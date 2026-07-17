@@ -13,8 +13,8 @@ created: 2026-07-17
 # #1165 revised body — draft (P-1a.0 收官投递物)
 
 **用途**：整体替换 [zts212653/clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) 的 issue body（GitHub 保留 edit history，可逆）。
-**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ `34a9070`（R18 = maintainer R2 吸收：五决策全落定 D0=A/D1a=c/D1b=a/D1c=a/D2=b，stable foundation co-signed，rows 6/8/9 closed shapes 本轮闭合）。本 draft 执行 R2 六项 required revision 清单的 body 侧呈现。
-**状态**：D3（DECISION 0/1/2 → resolved 记录；新增 shared DTO family / Row 6 closed schemas / snapshot closed shapes / row 9 bounded / cross-cutting invariant；ready=false 全表；approval marker unchecked），pending sol fresh narrow scan——**先扫后投**（sol R18 球明确要求任何 live issue edit 之前送 exact SHA 扫）。
+**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ `18393c6`（R19 = R18/D3 scan 的 field-level closure hardening：frozen union mirror + 四类 cap 表 + frozen 判别 mirror + empty 分支 + row 9 exact + ★ 清理；R18 = maintainer R2 吸收，五决策落定）。
+**状态**：D4（同步 R19：BoundedMessageOutputEvent union / 四类 cap 表 / BoundedSubscriptionReadPageResponse frozen-mirror 判别 + limit 1..32 + 七步算法含 empty 分支 / HostMessagingDeliverRequest + frozen ThreadHandleAddress / registry cells），pending sol narrow rescan——**先扫后投**。
 **忠实性边界**：unmarked = canonical-decided（maintainer 已决，呈现仅确认吸收正确）；★ = our proposal pending co-sign；★★ = decision packet（owner 拍板）。原 body 的 "K-1 remains pinned to beta.1" 错误陈述在本版修正（R5 grounding correction）。
 
 ---
@@ -60,33 +60,42 @@ core interface shape-approved
 
 ## Shared bounded envelope/event DTO family (your D1c = (a), closed; payload truth for rows 6/8/9)
 
-One contract-owned family of bounded wire DTOs carries every message payload crossing the wire: **`BoundedMessageEnvelope`** (snapshot items, row-9 delivery payloads) and **`BoundedMessageEvent`** (row-6 read pages: the envelope plus its event coordinates, at minimum the event sequence). Rules:
+The family **mirrors the frozen beta.2 `$defs` structurally** — same members, same required sets, same closed unions and `const` discriminators, `additionalProperties: false` everywhere — and adds exact caps to every formerly unbounded string. The generator derives member/required/const sets from the frozen schema mechanically; **it may add caps, never members**. Types:
 
-- field-for-field carry of every canonical `MessageEnvelope` member — including actor, audience, occurredAt, replyTo, provenance, correlation, and **causation** (your R2 list) — per the frozen beta.2 `$defs`; the P-1a generator derives the member list from the frozen schema, never by hand;
-- every copied variable-length field carries an exact structural cap **plus** a generated UTF-8/JSON byte validator (bounds live on the DTO; frozen `$defs` untouched);
-- item/page ceilings derive from generated full-frame proofs strictly below `maxFrameBytes` (numbers provisional);
-- the same family is the payload type for rows 6, 8, and 9 — **no per-row envelope variants**.
+- **`BoundedMessageEnvelope`** — field-for-field carry of frozen `MessageEnvelope`: `messageId`, `revision`, `threadId`, `replyTo?`, `actor`, `audience`, `occurredAt`, `payload`. Your R2 provenance/correlation/causation members are frozen members of `payload` (`payload.provenance`, `payload.correlationId` ≤256, `payload.causationId` ≤256) — carried, not re-modeled.
+- **`BoundedMessageOutputEvent` = `BoundedMessagePublishEvent | BoundedMessageElementsAppendEvent`** — mirroring frozen `MessageOutputEvent`'s closed union exactly: *publish* = `{ eventId, sequence, type: "message.publish" (const), envelope: BoundedMessageEnvelope }`, all required; *elements-append* = `{ eventId, sequence, type: "message.elements.append" (const), messageId, threadId, operationId, baseRevision?, revision, elements (1..32) }` — **no envelope on the append arm** (canonical frozen shape).
+
+Exact added caps (provisional pending generated proof; frozen-existing bounds kept verbatim — `operationId` ≤200, `correlationId`/`causationId` ≤256, `elementId`/`derivedFromElementId` ≤128, append `elements` maxItems 32, payload `elements` maxItems 128):
+
+| Class | Fields | Cap |
+|---|---|---|
+| identifiers | `eventId`, `messageId`, `threadId`, `replyTo`, `actor.id` | ≤ 128 |
+| timestamps | `occurredAt` (RFC3339 UTC) | ≤ 64 |
+| opaque tokens | handles / cursors / entitlements copied into DTOs | ≤ 512 |
+| free text | nested payload strings (e.g. `TextElementPayload.text`) | ≤ 65,536 |
+
+Nested payload refs (`TextElementPayload`, `MediaRefElementPayload`, `RichBlockElementPayload`, `ProvenanceOrigin` arms) receive per-string caps recursively by the same four-class rule. Item/page ceilings derive from generated full-frame proofs strictly below `maxFrameBytes`; the same family is the payload type for rows 6, 8, and 9 — **no per-row envelope variants**.
 
 ## Row 6 — `messaging.read` bounded paging (your D2 = (b), closed this round)
 
-**`SubscriptionReadPageRequest`** (closed, `additionalProperties: false`): `subscriptionId` — string ≤128; `limit` — integer 1..64 (provisional cap pending generated proof). **No page token** — a read always resumes from Host-side `ackedSequence`; a page token may only be added by a later proposal proving a semantic need (your R2 ruling).
+Frozen beta.2 already fixes the read-result discrimination: `SubscriptionReadResponse = SubscriptionNormalResponse | SubscriptionEmptyResponse | SubscriptionStaleResponse`, discriminated by `stale` (`const`) + `ackToken` nullability + `events` cardinality — the `oneOf` plus `const` locks make a fourth combination unrepresentable. **The bounded page family mirrors that frozen discrimination exactly.**
 
-**`SubscriptionReadPageResponse`** — closed variants discriminated by `status`, exact presence rules, no fourth combination:
+- **`SubscriptionReadPageRequest`** (closed, `additionalProperties: false`, all fields required): `subscriptionId` — string ≤128; `limit` — integer 1..32 (aligned to frozen `events` maxItems 32; provisional pending generated proof). **No page token** — a read always resumes from Host-side `ackedSequence`; a page token may only be added by a later proposal proving a semantic need (your R2 ruling).
+- **`BoundedSubscriptionReadPageResponse`** — closed `oneOf`, mirroring the frozen variants with bounded payloads:
+  - *normal*: `{ events: BoundedMessageOutputEvent[] (1..limit), ackToken: string(≤512), stale: false (const) }` — `ackToken` carries your kind-tagged read-page entitlement; disclosed delta vs frozen: frozen `SubscriptionCursor` was an unbounded opaque string, the bounded form is ≤512 and kind-tagged per your R2;
+  - *empty*: `{ events: [] (maxItems 0), ackToken: null, stale: false (const) }`;
+  - *stale*: `{ events: [] (maxItems 0), ackToken: null, stale: true (const) }` — retention floor has passed the reader; recovery = `messaging.snapshot` catch-up.
+  - No `lastEmittedSequence` response field: frozen has none, and the page's last emitted sequence lives inside the entitlement binding — a response copy would be an unconstrained second truth source.
 
-- *events*: `{ status: "events", events: BoundedMessageEvent[] (1..limit), lastEmittedSequence: integer, readAckToken: string(≤512) }`;
-- *empty*: `{ status: "empty" }` — nothing at or above the read start; no token, no cursor movement;
-- *stale*: `{ status: "stale" }` — zero events, no ack token, both cursors unchanged (retention floor has passed the reader; recovery path = `messaging.snapshot` catch-up).
-
-(Read uses an explicit three-way `status` discriminator because three variants cannot be encoded by two nullable-field presence rules without a fourth illegal combination; snapshot keeps its two-variant presence discrimination, which your R2 left unchanged.)
-
-**Host read algorithm (your R2 decision, absorbed):**
+**Host read algorithm (your R2 semantics; the empty branch is made explicit — your three-variant requirement implies the algorithm must produce it, a coherence completion, not a new decision):**
 
 1. A read begins at `A = ackedSequence` (Host state; never caller-supplied).
 2. The Host assembles a candidate page under the generated byte budget, stopping before the first non-fitting event, and proves one individually valid event fits.
 3. The final retention-floor check runs **after** candidate assembly and byte proof but **before** any response, token, or cursor mutation.
-4. If `A < currentFloor - 1` → the closed *stale* variant: zero events, no ack token, both cursors unchanged.
-5. Otherwise the Host mints a kind-tagged read-page ack entitlement bound at least to the plugin instance, subscription, the page's last emitted sequence, and the closed shape. Only after the final encoded-page proof may `lastDeliveredSequence` advance monotonically through the page's last emitted event.
-6. `messaging.ack` validates the entitlement and advances `ackedSequence` monotonically only to its issued sequence; malformed, forged, cross-subscription, wrong-kind, or expired tokens fail before any mutation. Response loss re-reads from acked state.
+4. If `A < currentFloor - 1` → the *stale* variant: zero events, null token, both cursors unchanged.
+5. Else if the candidate page is **empty** → the *empty* variant: null token, **no entitlement minted, no cursor movement**.
+6. Else (*normal*) → the Host mints the kind-tagged read-page ack entitlement bound at least to the plugin instance, subscription, the page's last emitted sequence, and the closed shape. Only after the final encoded-page proof may `lastDeliveredSequence` advance monotonically through that sequence.
+7. `messaging.ack` validates the entitlement and advances `ackedSequence` monotonically only to its issued sequence; malformed, forged, cross-subscription, wrong-kind, or expired tokens fail before any mutation. Response loss re-reads from acked state.
 
 Row 6 is `ready=false` until its generated byte proofs and N/N+1 raw-byte conformance pass.
 
@@ -157,10 +166,10 @@ No generic wire `operationId`. The Broker *extracts* the settlement key from inp
 | 3 | `messaging.send` | plugin → Host | `messaging.send` | `MessageDraft` → `SendReceipt` **with `messageHandle`** | `MessagingErrorCode` + deadline | `input.idempotencyKey` |
 | 4 | `messaging.appendElements` | plugin → Host | `messaging.appendElements` | `AppendElementsRequest` → `AppendReceipt` | `MessagingErrorCode` + deadline | `(Host-resolved messageId from input.handle, input.operationId)` |
 | 5 | `messaging.subscribe` | plugin → Host | `message.event.subscribe` | handle → subscriptionId | `MessagingErrorCode` + deadline | Host-resolved `input.handle` identity (K-1 create-or-get authoritative) |
-| 6 | `messaging.read` | plugin → Host | `message.event.subscribe` | `SubscriptionReadPageRequest` → status-discriminated events/empty/stale variants — **closed this round (your D2 = (b); Row 6 section above); `ready=false` pending generated proofs** | `MessagingErrorCode` + deadline | none (at-least-once; bounded page assembly advances `lastDeliveredSequence` only through the last emitted event; only ack advances `ackedSequence` — via the kind-tagged read-page entitlement) |
+| 6 | `messaging.read` | plugin → Host | `message.event.subscribe` | `SubscriptionReadPageRequest` → `BoundedSubscriptionReadPageResponse` (normal/empty/stale, frozen-mirroring discrimination) — **closed this round (your D2 = (b); Row 6 section above); `ready=false` pending generated proofs** | `MessagingErrorCode` + deadline | none (at-least-once; bounded page assembly advances `lastDeliveredSequence` only through the last emitted event; only ack advances `ackedSequence` — via the kind-tagged read-page entitlement) |
 | 7 | `messaging.ack` | plugin → Host | `message.event.subscribe` | subscriptionId + ackToken → `null` | `MessagingErrorCode` + deadline | `(input.subscriptionId, input.ackToken)` |
 | 8 | `messaging.snapshot` | plugin → Host | `message.event.subscribe` | bounded `SnapshotPageRequest` → `SnapshotPageResponse` (**closed per your D1a/b/c — Row 8 section above**) | `DOMAIN_ERROR`/`DEADLINE_EXPIRED`/`SNAPSHOT_UNAVAILABLE` per wire mapping (co-signed R2) | none for traversal; completion = your D1b Host entitlement through existing `messaging.ack` (atomic dual-cursor advance to `H`); **`ready=false` pending generated proofs** |
-| 9 | `host.messaging.deliver` | Host → plugin | `onMessage` | deliveryId + threadHandle + `BoundedMessageEnvelope` → **`deliveryId` ack (canonical; echoed value must byte-equal the Host request identity — co-signed R2; mismatch = protocol violation)** | `DELIVERY_REJECTED` per wire mapping (co-signed R2) — **bounded schemas closed this round (shared DTO family); `ready=false` until callback request/ack/rejection byte proofs close** | `input.deliveryId` (Host-side authoritative) |
+| 9 | `host.messaging.deliver` | Host → plugin | `onMessage` | `HostMessagingDeliverRequest` (deliveryId + frozen `ThreadHandleAddress` + `BoundedMessageEnvelope`) → **`deliveryId` ack (canonical; echoed value must byte-equal the Host request identity — co-signed R2; mismatch = protocol violation)** | `DELIVERY_REJECTED` per wire mapping (co-signed R2) — **exact closed schemas this round; `ready=false` until callback request/ack/rejection byte proofs close** | `input.deliveryId` (Host-side authoritative) |
 | 10 | `host.grants.changed` | Host → plugin | protocol-intrinsic | `GrantSnapshot` notification | none | (grantRevision monotonic) |
 | 11 | `host.lifecycle.ping` | Host → plugin | protocol-intrinsic | nonce → nonce | protocol errors only | — |
 | 12 | `host.lifecycle.drain` | Host → plugin | protocol-intrinsic | deadlineUnixMs → `null` | deadline | — |
@@ -181,7 +190,11 @@ No production method exists for fixture setup/observe, grant presets, revocation
 - *Identity:* resolved **exclusively from the JSON-RPC correlation**; `error.data` carries no `deliveryId`.
 - *Retry policy is Host-owned:* contract-fixed mapping — `UNSUPPORTED_PAYLOAD`/`NO_HANDLER` → dead-letter; `PLUGIN_BUSY`/`PLUGIN_INTERNAL` → bounded retry. The runtime reports facts, never selects Broker behavior; any other error shape on a deliver call is a connection-level protocol violation.
 - *Success (canonical, equality target disambiguated):* result = `deliveryId` ack exactly as your matrix states, with the strengthening you co-signed at R2: the echoed value **must byte-equal `params.input.deliveryId`** of the originating request — never compared against the JSON-RPC `id`/`requestId`; mismatch is a connection-level protocol violation. The error path remains correlation-only and echoes nothing.
-- *Bounded schemas (this revision, your six-item list #4 — shared DTO family):* the deliver request (`deliveryId` string ≤128 provisional, bounded `threadHandle`, payload = `BoundedMessageEnvelope`), the result's `deliveryId` echo (same bound, byte-equality oracle), and the closed `DELIVERY_REJECTED` `error.data` are exact closed bounded schemas; row 9 stays `ready=false` until its callback request/acknowledgement/rejection byte proofs and raw-byte conformance close.
+- *Exact closed callback schemas (this revision, your six-item list #4):*
+  - **request** — `HostMessagingDeliverRequest` (closed, `additionalProperties: false`, all fields required), carried in `params.input` under the standard `params.meta` deadline: `{ deliveryId: string ≤128, threadHandle: ThreadHandleAddress, envelope: BoundedMessageEnvelope }`. `ThreadHandleAddress` is the **existing frozen `$def`** — `{ kind: "thread_handle" (const), handle: string 1..256 }`, already closed and bounded; no new handle type is invented.
+  - **acknowledgement** — the result schema is exactly `deliveryId: string ≤128`, byte-equal to `params.input.deliveryId` (mismatch = connection-level protocol violation; the equality oracle is a conformance case, the bound is the schema).
+  - **rejection** — `DELIVERY_REJECTED` `error.data = { reason }`, closed 4-value enum (below).
+  - Row 9 stays `ready=false` until its callback request/acknowledgement/rejection byte proofs and N/N+1 raw-byte conformance close.
 
 ### Wire error envelope mapping (co-signed R2; JSON-RPC 2.0 requires integer `error.code`)
 
