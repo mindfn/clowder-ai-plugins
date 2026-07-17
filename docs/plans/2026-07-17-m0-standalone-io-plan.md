@@ -14,7 +14,7 @@ created: 2026-07-17
 
 # M0 Standalone Runtime / Standard I/O Plan (P-1 remainder)
 
-> **Status: draft R6 — field-level co-signable shape. Absorbed the K-2 maintainer verdict on [clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) (comment 2026-07-17T06:11Z; canonical assessment `main@b32170a8`) including the full 12-column registry verbatim, plus field-level `SnapshotPage`/`DeliveryRejection` proposals (★). Pending explicit `shape-approved` on the revised issue body. No implementation, no beta.3 publication, no K-1/K-2 re-pin before that reply.**
+> **Status: draft R7 — field-level co-signable shape with settled ★-proposal semantics (snapshot fence/membership/final-page settlement, Host-owned delivery-rejection policy). Absorbed the K-2 maintainer verdict on [clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) (comment 2026-07-17T06:11Z; canonical assessment `main@b32170a8`) including the full 12-row registry verbatim. Pending explicit `shape-approved` on the revised issue body. No implementation, no beta.3 publication, no K-1/K-2 re-pin before that reply.**
 
 **Goal:** Complete the plugins-side M0 vertical slice (roadmap PR-4 "P-1"): a real child-process standalone runtime speaking the standard I/O wire protocol, one shared SDK client that first- and third-party plugins use identically (P14), and the adversarial matrix executed with SDK-surface operations over the real transport — with every wire-level word contract-owned before any runtime consumes it.
 
@@ -22,7 +22,7 @@ created: 2026-07-17
 
 ---
 
-## Post-merge truth baseline (updated R5)
+## Post-merge truth baseline
 
 | Fact | Value | Verified via |
 |---|---|---|
@@ -80,8 +80,8 @@ There is **no generic wire `operationId`**. The Broker *extracts* the settlement
 | 5 | `messaging.subscribe` | plugin → Host | `message.event.subscribe` | handle → subscriptionId | `MessagingErrorCode` + deadline | Host-resolved `input.handle` identity (K-1 create-or-get authoritative) |
 | 6 | `messaging.read` | plugin → Host | `message.event.subscribe` | subscriptionId + limit → `SubscriptionReadResponse` | `MessagingErrorCode` + deadline | none (at-least-once; `lastDeliveredSequence` monotonic, only ack moves `ackedSequence`) |
 | 7 | `messaging.ack` | plugin → Host | `message.event.subscribe` | subscriptionId + ackToken → `null` | `MessagingErrorCode` + deadline | `(input.subscriptionId, input.ackToken)` |
-| 8 | `messaging.snapshot` | plugin → Host | `message.event.subscribe` | bounded `SnapshotPageRequest` → `SnapshotPageResponse` (field-level proposal below) | blocked until schema closes | none (replay-safe, monotonic catch-up) |
-| 9 | `host.messaging.deliver` | Host → plugin | `onMessage` | deliveryId + threadHandle + envelope → deliveryId ack | closed callback error set (`DeliveryRejection` proposal below) | `input.deliveryId` |
+| 8 | `messaging.snapshot` | plugin → Host | `message.event.subscribe` | bounded `SnapshotPageRequest` → `SnapshotPageResponse` (field-level proposal below) | ★`MessagingErrorCode` + deadline (closing the "blocked until schema closes" placeholder — proposal below defines the schema) | none (replay-safe, monotonic catch-up; final-page settlement below) |
+| 9 | `host.messaging.deliver` | Host → plugin | `onMessage` | deliveryId + threadHandle + envelope → `null` ack (correlation-identified) | ★`DELIVERY_REJECTED` + closed reason data (proposal below) | `input.deliveryId` (Host-side; never plugin-echoed) |
 | 10 | `host.grants.changed` | Host → plugin | protocol-intrinsic | `GrantSnapshot` notification | none | (grantRevision monotonic) |
 | 11 | `host.lifecycle.ping` | Host → plugin | protocol-intrinsic | nonce → nonce | protocol errors only | — |
 | 12 | `host.lifecycle.drain` | Host → plugin | protocol-intrinsic | deadlineUnixMs → `null` | deadline | — |
@@ -92,16 +92,35 @@ There is **no production method** for fixture setup/observe, grant presets, revo
 
 **`CallMeta`** (closed, v0): `deadlineUnixMs` — integer, Host-capped absolute Unix ms. Sole field; `requestId` lives in the JSON-RPC `id`, never in meta.
 
-**`GrantSnapshot`** (closed): `grantRevision` — integer, strictly monotonic per instance; `effectiveGrants` — unique `Capability[]`. `SessionBinding` embeds these same two fields; `host.grants.changed` params = `GrantSnapshot`. Stale-revision notifications are discarded by revision comparison.
+**★ `GrantSnapshot`** (closed; FC-10 — the *name* is canonical but this exact field set is **our proposal**, derived from `SessionBinding`'s fields, explicitly submitted for co-sign): `grantRevision` — integer, strictly monotonic per instance; `effectiveGrants` — unique `Capability[]`. `SessionBinding` embeds these same two fields; `host.grants.changed` params = `GrantSnapshot`. Stale-revision notifications are discarded by revision comparison.
 
 **`SendReceipt` beta.3 delta**: adds `messageHandle` typed as the **existing frozen `MessageHandle` $def** (`{kind:"message", token}`) — no new shape invented. Conformance oracle: `messageHandle.token !== messageId` (messageId is never the capability token). Fixture updates accompany the schema change (additive, disclosed).
 
 **★ `SnapshotPageRequest`** (closed): `subscriptionId` — string; `pageToken` — optional opaque Host-minted continuation (absent = first page); `maxItems` — integer 1..64.
-**★ `SnapshotPageResponse`** (closed): `items` — canonical message projections, length ≤ `maxItems`; `nextPageToken` — string \| null (null = traversal complete); `fenceSequence` — integer, snapshot consistency fence minted on first page and constant across the traversal (events after the fence arrive via incremental `read`); `resumeSequence` — integer on the final page = `nextReadStartsAfter`.
-**★ Boundedness proof**: Host additionally truncates each page at `pageByteBudget = 786_432` bytes of serialized items (whichever of maxItems/budget hits first); a single message's aggregate element payload is already capped at 262,144 bytes (beta.2), so every message fits a page, and 768 KiB payload + JSON-RPC envelope stays under the 1 MiB frame ceiling with ≥25% headroom.
-**★ Replay obligations** (settlement `none` row): same `pageToken` + same `fenceSequence` re-serves an equivalent page; traversal never advances `ackedSequence`; `fenceSequence` and `resumeSequence` are monotonic across snapshots.
+**★ `SnapshotPageResponse`** (closed): `items` — snapshot-view message projections, length ≤ `maxItems`; `nextPageToken` — string \| null (null = final page); `fenceSequence` — integer, minted on the first page and constant across the traversal.
 
-**★ `DeliveryRejection`** (closed; carried in JSON-RPC `error.data` of `host.messaging.deliver`): `deliveryId` — string (idempotent dedupe key); `reason` — closed enum `UNSUPPORTED_PAYLOAD | NO_HANDLER | PLUGIN_BUSY | PLUGIN_INTERNAL`; `retryable` — boolean (Broker input: true → bounded retry, false or budget exhausted → dead-letter). Success result is the `deliveryId` ack.
+**★ Snapshot view semantics (FC-6):**
+- *Membership:* the traversal yields exactly the messages whose canonical publish sequence ≤ `fenceSequence` — no duplicates, no omissions across pages.
+- *Revision view:* every item is the envelope's **fence-time projection** (revision/elements as of the fence). Publishes/appends after the fence never leak into later pages — they arrive exactly once via incremental `read` after the fence. Deletions after the fence do not remove items from the in-flight traversal (the snapshot is an immutable logical view); reconciliation of deletions is the consumer's post-fence event stream.
+- *Token binding:* `pageToken` is Host-minted and opaquely binds `(pluginInstanceId, brokerSessionId-independent subscription identity, fenceSequence, position, view-shape digest)`; presenting it under any other subscription/instance/fence → `VALIDATION`, fail-closed.
+
+**★ Final-page settlement (FC-5 — replaces the contradictory `resumeSequence` field, which is removed):**
+- Intermediate pages have **zero cursor side effects**.
+- Successful delivery of the final page **atomically max-advances the subscription cursors**: `lastDeliveredSequence := max(lastDeliveredSequence, fenceSequence)` and `ackedSequence := max(ackedSequence, fenceSequence)` — the snapshot delivered the complete fence-time state, which is the catch-up semantics stale subscriptions exist for; `read` needs no new parameter and naturally continues after the fence.
+- Replaying the final `pageToken` re-serves the same page and the max-advance is **idempotent** (max is order- and repeat-insensitive).
+- `fenceSequence` is monotonic across successive snapshots of one subscription.
+- The `ackedSequence` co-advance is the one semantic judgment explicitly flagged for K-2 decision: rationale is that post-catch-up the pre-fence region is unrecoverable anyway (retention), so a lower acked cursor has no replay value; if K-2 prefers delivered-only advance, only this bullet changes.
+
+**★ Boundedness (FC-7 — payload cap alone is insufficient because identity/string fields are unbounded today):**
+1. P-1a adds explicit `maxLength` to the wire projection's unbounded string fields (proposal: `messageId`/`threadId`/`subscriptionId` ≤ 128, `ActorRef.id` \| handle/page tokens ≤ 256, element ids ≤ 128) — the root fix, making per-item size computable.
+2. Defensive ceiling `maxSerializedItemBytes = 393_216` (384 KiB = payload cap × 1.5 for metadata/JSON overhead): an item exceeding it is a **fail-closed snapshot error** (`VALIDATION`), never silently skipped — reachable only if the upstream field bounds were not enforced, i.e. a system fault, not a data path.
+3. Page assembly truncates at `pageByteBudget = 786_432` bytes of serialized items or `maxItems`, whichever first; with (1)+(2) every legal item fits a page, and 768 KiB items + envelope stays under the 1 MiB frame with ≥25% headroom.
+
+**★ Delivery rejection (FC-8/FC-9 — no second identity source, no runtime-selected policy):**
+- *Error class:* one public top-level JSON-RPC error code **`DELIVERY_REJECTED`** (mirroring the `HANDSHAKE_REJECTED` pattern) with `error.data = { reason }` — **`reason` is the sole field**; closed enum `UNSUPPORTED_PAYLOAD | NO_HANDLER | PLUGIN_BUSY | PLUGIN_INTERNAL`.
+- *Identity:* the Host resolves which delivery was rejected **exclusively from the JSON-RPC correlation** (`id` → its pending delivery). `error.data` carries **no `deliveryId`** — the plugin never re-states Host-minted identity, so no echo, no equality check, no second truth source.
+- *Retry policy is Host-owned:* the closed **reason → Broker policy** mapping is contract-fixed — `UNSUPPORTED_PAYLOAD` → no retry (dead-letter), `NO_HANDLER` → no retry (dead-letter), `PLUGIN_BUSY` → bounded retry, `PLUGIN_INTERNAL` → bounded retry. The runtime reports facts; it never selects Broker behavior. Any other error shape from the plugin on a `host.messaging.deliver` call is a protocol violation handled at the connection level.
+- *Success:* result = `null` ack (the correlation already identifies the delivery; echoing `deliveryId` in the result is likewise unnecessary — final shape K-2's call).
 
 ### Reject taxonomy (closed)
 
@@ -113,9 +132,9 @@ V0 has **no resume token**. Every reconnect performs fresh `broker.hello`/`broke
 
 **Column C — kernel-owned, joined at the M0 gate:** unchanged (Broker dispatch/retry/dead-letter/reconcile, production supervision, production persistence — K-2).
 
-**Cross-repo pinning declaration (replaces R4 version-skew text):** today *neither* kernel consumer pins a plugin-contract artifact — K-1 carries a drifting hand-written mirror (see baseline). The pinning event happens once per contract delta: co-signed contract PR → exact artifact registry-verified → K-1/K-2 pin that exact version and K-1 deletes the mirror. Publication and re-pin come **after** R5 review + registry verification + #1165 explicit approval — never before, never via dist-tags.
+**Cross-repo pinning declaration (replaces R4 version-skew text):** today *neither* kernel consumer pins a plugin-contract artifact — K-1 carries a drifting hand-written mirror (see baseline). The pinning event happens once per contract delta: co-signed contract PR → exact artifact registry-verified → K-1/K-2 pin that exact version and K-1 deletes the mirror. Publication and re-pin come **after** plan review + registry verification + #1165 explicit approval — never before, never via dist-tags.
 
-## §3.8-1 adversarial-matrix coverage map (R5 refresh)
+## §3.8-1 adversarial-matrix coverage map
 
 | Requirement | Slice/owner | Oracle |
 |---|---|---|
@@ -132,7 +151,7 @@ V0 has **no resume token**. Every reconnect performs fresh `broker.hello`/`broke
 
 ### P-1a.0 — Shape co-sign on #1165 (in progress)
 
-**State:** first-party anchor open; maintainer verdict = *corrections required* (row-by-row above). **Gate order (corrected in R6):** every approval precondition is satisfied **inside this plan revision, before approval** — the field-level shape above (handshake structures, CallMeta, GrantSnapshot, SendReceipt delta, SnapshotPage pair, DeliveryRejection, full 12-column registry) *is* the co-signable artifact. Next action = replay this field-level shape into the #1165 issue body and request explicit `shape-approved`. P-1a then mechanizes the approved words verbatim; it defines nothing new. Precondition accounting:
+**State:** first-party anchor open; maintainer verdict = *corrections required* (row-by-row above). **Gate order (corrected in R6):** every approval precondition is satisfied **inside this plan revision, before approval** — the field-level shape above (handshake structures, CallMeta, GrantSnapshot, SendReceipt delta, SnapshotPage pair, DeliveryRejection, full 12-row registry) *is* the co-signable artifact. Next action = replay this field-level shape into the #1165 issue body and request explicit `shape-approved`. P-1a then mechanizes the approved words verbatim; it defines nothing new. Precondition accounting:
 
 1. corrected K-1 dependency truth — **in baseline table**;
 2. `CandidateHello` / `SessionBinding` / `CallMeta` / `GrantSnapshot` / `SendReceipt.messageHandle` / registry rows / closed error data — **field-level in Column B** (contract ownership lands with P-1a mechanization);
@@ -144,7 +163,7 @@ Ownership-gate record (R3) stands: thread-level seam review is evidence, not sig
 
 ### P-1a — Wire-protocol contract delta (contract PR, co-signed)
 
-*Scope:* **mechanize the approved field-level shape verbatim — this slice defines nothing new.** Generated schemas for every Column-B type exactly as approved on #1165; NDJSON framing constants; the 12-column registry as machine truth; `HANDSHAKE_REJECTED` + closed reasons; **stateful reject fixtures** per closed reason incl. binding replay and zero-side-effect handshake failure; codegen projection + value-level regression locks. Any field the mechanization proves unworkable goes back to #1165 as a delta request — never silently adjusted.
+*Scope:* **mechanize the approved field-level shape verbatim — this slice defines nothing new.** Generated schemas for every Column-B type exactly as approved on #1165; NDJSON framing constants; the 12-row registry as machine truth; `HANDSHAKE_REJECTED` + closed reasons; **stateful reject fixtures** per closed reason incl. binding replay and zero-side-effect handshake failure; codegen projection + value-level regression locks. Any field the mechanization proves unworkable goes back to #1165 as a delta request — never silently adjusted.
 *Non-goals:* no runtime, no transport code.
 *Version:* `0.1.0-beta.3` on `next`; `latest` untouched; K-1/K-2 pinning per the cross-repo declaration.
 
@@ -178,4 +197,5 @@ Unchanged from R4 (same transport core; P14 three-part lock; SDK-expressible adv
 - **R3 (2026-07-17):** K-1 seam corrections SC-1…SC-6 — four-way naming discipline; Host-bound identity; ownership gate recorded.
 - **R4 (2026-07-17):** SC-7 — envelope settlement identity restored to owner-neutral three-candidate form.
 - **R5 (2026-07-17):** absorbed the #1165 K-2 maintainer verdict (row-by-row): handshake structures `CandidateHello`/`SessionBinding` with one-use `bindingNonce`; framing accepted with constraints (1 MiB, NDJSON, protocol-only stdout); single SRI digest truth; settlement identity finalized as per-row `settlementKeySource` (no generic wire operationId — OQ-5 owner decision landed near the third candidate); resume deferred with fresh-handshake semantics (OQ-6 resolved; BINDING_REPLAY carrier = bindingNonce); explicit `SendReceipt.messageHandle` (supersedes R3 derivation phrasing); 12-method reserved registry with rows 8–9 publication-gated; closed `HANDSHAKE_REJECTED` taxonomy; **K-1 grounding correction** — `9fb37310` has no pin and a drifting mirror, R4's "K-1 stays on beta.1" text removed; five approval preconditions recorded in P-1a.0; wire-conformance six-pack added to coverage map and P-1b.
-- **R6 (2026-07-17):** fresh-context findings on R5 (`34f9ef6`) absorbed — shape lifted from name-level to **field-level co-signable**: registry expanded to the canonical 12-column form verbatim (grant / input→result / error set per row, incl. `ack → null`, `ping nonce → nonce`); Concrete-wire-types section added — `CallMeta` (sole field `deadlineUnixMs`), `GrantSnapshot` (`grantRevision` + `effectiveGrants`, revision-monotonic), `SendReceipt.messageHandle` bound to the **existing frozen `MessageHandle` $def** with a `token !== messageId` oracle, ★`SnapshotPageRequest/Response` with fence/resume semantics and a byte-budget boundedness proof under the 1 MiB frame, ★`DeliveryRejection` closed enum with `retryable` broker input (FC-1/FC-2); **gate order fixed** — all approval preconditions satisfied inside this revision, P-1a mechanizes verbatim and defines nothing (FC-3); no-grant-introspection-RPC canonical ruling noted in P-1c; revision provenance corrected to thread anchors, R1–R4 no longer claim git history (FC-4).
+- **R6 (2026-07-17):** fresh-context findings on R5 (`34f9ef6`) absorbed — shape lifted from name-level to **field-level co-signable**: registry expanded to the canonical 12-row form verbatim (grant / input→result / error set per row, incl. `ack → null`, `ping nonce → nonce`); Concrete-wire-types section added — `CallMeta` (sole field `deadlineUnixMs`), `GrantSnapshot` (`grantRevision` + `effectiveGrants`, revision-monotonic), `SendReceipt.messageHandle` bound to the **existing frozen `MessageHandle` $def** with a `token !== messageId` oracle, ★`SnapshotPageRequest/Response` with fence/resume semantics and a byte-budget boundedness proof under the 1 MiB frame, ★`DeliveryRejection` closed enum with `retryable` broker input (FC-1/FC-2); **gate order fixed** — all approval preconditions satisfied inside this revision, P-1a mechanizes verbatim and defines nothing (FC-3); no-grant-introspection-RPC canonical ruling noted in P-1c; revision provenance corrected to thread anchors, R1–R4 no longer claim git history (FC-4).
+- **R7 (2026-07-17):** fresh-context findings on R6 (`f842b8c`) absorbed — ★-proposal semantics settled: **final-page settlement** replaces the contradictory `resumeSequence` (intermediate pages zero cursor side effects; final page atomically max-advances `lastDeliveredSequence`/`ackedSequence` to the fence, idempotent under token replay; the acked co-advance explicitly flagged for K-2 judgment) (FC-5); **snapshot view semantics** defined — membership = publish sequence ≤ fence exactly once, fence-time revision projection, deletion-race immunity, pageToken opaquely bound to instance/subscription/fence/position/shape-digest (FC-6); **boundedness rebuilt** — root fix = ★maxLength on unbounded identity/string wire fields, defensive `maxSerializedItemBytes = 384 KiB` with fail-closed oversize error, then the 768 KiB page budget (payload cap alone proven insufficient) (FC-7); **delivery rejection de-privileged** — no `deliveryId` echo (correlation-only identity), no plugin-supplied `retryable`; closed reason → Host-owned policy mapping; public `DELIVERY_REJECTED` class with `reason` as sole data field; success = `null` ack (FC-8, closing rows 8–9 error placeholders per FC-9); `GrantSnapshot` field set re-marked ★ as our proposal, not canonical fact (FC-10); registry consistently described as 12-row and stale R5 markers removed (FC-11).
