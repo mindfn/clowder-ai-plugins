@@ -13,28 +13,31 @@ created: 2026-07-17
 # #1165 revised body — draft (P-1a.0 收官投递物)
 
 **用途**：整体替换 [zts212653/clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) 的 issue body（GitHub 保留 edit history，可逆）。
-**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ `1b74f1f`（R17；R16 = sol 零 finding 收敛，R17 = D1 scan 引发的 provenance 措辞同步校正）。本 draft 是其 line 183 spec 的呈现式转写——**(0)** lifecycle、**(1)** 三 snapshot rows、**(2)** row-6 paging 三项 owner decisions + stable portion co-sign，零预设。
-**状态**：D2（修复 sol D1 scan 的 FC-D1-1..4：1a(c) tradeoff 对称恢复 / checklist 收窄 / verbatim→base-matrix-with-overlays / first-hand+This-revision 措辞），pending sol 复扫四锚点。零 finding 后投递：sol 有原 body 署名与通道先例；通道不可用则升级 operator 机械投递。
+**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ `34a9070`（R18 = maintainer R2 吸收：五决策全落定 D0=A/D1a=c/D1b=a/D1c=a/D2=b，stable foundation co-signed，rows 6/8/9 closed shapes 本轮闭合）。本 draft 执行 R2 六项 required revision 清单的 body 侧呈现。
+**状态**：D3（DECISION 0/1/2 → resolved 记录；新增 shared DTO family / Row 6 closed schemas / snapshot closed shapes / row 9 bounded / cross-cutting invariant；ready=false 全表；approval marker unchecked），pending sol fresh narrow scan——**先扫后投**（sol R18 球明确要求任何 live issue edit 之前送 exact SHA 扫）。
 **忠实性边界**：unmarked = canonical-decided（maintainer 已决，呈现仅确认吸收正确）；★ = our proposal pending co-sign；★★ = decision packet（owner 拍板）。原 body 的 "K-1 remains pinned to beta.1" 错误陈述在本版修正（R5 grounding correction）。
 
 ---
 
 ## BODY（verbatim replace begins below）
 
-## Status and request — revised after your verdict and P1 addendum
+## Status and request — revision 2: your R2 decisions absorbed; rows 6/8/9 closed for fresh review
 
-This remains a **shape-only K-2 / P-1a.0 co-sign anchor**. It does not authorize implementation, publication, or dependency migration.
+This remains a **shape-only K-2 / P-1a.0 co-sign anchor**. It does not authorize implementation, publication, dependency re-pin, or K-2 runtime work.
 
-Since the original anchor: your row-by-row verdict, your P1 addendum ([comment 5000048510](https://github.com/zts212653/clowder-ai/issues/1165#issuecomment-5000048510)), and the canonical fix #1168 (merged `d606aab859883422b04d996cf223560fc20ae232`) have been absorbed field-by-field through twelve fresh-context review rounds (R5–R16); the final round reported zero findings. The shape below is the corrected, field-level form.
+Your R2 decision ([comment 5001381702](https://github.com/zts212653/clowder-ai/issues/1165#issuecomment-5001381702)) resolved every open decision variable and co-signed the complete-and-stable foundation as written. This revision executes your six-item list: the former DECISION sections are replaced by your decisions as decided, and rows 6/8/9 now carry **exact closed bounded schemas** on those terms.
 
-**This revision asks you for exactly three decisions and one co-sign:**
+**Your R2 decisions — absorbed as decided (no re-answer needed):**
 
-- **DECISION 0** — the proofs-vs-shape lifecycle (your addendum's withheld condition);
-- **DECISION 1** — the snapshot sub-protocol decision rows (view coordinates / completion authorization / item shape);
-- **DECISION 2** — `messaging.read` bounded-paging disposition;
-- **CO-SIGN** — the complete-and-stable portion (unchanged for ≥2 scan rounds, listed in full below).
+| # | Decision | Your pick | Absorbed where |
+|---|---|---|---|
+| D0 | proofs-vs-shape lifecycle | **Option A — reservation-only** | lifecycle rule below + per-row `ready=false` in the registry |
+| D1a | snapshot view coordinates | **(c) causally fenced two-coordinate capture** | snapshot section |
+| D1b | completion authorization | **(a) replay-safe Host entitlement via existing `messaging.ack`** | snapshot section |
+| D1c | item shape | **(a) semantically complete bounded DTO** | shared DTO family section |
+| D2 | `messaging.read` paging | **(b) row 6 closed in this round** | Row 6 section |
 
-Whether approval is **partial** (e.g. detaching rows 6/8 into their own decision rounds) is your explicit call — this anchor presumes neither the split nor the lifecycle order.
+**What this revision asks of you:** a **fresh review of the closed rows 6/8/9 schemas** (Row 6 / snapshot / Row 9 sections below) and the cross-cutting progress invariant. Per your item 6, the approval marker below stays **unchecked** until that review confirms.
 
 The confirmed cross-repository order is unchanged:
 
@@ -45,79 +48,74 @@ core interface shape-approved
 → each consumer explicitly re-pins
 ```
 
+**Reservation-only lifecycle (your D0 = Option A, absorbed):** the co-sign covers the closed field-level/reservation shape and authorizes only the contract PR; **every row is `ready=false`, unpublished, and unadvertised** until its exact UTF-8/JSON validators, generated `maxEncodedRequestBytes`/`maxEncodedResultBytes`/`maxEncodedErrorBytes`, N/N+1 raw-byte conformance, and three-stage runtime enforcement pass; proof failure returns as a shape delta and never silently raises the v0 cap.
+
+**Cross-cutting progress invariant (your R2 wording, absorbed; rows 6/8/9):** a response may authorize cursor, lease, or settlement progress **only through a Host-minted entitlement produced after both causal completeness and the final wire-byte proof**; any stale, capture, or proof failure emits no entitlement and mutates no progress state.
+
 ## Corrections from your verdict/addendum — absorbed, confirmation requested
 
-1. **Row 6 publication gate absorbed.** Your proof (a contract-valid compact `messaging.read` frame reaches 1,049,033 bytes — 457 over the 1,048,576 ceiling) is recorded; `messaging.read` stays publication-gated until a contract-owned bounded `SubscriptionReadPageRequest/Response` with atomic page assembly exists (see DECISION 2).
+1. **Row 6 publication gate absorbed.** Your proof (a contract-valid compact `messaging.read` frame reaches 1,049,033 bytes — 457 over the 1,048,576 ceiling) is recorded; per your R2 D2 = (b) the bounded `SubscriptionReadPageRequest/Response` shape is now closed in this revision (Row 6 section below), and row 6 stays `ready=false` until its generated proofs and raw-byte conformance pass.
 2. **Registry-wide `wireBounds` invariant pinned from the merged canonical doc** (`d606aab`, semantically equivalent restatement; the merged doc is the literal truth source): one generated `wireBounds` truth whose frame cap is v0 `maxFrameBytes`; a row may be marked ready only when ① every variable-length request/result/notification/acknowledgement/public-error field has a structural limit **plus an exact UTF-8/JSON byte validator** (`maxLength` counts characters, not encoded bytes), ② the row declares `maxEncodedRequestBytes`/`maxEncodedResultBytes`/`maxEncodedErrorBytes`, each ≤ `maxFrameBytes` under the v0 compact profile incl. shared `CallMeta` and escaping, ③ collection assemblers admit an item only if the encoded page stays within the row's result budget, preserve continuation/watermark state when the next item does not fit, and prove one individually valid item fits, ④ request validation + row proofs are checked before authorization-visible business dispatch, dynamic page assembly completes within budget before advancing any delivered watermark, callback lease, or settlement state, and the final encoded frame is re-checked before write-queue mutation — an over-budget value is a contract violation, never a partially emitted success. Proof coverage spans requestId, plugin/package/version/session identifiers, `bindingNonce`, message/thread/subscription identifiers, handles, cursors, `deliveryId`, callback acknowledgements, and closed public error data. A method name may be reserved without proof, but cannot be published or advertised as ready.
 3. **Grounding correction to the original anchor (our error, now fixed):** the original body claimed "K-1 remains pinned to exact `@clowder-ai/plugin-contract@0.1.0-beta.1`". That was wrong — K-1 branch `9fb37310` has **no plugin-contract package dependency and no pin**; it owns a hand-written mirror that already drifts from beta.2. The corrected later gate: co-signed contract PR → exact registry-verified artifact → K-1/K-2 explicitly re-pin that exact version → **K-1 removes its mirror before merge**. Neither consumer ever follows `next` or any mutable dist-tag.
 
-## DECISION 0 — proofs-vs-shape lifecycle (owner decision; we state no preference)
+## Shared bounded envelope/event DTO family (your D1c = (a), closed; payload truth for rows 6/8/9)
 
-Two of your first-hand rules hold simultaneously:
+One contract-owned family of bounded wire DTOs carries every message payload crossing the wire: **`BoundedMessageEnvelope`** (snapshot items, row-9 delivery payloads) and **`BoundedMessageEvent`** (row-6 read pages: the envelope plus its event coordinates, at minimum the event sequence). Rules:
 
-- your P1 addendum states verbatim that *"`shape-approved` remains withheld and the required revision now also must"* give every ready method/notification a generated `maxEncodedRequestBytes`/`maxEncodedResultBytes`/`maxEncodedErrorBytes` proof — i.e. proofs are written into the **current shape-approved withheld condition**;
-- the merged canonical doc's method-level rule says a method may be **reserved** without proof but cannot be **published** without it.
+- field-for-field carry of every canonical `MessageEnvelope` member — including actor, audience, occurredAt, replyTo, provenance, correlation, and **causation** (your R2 list) — per the frozen beta.2 `$defs`; the P-1a generator derives the member list from the frozen schema, never by hand;
+- every copied variable-length field carries an exact structural cap **plus** a generated UTF-8/JSON byte validator (bounds live on the DTO; frozen `$defs` untouched);
+- item/page ceilings derive from generated full-frame proofs strictly below `maxFrameBytes` (numbers provisional);
+- the same family is the payload type for rows 6, 8, and 9 — **no per-row envelope variants**.
 
-Neither rule implies the other's ordering, and the proofs are generated by P-1a tooling that normally starts after shape approval — so the lifecycle order is yours to set:
+## Row 6 — `messaging.read` bounded paging (your D2 = (b), closed this round)
 
-- **Option A — reservation-only shape co-sign.** `shape-approved` covers the field-level shape with all 12 names reserved; generated byte proofs move to P-1a's **publication readiness** gate (no row publishes or is advertised ready without its proof; proof failure returns here as an explicit delta request).
-- **Option B — proofs stay a shape gate.** You authorize a **pre-shape contract-proof spike** whose deliverable is the full withheld-condition set from your addendum: generated per-row `maxEncoded{Request,Result,Error}Bytes` proof metadata **plus** the exact UTF-8/JSON byte validators **plus** the required raw-byte conformance (max-boundary frames in ASCII / multibyte UTF-8 / JSON-escaping encodings, +1-byte oversize rejection, bounded page continuation, zero-side-effect oversize rejection) — still excluding production runtime and any publication; `shape-approved` follows only after that spike lands.
+**`SubscriptionReadPageRequest`** (closed, `additionalProperties: false`): `subscriptionId` — string ≤128; `limit` — integer 1..64 (provisional cap pending generated proof). **No page token** — a read always resumes from Host-side `ackedSequence`; a page token may only be added by a later proposal proving a semantic need (your R2 ruling).
 
-This revision presumes no relocation and no order until you answer.
+**`SubscriptionReadPageResponse`** — closed variants discriminated by `status`, exact presence rules, no fourth combination:
 
-## DECISION 1 — snapshot sub-protocol (★★ decision packet)
+- *events*: `{ status: "events", events: BoundedMessageEvent[] (1..limit), lastEmittedSequence: integer, readAckToken: string(≤512) }`;
+- *empty*: `{ status: "empty" }` — nothing at or above the read start; no token, no cursor movement;
+- *stale*: `{ status: "stale" }` — zero events, no ack token, both cursors unchanged (retention floor has passed the reader; recovery path = `messaging.snapshot` catch-up).
 
-Review rounds proved this sub-protocol's free variables live in K-1/K-2 ground truth (ack-guard implementation, store-vs-event coordinates, canonical envelope shape) — not in this repo's authority. We therefore present invariants we can fix, the decisions only you can pick, and candidate shapes conditional on those picks. **Row 8 stays publication-gated until every decision row is signed; if that takes longer than the rest of the shape, row 8 detaches into its own decision round and the remainder proceeds — your call.**
+(Read uses an explicit three-way `status` discriminator because three variants cannot be encoded by two nullable-field presence rules without a fourth illegal combination; snapshot keeps its two-variant presence discrimination, which your R2 left unchanged.)
 
-**Fixed invariants (self-decidable; hold under every option below):**
+**Host read algorithm (your R2 decision, absorbed):**
 
-- No page response ever moves a cursor (response-loss safety); completion is client-explicit.
-- Completion authorization must be **Host-verifiable** — plugin-presented tokens alone cannot authorize cursor movement past `lastDeliveredSequence` (K-1's `q <= lastDeliveredSequence` guard is load-bearing against forgery and stays so).
+1. A read begins at `A = ackedSequence` (Host state; never caller-supplied).
+2. The Host assembles a candidate page under the generated byte budget, stopping before the first non-fitting event, and proves one individually valid event fits.
+3. The final retention-floor check runs **after** candidate assembly and byte proof but **before** any response, token, or cursor mutation.
+4. If `A < currentFloor - 1` → the closed *stale* variant: zero events, no ack token, both cursors unchanged.
+5. Otherwise the Host mints a kind-tagged read-page ack entitlement bound at least to the plugin instance, subscription, the page's last emitted sequence, and the closed shape. Only after the final encoded-page proof may `lastDeliveredSequence` advance monotonically through the page's last emitted event.
+6. `messaging.ack` validates the entitlement and advances `ackedSequence` monotonically only to its issued sequence; malformed, forged, cross-subscription, wrong-kind, or expired tokens fail before any mutation. Response loss re-reads from acked state.
+
+Row 6 is `ready=false` until its generated byte proofs and N/N+1 raw-byte conformance pass.
+
+## Row 8 — snapshot sub-protocol (your D1a/D1b/D1c, resolved and closed)
+
+**Fixed invariants (hold under the resolved design):**
+
+- No snapshot page response ever moves a cursor (response-loss safety); completion is client-explicit. (Row-6 read pages differ by canonical design: emission advances `lastDeliveredSequence` post-proof, only ack advances `ackedSequence`.)
+- Completion authorization is **Host-verifiable** — plugin-presented tokens alone cannot authorize cursor movement past `lastDeliveredSequence` (K-1's `q <= lastDeliveredSequence` guard stays load-bearing against forgery).
 - Pages bounded: page and item ceilings are **derived from generated full-frame proofs** and land strictly below `maxFrameBytes`. The specific values (`maxItems` 1..64, `pageByteBudget = 786_432`, `maxSerializedItemBytes = 393_216`) are **provisional candidates only**, adjusted without ceremony if the generated proof rejects them. Oversize stored item = system fault (`SNAPSHOT_UNAVAILABLE`), never caller `VALIDATION`, never silent skip.
-- Page/completion tokens opaquely bind `(pluginInstanceId, subscription identity, view anchor, position, shape digest)`; cross-context presentation → `VALIDATION` fail-closed.
+- Page/completion tokens opaquely bind their full issuance context; cross-context presentation → `VALIDATION` fail-closed. (Your R2 fixes the completion-token binding set exactly: plugin instance, subscription, `viewVersion`, shape digest, final-page status, `resumeAfterSequence = H`.)
 - All snapshot strings carry exact `maxLength` on their own request/response fields (`subscriptionId` ≤ 128; `pageToken`/`nextPageToken`/`snapshotAckToken` ≤ 512).
 
-**★★ DECISION 1a — view coordinates.** K-1's snapshot includes host-relayed messages with no plugin publish sequence, beta.2 has no deletion events, and a store MVCC version and an event-log sequence are different coordinate systems — one integer cannot be both the traversal anchor and the cursor-advance target. Options:
+**Your D1a — (c) causally fenced two-coordinate capture (absorbed):** a snapshot capture has one Host linearization point. The Host may mint an immutable view entitlement `(viewVersion, resumeAfterSequence = H)` only after proving that the view contains the cumulative effect of every snapshot-visible output event with sequence ≤ H; a message/revision lacking its matching output watermark, or any relevant write racing capture, aborts/retries the capture and issues no page or completion token. `viewVersion` governs membership and pagination only; `H` is the sole cursor catch-up target; one integer is never reused for both coordinate systems.
 
-- (a) store-canonical sequence covering every snapshot-visible message + new deletion events — unified coordinates, touches K-1's event model;
-- (b) membership narrowed to sequenced plugin output — cheapest, incompatible with K-1's current snapshot;
-- (c) **two-coordinate capture**: `viewVersion` (immutable store view for membership/pagination) **plus** `resumeAfterSequence` (event-log watermark captured atomically at the same instant; the only value cursor advancement may target) — matches K-1 behavior, no new event kinds, at the cost of a two-field fence.
+**Your D1b — (a) replay-safe Host entitlement through existing `messaging.ack` (absorbed):** the final-page completion token is kind-tagged and Host-verifiable, bound to the exact plugin instance, subscription, `viewVersion`, shape digest, final-page status, and `resumeAfterSequence = H`; it is not a caller-chosen kind string and does not relax the ordinary delivered-watermark guard. In one atomic transaction, completion validates all bindings, monotonic-max advances both `lastDeliveredSequence` and `ackedSequence` to `H`, and records terminal success. Forged, cross-context, non-final, or expired tokens mutate neither cursor; replay of the same terminal token returns the same success within the entitlement retention window. **No thirteenth public method.** Regression set: forged token, cross-subscription token, response loss, final-page replay, concurrent read/snapshot.
 
-*Our lean:* (c), both fields minted in one atomic capture. A single dual-purpose `fenceSequence` is withdrawn — it cannot exist across the two coordinate systems.
+**Your D1c — (a) semantically complete bounded DTO (absorbed):** snapshot items preserve every canonical `MessageEnvelope` member via the shared bounded DTO family above; bounds live on the DTO, frozen `$defs` untouched, no K-1 parity migration.
 
-**★★ DECISION 1b — completion authorization mechanism.** Reusing plain `messaging.ack` is withdrawn — it cannot pass K-1's `q <= lastDelivered` guard without a relaxation that enables forged cursor skips. Options:
+**Closed shapes (on the resolved terms; row 8 `ready=false` until generated proofs pass):**
 
-- (a) Host persists an exact completion-token → `(subscription, resumeAfterSequence)` entitlement, consumed atomically on ack;
-- (b) authenticated (MAC) kind-tagged tokens verified statelessly;
-- (c) a distinct `messaging.completeSnapshot` method so ack semantics stay untouched.
-
-*Our lean:* (a) — no new crypto surface, no new method, the guard stays load-bearing. Regression set must cover: forged token, cross-subscription token, response loss, final-page replay, concurrent read/snapshot.
-
-**★★ DECISION 1c — item shape.** Frozen beta.2 snapshot items are full `MessageEnvelope`s and K-1 returns `MessageEnvelope[]`; a narrowed item type silently discards `actor/audience/occurredAt/replyTo/provenance/correlation` — metadata unrecoverable post-catch-up. Options:
-
-- (a) **semantically complete bounded DTO** — field-for-field carry of every canonical envelope member with `maxLength` on each copied field (bounds live on the DTO; frozen `$defs` untouched);
-- (b) narrowed projection as an explicit owner-signed breaking/narrowing decision with a K-1 parity migration.
-
-*Our lean:* (a); "no K-1 parity migration" is only claimable under (a).
-
-**Candidate shapes (conditional on the rows above — NOT closed until signed):**
-
-- `SnapshotPageRequest`: `subscriptionId` (≤128); `pageToken` (≤512, absent = first page); `maxItems` (1..64).
-- `SnapshotPageResponse` as closed discriminated variants: *intermediate* = `{ items, nextPageToken: string(≤512), snapshotAckToken: null }`; *final* = `{ items, nextPageToken: null, snapshotAckToken: string(≤512) }` — presence rules exact, no third combination; same-token replay re-serves the equivalent page; token expiry bound to the view anchor's lifetime.
-- Completion per DECISION 1b; cursor advance targets `resumeAfterSequence` per DECISION 1a(c).
+- `SnapshotPageRequest` (closed, `additionalProperties: false`): `subscriptionId` (≤128); `pageToken` (≤512, absent = first page); `maxItems` (1..64, provisional cap pending generated proof).
+- `SnapshotPageResponse` as closed discriminated variants: *intermediate* = `{ items, nextPageToken: string(≤512), snapshotAckToken: null }`; *final* = `{ items, nextPageToken: null, snapshotAckToken: string(≤512) }` — presence rules exact, no third combination; `items` = `BoundedMessageEnvelope[]`; same-token replay re-serves the equivalent page; token expiry bound to the view anchor's lifetime (Host GC policy over the D1a view entitlement).
+- Completion rides your D1b through existing `messaging.ack`; cursor advance targets `resumeAfterSequence = H` per your D1a.
 - Oversize-vs-immutable-traversal: an `OVERSIZED_ITEM` fault poisons and expires the traversal's view anchor — the same `pageToken` thereafter returns `SNAPSHOT_UNAVAILABLE { reason: "VIEW_EXPIRED" }`; after Host-side repair the caller starts a **new** snapshot; repair never mutates an existing view.
 
-## DECISION 2 — `messaging.read` bounded-paging disposition (owner decision; we presume none)
+## Complete and stable — CO-SIGNED at your R2 (as written; text unchanged in this revision)
 
-Current fact (your addendum, absorbed): row 6 is **publication-gated** until a contract-owned bounded `SubscriptionReadPageRequest/Response` with atomic page assembly exists; per the merged canonical text, bounded page assembly advances `lastDeliveredSequence` only through the last emitted event, and only ack advances `ackedSequence`. The paging shape itself does not exist yet. Dispositions we can execute — the choice is yours:
-
-- (a) approve the stable shape with row 6 detached into its own follow-up decision round; we then draft the bounded paging shape as an explicit delta returning to this issue;
-- (b) hold `shape-approved` until a bounded paging proposal is drafted and co-signed inside this round — we will draft it on your instruction;
-- (c) supply the paging shape or its constraints directly and we mechanize verbatim.
-
-## Complete and stable — co-sign requested (unchanged for ≥2 scan rounds)
-
-Unmarked items are canonical-decided (your verdict absorbed; co-sign here confirms our absorption is correct). ★ items are our proposals awaiting your signature.
+Your R2 co-signed this eight-item foundation as written: handshake authority direction and closed rejection taxonomy; compact NDJSON framing, 1 MiB hard cap, and single SRI package digest; attempt-only request IDs and per-row settlement keys; no-resume v0 reconnect semantics; the twelve reserved production names and directions; `GrantSnapshot` fields; the `-32090..-32094` closed wire-error mapping; delivery-rejection reasons, Host-owned retry policy, and exact `deliveryId` echo semantics. Items formerly marked ★ within this portion are therefore now signed (markers updated below). **The co-sign does not close the field-level shapes for rows 6, 8, or 9 — those are the closed schemas above, awaiting your fresh review.**
 
 ### Handshake (contract-generated structures)
 
@@ -150,7 +148,7 @@ No generic wire `operationId`. The Broker *extracts* the settlement key from inp
 
 **`CallMeta`** (closed, v0): `deadlineUnixMs` — integer, Host-capped absolute Unix ms. Sole field; `requestId` lives in the JSON-RPC `id`, never in meta.
 
-### Production method registry (12 reserved names; your canonical base matrix from `b32170a8` with inline marked overlays — merged settlement-mapping column, gate/★ annotations)
+### Production method registry (12 reserved names; your canonical base matrix from `b32170a8` with inline marked overlays — merged settlement-mapping column, gate/lifecycle annotations)
 
 | # | Method | Direction | Grant | Input → Result | Error set | Settlement key source |
 |---|---|---|---|---|---|---|
@@ -159,30 +157,33 @@ No generic wire `operationId`. The Broker *extracts* the settlement key from inp
 | 3 | `messaging.send` | plugin → Host | `messaging.send` | `MessageDraft` → `SendReceipt` **with `messageHandle`** | `MessagingErrorCode` + deadline | `input.idempotencyKey` |
 | 4 | `messaging.appendElements` | plugin → Host | `messaging.appendElements` | `AppendElementsRequest` → `AppendReceipt` | `MessagingErrorCode` + deadline | `(Host-resolved messageId from input.handle, input.operationId)` |
 | 5 | `messaging.subscribe` | plugin → Host | `message.event.subscribe` | handle → subscriptionId | `MessagingErrorCode` + deadline | Host-resolved `input.handle` identity (K-1 create-or-get authoritative) |
-| 6 | `messaging.read` | plugin → Host | `message.event.subscribe` | subscriptionId + limit → `SubscriptionReadResponse` — **publication-gated (your addendum; see DECISION 2)** | `MessagingErrorCode` + deadline | none (at-least-once; bounded page assembly advances `lastDeliveredSequence` only through the last emitted event; only ack advances `ackedSequence`) |
+| 6 | `messaging.read` | plugin → Host | `message.event.subscribe` | `SubscriptionReadPageRequest` → status-discriminated events/empty/stale variants — **closed this round (your D2 = (b); Row 6 section above); `ready=false` pending generated proofs** | `MessagingErrorCode` + deadline | none (at-least-once; bounded page assembly advances `lastDeliveredSequence` only through the last emitted event; only ack advances `ackedSequence` — via the kind-tagged read-page entitlement) |
 | 7 | `messaging.ack` | plugin → Host | `message.event.subscribe` | subscriptionId + ackToken → `null` | `MessagingErrorCode` + deadline | `(input.subscriptionId, input.ackToken)` |
-| 8 | `messaging.snapshot` | plugin → Host | `message.event.subscribe` | bounded `SnapshotPageRequest` → `SnapshotPageResponse` (candidate — see DECISION 1) | ★`DOMAIN_ERROR`/`DEADLINE_EXPIRED`/`SNAPSHOT_UNAVAILABLE` per wire mapping | none for traversal; completion = DECISION 1b — **publication gated on all three DECISION-1 rows; may detach into its own round** |
-| 9 | `host.messaging.deliver` | Host → plugin | `onMessage` | deliveryId + threadHandle + envelope → **`deliveryId` ack (canonical; ★ echoed value must byte-equal the Host request identity, mismatch = protocol violation)** | ★`DELIVERY_REJECTED` per wire mapping — **publication-gated per canonical: blocked until callback request/ack/rejection byte proofs close** | `input.deliveryId` (Host-side authoritative) |
+| 8 | `messaging.snapshot` | plugin → Host | `message.event.subscribe` | bounded `SnapshotPageRequest` → `SnapshotPageResponse` (**closed per your D1a/b/c — Row 8 section above**) | `DOMAIN_ERROR`/`DEADLINE_EXPIRED`/`SNAPSHOT_UNAVAILABLE` per wire mapping (co-signed R2) | none for traversal; completion = your D1b Host entitlement through existing `messaging.ack` (atomic dual-cursor advance to `H`); **`ready=false` pending generated proofs** |
+| 9 | `host.messaging.deliver` | Host → plugin | `onMessage` | deliveryId + threadHandle + `BoundedMessageEnvelope` → **`deliveryId` ack (canonical; echoed value must byte-equal the Host request identity — co-signed R2; mismatch = protocol violation)** | `DELIVERY_REJECTED` per wire mapping (co-signed R2) — **bounded schemas closed this round (shared DTO family); `ready=false` until callback request/ack/rejection byte proofs close** | `input.deliveryId` (Host-side authoritative) |
 | 10 | `host.grants.changed` | Host → plugin | protocol-intrinsic | `GrantSnapshot` notification | none | (grantRevision monotonic) |
 | 11 | `host.lifecycle.ping` | Host → plugin | protocol-intrinsic | nonce → nonce | protocol errors only | — |
 | 12 | `host.lifecycle.drain` | Host → plugin | protocol-intrinsic | deadlineUnixMs → `null` | deadline | — |
 
 No production method exists for fixture setup/observe, grant presets, revocation, permission-matrix inspection, or replay deletion; and **no grant-introspection RPC** — `SessionBinding` and `host.grants.changed` are the authoritative grant snapshots (your ruling). Fixture words never become production RPCs; capability ≠ semantic operation ≠ fixture op ≠ production method; identity is Host-bound (`pluginInstanceId` never accepted from params).
 
+**Reservation-only lifecycle marker (your D0 = A):** every row above is `ready=false`, unpublished, and unadvertised until its exact UTF-8/JSON validators, generated byte proofs, N/N+1 raw-byte conformance, and three-stage runtime enforcement pass.
+
 ### Concrete wire types
 
-**★ `GrantSnapshot`** (closed; the *name* is canonical but this exact field set is **our proposal**, derived from `SessionBinding`'s fields, submitted for co-sign): `grantRevision` — integer, strictly monotonic per instance; `effectiveGrants` — unique `Capability[]`. `SessionBinding` embeds these same two fields; `host.grants.changed` params = `GrantSnapshot`. Stale-revision notifications are discarded by revision comparison.
+**`GrantSnapshot`** (closed; **co-signed R2** — the *name* was canonical, this exact field set was our proposal, now signed): `grantRevision` — integer, strictly monotonic per instance; `effectiveGrants` — unique `Capability[]`. `SessionBinding` embeds these same two fields; `host.grants.changed` params = `GrantSnapshot`. Stale-revision notifications are discarded by revision comparison.
 
 **`SendReceipt` beta.3 delta**: adds `messageHandle` typed as the **existing frozen `MessageHandle` $def** (`{kind:"message", token}`) — no new shape invented. Conformance oracle: `messageHandle.token !== messageId`. Fixture updates accompany the schema change (additive, disclosed).
 
-### ★ Delivery rejection (row 9)
+### Delivery rejection (row 9) — reasons, Host-owned policy, and echo semantics co-signed R2; bounded schemas closed this round
 
 - *Error class:* public **`DELIVERY_REJECTED`** wire error with `error.data = { reason }` — sole data field; closed enum `UNSUPPORTED_PAYLOAD | NO_HANDLER | PLUGIN_BUSY | PLUGIN_INTERNAL`.
 - *Identity:* resolved **exclusively from the JSON-RPC correlation**; `error.data` carries no `deliveryId`.
 - *Retry policy is Host-owned:* contract-fixed mapping — `UNSUPPORTED_PAYLOAD`/`NO_HANDLER` → dead-letter; `PLUGIN_BUSY`/`PLUGIN_INTERNAL` → bounded retry. The runtime reports facts, never selects Broker behavior; any other error shape on a deliver call is a connection-level protocol violation.
-- *Success (canonical, equality target disambiguated):* result = `deliveryId` ack exactly as your matrix states, with a ★ strengthening: the echoed value **must byte-equal `params.input.deliveryId`** of the originating request — never compared against the JSON-RPC `id`/`requestId`; mismatch is a connection-level protocol violation. The error path remains correlation-only and echoes nothing.
+- *Success (canonical, equality target disambiguated):* result = `deliveryId` ack exactly as your matrix states, with the strengthening you co-signed at R2: the echoed value **must byte-equal `params.input.deliveryId`** of the originating request — never compared against the JSON-RPC `id`/`requestId`; mismatch is a connection-level protocol violation. The error path remains correlation-only and echoes nothing.
+- *Bounded schemas (this revision, your six-item list #4 — shared DTO family):* the deliver request (`deliveryId` string ≤128 provisional, bounded `threadHandle`, payload = `BoundedMessageEnvelope`), the result's `deliveryId` echo (same bound, byte-equality oracle), and the closed `DELIVERY_REJECTED` `error.data` are exact closed bounded schemas; row 9 stays `ready=false` until its callback request/acknowledgement/rejection byte proofs and raw-byte conformance close.
 
-### ★ Wire error envelope mapping (JSON-RPC 2.0 requires integer `error.code`)
+### Wire error envelope mapping (co-signed R2; JSON-RPC 2.0 requires integer `error.code`)
 
 | Named class | `error.code` (proposed reserved range) | `error.data` (closed; all fields `required`; `additionalProperties: false`) |
 |---|---|---|
@@ -224,16 +225,16 @@ The plugins repository provides a **test-host conformance harness** only (framin
 
 ## Shape gate checklist (current state)
 
-- [x] authority direction for every handshake field — verdict absorbed above
-- [x] production method registry — 12 reserved names / directions / base matrix (verdict absorbed); field-level completion of rows 6/8/9 rides DECISION 1/2 and the ★ items under CO-SIGN
-- [x] session-injected identity boundary — Host-bound, fail-closed
-- [x] idempotency/settlement identity single truth source — per-row `settlementKeySource`
-- [x] receipt-to-handle relationship — explicit `messageHandle`
-- [x] framing and handshake-rejection semantics — incl. v0 compact profile + `wireBounds` invariant from `d606aab`; the ★ wire-error envelope mapping (incl. row 9 `DELIVERY_REJECTED`) rides CO-SIGN
-- [ ] **DECISION 0** — proofs-vs-shape lifecycle
-- [ ] **DECISION 1** — snapshot rows (1a view coordinates / 1b completion authorization / 1c item shape)
-- [ ] **DECISION 2** — row-6 bounded-paging disposition
-- [ ] **CO-SIGN** — complete-and-stable portion above
-- [ ] K-2 maintainer records `shape-approved` (scope per your partial/full call)
+- [x] authority direction for every handshake field — verdict absorbed; **co-signed R2**
+- [x] production method registry — 12 reserved names / directions / base matrix **co-signed R2**; rows 6/8/9 field-level shapes closed this revision (fresh review requested)
+- [x] session-injected identity boundary — Host-bound, fail-closed; **co-signed R2**
+- [x] idempotency/settlement identity single truth source — per-row `settlementKeySource`; **co-signed R2**
+- [x] receipt-to-handle relationship — explicit `messageHandle`; **co-signed R2**
+- [x] framing and rejection semantics — v0 compact profile + `wireBounds` invariant; wire-error mapping and delivery-rejection semantics **co-signed R2**
+- [x] **DECISION 0 / 1a / 1b / 1c / 2** — resolved by your R2 (**A / c / a / a / b**), absorbed above
+- [x] **CO-SIGN** — complete-and-stable eight-item foundation co-signed at R2 as written
+- [ ] **rows 6/8/9 closed bounded schemas + cross-cutting progress invariant — fresh review requested (this revision)**
+- [ ] per-row `ready=true` — only after exact validators, generated byte proofs, N/N+1 raw-byte conformance, and three-stage runtime enforcement pass (reservation-only lifecycle, your D0 = A)
+- [ ] K-2 maintainer records `shape-approved`
 
-No implementation, no `beta.3` publication, and no consumer re-pin begins before your explicit approval, in the order you set.
+No production implementation, no `beta.3` publication, no consumer re-pin, and no K-2 runtime work begins before your explicit approval, in the order you set.
