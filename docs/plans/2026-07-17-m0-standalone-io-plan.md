@@ -14,7 +14,7 @@ created: 2026-07-17
 
 # M0 Standalone Runtime / Standard I/O Plan (P-1 remainder)
 
-> **Status: draft R5 — absorbed the K-2 maintainer verdict on [clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) (comment 2026-07-17T06:11Z; canonical assessment `main@b32170a8`, doc SHA256 `6eff8e0a…`). Wire shape below is maintainer-corrected, pending explicit `shape-approved` on the revised issue body. No implementation, no beta.3 publication, no K-1/K-2 re-pin before that reply.**
+> **Status: draft R6 — field-level co-signable shape. Absorbed the K-2 maintainer verdict on [clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) (comment 2026-07-17T06:11Z; canonical assessment `main@b32170a8`) including the full 12-column registry verbatim, plus field-level `SnapshotPage`/`DeliveryRejection` proposals (★). Pending explicit `shape-approved` on the revised issue body. No implementation, no beta.3 publication, no K-1/K-2 re-pin before that reply.**
 
 **Goal:** Complete the plugins-side M0 vertical slice (roadmap PR-4 "P-1"): a real child-process standalone runtime speaking the standard I/O wire protocol, one shared SDK client that first- and third-party plugins use identically (P14), and the adversarial matrix executed with SDK-surface operations over the real transport — with every wire-level word contract-owned before any runtime consumes it.
 
@@ -69,24 +69,39 @@ registry.settlementKeySource     authoritative domain field/composite or "none"
 
 There is **no generic wire `operationId`**. The Broker *extracts* the settlement key from input, never duplicates it. Retry: new requestId + same settlement key + same input → converges on the existing terminal/in-flight result; same key + different input → conflict. Rows marked `none` must prove at-least-once replay safety and monotonic cursor advancement before publication.
 
-### Production method registry (12 reserved names; fixture verbs stay conformance-only)
+### Production method registry (12 reserved names; canonical columns verbatim from `b32170a8`; fixture verbs stay conformance-only)
 
-| # | Method | Direction | Settlement key source |
-|---|---|---|---|
-| 1 | `broker.hello` | plugin → Host | — (handshake) |
-| 2 | `broker.ready` | plugin → Host | — (handshake) |
-| 3 | `messaging.send` | plugin → Host | `input.idempotencyKey` |
-| 4 | `messaging.appendElements` | plugin → Host | `(Host-resolved messageId from input.handle, input.operationId)` |
-| 5 | `messaging.subscribe` | plugin → Host | Host-resolved `input.handle` identity (K-1 create-or-get authoritative) |
-| 6 | `messaging.read` | plugin → Host | none (at-least-once; `lastDeliveredSequence` monotonic, only ack moves `ackedSequence`) |
-| 7 | `messaging.ack` | plugin → Host | `(input.subscriptionId, input.ackToken)` |
-| 8 | `messaging.snapshot` | plugin → Host | none — **unpublished** until bounded `SnapshotPageRequest/Response` is contract-owned |
-| 9 | `host.messaging.deliver` | Host → plugin | `input.deliveryId` — **unpublished** until closed callback-rejection schema exists |
-| 10 | `host.grants.changed` | Host → plugin | (grant snapshot push) |
-| 11 | `host.lifecycle.ping` | Host → plugin | — |
-| 12 | `host.lifecycle.drain` | Host → plugin | — |
+| # | Method | Direction | Grant | Input → Result | Error set | Settlement key source |
+|---|---|---|---|---|---|---|
+| 1 | `broker.hello` | plugin → Host | protocol-intrinsic | `CandidateHello` → `SessionBinding` | `HANDSHAKE_REJECTED` | — |
+| 2 | `broker.ready` | plugin → Host | protocol-intrinsic | `bindingNonce` → `null` | `HANDSHAKE_REJECTED` | — |
+| 3 | `messaging.send` | plugin → Host | `messaging.send` | `MessageDraft` → `SendReceipt` **with `messageHandle`** | `MessagingErrorCode` + deadline | `input.idempotencyKey` |
+| 4 | `messaging.appendElements` | plugin → Host | `messaging.appendElements` | `AppendElementsRequest` → `AppendReceipt` | `MessagingErrorCode` + deadline | `(Host-resolved messageId from input.handle, input.operationId)` |
+| 5 | `messaging.subscribe` | plugin → Host | `message.event.subscribe` | handle → subscriptionId | `MessagingErrorCode` + deadline | Host-resolved `input.handle` identity (K-1 create-or-get authoritative) |
+| 6 | `messaging.read` | plugin → Host | `message.event.subscribe` | subscriptionId + limit → `SubscriptionReadResponse` | `MessagingErrorCode` + deadline | none (at-least-once; `lastDeliveredSequence` monotonic, only ack moves `ackedSequence`) |
+| 7 | `messaging.ack` | plugin → Host | `message.event.subscribe` | subscriptionId + ackToken → `null` | `MessagingErrorCode` + deadline | `(input.subscriptionId, input.ackToken)` |
+| 8 | `messaging.snapshot` | plugin → Host | `message.event.subscribe` | bounded `SnapshotPageRequest` → `SnapshotPageResponse` (field-level proposal below) | blocked until schema closes | none (replay-safe, monotonic catch-up) |
+| 9 | `host.messaging.deliver` | Host → plugin | `onMessage` | deliveryId + threadHandle + envelope → deliveryId ack | closed callback error set (`DeliveryRejection` proposal below) | `input.deliveryId` |
+| 10 | `host.grants.changed` | Host → plugin | protocol-intrinsic | `GrantSnapshot` notification | none | (grantRevision monotonic) |
+| 11 | `host.lifecycle.ping` | Host → plugin | protocol-intrinsic | nonce → nonce | protocol errors only | — |
+| 12 | `host.lifecycle.drain` | Host → plugin | protocol-intrinsic | deadlineUnixMs → `null` | deadline | — |
 
-`SendReceipt` carries an **explicit opaque Host-minted `messageHandle`**; `messageId` is never reused as the capability token (final ruling on the R3 "derivation" question — a distinct field, not a derivation rule).
+There is **no production method** for fixture setup/observe, grant presets, revocation, permission-matrix inspection, or replay deletion; and **no grant-introspection RPC** — `SessionBinding` and `host.grants.changed` are the authoritative grant snapshots (canonical ruling).
+
+### Concrete wire types (field-level; ★ = our proposal pending co-sign, unmarked = canonical-decided)
+
+**`CallMeta`** (closed, v0): `deadlineUnixMs` — integer, Host-capped absolute Unix ms. Sole field; `requestId` lives in the JSON-RPC `id`, never in meta.
+
+**`GrantSnapshot`** (closed): `grantRevision` — integer, strictly monotonic per instance; `effectiveGrants` — unique `Capability[]`. `SessionBinding` embeds these same two fields; `host.grants.changed` params = `GrantSnapshot`. Stale-revision notifications are discarded by revision comparison.
+
+**`SendReceipt` beta.3 delta**: adds `messageHandle` typed as the **existing frozen `MessageHandle` $def** (`{kind:"message", token}`) — no new shape invented. Conformance oracle: `messageHandle.token !== messageId` (messageId is never the capability token). Fixture updates accompany the schema change (additive, disclosed).
+
+**★ `SnapshotPageRequest`** (closed): `subscriptionId` — string; `pageToken` — optional opaque Host-minted continuation (absent = first page); `maxItems` — integer 1..64.
+**★ `SnapshotPageResponse`** (closed): `items` — canonical message projections, length ≤ `maxItems`; `nextPageToken` — string \| null (null = traversal complete); `fenceSequence` — integer, snapshot consistency fence minted on first page and constant across the traversal (events after the fence arrive via incremental `read`); `resumeSequence` — integer on the final page = `nextReadStartsAfter`.
+**★ Boundedness proof**: Host additionally truncates each page at `pageByteBudget = 786_432` bytes of serialized items (whichever of maxItems/budget hits first); a single message's aggregate element payload is already capped at 262,144 bytes (beta.2), so every message fits a page, and 768 KiB payload + JSON-RPC envelope stays under the 1 MiB frame ceiling with ≥25% headroom.
+**★ Replay obligations** (settlement `none` row): same `pageToken` + same `fenceSequence` re-serves an equivalent page; traversal never advances `ackedSequence`; `fenceSequence` and `resumeSequence` are monotonic across snapshots.
+
+**★ `DeliveryRejection`** (closed; carried in JSON-RPC `error.data` of `host.messaging.deliver`): `deliveryId` — string (idempotent dedupe key); `reason` — closed enum `UNSUPPORTED_PAYLOAD | NO_HANDLER | PLUGIN_BUSY | PLUGIN_INTERNAL`; `retryable` — boolean (Broker input: true → bounded retry, false or budget exhausted → dead-letter). Success result is the `deliveryId` ack.
 
 ### Reject taxonomy (closed)
 
@@ -117,19 +132,19 @@ V0 has **no resume token**. Every reconnect performs fresh `broker.hello`/`broke
 
 ### P-1a.0 — Shape co-sign on #1165 (in progress)
 
-**State:** first-party anchor open; maintainer verdict = *corrections required* (row-by-row above). **Next action = revise the #1165 issue body** to the corrected shape and request explicit `shape-approved`. Approval preconditions set by the verdict:
+**State:** first-party anchor open; maintainer verdict = *corrections required* (row-by-row above). **Gate order (corrected in R6):** every approval precondition is satisfied **inside this plan revision, before approval** — the field-level shape above (handshake structures, CallMeta, GrantSnapshot, SendReceipt delta, SnapshotPage pair, DeliveryRejection, full 12-column registry) *is* the co-signable artifact. Next action = replay this field-level shape into the #1165 issue body and request explicit `shape-approved`. P-1a then mechanizes the approved words verbatim; it defines nothing new. Precondition accounting:
 
-1. corrected K-1 dependency truth incorporated (done in this R5);
-2. `CandidateHello`, `SessionBinding`, `CallMeta`, `GrantSnapshot`, explicit `SendReceipt.messageHandle`, registry rows, and closed error data all **contract-owned**;
-3. bounded `SnapshotPageRequest/SnapshotPageResponse` + callback-rejection data defined under the 1 MiB ceiling;
-4. split-read / oversize / invalid-frame / authority-violation / binding-replay / zero-side-effect handshake conformance required;
-5. publication and K-1/K-2 re-pinning strictly after contract review + exact registry verification (+ #1165 approval).
+1. corrected K-1 dependency truth — **in baseline table**;
+2. `CandidateHello` / `SessionBinding` / `CallMeta` / `GrantSnapshot` / `SendReceipt.messageHandle` / registry rows / closed error data — **field-level in Column B** (contract ownership lands with P-1a mechanization);
+3. bounded `SnapshotPageRequest/Response` + `DeliveryRejection` under the 1 MiB ceiling — **defined with boundedness proof in Column B** (★-marked fields are our proposal for maintainer decision);
+4. split-read / oversize / invalid-frame / authority-violation / binding-replay / zero-side-effect handshake conformance — **in coverage map + P-1b**;
+5. publication and K-1/K-2 re-pinning strictly after contract review + exact registry verification + approval — **in cross-repo pinning declaration**.
 
 Ownership-gate record (R3) stands: thread-level seam review is evidence, not signature.
 
 ### P-1a — Wire-protocol contract delta (contract PR, co-signed)
 
-*Scope:* mechanize the approved shape exactly: generated `CandidateHello`/`SessionBinding`/`CallMeta`/`GrantSnapshot` + `SendReceipt.messageHandle`; NDJSON framing constants (`maxFrameBytes`); the 12-row registry with per-row `settlementKeySource`, direction, grant, input→result bindings to Column-A `$defs`; `HANDSHAKE_REJECTED` + closed reasons; bounded `SnapshotPageRequest/Response` and callback-rejection schemas (unlocking rows 8–9); **stateful reject fixtures** per closed reason incl. binding replay and zero-side-effect handshake failure; codegen projection + value-level regression locks.
+*Scope:* **mechanize the approved field-level shape verbatim — this slice defines nothing new.** Generated schemas for every Column-B type exactly as approved on #1165; NDJSON framing constants; the 12-column registry as machine truth; `HANDSHAKE_REJECTED` + closed reasons; **stateful reject fixtures** per closed reason incl. binding replay and zero-side-effect handshake failure; codegen projection + value-level regression locks. Any field the mechanization proves unworkable goes back to #1165 as a delta request — never silently adjusted.
 *Non-goals:* no runtime, no transport code.
 *Version:* `0.1.0-beta.3` on `next`; `latest` untouched; K-1/K-2 pinning per the cross-repo declaration.
 
@@ -139,7 +154,7 @@ Unchanged structure from R3/R4 (single wire client consumed by SDK; harness-not-
 
 ### P-1c — SDK author surface (plugins PR)
 
-Unchanged from R4 (same transport core; P14 three-part lock; SDK-expressible adversarial extensions now including settlement-key retry convergence).
+Unchanged from R4 (same transport core; P14 three-part lock; SDK-expressible adversarial extensions now including settlement-key retry convergence). One canonical constraint added: **there is no grant-introspection RPC** — the SDK's grant surface is a local projection of `SessionBinding` + `host.grants.changed` (revision-monotonic cache), never a wire call; the Host re-reads current grants on every call regardless.
 
 ### Joint M0 gate — unchanged from roadmap.
 
@@ -156,7 +171,11 @@ Unchanged from R4 (same transport core; P14 three-part lock; SDK-expressible adv
 
 ## Revision log
 
-- **R1–R2 (2026-07-17):** fresh-context findings FC-1…FC-7 absorbed (see git history for detail).
-- **R3 (2026-07-17):** K-1 seam corrections SC-1…SC-6; four-way naming discipline; Host-bound identity; ownership gate recorded.
+(R1–R4 predate this file's first git commit; their provenance is the Cat Café review exchange in threads `thread_mrkn6povq4zzgh45` (FC/SC rounds) and `thread_mrkmxgdfqquounc9` (K-1 seam evidence), not git history.)
+
+- **R1 (2026-07-17):** fresh-context FC-1…FC-6 — core-shape predecessor, hello/ack split, wire/control-plane split, §3.8-1 coverage map, single wire client, P14 three-part lock.
+- **R2 (2026-07-17):** FC-7 — Column A narrowed to data types + fixture vocabulary; wire method registry added.
+- **R3 (2026-07-17):** K-1 seam corrections SC-1…SC-6 — four-way naming discipline; Host-bound identity; ownership gate recorded.
 - **R4 (2026-07-17):** SC-7 — envelope settlement identity restored to owner-neutral three-candidate form.
 - **R5 (2026-07-17):** absorbed the #1165 K-2 maintainer verdict (row-by-row): handshake structures `CandidateHello`/`SessionBinding` with one-use `bindingNonce`; framing accepted with constraints (1 MiB, NDJSON, protocol-only stdout); single SRI digest truth; settlement identity finalized as per-row `settlementKeySource` (no generic wire operationId — OQ-5 owner decision landed near the third candidate); resume deferred with fresh-handshake semantics (OQ-6 resolved; BINDING_REPLAY carrier = bindingNonce); explicit `SendReceipt.messageHandle` (supersedes R3 derivation phrasing); 12-method reserved registry with rows 8–9 publication-gated; closed `HANDSHAKE_REJECTED` taxonomy; **K-1 grounding correction** — `9fb37310` has no pin and a drifting mirror, R4's "K-1 stays on beta.1" text removed; five approval preconditions recorded in P-1a.0; wire-conformance six-pack added to coverage map and P-1b.
+- **R6 (2026-07-17):** fresh-context findings on R5 (`34f9ef6`) absorbed — shape lifted from name-level to **field-level co-signable**: registry expanded to the canonical 12-column form verbatim (grant / input→result / error set per row, incl. `ack → null`, `ping nonce → nonce`); Concrete-wire-types section added — `CallMeta` (sole field `deadlineUnixMs`), `GrantSnapshot` (`grantRevision` + `effectiveGrants`, revision-monotonic), `SendReceipt.messageHandle` bound to the **existing frozen `MessageHandle` $def** with a `token !== messageId` oracle, ★`SnapshotPageRequest/Response` with fence/resume semantics and a byte-budget boundedness proof under the 1 MiB frame, ★`DeliveryRejection` closed enum with `retryable` broker input (FC-1/FC-2); **gate order fixed** — all approval preconditions satisfied inside this revision, P-1a mechanizes verbatim and defines nothing (FC-3); no-grant-introspection-RPC canonical ruling noted in P-1c; revision provenance corrected to thread anchors, R1–R4 no longer claim git history (FC-4).
