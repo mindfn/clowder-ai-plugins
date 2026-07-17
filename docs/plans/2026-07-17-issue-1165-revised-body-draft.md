@@ -13,15 +13,15 @@ created: 2026-07-17
 # #1165 revised body — draft (P-1a.0 收官投递物)
 
 **用途**：整体替换 [zts212653/clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) 的 issue body（GitHub 保留 edit history，可逆）。
-**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ R25（FC-R24-1 措辞卫生：closed→structurally-defined-pending）（R24 = FC-R23-1 修复：error-id typed+byte-equality+null 闭合分支 / deadline raw-token canonical-decimal grammar ≤16 / envelope 改标 pending-RequestId-owner-value，128 lean 撤回）。
-**状态**：D10（revision 3 body），terra 三轮 finding 已修——pending 复扫——**先扫后投**；投递时报 raw API-string SHA-256。
+**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ `9fe711c`（R26 = R4-intake 吸收：RequestId verbatim + source-owned bound inventory【transitively-bounded 声明撤回，K-1 producer 一手引证，未可证字段显式 reserved】）。
+**状态**：D11（revision 4 body），R4-intake 两项已吸收——pending terra 内部窄扫——**先扫后投**；投递报新 raw API-string SHA-256，maintainer 将路由 exact bytes 给 Terra re-review。
 **忠实性边界（R21 更新）**：rows 6/8/9 closure sections 内**仅 R2 之后新增的显式 field-level closure blocks（schema/grammar/cap 定义块）待 fresh review**；同 section 内标为 R2-absorbed/resolved/co-signed 的文字保持既决、不重开。其外 unmarked = canonical-decided 或 co-signed R2；★ = 单独标记的 open proposal。原 body 的 "K-1 remains pinned to beta.1" 错误陈述在本版修正（R5 grounding correction）。
 
 ---
 
 ## BODY（verbatim replace begins below）
 
-## Status and request — revision 3: your R3 five-P1 ledger executed; fresh review on these exact bytes requested
+## Status and request — revision 4: your R4-intake absorbed (RequestId verbatim; source-owned bound inventory); fresh review on these exact bytes requested
 
 This remains a **shape-only K-2 / P-1a.0 co-sign anchor**. It does not authorize implementation, publication, dependency re-pin, or K-2 runtime work.
 
@@ -36,7 +36,8 @@ Your R3 verdict ([5004451129](https://github.com/zts212653/clowder-ai/issues/116
 | 3 — shared ack carrier not field-level closed | closed `MessagingAckRequest` + Host-resolved token kind (own section below) |
 | 4 — bounded DTO narrowings vs K-1 byte-only admission | **frozen-compatible bounding rule**: R19–R21 narrowings withdrawn — `replyTo` restored to 1..256, uniform identifier caps and the `BoundedOpenPayload` structural grammar removed; no valid-write/unencodable-read path remains (DTO family section) |
 | 5 — public bounds "adjusted without ceremony" | public schema bounds vs internal generated budgets split; entitlements bind an immutable shape/budget digest (rule below) |
-| + (internal review, this revision) | the sweep's first axis was itself incomplete — the **outer JSON-RPC envelope** (`jsonrpc`, `id`, `method`, response correlation, result/error exclusivity) was undefined, letting a sub-frame request with an oversized `id` evade every DTO cap; an envelope family is now structurally defined, **pending your RequestId value** (own section below), with the `RequestId` representation **left explicitly for your decision** |
+| + (your R4-intake, this revision) | **RequestId absorbed verbatim** + the P1#4 "transitively bounded" claim replaced by the **source-owned bound inventory** (producer truths cited file:line; unattestable fields explicitly reserved) |
+| + (internal review, earlier this revision) | the sweep's first axis was itself incomplete — the **outer JSON-RPC envelope** (`jsonrpc`, `id`, `method`, response correlation, result/error exclusivity) was undefined, letting a sub-frame request with an oversized `id` evade every DTO cap; an envelope family was defined with the `RequestId` representation left for your decision — **resolved by your intake, previous row** (envelope now closed, own section below) |
 
 **Your R2 decisions — absorbed as decided (no re-answer needed):**
 
@@ -83,7 +84,20 @@ The family **mirrors the frozen beta.2 `$defs` structurally** — same members, 
 | Field class | Rule | Instances |
 |---|---|---|
 | frozen-bounded domain fields | **frozen bounds verbatim** — the write-side (draft) bound is the historical admission ceiling and the DTO carries exactly it | `operationId` 1..200; `correlationId`/`causationId` 1..256; `elementId`/`derivedFromElementId` 1..128; **`replyTo` 1..256 (= frozen `MessageDraft.replyTo`; revision 2's 128 narrowing withdrawn)**; `PluginOrigin.instanceId`/`ExternalOrigin.connectorId`/`WhisperAudience.targets[]`/`ConnectorBindingAddress.handle` 1..256; `sourceEventId`/`ExternalSourceAddress.chatId`/`.messageId` 1..512; `ThreadHandleAddress.handle` 1..256; append `elements` maxItems 32; payload `elements` maxItems 128 |
-| frozen-unbounded domain fields | **no added per-field cap** (frozen-compatible: K-1 admits them under byte ceilings only; any per-field cap could reject historically valid stored data) — bounded transitively by the frozen byte ceilings (65,536 / 262,144) and the row's generated `maxEncoded{Request,Result,Error}Bytes` frame proofs, which remain the exact wire bound | `messageId`, `threadId`, `eventId`, `actor.id`, `occurredAt` (format-constrained RFC3339 UTC), `MessageHandle.token`, closed-def free text (e.g. `TextElementPayload.text`); minLength stays exactly as frozen |
+| frozen-unbounded fields **inside byte-bounded payloads** | no added per-field cap — the frozen payload byte ceilings (65,536 / 262,144) are the exact wire bound for everything living inside an element payload | closed-def free text (e.g. `TextElementPayload.text`); minLength stays exactly as frozen |
+| frozen-unbounded fields **outside the payload ceilings** | **source-owned wire bound per field** (your intake P1#4: the payload ceilings do not reach envelope-level identifiers/timestamps/tokens, and no finite proof derives from an unbounded string — our earlier "transitively bounded" claim is withdrawn as false). Each bound is grounded in its producer/admission truth, never a uniform cap; **a field whose source has no proven bound stays reserved and unclosed** (consistent with your D0 = A: every row is already `ready=false`) | producer inventory below |
+
+**Source-owned bound inventory (producer truths read first-hand from K-1 exact `9fb37310`):**
+
+| Field | Producer truth | Wire bound |
+|---|---|---|
+| `subscriptionId` | K-1 mints `sub_` + UUID = 40 chars fixed (`event-stream.ts:112`) | 1..128 (your `MessagingAckRequest` value; covers the mint) |
+| `occurredAt` | K-1 emits `toISOString()` = 24 chars fixed, RFC3339 UTC ms `Z` (`envelope.ts:305`) | **exactly 24** (producer invariant; validator pins format and length) |
+| `ThreadHandleAddress.handle` | K-1 mints `th_` + UUID = 39 chars (`handles.ts:47`; `cb_` variant `:61`) | frozen 1..256 verbatim (covers the mint) |
+| `eventId` | K-1 composes `ev_pub_${messageId}_1` / `ev_app_${messageId}_${operationId}` (`send-service.ts:194`, `append-output.ts:211`) | composite: 7 + \|messageId\| + 1 + \|operationId ≤ 200\| — finite **once the `messageId` attestation lands** |
+| `messageId`, `threadId` | minted inside K-1's core message store (`messageStore.append`), outside the messaging domain — not attestable from this repo | **pending your K-1 producer attestation** (an attested bound or admission gate, entering as a shape delta); until then these fields — and therefore `eventId` and `MessageHandle.token` — stay reserved/unclosed per your intake rule |
+| `actor.id` | actor identity registry (`catRegistry` domain) — outside this repo's attestation reach | **pending attestation**, same rule |
+| `MessageHandle.token` | canonical: derived from `messageId` | follows the `messageId` attestation |
 | contract-minted wire fields (new in this shape; no historical data) | **exact closed bounds** | `ackToken`/`pageToken`/`nextPageToken`/`snapshotAckToken` 1..512; `deliveryId` 1..128; `subscriptionId` 1..128 (**your `MessagingAckRequest` specification**); `bindingNonce` and row-11 ping `nonce` 1..512 (sweep) |
 | frozen-open payloads | **frozen byte caps only** — `MediaRefElementPayload`/`RichBlockElementPayload` stay `additionalProperties: true` with the frozen 65,536 encoded-bytes element validator and 262,144 per-message validator as the exact wire bound. **Revision 2's `BoundedOpenPayload` structural grammar (64 properties / depth 8 / per-key and per-string caps) is withdrawn** — K-1 admits these payloads under byte ceilings alone, so any structural narrowing is a valid-write/unencodable-read path. If you later want structural limits, that is a reviewed shape delta with a migration/admission proof — not presumed here | — |
 
@@ -181,7 +195,7 @@ No generic wire `operationId`. The Broker *extracts* the settlement key from inp
 
 **`CallMeta`** (closed, v0): `deadlineUnixMs` — integer, Host-capped absolute Unix ms. Sole field; `requestId` lives in the JSON-RPC `id`, never in meta.
 
-### Outer JSON-RPC envelope (structurally defined — **pending your RequestId value**; the frame level the DTO caps cannot see)
+### Outer JSON-RPC envelope (closed — your RequestId value absorbed verbatim; the frame level the DTO caps cannot see)
 
 Without a contract-owned outer envelope, a sub-frame request with an enormous `id` or numeric deadline evades every method DTO cap while the decoder ceiling stays the last defense — which your merged canonical text forbids as a normal rejection path, and whose proof coverage explicitly spans `requestId`. The envelope family is contract-owned and closed (`additionalProperties: false`, all listed members required):
 
@@ -189,9 +203,9 @@ Without a contract-owned outer envelope, a sub-frame request with an enormous `i
 - **`WireNotification`** = same shape **without `id`** — legal only for registry rows declared as notifications (row 10 `host.grants.changed`); a notification with an `id`, or a request without one, is a connection-level protocol violation.
 - **`WireSuccessResponse`** = `{ jsonrpc: "2.0" (const), id: RequestId (byte-equal echo of the originating request `id`), result: <the row's result schema> }` — no `error` member.
 - **`WireErrorResponse`** = `{ jsonrpc: "2.0" (const), id: RequestId | null, error: { code (const int), message (const string), data (closed) } }` — no `result` member; **`id` is typed `RequestId` and must byte-equal the valid originating request `id`; the sole `null` branch is the closed pre-id failure case** (a frame whose `id` could not be validly extracted, per JSON-RPC 2.0 §5), never a Host choice on a valid request. Result/error mutual exclusivity is structural (`oneOf` of the two closed variants), never a runtime convention.
-- **`RequestId` representation and byte bound — your value, still open:** canonical fixes only the role (`JSON-RPC id = requestId`, attempt correlation ONLY). The representation (string vs number) and its exact bound are **left explicitly for your decision** (no lean is presumed); until that value lands, **this envelope and the sweep's first axis are "pending your RequestId value", not closed** — carried in the gate checklist below.
+- **`RequestId` — your value, absorbed verbatim:** `type: string`, `minLength 1`, `maxLength 128`, `pattern ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`, raw UTF-8 byte length 1..128 (ASCII grammar ⇒ character count = byte count; JSON escaping cannot create a second size truth). **String-only: numeric and `null` request IDs are protocol violations before dispatch** — `null` exists only in the pre-id `WireErrorResponse` branch. In-flight uniqueness per `brokerSessionId` (collision fails before dispatch); **a retry is a new attempt with a fresh RequestId** (attempt-only, non-authoritative for settlement); success/error responses echo the originating valid ID **byte-for-byte**.
 - **`deadlineUnixMs` wire numeric grammar (raw-token level, not parsed-value):** the raw JSON lexeme must match canonical decimal digits `0|[1-9][0-9]*` — no sign, no decimal point, **no exponent**, no leading zeros — with raw token length ≤ 16 characters (the decimal digit count of 2^53 − 1, a derived structural fact, not a policy number), validated **pre-parse/pre-dispatch**; exponent-padding and every other non-canonical numeric encoding is rejected before dispatch. The parsed value must additionally be a positive integer ≤ 2^53 − 1. The **operational Host deadline cap policy stays yours (K-2)**.
-- The outer members (`jsonrpc`, `id`, `method`, braces and separators) are **included in every generated `maxEncoded{Request,Result,Error}Bytes` proof** (your canonical rule: proofs include shared `CallMeta` and cover `requestId`) **once your RequestId value lands**, with mutation and N/N+1 conformance cases proving oversize/malformed-envelope/non-canonical-numeric rejection **before authorization-visible dispatch**.
+- The outer members (`jsonrpc`, `id`, `method`, braces and separators) are **included in every generated `maxEncoded{Request,Result,Error}Bytes` proof** — your RequestId value above is now fixed, and the proofs include its surrounding JSON quotes per your intake — with mutation and N/N+1 conformance cases proving oversize/malformed-envelope/non-canonical-numeric/non-string-id rejection **before authorization-visible dispatch**.
 
 ### Production method registry (12 reserved names; your canonical base matrix from `b32170a8` with inline marked overlays — merged settlement-mapping column, gate/lifecycle annotations)
 
@@ -280,7 +294,7 @@ The plugins repository provides a **test-host conformance harness** only (framin
 
 | Axis | Sweep result |
 |---|---|
-| complete JSON-RPC request / result / **full error** object | **outer envelope defined, pending your `RequestId` value** (`WireRequest`/`WireNotification`/`WireSuccessResponse`/`WireErrorResponse`; error-`id` typed with byte-equality, `null` only for the closed pre-id failure branch; structural result/error exclusivity; `deadlineUnixMs` raw-token canonical-decimal grammar ≤16 chars; deadline cap yours) + `params.meta` (closed `CallMeta`) + `params.input` (per-row named closed schema or frozen `$def`, rows 1–12) + error `{code const, message const, data closed}`; outer members enter every `maxEncoded*` proof once your `RequestId` value lands. The sweep additionally bounded `bindingNonce` and row-11 ping `nonce` (1..512) |
+| complete JSON-RPC request / result / **full error** object | **outer envelope closed — your `RequestId` value absorbed verbatim** (`WireRequest`/`WireNotification`/`WireSuccessResponse`/`WireErrorResponse`; error-`id` typed with byte-equality, `null` only for the closed pre-id failure branch; structural result/error exclusivity; `deadlineUnixMs` raw-token canonical-decimal grammar ≤16 chars; deadline cap yours) + `params.meta` (closed `CallMeta`) + `params.input` (per-row named closed schema or frozen `$def`, rows 1–12) + error `{code const, message const, data closed}`; outer members (incl. the id and its quotes) enter every `maxEncoded*` proof. The sweep additionally bounded `bindingNonce` and row-11 ping `nonce` (1..512) |
 | every caller-supplied value that can change replay output | read `limit` — no token; at-least-once re-read from acked state per the canonical row-6 settlement, page re-assembled from current state by design; snapshot `maxItems` — bound into the page token, mismatch fails before mutation; ack `subscriptionId`/`ackToken` — validated against the token's stored binding |
 | every entitlement carrier and Host-only kind transition | single carrier = `MessagingAckRequest`; exactly two kinds (read-page / snapshot-completion), resolved from stored provenance only; per-kind cursor effects enumerated in the ack-carrier section; no caller-selectable kind exists |
 | current plus historical producer values vs the bounded DTO | frozen-compatible rule: frozen-bounded fields verbatim (incl. `replyTo` 1..256), frozen-unbounded fields uncapped (byte ceilings govern), open payloads byte-only — no valid-write/unencodable-read path remains; incompatible stored data = explicit Host fault + reconciliation, zero progress movement |
@@ -298,7 +312,8 @@ The plugins repository provides a **test-host conformance harness** only (framin
 - [x] **CO-SIGN** — complete-and-stable eight-item foundation co-signed at R2 as written
 - [x] **rows 6/8/9 field-level direction — accepted at your R3** (pending the five P1 fixes)
 - [x] **R3 five-P1 ledger + five-axis sweep — executed in this revision** (error `message` const · page-token binding set · `MessagingAckRequest` · frozen-compatible bounds · public/internal split)
-- [ ] **`RequestId` representation + byte bound — your value** (the outer envelope and sweep first axis stay "pending" until it lands)
+- [x] **`RequestId` representation + byte bound — your value, absorbed verbatim this revision**
+- [ ] **`messageId`/`threadId`/`actor.id` producer attestation — your attested bound or admission gate** (affected fields stay reserved until it lands; consistent with D0 = A)
 - [ ] **fresh review on these exact live bytes** (raw API-string SHA-256 reported in the delivery comment)
 - [ ] per-row `ready=true` — only after exact validators, generated byte proofs, N/N+1 raw-byte conformance, and three-stage runtime enforcement pass (reservation-only lifecycle, your D0 = A)
 - [ ] K-2 maintainer records `shape-approved`
