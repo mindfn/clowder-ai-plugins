@@ -13,8 +13,8 @@ created: 2026-07-17
 # #1165 revised body — draft (P-1a.0 收官投递物)
 
 **用途**：整体替换 [zts212653/clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) 的 issue body（GitHub 保留 edit history，可逆）。
-**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ `9fe711c`（R26 = R4-intake 吸收：RequestId verbatim + source-owned bound inventory【transitively-bounded 声明撤回，K-1 producer 一手引证，未可证字段显式 reserved】）。
-**状态**：D11（revision 4 body），R4-intake 两项已吸收——pending terra 内部窄扫——**先扫后投**；投递报新 raw API-string SHA-256，maintainer 将路由 exact bytes 给 Terra re-review。
+**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ `d396d4e`（R27 = occurredAt 1..27【exact-24 撤回，expanded ISO years + 无 admission range check】+ eventId 双 producer 公式 + header 时态；R26 = R4-intake 吸收）。
+**状态**：D12（revision 4 body），terra R26/D11 三 finding 已修——pending terra 复扫——**先扫后投**；投递报新 raw API-string SHA-256，maintainer 将路由 exact bytes 给 Terra re-review。
 **忠实性边界（R21 更新）**：rows 6/8/9 closure sections 内**仅 R2 之后新增的显式 field-level closure blocks（schema/grammar/cap 定义块）待 fresh review**；同 section 内标为 R2-absorbed/resolved/co-signed 的文字保持既决、不重开。其外 unmarked = canonical-decided 或 co-signed R2；★ = 单独标记的 open proposal。原 body 的 "K-1 remains pinned to beta.1" 错误陈述在本版修正（R5 grounding correction）。
 
 ---
@@ -92,9 +92,9 @@ The family **mirrors the frozen beta.2 `$defs` structurally** — same members, 
 | Field | Producer truth | Wire bound |
 |---|---|---|
 | `subscriptionId` | K-1 mints `sub_` + UUID = 40 chars fixed (`event-stream.ts:112`) | 1..128 (your `MessagingAckRequest` value; covers the mint) |
-| `occurredAt` | K-1 emits `toISOString()` = 24 chars fixed, RFC3339 UTC ms `Z` (`envelope.ts:305`) | **exactly 24** (producer invariant; validator pins format and length) |
+| `occurredAt` | K-1 emits `new Date(msg.timestamp).toISOString()` (`envelope.ts:305`); `toISOString()` yields 24 chars for years 0000..9999 but **27 for expanded ISO years** (`+010000-01-01T00:00:00.000Z`), and K-1 admission stores `timestamp: number` with no range check | **1..27 raw UTF-8** — the full valid-Date `toISOString()` output domain — with an RFC3339/expanded-ISO UTC grammar validator; narrowing to four-digit years (⇒ exact 24) would be your separately reviewed shape delta |
 | `ThreadHandleAddress.handle` | K-1 mints `th_` + UUID = 39 chars (`handles.ts:47`; `cb_` variant `:61`) | frozen 1..256 verbatim (covers the mint) |
-| `eventId` | K-1 composes `ev_pub_${messageId}_1` / `ev_app_${messageId}_${operationId}` (`send-service.ts:194`, `append-output.ts:211`) | composite: 7 + \|messageId\| + 1 + \|operationId ≤ 200\| — finite **once the `messageId` attestation lands** |
+| `eventId` | two distinct producers: publish arm `ev_pub_${messageId}_1` = 7 + \|messageId\| + 2 (`send-service.ts:194`); append arm `ev_app_${messageId}_${operationId}` = 7 + \|messageId\| + 1 + \|operationId ≤ 200\| (`append-output.ts:211`) | both branch formulas finite **once the `messageId` attestation lands**; both stay reserved until then |
 | `messageId`, `threadId` | minted inside K-1's core message store (`messageStore.append`), outside the messaging domain — not attestable from this repo | **pending your K-1 producer attestation** (an attested bound or admission gate, entering as a shape delta); until then these fields — and therefore `eventId` and `MessageHandle.token` — stay reserved/unclosed per your intake rule |
 | `actor.id` | actor identity registry (`catRegistry` domain) — outside this repo's attestation reach | **pending attestation**, same rule |
 | `MessageHandle.token` | canonical: derived from `messageId` | follows the `messageId` attestation |
