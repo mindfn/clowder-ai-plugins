@@ -13,8 +13,8 @@ created: 2026-07-17
 # #1165 revised body — draft (P-1a.0 收官投递物)
 
 **用途**：整体替换 [zts212653/clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) 的 issue body（GitHub 保留 edit history，可逆）。
-**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ `3f5d8fd`（R24 = FC-R23-1 修复：error-id typed+byte-equality+null 闭合分支 / deadline raw-token canonical-decimal grammar ≤16 / envelope 改标 pending-RequestId-owner-value，128 lean 撤回）。
-**状态**：D9（revision 3 body），terra 两轮 finding 已修——pending 复扫——**先扫后投**；投递时报 raw API-string SHA-256。
+**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ R25（FC-R24-1 措辞卫生：closed→structurally-defined-pending）（R24 = FC-R23-1 修复：error-id typed+byte-equality+null 闭合分支 / deadline raw-token canonical-decimal grammar ≤16 / envelope 改标 pending-RequestId-owner-value，128 lean 撤回）。
+**状态**：D10（revision 3 body），terra 三轮 finding 已修——pending 复扫——**先扫后投**；投递时报 raw API-string SHA-256。
 **忠实性边界（R21 更新）**：rows 6/8/9 closure sections 内**仅 R2 之后新增的显式 field-level closure blocks（schema/grammar/cap 定义块）待 fresh review**；同 section 内标为 R2-absorbed/resolved/co-signed 的文字保持既决、不重开。其外 unmarked = canonical-decided 或 co-signed R2；★ = 单独标记的 open proposal。原 body 的 "K-1 remains pinned to beta.1" 错误陈述在本版修正（R5 grounding correction）。
 
 ---
@@ -36,7 +36,7 @@ Your R3 verdict ([5004451129](https://github.com/zts212653/clowder-ai/issues/116
 | 3 — shared ack carrier not field-level closed | closed `MessagingAckRequest` + Host-resolved token kind (own section below) |
 | 4 — bounded DTO narrowings vs K-1 byte-only admission | **frozen-compatible bounding rule**: R19–R21 narrowings withdrawn — `replyTo` restored to 1..256, uniform identifier caps and the `BoundedOpenPayload` structural grammar removed; no valid-write/unencodable-read path remains (DTO family section) |
 | 5 — public bounds "adjusted without ceremony" | public schema bounds vs internal generated budgets split; entitlements bind an immutable shape/budget digest (rule below) |
-| + (internal review, this revision) | the sweep's first axis was itself incomplete — the **outer JSON-RPC envelope** (`jsonrpc`, `id`, `method`, response correlation, result/error exclusivity) was undefined, letting a sub-frame request with an oversized `id` evade every DTO cap; a closed envelope family is now defined (own section below), with the `RequestId` representation **left explicitly for your decision** |
+| + (internal review, this revision) | the sweep's first axis was itself incomplete — the **outer JSON-RPC envelope** (`jsonrpc`, `id`, `method`, response correlation, result/error exclusivity) was undefined, letting a sub-frame request with an oversized `id` evade every DTO cap; an envelope family is now structurally defined, **pending your RequestId value** (own section below), with the `RequestId` representation **left explicitly for your decision** |
 
 **Your R2 decisions — absorbed as decided (no re-answer needed):**
 
@@ -181,7 +181,7 @@ No generic wire `operationId`. The Broker *extracts* the settlement key from inp
 
 **`CallMeta`** (closed, v0): `deadlineUnixMs` — integer, Host-capped absolute Unix ms. Sole field; `requestId` lives in the JSON-RPC `id`, never in meta.
 
-### Outer JSON-RPC envelope (closed; the frame level the DTO caps cannot see)
+### Outer JSON-RPC envelope (structurally defined — **pending your RequestId value**; the frame level the DTO caps cannot see)
 
 Without a contract-owned outer envelope, a sub-frame request with an enormous `id` or numeric deadline evades every method DTO cap while the decoder ceiling stays the last defense — which your merged canonical text forbids as a normal rejection path, and whose proof coverage explicitly spans `requestId`. The envelope family is contract-owned and closed (`additionalProperties: false`, all listed members required):
 
