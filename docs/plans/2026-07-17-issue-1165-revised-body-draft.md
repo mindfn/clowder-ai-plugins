@@ -13,8 +13,8 @@ created: 2026-07-17
 # #1165 revised body — draft (P-1a.0 收官投递物)
 
 **用途**：整体替换 [zts212653/clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) 的 issue body（GitHub 保留 edit history，可逆）。
-**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ `2193356`（R22 = maintainer R3 五 P1 修复：error.message const / page-token binding set / MessagingAckRequest / frozen-compatible bounds【R19–R21 收窄撤回】/ public-internal 分层 + 五维 sweep）。
-**状态**：D7（revision 3 body），pending sol narrow scan——**先扫后投**；投递时按 R3 addendum 报 raw API-string SHA-256。
+**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ `d12ce8d`（R23 = R22 五 P1 修复 + terra FC-R22-1 outer envelope 闭合：WireRequest/Notification/Success/Error family，RequestId 表示留 owner value，deadline cap 留 K-2）。
+**状态**：D8（revision 3 body），terra R22/D7 scan 的 1×P1 已修——pending 窄扫复核（terra 或 sol，先到为准）——**先扫后投**；投递时报 raw API-string SHA-256。
 **忠实性边界（R21 更新）**：rows 6/8/9 closure sections 内**仅 R2 之后新增的显式 field-level closure blocks（schema/grammar/cap 定义块）待 fresh review**；同 section 内标为 R2-absorbed/resolved/co-signed 的文字保持既决、不重开。其外 unmarked = canonical-decided 或 co-signed R2；★ = 单独标记的 open proposal。原 body 的 "K-1 remains pinned to beta.1" 错误陈述在本版修正（R5 grounding correction）。
 
 ---
@@ -36,6 +36,7 @@ Your R3 verdict ([5004451129](https://github.com/zts212653/clowder-ai/issues/116
 | 3 — shared ack carrier not field-level closed | closed `MessagingAckRequest` + Host-resolved token kind (own section below) |
 | 4 — bounded DTO narrowings vs K-1 byte-only admission | **frozen-compatible bounding rule**: R19–R21 narrowings withdrawn — `replyTo` restored to 1..256, uniform identifier caps and the `BoundedOpenPayload` structural grammar removed; no valid-write/unencodable-read path remains (DTO family section) |
 | 5 — public bounds "adjusted without ceremony" | public schema bounds vs internal generated budgets split; entitlements bind an immutable shape/budget digest (rule below) |
+| + (internal review, this revision) | the sweep's first axis was itself incomplete — the **outer JSON-RPC envelope** (`jsonrpc`, `id`, `method`, response correlation, result/error exclusivity) was undefined, letting a sub-frame request with an oversized `id` evade every DTO cap; a closed envelope family is now defined (own section below), with the `RequestId` representation **left explicitly for your decision** |
 
 **Your R2 decisions — absorbed as decided (no re-answer needed):**
 
@@ -180,6 +181,18 @@ No generic wire `operationId`. The Broker *extracts* the settlement key from inp
 
 **`CallMeta`** (closed, v0): `deadlineUnixMs` — integer, Host-capped absolute Unix ms. Sole field; `requestId` lives in the JSON-RPC `id`, never in meta.
 
+### Outer JSON-RPC envelope (closed; the frame level the DTO caps cannot see)
+
+Without a contract-owned outer envelope, a sub-frame request with an enormous `id` or numeric deadline evades every method DTO cap while the decoder ceiling stays the last defense — which your merged canonical text forbids as a normal rejection path, and whose proof coverage explicitly spans `requestId`. The envelope family is contract-owned and closed (`additionalProperties: false`, all listed members required):
+
+- **`WireRequest`** = `{ jsonrpc: "2.0" (const), id: RequestId, method: <the 12-name enum, direction-checked against the registry>, params: { meta: CallMeta, input: <the row's input schema> } (closed, exactly two keys) }`.
+- **`WireNotification`** = same shape **without `id`** — legal only for registry rows declared as notifications (row 10 `host.grants.changed`); a notification with an `id`, or a request without one, is a connection-level protocol violation.
+- **`WireSuccessResponse`** = `{ jsonrpc: "2.0" (const), id (byte-equal echo of the request `id`), result: <the row's result schema> }` — no `error` member.
+- **`WireErrorResponse`** = `{ jsonrpc: "2.0" (const), id, error: { code (const int), message (const string), data (closed) } }` — no `result` member. Result/error mutual exclusivity is structural (`oneOf` of the two closed variants), never a runtime convention.
+- **`RequestId` representation and byte bound — your value, not invented here:** canonical fixes only the role (`JSON-RPC id = requestId`, attempt correlation ONLY). The representation (string vs number) and its exact bound are **left explicitly for your decision**; our lean, submitted for that decision: opaque string, minLength 1, maxLength 128 (the contract-minted identifier tier). Whatever you decide enters the generated proofs.
+- **`deadlineUnixMs` admission (structural part):** a finite positive integer within JSON-safe range (≤ 2^53 − 1), validated at admission; the **numeric Host cap policy is K-2's** and is not fixed by this shape.
+- The outer members (`jsonrpc`, `id`, `method`, braces and separators) are **included in every generated `maxEncoded{Request,Result,Error}Bytes` proof** (your canonical rule: proofs include shared `CallMeta` and cover `requestId`), with mutation and N/N+1 conformance cases proving oversize/malformed-envelope rejection **before authorization-visible dispatch**.
+
 ### Production method registry (12 reserved names; your canonical base matrix from `b32170a8` with inline marked overlays — merged settlement-mapping column, gate/lifecycle annotations)
 
 | # | Method | Direction | Grant | Input → Result | Error set | Settlement key source |
@@ -267,7 +280,7 @@ The plugins repository provides a **test-host conformance harness** only (framin
 
 | Axis | Sweep result |
 |---|---|
-| complete JSON-RPC request / result / **full error** object | request = `params.meta` (closed `CallMeta`) + `params.input` (per-row named closed schema or frozen `$def`, rows 1–12); result = per-row closed type; error = `{code const, message const, data closed}` — closed above. The sweep additionally bounded the two previously implicit contract-minted tokens: `bindingNonce` and row-11 ping `nonce` (1..512) |
+| complete JSON-RPC request / result / **full error** object | **outer envelope closed** (`WireRequest`/`WireNotification`/`WireSuccessResponse`/`WireErrorResponse`, structural result/error exclusivity; `RequestId` representation left for your decision; deadline admission structural, cap yours) + `params.meta` (closed `CallMeta`) + `params.input` (per-row named closed schema or frozen `$def`, rows 1–12) + error `{code const, message const, data closed}`; outer members enter every `maxEncoded*` proof. The sweep additionally bounded `bindingNonce` and row-11 ping `nonce` (1..512) |
 | every caller-supplied value that can change replay output | read `limit` — no token; at-least-once re-read from acked state per the canonical row-6 settlement, page re-assembled from current state by design; snapshot `maxItems` — bound into the page token, mismatch fails before mutation; ack `subscriptionId`/`ackToken` — validated against the token's stored binding |
 | every entitlement carrier and Host-only kind transition | single carrier = `MessagingAckRequest`; exactly two kinds (read-page / snapshot-completion), resolved from stored provenance only; per-kind cursor effects enumerated in the ack-carrier section; no caller-selectable kind exists |
 | current plus historical producer values vs the bounded DTO | frozen-compatible rule: frozen-bounded fields verbatim (incl. `replyTo` 1..256), frozen-unbounded fields uncapped (byte ceilings govern), open payloads byte-only — no valid-write/unencodable-read path remains; incompatible stored data = explicit Host fault + reconciliation, zero progress movement |
