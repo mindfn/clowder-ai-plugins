@@ -13,9 +13,9 @@ created: 2026-07-17
 # #1165 revised body — draft (P-1a.0 收官投递物)
 
 **用途**：整体替换 [zts212653/clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) 的 issue body（GitHub 保留 edit history，可逆）。
-**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ `18393c6`（R19 = R18/D3 scan 的 field-level closure hardening：frozen union mirror + 四类 cap 表 + frozen 判别 mirror + empty 分支 + row 9 exact + ★ 清理；R18 = maintainer R2 吸收，五决策落定）。
-**状态**：D4（同步 R19：BoundedMessageOutputEvent union / 四类 cap 表 / BoundedSubscriptionReadPageResponse frozen-mirror 判别 + limit 1..32 + 七步算法含 empty 分支 / HostMessagingDeliverRequest + frozen ThreadHandleAddress / registry cells），pending sol narrow rescan——**先扫后投**。
-**忠实性边界**：unmarked = canonical-decided（maintainer 已决，呈现仅确认吸收正确）；★ = our proposal pending co-sign；★★ = decision packet（owner 拍板）。原 body 的 "K-1 remains pinned to beta.1" 错误陈述在本版修正（R5 grounding correction）。
+**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ `f0a009b`（R20 = R19/D4 scan 的 payload grammar + cardinality closure：BoundedOpenPayload grammar + frozen x-clowder-bounds 落 wire validator + 固定 cardinality/required sets + oracle 单列 + 账本清零 + 图例修正）。
+**状态**：D5（同步 R20），pending sol narrow rescan（他声明的四点：① payload grammar/byte caps ② 固定 schema bounds + oracles ③ 残留清零 ④ marker 语义）——**先扫后投**。
+**忠实性边界（R20 更新）**：rows 6/8/9 closure sections（DTO family / Row 6 / Row 8 / row-9 schemas）**整段待 fresh review**（section banner 承载 gate，无逐项标记）；其外 unmarked = canonical-decided 或 co-signed R2；★ = 单独标记的 open proposal。原 body 的 "K-1 remains pinned to beta.1" 错误陈述在本版修正（R5 grounding correction）。
 
 ---
 
@@ -60,7 +60,7 @@ core interface shape-approved
 
 ## Shared bounded envelope/event DTO family (your D1c = (a), closed; payload truth for rows 6/8/9)
 
-The family **mirrors the frozen beta.2 `$defs` structurally** — same members, same required sets, same closed unions and `const` discriminators, `additionalProperties: false` everywhere — and adds exact caps to every formerly unbounded string. The generator derives member/required/const sets from the frozen schema mechanically; **it may add caps, never members**. Types:
+The family **mirrors the frozen beta.2 `$defs` structurally** — same members, same required sets, same closed unions and `const` discriminators; `additionalProperties: false` **wherever frozen is closed** — and adds exact caps to every formerly unbounded string. Frozen-**open** payload objects (`MediaRefElementPayload` and `RichBlockElementPayload` are `{type: "object", additionalProperties: true}` — empty member set, open by canonical design) **stay open-membered**: closing their members would invent canonical payload semantics we do not own. They are bounded instead by the `BoundedOpenPayload` grammar below plus the **frozen `x-clowder-bounds` byte caps** (`maxElementPayloadBytes` = 65,536 per element payload, `maxTotalPayloadBytes` = 262,144 per message — already enforced by the K-1 semantic validator, now landed as exact wire byte validators). The generator derives member/required/const sets from the frozen schema mechanically; **it may add caps and value-grammar bounds, never members**. Types:
 
 - **`BoundedMessageEnvelope`** — field-for-field carry of frozen `MessageEnvelope`: `messageId`, `revision`, `threadId`, `replyTo?`, `actor`, `audience`, `occurredAt`, `payload`. Your R2 provenance/correlation/causation members are frozen members of `payload` (`payload.provenance`, `payload.correlationId` ≤256, `payload.causationId` ≤256) — carried, not re-modeled.
 - **`BoundedMessageOutputEvent` = `BoundedMessagePublishEvent | BoundedMessageElementsAppendEvent`** — mirroring frozen `MessageOutputEvent`'s closed union exactly: *publish* = `{ eventId, sequence, type: "message.publish" (const), envelope: BoundedMessageEnvelope }`, all required; *elements-append* = `{ eventId, sequence, type: "message.elements.append" (const), messageId, threadId, operationId, baseRevision?, revision, elements (1..32) }` — **no envelope on the append arm** (canonical frozen shape).
@@ -72,19 +72,23 @@ Exact added caps (provisional pending generated proof; frozen-existing bounds ke
 | identifiers | `eventId`, `messageId`, `threadId`, `replyTo`, `actor.id` | ≤ 128 |
 | timestamps | `occurredAt` (RFC3339 UTC) | ≤ 64 |
 | opaque tokens | handles / cursors / entitlements copied into DTOs | ≤ 512 |
-| free text | nested payload strings (e.g. `TextElementPayload.text`) | ≤ 65,536 |
+| free text | closed-def payload strings (e.g. `TextElementPayload.text`) | ≤ 65,536 (= frozen `maxElementPayloadBytes`) |
+| open payloads | `MediaRefElementPayload`, `RichBlockElementPayload` (frozen `additionalProperties: true`) | `BoundedOpenPayload` grammar + frozen `maxElementPayloadBytes` 65,536 encoded-bytes validator |
 
-Nested payload refs (`TextElementPayload`, `MediaRefElementPayload`, `RichBlockElementPayload`, `ProvenanceOrigin` arms) receive per-string caps recursively by the same four-class rule. Item/page ceilings derive from generated full-frame proofs strictly below `maxFrameBytes`; the same family is the payload type for rows 6, 8, and 9 — **no per-row envelope variants**.
+**`BoundedOpenPayload` grammar (closed value grammar over an open member set; numbers provisional pending generated proof except the two frozen byte caps, kept verbatim):** every property key ≤ 128 chars; string values ≤ 65,536; arrays maxItems ≤ 128; objects maxProperties ≤ 64; nesting depth ≤ 8; numbers/booleans/null native; the **entire encoded payload object ≤ `maxElementPayloadBytes` (65,536) raw UTF-8 bytes** under the v0 compact profile, and per-message element payloads sum ≤ `maxTotalPayloadBytes` (262,144) — both frozen `x-clowder-bounds` values, landed as exact generated byte validators. This bounds the full-frame proof without closing the canonical open member semantics.
+
+Closed-def payload refs (`TextElementPayload`, `ProvenanceOrigin` arms) receive per-string caps recursively by the class table. Item/page ceilings derive from generated full-frame proofs strictly below `maxFrameBytes`; the same family is the payload type for rows 6, 8, and 9 — **no per-row envelope variants**.
 
 ## Row 6 — `messaging.read` bounded paging (your D2 = (b), closed this round)
 
 Frozen beta.2 already fixes the read-result discrimination: `SubscriptionReadResponse = SubscriptionNormalResponse | SubscriptionEmptyResponse | SubscriptionStaleResponse`, discriminated by `stale` (`const`) + `ackToken` nullability + `events` cardinality — the `oneOf` plus `const` locks make a fourth combination unrepresentable. **The bounded page family mirrors that frozen discrimination exactly.**
 
 - **`SubscriptionReadPageRequest`** (closed, `additionalProperties: false`, all fields required): `subscriptionId` — string ≤128; `limit` — integer 1..32 (aligned to frozen `events` maxItems 32; provisional pending generated proof). **No page token** — a read always resumes from Host-side `ackedSequence`; a page token may only be added by a later proposal proving a semantic need (your R2 ruling).
-- **`BoundedSubscriptionReadPageResponse`** — closed `oneOf`, mirroring the frozen variants with bounded payloads:
-  - *normal*: `{ events: BoundedMessageOutputEvent[] (1..limit), ackToken: string(≤512), stale: false (const) }` — `ackToken` carries your kind-tagged read-page entitlement; disclosed delta vs frozen: frozen `SubscriptionCursor` was an unbounded opaque string, the bounded form is ≤512 and kind-tagged per your R2;
+- **`BoundedSubscriptionReadPageResponse`** — closed `oneOf`, mirroring the frozen variants with bounded payloads. Every variant: required = `[events, ackToken, stale]` exactly (frozen mirror), `additionalProperties: false`:
+  - *normal*: `{ events: BoundedMessageOutputEvent[] — minItems 1, maxItems 32 (frozen literal), ackToken: string(≤512), stale: false (const) }` — `ackToken` carries your kind-tagged read-page entitlement; disclosed delta vs frozen: frozen `SubscriptionCursor` was an unbounded opaque string, the bounded form is ≤512 and kind-tagged per your R2;
   - *empty*: `{ events: [] (maxItems 0), ackToken: null, stale: false (const) }`;
   - *stale*: `{ events: [] (maxItems 0), ackToken: null, stale: true (const) }` — retention floor has passed the reader; recovery = `messaging.snapshot` catch-up.
+  - Request-relative bound is a **conformance oracle**, not a schema constraint (JSON Schema cannot reference the request's `limit`): `events.length ≤ params.input.limit`, executed by the generated validator suite alongside the schema check.
   - No `lastEmittedSequence` response field: frozen has none, and the page's last emitted sequence lives inside the entitlement binding — a response copy would be an unconstrained second truth source.
 
 **Host read algorithm (your R2 semantics; the empty branch is made explicit — your three-variant requirement implies the algorithm must produce it, a coherence completion, not a new decision):**
@@ -117,8 +121,12 @@ Row 6 is `ready=false` until its generated byte proofs and N/N+1 raw-byte confor
 
 **Closed shapes (on the resolved terms; row 8 `ready=false` until generated proofs pass):**
 
-- `SnapshotPageRequest` (closed, `additionalProperties: false`): `subscriptionId` (≤128); `pageToken` (≤512, absent = first page); `maxItems` (1..64, provisional cap pending generated proof).
-- `SnapshotPageResponse` as closed discriminated variants: *intermediate* = `{ items, nextPageToken: string(≤512), snapshotAckToken: null }`; *final* = `{ items, nextPageToken: null, snapshotAckToken: string(≤512) }` — presence rules exact, no third combination; `items` = `BoundedMessageEnvelope[]`; same-token replay re-serves the equivalent page; token expiry bound to the view anchor's lifetime (Host GC policy over the D1a view entitlement).
+- `SnapshotPageRequest` (closed, `additionalProperties: false`; required = `[subscriptionId, maxItems]`, `pageToken` optional): `subscriptionId` (≤128); `pageToken` (≤512, absent = first page); `maxItems` (1..64, provisional cap pending generated proof).
+- `SnapshotPageResponse` as closed discriminated variants. Both variants: required = `[items, nextPageToken, snapshotAckToken]` exactly, `additionalProperties: false`, `items` = `BoundedMessageEnvelope[]`:
+  - *intermediate* = `{ items — minItems 1, maxItems 64, nextPageToken: string(≤512), snapshotAckToken: null }`;
+  - *final* = `{ items — minItems 0, maxItems 64 (an empty snapshot is a single empty final page), nextPageToken: null, snapshotAckToken: string(≤512) }`;
+  - no third combination; structural `maxItems` fixed at 64 (provisional), request-relative bound as a **conformance oracle**: `items.length ≤ params.input.maxItems`;
+  - same-token replay re-serves the equivalent page; token expiry bound to the view anchor's lifetime (Host GC policy over the D1a view entitlement).
 - Completion rides your D1b through existing `messaging.ack`; cursor advance targets `resumeAfterSequence = H` per your D1a.
 - Oversize-vs-immutable-traversal: an `OVERSIZED_ITEM` fault poisons and expires the traversal's view anchor — the same `pageToken` thereafter returns `SNAPSHOT_UNAVAILABLE { reason: "VIEW_EXPIRED" }`; after Host-side repair the caller starts a **new** snapshot; repair never mutates an existing view.
 
