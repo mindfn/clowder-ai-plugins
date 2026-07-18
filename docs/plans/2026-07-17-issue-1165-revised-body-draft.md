@@ -13,19 +13,19 @@ created: 2026-07-17
 # #1165 revised body — draft (P-1a.0 收官投递物)
 
 **用途**：整体替换 [zts212653/clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) 的 issue body（GitHub 保留 edit history，可逆）。
-**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` R29（maintainer revision-4 audit `5008567649` + dual fresh-context findings；以 exhaustive raw-lexeme/leaf matrix 为唯一 closure truth）。
-**状态**：D14（revision 5 body），未投递——**先复扫 fresh-context 修复，再替换 live issue body**；投递时报告新的 raw API-string SHA-256/code-point/UTF-8-byte counts。
+**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` R30（maintainer revision-4 audit `5008567649` + dual fresh-context findings + dual fix-confirmation findings；以 exhaustive raw-frame/lexeme/leaf matrix 为唯一 closure truth）。
+**状态**：D15（revision 5 body），未投递——**先复扫 fresh-context 修复，再替换 live issue body**；投递时报告新的 raw API-string SHA-256/code-point/UTF-8-byte counts。
 **忠实性边界**：R2 已签语义决策不重开；本次只纠正“哪些 leaf/row 已 closed”的事实与其机械推导。`CLOSED`/`RESERVED` 仅由下方 matrix 决定；任何旧 prose “closed” 标签与 matrix 冲突时一律以 matrix 为准。PR #7 保持 draft 且不改代码。
 
 ---
 
 ## BODY（verbatim replace begins below）
 
-## Status and request — revision 5: revision-4 audit root-corrected with one exhaustive raw-lexeme/leaf matrix
+## Status and request — revision 5: revision-4 audit root-corrected with one exhaustive raw-frame/lexeme/leaf matrix
 
 This remains a **shape-only K-2 / P-1a.0 co-sign anchor**. It does not authorize implementation, publication, dependency re-pin, or K-2 runtime work.
 
-Your revision-4 audit ([5008567649](https://github.com/zts212653/clowder-ai/issues/1165#issuecomment-5008567649)) confirmed `RequestId`, the rejected transitive-bound claim, and the listed beta.2 messaging-string reservations, then found the same systemic defect one level wider: our prose “row-wide” sweep omitted the handshake/session/grant family and every non-deadline integer. **That completeness claim is withdrawn.** Revision 5 installs one authoritative matrix covering every variable-width leaf and every raw JSON lexeme whose parsed value has multiple spellings across all 12 request/result/notification/error shapes. Its dual fresh-context scan additionally closed canonical inbound string tokens, signed integer `const` tokens, all five JSON-RPC standard errors, and SHA-512 SRI pad bits. The checklist, five-axis sweep, and row statuses below are projections of that matrix, not separate claims.
+Your revision-4 audit ([5008567649](https://github.com/zts212653/clowder-ai/issues/1165#issuecomment-5008567649)) confirmed `RequestId`, the rejected transitive-bound claim, and the listed beta.2 messaging-string reservations, then found the same systemic defect one level wider: our prose “row-wide” sweep omitted the handshake/session/grant family and every non-deadline integer. **That completeness claim is withdrawn.** Revision 5 installs one authoritative matrix covering every pre-parse frame structure, variable-width leaf, and raw JSON lexeme whose information would otherwise be lost or normalized by parsing across all 12 request/result/notification/error shapes. The first dual scan closed canonical strings, integer `const` tokens, all five JSON-RPC standard errors, and SHA-512 SRI pad bits. Its fix-confirmation scan verified those repairs, then extended the same root correction to recursive open-payload numbers and duplicate object-member names. The checklist, five-axis sweep, and row statuses below are projections of that matrix, not separate claims.
 
 **Revision-4 disposition in one view:**
 
@@ -100,22 +100,34 @@ The family **mirrors the frozen beta.2 `$defs` structurally** — same members, 
 
 An incompatible stored event (should the byte ceilings themselves ever be exceeded by legacy data) is an explicit **Host fault with a reconciliation path and zero cursor/lease/settlement movement** — never a silent skip, never caller validation (your addendum). The full-frame proof rests on the frozen byte ceilings plus each row's generated `maxEncoded{Request,Result,Error}Bytes` under the v0 compact profile — exact wire bounds without structural narrowing of canonical data. Item/page ceilings derive from generated full-frame proofs strictly below `maxFrameBytes`; the same family is the payload type for rows 6, 8, and 9 — **no per-row envelope variants**.
 
-## Exhaustive raw-lexeme and variable-width leaf closure matrix (authoritative)
+## Exhaustive raw-frame, raw-lexeme, and variable-width leaf closure matrix (authoritative)
 
-A row/DTO/envelope is closed only when every reachable variable-width leaf and every raw JSON lexeme whose parsed value has multiple spellings maps to a `CLOSED` entry here. Grouped entries enumerate every schema path they cover. Exact sources: **T1** = plugins beta.2 `f52e820` manifest/messaging schemas; **T2** = K-1 exact `9fb37310` producer/admission code; **T3** = K-2 canonical `d606aab`; **T4** = your revision-4 audit `5008567649`; **T5** = [JSON-RPC 2.0 §5/§5.1](https://www.jsonrpc.org/specification#response_object) + [RFC 4648 §3.5](https://www.rfc-editor.org/rfc/rfc4648.html#section-3.5).
+A row/DTO/envelope is closed only when every reachable pre-parse frame structure, variable-width leaf, and raw JSON lexeme whose information would be lost or normalized by parsing maps to a `CLOSED` entry here. Grouped entries enumerate every schema path they cover. Exact sources: **T1** = plugins beta.2 `f52e820` manifest/messaging schemas; **T2** = K-1 exact `9fb37310` producer/admission code; **T3** = K-2 canonical `d606aab`; **T4** = your revision-4 audit `5008567649`; **T5** = [JSON-RPC 2.0 §5/§5.1](https://www.jsonrpc.org/specification#response_object) + [RFC 4648 §3.5](https://www.rfc-editor.org/rfc/rfc4648.html#section-3.5) + [RFC 8259 §§2, 4, 6](https://www.rfc-editor.org/rfc/rfc8259.html#section-4).
+
+Pre-parse raw-frame acceptance grammar:
+
+| Component | Rule | Closure consequence |
+|---|---|---|
+| frame | one UTF-8 non-batch object, no BOM/insignificant whitespace, LF outside the byte count | raw framing cannot inflate a generated compact-frame proof |
+| object | canonical-decoded member names pairwise unique at every object depth; member order unconstrained | duplicate names cannot collapse after parse or multiply a closed member's byte contribution |
+| string token | `CanonicalStringToken` at every name/value position | escape aliases cannot normalize after parse |
+| number token | every path selects `WireUInt53`, `WireIntConst`, or M2 `CanonicalNumberToken` | exponent, sign, precision, and negative-zero aliases cannot normalize after parse |
+| `true` / `false` / `null` | exact lowercase JSON literals | finite by JSON grammar |
 
 Validator profiles:
 
 - `CanonicalStringToken`: before parsed-value/schema validation, the inbound raw string lexeme must byte-equal `JSON.stringify(parsedValue)` from the production compact encoder; outbound uses that encoder. Alternate `\u` spellings are rejected.
+- `CanonicalNumberToken`: an M2 raw numeric lexeme must byte-equal the production compact encoder's scalar serialization of the same parsed **finite** numeric value, recursively at every object/array depth before schema validation. This rejects `1e2` for `100`, `-0` for `0`, exponent padding, and values outside the encoder's finite numeric domain.
 - `JSONString(N)`: `CanonicalStringToken` plus schema `maxLength: N` in Unicode code points and compact-leaf check `utf8(JSON.stringify(value)).length <= 6N + 2` bytes (quotes included); full frames use the same production compact encoder and actual bytes.
 - `ASCII(N)`: `CanonicalStringToken` plus ASCII grammar of at most N chars; compact leaf ≤ `N + 2` bytes including quotes.
 - `WireUInt53(min,max)`: raw lexeme `0|[1-9][0-9]{0,15}`, length 1..16, no sign/point/exponent/leading zero, checked pre-parse; parsed value must be a safe integer inside the field range, maximum `9_007_199_254_740_991`.
 - `WireIntConst(S)`: the inbound numeric lexeme must byte-equal the signed canonical decimal literal `S` before parse; parsed equality alone is insufficient.
-- `PayloadBytes(65_536,262_144)`: exact production compact-encoder check per element payload and per containing message payload before dispatch/state mutation.
+- `PayloadBytes(65_536,262_144)`: pre-parse raw payload slices are checked at the frozen per-element/per-message limits after W0 token/uniqueness acceptance; parsed/outbound compact encodings are re-checked at the same limits before dispatch/state mutation or write.
 - `CLOSED` = finite shape + exact raw-byte validator + compatible source/admission evidence, pending your co-sign. `RESERVED` = at least one is absent; a reaching row may expose only its reserved method name, never an advertised request/result schema.
 
 | ID | Rows and exact raw-lexeme / variable-width leaf paths | Representation | Structural bound | Exact raw-token / byte validator | Producer / admission source | Status |
 |---|---|---|---|---|---|---|
+| W0 | all rows, every object depth and raw frame token | compact UTF-8 JSON frame | one non-batch object; no whitespace; unique decoded member names/object; member order unconstrained | streaming/pre-parse grammar gate; duplicate names and unprofiled string/number tokens reject before schema/dispatch | T3 framing + T5 JSON grammar/interoperability + R30 fix-confirmation REDs | **CLOSED** |
 | W1 | rows 1–9, 11–12 request/response/error `id` | ASCII `RequestId` | 1..128; `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`; in-flight unique/session | `ASCII(128)` = 3..130 encoded bytes; response echo byte-equal | T4 exact owner value | **CLOSED** |
 | W2 | rows 1–9, 11–12 `params.meta.deadlineUnixMs`; row-10 common notification meta; row-12 `params.input.deadlineUnixMs` | JSON integer | `WireUInt53(1, 9_007_199_254_740_991)` | canonical raw lexeme 1..16 bytes, pre-parse | existing deadline rule + T3 Host cap | **CLOSED** |
 | W3 | every finite literal leaf: outer `jsonrpc`/`method`; five application + five JSON-RPC standard error code/message pairs; application error data; beta.2 actor/element/epistemic/error enums and all address/origin/audience/event/handle consts; capability values | closed string const/enum + signed integer error-code const | exact finite sets: 12 methods, ten public code/message pairs, every schema enum/const; standard errors have no data, application errors have closed data | strings pass `CanonicalStringToken`; codes pass `WireIntConst`; generator measures every complete error variant | T1 enum/consts + T3 registry + R2 application errors + T5 standard errors | **CLOSED** |
@@ -129,7 +141,7 @@ Validator profiles:
 | H8 | row-1 result + row-10 `effectiveGrants[]` | unique Capability enum array | 0..17, derived from T1's 17-value enum | generated longest legal array; duplicate/non-enum rejected | T1 + Host authority | **CLOSED** |
 | H9 | row-1 result / row-2 input `bindingNonce` | opaque Unicode | 1..512 | `JSONString(512)` ≤3,074 bytes | new Host one-use value; cap is admission | **CLOSED** |
 | M1 | row-3 draft `address.handle`, `idempotencyKey`, `sourceEventId?`, `replyTo?`, audience targets, provenance IDs/source address, correlation/causation, element/derived IDs; row-4 `operationId`/element IDs; row-6/8/9 bounded copies | Unicode strings | exact T1 bounds: 128 element IDs; 200 idempotency/operation; 256 handles/plugin/connector/audience/correlation/causation/replyTo; 512 source event/external chat/message IDs | `JSONString(N)` for each bound; full payload also M2 | T1 + T2 validator; your revision-4 audit accepted `replyTo` treatment | **CLOSED** |
-| M2 | rows 3/4 inputs + rows 6/8/9 copies: text payload and every member/key/value/nesting of open media/rich payloads | compact JSON | no invented grammar; finite by `PayloadBytes(65_536,262_144)` | exact compact encoder; cycles/non-JSON rejected | T1 extension + T2 validator | **CLOSED** |
+| M2 | rows 3/4 inputs + rows 6/8/9 copies: text payload and every member/key/value/nesting of open media/rich payloads | compact JSON | no invented grammar; finite by `PayloadBytes(65_536,262_144)` | W0 uniqueness + recursive `CanonicalStringToken`/`CanonicalNumberToken`; exact raw-slice and compact re-encode bytes; cycles/non-JSON rejected | T1 extension + T2 validator + R30 numeric-alias RED | **CLOSED** |
 | M3 | arrays: draft elements 1..32; whisper targets 1..16; append input/event elements 1..32; applied IDs 1..32; read events 0..32; snapshot items 0..64; envelope elements 1..128 | JSON arrays | listed bounds; applied IDs derive from input; `items <= maxItems` remains a cross-document oracle | compact array + per-item validation; assembler checks full frame before admit | T1/T2 + R2 snapshot choice | **CLOSED for cardinality**; containing row inherits any reserved item leaf |
 | M4 | row-5 input `handle`; rows 5 result/6/7/8 input `subscriptionId`; row-6/7 ack token; row-8 page/next/ack tokens; row-9 input/result `deliveryId`; row-11 input/result `nonce` | opaque Unicode | handle 1..256; subscription/delivery 1..128; tokens/nonces 1..512 | `JSONString(N)` | T2 handle/subscription mints (39/40 chars); new Host values use public cap as admission | **CLOSED** |
 | M5 | row-3 result; row-4 request/result; rows 6/8 results; row-9 input: `messageId`, `threadId`, `actor.id`, `MessageHandle.token` | Unicode, grammar pending | beta.2 min 1 only | none | T2 core stores/identity registry; your audit accepts reservation | **RESERVED** |
@@ -138,24 +150,24 @@ Validator profiles:
 | I1 | row-3 result revision/publishSequence; row-4 baseRevision/revision/appendSequence; rows 6/8/9 envelope/event revision/sequence/baseRevision; legacy snapshot resumeSequence and new entitlement source `H` | target `WireUInt53` (revision min1, sequence min0) | target max safe integer, **not yet admitted** | target canonical 1..16 bytes, but source guard absent | T2 uses `Number.isInteger`; Redis `INCR` is converted directly with `Number`; persisted increments have no safe guard | **RESERVED** pending K-1 admission + stored-value attestation/migration invariant |
 | I2 | row-6 `limit`; row-8 `maxItems` | JSON integer | `WireUInt53(1,32)` / `WireUInt53(1,64)` | canonical raw + parsed range; ≤2 bytes | frozen read bound / R2 snapshot shape | **CLOSED** |
 
-Beta.2 `SnapshotResponse.envelopes[]/resumeSequence` is not silently reused: bounded pages replace the array, while its Host sequence source remains I1-reserved. Token `viewVersion`/position/kind data is Host-stored provenance, not a public JSON leaf; M4 bounds the carrier. Booleans, nulls, and closed object member sets are finite by construction. String consts/enums and all ten integer error codes pass W3 canonical raw-token equality before full-frame generation.
+Beta.2 `SnapshotResponse.envelopes[]/resumeSequence` is not silently reused: bounded pages replace the array, while its Host sequence source remains I1-reserved. Token `viewVersion`/position/kind data is Host-stored provenance, not a public JSON leaf; M4 bounds the carrier. W0 covers frame structure and duplicate names globally. Every numeric token joins through W2/H7/I1/I2, W3 `WireIntConst`, or M2 `CanonicalNumberToken`; every string token is canonical before its field profile. Booleans and null are finite by grammar. No parsed-value normalization path substitutes for raw-frame proof.
 
 ### Derived row closure projection
 
 | Row | Matrix join | Field-level status | Publication |
 |---|---|---|---|
-| 1 `broker.hello` | W1/W2/W3 + H1–H9 | **RESERVED** — H1/H3/H4/H5/H6 | `ready=false` |
-| 2 `broker.ready` | W1/W2/W3 + H9; row-1 dependency | **RESERVED** — no activation without closed binding | `ready=false` |
-| 3 `messaging.send` | W1/W2/W3 + M1/M2/M3/M5 + I1 | **RESERVED** — IDs/handle/integer result | `ready=false` |
-| 4 `messaging.appendElements` | W1/W2/W3 + M1/M2/M3/M5 + I1 | **RESERVED** — handle/IDs/integers | `ready=false` |
-| 5 `messaging.subscribe` | W1/W2/W3 + M4 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
-| 6 `messaging.read` | W1/W2/W3 + M1–M7 + I1/I2 | **RESERVED** — event/envelope IDs/integers | `ready=false` |
-| 7 `messaging.ack` | W1/W2/W3 + M4 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
-| 8 `messaging.snapshot` | W1/W2/W3 + M1/M2/M3/M4/M5/M7 + I1/I2 | **RESERVED** — envelope IDs/revision + Host sequence | `ready=false` |
-| 9 `host.messaging.deliver` | W1/W2/W3 + M1/M2/M3/M4/M5/M7 + I1 | **RESERVED** — envelope IDs/revision | `ready=false` |
-| 10 `host.grants.changed` | W2/W3 + H7/H8 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
-| 11 `host.lifecycle.ping` | W1/W2/W3 + M4 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
-| 12 `host.lifecycle.drain` | W1/W2/W3 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
+| 1 `broker.hello` | W0/W1/W2/W3 + H1–H9 | **RESERVED** — H1/H3/H4/H5/H6 | `ready=false` |
+| 2 `broker.ready` | W0/W1/W2/W3 + H9; row-1 dependency | **RESERVED** — no activation without closed binding | `ready=false` |
+| 3 `messaging.send` | W0/W1/W2/W3 + M1/M2/M3/M5 + I1 | **RESERVED** — IDs/handle/integer result | `ready=false` |
+| 4 `messaging.appendElements` | W0/W1/W2/W3 + M1/M2/M3/M5 + I1 | **RESERVED** — handle/IDs/integers | `ready=false` |
+| 5 `messaging.subscribe` | W0/W1/W2/W3 + M4 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
+| 6 `messaging.read` | W0/W1/W2/W3 + M1–M7 + I1/I2 | **RESERVED** — event/envelope IDs/integers | `ready=false` |
+| 7 `messaging.ack` | W0/W1/W2/W3 + M4 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
+| 8 `messaging.snapshot` | W0/W1/W2/W3 + M1/M2/M3/M4/M5/M7 + I1/I2 | **RESERVED** — envelope IDs/revision + Host sequence | `ready=false` |
+| 9 `host.messaging.deliver` | W0/W1/W2/W3 + M1/M2/M3/M4/M5/M7 + I1 | **RESERVED** — envelope IDs/revision | `ready=false` |
+| 10 `host.grants.changed` | W0/W2/W3 + H7/H8 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
+| 11 `host.lifecycle.ping` | W0/W1/W2/W3 + M4 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
+| 12 `host.lifecycle.drain` | W0/W1/W2/W3 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
 
 No row inherits closure from prose. Moving any `RESERVED` entry to `CLOSED` requires a reviewed source/admission delta and simultaneous recomputation of this projection, the sweep/checklist, schemas, and byte fixtures.
 
@@ -232,7 +244,7 @@ Your R2 co-signed this eight-item semantic foundation as written: handshake auth
 
 ### Framing
 
-JSON-RPC 2.0 over UTF-8 NDJSON; one non-batch object per LF-delimited frame; stdout protocol-only (logs → stderr); **v0 compact encoding profile (canonical, merged `d606aab`)**: compact UTF-8 JSON, no BOM, no insignificant whitespace, LF terminator; every inbound string token must byte-equal the production compact encoder's serialization of its parsed value (alternate `\u` spellings are rejected); non-control Unicode encoded directly as UTF-8; required JSON escaping counts toward the budget. Batch arrays, compression, blank frames, invalid UTF-8, trailing non-whitespace all rejected in v0. **`maxFrameBytes = 1_048_576`** counted on raw UTF-8 bytes excluding LF; an unterminated frame crossing the ceiling → stop buffering, close connection — the decoder ceiling is the last fail-closed defense, never the normal rejection path for schema-valid values (inbound checked pre-dispatch, outbound pre-write-queue); oversized domain results are never transport-split — method schemas paginate below the ceiling or negotiate a later wireVersion.
+JSON-RPC 2.0 over UTF-8 NDJSON; one non-batch object per LF-delimited frame; stdout protocol-only (logs → stderr); **v0 compact encoding profile (canonical, merged `d606aab`)**: compact UTF-8 JSON, no BOM, no insignificant whitespace, LF terminator; every inbound string token must byte-equal the production compact encoder's serialization of its parsed value (alternate `\u` spellings are rejected); non-control Unicode encoded directly as UTF-8; required JSON escaping counts toward the budget. **Pre-parse R30 closure on top of that merged profile:** canonical-decoded member names are pairwise unique at every object depth, and every numeric token is checked against its path's canonical numeric profile before parsed-value/schema validation. Object member order is deliberately unconstrained because it changes neither semantics nor encoded length; whole-frame JS `JSON.stringify` equality is not a cross-language ABI. Batch arrays, compression, blank frames, invalid UTF-8, trailing non-whitespace all rejected in v0. **`maxFrameBytes = 1_048_576`** counted on raw UTF-8 bytes excluding LF; an unterminated frame crossing the ceiling → stop buffering, close connection — the decoder ceiling is the last fail-closed defense, never the normal rejection path for schema-valid values (inbound checked pre-dispatch, outbound pre-write-queue); oversized domain results are never transport-split — method schemas paginate below the ceiling or negotiate a later wireVersion.
 
 ### Package digest
 
@@ -261,7 +273,7 @@ Without a contract-owned outer envelope, a sub-frame request with an enormous `i
 - **`WireErrorResponse`** is a closed `oneOf`: application errors are `{ jsonrpc: "2.0", id: RequestId, error: { code, message, data } }`; JSON-RPC standard errors are `{ jsonrpc: "2.0", id: RequestId | null, error: { code, message } }` with no `data`. Both forbid `result` and additional members. **A valid extracted `id` is echoed byte-for-byte; `id: null` is restricted to the pre-id Parse error / Invalid Request branch** required by JSON-RPC 2.0 §5, never a Host choice on a valid request. Result/error mutual exclusivity and per-error member sets are structural.
 - **`RequestId` — your value, absorbed verbatim:** `type: string`, `minLength 1`, `maxLength 128`, `pattern ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`, raw UTF-8 byte length 1..128. The ASCII grammar plus canonical raw-token equality makes the token exactly 3..130 bytes including quotes; `"\u0061"` is rejected rather than normalized to `"a"`. **String-only: numeric and `null` request IDs are protocol violations before dispatch** — `null` exists only in the pre-id `WireErrorResponse` branch. In-flight uniqueness per `brokerSessionId` (collision fails before dispatch); **a retry is a new attempt with a fresh RequestId** (attempt-only, non-authoritative for settlement); success/error responses echo the originating valid ID **byte-for-byte**.
 - **`deadlineUnixMs` wire numeric grammar (raw-token level, not parsed-value):** the raw JSON lexeme must match canonical decimal digits `0|[1-9][0-9]*` — no sign, no decimal point, **no exponent**, no leading zeros — with raw token length ≤ 16 characters (the decimal digit count of 2^53 − 1, a derived structural fact, not a policy number), validated **pre-parse/pre-dispatch**; exponent-padding and every other non-canonical numeric encoding is rejected before dispatch. The parsed value must additionally be a positive integer ≤ 2^53 − 1. The **operational Host deadline cap policy stays yours (K-2)**.
-- The outer members (`jsonrpc`, `id`, `method`, braces and separators) are **included in every generated `maxEncoded{Request,Result,Error}Bytes` proof** — your RequestId value above is now fixed, and the proofs include its surrounding JSON quotes per your intake — with mutation and N/N+1 conformance cases proving oversize/malformed-envelope/non-canonical-string/non-canonical-numeric/non-string-id rejection **before authorization-visible dispatch**.
+- The outer members (`jsonrpc`, `id`, `method`, braces and separators) are **included in every generated `maxEncoded{Request,Result,Error}Bytes` proof** — your RequestId value above is now fixed, and the proofs include its surrounding JSON quotes per your intake — with mutation and N/N+1 conformance cases proving oversize/malformed-envelope/non-canonical-string/non-canonical-numeric/duplicate-member/non-string-id rejection **before authorization-visible dispatch**. Duplicate-member mutations cover the outer envelope, a nested closed DTO, and a nested frozen-open payload; numeric-alias mutations cover both object and array positions inside M2.
 
 ### Production method registry (12 reserved names; your canonical base matrix from `b32170a8` with inline marked overlays — merged settlement-mapping column, gate/lifecycle annotations)
 
@@ -360,7 +372,7 @@ The plugins repository provides a **test-host conformance harness** only (framin
 
 | Axis | Matrix derivation |
 |---|---|
-| complete request/result/notification/**full error** object | outer/fixed leaves = W1–W3; each row payload = its H/M/I join in the row projection. Errors have no free string branch beyond W1 because messages/data are W3 finite literals. Rows reaching reserved leaves are called reserved, not closed. |
+| complete request/result/notification/**full error** object | raw frame/object grammar = W0; outer/fixed leaves = W1–W3; each row payload = its H/M/I join in the row projection. Errors have no free string branch beyond W1 because messages/data are W3 finite literals. Rows reaching reserved leaves are called reserved, not closed. |
 | every caller-supplied value that can change dispatch/replay output | every caller input enters through its row's W/H/M/I join. The control subset is W2 deadlines, M1 idempotency/operation strings, M4 entitlements, M5 caller handles that resolve settlement identity, and I2 page controls. M5 reservation propagates to row 4; no bounded carrier claim overrides a reserved row. |
 | every entitlement carrier and Host-only kind transition | public carriers = M4. Kind/view/sequence/position are Host-stored provenance rather than caller-selectable JSON leaves; progress mutation remains after causal completeness + final full-frame proof. |
 | current plus historical producer values vs DTO | T1/T2 source every M/I entry. Compatible bounds are closed; unattested IDs and unsafe counters are M5/M6/I1 `RESERVED`. Neither a payload ceiling nor a JS `number` type is treated as an admission invariant. |
@@ -378,8 +390,8 @@ The plugins repository provides a **test-host conformance harness** only (framin
 - [x] **CO-SIGN** — complete-and-stable eight-item foundation co-signed at R2 as written
 - [x] **rows 6/8/9 semantic direction/topology — accepted at your R3/R2 decisions**; variable-leaf closure is not inferred
 - [x] **`RequestId` exact owner value** — W1 `CLOSED`
-- [x] **one canonical numeric profile** — `WireUInt53`; small/new numeric leaves close under it
-- [x] **all 12 shapes joined through one exhaustive raw-lexeme/variable-width leaf matrix** — no prose-only or parsed-value-only closure path
+- [x] **complete canonical numeric coverage** — bounded integers use `WireUInt53`, fixed codes use `WireIntConst`, and arbitrary M2 numbers use recursive `CanonicalNumberToken`
+- [x] **all 12 shapes joined through one exhaustive raw-frame/lexeme/variable-width leaf matrix** — W0 rejects duplicate members before parse; no prose-only or parsed-value-only closure path
 - [ ] **maintainer accepts the explicit reservation boundary** — H1/H3/H4/H5/H6, M5/M6, I1; affected rows stay reserved under D0
 - [ ] **fresh review on revision-5 exact live bytes** (raw API-string SHA-256/counts reported in delivery comment)
 - [ ] per-row `ready=true` — only after exact validators, generated byte proofs, N/N+1 raw-byte conformance, and three-stage runtime enforcement pass (reservation-only lifecycle, your D0 = A)
