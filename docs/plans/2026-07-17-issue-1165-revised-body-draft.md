@@ -13,31 +13,28 @@ created: 2026-07-17
 # #1165 revised body — draft (P-1a.0 收官投递物)
 
 **用途**：整体替换 [zts212653/clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) 的 issue body（GitHub 保留 edit history，可逆）。
-**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` @ `d396d4e`（R27 = occurredAt 1..27【exact-24 撤回，expanded ISO years + 无 admission range check】+ eventId 双 producer 公式 + header 时态；R26 = R4-intake 吸收）。
-**状态**：D12（revision 4 body），terra R26/D11 三 finding 已修——pending terra 复扫——**先扫后投**；投递报新 raw API-string SHA-256，maintainer 将路由 exact bytes 给 Terra re-review。
-**忠实性边界（R21 更新）**：rows 6/8/9 closure sections 内**仅 R2 之后新增的显式 field-level closure blocks（schema/grammar/cap 定义块）待 fresh review**；同 section 内标为 R2-absorbed/resolved/co-signed 的文字保持既决、不重开。其外 unmarked = canonical-decided 或 co-signed R2；★ = 单独标记的 open proposal。原 body 的 "K-1 remains pinned to beta.1" 错误陈述在本版修正（R5 grounding correction）。
+**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` R28（maintainer revision-4 audit `5008567649` 的 root correction；以 exhaustive leaf matrix 为唯一 closure truth）。
+**状态**：D13（revision 5 body），未投递——**先做 fresh-context review，再替换 live issue body**；投递时报告新的 raw API-string SHA-256/code-point/UTF-8-byte counts。
+**忠实性边界**：R2 已签语义决策不重开；本次只纠正“哪些 leaf/row 已 closed”的事实与其机械推导。`CLOSED`/`RESERVED` 仅由下方 matrix 决定；任何旧 prose “closed” 标签与 matrix 冲突时一律以 matrix 为准。PR #7 保持 draft 且不改代码。
 
 ---
 
 ## BODY（verbatim replace begins below）
 
-## Status and request — revision 4: your R4-intake absorbed (RequestId verbatim; source-owned bound inventory); fresh review on these exact bytes requested
+## Status and request — revision 5: revision-4 audit root-corrected with one exhaustive leaf matrix
 
 This remains a **shape-only K-2 / P-1a.0 co-sign anchor**. It does not authorize implementation, publication, dependency re-pin, or K-2 runtime work.
 
-Your R3 verdict ([5004451129](https://github.com/zts212653/clowder-ai/issues/1165#issuecomment-5004451129)) and addendum ([5004519194](https://github.com/zts212653/clowder-ai/issues/1165#issuecomment-5004519194)) accepted the rows-6/8/9 field-level direction and identified five P1 closure gaps. **This revision fixes all five and answers the root failure mode you named** (closure claimed wider than closure proven) **with the five-axis row-by-row sweep below.** Your decisions remain unchanged (D0/D1a/D1b/D1c/D2 = A/c/a/a/b); the R2 complete-and-stable co-sign is not reopened.
+Your revision-4 audit ([5008567649](https://github.com/zts212653/clowder-ai/issues/1165#issuecomment-5008567649)) confirmed `RequestId`, the rejected transitive-bound claim, and the listed beta.2 messaging-string reservations, then found the same systemic defect one level wider: our prose “row-wide” sweep omitted the handshake/session/grant family and every non-deadline integer. **That completeness claim is withdrawn.** Revision 5 installs one authoritative matrix covering every variable-width leaf reachable from all 12 request/result/notification/error shapes. The checklist, five-axis sweep, and row statuses below are projections of that matrix, not separate claims.
 
-**The five corrections in one view:**
+**Revision-4 disposition in one view:**
 
-| R3 P1 | Fix in this revision |
+| Item | Revision-5 treatment |
 |---|---|
-| 1 — `error.message` missing from the closed error object | per-class `const` messages added; full `{code, message, data}` object closed (wire-error table below) |
-| 2 — page-token binding "full issuance context" not executable | binding set enumerated exactly (Row 8 invariants) |
-| 3 — shared ack carrier not field-level closed | closed `MessagingAckRequest` + Host-resolved token kind (own section below) |
-| 4 — bounded DTO narrowings vs K-1 byte-only admission | **frozen-compatible bounding rule**: R19–R21 narrowings withdrawn — `replyTo` restored to 1..256, uniform identifier caps and the `BoundedOpenPayload` structural grammar removed; no valid-write/unencodable-read path remains (DTO family section) |
-| 5 — public bounds "adjusted without ceremony" | public schema bounds vs internal generated budgets split; entitlements bind an immutable shape/budget digest (rule below) |
-| + (your R4-intake, this revision) | **RequestId absorbed verbatim** + the P1#4 "transitively bounded" claim replaced by the **source-owned bound inventory** (producer truths cited file:line; unattestable fields explicitly reserved) |
-| + (internal review, earlier this revision) | the sweep's first axis was itself incomplete — the **outer JSON-RPC envelope** (`jsonrpc`, `id`, `method`, response correlation, result/error exclusivity) was undefined, letting a sub-frame request with an oversized `id` evade every DTO cap; an envelope family was defined with the `RequestId` representation left for your decision — **resolved by your intake, previous row** (envelope now closed, own section below) |
+| Prior revision-4 closures | retained: exact `RequestId`; fixed public error literals; frozen payload byte limits; source-grounded `replyTo`/`occurredAt`; explicit reservation of `messageId`/`threadId`/`actor.id` and derived handle/event fields |
+| Handshake/session/grant omission | `packageDigest` closed as exact 95-byte SRI; `grantRevision` uses the one canonical integer profile; finite grants/nonce closed; `pluginId`, `contractVersion`, `wireVersion`, `pluginInstanceId`, `brokerSessionId` explicitly `RESERVED` |
+| Non-deadline integer omission | one `WireUInt53` raw-number profile defined; small new/public controls close under it; existing K-1 revision/sequence families stay `RESERVED` because exact K-1 has no safe-integer admission or stored-value migration invariant |
+| Root correction | one matrix with representation, structural bound, exact raw-byte validator, producer/admission source, and `CLOSED`/`RESERVED`; derived row projection marks rows 1/2/3/4/6/8/9 reserved and rows 5/7/10/11/12 leaf-closed; all 12 remain `ready=false` under D0 |
 
 **Your R2 decisions — absorbed as decided (no re-answer needed):**
 
@@ -47,9 +44,9 @@ Your R3 verdict ([5004451129](https://github.com/zts212653/clowder-ai/issues/116
 | D1a | snapshot view coordinates | **(c) causally fenced two-coordinate capture** | snapshot section |
 | D1b | completion authorization | **(a) replay-safe Host entitlement via existing `messaging.ack`** | snapshot section |
 | D1c | item shape | **(a) semantically complete bounded DTO** | shared DTO family section |
-| D2 | `messaging.read` paging | **(b) row 6 closed in this round** | Row 6 section |
+| D2 | `messaging.read` paging | **(b) keep row 6 in this round; semantics/topology resolved** | Row 6 section; variable-leaf status comes from the matrix and is currently `RESERVED` |
 
-**What this revision asks of you:** a **fresh review of the closed rows 6/8/9 schemas** (Row 6 / snapshot / Row 9 sections below) and the cross-cutting progress invariant. Per your item 6, the approval marker below stays **unchecked** until that review confirms.
+**What this revision asks of you:** review the exhaustive matrix and confirm its reservation boundary. In particular, please confirm that H1/H3/H4/H5/H6, M5/M6, and I1 may remain explicitly reserved under D0 instead of being guessed closed. The approval marker stays **unchecked**.
 
 The confirmed cross-repository order is unchanged:
 
@@ -68,11 +65,11 @@ core interface shape-approved
 
 ## Corrections from your verdict/addendum — absorbed, confirmation requested
 
-1. **Row 6 publication gate absorbed.** Your proof (a contract-valid compact `messaging.read` frame reaches 1,049,033 bytes — 457 over the 1,048,576 ceiling) is recorded; per your R2 D2 = (b) the bounded `SubscriptionReadPageRequest/Response` shape is now closed in this revision (Row 6 section below), and row 6 stays `ready=false` until its generated proofs and raw-byte conformance pass.
+1. **Row 6 semantic direction absorbed; closure overclaim withdrawn.** Your proof (a contract-valid compact `messaging.read` frame reaches 1,049,033 bytes — 457 over the 1,048,576 ceiling) is recorded; per your R2 D2 = (b), the bounded request/response topology remains in this round. The leaf matrix now correctly marks row 6 `RESERVED` through M5/M6/I1; it cannot become `ready=true` until those entries close and its generated proofs/raw-byte conformance pass.
 2. **Registry-wide `wireBounds` invariant pinned from the merged canonical doc** (`d606aab`, semantically equivalent restatement; the merged doc is the literal truth source): one generated `wireBounds` truth whose frame cap is v0 `maxFrameBytes`; a row may be marked ready only when ① every variable-length request/result/notification/acknowledgement/public-error field has a structural limit **plus an exact UTF-8/JSON byte validator** (`maxLength` counts characters, not encoded bytes), ② the row declares `maxEncodedRequestBytes`/`maxEncodedResultBytes`/`maxEncodedErrorBytes`, each ≤ `maxFrameBytes` under the v0 compact profile incl. shared `CallMeta` and escaping, ③ collection assemblers admit an item only if the encoded page stays within the row's result budget, preserve continuation/watermark state when the next item does not fit, and prove one individually valid item fits, ④ request validation + row proofs are checked before authorization-visible business dispatch, dynamic page assembly completes within budget before advancing any delivered watermark, callback lease, or settlement state, and the final encoded frame is re-checked before write-queue mutation — an over-budget value is a contract violation, never a partially emitted success. Proof coverage spans requestId, plugin/package/version/session identifiers, `bindingNonce`, message/thread/subscription identifiers, handles, cursors, `deliveryId`, callback acknowledgements, and closed public error data. A method name may be reserved without proof, but cannot be published or advertised as ready.
 3. **Grounding correction to the original anchor (our error, now fixed):** the original body claimed "K-1 remains pinned to exact `@clowder-ai/plugin-contract@0.1.0-beta.1`". That was wrong — K-1 branch `9fb37310` has **no plugin-contract package dependency and no pin**; it owns a hand-written mirror that already drifts from beta.2. The corrected later gate: co-signed contract PR → exact registry-verified artifact → K-1/K-2 explicitly re-pin that exact version → **K-1 removes its mirror before merge**. Neither consumer ever follows `next` or any mutable dist-tag.
 
-## Shared bounded envelope/event DTO family (your D1c = (a), closed; payload truth for rows 6/8/9)
+## Shared bounded envelope/event DTO family (your D1c = (a), topology resolved; leaf closure comes only from the matrix)
 
 The family **mirrors the frozen beta.2 `$defs` structurally** — same members, same required sets, same closed unions and `const` discriminators; `additionalProperties: false` **wherever frozen is closed**. Bounds follow the **frozen-compatible rule** below (your R3 P1#4): frozen-existing bounds verbatim, no added structural narrowing on anything K-1 has historically admitted, exact closed bounds only on contract-minted wire fields with no historical data. Frozen-**open** payload objects (`MediaRefElementPayload` / `RichBlockElementPayload`, `{type: "object", additionalProperties: true}` by canonical design) **stay open-membered and structurally unconstrained**, bounded by the frozen byte caps alone (`x-clowder-bounds`: `maxElementPayloadBytes` = 65,536 per element payload, `maxTotalPayloadBytes` = 262,144 per message — already enforced by the K-1 semantic validator, landed as exact wire byte validators). The generator derives member/required/const sets from the frozen schema mechanically; **it may land frozen bounds and byte validators, never members and never sub-frozen narrowing**. Types:
 
@@ -87,7 +84,7 @@ The family **mirrors the frozen beta.2 `$defs` structurally** — same members, 
 | frozen-unbounded fields **inside byte-bounded payloads** | no added per-field cap — the frozen payload byte ceilings (65,536 / 262,144) are the exact wire bound for everything living inside an element payload | closed-def free text (e.g. `TextElementPayload.text`); minLength stays exactly as frozen |
 | frozen-unbounded fields **outside the payload ceilings** | **source-owned wire bound per field** (your intake P1#4: the payload ceilings do not reach envelope-level identifiers/timestamps/tokens, and no finite proof derives from an unbounded string — our earlier "transitively bounded" claim is withdrawn as false). Each bound is grounded in its producer/admission truth, never a uniform cap; **a field whose source has no proven bound stays reserved and unclosed** (consistent with your D0 = A: every row is already `ready=false`) | producer inventory below |
 
-**Source-owned bound inventory (producer truths read first-hand from K-1 exact `9fb37310`):**
+**Source-owned evidence index (producer truths read first-hand from K-1 exact `9fb37310`; inputs to the authoritative matrix, not a second closure ledger):**
 
 | Field | Producer truth | Wire bound |
 |---|---|---|
@@ -103,12 +100,69 @@ The family **mirrors the frozen beta.2 `$defs` structurally** — same members, 
 
 An incompatible stored event (should the byte ceilings themselves ever be exceeded by legacy data) is an explicit **Host fault with a reconciliation path and zero cursor/lease/settlement movement** — never a silent skip, never caller validation (your addendum). The full-frame proof rests on the frozen byte ceilings plus each row's generated `maxEncoded{Request,Result,Error}Bytes` under the v0 compact profile — exact wire bounds without structural narrowing of canonical data. Item/page ceilings derive from generated full-frame proofs strictly below `maxFrameBytes`; the same family is the payload type for rows 6, 8, and 9 — **no per-row envelope variants**.
 
-## Row 6 — `messaging.read` bounded paging (your D2 = (b), closed this round)
+## Exhaustive variable-width leaf closure matrix (authoritative)
+
+A row/DTO/envelope is closed only when every reachable variable-width leaf maps to a `CLOSED` entry here. Grouped entries enumerate every schema path they cover. Exact sources: **T1** = plugins beta.2 `f52e820` manifest/messaging schemas; **T2** = K-1 exact `9fb37310` producer/admission code; **T3** = K-2 canonical `d606aab`; **T4** = your revision-4 audit `5008567649`.
+
+Validator profiles:
+
+- `JSONString(N)`: schema `maxLength: N` in Unicode code points plus exact compact-leaf check `utf8(JSON.stringify(value)).length <= 6N + 2` bytes (quotes included); full frames use the same production compact encoder and actual bytes.
+- `ASCII(N)`: ASCII grammar of at most N chars; compact leaf ≤ `N + 2` bytes including quotes.
+- `WireUInt53(min,max)`: raw lexeme `0|[1-9][0-9]{0,15}`, length 1..16, no sign/point/exponent/leading zero, checked pre-parse; parsed value must be a safe integer inside the field range, maximum `9_007_199_254_740_991`.
+- `PayloadBytes(65_536,262_144)`: exact production compact-encoder check per element payload and per containing message payload before dispatch/state mutation.
+- `CLOSED` = finite shape + exact raw-byte validator + compatible source/admission evidence, pending your co-sign. `RESERVED` = at least one is absent; a reaching row may expose only its reserved method name, never an advertised request/result schema.
+
+| ID | Rows and exact variable-width leaf paths | Representation | Structural bound | Exact raw-byte validator | Producer / admission source | Status |
+|---|---|---|---|---|---|---|
+| W1 | rows 1–9, 11–12 request/response/error `id` | ASCII `RequestId` | 1..128; `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`; in-flight unique/session | `ASCII(128)` = 3..130 encoded bytes; response echo byte-equal | T4 exact owner value | **CLOSED** |
+| W2 | rows 1–9, 11–12 `params.meta.deadlineUnixMs`; row-10 common notification meta; row-12 `params.input.deadlineUnixMs` | JSON integer | `WireUInt53(1, 9_007_199_254_740_991)` | canonical raw lexeme 1..16 bytes, pre-parse | existing deadline rule + T3 Host cap | **CLOSED** |
+| W3 | every finite string leaf: outer `jsonrpc`/`method`; public error message/data; beta.2 actor/element/epistemic/error enums and all address/origin/audience/event/handle consts; capability values | closed string const/enum | exact finite sets: 12 methods, five messages, every schema enum/const | generator enumerates and measures each literal; no free string branch | T1 enum/const definitions + T3 registry + R2 co-sign | **CLOSED** |
+| H1 | row-1 hello/result `pluginId` | Unicode string | beta.2 min 1, **no max** | none finite | T1; installed-record equality does not bound the manifest | **RESERVED** |
+| H2 | row-1 hello/result `packageDigest` | SHA-512 SRI ASCII | exactly 95; `^sha512-[A-Za-z0-9+/]{86}==$` | exactly 97 encoded bytes incl. quotes | T3/T4 | **CLOSED** |
+| H3 | row-1 hello/result `contractVersion` | SemVer 2 string | T1 grammar, min 1, **no max** | none finite | T1; installed equality is semantic, not admission | **RESERVED** |
+| H4 | row-1 hello/result `wireVersion` | owner representation pending | none | none | T3 names compatibility only | **RESERVED** |
+| H5 | row-1 result `pluginInstanceId` | Host ID, grammar pending | none | none | new K-2 value; no owner bound | **RESERVED** |
+| H6 | row-1 result `brokerSessionId` | Host ID, grammar pending | none | none | new K-2 value; no owner bound | **RESERVED** |
+| H7 | row-1 result + row-10 `grantRevision` | JSON integer | `WireUInt53(0, 9_007_199_254_740_991)`; monotonic/instance; overflow refused | canonical raw 1..16 bytes, pre-parse/pre-emit | new Host state; T3/K-2 admission rule | **CLOSED** |
+| H8 | row-1 result + row-10 `effectiveGrants[]` | unique Capability enum array | 0..17, derived from T1's 17-value enum | generated longest legal array; duplicate/non-enum rejected | T1 + Host authority | **CLOSED** |
+| H9 | row-1 result / row-2 input `bindingNonce` | opaque Unicode | 1..512 | `JSONString(512)` ≤3,074 bytes | new Host one-use value; cap is admission | **CLOSED** |
+| M1 | row-3 draft `address.handle`, `idempotencyKey`, `sourceEventId?`, `replyTo?`, audience targets, provenance IDs/source address, correlation/causation, element/derived IDs; row-4 `operationId`/element IDs; row-6/8/9 bounded copies | Unicode strings | exact T1 bounds: 128 element IDs; 200 idempotency/operation; 256 handles/plugin/connector/audience/correlation/causation/replyTo; 512 source event/external chat/message IDs | `JSONString(N)` for each bound; full payload also M2 | T1 + T2 validator; your revision-4 audit accepted `replyTo` treatment | **CLOSED** |
+| M2 | rows 3/4 inputs + rows 6/8/9 copies: text payload and every member/key/value/nesting of open media/rich payloads | compact JSON | no invented grammar; finite by `PayloadBytes(65_536,262_144)` | exact compact encoder; cycles/non-JSON rejected | T1 extension + T2 validator | **CLOSED** |
+| M3 | arrays: draft elements 1..32; whisper targets 1..16; append input/event elements 1..32; applied IDs 1..32; read events 0..32; snapshot items 0..64; envelope elements 1..128 | JSON arrays | listed bounds; applied IDs derive from input; `items <= maxItems` remains a cross-document oracle | compact array + per-item validation; assembler checks full frame before admit | T1/T2 + R2 snapshot choice | **CLOSED for cardinality**; containing row inherits any reserved item leaf |
+| M4 | row-5 input `handle`; rows 5 result/6/7/8 input `subscriptionId`; row-6/7 ack token; row-8 page/next/ack tokens; row-9 input/result `deliveryId`; row-11 input/result `nonce` | opaque Unicode | handle 1..256; subscription/delivery 1..128; tokens/nonces 1..512 | `JSONString(N)` | T2 handle/subscription mints (39/40 chars); new Host values use public cap as admission | **CLOSED** |
+| M5 | row-3 result; row-4 request/result; rows 6/8 results; row-9 input: `messageId`, `threadId`, `actor.id`, `MessageHandle.token` | Unicode, grammar pending | beta.2 min 1 only | none | T2 core stores/identity registry; your audit accepts reservation | **RESERVED** |
+| M6 | row-6 publish/append `eventId` | derived Unicode | publish `7+\|messageId\|+2`; append `7+\|messageId\|+1+\|operationId\|`, operation ≤200; unbounded while M5 is | none until M5 closes | T2 send/append producers | **RESERVED** |
+| M7 | rows 6/8/9 envelope `occurredAt` | ASCII UTC timestamp | 1..27, RFC3339/expanded-year UTC grammar | `ASCII(27)` ≤29 encoded bytes | T2 `toISOString()` valid-Date domain; accepted by your audit | **CLOSED** |
+| I1 | row-3 result revision/publishSequence; row-4 baseRevision/revision/appendSequence; rows 6/8/9 envelope/event revision/sequence/baseRevision; legacy snapshot resumeSequence and new entitlement source `H` | target `WireUInt53` (revision min1, sequence min0) | target max safe integer, **not yet admitted** | target canonical 1..16 bytes, but source guard absent | T2 uses `Number.isInteger`; Redis `INCR` is converted directly with `Number`; persisted increments have no safe guard | **RESERVED** pending K-1 admission + stored-value attestation/migration invariant |
+| I2 | row-6 `limit`; row-8 `maxItems` | JSON integer | `WireUInt53(1,32)` / `WireUInt53(1,64)` | canonical raw + parsed range; ≤2 bytes | frozen read bound / R2 snapshot shape | **CLOSED** |
+
+Beta.2 `SnapshotResponse.envelopes[]/resumeSequence` is not silently reused: bounded pages replace the array, while its Host sequence source remains I1-reserved. Token `viewVersion`/position/kind data is Host-stored provenance, not a public JSON leaf; M4 bounds the carrier. Fixed integer error codes, booleans, nulls, discriminating consts, and closed object member sets are finite and measured under W3/full-frame generation.
+
+### Derived row closure projection
+
+| Row | Matrix join | Field-level status | Publication |
+|---|---|---|---|
+| 1 `broker.hello` | W1/W2/W3 + H1–H9 | **RESERVED** — H1/H3/H4/H5/H6 | `ready=false` |
+| 2 `broker.ready` | W1/W2/W3 + H9; row-1 dependency | **RESERVED** — no activation without closed binding | `ready=false` |
+| 3 `messaging.send` | W1/W2/W3 + M1/M2/M3/M5 + I1 | **RESERVED** — IDs/handle/integer result | `ready=false` |
+| 4 `messaging.appendElements` | W1/W2/W3 + M1/M2/M3/M5 + I1 | **RESERVED** — handle/IDs/integers | `ready=false` |
+| 5 `messaging.subscribe` | W1/W2/W3 + M4 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
+| 6 `messaging.read` | W1/W2/W3 + M1–M7 + I1/I2 | **RESERVED** — event/envelope IDs/integers | `ready=false` |
+| 7 `messaging.ack` | W1/W2/W3 + M4 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
+| 8 `messaging.snapshot` | W1/W2/W3 + M1/M2/M3/M4/M5/M7 + I1/I2 | **RESERVED** — envelope IDs/revision + Host sequence | `ready=false` |
+| 9 `host.messaging.deliver` | W1/W2/W3 + M1/M2/M3/M4/M5/M7 + I1 | **RESERVED** — envelope IDs/revision | `ready=false` |
+| 10 `host.grants.changed` | W2/W3 + H7/H8 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
+| 11 `host.lifecycle.ping` | W1/W2/W3 + M4 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
+| 12 `host.lifecycle.drain` | W1/W2/W3 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
+
+No row inherits closure from prose. Moving any `RESERVED` entry to `CLOSED` requires a reviewed source/admission delta and simultaneous recomputation of this projection, the sweep/checklist, schemas, and byte fixtures.
+
+## Row 6 — `messaging.read` bounded paging (your D2 = (b), semantics/topology resolved; matrix status `RESERVED`)
 
 Frozen beta.2 already fixes the read-result discrimination: `SubscriptionReadResponse = SubscriptionNormalResponse | SubscriptionEmptyResponse | SubscriptionStaleResponse`, discriminated by `stale` (`const`) + `ackToken` nullability + `events` cardinality — the `oneOf` plus `const` locks make a fourth combination unrepresentable. **The bounded page family mirrors that frozen discrimination exactly.**
 
 - **`SubscriptionReadPageRequest`** (closed, `additionalProperties: false`, all fields required): `subscriptionId` — string, minLength 1, maxLength 128; `limit` — integer 1..32 (aligned to frozen `events` maxItems 32; a **public schema bound** — change = reviewed shape delta). **No page token** — a read always resumes from Host-side `ackedSequence`; a page token may only be added by a later proposal proving a semantic need (your R2 ruling).
-- **`BoundedSubscriptionReadPageResponse`** — closed `oneOf`, mirroring the frozen variants with bounded payloads. Every variant: required = `[events, ackToken, stale]` exactly (frozen mirror), `additionalProperties: false`:
+- **`BoundedSubscriptionReadPageResponse`** — structurally closed `oneOf` (member/discriminator topology), mirroring the frozen variants; contained leaves inherit M1–M7/I1. Every variant: required = `[events, ackToken, stale]` exactly (frozen mirror), `additionalProperties: false`:
   - *normal*: `{ events: BoundedMessageOutputEvent[] — minItems 1, maxItems 32 (frozen literal), ackToken: string (minLength 1 — frozen `SubscriptionCursor` mirror — maxLength 512), stale: false (const) }` — `ackToken` carries your kind-tagged read-page entitlement; disclosed delta vs frozen: frozen `SubscriptionCursor` was `minLength 1` with no upper bound, the bounded form adds maxLength 512 and your R2 kind tag;
   - *empty*: `{ events: [] (maxItems 0), ackToken: null, stale: false (const) }`;
   - *stale*: `{ events: [] (maxItems 0), ackToken: null, stale: true (const) }` — retention floor has passed the reader; recovery = `messaging.snapshot` catch-up.
@@ -125,7 +179,7 @@ Frozen beta.2 already fixes the read-result discrimination: `SubscriptionReadRes
 6. Else (*normal*) → the Host mints the kind-tagged read-page ack entitlement bound at least to the plugin instance, subscription, the page's last emitted sequence, and the closed shape. Only after the final encoded-page proof may `lastDeliveredSequence` advance monotonically through that sequence.
 7. `messaging.ack` validates the entitlement and advances `ackedSequence` monotonically only to its issued sequence; malformed, forged, cross-subscription, wrong-kind, or expired tokens fail before any mutation. Response loss re-reads from acked state.
 
-Row 6 is `ready=false` until its generated byte proofs and N/N+1 raw-byte conformance pass.
+Row 6 remains structurally `RESERVED` until matrix M5/M6/I1 close; after that it is still `ready=false` until generated byte proofs and N/N+1 raw-byte conformance pass.
 
 ## Shared ack carrier — `MessagingAckRequest` (closed; your R3 addendum P1#3 specification)
 
@@ -133,7 +187,7 @@ Row 6 is `ready=false` until its generated byte proofs and N/N+1 raw-byte confor
 
 **Host-resolved token kind — caller text never selects the kind:** the Host resolves the minted token's kind from **stored provenance**, never from any caller-supplied field. A **read-page token** may advance only `ackedSequence`, monotonically, to its issued sequence. A **snapshot-completion token** performs the already-decided atomic dual advance (`lastDeliveredSequence` and `ackedSequence` monotonic-max to `H`) with terminal replay semantics. Missing, forged, cross-kind, cross-binding, or expired tokens **fail before any mutation**.
 
-## Row 8 — snapshot sub-protocol (your D1a/D1b/D1c, resolved and closed)
+## Row 8 — snapshot sub-protocol (your D1a/D1b/D1c semantics/topology resolved; matrix status `RESERVED`)
 
 **Fixed invariants (hold under the resolved design):**
 
@@ -149,10 +203,10 @@ Row 6 is `ready=false` until its generated byte proofs and N/N+1 raw-byte confor
 
 **Your D1c — (a) semantically complete bounded DTO (absorbed):** snapshot items preserve every canonical `MessageEnvelope` member via the shared bounded DTO family above; bounds live on the DTO, frozen `$defs` untouched, no K-1 parity migration.
 
-**Closed shapes (on the resolved terms; row 8 `ready=false` until generated proofs pass):**
+**Resolved topology (variable leaves still inherit M5/I1 `RESERVED`; row 8 stays `ready=false`):**
 
 - `SnapshotPageRequest` (closed, `additionalProperties: false`; required = `[subscriptionId, maxItems]`, `pageToken` optional): `subscriptionId` (string, minLength 1, maxLength 128); `pageToken` (string, minLength 1, maxLength 512 — absent = first page; when present it is never empty); `maxItems` (1..64 — a **public schema bound**; change = reviewed shape delta).
-- `SnapshotPageResponse` as closed discriminated variants. Both variants: required = `[items, nextPageToken, snapshotAckToken]` exactly, `additionalProperties: false`, `items` = `BoundedMessageEnvelope[]`:
+- `SnapshotPageResponse` as structurally closed discriminated variants; contained envelope leaves inherit M5/I1 `RESERVED`. Both variants: required = `[items, nextPageToken, snapshotAckToken]` exactly, `additionalProperties: false`, `items` = `BoundedMessageEnvelope[]`:
   - *intermediate* = `{ items — minItems 1, maxItems 64, nextPageToken: string (minLength 1, maxLength 512), snapshotAckToken: null }`;
   - *final* = `{ items — minItems 0, maxItems 64 (an empty snapshot is a single empty final page), nextPageToken: null, snapshotAckToken: string (minLength 1, maxLength 512) }`;
   - no third combination; structural `maxItems` fixed at 64 (a **public schema bound**), request-relative bound as a **conformance oracle**: `items.length ≤ params.input.maxItems`;
@@ -162,7 +216,7 @@ Row 6 is `ready=false` until its generated byte proofs and N/N+1 raw-byte confor
 
 ## Complete and stable — CO-SIGNED at your R2 (as written; text unchanged in this revision)
 
-Your R2 co-signed this eight-item foundation as written: handshake authority direction and closed rejection taxonomy; compact NDJSON framing, 1 MiB hard cap, and single SRI package digest; attempt-only request IDs and per-row settlement keys; no-resume v0 reconnect semantics; the twelve reserved production names and directions; `GrantSnapshot` fields; the `-32090..-32094` closed wire-error mapping; delivery-rejection reasons, Host-owned retry policy, and exact `deliveryId` echo semantics. Items formerly marked ★ within this portion are therefore now signed (markers updated below). **The co-sign does not close the field-level shapes for rows 6, 8, or 9 — those are the closed schemas above, awaiting your fresh review.**
+Your R2 co-signed this eight-item semantic foundation as written: handshake authority direction and closed rejection taxonomy; compact NDJSON framing, 1 MiB hard cap, and single SRI package digest; attempt-only request IDs and per-row settlement keys; no-resume v0 reconnect semantics; the twelve reserved production names and directions; `GrantSnapshot` fields; the `-32090..-32094` closed wire-error mapping; delivery-rejection reasons, Host-owned retry policy, and exact `deliveryId` echo semantics. **The co-sign does not imply variable-leaf closure; rows 6/8/9 are `RESERVED` exactly as the matrix projects.**
 
 ### Handshake (contract-generated structures)
 
@@ -180,7 +234,7 @@ JSON-RPC 2.0 over UTF-8 NDJSON; one non-batch object per LF-delimited frame; std
 
 ### Package digest
 
-Exactly **one** canonical `sha512-<base64>` SRI token over the exact staged archive bytes, for every package source. npm artifacts additionally pass registry integrity; local packages become an exact archive before install. An unpacked-tree normalization is not a second digest truth.
+Exactly **one** canonical `sha512-<base64>` SRI token over the exact staged archive bytes, for every package source: ASCII string length exactly **95**, pattern `^sha512-[A-Za-z0-9+/]{86}==$`, compact-JSON encoded length exactly **97** bytes including quotes. npm artifacts additionally pass registry integrity; local packages become an exact archive before install. An unpacked-tree normalization is not a second digest truth.
 
 ### Call meta & settlement identity
 
@@ -216,10 +270,10 @@ Without a contract-owned outer envelope, a sub-frame request with an enormous `i
 | 3 | `messaging.send` | plugin → Host | `messaging.send` | `MessageDraft` → `SendReceipt` **with `messageHandle`** | `MessagingErrorCode` + deadline | `input.idempotencyKey` |
 | 4 | `messaging.appendElements` | plugin → Host | `messaging.appendElements` | `AppendElementsRequest` → `AppendReceipt` | `MessagingErrorCode` + deadline | `(Host-resolved messageId from input.handle, input.operationId)` |
 | 5 | `messaging.subscribe` | plugin → Host | `message.event.subscribe` | handle → subscriptionId | `MessagingErrorCode` + deadline | Host-resolved `input.handle` identity (K-1 create-or-get authoritative) |
-| 6 | `messaging.read` | plugin → Host | `message.event.subscribe` | `SubscriptionReadPageRequest` → `BoundedSubscriptionReadPageResponse` (normal/empty/stale, frozen-mirroring discrimination) — **closed this round (your D2 = (b); Row 6 section above); `ready=false` pending generated proofs** | `MessagingErrorCode` + deadline | none (at-least-once; bounded page assembly advances `lastDeliveredSequence` only through the last emitted event; only ack advances `ackedSequence` — via the kind-tagged read-page entitlement) |
+| 6 | `messaging.read` | plugin → Host | `message.event.subscribe` | `SubscriptionReadPageRequest` → `BoundedSubscriptionReadPageResponse` (normal/empty/stale, frozen-mirroring discrimination); semantics/topology resolved, **matrix status RESERVED** | `MessagingErrorCode` + deadline | none (at-least-once; bounded page assembly advances `lastDeliveredSequence` only through the last emitted event; only ack advances `ackedSequence` — via the kind-tagged read-page entitlement) |
 | 7 | `messaging.ack` | plugin → Host | `message.event.subscribe` | subscriptionId + ackToken → `null` (= closed `MessagingAckRequest`; Host-resolved token kind) | `MessagingErrorCode` + deadline | `(input.subscriptionId, input.ackToken)` |
-| 8 | `messaging.snapshot` | plugin → Host | `message.event.subscribe` | bounded `SnapshotPageRequest` → `SnapshotPageResponse` (**closed per your D1a/b/c — Row 8 section above**) | `DOMAIN_ERROR`/`DEADLINE_EXPIRED`/`SNAPSHOT_UNAVAILABLE` per wire mapping (co-signed R2) | none for traversal; completion = your D1b Host entitlement through existing `messaging.ack` (atomic dual-cursor advance to `H`); **`ready=false` pending generated proofs** |
-| 9 | `host.messaging.deliver` | Host → plugin | `onMessage` | `HostMessagingDeliverRequest` (deliveryId + frozen `ThreadHandleAddress` + `BoundedMessageEnvelope`) → **`deliveryId` ack (canonical; echoed value must byte-equal the Host request identity — co-signed R2; mismatch = protocol violation)** | `DELIVERY_REJECTED` per wire mapping (co-signed R2) — **exact closed schemas this round; `ready=false` until callback request/ack/rejection byte proofs close** | `input.deliveryId` (Host-side authoritative) |
+| 8 | `messaging.snapshot` | plugin → Host | `message.event.subscribe` | bounded `SnapshotPageRequest` → `SnapshotPageResponse`; semantics/topology resolved, **matrix status RESERVED** | `DOMAIN_ERROR`/`DEADLINE_EXPIRED`/`SNAPSHOT_UNAVAILABLE` per wire mapping (co-signed R2) | none for traversal; completion = your D1b Host entitlement through existing `messaging.ack` (atomic dual-cursor advance to `H`); `ready=false` |
+| 9 | `host.messaging.deliver` | Host → plugin | `onMessage` | `HostMessagingDeliverRequest` (deliveryId + frozen `ThreadHandleAddress` + `BoundedMessageEnvelope`) → **`deliveryId` ack**; **matrix status RESERVED** through envelope leaves | `DELIVERY_REJECTED` per wire mapping (co-signed R2) | `input.deliveryId` (Host-side authoritative) |
 | 10 | `host.grants.changed` | Host → plugin | protocol-intrinsic | `GrantSnapshot` notification | none | (grantRevision monotonic) |
 | 11 | `host.lifecycle.ping` | Host → plugin | protocol-intrinsic | nonce → nonce | protocol errors only | — |
 | 12 | `host.lifecycle.drain` | Host → plugin | protocol-intrinsic | deadlineUnixMs → `null` | deadline | — |
@@ -228,25 +282,25 @@ No production method exists for fixture setup/observe, grant presets, revocation
 
 **Reservation-only lifecycle marker (your D0 = A):** every row above is `ready=false`, unpublished, and unadvertised until its exact UTF-8/JSON validators, generated byte proofs, N/N+1 raw-byte conformance, and three-stage runtime enforcement pass.
 
-**Contract-minted opaque tokens in handshake/lifecycle rows (sweep):** `bindingNonce` (rows 1–2) and the row-11 ping `nonce` are strings, minLength 1, maxLength 512 — closure-block bounds on contract-minted values with no historical data; the co-signed authority direction and semantics are unchanged.
+**Contract-minted opaque tokens:** `bindingNonce` and ping `nonce` are strings 1..512; Matrix H9/M4 owns their exact compact-JSON validator (`JSONString(512)` ≤3,074 bytes). The authority direction and semantics are unchanged.
 
 ### Concrete wire types
 
-**`GrantSnapshot`** (closed; **co-signed R2** — the *name* was canonical, this exact field set was our proposal, now signed): `grantRevision` — integer, strictly monotonic per instance; `effectiveGrants` — unique `Capability[]`. `SessionBinding` embeds these same two fields; `host.grants.changed` params = `GrantSnapshot`. Stale-revision notifications are discarded by revision comparison.
+**`GrantSnapshot`** (member set co-signed R2; variable-width closure = H7/H8): `grantRevision` — `WireUInt53(0, 9_007_199_254_740_991)`, strictly monotonic per instance, Host refuses overflow; `effectiveGrants` — unique `Capability[]`, 0..17 items. `SessionBinding` embeds both; row 10 params = `GrantSnapshot`. Stale revisions are discarded.
 
 **`SendReceipt` beta.3 delta**: adds `messageHandle` typed as the **existing frozen `MessageHandle` $def** (`{kind:"message", token}`) — no new shape invented. Conformance oracle: `messageHandle.token !== messageId`. Fixture updates accompany the schema change (additive, disclosed).
 
-### Delivery rejection (row 9) — reasons, Host-owned policy, and echo semantics co-signed R2; bounded schemas closed this round
+### Delivery rejection (row 9) — semantics co-signed R2; topology resolved; matrix status `RESERVED`
 
 - *Error class:* public **`DELIVERY_REJECTED`** wire error with `error.data = { reason }` — sole data field; closed enum `UNSUPPORTED_PAYLOAD | NO_HANDLER | PLUGIN_BUSY | PLUGIN_INTERNAL`.
 - *Identity:* resolved **exclusively from the JSON-RPC correlation**; `error.data` carries no `deliveryId`.
 - *Retry policy is Host-owned:* contract-fixed mapping — `UNSUPPORTED_PAYLOAD`/`NO_HANDLER` → dead-letter; `PLUGIN_BUSY`/`PLUGIN_INTERNAL` → bounded retry. The runtime reports facts, never selects Broker behavior; any other error shape on a deliver call is a connection-level protocol violation.
 - *Success (canonical, equality target disambiguated):* result = `deliveryId` ack exactly as your matrix states, with the strengthening you co-signed at R2: the echoed value **must byte-equal `params.input.deliveryId`** of the originating request — never compared against the JSON-RPC `id`/`requestId`; mismatch is a connection-level protocol violation. The error path remains correlation-only and echoes nothing.
-- *Exact closed callback schemas (this revision, your six-item list #4):*
-  - **request** — `HostMessagingDeliverRequest` (closed, `additionalProperties: false`, all fields required), carried in `params.input` under the standard `params.meta` deadline: `{ deliveryId: string (minLength 1, maxLength 128), threadHandle: ThreadHandleAddress, envelope: BoundedMessageEnvelope }`. `ThreadHandleAddress` is the **existing frozen `$def`** — `{ kind: "thread_handle" (const), handle: string 1..256 }`, already closed and bounded; no new handle type is invented.
+- *Resolved callback topology (variable leaves inherit the matrix):*
+  - **request** — `HostMessagingDeliverRequest` has a closed member set (`additionalProperties: false`, all fields required) but inherits M5/I1 `RESERVED` through its envelope; carried in `params.input` under the standard `params.meta` deadline: `{ deliveryId: string (minLength 1, maxLength 128), threadHandle: ThreadHandleAddress, envelope: BoundedMessageEnvelope }`. `ThreadHandleAddress` is the **existing frozen `$def`** — `{ kind: "thread_handle" (const), handle: string 1..256 }`, already closed and bounded; no new handle type is invented.
   - **acknowledgement** — the result schema is exactly `deliveryId: string (minLength 1, maxLength 128)`, byte-equal to `params.input.deliveryId` (mismatch = connection-level protocol violation; the equality oracle is a conformance case, the bound is the schema).
   - **rejection** — `DELIVERY_REJECTED` `error.data = { reason }`, closed 4-value enum (below).
-  - Row 9 stays `ready=false` until its callback request/acknowledgement/rejection byte proofs and N/N+1 raw-byte conformance close.
+  - Row 9 is structurally `RESERVED` through M5/I1 and stays `ready=false`; only after those sources close can callback byte proofs/N+1 conformance run.
 
 ### Wire error envelope mapping (co-signed R2; JSON-RPC 2.0 requires integer `error.code`)
 
@@ -290,31 +344,32 @@ V0 has **no resume token**. Every reconnect performs fresh `broker.hello`/`broke
 
 The plugins repository provides a **test-host conformance harness** only (framing/handshake/crash-isolation proofs). Production spawn, kill, restart budget, callback retry/dead-letter, restart reconciliation, and the three-stage production byte-proof enforcement (pre-dispatch / pre-state / pre-write) remain K-2 Host Broker responsibilities, proven at the joint M0 gate. The harness never evolves into a second production Broker.
 
-## Five-axis failure-mode sweep (your R3 addendum requirement, executed row-by-row)
+## Five-axis failure-mode sweep (derived from the matrix)
 
-| Axis | Sweep result |
+| Axis | Matrix derivation |
 |---|---|
-| complete JSON-RPC request / result / **full error** object | **outer envelope closed — your `RequestId` value absorbed verbatim** (`WireRequest`/`WireNotification`/`WireSuccessResponse`/`WireErrorResponse`; error-`id` typed with byte-equality, `null` only for the closed pre-id failure branch; structural result/error exclusivity; `deadlineUnixMs` raw-token canonical-decimal grammar ≤16 chars; deadline cap yours) + `params.meta` (closed `CallMeta`) + `params.input` (per-row named closed schema or frozen `$def`, rows 1–12) + error `{code const, message const, data closed}`; outer members (incl. the id and its quotes) enter every `maxEncoded*` proof. The sweep additionally bounded `bindingNonce` and row-11 ping `nonce` (1..512) |
-| every caller-supplied value that can change replay output | read `limit` — no token; at-least-once re-read from acked state per the canonical row-6 settlement, page re-assembled from current state by design; snapshot `maxItems` — bound into the page token, mismatch fails before mutation; ack `subscriptionId`/`ackToken` — validated against the token's stored binding |
-| every entitlement carrier and Host-only kind transition | single carrier = `MessagingAckRequest`; exactly two kinds (read-page / snapshot-completion), resolved from stored provenance only; per-kind cursor effects enumerated in the ack-carrier section; no caller-selectable kind exists |
-| current plus historical producer values vs the bounded DTO | frozen-compatible rule: frozen-bounded fields verbatim (incl. `replyTo` 1..256), frozen-unbounded fields uncapped (byte ceilings govern), open payloads byte-only — no valid-write/unencodable-read path remains; incompatible stored data = explicit Host fault + reconciliation, zero progress movement |
-| public schema bounds vs internal generated budgets | split rule above; public-bound changes reopen the gate as reviewed shape deltas; entitlements bind an immutable shape/budget digest |
+| complete request/result/notification/**full error** object | outer/fixed leaves = W1–W3; each row payload = its H/M/I join in the row projection. Errors have no free string branch beyond W1 because messages/data are W3 finite literals. Rows reaching reserved leaves are called reserved, not closed. |
+| every caller-supplied value that can change replay output | settlement strings live in M1/M4; public numeric controls in I2. Snapshot `maxItems` is token-bound; read `limit` mints no continuation; ack carriers are M4-bounded. This axis does not override a reserved result row. |
+| every entitlement carrier and Host-only kind transition | public carriers = M4. Kind/view/sequence/position are Host-stored provenance rather than caller-selectable JSON leaves; progress mutation remains after causal completeness + final full-frame proof. |
+| current plus historical producer values vs DTO | T1/T2 source every M/I entry. Compatible bounds are closed; unattested IDs and unsafe counters are M5/M6/I1 `RESERVED`. Neither a payload ceiling nor a JS `number` type is treated as an admission invariant. |
+| public schema bounds vs internal generated budgets | H/M/I maxima are reviewed public values. `maxEncoded*`, assembler budgets, and encoder measurements are generated internal outputs. Editing a public matrix cell reopens shape review and recomputes every dependent artifact. |
 
 ## Shape gate checklist (current state)
 
 - [x] authority direction for every handshake field — verdict absorbed; **co-signed R2**
-- [x] production method registry — 12 reserved names / directions / base matrix **co-signed R2**; rows 6/8/9 field-level shapes closed this revision (fresh review requested)
+- [x] production method registry — 12 reserved names / directions / base matrix **co-signed R2**
 - [x] session-injected identity boundary — Host-bound, fail-closed; **co-signed R2**
 - [x] idempotency/settlement identity single truth source — per-row `settlementKeySource`; **co-signed R2**
 - [x] receipt-to-handle relationship — explicit `messageHandle`; **co-signed R2**
 - [x] framing and rejection semantics — v0 compact profile + `wireBounds` invariant; wire-error mapping and delivery-rejection semantics **co-signed R2**
 - [x] **DECISION 0 / 1a / 1b / 1c / 2** — resolved by your R2 (**A / c / a / a / b**), absorbed above
 - [x] **CO-SIGN** — complete-and-stable eight-item foundation co-signed at R2 as written
-- [x] **rows 6/8/9 field-level direction — accepted at your R3** (pending the five P1 fixes)
-- [x] **R3 five-P1 ledger + five-axis sweep — executed in this revision** (error `message` const · page-token binding set · `MessagingAckRequest` · frozen-compatible bounds · public/internal split)
-- [x] **`RequestId` representation + byte bound — your value, absorbed verbatim this revision**
-- [ ] **`messageId`/`threadId`/`actor.id` producer attestation — your attested bound or admission gate** (affected fields stay reserved until it lands; consistent with D0 = A)
-- [ ] **fresh review on these exact live bytes** (raw API-string SHA-256 reported in the delivery comment)
+- [x] **rows 6/8/9 semantic direction/topology — accepted at your R3/R2 decisions**; variable-leaf closure is not inferred
+- [x] **`RequestId` exact owner value** — W1 `CLOSED`
+- [x] **one canonical numeric profile** — `WireUInt53`; small/new numeric leaves close under it
+- [x] **all 12 shapes joined through one exhaustive variable-width leaf matrix** — no prose-only closure path
+- [ ] **maintainer accepts the explicit reservation boundary** — H1/H3/H4/H5/H6, M5/M6, I1; affected rows stay reserved under D0
+- [ ] **fresh review on revision-5 exact live bytes** (raw API-string SHA-256/counts reported in delivery comment)
 - [ ] per-row `ready=true` — only after exact validators, generated byte proofs, N/N+1 raw-byte conformance, and three-stage runtime enforcement pass (reservation-only lifecycle, your D0 = A)
 - [ ] K-2 maintainer records `shape-approved`
 
