@@ -13,19 +13,19 @@ created: 2026-07-17
 # #1165 revised body — draft (P-1a.0 收官投递物)
 
 **用途**：整体替换 [zts212653/clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) 的 issue body（GitHub 保留 edit history，可逆）。
-**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` R28（maintainer revision-4 audit `5008567649` 的 root correction；以 exhaustive leaf matrix 为唯一 closure truth）。
-**状态**：D13（revision 5 body），未投递——**先做 fresh-context review，再替换 live issue body**；投递时报告新的 raw API-string SHA-256/code-point/UTF-8-byte counts。
+**真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` R29（maintainer revision-4 audit `5008567649` + dual fresh-context findings；以 exhaustive raw-lexeme/leaf matrix 为唯一 closure truth）。
+**状态**：D14（revision 5 body），未投递——**先复扫 fresh-context 修复，再替换 live issue body**；投递时报告新的 raw API-string SHA-256/code-point/UTF-8-byte counts。
 **忠实性边界**：R2 已签语义决策不重开；本次只纠正“哪些 leaf/row 已 closed”的事实与其机械推导。`CLOSED`/`RESERVED` 仅由下方 matrix 决定；任何旧 prose “closed” 标签与 matrix 冲突时一律以 matrix 为准。PR #7 保持 draft 且不改代码。
 
 ---
 
 ## BODY（verbatim replace begins below）
 
-## Status and request — revision 5: revision-4 audit root-corrected with one exhaustive leaf matrix
+## Status and request — revision 5: revision-4 audit root-corrected with one exhaustive raw-lexeme/leaf matrix
 
 This remains a **shape-only K-2 / P-1a.0 co-sign anchor**. It does not authorize implementation, publication, dependency re-pin, or K-2 runtime work.
 
-Your revision-4 audit ([5008567649](https://github.com/zts212653/clowder-ai/issues/1165#issuecomment-5008567649)) confirmed `RequestId`, the rejected transitive-bound claim, and the listed beta.2 messaging-string reservations, then found the same systemic defect one level wider: our prose “row-wide” sweep omitted the handshake/session/grant family and every non-deadline integer. **That completeness claim is withdrawn.** Revision 5 installs one authoritative matrix covering every variable-width leaf reachable from all 12 request/result/notification/error shapes. The checklist, five-axis sweep, and row statuses below are projections of that matrix, not separate claims.
+Your revision-4 audit ([5008567649](https://github.com/zts212653/clowder-ai/issues/1165#issuecomment-5008567649)) confirmed `RequestId`, the rejected transitive-bound claim, and the listed beta.2 messaging-string reservations, then found the same systemic defect one level wider: our prose “row-wide” sweep omitted the handshake/session/grant family and every non-deadline integer. **That completeness claim is withdrawn.** Revision 5 installs one authoritative matrix covering every variable-width leaf and every raw JSON lexeme whose parsed value has multiple spellings across all 12 request/result/notification/error shapes. Its dual fresh-context scan additionally closed canonical inbound string tokens, signed integer `const` tokens, all five JSON-RPC standard errors, and SHA-512 SRI pad bits. The checklist, five-axis sweep, and row statuses below are projections of that matrix, not separate claims.
 
 **Revision-4 disposition in one view:**
 
@@ -34,7 +34,7 @@ Your revision-4 audit ([5008567649](https://github.com/zts212653/clowder-ai/issu
 | Prior revision-4 closures | retained: exact `RequestId`; fixed public error literals; frozen payload byte limits; source-grounded `replyTo`/`occurredAt`; explicit reservation of `messageId`/`threadId`/`actor.id` and derived handle/event fields |
 | Handshake/session/grant omission | `packageDigest` closed as exact 95-byte SRI; `grantRevision` uses the one canonical integer profile; finite grants/nonce closed; `pluginId`, `contractVersion`, `wireVersion`, `pluginInstanceId`, `brokerSessionId` explicitly `RESERVED` |
 | Non-deadline integer omission | one `WireUInt53` raw-number profile defined; small new/public controls close under it; existing K-1 revision/sequence families stay `RESERVED` because exact K-1 has no safe-integer admission or stored-value migration invariant |
-| Root correction | one matrix with representation, structural bound, exact raw-byte validator, producer/admission source, and `CLOSED`/`RESERVED`; derived row projection marks rows 1/2/3/4/6/8/9 reserved and rows 5/7/10/11/12 leaf-closed; all 12 remain `ready=false` under D0 |
+| Root correction | one matrix with representation, structural bound, exact raw-token/byte validator, producer/admission source, and `CLOSED`/`RESERVED`; canonical string/numeric lexemes and the complete ten-variant public error union are included; derived row projection marks rows 1/2/3/4/6/8/9 reserved and rows 5/7/10/11/12 leaf-closed; all 12 remain `ready=false` under D0 |
 
 **Your R2 decisions — absorbed as decided (no re-answer needed):**
 
@@ -100,25 +100,27 @@ The family **mirrors the frozen beta.2 `$defs` structurally** — same members, 
 
 An incompatible stored event (should the byte ceilings themselves ever be exceeded by legacy data) is an explicit **Host fault with a reconciliation path and zero cursor/lease/settlement movement** — never a silent skip, never caller validation (your addendum). The full-frame proof rests on the frozen byte ceilings plus each row's generated `maxEncoded{Request,Result,Error}Bytes` under the v0 compact profile — exact wire bounds without structural narrowing of canonical data. Item/page ceilings derive from generated full-frame proofs strictly below `maxFrameBytes`; the same family is the payload type for rows 6, 8, and 9 — **no per-row envelope variants**.
 
-## Exhaustive variable-width leaf closure matrix (authoritative)
+## Exhaustive raw-lexeme and variable-width leaf closure matrix (authoritative)
 
-A row/DTO/envelope is closed only when every reachable variable-width leaf maps to a `CLOSED` entry here. Grouped entries enumerate every schema path they cover. Exact sources: **T1** = plugins beta.2 `f52e820` manifest/messaging schemas; **T2** = K-1 exact `9fb37310` producer/admission code; **T3** = K-2 canonical `d606aab`; **T4** = your revision-4 audit `5008567649`.
+A row/DTO/envelope is closed only when every reachable variable-width leaf and every raw JSON lexeme whose parsed value has multiple spellings maps to a `CLOSED` entry here. Grouped entries enumerate every schema path they cover. Exact sources: **T1** = plugins beta.2 `f52e820` manifest/messaging schemas; **T2** = K-1 exact `9fb37310` producer/admission code; **T3** = K-2 canonical `d606aab`; **T4** = your revision-4 audit `5008567649`; **T5** = [JSON-RPC 2.0 §5/§5.1](https://www.jsonrpc.org/specification#response_object) + [RFC 4648 §3.5](https://www.rfc-editor.org/rfc/rfc4648.html#section-3.5).
 
 Validator profiles:
 
-- `JSONString(N)`: schema `maxLength: N` in Unicode code points plus exact compact-leaf check `utf8(JSON.stringify(value)).length <= 6N + 2` bytes (quotes included); full frames use the same production compact encoder and actual bytes.
-- `ASCII(N)`: ASCII grammar of at most N chars; compact leaf ≤ `N + 2` bytes including quotes.
+- `CanonicalStringToken`: before parsed-value/schema validation, the inbound raw string lexeme must byte-equal `JSON.stringify(parsedValue)` from the production compact encoder; outbound uses that encoder. Alternate `\u` spellings are rejected.
+- `JSONString(N)`: `CanonicalStringToken` plus schema `maxLength: N` in Unicode code points and compact-leaf check `utf8(JSON.stringify(value)).length <= 6N + 2` bytes (quotes included); full frames use the same production compact encoder and actual bytes.
+- `ASCII(N)`: `CanonicalStringToken` plus ASCII grammar of at most N chars; compact leaf ≤ `N + 2` bytes including quotes.
 - `WireUInt53(min,max)`: raw lexeme `0|[1-9][0-9]{0,15}`, length 1..16, no sign/point/exponent/leading zero, checked pre-parse; parsed value must be a safe integer inside the field range, maximum `9_007_199_254_740_991`.
+- `WireIntConst(S)`: the inbound numeric lexeme must byte-equal the signed canonical decimal literal `S` before parse; parsed equality alone is insufficient.
 - `PayloadBytes(65_536,262_144)`: exact production compact-encoder check per element payload and per containing message payload before dispatch/state mutation.
 - `CLOSED` = finite shape + exact raw-byte validator + compatible source/admission evidence, pending your co-sign. `RESERVED` = at least one is absent; a reaching row may expose only its reserved method name, never an advertised request/result schema.
 
-| ID | Rows and exact variable-width leaf paths | Representation | Structural bound | Exact raw-byte validator | Producer / admission source | Status |
+| ID | Rows and exact raw-lexeme / variable-width leaf paths | Representation | Structural bound | Exact raw-token / byte validator | Producer / admission source | Status |
 |---|---|---|---|---|---|---|
 | W1 | rows 1–9, 11–12 request/response/error `id` | ASCII `RequestId` | 1..128; `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`; in-flight unique/session | `ASCII(128)` = 3..130 encoded bytes; response echo byte-equal | T4 exact owner value | **CLOSED** |
 | W2 | rows 1–9, 11–12 `params.meta.deadlineUnixMs`; row-10 common notification meta; row-12 `params.input.deadlineUnixMs` | JSON integer | `WireUInt53(1, 9_007_199_254_740_991)` | canonical raw lexeme 1..16 bytes, pre-parse | existing deadline rule + T3 Host cap | **CLOSED** |
-| W3 | every finite string leaf: outer `jsonrpc`/`method`; public error message/data; beta.2 actor/element/epistemic/error enums and all address/origin/audience/event/handle consts; capability values | closed string const/enum | exact finite sets: 12 methods, five messages, every schema enum/const | generator enumerates and measures each literal; no free string branch | T1 enum/const definitions + T3 registry + R2 co-sign | **CLOSED** |
+| W3 | every finite literal leaf: outer `jsonrpc`/`method`; five application + five JSON-RPC standard error code/message pairs; application error data; beta.2 actor/element/epistemic/error enums and all address/origin/audience/event/handle consts; capability values | closed string const/enum + signed integer error-code const | exact finite sets: 12 methods, ten public code/message pairs, every schema enum/const; standard errors have no data, application errors have closed data | strings pass `CanonicalStringToken`; codes pass `WireIntConst`; generator measures every complete error variant | T1 enum/consts + T3 registry + R2 application errors + T5 standard errors | **CLOSED** |
 | H1 | row-1 hello/result `pluginId` | Unicode string | beta.2 min 1, **no max** | none finite | T1; installed-record equality does not bound the manifest | **RESERVED** |
-| H2 | row-1 hello/result `packageDigest` | SHA-512 SRI ASCII | exactly 95; `^sha512-[A-Za-z0-9+/]{86}==$` | exactly 97 encoded bytes incl. quotes | T3/T4 | **CLOSED** |
+| H2 | row-1 hello/result `packageDigest` | SHA-512 SRI ASCII | exactly 95; `^sha512-[A-Za-z0-9+/]{85}[AQgw]==$` | `ASCII(95)` = exactly 97 bytes; decode → re-encode equality proves zero pad bits | T3/T4 + T5 canonical Base64 | **CLOSED** |
 | H3 | row-1 hello/result `contractVersion` | SemVer 2 string | T1 grammar, min 1, **no max** | none finite | T1; installed equality is semantic, not admission | **RESERVED** |
 | H4 | row-1 hello/result `wireVersion` | owner representation pending | none | none | T3 names compatibility only | **RESERVED** |
 | H5 | row-1 result `pluginInstanceId` | Host ID, grammar pending | none | none | new K-2 value; no owner bound | **RESERVED** |
@@ -136,7 +138,7 @@ Validator profiles:
 | I1 | row-3 result revision/publishSequence; row-4 baseRevision/revision/appendSequence; rows 6/8/9 envelope/event revision/sequence/baseRevision; legacy snapshot resumeSequence and new entitlement source `H` | target `WireUInt53` (revision min1, sequence min0) | target max safe integer, **not yet admitted** | target canonical 1..16 bytes, but source guard absent | T2 uses `Number.isInteger`; Redis `INCR` is converted directly with `Number`; persisted increments have no safe guard | **RESERVED** pending K-1 admission + stored-value attestation/migration invariant |
 | I2 | row-6 `limit`; row-8 `maxItems` | JSON integer | `WireUInt53(1,32)` / `WireUInt53(1,64)` | canonical raw + parsed range; ≤2 bytes | frozen read bound / R2 snapshot shape | **CLOSED** |
 
-Beta.2 `SnapshotResponse.envelopes[]/resumeSequence` is not silently reused: bounded pages replace the array, while its Host sequence source remains I1-reserved. Token `viewVersion`/position/kind data is Host-stored provenance, not a public JSON leaf; M4 bounds the carrier. Fixed integer error codes, booleans, nulls, discriminating consts, and closed object member sets are finite and measured under W3/full-frame generation.
+Beta.2 `SnapshotResponse.envelopes[]/resumeSequence` is not silently reused: bounded pages replace the array, while its Host sequence source remains I1-reserved. Token `viewVersion`/position/kind data is Host-stored provenance, not a public JSON leaf; M4 bounds the carrier. Booleans, nulls, and closed object member sets are finite by construction. String consts/enums and all ten integer error codes pass W3 canonical raw-token equality before full-frame generation.
 
 ### Derived row closure projection
 
@@ -230,11 +232,11 @@ Your R2 co-signed this eight-item semantic foundation as written: handshake auth
 
 ### Framing
 
-JSON-RPC 2.0 over UTF-8 NDJSON; one non-batch object per LF-delimited frame; stdout protocol-only (logs → stderr); **v0 compact encoding profile (canonical, merged `d606aab`)**: compact UTF-8 JSON, no BOM, no insignificant whitespace, LF terminator; non-control Unicode encoded directly as UTF-8; required JSON escaping counts toward the budget. Batch arrays, compression, blank frames, invalid UTF-8, trailing non-whitespace all rejected in v0. **`maxFrameBytes = 1_048_576`** counted on raw UTF-8 bytes excluding LF; an unterminated frame crossing the ceiling → stop buffering, close connection — the decoder ceiling is the last fail-closed defense, never the normal rejection path for schema-valid values (inbound checked pre-dispatch, outbound pre-write-queue); oversized domain results are never transport-split — method schemas paginate below the ceiling or negotiate a later wireVersion.
+JSON-RPC 2.0 over UTF-8 NDJSON; one non-batch object per LF-delimited frame; stdout protocol-only (logs → stderr); **v0 compact encoding profile (canonical, merged `d606aab`)**: compact UTF-8 JSON, no BOM, no insignificant whitespace, LF terminator; every inbound string token must byte-equal the production compact encoder's serialization of its parsed value (alternate `\u` spellings are rejected); non-control Unicode encoded directly as UTF-8; required JSON escaping counts toward the budget. Batch arrays, compression, blank frames, invalid UTF-8, trailing non-whitespace all rejected in v0. **`maxFrameBytes = 1_048_576`** counted on raw UTF-8 bytes excluding LF; an unterminated frame crossing the ceiling → stop buffering, close connection — the decoder ceiling is the last fail-closed defense, never the normal rejection path for schema-valid values (inbound checked pre-dispatch, outbound pre-write-queue); oversized domain results are never transport-split — method schemas paginate below the ceiling or negotiate a later wireVersion.
 
 ### Package digest
 
-Exactly **one** canonical `sha512-<base64>` SRI token over the exact staged archive bytes, for every package source: ASCII string length exactly **95**, pattern `^sha512-[A-Za-z0-9+/]{86}==$`, compact-JSON encoded length exactly **97** bytes including quotes. npm artifacts additionally pass registry integrity; local packages become an exact archive before install. An unpacked-tree normalization is not a second digest truth.
+Exactly **one** canonical `sha512-<base64>` SRI token over the exact staged archive bytes, for every package source: ASCII string length exactly **95**, pattern `^sha512-[A-Za-z0-9+/]{85}[AQgw]==$`, compact-JSON encoded length exactly **97** bytes including quotes. The final data character restriction is the RFC 4648 zero-pad-bit rule for a 64-byte SHA-512 digest; decode → re-encode equality is the equivalent conformance oracle. npm artifacts additionally pass registry integrity; local packages become an exact archive before install. An unpacked-tree normalization is not a second digest truth.
 
 ### Call meta & settlement identity
 
@@ -256,10 +258,10 @@ Without a contract-owned outer envelope, a sub-frame request with an enormous `i
 - **`WireRequest`** = `{ jsonrpc: "2.0" (const), id: RequestId, method: <the 12-name enum, direction-checked against the registry>, params: { meta: CallMeta, input: <the row's input schema> } (closed, exactly two keys) }`.
 - **`WireNotification`** = same shape **without `id`** — legal only for registry rows declared as notifications (row 10 `host.grants.changed`); a notification with an `id`, or a request without one, is a connection-level protocol violation.
 - **`WireSuccessResponse`** = `{ jsonrpc: "2.0" (const), id: RequestId (byte-equal echo of the originating request `id`), result: <the row's result schema> }` — no `error` member.
-- **`WireErrorResponse`** = `{ jsonrpc: "2.0" (const), id: RequestId | null, error: { code (const int), message (const string), data (closed) } }` — no `result` member; **`id` is typed `RequestId` and must byte-equal the valid originating request `id`; the sole `null` branch is the closed pre-id failure case** (a frame whose `id` could not be validly extracted, per JSON-RPC 2.0 §5), never a Host choice on a valid request. Result/error mutual exclusivity is structural (`oneOf` of the two closed variants), never a runtime convention.
-- **`RequestId` — your value, absorbed verbatim:** `type: string`, `minLength 1`, `maxLength 128`, `pattern ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`, raw UTF-8 byte length 1..128 (ASCII grammar ⇒ character count = byte count; JSON escaping cannot create a second size truth). **String-only: numeric and `null` request IDs are protocol violations before dispatch** — `null` exists only in the pre-id `WireErrorResponse` branch. In-flight uniqueness per `brokerSessionId` (collision fails before dispatch); **a retry is a new attempt with a fresh RequestId** (attempt-only, non-authoritative for settlement); success/error responses echo the originating valid ID **byte-for-byte**.
+- **`WireErrorResponse`** is a closed `oneOf`: application errors are `{ jsonrpc: "2.0", id: RequestId, error: { code, message, data } }`; JSON-RPC standard errors are `{ jsonrpc: "2.0", id: RequestId | null, error: { code, message } }` with no `data`. Both forbid `result` and additional members. **A valid extracted `id` is echoed byte-for-byte; `id: null` is restricted to the pre-id Parse error / Invalid Request branch** required by JSON-RPC 2.0 §5, never a Host choice on a valid request. Result/error mutual exclusivity and per-error member sets are structural.
+- **`RequestId` — your value, absorbed verbatim:** `type: string`, `minLength 1`, `maxLength 128`, `pattern ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`, raw UTF-8 byte length 1..128. The ASCII grammar plus canonical raw-token equality makes the token exactly 3..130 bytes including quotes; `"\u0061"` is rejected rather than normalized to `"a"`. **String-only: numeric and `null` request IDs are protocol violations before dispatch** — `null` exists only in the pre-id `WireErrorResponse` branch. In-flight uniqueness per `brokerSessionId` (collision fails before dispatch); **a retry is a new attempt with a fresh RequestId** (attempt-only, non-authoritative for settlement); success/error responses echo the originating valid ID **byte-for-byte**.
 - **`deadlineUnixMs` wire numeric grammar (raw-token level, not parsed-value):** the raw JSON lexeme must match canonical decimal digits `0|[1-9][0-9]*` — no sign, no decimal point, **no exponent**, no leading zeros — with raw token length ≤ 16 characters (the decimal digit count of 2^53 − 1, a derived structural fact, not a policy number), validated **pre-parse/pre-dispatch**; exponent-padding and every other non-canonical numeric encoding is rejected before dispatch. The parsed value must additionally be a positive integer ≤ 2^53 − 1. The **operational Host deadline cap policy stays yours (K-2)**.
-- The outer members (`jsonrpc`, `id`, `method`, braces and separators) are **included in every generated `maxEncoded{Request,Result,Error}Bytes` proof** — your RequestId value above is now fixed, and the proofs include its surrounding JSON quotes per your intake — with mutation and N/N+1 conformance cases proving oversize/malformed-envelope/non-canonical-numeric/non-string-id rejection **before authorization-visible dispatch**.
+- The outer members (`jsonrpc`, `id`, `method`, braces and separators) are **included in every generated `maxEncoded{Request,Result,Error}Bytes` proof** — your RequestId value above is now fixed, and the proofs include its surrounding JSON quotes per your intake — with mutation and N/N+1 conformance cases proving oversize/malformed-envelope/non-canonical-string/non-canonical-numeric/non-string-id rejection **before authorization-visible dispatch**.
 
 ### Production method registry (12 reserved names; your canonical base matrix from `b32170a8` with inline marked overlays — merged settlement-mapping column, gate/lifecycle annotations)
 
@@ -302,7 +304,7 @@ No production method exists for fixture setup/observe, grant presets, revocation
   - **rejection** — `DELIVERY_REJECTED` `error.data = { reason }`, closed 4-value enum (below).
   - Row 9 is structurally `RESERVED` through M5/I1 and stays `ready=false`; only after those sources close can callback byte proofs/N+1 conformance run.
 
-### Wire error envelope mapping (co-signed R2; JSON-RPC 2.0 requires integer `error.code`)
+### Application wire-error mapping (co-signed R2; JSON-RPC 2.0 requires integer `error.code`)
 
 | Named class | `error.code` (proposed reserved range) | `error.message` (**required per JSON-RPC 2.0 §5.1; exact per-class `const` — your R3 P1#1**) | `error.data` (closed; all fields `required`; `additionalProperties: false`) |
 |---|---|---|---|
@@ -312,9 +314,19 @@ No production method exists for fixture setup/observe, grant presets, revocation
 | `DEADLINE_EXPIRED` | `-32093` | `"deadline expired"` (const) | `{}` (empty object, exactly) |
 | `SNAPSHOT_UNAVAILABLE` | `-32094` | `"snapshot unavailable"` (const) | `{ reason: "OVERSIZED_ITEM" \| "VIEW_EXPIRED" \| "STORE_UNAVAILABLE" }` — closed enum |
 
-The full public error object is therefore closed: `{ code (const integer), message (const string), data (closed object) }`, `additionalProperties: false`; per-class `const` messages make the `maxEncodedErrorBytes` and N/N+1 error-byte proofs exact (human-readable diagnostics stay in private Host logs, never on the wire).
+### JSON-RPC standard-error mapping (closes the outer/pre-id branches omitted by revision 4)
 
-Every registry row's error set resolves through this table; no string ever appears as a top-level JSON-RPC `code`; new classes/reasons require a contract delta — the integer range is contract-reserved.
+| Standard class | `error.code` | `error.message` | `id` | `error.data` |
+|---|---|---|---|---|
+| Parse error | `-32700` | `"Parse error"` | `null` | absent |
+| Invalid Request | `-32600` | `"Invalid Request"` | `null` | absent |
+| Method not found | `-32601` | `"Method not found"` | valid `RequestId` echo | absent |
+| Invalid params | `-32602` | `"Invalid params"` | valid `RequestId` echo | absent |
+| Internal error | `-32603` | `"Internal error"` | valid `RequestId` echo | absent |
+
+The full public error union is closed: five application variants require `{ code, message, data }`; five standard variants require `{ code, message }` and forbid `data`; all have `additionalProperties: false`. Every raw code token byte-equals its canonical signed decimal literal before parse, every message passes `CanonicalStringToken`, and the generator measures all ten complete variants for exact error proofs. Diagnostics remain private.
+
+Every registry row's application error set resolves through the first table; the standard table is outer-envelope-wide and supplies row 11's named protocol errors without inventing a row-specific shape. No string appears as a top-level JSON-RPC `code`; new classes/reasons require a contract delta.
 
 ### Reject taxonomy (closed, per your verdict)
 
@@ -349,10 +361,10 @@ The plugins repository provides a **test-host conformance harness** only (framin
 | Axis | Matrix derivation |
 |---|---|
 | complete request/result/notification/**full error** object | outer/fixed leaves = W1–W3; each row payload = its H/M/I join in the row projection. Errors have no free string branch beyond W1 because messages/data are W3 finite literals. Rows reaching reserved leaves are called reserved, not closed. |
-| every caller-supplied value that can change replay output | settlement strings live in M1/M4; public numeric controls in I2. Snapshot `maxItems` is token-bound; read `limit` mints no continuation; ack carriers are M4-bounded. This axis does not override a reserved result row. |
+| every caller-supplied value that can change dispatch/replay output | every caller input enters through its row's W/H/M/I join. The control subset is W2 deadlines, M1 idempotency/operation strings, M4 entitlements, M5 caller handles that resolve settlement identity, and I2 page controls. M5 reservation propagates to row 4; no bounded carrier claim overrides a reserved row. |
 | every entitlement carrier and Host-only kind transition | public carriers = M4. Kind/view/sequence/position are Host-stored provenance rather than caller-selectable JSON leaves; progress mutation remains after causal completeness + final full-frame proof. |
 | current plus historical producer values vs DTO | T1/T2 source every M/I entry. Compatible bounds are closed; unattested IDs and unsafe counters are M5/M6/I1 `RESERVED`. Neither a payload ceiling nor a JS `number` type is treated as an admission invariant. |
-| public schema bounds vs internal generated budgets | H/M/I maxima are reviewed public values. `maxEncoded*`, assembler budgets, and encoder measurements are generated internal outputs. Editing a public matrix cell reopens shape review and recomputes every dependent artifact. |
+| public schema bounds vs internal generated budgets | H/M/I maxima are **proposed public values pending this shape co-sign**; once co-signed, editing one reopens shape review and recomputes every dependent artifact. `maxEncoded*`, assembler budgets, and encoder measurements are generated internal outputs. |
 
 ## Shape gate checklist (current state)
 
@@ -367,7 +379,7 @@ The plugins repository provides a **test-host conformance harness** only (framin
 - [x] **rows 6/8/9 semantic direction/topology — accepted at your R3/R2 decisions**; variable-leaf closure is not inferred
 - [x] **`RequestId` exact owner value** — W1 `CLOSED`
 - [x] **one canonical numeric profile** — `WireUInt53`; small/new numeric leaves close under it
-- [x] **all 12 shapes joined through one exhaustive variable-width leaf matrix** — no prose-only closure path
+- [x] **all 12 shapes joined through one exhaustive raw-lexeme/variable-width leaf matrix** — no prose-only or parsed-value-only closure path
 - [ ] **maintainer accepts the explicit reservation boundary** — H1/H3/H4/H5/H6, M5/M6, I1; affected rows stay reserved under D0
 - [ ] **fresh review on revision-5 exact live bytes** (raw API-string SHA-256/counts reported in delivery comment)
 - [ ] per-row `ready=true` — only after exact validators, generated byte proofs, N/N+1 raw-byte conformance, and three-stage runtime enforcement pass (reservation-only lifecycle, your D0 = A)
