@@ -23,7 +23,7 @@ clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 ├─ K-1 messaging 域（maintainer 侧）        ├─ P-2  in-process conformance   ✅
 ├─ K-2 Host Broker（maintainer 侧）  ⬜     ├─ P-1a.0 shape co-sign (#1165)  ⏸️ rev9 等 R9 verdict
 ├─ #1165 shape 裁决权（K-2 maintainer）     ├─ P-1a  contract PR 机制化       💤 等 shape-approved
-└─ K-1 producer attestation        ⬜      ├─ P-1b  wire-client + harness    ⬜
+└─ K-1 producer attestation        ⬜      ├─ P-1b  wire-client + harness    🔄 骨架 PR #9
                                            ├─ P-1c  SDK author surface       ⬜
                                            └─ C-2/C-3 defers                 ⬜
 联合闸门：M0 gate = P-1a/b/c ✅ + K-2 MVP ✅ + joint adversarial run
@@ -51,7 +51,7 @@ clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 |---|---|---|---|
 | core | #1165 **rev9**（SHA `95e4e99c…`，packet `5015871814`） | maintainer R9 exact-body verdict（含 exhaustive-listing 请求） | tracking @ R9 cursor + hold_ball 30min 轮询 |
 | plugins | **PR #8** byte-proof 引擎（draft，`04fd4e0`，113/113） | 云端 review 0 finding；merge 需 maintainer/co-creator 授权（schema 无关，不等 shape） | PR tracking intent=review |
-| plugins | **P-1b harness 骨架**（sol 实现 ✅ `b105154`，9 files +846） | terra 独立 review `f52e820..b105154`（跨个体铁律）→ 收敛后 draft PR | review 球在 terra |
+| plugins | **PR #9** P-1b harness 骨架（draft，`8423b27`，sol 作 + terra APPROVED） | 云端 review + Contract CI；merge 等授权（not-for-merge 边界明确） | PR tracking intent=review |
 | plugins | PR #7 draft（wire truth 首批，head `7b2a0d1`） | shape-approved 后 schema-first 重建转 ready | 三个 [P1] task 停靠 + PR tracking |
 
 ### 🔒 BLOCKED——真依赖串行链
