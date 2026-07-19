@@ -38,7 +38,6 @@ clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 
 | 仓 | 项 | 谁动 | 说明 |
 |---|---|---|---|
-| plugins | **P-1b harness 骨架** | 我们 | 进程管理 / NDJSON 传输 / kill-9 隔离——不含最终 schema，不碰授权边界 |
 | plugins | **DX 脚手架** create-clowder-plugin | 我们 | 与 contract 解耦 |
 | plugins | C-2/C-3 fixture 设计稿 | 我们（可选） | 设计先行，不实现 |
 | core | **K-1 上游化**（rebase + formal PR） | maintainer | 已在进行 🔄，K-2 prep 明文前置 |
@@ -52,6 +51,7 @@ clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 |---|---|---|---|
 | core | #1165 **rev9**（SHA `95e4e99c…`，packet `5015871814`） | maintainer R9 exact-body verdict（含 exhaustive-listing 请求） | tracking @ R9 cursor + hold_ball 30min 轮询 |
 | plugins | **PR #8** byte-proof 引擎（draft，`04fd4e0`，113/113） | 云端 review 0 finding；merge 需 maintainer/co-creator 授权（schema 无关，不等 shape） | PR tracking intent=review |
+| plugins | **P-1b harness 骨架**（sol 实现 ✅ `b105154`，9 files +846） | terra 独立 review `f52e820..b105154`（跨个体铁律）→ 收敛后 draft PR | review 球在 terra |
 | plugins | PR #7 draft（wire truth 首批，head `7b2a0d1`） | shape-approved 后 schema-first 重建转 ready | 三个 [P1] task 停靠 + PR tracking |
 
 ### 🔒 BLOCKED——真依赖串行链
@@ -93,6 +93,7 @@ R1 verdict(07-17 06:11) → R2 五决策落定(09:22) → rev2 → R3 五P1(14:4
 | 3 | 07-17 15:58 R4-intake comment 1 小时无人处理 | issue tracking 回调对 comment 不可靠 | 关键外部等待挂 hold_ball 轮询兜底（operator 08:12 指示固化） |
 | 4 | 07-18 夜 平行 thread 读 R5 verdict 后 session 停 | session 生命周期无接力检测 | operator 手动发现→本 thread 接力；**待改进：跨 thread 断点自动检测** |
 | 5 | 07-17 GitHub body edit 零通知 maintainer | 投递链缺显式 @ 步骤 | 两步投递 SOP（replace + 行首 @zts212653 comment）固化 |
+| 6 | 07-19 13:13-13:51 P-1b 误判掉球：sol 09:02 已接球并完工推 fork，但接球声明/review 请求消息未路由到派球者 + 未 update_task 认领 → 派球者误判超时，两次错误改派（含池外猫，spark 三轮上下文错乱） | ① 接球方漏 task 双写 ② A2A 消息路由丢失 ③ 派球方宣布掉球前未查物理证据（git worktree/fork 分支） | ① 接球必须 update_task（双写铁律）② **宣布掉球前必查 `git worktree list` + fork 分支**（物理证据 > 账本/消息推断）③ 派工池 = thread 既定池（terra+sol），不是全家名册（operator 13:51 拍定） |
 
 ## 五、沟通协作协议（现行）
 
