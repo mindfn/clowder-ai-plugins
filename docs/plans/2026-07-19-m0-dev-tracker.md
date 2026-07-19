@@ -72,12 +72,14 @@ M0 joint gate ← P-1a/b/c ✅ + K-2 MVP ✅ + joint adversarial run（§3.8 全
 ```
 R1 verdict(07-17 06:11) → R2 五决策落定(09:22) → rev2 → R3 五P1(14:45)
 → rev3 → R4-intake: RequestId 拍定+P1#4(15:58) → rev4 → R5 两P1(07-18 15:34)
-→ rev6 上线(07-19 08:05, SHA ee2ee48f…) → ⏸️ 等 R6 exact-body verdict
+→ rev6 上线(07-19 08:05, SHA ee2ee48f…) → R6 verdict(08:58) = REQUEST_CHANGES
+→ 🔄 R35/D20 吸收中 → rev7 投递（新 hash/count packet）
 ```
 
-- **当前等**：maintainer R6 确认三件事——① 两 P1 修复（M7→RESERVED / Invalid Request 双 id arms）② 保留边界 H1/H3/H4/H5/H6+M1/M2/M5/M6/M7+I1 ③ **`shape-approved` 与否（终局信号）**
-- **保障**：issue tracking（不可靠，见掉球史#3）+ hold_ball 30min 轮询兜底（08:43Z 首查）
-- **approved 解锁链**：contract PR 授权 → PR #7 重建转 ready → beta.3 → registry 验证 → K-1/K-2 re-pin
+- **R6 结果（comment `5015117839`）**：R5 两 P1 **关闭** ✅（M7 RESERVED + 双 id arms 被接受，机械投影 22/22、12/12 全核验）；**新 P1** = detectable-but-profile-invalid ID（`id:1`/`id:null`/超长/grammar 不匹配）无确定性 disposition——JSON-RPC §4-5 禁止静默进 null arm
+- **治理不变量（R6 拍定）**：每个 rejection class 恰好一个 disposition——closed byte-proved error 或 connection-close，无中间地带；要求完整 pre-dispatch disposition table，禁只补例子
+- **R35 吸收方向**：采 maintainer 推荐 **strict-profile route**（close 无 response + 排除出 public error union/proofs）+ disposition table + conformance cases + 全量传播（task 见毛线球）
+- **approved 解锁链不变**：rev7 → R7 verdict → shape-approved → contract PR → PR #7 重建 → beta.3 → registry 验证 → K-1/K-2 re-pin
 
 ## 四、掉球史（根因 + 已固化对策）
 
