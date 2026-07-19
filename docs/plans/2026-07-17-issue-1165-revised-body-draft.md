@@ -33,7 +33,7 @@ Your R5 exact-body audit ([5011835675](https://github.com/zts212653/clowder-ai/i
 
 | Item | Revision-5 treatment |
 |---|---|
-| Prior revision-4 closures | retained: exact `RequestId`; fixed public error literals; frozen payload byte limits; source-grounded `replyTo` bound and `occurredAt`; explicit reservation of M1/M2 scalar compatibility, `messageId`/`threadId`/`actor.id`, and derived handle/event fields |
+| Prior revision-4 closures | retained: exact `RequestId`; fixed public error literals; frozen payload byte limits; source-grounded `replyTo` bound; the `occurredAt` **target output profile** (1..27 validator) — its **source compatibility/closure moved to RESERVED (M7)** per your R5 P1-1, pending valid-Date admission + stored-data attestation/migration; explicit reservation of M1/M2 scalar compatibility, `messageId`/`threadId`/`actor.id`, and derived handle/event fields |
 | Handshake/session/grant omission | `packageDigest` closed as exact 95-byte SRI; `grantRevision` uses the one canonical integer profile; finite grants/nonce closed; `pluginId`, `contractVersion`, `wireVersion`, `pluginInstanceId`, `brokerSessionId` explicitly `RESERVED` |
 | Non-deadline integer omission | one `WireUInt53` raw-number profile defined; small new/public controls close under it; existing K-1 revision/sequence families stay `RESERVED` because exact K-1 has no safe-integer admission or stored-value migration invariant |
 | Root correction | one raw-frame/leaf matrix; scalar-only canonical strings/numbers and all ten public errors; M1/M2 reserved pending K-1 scalar admission + attestation/migration; seven rows reserved, five leaf-closed, all `ready=false` |
