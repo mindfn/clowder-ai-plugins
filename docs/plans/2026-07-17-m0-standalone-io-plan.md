@@ -415,6 +415,25 @@ Ownership-gate record (R3) stands: thread-level seam review is evidence, not sig
 
 Unchanged structure from R3/R4 (single wire client consumed by SDK; harness-not-Broker), now bound to the corrected shape: hello/ready two-step with nonce activation, frame-limit enforcement, deadline from `params.meta.deadlineUnixMs`. Dual-transport oracle split unchanged: plugin→Host semantic operations traverse the wire; governance/fixture-control stays in-process. Adds the six wire-conformance cases **plus the byte-proof conformance set (FC-28): per-row max-boundary frames in all three encodings, +1-byte oversize, bounded pagination continuation, zero-side-effect oversized-page rejection, and the dynamic frame-assembly oracles for rows 6/8/9 — the harness executes the P-1a-generated validators; production three-stage enforcement itself is K-2's, proven at the joint gate, never re-implemented here**.
 
+#### P-1b process-tree Stateful Object Gate (R44 addendum; triggered by cloud R1→R3 landing three consecutive rounds on the same `HarnessChild` isolation/cleanup object)
+
+**Single writer:** the `HarnessChild` internal state machine — every termination trigger (case timeout, protocol/I-O fatal, public `kill()`, natural target exit) funnels through one controller; readers (`receive()`, `waitForExit()`, `stop()`) observe and never mutate.
+
+**States (monotonic, no back-edges):** `spawned → running → terminating → exited → reaped | cleanup-failed`
+- `running → terminating`: any of timeout / fatal / kill / natural target exit.
+- `terminating → exited`: the **direct target process** has exited — `waitForExit` resolves here (target exit, NOT tree cleanup). Stream `close` (protocol drain, the R2 dual-phase rule) is tracked orthogonally and may complete before or after `exited`; both are prerequisites of `reaped`.
+- `exited → reaped`: the whole tree is confirmed gone via bounded existence probes.
+- `exited → cleanup-failed`: bounded retries/probes exhausted without confirmation → throw the **public `HarnessCleanupError`** (fail-closed, never silent; the class joins the public export set enforced by the built-boundary guard).
+
+**Invariants:**
+- **I1 monotonicity** — states never regress; late triggers are recorded no-ops.
+- **I2 hard-kill monotonic finality** — once SIGKILL / the Windows tree-kill is requested, no later path downgrades the signal or soft-re-probes (R2 rule, restated at object level).
+- **I3 whole-tree ownership** — POSIX: one process group per case, every kill targets the group. **Windows v0: a sentinel wrapper root** owned by the harness — no native dependency (OS Job Objects deliberately deferred as a later delta needing its own authorization): the wrapper spawns the target, relays target-exit over a control channel, and stays alive as the stable `taskkill /T /F` root until reap is confirmed — the target's own exit can never orphan the tree root, and awaiting `taskkill` (spawn `error` **and** nonzero exit both handled) is a completeness check, not the ownership mechanism.
+- **I4 cleanup evidence** — `reaped` requires bounded poll-until-gone probes with a deadline, never one instantaneous existence check.
+- **I5 terminal-state table** — kill-utility success / nonzero exit / spawn-error / timeout all converge to exactly one of `reaped` / `cleanup-failed`; no path returns early on the kill utility's exit status alone.
+
+**Answers of record (cloud-R3 gate OQ①–④):** ① Windows v0 ownership primitive = sentinel wrapper root (Job Object deferred); ② `waitForExit` = target exit — three observable phases: `exited` / stream-`close` / `reaped`; ③ terminal states per I5; ④ cleanup failure throws public `HarnessCleanupError`.
+
 ### P-1c — SDK author surface (plugins PR)
 
 Unchanged from R4 (same transport core; P14 three-part lock; SDK-expressible adversarial extensions now including settlement-key retry convergence). One canonical constraint added: **there is no grant-introspection RPC** — the SDK's grant surface is a local projection of `SessionBinding` + `host.grants.changed` (revision-monotonic cache), never a wire call; the Host re-reads current grants on every call regardless.
