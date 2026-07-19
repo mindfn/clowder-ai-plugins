@@ -91,6 +91,7 @@ R1 verdict(07-17 06:11) → R2 五决策落定(09:22) → rev2 → R3 五P1(14:4
 
 ## 五、沟通协作协议（现行）
 
+- **双仓双 thread（operator 08:49 规范）**：仓库 ↔ thread 一一映射——plugins 仓 = 主 thread `thread_mrkn6povq4zzgh45`（能本 thread 闭环就本 thread 闭环）；core 仓 = K-1 thread `thread_mrkmxgdfqquounc9`。跨仓协调走 cross_post，不另开分支 thread（历史分支 thread `thread_mrq6n8fjq4bp426z` 已封口）
 - **maintainer 裁决**：K-1 thread 侧执行（起草 + Terra 独立复核 + zts212653 账号发 verdict）；lang 催审 = 去 K-1 thread 派球
 - **plugins 侧 review**：本 thread 闭环（sol/terra finding-only），**先扫后投**铁律
 - **投递协议**：两步不可拆 + 报 raw API-string hash/count packet；exact-body re-review on those bytes
