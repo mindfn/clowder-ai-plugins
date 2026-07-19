@@ -73,12 +73,14 @@ M0 joint gate ← P-1a/b/c ✅ + K-2 MVP ✅ + joint adversarial run（§3.8 全
 R1 verdict(07-17 06:11) → R2 五决策落定(09:22) → rev2 → R3 五P1(14:45)
 → rev3 → R4-intake: RequestId 拍定+P1#4(15:58) → rev4 → R5 两P1(07-18 15:34)
 → rev6 上线(07-19 08:05) → R6 = REQUEST_CHANGES(08:58) → R35..R38 吸收（terra 四轮扫收敛）
-→ **rev7 上线(12:42, SHA df89f7a1…, 74,434 cp / 74,969 B, packet `5015754655`) → ⏸️ 等 R7 verdict**
+→ rev7 上线(12:42) → R7 = REQUEST_CHANGES(12:46, T-D 回了合法 Notification)
+→ R39..R41 吸收（六维 state partition + T-J/T-K + terra 三轮扫收敛）
+→ **rev8 上线(13:04, SHA c56b8e58…, 78,671 cp / 79,276 B, packet `5015822407`) → ⏸️ 等 R8 verdict**
 ```
 
-- **R6 → rev7 吸收链**：R6 唯一 P1（detectable-but-profile-invalid ID 无 disposition）→ **pre-dispatch disposition table T-A…T-I**（strict-profile route；八 rejection surface 完备性声明；close-classes 排除出 public union/proofs）。内部扫三轮修正：T-H（inbound response/callback 面）、**T-I**（in-flight collision——respond 路线会被误当 in-flight 终态响应、falsely settle，correlation-trust 失败改判 close）、W3 五类投影同步。链终态 `2508ec7`，我方独立核验 live body 逐字节吻合
-- **当前等**：maintainer R7 exact-body verdict（① disposition table 修复确认 ② 保留边界不变确认 ③ shape-approved 与否）；issue tracking + hold_ball 轮询兜底（R6 实证：轮询比 tracking 先 7 分钟抓到）
-- **approved 解锁链不变**：R7 verdict → shape-approved → contract PR → PR #7 重建 → beta.3 → registry 验证 → K-1/K-2 re-pin
+- **R7 → rev8 吸收链**：R7 唯一 P1（T-D 把合法 Notification 打回 null，违反 §4.1 MUST-NOT-reply）→ 表重构为**六维 state partition 投影**（T-A…T-K）：T-D 收窄真 detection failure、T-J 合法 row-10 accept、T-K 一切 idless v0 违规 close、Notification invariant 逐字采纳。内部扫三轮（R40 残留段+idless envelope 类；R41 计数）收敛，链终态 `c79f83a`，我方独立核验 live body 逐字节吻合。累计：R6→rev7（T-A…T-I 表）、R7→rev8（partition 化）——两轮 verdict 均确认既有推导、每轮 finding 数=1
+- **当前等**：maintainer R8 exact-body verdict（① Notification partition 修复确认 ② 保留边界不变 ③ shape-approved 与否）；tracking @ R8 cursor + hold_ball 轮询兜底
+- **approved 解锁链不变**：R8 verdict → shape-approved → contract PR → PR #7 重建 → beta.3 → registry 验证 → K-1/K-2 re-pin
 
 ## 四、掉球史（根因 + 已固化对策）
 
