@@ -29,38 +29,38 @@ clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 联合闸门：M0 gate = P-1a/b/c ✅ + K-2 MVP ✅ + joint adversarial run
 ```
 
-## 二、PR 台账（已发生 + 计划中）
+## 二、统一开发台账（按泳道；两仓合并，含真实依赖）
 
-| # | 仓 | 内容 | 状态 | 下一步归属 |
-|---|---|---|---|---|
-| plugins #3 | plugins | contract bootstrap（beta.1 发布） | ✅ merged | — |
-| plugins #4 | plugins | governance bootstrap（ruleset/CODEOWNERS） | ✅ merged | — |
-| plugins #6 | plugins | **P-2** messaging conformance（18 cases，beta.2） | ✅ merged `f52e820` | — |
-| core #1168 | core | canonical byte-proof wording fix | ✅ merged `d606aab` | — |
-| plugins #7 | plugins | P-1a wire truth modules（第一批工具层） | 💤 **draft**，CHANGES_REQUESTED 已分诊 | 等 #1165 shape-approved → terra 三张毛线球 schema-first 重建 |
-| plugins（计划） | plugins | **P-1a 正式 contract PR**（codegen schemas + validators + 生成 byte proofs） | ⬜ | shape-approved 后我（宪宪）主笔 |
-| plugins（计划） | plugins | **P-1b** wire-client core + test-host harness | ⬜ | P-1a 后 |
-| plugins（计划） | plugins | **P-1c** SDK author surface（P14 三重锁） | ⬜ | P-1b 后 |
-| core（计划） | core | **K-2 Host Broker MVP**（spawn/retry/dead-letter/reconcile） | ⬜ | maintainer 侧，与 P-1b 并行可 |
-| core（计划） | core | K-1 mirror 删除 + exact re-pin | ⬜ | beta.3 registry-verified 后 |
-| core（计划） | core | K-1 producer attestation（messageId/threadId/actor.id 界）+ valid-Date admission | ⬜ | **maintainer 侧 owner 动作**——reserved 字段解除的前置 |
+> **核心结论（08:24 lang 纠偏）**：只有「contract PR 的 schema 内容 → beta.3 → re-pin」真正被 shape-approved 阻塞。其余都可并行——线性化是误把单点 gate 当成了全局 gate。
 
-## 二·五、M0 之外的全景清单（原始蓝图完整口径——上表只是 M0/P-1 切片）
+### 泳道 A：plugins 侧（我们）
 
-| 系列 | 项 | 状态 | 说明 |
+| 项 | 状态 | 真实依赖 | 现在能动？ |
 |---|---|---|---|
-| C-1 | prerelease channel + signed reconciliation | ✅ 大部分完成 | beta.1/beta.2 发布链（docs/plans/2026-07-16-contract-prerelease-channel.md、g0-c1-signed-reconciliation.md）；beta.3 属 P-1a 解锁链 |
-| C-2 | event-input 四项（undeclared signal 拒绝 / producer 伪造 / wake route 自报拒绝 / lease-offline） | ⬜ defer | 对抗矩阵 §3.8 全集的一部分，M0 后 |
-| C-3 | uninstall-durable state + namespace escape | ⬜ defer | 同上 |
-| K-1 | messaging 域上游化（rebase + formal PR + mirror 删除 + exact re-pin 两步 merge prep） | 🔄 maintainer 侧 | K-2 生产工作的前置门 |
-| K-2 | Host Broker（单一 plugin control plane，扩展 F202） | ⬜ maintainer 侧 | prep 文档已 merge（d606aab）；production 待 K-1 上游 + contract 发布 |
-| K-3a | signal ingress 域 | ⬜ 明确 later | K-2 prep 明文排除在当前 scope 外 |
-| K-3b | window/presence 域 | ⬜ 明确 later | 同上 |
-| DX | create-clowder-plugin 脚手架（P14 开发者体验面） | ⬜ | principles §顶层交付物 3 |
-| 联动 | #1047 记忆接口改造场（插件 memory namespace/受限 retrieve 作为输入） | ⬜ 跨 feature | P8 纪律：不绕开自建 |
-| 验证 | §3.8 对抗矩阵全集（actor/audience/whisper 伪造、provenance 升级、cursor 续投、P14 断言等 ~15 项） | 🔄 部分（18 cases in P-2） | 其余随 P-1b/c 与 joint gate 铺开 |
+| #3/#4/#6 bootstrap+governance+P-2 · C-1 发布链 | ✅ merged | — | — |
+| P-1a.0 shape co-sign (#1165 rev6) | ⏸️ 等 R6 verdict | maintainer review | 等（hold_ball 兜底） |
+| PR #7 wire truth 模块 | 💤 draft | shape-approved → schema-first 重建 | 等 |
+| P-1a contract PR（schema 内容/validators/proofs） | ⬜ | **shape-approved（唯一硬闸）** | 等 |
+| **byte-proof 计算引擎**（worst-case 编码计算器，schema 无关） | ⬜ | 无 | **✅ 现在** |
+| **P-1b harness 骨架**（进程管理/NDJSON 传输/kill-9 隔离，不含最终 schema） | ⬜ | 无 | **✅ 现在** |
+| **DX 脚手架** create-clowder-plugin | ⬜ | 无 | **✅ 现在** |
+| C-2/C-3 fixture 设计稿 | ⬜ defer | 无（设计先行） | ✅ 可选 |
+| P-1c SDK surface | ⬜ | P-1b + contract | 等 |
 
-> 上面第二区的 PR 台账 = 本表中 P-1/M0 切片的可 PR 化投影；lang 记忆的"十几个"= 本表全景。两表合看才是全部。
+### 泳道 B：core 侧（maintainer）——**这批与 #1165 无依赖，现在就能并行**
+
+| 项 | 状态 | 真实依赖 | 现在能动？ |
+|---|---|---|---|
+| **K-1 上游化**（rebase + formal upstream PR） | 🔄 | 无（K-2 prep 明文前置） | **✅ 现在** |
+| **K-1 producer attestation**（messageId/threadId/actor.id 界 + valid-Date admission） | ⬜ | 无——**正是我们 reserved 字段等的**，做完 M1/M2/M7 等即可解锁 | **✅ 现在** |
+| **K-2 Broker 非契约面**（supervision/spawn/dead-letter/reconcile 骨架） | ⬜ | 无（不消费 wire schema 的部分） | **✅ 现在** |
+| #1165 R6 verdict | ⏸️ | rev6 已投 | **✅ 现在（催审即动）** |
+| K-1 mirror 删除 + exact re-pin | ⬜ | beta.3 registry-verified | 等 |
+| K-3a/K-3b · #1047 联动 | ⬜ later | 明文排除当前 scope | — |
+
+### 联合闸门
+
+M0 gate = P-1a/b/c ✅ + K-2 MVP ✅ + joint adversarial run（§3.8 全集 ~15 项，18 cases 已在 P-2）
 
 ## 三、#1165 shape 裁决线（当前主战场）
 
