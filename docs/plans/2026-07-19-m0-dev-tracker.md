@@ -29,38 +29,43 @@ clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 联合闸门：M0 gate = P-1a/b/c ✅ + K-2 MVP ✅ + joint adversarial run
 ```
 
-## 二、统一开发台账（按泳道；两仓合并，含真实依赖）
+## 二、统一开发台账（三态 × 双仓；v2 per lang 08:29 指令）
 
+> **读法**：🟢 无依赖可并行（谁闲谁动）→ 🔍 已投出等外部审（有兜底，不用人肉盯）→ 🔒 真依赖串行（唯一硬闸 = shape-approved）。
 > **核心结论（08:24 lang 纠偏）**：只有「contract PR 的 schema 内容 → beta.3 → re-pin」真正被 shape-approved 阻塞。其余都可并行——线性化是误把单点 gate 当成了全局 gate。
 
-### 泳道 A：plugins 侧（我们）
+### 🟢 NOW——无依赖，可并行开动
 
-| 项 | 状态 | 真实依赖 | 现在能动？ |
+| 仓 | 项 | 谁动 | 说明 |
 |---|---|---|---|
-| #3/#4/#6 bootstrap+governance+P-2 · C-1 发布链 | ✅ merged | — | — |
-| P-1a.0 shape co-sign (#1165 rev6) | ⏸️ 等 R6 verdict | maintainer review | 等（hold_ball 兜底） |
-| PR #7 wire truth 模块 | 💤 draft | shape-approved → schema-first 重建 | 等 |
-| P-1a contract PR（schema 内容/validators/proofs） | ⬜ | **shape-approved（唯一硬闸）** | 等 |
-| **byte-proof 计算引擎**（worst-case 编码计算器，schema 无关） | ⬜ | 无 | **✅ 现在** |
-| **P-1b harness 骨架**（进程管理/NDJSON 传输/kill-9 隔离，不含最终 schema） | ⬜ | 无 | **✅ 现在** |
-| **DX 脚手架** create-clowder-plugin | ⬜ | 无 | **✅ 现在** |
-| C-2/C-3 fixture 设计稿 | ⬜ defer | 无（设计先行） | ✅ 可选 |
-| P-1c SDK surface | ⬜ | P-1b + contract | 等 |
+| plugins | **byte-proof 计算引擎** | 我们 | worst-case 编码计算器（ASCII/multibyte/escaping），schema 无关的 P-1a 通用底座 |
+| plugins | **P-1b harness 骨架** | 我们 | 进程管理 / NDJSON 传输 / kill-9 隔离——不含最终 schema，不碰授权边界 |
+| plugins | **DX 脚手架** create-clowder-plugin | 我们 | 与 contract 解耦 |
+| plugins | C-2/C-3 fixture 设计稿 | 我们（可选） | 设计先行，不实现 |
+| core | **K-1 上游化**（rebase + formal PR） | maintainer | 已在进行 🔄，K-2 prep 明文前置 |
+| core | **K-1 producer attestation** | maintainer | messageId/threadId/actor.id 界 + valid-Date admission——**正是我们 M1/M2/M7 reserved 等的解锁件** |
+| core | **K-2 Broker 非契约面** | maintainer | supervision/spawn/dead-letter/reconcile 骨架，不消费 wire schema |
+| — | **#1165 R6 催审** | **lang** | 拿 <https://github.com/zts212653/clowder-ai/issues/1165> 找 maintainer；顺带把上面 core 三项并行提给他 |
 
-### 泳道 B：core 侧（maintainer）——**这批与 #1165 无依赖，现在就能并行**
+### 🔍 IN-REVIEW——已投出，等外部审
 
-| 项 | 状态 | 真实依赖 | 现在能动？ |
+| 仓 | 项 | 等什么 | 兜底 |
 |---|---|---|---|
-| **K-1 上游化**（rebase + formal upstream PR） | 🔄 | 无（K-2 prep 明文前置） | **✅ 现在** |
-| **K-1 producer attestation**（messageId/threadId/actor.id 界 + valid-Date admission） | ⬜ | 无——**正是我们 reserved 字段等的**，做完 M1/M2/M7 等即可解锁 | **✅ 现在** |
-| **K-2 Broker 非契约面**（supervision/spawn/dead-letter/reconcile 骨架） | ⬜ | 无（不消费 wire schema 的部分） | **✅ 现在** |
-| #1165 R6 verdict | ⏸️ | rev6 已投 | **✅ 现在（催审即动）** |
-| K-1 mirror 删除 + exact re-pin | ⬜ | beta.3 registry-verified | 等 |
-| K-3a/K-3b · #1047 联动 | ⬜ later | 明文排除当前 scope | — |
+| core | #1165 **rev6**（SHA `ee2ee48f…`，comment `5014966821`） | maintainer R6 exact-body verdict（三确认：两 P1 修复 / 保留边界 / shape-approved 与否） | issue tracking + hold_ball 30min 轮询 |
+| plugins | PR #7 draft（wire truth 首批，head `7b2a0d1`） | shape-approved 后 schema-first 重建转 ready | 三个 [P1] task 停靠 + PR tracking |
 
-### 联合闸门
+### 🔒 BLOCKED——真依赖串行链
 
-M0 gate = P-1a/b/c ✅ + K-2 MVP ✅ + joint adversarial run（§3.8 全集 ~15 项，18 cases 已在 P-2）
+```
+shape-approved（唯一硬闸）
+ ├─→ P-1a contract PR（schema 内容/validators/per-row byte proofs）─→ beta.3 on next ─→ registry 验证
+ │                                                                      └─→ K-1 mirror 删除 + exact re-pin
+ ├─→ PR #7 schema-first 重建 → ready
+ └─→ P-1b 收尾（wire-conformance 六案 + FC-28 byte-proof 集）← 还需 P-1a validators
+P-1c SDK surface ← P-1b + contract
+M0 joint gate ← P-1a/b/c ✅ + K-2 MVP ✅ + joint adversarial run（§3.8 全集 ~15 项，18 cases 已在 P-2）
+（K-3a/K-3b · #1047 联动：明文排除当前 scope）
+```
 
 ## 三、#1165 shape 裁决线（当前主战场）
 
