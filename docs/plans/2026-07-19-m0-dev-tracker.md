@@ -42,8 +42,7 @@ clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 | plugins | C-2/C-3 fixture 设计稿 | 我们（可选） | 设计先行，不实现 |
 | core | **K-1 上游化**（rebase + formal PR） | maintainer | 已在进行 🔄，K-2 prep 明文前置 |
 | core | **K-1 producer attestation** | maintainer | messageId/threadId/actor.id 界 + valid-Date admission——**正是我们 M1/M2/M7 reserved 等的解锁件** |
-| core | **K-2 Broker 非契约面** | maintainer | supervision/spawn/dead-letter/reconcile 骨架，不消费 wire schema |
-| — | **#1165 R9 催审** | **lang** | 同一地址 <https://github.com/zts212653/clowder-ai/issues/1165>（看 revision 9 + packet `5015871814`）；core 三项并行提案不变 |
+| — | **#1165 R9 催审** | **lang** | 同一地址 <https://github.com/zts212653/clowder-ai/issues/1165>（看 revision 9 + packet `5015871814`）；**core 并行提案降为两项**（K-1 上游化 + attestation）——K-2 已证伪见 🔒 |
 
 ### 🔍 IN-REVIEW——已投出，等外部审
 
@@ -64,6 +63,7 @@ shape-approved（唯一硬闸）
  └─→ P-1b 收尾（wire-conformance 六案 + FC-28 byte-proof 集）← 还需 P-1a validators
 P-1c SDK surface ← P-1b + contract
 M0 joint gate ← P-1a/b/c ✅ + K-2 MVP ✅ + joint adversarial run（§3.8 全集 ~15 项，18 cases 已在 P-2）
+**K-2 Broker 全部 runtime work（含 supervision/spawn/dead-letter/reconcile "骨架"）← #1165 explicit approval + K-2 runtime authorization**——live body 明文 "no K-2 runtime work begins before explicit approval"，零 wire-schema 消费不改变授权边界（K-1 thread 14:09 更正，曾误标 🟢；lang 提并行时 K-2 只可"预备排期"不可"已在做"）
 （K-3a/K-3b · #1047 联动：明文排除当前 scope）
 ```
 
