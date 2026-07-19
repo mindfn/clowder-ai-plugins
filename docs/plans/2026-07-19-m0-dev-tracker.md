@@ -38,7 +38,7 @@ clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 
 | 仓 | 项 | 谁动 | 说明 |
 |---|---|---|---|
-| plugins | **byte-proof 计算引擎** | 我们 | worst-case 编码计算器（ASCII/multibyte/escaping），schema 无关的 P-1a 通用底座 |
+| plugins | **byte-proof 计算引擎** 🔄 | terra | R1→R2 双轮 review 收敛（`04fd4e0`，113/113）；三 OQ 全按 plan canonical 裁决闭合；待推 fork + draft PR |
 | plugins | **P-1b harness 骨架** | 我们 | 进程管理 / NDJSON 传输 / kill-9 隔离——不含最终 schema，不碰授权边界 |
 | plugins | **DX 脚手架** create-clowder-plugin | 我们 | 与 contract 解耦 |
 | plugins | C-2/C-3 fixture 设计稿 | 我们（可选） | 设计先行，不实现 |
