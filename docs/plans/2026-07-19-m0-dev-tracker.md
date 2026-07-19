@@ -45,6 +45,23 @@ clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 | core（计划） | core | K-1 mirror 删除 + exact re-pin | ⬜ | beta.3 registry-verified 后 |
 | core（计划） | core | K-1 producer attestation（messageId/threadId/actor.id 界）+ valid-Date admission | ⬜ | **maintainer 侧 owner 动作**——reserved 字段解除的前置 |
 
+## 二·五、M0 之外的全景清单（原始蓝图完整口径——上表只是 M0/P-1 切片）
+
+| 系列 | 项 | 状态 | 说明 |
+|---|---|---|---|
+| C-1 | prerelease channel + signed reconciliation | ✅ 大部分完成 | beta.1/beta.2 发布链（docs/plans/2026-07-16-contract-prerelease-channel.md、g0-c1-signed-reconciliation.md）；beta.3 属 P-1a 解锁链 |
+| C-2 | event-input 四项（undeclared signal 拒绝 / producer 伪造 / wake route 自报拒绝 / lease-offline） | ⬜ defer | 对抗矩阵 §3.8 全集的一部分，M0 后 |
+| C-3 | uninstall-durable state + namespace escape | ⬜ defer | 同上 |
+| K-1 | messaging 域上游化（rebase + formal PR + mirror 删除 + exact re-pin 两步 merge prep） | 🔄 maintainer 侧 | K-2 生产工作的前置门 |
+| K-2 | Host Broker（单一 plugin control plane，扩展 F202） | ⬜ maintainer 侧 | prep 文档已 merge（d606aab）；production 待 K-1 上游 + contract 发布 |
+| K-3a | signal ingress 域 | ⬜ 明确 later | K-2 prep 明文排除在当前 scope 外 |
+| K-3b | window/presence 域 | ⬜ 明确 later | 同上 |
+| DX | create-clowder-plugin 脚手架（P14 开发者体验面） | ⬜ | principles §顶层交付物 3 |
+| 联动 | #1047 记忆接口改造场（插件 memory namespace/受限 retrieve 作为输入） | ⬜ 跨 feature | P8 纪律：不绕开自建 |
+| 验证 | §3.8 对抗矩阵全集（actor/audience/whisper 伪造、provenance 升级、cursor 续投、P14 断言等 ~15 项） | 🔄 部分（18 cases in P-2） | 其余随 P-1b/c 与 joint gate 铺开 |
+
+> 上面第二区的 PR 台账 = 本表中 P-1/M0 切片的可 PR 化投影；lang 记忆的"十几个"= 本表全景。两表合看才是全部。
+
 ## 三、#1165 shape 裁决线（当前主战场）
 
 ```
