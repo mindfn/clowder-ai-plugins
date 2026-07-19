@@ -14,18 +14,20 @@ created: 2026-07-17
 
 **用途**：整体替换 [zts212653/clowder-ai#1165](https://github.com/zts212653/clowder-ai/issues/1165) 的 issue body（GitHub 保留 edit history，可逆）。
 **真相源**：`docs/plans/2026-07-17-m0-standalone-io-plan.md` R31（maintainer revision-4 audit `5008567649` + three dual fresh-context/fix-confirmation scans；以 exhaustive raw-frame/lexeme/leaf matrix 为唯一 closure truth）。
-**状态**：D16（revision 5 body），未投递——**先复扫 fresh-context 修复，再替换 live issue body**；投递时报告新的 raw API-string SHA-256/code-point/UTF-8-byte counts。
+**状态**：D17（revision 6 body），R5 两 P1 已修——pending 本 thread 双猫窄扫（sol/terra finding-only）——**先扫后投**；投递报新 raw API-string hash/count packet，maintainer exact-body re-review（不 route Terra pre-verdict）。
 **忠实性边界**：R2 已签语义决策不重开；本次只纠正“哪些 leaf/row 已 closed”的事实与其机械推导。`CLOSED`/`RESERVED` 仅由下方 matrix 决定；任何旧 prose “closed” 标签与 matrix 冲突时一律以 matrix 为准。PR #7 保持 draft 且不改代码。
 
 ---
 
 ## BODY（verbatim replace begins below）
 
-## Status and request — revision 5: revision-4 audit root-corrected with one exhaustive raw-frame/lexeme/leaf matrix
+## Status and request — revision 6: your R5 exact-body audit absorbed — M7 reserved, Invalid Request dual id arms
 
 This remains a **shape-only K-2 / P-1a.0 co-sign anchor**. It does not authorize implementation, publication, dependency re-pin, or K-2 runtime work.
 
 Your revision-4 audit ([5008567649](https://github.com/zts212653/clowder-ai/issues/1165#issuecomment-5008567649)) found that our prose sweep omitted handshake/session/grant leaves and non-deadline integers. **That completeness claim is withdrawn.** Revision 5 installs one authoritative matrix for all 12 shapes. Three dual scans extended raw proof to canonical strings/numbers, integer consts, ten public errors, SRI pad bits, duplicate names, and scalar-only Unicode. Exact K-1 has no Unicode-scalar admission or stored-value migration proof, so M1/M2 are reserved. The checklist, five-axis sweep, and row statuses are matrix projections, not separate claims.
+
+Your R5 exact-body audit ([5011835675](https://github.com/zts212653/clowder-ai/issues/1165#issuecomment-5011835675)) accepted the matrix, projection, prior reservations, and named profiles, and found two P1 closure errors. **Both are fixed in this revision:** M7 `occurredAt` moves **CLOSED → RESERVED** (your K-1 source-path evidence adopted verbatim: a target-output validator is not compatible-source evidence — the same failure mode we already handle in M1/M2/I1), and the standard-error union's `Invalid Request` now has **two closed id arms** (valid-id byte echo vs `null` on failed detection, per JSON-RPC 2.0 §5).
 
 **Revision-4 disposition in one view:**
 
@@ -46,7 +48,7 @@ Your revision-4 audit ([5008567649](https://github.com/zts212653/clowder-ai/issu
 | D1c | item shape | **(a) semantically complete bounded DTO** | shared DTO family section |
 | D2 | `messaging.read` paging | **(b) keep row 6 in this round; semantics/topology resolved** | Row 6 section; variable-leaf status comes from the matrix and is currently `RESERVED` |
 
-**What this revision asks of you:** review the exhaustive matrix and confirm its reservation boundary. In particular, please confirm that H1/H3/H4/H5/H6, M1/M2/M5/M6, and I1 may remain explicitly reserved under D0 instead of being guessed closed. The approval marker stays **unchecked**.
+**What this revision asks of you:** review the exhaustive matrix and confirm its reservation boundary. In particular, please confirm that H1/H3/H4/H5/H6, M1/M2/M5/M6/**M7**, and I1 may remain explicitly reserved under D0 instead of being guessed closed (M7 joins per your R5 P1-1). The approval marker stays **unchecked**.
 
 The confirmed cross-repository order is unchanged:
 
@@ -131,7 +133,7 @@ Validator profiles:
 | W0 | all rows, every object depth and raw frame token | compact UTF-8 JSON frame | one non-batch object; no whitespace; scalar-only decoded strings; unique decoded member names/object; member order unconstrained | streaming/pre-parse grammar gate; lone surrogates, duplicate names, and unprofiled string/number tokens reject before schema/dispatch | T3 framing + T5 JSON grammar/interoperability + R30/R31 fix-confirmation REDs; historical compatibility remains leaf-owned | **CLOSED** |
 | W1 | rows 1–9, 11–12 request/response/error `id` | ASCII `RequestId` | 1..128; `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`; in-flight unique/session | `ASCII(128)` = 3..130 encoded bytes; response echo byte-equal | T4 exact owner value | **CLOSED** |
 | W2 | rows 1–9, 11–12 `params.meta.deadlineUnixMs`; row-10 common notification meta; row-12 `params.input.deadlineUnixMs` | JSON integer | `WireUInt53(1, 9_007_199_254_740_991)` | canonical raw lexeme 1..16 bytes, pre-parse | existing deadline rule + T3 Host cap | **CLOSED** |
-| W3 | every finite literal leaf: outer `jsonrpc`/`method`; five application + five JSON-RPC standard error code/message pairs; application error data; beta.2 actor/element/epistemic/error enums and all address/origin/audience/event/handle consts; capability values | closed string const/enum + signed integer error-code const | exact finite sets: 12 methods, ten public code/message pairs, every schema enum/const; standard errors have no data, application errors have closed data | strings pass `UnicodeScalarString` + `CanonicalStringToken`; codes pass `WireIntConst`; generator measures every complete error variant | T1 enum/consts + T3 registry + R2 application errors + T5 standard errors | **CLOSED** |
+| W3 | every finite literal leaf: outer `jsonrpc`/`method`; five application + five JSON-RPC standard error code/message pairs; application error data; beta.2 actor/element/epistemic/error enums and all address/origin/audience/event/handle consts; capability values | closed string const/enum + signed integer error-code const | exact finite sets: 12 methods, ten public code/message pairs across **eleven closed variants** (Invalid Request has two id arms), every schema enum/const; standard errors have no data, application errors have closed data | strings pass `UnicodeScalarString` + `CanonicalStringToken`; codes pass `WireIntConst`; generator measures every complete error variant | T1 enum/consts + T3 registry + R2 application errors + T5 standard errors | **CLOSED** |
 | H1 | row-1 hello/result `pluginId` | Unicode string | beta.2 min 1, **no max** | none finite | T1; installed-record equality does not bound the manifest | **RESERVED** |
 | H2 | row-1 hello/result `packageDigest` | SHA-512 SRI ASCII | exactly 95; `^sha512-[A-Za-z0-9+/]{85}[AQgw]==$` | `ASCII(95)` = exactly 97 bytes; decode → re-encode equality proves zero pad bits | T3/T4 + T5 canonical Base64 | **CLOSED** |
 | H3 | row-1 hello/result `contractVersion` | SemVer 2 string | T1 grammar, min 1, **no max** | none finite | T1; installed equality is semantic, not admission | **RESERVED** |
@@ -147,7 +149,7 @@ Validator profiles:
 | M4 | row-5 input `handle`; rows 5 result/6/7/8 input `subscriptionId`; row-6/7 ack token; row-8 page/next/ack tokens; row-9 input/result `deliveryId`; row-11 input/result `nonce` | opaque Unicode | handle 1..256; subscription/delivery 1..128; tokens/nonces 1..512 | `JSONString(N)` | T2 handle/subscription mints (39/40 chars); new Host values use public cap as admission | **CLOSED** |
 | M5 | row-3 result; row-4 request/result; rows 6/8 results; row-9 input: `messageId`, `threadId`, `actor.id`, `MessageHandle.token` | Unicode, grammar pending | beta.2 min 1 only | none | T2 core stores/identity registry; your audit accepts reservation | **RESERVED** |
 | M6 | row-6 publish/append `eventId` | derived Unicode | publish `7+\|messageId\|+2`; append `7+\|messageId\|+1+\|operationId\|`, operation ≤200; unbounded while M5 is | none until M5 closes | T2 send/append producers | **RESERVED** |
-| M7 | rows 6/8/9 envelope `occurredAt` | ASCII UTC timestamp | 1..27, RFC3339/expanded-year UTC grammar | `ASCII(27)` ≤29 encoded bytes | T2 `toISOString()` valid-Date domain; accepted by your audit | **CLOSED** |
+| M7 | rows 6/8/9 envelope `occurredAt` | ASCII UTC timestamp | 1..27, RFC3339/expanded-year UTC grammar **as the target validator only** | `ASCII(27)` ≤29 encoded bytes | your R5 P1-1: `toISOString()` bounds the output only after conversion succeeds — not compatible-source evidence; exact K-1 stores `timestamp: number` with no valid-Date invariant, transcript imports copy `evt.t` unchecked, imported messages pass `isSnapshotVisible`, and `projectEnvelope` converts unguarded — a JSON-safe `8_640_000_000_000_001` throws `RangeError` before any wire value exists | **RESERVED** — pending your K-1 valid-Date admission invariant plus stored-data attestation/migration; an invalid stored timestamp takes the explicit zero-progress Host fault/reconciliation path |
 | I1 | row-3 result revision/publishSequence; row-4 baseRevision/revision/appendSequence; rows 6/8/9 envelope/event revision/sequence/baseRevision; legacy snapshot resumeSequence and new entitlement source `H` | target `WireUInt53` (revision min1, sequence min0) | target max safe integer, **not yet admitted** | target canonical 1..16 bytes, but source guard absent | T2 uses `Number.isInteger`; Redis `INCR` is converted directly with `Number`; persisted increments have no safe guard | **RESERVED** pending K-1 admission + stored-value attestation/migration invariant |
 | I2 | row-6 `limit`; row-8 `maxItems` | JSON integer | `WireUInt53(1,32)` / `WireUInt53(1,64)` | canonical raw + parsed range; ≤2 bytes | frozen read bound / R2 snapshot shape | **CLOSED** |
 
@@ -162,10 +164,10 @@ Beta.2 snapshot arrays become bounded pages; their sequence source remains I1-re
 | 3 `messaging.send` | W0/W1/W2/W3 + M1/M2/M3/M5 + I1 | **RESERVED** — legacy string/payload admission + IDs/handle/integer result | `ready=false` |
 | 4 `messaging.appendElements` | W0/W1/W2/W3 + M1/M2/M3/M5 + I1 | **RESERVED** — legacy string/payload admission + handle/IDs/integers | `ready=false` |
 | 5 `messaging.subscribe` | W0/W1/W2/W3 + M4 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
-| 6 `messaging.read` | W0/W1/W2/W3 + M1–M7 + I1/I2 | **RESERVED** — legacy string/payload admission + event/envelope IDs/integers | `ready=false` |
+| 6 `messaging.read` | W0/W1/W2/W3 + M1–M7 + I1/I2 | **RESERVED** — legacy string/payload admission + event/envelope IDs/integers + timestamp admission (M7) | `ready=false` |
 | 7 `messaging.ack` | W0/W1/W2/W3 + M4 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
-| 8 `messaging.snapshot` | W0/W1/W2/W3 + M1/M2/M3/M4/M5/M7 + I1/I2 | **RESERVED** — legacy string/payload admission + envelope IDs/revision + Host sequence | `ready=false` |
-| 9 `host.messaging.deliver` | W0/W1/W2/W3 + M1/M2/M3/M4/M5/M7 + I1 | **RESERVED** — legacy string/payload admission + envelope IDs/revision | `ready=false` |
+| 8 `messaging.snapshot` | W0/W1/W2/W3 + M1/M2/M3/M4/M5/M7 + I1/I2 | **RESERVED** — legacy string/payload admission + envelope IDs/revision + Host sequence + timestamp admission (M7) | `ready=false` |
+| 9 `host.messaging.deliver` | W0/W1/W2/W3 + M1/M2/M3/M4/M5/M7 + I1 | **RESERVED** — legacy string/payload admission + envelope IDs/revision + timestamp admission (M7) | `ready=false` |
 | 10 `host.grants.changed` | W0/W2/W3 + H7/H8 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
 | 11 `host.lifecycle.ping` | W0/W1/W2/W3 + M4 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
 | 12 `host.lifecycle.drain` | W0/W1/W2/W3 | **CLOSED leaf shape** | `ready=false` pending proofs/runtime gates |
@@ -271,7 +273,7 @@ Without a contract-owned outer envelope, a sub-frame request with an enormous `i
 - **`WireRequest`** = `{ jsonrpc: "2.0" (const), id: RequestId, method: <the 12-name enum, direction-checked against the registry>, params: { meta: CallMeta, input: <the row's input schema> } (closed, exactly two keys) }`.
 - **`WireNotification`** = same shape **without `id`** — legal only for registry rows declared as notifications (row 10 `host.grants.changed`); a notification with an `id`, or a request without one, is a connection-level protocol violation.
 - **`WireSuccessResponse`** = `{ jsonrpc: "2.0" (const), id: RequestId (byte-equal echo of the originating request `id`), result: <the row's result schema> }` — no `error` member.
-- **`WireErrorResponse`** is a closed `oneOf`: application errors are `{ jsonrpc: "2.0", id: RequestId, error: { code, message, data } }`; JSON-RPC standard errors are `{ jsonrpc: "2.0", id: RequestId | null, error: { code, message } }` with no `data`. Both forbid `result` and additional members. **A valid extracted `id` is echoed byte-for-byte; `id: null` is restricted to the pre-id Parse error / Invalid Request branch** required by JSON-RPC 2.0 §5, never a Host choice on a valid request. Result/error mutual exclusivity and per-error member sets are structural.
+- **`WireErrorResponse`** is a closed `oneOf`: application errors are `{ jsonrpc: "2.0", id: RequestId, error: { code, message, data } }`; JSON-RPC standard errors are `{ jsonrpc: "2.0", id: RequestId | null, error: { code, message } }` with no `data`. Both forbid `result` and additional members. **A valid, uniquely extracted, profile-compliant `id` is echoed byte-for-byte on every standard error that has one — including `Invalid Request`; `id: null` is restricted to the arms where id detection failed** (Parse error; the Invalid-Request no-usable-id arm) per JSON-RPC 2.0 §5 — never a Host choice on a valid request (your R5 P1-2). Result/error mutual exclusivity and per-error member sets are structural.
 - **`RequestId` — your value, absorbed verbatim:** `type: string`, `minLength 1`, `maxLength 128`, `pattern ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`, raw UTF-8 byte length 1..128. The ASCII grammar plus canonical raw-token equality makes the token exactly 3..130 bytes including quotes; `"\u0061"` is rejected rather than normalized to `"a"`. **String-only: numeric and `null` request IDs are protocol violations before dispatch** — `null` exists only in the pre-id `WireErrorResponse` branch. In-flight uniqueness per `brokerSessionId` (collision fails before dispatch); **a retry is a new attempt with a fresh RequestId** (attempt-only, non-authoritative for settlement); success/error responses echo the originating valid ID **byte-for-byte**.
 - **`deadlineUnixMs` wire numeric grammar (raw-token level, not parsed-value):** the raw JSON lexeme must match canonical decimal digits `0|[1-9][0-9]*` — no sign, no decimal point, **no exponent**, no leading zeros — with raw token length ≤ 16 characters (the decimal digit count of 2^53 − 1, a derived structural fact, not a policy number), validated **pre-parse/pre-dispatch**; exponent-padding and every other non-canonical numeric encoding is rejected before dispatch. The parsed value must additionally be a positive integer ≤ 2^53 − 1. The **operational Host deadline cap policy stays yours (K-2)**.
 - The outer members (`jsonrpc`, `id`, `method`, braces and separators) are **included in every generated `maxEncoded{Request,Result,Error}Bytes` proof** — your RequestId value above is now fixed, and the proofs include its surrounding JSON quotes per your intake — with mutation and N/N+1 conformance cases proving oversize/malformed-envelope/non-canonical-string/non-canonical-numeric/duplicate-member/non-scalar-string/non-string-id rejection **before authorization-visible dispatch**. Duplicate-member mutations cover the outer envelope, a nested closed DTO, and a nested frozen-open payload; numeric-alias mutations cover both object and array positions inside M2; lone high- and low-surrogate mutations cover member names, bounded string values, and object/array positions inside open payloads.
@@ -332,12 +334,13 @@ No production method exists for fixture setup/observe, grant presets, revocation
 | Standard class | `error.code` | `error.message` | `id` | `error.data` |
 |---|---|---|---|---|
 | Parse error | `-32700` | `"Parse error"` | `null` | absent |
-| Invalid Request | `-32600` | `"Invalid Request"` | `null` | absent |
+| Invalid Request — valid id arm | `-32600` | `"Invalid Request"` | **valid `RequestId` echo** (uniquely extracted, profile-compliant — a structurally invalid request can still carry an unambiguous id, e.g. missing `method` with `id: "r1"`; your R5 P1-2) | absent |
+| Invalid Request — no-usable-id arm | `-32600` | `"Invalid Request"` | `null` (absent, malformed, ambiguous, or unparseable id) | absent |
 | Method not found | `-32601` | `"Method not found"` | valid `RequestId` echo | absent |
 | Invalid params | `-32602` | `"Invalid params"` | valid `RequestId` echo | absent |
 | Internal error | `-32603` | `"Internal error"` | valid `RequestId` echo | absent |
 
-The full public error union is closed: five application variants require `{ code, message, data }`; five standard variants require `{ code, message }` and forbid `data`; all have `additionalProperties: false`. Every raw code token byte-equals its canonical signed decimal literal before parse, every message passes `UnicodeScalarString` + `CanonicalStringToken`, and the generator measures all ten complete variants for exact error proofs. Diagnostics remain private.
+The full public error union is closed: five application variants require `{ code, message, data }`; six standard variants (five classes, `Invalid Request` split into its two closed id arms) require `{ code, message }` and forbid `data`; all have `additionalProperties: false`. Every raw code token byte-equals its canonical signed decimal literal before parse, every message passes `UnicodeScalarString` + `CanonicalStringToken`, and the generator measures all **eleven** complete variants for exact error proofs, with conformance cases for both Invalid-Request id arms. Diagnostics remain private.
 
 Every registry row's application error set resolves through the first table; the standard table is outer-envelope-wide and supplies row 11's named protocol errors without inventing a row-specific shape. No string appears as a top-level JSON-RPC `code`; new classes/reasons require a contract delta.
 
@@ -394,7 +397,7 @@ The plugins repository provides a **test-host conformance harness** only (framin
 - [x] **complete canonical numeric coverage** — bounded integers use `WireUInt53`, fixed codes use `WireIntConst`, and arbitrary M2 numbers use recursive `CanonicalNumberToken`
 - [x] **complete target string-token coverage** — `UnicodeScalarString` precedes canonical equality; lone high/low surrogates reject in member names and values
 - [x] **all 12 shapes joined through one exhaustive raw-frame/lexeme/variable-width leaf matrix** — W0 rejects non-scalar strings and duplicate members before parse; no prose-only or parsed-value-only closure path
-- [ ] **maintainer accepts the explicit reservation boundary** — H1/H3/H4/H5/H6, M1/M2/M5/M6, I1; affected rows stay reserved under D0
+- [ ] **maintainer accepts the explicit reservation boundary** — H1/H3/H4/H5/H6, M1/M2/M5/M6/**M7**, I1 (M7 joins per your R5 P1-1); affected rows stay reserved under D0
 - [ ] **fresh review on revision-5 exact live bytes** (raw API-string SHA-256/counts reported in delivery comment)
 - [ ] per-row `ready=true` — only after exact validators, generated byte proofs, N/N+1 raw-byte conformance, and three-stage runtime enforcement pass (reservation-only lifecycle, your D0 = A)
 - [ ] K-2 maintainer records `shape-approved`
