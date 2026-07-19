@@ -21,7 +21,7 @@ created: 2026-07-19
 ```
 clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 ├─ K-1 messaging 域（maintainer 侧）        ├─ P-2  in-process conformance   ✅
-├─ K-2 Host Broker（maintainer 侧）  ⬜     ├─ P-1a.0 shape co-sign (#1165)  ⏸️ rev6 等 R6 verdict
+├─ K-2 Host Broker（maintainer 侧）  ⬜     ├─ P-1a.0 shape co-sign (#1165)  ⏸️ rev8 等 R8 verdict
 ├─ #1165 shape 裁决权（K-2 maintainer）     ├─ P-1a  contract PR 机制化       💤 等 shape-approved
 └─ K-1 producer attestation        ⬜      ├─ P-1b  wire-client + harness    ⬜
                                            ├─ P-1c  SDK author surface       ⬜
@@ -38,20 +38,20 @@ clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 
 | 仓 | 项 | 谁动 | 说明 |
 |---|---|---|---|
-| plugins | **byte-proof 计算引擎** 🔄 | terra | R1→R2 双轮 review 收敛（`04fd4e0`，113/113）；三 OQ 全按 plan canonical 裁决闭合；待推 fork + draft PR |
 | plugins | **P-1b harness 骨架** | 我们 | 进程管理 / NDJSON 传输 / kill-9 隔离——不含最终 schema，不碰授权边界 |
 | plugins | **DX 脚手架** create-clowder-plugin | 我们 | 与 contract 解耦 |
 | plugins | C-2/C-3 fixture 设计稿 | 我们（可选） | 设计先行，不实现 |
 | core | **K-1 上游化**（rebase + formal PR） | maintainer | 已在进行 🔄，K-2 prep 明文前置 |
 | core | **K-1 producer attestation** | maintainer | messageId/threadId/actor.id 界 + valid-Date admission——**正是我们 M1/M2/M7 reserved 等的解锁件** |
 | core | **K-2 Broker 非契约面** | maintainer | supervision/spawn/dead-letter/reconcile 骨架，不消费 wire schema |
-| — | **#1165 R6 催审** | **lang** | 拿 <https://github.com/zts212653/clowder-ai/issues/1165> 找 maintainer；顺带把上面 core 三项并行提给他 |
+| — | **#1165 R8 催审** | **lang** | 同一地址 <https://github.com/zts212653/clowder-ai/issues/1165>（看 revision 8 + packet `5015822407`）；core 三项并行提案不变 |
 
 ### 🔍 IN-REVIEW——已投出，等外部审
 
 | 仓 | 项 | 等什么 | 兜底 |
 |---|---|---|---|
-| core | #1165 **rev6**（SHA `ee2ee48f…`，comment `5014966821`） | maintainer R6 exact-body verdict（三确认：两 P1 修复 / 保留边界 / shape-approved 与否） | issue tracking + hold_ball 30min 轮询 |
+| core | #1165 **rev8**（SHA `c56b8e58…`，packet `5015822407`） | maintainer R8 exact-body verdict（① Notification partition 修复 ② 保留边界 ③ shape-approved 与否） | tracking @ R8 cursor + hold_ball 30min 轮询 |
+| plugins | **PR #8** byte-proof 引擎（draft，`04fd4e0`，113/113） | 云端 review 0 finding；merge 需 maintainer/co-creator 授权（schema 无关，不等 shape） | PR tracking intent=review |
 | plugins | PR #7 draft（wire truth 首批，head `7b2a0d1`） | shape-approved 后 schema-first 重建转 ready | 三个 [P1] task 停靠 + PR tracking |
 
 ### 🔒 BLOCKED——真依赖串行链
