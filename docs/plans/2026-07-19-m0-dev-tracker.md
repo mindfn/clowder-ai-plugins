@@ -50,7 +50,7 @@ clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 |---|---|---|---|
 | core | #1165 **rev10**（SHA `7e6a8c66…`，packet `5017506041`） | maintainer R10 exact-body verdict（含 exhaustive-listing 请求） | tracking @ R10 cursor + hold_ball 30min 轮询 |
 | plugins | **PR #8** byte-proof 引擎（draft，`04fd4e0`，113/113） | 云端 review 0 finding；merge 需 maintainer/co-creator 授权（schema 无关，不等 shape） | PR tracking intent=review |
-| plugins | **PR #9** P-1b harness 骨架（`02293c57`，云端 R1-R3 全修：sentinel root + 单写者 cleanup 状态机 + `HarnessCleanupError`，147/147 + CI 绿） | 云端 R4 verdict（re-review packet `5017534904`） | PR tracking intent=review |
+| plugins | **PR #9** P-1b harness 骨架（`6edc277`，云端 R1-R4 全修：R4 = taskkill 非 success 无后代存活证据即 fail-closed，150/150 + CI 绿） | 云端 R5 verdict（packet `5017573376`） | PR tracking intent=review |
 | plugins | PR #7 draft（wire truth 首批，head `7b2a0d1`） | shape-approved 后 schema-first 重建转 ready | 三个 [P1] task 停靠 + PR tracking |
 
 ### 🔒 BLOCKED——真依赖串行链
