@@ -41,7 +41,7 @@ clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 | plugins | **DX 脚手架** create-clowder-plugin | 我们 | 与 contract 解耦 |
 | plugins | C-2/C-3 fixture 设计稿 | 我们（可选） | 设计先行，不实现 |
 | core | **K-1 上游化**（rebase + formal PR） | maintainer | 已在进行 🔄，K-2 prep 明文前置 |
-| core | **K-1 producer attestation** | maintainer | messageId/threadId/actor.id 界 + valid-Date admission——**正是我们 M1/M2/M7 reserved 等的解锁件** |
+| core | **K-1 producer attestation** | maintainer | valid-Date admission **future-write 半件已成 upstream PR #1185**（`05ad80c6`，gate PASS + 双审）——M7 仍 RESERVED 等 stored-data 半件；M1/M2/identifier 界未动 |
 | plugins | **P-1a contract PR 机制化** | **opus**（新分工） | shape-approved 落地——mechanize frozen rev11 shape verbatim，reservation-only（全 rows ready=false） |
 
 ### 🔍 IN-REVIEW——已投出，等外部审
