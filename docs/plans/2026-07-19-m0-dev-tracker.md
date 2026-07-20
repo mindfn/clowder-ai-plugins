@@ -21,7 +21,7 @@ created: 2026-07-19
 ```
 clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 ├─ K-1 messaging 域（maintainer 侧）        ├─ P-2  in-process conformance   ✅
-├─ K-2 Host Broker（maintainer 侧）  ⬜     ├─ P-1a.0 shape co-sign (#1165)  ⏸️ rev11 等 R11 verdict
+├─ K-2 Host Broker（maintainer 侧）  ⬜     ├─ P-1a.0 shape co-sign (#1165)  ✅ **shape-approved**（R11 APPROVE）
 ├─ #1165 shape 裁决权（K-2 maintainer）     ├─ P-1a  contract PR 机制化       💤 等 shape-approved
 └─ K-1 producer attestation        ⬜      ├─ P-1b  wire-client + harness    🔄 骨架 PR #9
                                            ├─ P-1c  SDK author surface       ⬜
@@ -42,13 +42,12 @@ clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 | plugins | C-2/C-3 fixture 设计稿 | 我们（可选） | 设计先行，不实现 |
 | core | **K-1 上游化**（rebase + formal PR） | maintainer | 已在进行 🔄，K-2 prep 明文前置 |
 | core | **K-1 producer attestation** | maintainer | messageId/threadId/actor.id 界 + valid-Date admission——**正是我们 M1/M2/M7 reserved 等的解锁件** |
-| — | **#1165 R11 催审** | **lang** | 同一地址（看 revision 11 + packet `5018246387`）；**R10 已接受权威表，收尾极近**；PR #8 可一并提（terra 已修 dist 漂移 P1，云端复审无 issue） |
+| plugins | **P-1a contract PR 机制化** | **opus**（新分工） | shape-approved 落地——mechanize frozen rev11 shape verbatim，reservation-only（全 rows ready=false） |
 
 ### 🔍 IN-REVIEW——已投出，等外部审
 
 | 仓 | 项 | 等什么 | 兜底 |
 |---|---|---|---|
-| core | #1165 **rev11**（SHA `7e26e5af…`，packet `5018246387`） | maintainer R11 exact-body verdict | tracking + hold_ball 轮询 |
 | plugins | **PR #8** byte-proof 引擎（`1ad6323`，maintainer P1【dist 漂移】已修：byte-proof 移出发布 build + integrity fail-closed 校验；云端复审 no-major-issues） | maintainer 新 verdict 覆盖旧 CHANGES_REQUESTED | PR tracking intent=review |
 | plugins | **PR #9** P-1b harness 骨架（`6edc277`，云端 R1-R4 全修：R4 = taskkill 非 success 无后代存活证据即 fail-closed，150/150 + CI 绿） | 云端 R5 verdict（packet `5017573376`） | PR tracking intent=review |
 | plugins | PR #7 draft（wire truth 首批，head `7b2a0d1`） | shape-approved 后 schema-first 重建转 ready | 三个 [P1] task 停靠 + PR tracking |
@@ -81,12 +80,12 @@ R1 verdict(07-17 06:11) → R2 五决策落定(09:22) → rev2 → R3 五P1(14:4
 → R44..R48 吸收（response-candidate precedence + T-L accept lane + terra 五轮扫收敛）
 → rev10 上线(21:51) → R10 = REQUEST_CHANGES(00:01, 表已 accept、三处 derived projection 滞后)
 → R49..R51 吸收（四终态句/checklist T-A…T-L/计数 5+4 + 坐标 sweep 两轮）
-→ **rev11 上线(02:35, SHA 7e26e5af…, 86,059 cp / 86,740 B, packet `5018246387`) → ⏸️ 等 R11 verdict**
+→ rev11 上线(02:35) → **R11 = APPROVE（02:38，`shape-approved` reservation-only，comment `5018275437`）🎉 主线关桌**
 ```
 
 - **R7 → rev8 吸收链**：R7 唯一 P1（T-D 把合法 Notification 打回 null，违反 §4.1 MUST-NOT-reply）→ 表重构为**六维 state partition 投影**（T-A…T-K）：T-D 收窄真 detection failure、T-J 合法 row-10 accept、T-K 一切 idless v0 违规 close、Notification invariant 逐字采纳。内部扫三轮（R40 残留段+idless envelope 类；R41 计数）收敛，链终态 `c79f83a`，我方独立核验 live body 逐字节吻合。累计：R6→rev7（T-A…T-I 表）、R7→rev8（partition 化）——两轮 verdict 均确认既有推导、每轮 finding 数=1
-- **当前等**：maintainer R11 exact-body verdict（**R10 已 accept 权威表——剩余全是投影同步类，收尾极近**）；tracking @ R11 packet + hold_ball 轮询兜底
-- **approved 解锁链不变**：R11 verdict → shape-approved → contract PR → PR #7 重建 → beta.3 → registry 验证 → K-1/K-2 re-pin
+- **APPROVED 范围（精确）**：授权 = 开 contract PR + 按 frozen shape（rev11 body `7e26e5af…`）review。**仍不授权** = 任何 row ready=true / beta.3 发布 / registry-tag 变更 / re-pin / K-1 mirror 删除 / **K-2 runtime work**。失效条款：issue body 任何编辑使 approval 作废——#1165 body 从此冻结
+- **解锁链激活**：contract PR（opus 写，新分工）→ PR #7 schema-first 重建（三 [P1] task 解锁）→ review 收敛 → merge 授权 → beta.3（另批）→ registry 验证 → re-pin（另批）
 
 ## 四、掉球史（根因 + 已固化对策）
 
