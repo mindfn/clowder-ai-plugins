@@ -21,7 +21,7 @@ created: 2026-07-19
 ```
 clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 ├─ K-1 messaging 域（maintainer 侧）        ├─ P-2  in-process conformance   ✅
-├─ K-2 Host Broker（maintainer 侧）  ⬜     ├─ P-1a.0 shape co-sign (#1165)  ⏸️ rev10 等 R10 verdict
+├─ K-2 Host Broker（maintainer 侧）  ⬜     ├─ P-1a.0 shape co-sign (#1165)  ⏸️ rev11 等 R11 verdict
 ├─ #1165 shape 裁决权（K-2 maintainer）     ├─ P-1a  contract PR 机制化       💤 等 shape-approved
 └─ K-1 producer attestation        ⬜      ├─ P-1b  wire-client + harness    🔄 骨架 PR #9
                                            ├─ P-1c  SDK author surface       ⬜
@@ -42,14 +42,14 @@ clowder-ai (core, upstream)               clowder-ai-plugins (本仓)
 | plugins | C-2/C-3 fixture 设计稿 | 我们（可选） | 设计先行，不实现 |
 | core | **K-1 上游化**（rebase + formal PR） | maintainer | 已在进行 🔄，K-2 prep 明文前置 |
 | core | **K-1 producer attestation** | maintainer | messageId/threadId/actor.id 界 + valid-Date admission——**正是我们 M1/M2/M7 reserved 等的解锁件** |
-| — | **#1165 R10 催审** | **lang** | 同一地址 <https://github.com/zts212653/clowder-ai/issues/1165>（看 revision 10 + packet `5017506041`）；core 并行提案两项（K-1 上游化 + attestation） |
+| — | **#1165 R11 催审** | **lang** | 同一地址（看 revision 11 + packet `5018246387`）；**R10 已接受权威表，收尾极近**；PR #8 可一并提（terra 已修 dist 漂移 P1，云端复审无 issue） |
 
 ### 🔍 IN-REVIEW——已投出，等外部审
 
 | 仓 | 项 | 等什么 | 兜底 |
 |---|---|---|---|
-| core | #1165 **rev10**（SHA `7e6a8c66…`，packet `5017506041`） | maintainer R10 exact-body verdict（含 exhaustive-listing 请求） | tracking @ R10 cursor + hold_ball 30min 轮询 |
-| plugins | **PR #8** byte-proof 引擎（draft，`04fd4e0`，113/113） | 云端 review 0 finding；merge 需 maintainer/co-creator 授权（schema 无关，不等 shape） | PR tracking intent=review |
+| core | #1165 **rev11**（SHA `7e26e5af…`，packet `5018246387`） | maintainer R11 exact-body verdict | tracking + hold_ball 轮询 |
+| plugins | **PR #8** byte-proof 引擎（`1ad6323`，maintainer P1【dist 漂移】已修：byte-proof 移出发布 build + integrity fail-closed 校验；云端复审 no-major-issues） | maintainer 新 verdict 覆盖旧 CHANGES_REQUESTED | PR tracking intent=review |
 | plugins | **PR #9** P-1b harness 骨架（`6edc277`，云端 R1-R4 全修：R4 = taskkill 非 success 无后代存活证据即 fail-closed，150/150 + CI 绿） | 云端 R5 verdict（packet `5017573376`） | PR tracking intent=review |
 | plugins | PR #7 draft（wire truth 首批，head `7b2a0d1`） | shape-approved 后 schema-first 重建转 ready | 三个 [P1] task 停靠 + PR tracking |
 
@@ -79,12 +79,14 @@ R1 verdict(07-17 06:11) → R2 五决策落定(09:22) → rev2 → R3 五P1(14:4
 → R42..R43 吸收（值路由 = ID/Notification 状态投影；gates/W2 修）
 → rev9 上线(13:20) → R9 = REQUEST_CHANGES(14:10, response 形态帧 T-D/T-H 双路由)
 → R44..R48 吸收（response-candidate precedence + T-L accept lane + terra 五轮扫收敛）
-→ **rev10 上线(21:51, SHA 7e6a8c66…, 85,745 cp / 86,416 B, packet `5017506041`) → ⏸️ 等 R10 verdict**
+→ rev10 上线(21:51) → R10 = REQUEST_CHANGES(00:01, 表已 accept、三处 derived projection 滞后)
+→ R49..R51 吸收（四终态句/checklist T-A…T-L/计数 5+4 + 坐标 sweep 两轮）
+→ **rev11 上线(02:35, SHA 7e26e5af…, 86,059 cp / 86,740 B, packet `5018246387`) → ⏸️ 等 R11 verdict**
 ```
 
 - **R7 → rev8 吸收链**：R7 唯一 P1（T-D 把合法 Notification 打回 null，违反 §4.1 MUST-NOT-reply）→ 表重构为**六维 state partition 投影**（T-A…T-K）：T-D 收窄真 detection failure、T-J 合法 row-10 accept、T-K 一切 idless v0 违规 close、Notification invariant 逐字采纳。内部扫三轮（R40 残留段+idless envelope 类；R41 计数）收敛，链终态 `c79f83a`，我方独立核验 live body 逐字节吻合。累计：R6→rev7（T-A…T-I 表）、R7→rev8（partition 化）——两轮 verdict 均确认既有推导、每轮 finding 数=1
-- **当前等**：maintainer R10 exact-body verdict（① response-candidate precedence + T-L 修复确认 ② 保留边界 ③ shape-approved 与否；exhaustive-listing 请求延续）；tracking @ R10 cursor + hold_ball 轮询兜底（22:23Z 首查）
-- **approved 解锁链不变**：R10 verdict → shape-approved → contract PR → PR #7 重建 → beta.3 → registry 验证 → K-1/K-2 re-pin
+- **当前等**：maintainer R11 exact-body verdict（**R10 已 accept 权威表——剩余全是投影同步类，收尾极近**）；tracking @ R11 packet + hold_ball 轮询兜底
+- **approved 解锁链不变**：R11 verdict → shape-approved → contract PR → PR #7 重建 → beta.3 → registry 验证 → K-1/K-2 re-pin
 
 ## 四、掉球史（根因 + 已固化对策）
 
