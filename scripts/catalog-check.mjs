@@ -80,6 +80,24 @@ async function verifyCatalogEntry(catalogEntry) {
     assert.deepEqual(manifestValidation.manifest.description, catalogEntry.description);
     assert.deepEqual(manifestValidation.manifest.icon, catalogEntry.icon);
 
+    if (catalogEntry.pluginId === 'dev.clowder.video-analysis') {
+      const descriptions = typeof catalogEntry.description === 'string'
+        ? [catalogEntry.description]
+        : [catalogEntry.description.default, ...Object.values(catalogEntry.description.translations)];
+      assert.ok(
+        descriptions.every(description => [...description].length <= 100),
+        'video-analysis Agent introductions must not exceed 100 characters per locale',
+      );
+      assert.ok(
+        artifact.files.some((file) => file.path === 'README.md'),
+        'packed video-analysis artifact is missing README.md',
+      );
+      assert.match(
+        await readFile(join(unpackedDirectory, 'package', 'README.md'), 'utf8'),
+        /^# Video Analysis\n/m,
+      );
+    }
+
     const contributions = manifestValidation.manifest.contributions ?? [];
     const staticEditors = contributions.length > 0 &&
       contributions.every(entry => entry.type === 'content-editor-provider');

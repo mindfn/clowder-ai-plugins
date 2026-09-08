@@ -145,6 +145,9 @@ test('packed public packages install and import in a fresh npm consumer', async 
       consumer,
     );
 
+    const contractPackage = JSON.parse(
+      await readFile(join(consumer, 'node_modules/@clowder-ai/plugin-contract/package.json'), 'utf8'),
+    );
     const sdkPackage = JSON.parse(
       await readFile(join(consumer, 'node_modules/@clowder-ai/plugin-sdk/package.json'), 'utf8'),
     );
@@ -206,6 +209,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
         'utf8',
       ),
     );
+    assert.equal(contractPackage.version, '0.1.0-beta.15');
     assert.equal(sdkPackage.version, '0.1.0-beta.10');
     assert.equal(sdkPackage.dependencies['@clowder-ai/plugin-contract'], '0.1.0-beta.14');
     assert.equal(
@@ -233,7 +237,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
     assert.deepEqual(companionPackage.bin, {
       'clowder-personal-chrome-host': 'native-host/native-host-cli.mjs',
     });
-    assert.equal(videoPackage.version, '0.1.0-alpha.0');
+    assert.equal(videoPackage.version, '0.1.0-alpha.1');
     assert.deepEqual(videoPackage.bin, {
       'clowder-video-analysis-mcp': './dist/mcp-entrypoint.js',
     });
@@ -247,6 +251,11 @@ test('packed public packages install and import in a fresh npm consumer', async 
       'utf8',
     );
     assert.match(videoIcon, /^<svg\b/);
+    const videoReadme = await readFile(
+      join(consumer, 'node_modules/@clowder-ai/video-analysis/README.md'),
+      'utf8',
+    );
+    assert.match(videoReadme, /^# Video Analysis\n/m);
     await readFile(
       join(consumer, 'node_modules/@clowder-ai/personal-chrome-companion/extension/manifest.json'),
       'utf8',

@@ -86,6 +86,23 @@
       ],
       "versions": [
         {
+          "version": "0.1.0-alpha.1",
+          "contractVersion": "0.1.0-beta.13",
+          "manifestPath": "plugin.yaml",
+          "artifact": {
+            "kind": "npm",
+            "packageName": "@clowder-ai/video-analysis",
+            "version": "0.1.0-alpha.1",
+            "tarballUrl": "https://registry.npmjs.org/@clowder-ai/video-analysis/-/video-analysis-0.1.0-alpha.1.tgz",
+            "integrity": "sha512-rap0UB5Q74NAXzB2TKAruSi4NyoVMi2qx9CRdGgnpN5+Adfvgk0wiuC7K3XXlbZ5F0bSzhL1qd7nMlsQ3SggWg==",
+            "shasum": "9fdfa46dc657ac26fc687ace2e4d9f110f869fa3",
+            "provenance": {
+              "repository": "https://github.com/zts212653/clowder-ai-plugins",
+              "sourceDirectory": "packages/video-analysis"
+            }
+          }
+        },
+        {
           "version": "0.1.0-alpha.0",
           "contractVersion": "0.1.0-beta.13",
           "manifestPath": "plugin.yaml",
