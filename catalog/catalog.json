@@ -94,8 +94,8 @@
             "packageName": "@clowder-ai/video-analysis",
             "version": "0.1.0-alpha.1",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/video-analysis/-/video-analysis-0.1.0-alpha.1.tgz",
-            "integrity": "sha512-rap0UB5Q74NAXzB2TKAruSi4NyoVMi2qx9CRdGgnpN5+Adfvgk0wiuC7K3XXlbZ5F0bSzhL1qd7nMlsQ3SggWg==",
-            "shasum": "9fdfa46dc657ac26fc687ace2e4d9f110f869fa3",
+            "integrity": "sha512-kIa5V8v/Ot8ZkemQUl99BqXALnLuDzvarfWtOJxsD6XJp5bzheUr3lx5MQvS/CKWuqjUKBWSEmdrSaac0bTUBg==",
+            "shasum": "fd38d5a7e9f2a932a0a2d90603991c5c801a25f7",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/video-analysis"

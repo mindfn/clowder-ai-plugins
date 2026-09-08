@@ -32,6 +32,8 @@ assert.equal(
   '@clowder-ai/video-analysis',
 );
 
+let videoAnalysisChecks = 0;
+
 async function verifyCatalogEntry(catalogEntry) {
   const version = getCatalogPlugin(validation.catalog, catalogEntry.pluginId);
   assert.ok(version);
@@ -81,6 +83,7 @@ async function verifyCatalogEntry(catalogEntry) {
     assert.deepEqual(manifestValidation.manifest.icon, catalogEntry.icon);
 
     if (catalogEntry.pluginId === 'dev.clowder.video-analysis') {
+      videoAnalysisChecks += 1;
       const descriptions = typeof catalogEntry.description === 'string'
         ? [catalogEntry.description]
         : [catalogEntry.description.default, ...Object.values(catalogEntry.description.translations)];
@@ -169,5 +172,6 @@ async function verifyCatalogEntry(catalogEntry) {
 }
 
 for (const entry of listCatalogPlugins(validation.catalog)) await verifyCatalogEntry(entry);
+assert.equal(videoAnalysisChecks, 1, 'video-analysis package-owned metadata checks must run exactly once');
 
 console.log('catalog validation, list/search/get, and exact packed artifact: ok');

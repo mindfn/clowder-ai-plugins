@@ -53,9 +53,9 @@ parameter; Zhipu receives it as a bearer credential. Known raw and encoded forms
 of the key are scrubbed from returned errors and results.
 
 Only HTTPS video URLs are accepted, and embedded URL credentials are rejected.
-Provider base URLs must use HTTPS. The runtime keeps no package-owned history or
-cache; the Host owns process supervision and any user-visible records around the
-tool call.
+Provider base URLs must use HTTPS; a loopback HTTP origin is accepted only for
+isolated local fixtures. The runtime keeps no package-owned history or cache; the
+Host owns process supervision and any user-visible records around the tool call.
 
 ## Limits and failure behavior
 
