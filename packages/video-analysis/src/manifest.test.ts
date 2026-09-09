@@ -13,7 +13,11 @@ test('plugin.yaml is the static access protocol and matches the package version'
   ) as { version: string };
 
   assert.equal(manifest['version'], packageJson.version);
-  assert.equal(manifest['contractVersion'], '0.1.0-beta.13');
+  assert.equal(
+    manifest['contractVersion'],
+    '0.1.0',
+    'manifest declares the Host compatibility line, not the contract npm version',
+  );
   assert.deepEqual(manifest['description'], {
     default: 'Analyze remote videos through configured Gemini or Zhipu providers.',
     translations: {

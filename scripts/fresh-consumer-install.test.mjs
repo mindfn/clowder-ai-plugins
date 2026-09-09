@@ -6,6 +6,8 @@ import { isAbsolute, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { parse as parseYaml } from 'yaml';
+
 const repoRoot = fileURLToPath(new URL('../', import.meta.url));
 
 function run(command, args, cwd) {
@@ -241,11 +243,28 @@ test('packed public packages install and import in a fresh npm consumer', async 
     assert.deepEqual(videoPackage.bin, {
       'clowder-video-analysis-mcp': './dist/mcp-entrypoint.js',
     });
-    const videoManifest = await readFile(
+    const installedContract = await import(
+      pathToFileURL(
+        join(consumer, 'node_modules/@clowder-ai/plugin-contract/dist/index.js'),
+      ).href
+    );
+    const videoManifestText = await readFile(
       join(consumer, 'node_modules/@clowder-ai/video-analysis/plugin.yaml'),
       'utf8',
     );
-    assert.match(videoManifest, /src: assets\/icon\.svg/);
+    const videoManifest = parseYaml(videoManifestText);
+    const videoManifestValidation = installedContract.validateManifest(videoManifest);
+    assert.equal(
+      videoManifestValidation.valid,
+      true,
+      videoManifestValidation.valid ? undefined : JSON.stringify(videoManifestValidation.errors),
+    );
+    assert.equal(
+      videoManifest.contractVersion,
+      installedContract.CONTRACT_VERSION,
+      'packed manifest declares the Host compatibility line, not the contract npm version',
+    );
+    assert.match(videoManifestText, /src: assets\/icon\.svg/);
     const videoIcon = await readFile(
       join(consumer, 'node_modules/@clowder-ai/video-analysis/assets/icon.svg'),
       'utf8',
