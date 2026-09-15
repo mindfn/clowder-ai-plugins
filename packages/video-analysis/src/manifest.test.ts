@@ -19,9 +19,9 @@ test('plugin.yaml is the static access protocol and matches the package version'
     'manifest declares the Host compatibility line, not the contract npm version',
   );
   assert.deepEqual(manifest['description'], {
-    default: 'Analyze remote videos through configured Gemini or Zhipu providers.',
+    default: 'Send one remote HTTPS video URL and a prompt to the configured provider for analysis.',
     translations: {
-      'zh-CN': '通过已配置的 Gemini 或智谱视觉模型分析远程视频。',
+      'zh-CN': '将一个远程 HTTPS 视频 URL 和提示词交给已配置的提供商分析。',
     },
   });
   const description = manifest['description'] as {

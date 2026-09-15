@@ -1,10 +1,10 @@
 # Video Analysis
 
 `@clowder-ai/video-analysis` gives a Clowder AI Agent one read-only MCP tool for
-asking a configured visual model to analyze a remote video. The package owns the
-provider protocol and runs as a Host-supervised stdio process; installation,
-configuration, secret storage, grants, enablement, and lifecycle remain Host
-decisions.
+sending one remote HTTPS video URL and a prompt to the configured provider for
+analysis. The package owns the provider protocol and runs as a Host-supervised
+stdio process; installation, configuration, secret storage, grants, enablement,
+and lifecycle remain Host decisions.
 
 ## What it does
 
