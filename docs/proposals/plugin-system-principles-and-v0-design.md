@@ -70,7 +70,7 @@ cutover 并删除旧实现/旧 IM 管理入口 → Train C2 由首个真实消�
    `plugin.yaml` 的 `type: mcp | skill | limb | schedule` 仍是正确的能力分类，Host 按 type
    分发到对应子系统，不合成一个万能 ToolRegistry；同一 capability type 若同时提供 YAML 静态
    与 SDK 动态注册，两路才共享底层 store、ledger 与 lifecycle。state namespace KV、
-   signals/events 与 UI contribution 继续按域开放。memory/thread 是 Train C 闭环后的高敏候选域，
+   signals/events 与 UI contribution 继续按域开放。memory/thread 是 Train C2 闭环后的高敏候选域，
    不进入当前 v0 contract/SDK
 2. 插件控制面与 Host Broker：F202 继续做统一编排，Core 只持有通用的时间/持久化/重试、
    HTTP ingress、IdentityRegistry、direct-tool registry、MCP runtime、skill registry、limb control
@@ -85,7 +85,7 @@ cutover 并删除旧实现/旧 IM 管理入口 → Train C2 由首个真实消�
 4. 控制面：Train B 即交付 VS Code 式 Marketplace/Installed/Details/Settings 终态骨架；
    Console 与 Agent 投影同一 Host inventory。Agent 公共工具固定为 `plugin_list`、
    `plugin_search`、`plugin_get`、`plugin_install`、`plugin_set_enabled`、`plugin_uninstall`，
-   不开放 `plugin_update`、`plugin_repair` 或 `updateAvailable`。Train C 只接入迁移 contribution
+   不开放 `plugin_update`、`plugin_repair` 或 `updateAvailable`。Train C1 只接入迁移 contribution
    并删除 IM connector 旧管理面，不再发明第二套 Marketplace；capability-gate 前端装配、审计/trace
    仍由 Host 拥有
 5. SDK Host Adapter（鉴权、授权、调用结算、callback/事件调度）随内核发版；插件进程 runtime/client 在插件仓
@@ -205,7 +205,7 @@ MessageOutputEvent（宿主事件流）
 - **signals/events（事件输入面）**：声明式信号 + 发布 + wake route + 类型化 liveness（§3.2a）
 - **lifecycle/effect/feature activation**：plugin 总闸、逐 feature revision-fenced 状态与注册即返回 disposer
 
-**闭环后候选域（不属于当前 v0 surface）**：memory 与 thread。它们要等 Train C
+**闭环后候选域（不属于当前 v0 surface）**：memory 与 thread。它们要等 Train C2
 完成，再分别以真实消费者、权限/数据形状审查和独立纵切验收开启；memory 还依赖
 #1047 acceptance。P8、§3.3、§3.6 与 §3.9 对二者的描述是届时必须满足的安全约束，
 不是已经冻结的 contract/SDK API。messaging 使用宿主签发的 opaque `ThreadHandle`
@@ -297,7 +297,7 @@ PluginControlPlane
 
 这些 adapter 只拥有通用 authority 与 resource lifecycle。GitHub poll/review parsing、
 PR/issue tracking tool、IM provider protocol、thread 选择、外部平台回推与具体 service 实现
-全部在插件进程；Core 中现存的业务 factory/router/hook 只是对应 Train C cutover 前的兼容路径，不是可冻结
+全部在插件进程；Core 中现存的业务 factory/router/hook 只是对应 Train C1/C2 cutover 前的兼容路径，不是可冻结
 的插件 API。同一 capability type 的静态 manifest 与动态 SDK 注册必须进入同一个 type-specific
 adapter/registry，不能形成两套 owner、冲突、dispose 或 restart 语义；不同 type 按图中的
 分类型 adapter/control plane 分发，不因共享生命周期 envelope 而合成一个 registry。
@@ -580,7 +580,7 @@ package 证据在 Train C1 冻结 inventory 中一次补齐，尚未开放的 ho
 Train C2 按真实消费者开放扩展点
 进一步收敛。
 这些变化不撤销 M1 产品目标，也不降低 P4/P14：foreground-cat
-将来仍必须走同一公开 SDK/授权路径并完成真实纵切验收；在 Train C 闭环前只保留需求
+将来仍必须走同一公开 SDK/授权路径并完成真实纵切验收；在 Train C2 闭环前只保留需求
 与设计输入，不进入实现关键路径。
 
 ### 3.9 已收敛结论与回应结构

@@ -6,7 +6,7 @@ ack_request: https://github.com/zts212653/clowder-ai-plugins/issues/1#issuecomme
 acknowledgement: https://github.com/zts212653/clowder-ai-plugins/issues/1#issuecomment-5248175358
 progress_refresh: https://github.com/zts212653/clowder-ai-plugins/pull/25#issuecomment-5261613034
 created: 2026-07-14
-revised: 2026-09-01
+revised: 2026-09-17
 feature_ids: [clowder-ai-plugins-init, P-1, F202, F288, F292]
 topics: [roadmap, plugin-contract, plugin-sdk, host-broker, plugin-manager, contribution-plane, migration]
 doc_kind: roadmap
@@ -31,8 +31,9 @@ Core feature 文档继续拥有各自的 Host acceptance criteria；本文件拥
 2026-09-01 operator 再次收窄两批终态：Train B 一次完成统一 Manager、VS Code 式
 Marketplace/Settings 骨架、Agent 管理工具、机器 catalog、静态 `plugin.yaml` 接入协议与
 一个真实首迁插件 `video-analysis`；该 package 只在隔离 acceptance 环境运行，不切 Core
-生产默认路径。Train C 只做剩余业务插件、IM providers 与既定 managed services 的插件仓
-聚合迁移，以及 Core 的单路径 cutover、旧实现/旧 IM 管理入口删除。公共 Agent 控制面固定为
+生产默认路径。Train C1（目标 2026-09-24）只做剩余业务插件与 IM providers 的插件仓
+聚合迁移，以及 Core 的删除主导单路径 cutover、旧实现/旧 IM 管理入口删除。Train C2 再由
+首个真实消费者逐点开放公共 hook/UI slot 并迁移既定 managed services。公共 Agent 控制面固定为
 `plugin_list / plugin_search / plugin_get / plugin_install / plugin_set_enabled / plugin_uninstall`；
 不开放 `plugin_update`、`plugin_repair` 或 `updateAvailable`。
 
@@ -147,7 +148,7 @@ ledger 这些更严格的边界。
 | Core Plugin Manager / catalog | 中 | 当前本地插件、官方外部插件、IM connector 仍有平行控制面；catalog 只有窄官方策略，Agent 尚无统一 list/search/get。 |
 | Public Plugin SDK | 低中 | 缺统一的 plugin lifecycle / Host-issued `FeatureContext`，以及 identity/scheduler/tool/webhook/subscription 等 YAML+SDK 双通道 facade。 |
 | Contribution / Console | 低 | typed contribution、slot runtime 和 disposer 未闭合。 |
-| 存量迁移 | 低 | Feishu/Chrome 是外部 package 先例；GitHub、全部 IM、具体服务和现有业务插件尚未统一迁移，Core 仍有 provider-specific factory/router/hook。 |
+| 存量迁移 | 低 | Feishu/Chrome 是外部 package 先例；GitHub、全部 IM 和现有业务插件尚未完成 C1 聚合迁移；具体服务与所需 hook/UI 点位属于 C2。Core 仍有 provider-specific factory/router/hook。 |
 
 阶段真相为 **Train A 已关闭，Train B 进行中**。不再用主观百分比替代列车完成门。
 
@@ -157,16 +158,17 @@ ledger 这些更严格的边界。
    `@clowder-ai/plugin-contract`，Core 不得恢复 wire/schema mirror。
 2. **交付按纵切列车，不按接口拆 PR。** lifecycle、messaging、MCP、scheduler、
    service 或 UI contribution 都不是各开一串 PR 的理由。
-3. **基础闭环固定为五个聚合 PR。** Train A 已完成 PR 1；Train B 使用 Plugins/Core
-   两个聚合 PR，Train C 使用 Plugins/Core 两个聚合 PR。每个 PR 内用小提交、TDD、按域测试矩阵和
-   review 修订保证可审查性；review finding 继续修在原 PR。
+3. **基础管理面与存量 cutover 固定为五个聚合 PR。** Train A 已完成 PR 1；Train B 使用
+   Plugins/Core 两个聚合 PR，Train C1 使用 Plugins/Core 两个聚合 PR。Train C2 的公共 hook/UI
+   与 managed service 按首个真实消费者成组交付，不反向扩大 C1 PR。每个 PR 内用小提交、TDD、
+   按域测试矩阵和 review 修订保证可审查性；review finding 继续修在原 PR。
 4. **只有边界而非规模允许拆分。** 新信任边界、不可逆 registry/数据迁移，或确实
    无法在一个 review 单元内安全证明的状态机，才允许突破预算。
 5. **双仓以 release train 协调。** Plugins 侧先发布精确 package，Core 在同一列车
    的聚合 PR 中 pin 一次；最终用两个 exact SHA 做联合验收。
 6. **先验证 surface，再做 production cutover。** Train B 必须用真实消费者的隔离
    acceptance slice 验证 SDK/adapter/UI surface，但不得切换默认生产路径或删除旧实现；
-   production data migration、默认路径切换与旧路径删除只在 Train C 发生。Train C 完成前
+   production data migration、默认路径切换与旧路径删除只在 Train C1 发生。Train C2 完成前
    不开始 foreground cat、memory、windows 等新插件化能力。
 7. **Host 必须业务失明。** Core 可以拥有通用 clock/store/retry、route/registry/binding、
    Broker 与 policy，但不得把 GitHub/IM/service 的 handler、thread routing 或平台回推留作终态。
@@ -174,7 +176,8 @@ ledger 这些更严格的边界。
    必须共享 type-specific schema、owner、conflict、dispose、restart 与 settlement；
    `mcp/skill/limb/schedule` 仍按 type 分发，不能借“收敛”抹平不同安全语义。
 9. **正式版晚于狗粮与文档。** `next` prerelease 可在列车间精确发布；`latest`/`0.1.0`
-   只能在 Train C 全量迁移、真实 install→uninstall 矩阵和开发者文档全部闭合后发布。
+   只能在 Train C1 存量迁移、Train C2 扩展点/managed service、真实 install→uninstall 矩阵和
+   开发者文档全部闭合后发布。
 
 受保护分支强制产生的路线图文档 PR #38 是一次治理落盘，不计入上述五个实施 PR；
 后续进度只在该路线图或对应实施 PR 内更新，不再为状态同步新开 PR。
@@ -185,18 +188,21 @@ ledger 这些更严格的边界。
 |---|---|---|---|---|
 | Train A / M0 | beta.12 contract 与 beta.8 SDK 已发布 | exact Host/Plugins SHA、完整 fail-closed matrix、canonical 18-case | Core PR #1410 在真实 Host seams 达到 18/18 并合入 | 单仓单测、单个 loopback 或 CI 绿灯 |
 | Train B / foundation | Train A 完成，§5.1 的 v0 surface 集合冻结 | product-neutral conformance fixture、`video-analysis` 真实纵切、Plugins/Core exact SHA 联合验收 | 机器 catalog、YAML/SDK contribution、终态 Manager/Marketplace/Agent 骨架和固定生命周期旅程闭合；不切生产路径 | 类型存在、通用 fixture 独跑、只覆盖部分 surface |
-| Train C / migration | Train B 完成；§6.4 inventory 在两个聚合 PR 的 merge base 上冻结 | 每个 inventory entry 的 package、数据 mapping、rollback、composition、cutover 与旧路径清理证据 | inventory 中每个 entry 均为 `migrated` 或经 maintainer 明确批准的 `excluded`，且无双跑/第二管理入口 | “至少一个”样例迁移、包已发布但 Core 仍保留业务实现 |
-| stable `0.1.0` publication | Train C 完成 | §7 正式版 dogfood、文档、版本与 dist-tag 证据 | contract/SDK `0.1.0` 发布且 Host/官方插件精确消费 | prerelease 绿、单个 demo、文档“计划补” |
+| Train C1 / inventory migration | Train B 完成；§6.4 C1 inventory 在两个聚合 PR 的 merge base 上冻结 | 每个 C1 entry 的 package、数据 mapping、rollback、composition、cutover 与旧路径清理证据 | C1 entry 均为 `migrated` 或经 maintainer 明确批准的 `excluded`，且无双跑/第二管理入口；Core cutover 删除主导 | “至少一个”样例迁移、包已发布但 Core 仍保留业务实现 |
+| Train C2 / extension + services | Train C1 可并行准备；每个点位已有首个真实消费者和数据形状审查 | contract/schema、SDK registration、Host invocation/revoke、真实 managed service 与 UI/hook lifecycle 验收 | 每个已开点位及其服务均在 disable/uninstall 后撤销 handler、authority 和 UI entry，Core 无业务分支 | 预造无人消费的 hook/slot、只迁 service definition、按钮或 handler 单边消失 |
+| stable `0.1.0` publication | Train C1 与 Train C2 完成 | §7 正式版 dogfood、文档、版本与 dist-tag 证据 | contract/SDK `0.1.0` 发布且 Host/官方插件精确消费 | prerelease 绿、单个 demo、文档“计划补” |
 | post-closure expansion | stable `0.1.0` publication 完成 | 新能力自己的真实消费者、权限与数据形状审查 | 对应纵切独立验收 | 旧 M1 排期或未实现设计稿 |
 
 以下不变量横跨所有列车：
 
 - **INV-R1 — contract 与纵切双证据：** 每个公开 v0 surface 都要有 machine schema/type 与
   product-neutral conformance；Train B 另以 `video-analysis` 证明首个真实 package 从 catalog
-  安装到卸载的纵切。其余业务 surface 的真实 package 证据随 Train C 冻结 inventory 一次补齐；
-- **INV-R2 — migration 全量守恒：** Train C 的完成集合严格等于冻结 inventory 的
-  in-scope 集合；新增、删除或排除 entry 必须在同一 PR 中显式修订 inventory 与理由；
-- **INV-R3 — 不双跑：** Train B 的 consumer slice 不成为默认生产路径，Train C cutover
+  安装到卸载的纵切。其余既有业务 surface 的真实 package 证据随 Train C1 冻结 inventory 一次补齐；
+  新 hook/UI/service surface 由 Train C2 各自的首个真实消费者补齐；
+- **INV-R2 — migration 全量守恒：** Train C1 的完成集合严格等于 §6.4 标为 C1 的冻结 inventory；
+  Train C2 managed service 集合严格等于同表标为 C2 的 inventory。任一列车新增、删除或排除
+  entry，必须在同一 PR 中显式修订 inventory 与理由；
+- **INV-R3 — 不双跑：** Train B 的 consumer slice 不成为默认生产路径，Train C1 cutover
   后旧新实现不得同时消费事件、执行 schedule 或写用户状态；
 - **INV-R4 — 顺序单一真相：** 本路线图拥有跨仓执行顺序；governing design 拥有架构
   原则和验收语义。`plugin-system-principles-and-v0-design.md` §2.2/§3.8 已同步本次
@@ -204,8 +210,9 @@ ledger 这些更严格的边界。
 - **INV-R5 — v0 边界闭合：** Train B 当前公开 surface 仅为 lifecycle/effect、
   feature activation、messaging/events、config/state/secrets、identity、scheduler、direct tool、
   webhook/message subscription、既有分类型 MCP/skill/limb、services/connectors 与 UI
-  contribution；memory/thread/hook/windows 不得从 governing design 的未来约束反向漏入
-  contract、SDK 或完成矩阵。messaging 的 opaque `ThreadHandle` 不等于开放 thread
+  contribution；memory/thread/windows 不得从 governing design 的未来约束反向漏入
+  contract、SDK 或完成矩阵。Train B 不声称已有公共 hook 注册面；Train C2 只可随首个真实
+  消费者逐点加入 contract/SDK。messaging 的 opaque `ThreadHandle` 不等于开放 thread
   create/list/read 域。
 - **INV-R6 — 坐标与门禁事实一致：** Train A 的 acceptance 指令、状态表与依赖图中
   复制的 Host/Plugins SHA 必须等于 §2.1 精确坐标；CI、mergeability 与 review 等外部
@@ -221,7 +228,7 @@ ledger 这些更严格的边界。
   继续分发到各自子系统，禁止把分类差异误判为需要收敛的平行实现。
 - **INV-R10 — 消息单入口与来源防伪：** Hub、Gateway 兼容路径与 SDK send 共享 canonical
   admission；actor/source 从 Host context 与 identity registry 派生，插件 metadata 不能升级 authority。
-- **INV-R11 — 正式版门禁：** Train C、§7 狗粮和文档任一未完成时，contract/SDK 只能留在
+- **INV-R11 — 正式版门禁：** Train C1、Train C2、§7 狗粮和文档任一未完成时，contract/SDK 只能留在
   prerelease dist-tag，不能把 `latest` 或版本号变化当作兼容性冻结。
 
 ## 4. Train A — M0 Runtime 收口（实施 PR 1/5 已关闭）
@@ -398,7 +405,7 @@ callback、generic list/delete 旁路误用与 disposer 重放；MCP、skill、l
   registry/control plane；Core adapter 只持有通用 clock/route/registry/binding/policy，不持有
   provider handler，也不把不同 capability type 压成一个万能 registry；
 - Hub UI、迁移期 Connector Gateway 与 Plugin SDK 共用 canonical message admission；
-  Connector Gateway 在 Train C 结束前只作兼容入口，不再扩展业务路由语义；
+  Connector Gateway 在 Train C1 结束前只作兼容入口，不再扩展业务路由语义；
 - Console 提供逐 feature 启停与声明式 slot/command/settings/message-element
   contribution；挂载与销毁同时受 plugin、feature lifecycle 和 grant 约束；v0 不执行
   不受信任的任意 DOM/React 代码；
@@ -528,32 +535,32 @@ catalog list/search/get
 ### 5.3 真实消费者 acceptance matrix
 
 通用 fixture 是必要条件但不是充分条件。Train B 只首迁一个真实纵切，剩余冻结 inventory
-统一留给 Train C，避免在底座批次提前制造五条生产迁移支线：
+按 Train C1/C2 边界交付，避免在底座批次提前制造五条生产迁移支线：
 
 | 真实消费者 | Train B 必须验证的公开 surface |
 |---|---|
 | `@clowder-ai/video-analysis`（从 Core 现有 manifest/protocol 真相外部化） | catalog list/search/get、packed-artifact install、静态 `plugin.yaml`、config/secret、direct tool/MCP call、enable/use/restart/disable/uninstall；无 Core 私有 import |
 
 该 package 只在隔离 acceptance 中运行，不替换 Core 默认路径。已发布 Feishu package 可作为
-messaging/events 的补充回归，但不再是 Train B 完成的替代门；GitHub、IM、voice/services 与其
-UI contributions 全部进入 Train C 单一 Plugins 聚合 PR。
+messaging/events 的补充回归，但不再是 Train B 完成的替代门；GitHub、IM 与 repository-local
+business plugins 进入 Train C1 单一 Plugins 聚合 PR；voice/services 及其新增 hook/UI contribution
+进入 Train C2，由首个真实消费者成组验收。
 
-## 6. Train C — 存量能力集中迁移（剩余 PR 4–5/5）
+## 6. Train C1 — 存量插件集中迁移（剩余 PR 4–5/5）
 
 基础底座验收后再迁移。一个 Plugins 聚合 PR 承载业务包，一个 Core 聚合 PR 承载
 数据切换、兼容窗口和旧路径清理；不为每个 provider 单独开 PR。
 
-### 6.1 Plugins 迁移聚合 PR（PR 4/5）
+### 6.1 Plugins C1 迁移聚合 PR（PR 4/5）
 
 - 迁移现有 IM connector 的具体 provider/adapters、identity、webhook/长连接、thread 选择、
   出站 subscription/callback 与 UI contribution；
 - 迁移现有 repository-local 业务插件；GitHub package 拥有 PR/issue tracking tool、poll/review
   parser、schedule handler、state 与 target-thread routing，Core 不留业务 factory；
-- 迁移 ASR/TTS 等具体服务定义、模型/二进制 artifact 描述和安装逻辑；
 - 所有包只依赖公共 SDK，不从 Core import 私有类型、store、registry 或 service instance；
 - 每个迁移包携带 config/state/secret/data mapping、rollback fixture 与真实 composition test。
 
-### 6.2 Core cutover 聚合 PR（PR 5/5）
+### 6.2 Core C1 cutover 聚合 PR（PR 5/5）
 
 - 将 connector binding、通用 service lifecycle 与 scheduler 等既有 Core control plane
   接到公共 contribution adapters；
@@ -563,7 +570,7 @@ UI contributions 全部进入 Train C 单一 Plugins 聚合 PR。
 - 删除/退役 provider-specific `ScheduleFactoryRegistry` 实现、`ConnectorRouter` 与
   `OutboundDeliveryHook` 业务路径；保留的同名通用 primitive 必须只做 §1.2 authority/control，
   不再解释 GitHub/IM 语义；
-- Train C 只把迁移后的 contributions 接入 Train B 已交付的终态 Console/Agent 管理骨架；
+- Train C1 只把迁移后的 contributions 接入 Train B 已交付的终态 Console/Agent 管理骨架；
   删除旧 IM 模块与第二管理入口，不再重做 Marketplace。公共旅程仍为安装、配置、启用、使用、
   重启、禁用和卸载，不新增 update/repair 工具。
 
@@ -584,32 +591,44 @@ transport 函数名；它们必须共享同一授权、持久化、ledger、广�
 
 ### 6.4 冻结迁移 inventory
 
-Train C 的 in-scope 集合不是“挑几个代表”，而是在 Train B 完成时以两个聚合 PR 的
-merge base 冻结。按 2026-08-25 已核验 Core 树，当前 census 为：
+Train C1/C2 的 in-scope 集合不是“挑几个代表”，而是在各自列车开始时冻结。按
+2026-08-25 已核验 Core 树，当前 census 为：
 
-| 类别 | 必须迁移的 entry |
-|---|---|
-| IM providers | `dingtalk`、`feishu`、`telegram`、`wecom-agent`、`wecom-bot`、`weixin`、`xiaoyi` |
-| repository-local business plugins | `github`、`video-analysis`、`video-gen`、`wechat-visible-reader`、`weixin-mp` |
-| concrete managed services | `whisper-stt`、`mlx-tts`、`embedding-model`、`llm-postprocess`、`audio-capture` |
+| 类别 | 交付列车 | 必须迁移的 entry |
+|---|---|---|
+| IM providers | C1（2026-09-24） | `dingtalk`、`feishu`、`telegram`、`wecom-agent`、`wecom-bot`、`weixin`、`xiaoyi` |
+| repository-local business plugins | C1（2026-09-24） | `github`、`video-analysis`、`video-gen`、`wechat-visible-reader`、`weixin-mp` |
+| concrete managed services | **C2；明确排除于 C1，因为需随首个消费者交付公共 hook/UI/service seam** | `whisper-stt`、`mlx-tts`、`embedding-model`、`llm-postprocess`、`audio-capture` |
 
-Train B/C 开发期间若上述权威目录新增 entry，Train C PR 必须把它加入 inventory，或由
-maintainer 在 PR 上明确批准 `excluded` 及理由；沉默遗漏不等于排除。通用 Plugin Manager、
+Train B/C 开发期间若上述权威目录新增 entry，对应 C1 或 C2 PR 必须把它加入同列车 inventory，
+或由 maintainer 在 PR 上明确批准 `excluded` 及理由；沉默遗漏不等于排除。上表 managed services
+行已经给出从 C1 排除并进入 C2 的明确 disposition，不要求在 C1 PR 逐项重复批准。通用 Plugin Manager、
 connector binding、service lifecycle、scheduler、MCP runtime 等 Core 控制面不是迁移
 entry，仍按 §1.2 留在 Core；其中 provider-specific factory/router/hook 不属于“通用控制面”，
 必须随业务 package 迁移或删除。
 
-### Train C 完成线
+### Train C1 完成线
 
-§6.4 冻结 inventory 的每个 in-scope entry 都必须从 `clowder-ai-plugins` 安装并只通过
+§6.4 标为 C1 的每个 in-scope entry 都必须从 `clowder-ai-plugins` 安装并只通过
 公共 SDK 工作，或有 maintainer 明确批准的 `excluded` disposition；Core 不再包含任何
 已迁移 entry 的业务实现、业务加载器或第二套管理入口。迁移账本必须逐项附 package、
 数据 mapping、rollback、真实 composition、cutover 和旧路径删除证据。只有 inventory
-达到 100% disposition 且没有旧新双跑，插件基础平台才形成闭环。
+达到 100% disposition 且没有旧新双跑，C1 存量 cutover 才形成闭环。
+
+### 6.5 Train C2 — 公共扩展点与 managed services
+
+- 迁移 ASR/TTS 等具体服务定义、模型/二进制 artifact 描述和安装逻辑；
+- 每个公共 hook/UI slot 必须由首个真实服务消费者驱动，同一交付内包含 contract schema、SDK
+  registration、Host 业务无关 invocation/revoke 与真实 composition；
+- Core 只拥有点位、类型、调度、授权、trace、失败隔离和 lifecycle revocation，不得保留 voice、
+  model 或 provider-specific 分支；
+- disable/uninstall 必须同时移除 handler、runtime authority、按钮/图标/command 与 secret access；
+- §6.4 标为 C2 的每个 managed service 必须 `migrated`，或有 maintainer 明确批准的 `excluded`
+  disposition。沉默遗漏不构成 C2 完成。
 
 ## 7. Contract / SDK `0.1.0` 正式发布门
 
-Train C 完成只说明实现和迁移闭环；正式发布还必须用将要发布的 exact artifacts 做一次
+Train C1 与 Train C2 完成只说明实现和迁移闭环；正式发布还必须用将要发布的 exact artifacts 做一次
 release-candidate acceptance，不能拿开发 workspace 或 prerelease 的历史成功代替：
 
 1. 从机器可读 catalog 发现并安装 GitHub、至少一个 IM provider、voice-suite（ASR + TTS）
@@ -636,7 +655,7 @@ release-candidate acceptance，不能拿开发 workspace 或 prerelease 的历�
 
 ## 8. 闭环后的能力扩张
 
-Train C 通过前，以下工作只保留需求输入，不进入实现关键路径：
+stable `0.1.0` 发布前，以下工作只保留需求输入，不进入实现关键路径：
 
 1. foreground cat / windows / presence；
 2. memory/thread 高敏能力；
@@ -662,7 +681,10 @@ Train A：Core PR #1410 reviewed HEAD 4138122 已合入为 090626a（closed）
 Train B：machine catalog + YAML/SDK contract + video-analysis ──exact publish──► terminal Manager/Marketplace/Agent/UI
                                       │
                                       ▼
-Train C：Plugins 全量聚合迁移 ──► Core 单 PR cutover/删旧实现与旧 IM UI ──► 基础平台闭环
+Train C1：Plugins 存量聚合迁移 ──► Core 单 PR cutover/删旧实现与旧 IM UI（删除主导）
+                                      │
+                                      ▼
+Train C2：真实消费者驱动 hook/UI seam ──► managed services 迁移/完整撤销验收 ──► 基础平台闭环
                                       │
                                       ▼
 RC dogfood + developer docs ──► contract/SDK 0.1.0 + latest
@@ -686,6 +708,6 @@ foreground cat / memory / windows / other capabilities / v1
    狭窄 composition，不复制公共真相。
 
 旧版 K-3b、GitHub、Service/UI、connector、memory 各自平行推进的 Phase 2/3 排期
-自本次刷新起停止生效。现有 repository-local GitHub schedule 与 IM Gateway 只作为 Train C
+自本次刷新起停止生效。现有 repository-local GitHub schedule 与 IM Gateway 只作为 Train C1
 前兼容路径继续运行，不是终态；GitHub/IM 业务实现必须迁到插件侧并使用统一 contribution/
 messaging surface。foreground-cat 保持后续能力扩张项。
