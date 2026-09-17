@@ -24,10 +24,15 @@ machine catalog list/search/get
   → uninstall
 ```
 
-The Core production route remains unchanged. A later Core aggregate PR consumes exact artifacts and
-implements the terminal Manager/Marketplace/Agent/Console projection. Train C migrates every remaining
-business plugin, IM provider, and managed service in one Plugins PR, then cuts over and removes old Core
-implementations in one Core PR.
+The Core production route remains unchanged. The paired Train B Core PR consumes exact artifacts and
+implements the terminal Manager/Marketplace/Agent/Console projection; together these PRs prove one real
+`video-analysis` install-to-uninstall slice. Train C1 then migrates every remaining repository-local business
+plugin, connector, and IM provider in one Plugins PR, followed by one deletion-dominant Core cutover PR.
+Train C2 separately opens public hook/UI points with their first real consumers and migrates managed services.
+
+Core remains a stable kernel: it owns lifecycle stages, typed extension contracts, orchestration, policy and
+revocation. Plugins own business behavior and register handlers/contributions only through the public SDK;
+Host does not grow TTS, provider, connector, or other product-specific branches.
 
 ## Human authority and non-goals
 
@@ -37,6 +42,9 @@ implementations in one Core PR.
 - No public `plugin_update`, `plugin_repair`, or `updateAvailable` field is introduced.
 - Train B does not switch the Core `video-analysis` default route, migrate production data, or remove any
   Core implementation or IM UI.
+- Train B does not predeclare arbitrary hook/UI slots or migrate managed services. Those surfaces land in
+  Train C2 with a real consumer, contract/schema, SDK registration, Host invocation and disable/uninstall
+  revocation acceptance in the same change.
 - Catalog discovery never grants execution authority. A verified artifact manifest only requests
   capabilities; the Host inventory and grants remain local Host truth.
 
@@ -49,6 +57,7 @@ implementations in one Core PR.
 | Detailed human capability guide (`README.md`) | Packed plugin artifact | Manager information surface, package consumers |
 | Manifest/catalog schemas and generated types | `@clowder-ai/plugin-contract` | SDK, Host, packages, conformance |
 | Author facade and runtime-neutral contribution semantics | `@clowder-ai/plugin-sdk` | Plugin authors and packages |
+| Opened hook points and UI slots | Contract + Host policy; handler/contribution in plugin | SDK registration, Host invocation/revocation |
 | Installed artifact, integrity, grants, config/auth, intent, live state | Local Host inventory | Manager, Console, Agent |
 | Video provider protocol and execution | `@clowder-ai/video-analysis` | Host-launched MCP process |
 

@@ -3,7 +3,7 @@ title: Clowder 插件体系：设计原则与 v0 方案
 status: draft-for-discussion (v0)
 discussion: zts212653/clowder-ai-plugins#1
 created: 2026-07-12
-revised: 2026-09-01
+revised: 2026-09-17
 feature_ids: [P-1, F202, F237, F240]
 topics: [plugin-contract, plugin-sdk, host-broker, plugin-manager, contribution-plane]
 doc_kind: governing-design
@@ -25,13 +25,13 @@ references: F202 plugin framework · F237 hook pipeline (clowder-ai#1075) · F24
 | P3 | **当前阶段数据兼容优先**：这次重构不承诺现有内部接口兼容，但本地持久化数据必须 migration；v1 冻结后，公开契约才新增独立兼容义务 | 客户端代码整体升级、数据持续存续；同时避免把“接口永不兼容”误写成长期原则 |
 | P4 | **按能力域整体收敛，不留尾巴**：开放哪个域，该域接口一次调整到位，不 followup | 社区插件开放前是唯一自由重构窗口；半改的域 = 写进契约的技术债 |
 | P5 | **hook 点位先审数据形状**：开点位 = 内部结构升格为公开契约 | hook 会把当下结构的不合理冻结进插件生态 |
-| P6 | **宿主编排取代插件点对点绑定**：插件不得持有另一插件实例或私有 API；组合经宿主编排（v0 = 事件订阅 + `appendElements` 增补；hook 点位 future-reserved，非 v0 公开协议） | 避免插件网状耦合；F237 已验证宿主管理的 resolve→fire→trace 模式（内核既有），第三方 hook 的隔离/超时语义待 M1 需求出现再定义 |
+| P6 | **稳定内核 + 宿主编排取代插件点对点绑定**：Core 只定义稳定阶段、类型化 hook/capability、UI slot policy 与调度/撤销；插件不得持有另一插件实例或私有 API，只能通过公共 SDK 注册 handler/contribution | 避免插件网状耦合和业务逻辑回流 Host；每个公开点位由首个真实消费者驱动，先审数据形状、隔离/超时与卸载语义 |
 | P7 | **壳无关**：契约不规定实现载体 | 抽象对了，Electron/Tauri 是插件自己的实现细节 |
 | P8 | **数据归属分明**：config/secrets/state 三分；插件数据 namespace 隔离；身份/记忆/会话真相只在内核，全局记忆写入走蒸馏晋升。**闭环后 memory 候选域的唯一改造场是 #1047**：namespace 强制注入、宿主中介的受限检索等需求只作为输入提给 #1047 的接口抽象，不满足就推动那边调整，不绕开自建；该原则不承诺当前 v0 memory API | 插件不成为真相第二来源；桌宠"真"的来源在内核；记忆接口双轨会立刻违反 P15 |
 | P9 | **桌面单用户检查**：每条安全约束先问“威胁在单用户桌面存在吗”；核心边界是跨插件隔离，而不是阻止用户查看自己的数据 | 不制造 SaaS 式虚空防御；但仍防 renderer/XSS/日志/截图意外泄露，用户显式查看自己的 secret ≠ 向所有前端或插件广播明文 |
 | P10 | **推断不执行**：origin × epistemicStatus 两轴原生长在 envelope；inference 只能触发建议/确认 | issue #1 中 maintainer 提出的不让步项 2；本条即我方确认接受的表态 |
-| P11 | **一切插件行为可追溯**：call/callback/事件投递全部留痕（future hook 同规则） | trace 语义必须长在接口签名里，事后补加等于重做；F237 resolve→fire→trace 已验证 |
-| P12 | **动作有账，失败显式**：动作幂等入结算账本；职责回调必须应答；`appendElements` 失败 = 目标增补元素缺失式降级（原消息照常送达；future hook 同语义）；插件失败（含崩溃/资源耗尽）不拖垮内核、不静默吞 | 语义决定接口形状（callId/ack/超时字段）；"桌宠崩了 Clowder 不崩"是硬承诺 |
+| P11 | **一切插件行为可追溯**：call/callback/事件投递/hook invocation 全部留痕 | trace 语义必须长在接口签名里，事后补加等于重做；F237 resolve→fire→trace 已验证 |
+| P12 | **动作有账，失败显式**：动作幂等入结算账本；职责回调与 hook handler 必须按点位契约应答；`appendElements` 失败 = 目标增补元素缺失式降级（原消息照常送达）；插件失败（含崩溃/资源耗尽）不拖垮内核、不静默吞 | 语义决定接口形状（callId/ack/超时字段）；"桌宠崩了 Clowder 不崩"是硬承诺 |
 | P13 | **用户主权**：装/卸/启/停/授权/撤销/数据清除全部用户可见可操作；插件不能自启、不能自我续权、不能绕控制面 | proposal-first 的正面原则化；没有它前 12 条管住接口管不住行为 |
 | P14 | **第一方不走后门**：语音/GitHub/IM/前台猫全走同一套 SDK；第一方与第三方差别只在能力授权集，不在通道 | SDK 撑不起自家插件就撑不起第三方；走捷径会让 SDK 退化成二等公民 |
 | P15 | **契约只有一个机器可读真相源**：schema、类型、capability 表与 conformance fixtures 同包发布；内核和插件 SDK 都消费它，不复制定义 | 两仓协作不能变成两份 schema；文档可分仓解释，契约结构不能双写漂移 |
@@ -54,10 +54,11 @@ references: F202 plugin framework · F237 hook pipeline (clowder-ai#1075) · F24
 issue #1 给出了 v0 契约、M0 standalone 与 M1 体验样板的产品目标；跨仓执行顺序由
 `v0-implementation-roadmap.md` 持有。2026-09-01 operator 将终态进一步收敛为：M0 收口 →
 Train B 一次交付静态 YAML、公共 SDK/Contribution、机器 catalog、终态 Manager/Marketplace/
-Agent/UI 骨架与 `video-analysis` 首迁纵切（不切生产路径）→ Train C 用 Plugins 单一聚合 PR
-迁移其余 IM、GitHub、业务插件和具体服务，再由 Core 单一聚合 PR cutover 并删除旧实现/旧 IM
-管理入口 → 完成 install/configure/enable/use/restart/disable/uninstall 狗粮 → 开发者文档闭合 →
-contract/SDK `0.1.0` 正式发布 → foreground-cat/windows/memory 等后续扩张。M1 的
+Agent/UI 骨架与 `video-analysis` 首迁纵切（不切生产路径）→ Train C1 用 Plugins 单一聚合 PR
+迁移其余 IM、GitHub 与 repository-local business plugins，再由 Core 单一、删除主导的聚合 PR
+cutover 并删除旧实现/旧 IM 管理入口 → Train C2 由首个真实消费者逐点开放公共 hook/UI slot
+并迁移具体 managed services → 完成 install/configure/enable/use/restart/disable/uninstall 狗粮 →
+开发者文档闭合 → contract/SDK `0.1.0` 正式发布 → foreground-cat/windows/memory 等后续扩张。M1 的
 “打开文件→猫跑过来→问要不要总结”目标保留，但不再作为与底座/存量收编并行的排期承诺。
 
 ### 2.3 两仓职责划分（本阶段核心产出）
@@ -77,7 +78,10 @@ contract/SDK `0.1.0` 正式发布 → foreground-cat/windows/memory 等后续扩
    GitHub poll/review 解析、IM 路由/回推、具体 service 等业务实现全部在插件侧，不把
    `ScheduleFactoryRegistry`、`ConnectorRouter` 或 provider-specific handler 当作终态 Host API
    （§3.4/§3.5）
-3. 输出事件流：带单调 sequence/cursor 的 message 事件订阅 + `appendElements` 增补通道（覆盖 TTS 类异步增补）；hook 点位 v0 不开放，机制方向保留（F237 输入侧同构），M1 有真实同步需求再按 P5 逐个评审
+3. 公共扩展阶段：Core 只拥有点位、类型化输入输出、顺序/超时/隔离、授权/trace 与 lifecycle
+   revocation；SDK 暴露注册，插件拥有实现。message event + `appendElements` 可作为 Host 内部执行
+   substrate，但不要求插件作者手工订阅内部事件来模拟 hook。每个点位随首个真实消费者按 P5
+   逐个开放；例如输出/渲染阶段触发已注册的 TTS handler，而 Core 不知道 voice provider 业务语义
 4. 控制面：Train B 即交付 VS Code 式 Marketplace/Installed/Details/Settings 终态骨架；
    Console 与 Agent 投影同一 Host inventory。Agent 公共工具固定为 `plugin_list`、
    `plugin_search`、`plugin_get`、`plugin_install`、`plugin_set_enabled`、`plugin_uninstall`，
@@ -87,7 +91,7 @@ contract/SDK `0.1.0` 正式发布 → foreground-cat/windows/memory 等后续扩
 5. SDK Host Adapter（鉴权、授权、调用结算、callback/事件调度）随内核发版；插件进程 runtime/client 在插件仓
 
 **clowder-ai-plugins（公开插件仓）——做什么、怎么管**：
-1. **契约机器真相源**：`@clowder-ai/plugin-contract`（envelope/event/manifest JSON Schema + TS 类型 + capability 表 + conformance fixtures；hook 表 future-reserved 不进 v0 包）；文档从 schema 生成或校验，不在内核仓复制定义（P15）
+1. **契约机器真相源**：`@clowder-ai/plugin-contract`（envelope/event/manifest JSON Schema + TS 类型 + capability/hook-point 表 + conformance fixtures）；只发布已有真实消费者和验收的点位，文档从 schema 生成或校验，不在内核仓复制定义（P15）
 2. **SDK 与插件 runtime**：客户端库、握手/传输实现、standalone 壳 runtime；版本随 contract package
 3. **插件脚手架与模板**：create-clowder-plugin 级别的起步体验（P14 的开发者体验面）
 4. **业务插件与参考插件**：GitHub、现有 IM providers、voice-suite、Feishu、
@@ -260,7 +264,9 @@ lifecycle/effect 与 feature activation settlement。它们最终仍通过 Broke
 adapter 与 ledger，不是绕开 call/callback 的内核对象引用。具体 generated type/schema
 以插件仓 contract package 为机器真相源；本段不另写一份手工 mirror。
 
-- **v0 无 hook 类接口**：原拟的 `output.message.augment` 与"订阅 message.publish 事件 + `appendElements`"能力重复（TTS 本就是异步增补），同步读取全部输出的高敏点位没有不可替代消费者，违反 P1——删。`input.pre` 同理不进 v0。hook 作为机制方向保留（F237 输入侧同构），点位在 M1 出现真实同步增补需求时再按 P5 逐个评审。
+- **公共 hook 是受限注册面，不是任意拦截器**：Host 定义稳定点位、类型化 payload/result、顺序、超时、失败降级、capability 与 trace；SDK 只允许插件对已发布点位注册 handler。插件不能发明点位、读取私有 Core 对象或阻塞未授权阶段。每个点位由首个真实迁移消费者按 P5 成组交付 contract、SDK、Host invocation 与 disable/uninstall revocation；`output.message.render` 等名字和形状只有在真实 TTS/渲染迁移审查后才冻结。
+- Train B 当前 facade 不声称已经交付 `featureCtx.hooks`；Train C2 首个 hook 点位落地时，contract 与 SDK
+  才一起增加该注册面，避免文档先于机器契约制造不存在的能力。
 - 通知回调可忽略；职责回调必须 ack，超时/重试/死信显式。
 - 第一方可以拿预置 grant，但授权仍在 UI 可见、可撤销；“第一方默认持有”不等于隐藏后门。
 
@@ -285,13 +291,13 @@ PluginControlPlane
   ├─ ServiceResourceAdapter   → 复用 service manager / deep health
   ├─ ConnectorResourceAdapter → generic binding / transport contribution
   ├─ ScheduleResourceAdapter  → TaskRunner / durable schedules
-  ├─ HookResourceAdapter      → future-reserved（随 M1 hook 点位评审，非 v0 构成）
+  ├─ HookResourceAdapter      → Train C2 已发布类型化阶段的 registry / invocation / revoke
   └─ UiContributionAdapter    → slot/capability/renderer policy
 ```
 
 这些 adapter 只拥有通用 authority 与 resource lifecycle。GitHub poll/review parsing、
 PR/issue tracking tool、IM provider protocol、thread 选择、外部平台回推与具体 service 实现
-全部在插件进程；Core 中现存的业务 factory/router/hook 只是 Train C 前的兼容路径，不是可冻结
+全部在插件进程；Core 中现存的业务 factory/router/hook 只是对应 Train C cutover 前的兼容路径，不是可冻结
 的插件 API。同一 capability type 的静态 manifest 与动态 SDK 注册必须进入同一个 type-specific
 adapter/registry，不能形成两套 owner、冲突、dispose 或 restart 语义；不同 type 按图中的
 分类型 adapter/control plane 分发，不因共享生命周期 envelope 而合成一个 registry。
@@ -300,7 +306,7 @@ adapter/registry，不能形成两套 owner、冲突、dispose 或 restart 语�
 mcp/skill/limb/schedule/sdk 资源组合成的一个完整用户可感知能力，如 github 插件的
 "PR 追踪"= schedule + mcp tool + UI 入口）。manifest v0 按
 `features[{id, name, resources[], capabilities[]}]` 组织，feature 是一等公民。Train B
-用 product-neutral conformance 同步交付 feature-level activation；Train C 再由真实 voice-suite
+用 product-neutral conformance 同步交付 feature-level activation；Train C2 再由真实 voice-suite
 证明用户可独立启用 TTS 或 ASR。不能先展示 feature、却只允许整包启停。
 
 插件 activation 是外层总闸；每个 feature 另有独立 desired/current activation 与
@@ -523,8 +529,8 @@ repair 请求、generic restore、catalog refresh、plugin callback 或 runtime 
 - **声明式 + 宿主渲染**：contribution 是数据，不是插件自带 DOM/iframe——样式语言天然一致，主题/无障碍/布局由宿主统一保证。不受信插件的自由 UI（iframe 沙箱）不进 v0。
 - **capability-gate 原生集成**：contribution 挂在 feature 上；只有 plugin 与 feature
   都启用且 grants 满足才装配。Train B 的 conformance 必须证明声明式 contribution 与 runtime
-  注册同步生灭；Train C 的 voice-suite 再证明 ASR/TTS 独立启停时对应按钮和消息元素同步生灭。
-- slot 开放节奏跟随真实迁移：Train B 先交付终态骨架和确定性 fixture；Train C 随 voice-suite
+  注册同步生灭；Train C2 的 voice-suite 再证明 ASR/TTS 独立启停时对应按钮和消息元素同步生灭。
+- slot 开放节奏跟随真实迁移：Train B 先交付终态骨架和确定性 fixture；Train C2 随 voice-suite
   开 `composer.actions` + 消息元素、GitHub 视需要开 `nav.sections`。每次开放走 Console 既有 Design Gate。
 
 **B 类（闭环后候选，不属于当前 v0）：独立窗口 contribution（插件自有 surface）**——
@@ -553,19 +559,25 @@ surface：
    install→configure→enable→use→restart→disable→uninstall。Console/Agent 同时交付
    §2.3 的终态骨架和六个固定工具。该 slice 不替换 Core 生产默认路径；internal update/repair
    状态机不构成公共工具或本列车稳定 gate。具体关闭条件见 roadmap §5。
-3. **Train C 全量存量迁移**：按 roadmap §6 的冻结 inventory 迁移 GitHub、
-   video-analysis/video-gen、weixin-mp/wechat-visible-reader、全部现有 IM provider 与全部具体
-   managed service；不是抽样迁移。Host 保留通用控制面，删除已迁移业务实现与第二入口。
-4. **闭环后能力扩张**：foreground-cat 首先验证第一方同通道与 B 类 UI surface；
+3. **Train C1 存量插件迁移与删除（目标 2026-09-24）**：按 roadmap §6 的冻结 inventory
+   迁移 GitHub、video-analysis/video-gen、weixin-mp/wechat-visible-reader 与全部现有 IM provider；
+   不是抽样迁移。Host 保留通用控制面，Core cutover PR 以删除已迁移业务实现与第二入口为主，
+   不夹带 managed service、公共 hook 或新 UI slot 设计。
+4. **Train C2 公共扩展点与 managed services**：以首个真实消费者成组交付 hook/UI contract、
+   SDK registration、Host 业务无关 invocation/revoke 与插件实现，再迁移 TTS/ASR 等具体服务。
+   每个 UI slot 必须证明 plugin/feature disable 或 uninstall 后按钮、图标和 command handler 一起消失。
+5. **闭环后能力扩张**：foreground-cat 首先验证第一方同通道与 B 类 UI surface；
    memory/thread 则分别等待自己的真实消费者、权限/数据形状审查与独立验收，不能由
    foreground-cat 一次性代验；windows/presence 等其余能力同样按真实消费者成组开放。
 
 GitHub 是 schedule/state 的真实验证器，但不反向重开已关闭的 M0。Train B 不能只靠通用
-fixture：还必须有 `video-analysis` 的 packed-artifact 纵切；其余公开 surface 的真实业务
-package 证据在 Train C 冻结 inventory 中一次补齐。
+fixture：还必须有 `video-analysis` 的 packed-artifact 纵切；其余已开放 surface 的真实业务
+package 证据在 Train C1 冻结 inventory 中一次补齐，尚未开放的 hook/UI/service surface 由 Train C2
+各自的首个真实消费者给出证据。
 
 旧版“收编线/体验线并行，M1 排期不等待收编”的安排已被 2026-08-23 operator 改序、
-并由 2026-09-01 的终态 Manager/Marketplace/Agent、单一首迁纵切与 Train C 全量聚合迁移
+并由终态 Manager/Marketplace/Agent、单一首迁纵切、Train C1 存量插件聚合迁移与
+Train C2 按真实消费者开放扩展点
 进一步收敛。
 这些变化不撤销 M1 产品目标，也不降低 P4/P14：foreground-cat
 将来仍必须走同一公开 SDK/授权路径并完成真实纵切验收；在 Train C 闭环前只保留需求
@@ -574,8 +586,10 @@ package 证据在 Train C 冻结 inventory 中一次补齐。
 ### 3.9 已收敛结论与回应结构
 
 **本轮已收敛**：
-1. MessageEnvelope 需要 actor、稳定 elementId、causation/correlation、外部幂等键；异步 TTS 通过 `message.elements.append` 事件，不重发整个 envelope。
-2. 高敏能力不止闭环后的 thread/memory：当前凡读消息内容者（事件订阅、`onMessage`）也均按 scope 授权；v0 不设 hook 类接口——`input.pre` 与 `output.message.augment` 都没有不可替代消费者，TTS 类异步增补由"事件订阅 + `appendElements`"覆盖。
+1. MessageEnvelope 需要 actor、稳定 elementId、causation/correlation、外部幂等键；现有
+   `message.elements.append` 仍是可复用的内部增补原语，但 TTS 插件作者最终面向的是 Train C2
+   随真实消费者冻结的输出/渲染 hook，而不是手工拼装 Host 内部事件流。
+2. 高敏能力不止闭环后的 thread/memory：当前凡读消息内容者（事件订阅、`onMessage`）也均按 scope 授权；公共 hook 是逐点发布的类型化注册面，不是万能拦截器。点位只有在真实消费者证明数据形状后才进入 contract/SDK，Host 负责调度与撤销、插件负责业务实现。
 3. 生命周期方向不是“service manifest 泛化成万能引擎”，而是 F202 控制面 + 分类型 resource adapter + 正交状态投影。
 4. contract schema 在插件仓单一真相，Host 实现在内核仓；双签的是 contract PR，不是两仓各写一份接口。
 5. manifest/YAML 与 SDK 在表达同一 capability type 时是静态/动态入口，共享 type-specific
