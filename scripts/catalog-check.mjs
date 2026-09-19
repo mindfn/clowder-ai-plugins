@@ -13,6 +13,7 @@ import {
   validatePluginCatalog,
 } from '../packages/plugin-contract/dist/index.js';
 import { parse } from 'yaml';
+import { assertStaticPackageDependencies } from './catalog-static-package.mjs';
 
 const catalog = JSON.parse(await readFile(new URL('../catalog/catalog.json', import.meta.url), 'utf8'));
 const validation = validatePluginCatalog(catalog);
@@ -21,7 +22,7 @@ if (!validation.valid) process.exit(1);
 
 assert.deepEqual(
   listCatalogPlugins(validation.catalog).map((entry) => entry.pluginId),
-  ['dev.clowder.genoffice-docx', 'dev.clowder.video-analysis'],
+  ['dev.clowder.genoffice-docx', 'dev.clowder.video-analysis', 'official.companion'],
 );
 assert.deepEqual(
   searchCatalogPlugins(validation.catalog, 'zhipu').map((entry) => entry.pluginId),
@@ -102,9 +103,9 @@ async function verifyCatalogEntry(catalogEntry) {
     }
 
     const contributions = manifestValidation.manifest.contributions ?? [];
-    const staticEditors = contributions.length > 0 &&
-      contributions.every(entry => entry.type === 'content-editor-provider');
-    if (!staticEditors) {
+    const staticSurfaces = contributions.length > 0 &&
+      contributions.every(entry => ['content-editor-provider', 'desktop-window'].includes(entry.type));
+    if (!staticSurfaces) {
       assert.ok(
         artifact.files.some((file) => file.path === 'npm-shrinkwrap.json'),
         'packed artifact is missing npm-shrinkwrap.json',
@@ -141,6 +142,8 @@ async function verifyCatalogEntry(catalogEntry) {
       }
 
     } else {
+      const packageJson = JSON.parse(await readFile(join(unpackedDirectory, 'package', 'package.json'), 'utf8'));
+      assertStaticPackageDependencies(packageJson, contributions);
       assert.equal(manifestValidation.manifest.runtime.transport, 'builtin');
       for (const entry of contributions) {
         const bytes = await readFile(join(unpackedDirectory, 'package', entry.surface.entrypoint));

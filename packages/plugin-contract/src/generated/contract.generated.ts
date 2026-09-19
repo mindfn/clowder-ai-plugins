@@ -58,7 +58,7 @@ export type ResourceReference = {
   readonly id: string;
 };
 export type ContributionReference = {
-  readonly type: 'identity' | 'schedule' | 'tool' | 'mcp' | 'skill' | 'limb' | 'webhook' | 'message-subscription' | 'service' | 'connector' | 'ui' | 'content-editor-provider';
+  readonly type: 'identity' | 'schedule' | 'tool' | 'mcp' | 'skill' | 'limb' | 'webhook' | 'message-subscription' | 'service' | 'connector' | 'ui' | 'content-editor-provider' | 'desktop-window';
   readonly id: string;
 };
 export type PackageRelativePath = string;
@@ -252,6 +252,24 @@ export type SemanticMaterializerDeclaration = {
   readonly integrity: string;
   readonly protocolVersion: '1.0.0';
 };
+export type DesktopWindowContribution = {
+  readonly type: 'desktop-window';
+  readonly id: string;
+  readonly role: 'companion';
+  readonly surface: {
+    readonly entrypoint: PackageRelativePath & `${string}.html`;
+    readonly integrity: string;
+  };
+  readonly bridgeVersion: '1.0.0';
+  readonly presentation: {
+    readonly width: number;
+    readonly height: number;
+    readonly transparent: true;
+    readonly frame: false;
+    readonly alwaysOnTop: boolean;
+    readonly skipTaskbar: boolean;
+  };
+};
 export type ContentEditorProviderContribution = {
   readonly type: 'content-editor-provider';
   readonly id: string;
@@ -266,7 +284,7 @@ export type ContentEditorProviderContribution = {
   readonly semanticMaterializer?: SemanticMaterializerDeclaration;
   readonly operations: readonly ['load' | 'settle' | 'comment' | 'tracked-change', 'load' | 'settle' | 'comment' | 'tracked-change', 'load' | 'settle' | 'comment' | 'tracked-change', 'load' | 'settle' | 'comment' | 'tracked-change'];
 };
-export type StaticContribution = IdentityContribution | ScheduleContribution | DirectToolContribution | McpContribution | SkillContribution | LimbContribution | WebhookContribution | MessageSubscriptionContribution | ServiceContribution | ConnectorContribution | UiContribution | ContentEditorProviderContribution;
+export type StaticContribution = IdentityContribution | ScheduleContribution | DirectToolContribution | McpContribution | SkillContribution | LimbContribution | WebhookContribution | MessageSubscriptionContribution | ServiceContribution | ConnectorContribution | UiContribution | ContentEditorProviderContribution | DesktopWindowContribution;
 export type PluginFeature = {
   readonly id: string;
   readonly name: string;
@@ -801,6 +819,106 @@ export type DocxMaterializationResponse = {
   readonly protocolVersion: '1.0.0';
   readonly requestId: string;
   readonly result: DocxMaterializationResult;
+};
+export type CompanionSelectionId = string;
+export type CompanionScreenFrame = {
+  readonly image: string;
+  readonly width: number;
+  readonly height: number;
+  readonly frameId: string;
+  readonly sourceLabel: string;
+  readonly observedAt: number;
+};
+export type CompanionCommand = {
+  readonly kind: 'state';
+} | {
+  readonly kind: 'prepare';
+} | {
+  readonly kind: 'audio.connect';
+} | {
+  readonly kind: 'audio.close';
+} | {
+  readonly kind: 'audio.microphone';
+  readonly muted: boolean;
+} | {
+  readonly kind: 'audio.speaker';
+  readonly muted: boolean;
+} | {
+  readonly kind: 'stop';
+} | {
+  readonly kind: 'text';
+  readonly text: string;
+  readonly clientMessageId: string;
+} | {
+  readonly kind: 'documents';
+  readonly allowed: boolean;
+} | {
+  readonly kind: 'screen.pick';
+} | {
+  readonly kind: 'screen.open';
+  readonly selectionId: CompanionSelectionId;
+  readonly label: string;
+} | {
+  readonly kind: 'screen.frame';
+  readonly selectionId: CompanionSelectionId;
+  readonly frame: CompanionScreenFrame;
+} | {
+  readonly kind: 'screen.close';
+} | {
+  readonly kind: 'conversation.open';
+} | {
+  readonly kind: 'view.resize';
+  readonly expanded: boolean;
+};
+export type CompanionActor = {
+  readonly catId: string;
+  readonly displayName: string;
+};
+export type CompanionState = {
+  readonly kind: 'state';
+  readonly phase: 'idle' | 'preparing' | 'ready' | 'connecting' | 'talking' | 'closed' | 'failed';
+  readonly displayName: string;
+  readonly skin: string;
+  readonly duty: CompanionActor;
+  readonly carrier: CompanionActor;
+  readonly documentsAllowed: boolean;
+  readonly toolsReady: boolean;
+};
+export type CompanionErrorCode = 'invalid_request' | 'permission_required' | 'unavailable' | 'session_required' | 'busy' | 'selection_changed' | 'carrier_unavailable' | 'cancelled' | 'unconfirmed';
+export type CompanionReply = {
+  readonly kind: 'ok';
+} | CompanionState | {
+  readonly kind: 'delivery';
+  readonly delivery: 'accepted' | 'unconfirmed';
+} | {
+  readonly kind: 'selection';
+  readonly selectionId: CompanionSelectionId;
+} | {
+  readonly kind: 'navigation';
+  readonly delivery: 'requested' | 'unconfirmed';
+} | {
+  readonly kind: 'error';
+  readonly code: CompanionErrorCode;
+};
+export type CompanionEvent = {
+  readonly kind: 'media-stopped';
+  readonly reason: 'locked' | 'suspended' | 'hidden' | 'closed' | 'revoked';
+} | {
+  readonly kind: 'audio';
+  readonly type: 'connected' | 'recovering' | 'recovered' | 'error';
+} | {
+  readonly kind: 'audio';
+  readonly type: 'transcript';
+  readonly role: 'user' | 'assistant';
+  readonly text: string;
+  readonly turnId?: string;
+  readonly itemId?: string;
+} | {
+  readonly kind: 'audio';
+  readonly type: 'turn-done';
+  readonly role?: 'user' | 'assistant';
+  readonly transcript?: string;
+  readonly turnId?: string;
 };
 export const DOCX_MATERIALIZATION_TEXT_PATTERN = '^[\\u0009\\u000A\\u0020-\\uD7FF\\uE000-\\uFFFD\\u{10000}-\\u{10FFFF}]*(?![\\s\\S])';
 export const DOCX_MATERIALIZATION_AUTHOR_PATTERN = '^[\\u0020-\\uD7FF\\uE000-\\uFFFD\\u{10000}-\\u{10FFFF}]*(?![\\s\\S])';
