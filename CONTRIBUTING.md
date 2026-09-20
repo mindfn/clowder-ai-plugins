@@ -6,6 +6,17 @@
 
 当前阶段：**插件契约 v0 讨论**（Issue #1）。
 
+## 交付前核验（宣布新 HEAD 前必读）
+
+CI 的 `assert-pr-head` 闸只在**有 run 存在**时才拦得住「推错仓」——推错 remote 的 push 根本不产生 PR run，闸不会红。因此每次向 reviewer 交付新 exact HEAD 前，必须在本机手工跑一遍：
+
+```
+node scripts/assert-pr-head.mjs <owner/repo> <pr-number> <新HEAD-sha>
+# EXIT=0 且 gh run list --repo <owner/repo> --branch <分支> 显示新 run 已出现，才可宣布
+```
+
+宣布的 HEAD 字符串必须与本机 `git rev-parse HEAD` 一致。少这一步，「CI 绿」可能是旧 HEAD 的绿。
+
 - 现在：欢迎在 issue 中参与契约与分工讨论
 - 契约 v0 冻结后：开放插件实现 PR（monorepo，每插件一目录 + 独立 manifest）
 - 节奏：v0 draft → M0（壳+传输验证）→ M1（权限+认识论语义验证）→ 冻结 v1 兼容承诺

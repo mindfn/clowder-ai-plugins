@@ -141,7 +141,7 @@ export function createWeChatVisibleReaderNativeRunner(
   const sourcePaths =
     options.sourcePaths ??
     (options.sourcePath ? [...DEFAULT_SOURCE_PATHS.slice(0, -1), options.sourcePath] : DEFAULT_SOURCE_PATHS);
-  const cacheDirectory = options.cacheDirectory ?? tmpdir();
+  const cacheDirectory = options.cacheDirectory ?? join(tmpdir(), 'cat-cafe-wechat-reader-cache');
   let executablePromise: Promise<string> | undefined;
 
   const resolveExecutable = (): Promise<string> => {
@@ -156,34 +156,27 @@ export function createWeChatVisibleReaderNativeRunner(
         // A source-hash keyed executable contains code only. No capture, OCR,
         // message body, or user data is written into this cache.
       }
-      if (execute === defaultExecutor) {
-        await mkdir(cacheDirectory, { recursive: true });
-        // The digest-keyed path is shared across processes. Compile in a
-        // per-process private staging directory and atomically rename into
-        // place: a concurrent swiftc writing the same -o target directly can
-        // leave a partially linked binary that access(X_OK) approves — and
-        // the rename makes a visible path always a complete binary.
-        const stagingDirectory = await mkdtemp(join(cacheDirectory, '.compile-'));
-        const stagedExecutable = join(stagingDirectory, 'reader');
-        try {
-          await execute('/usr/bin/xcrun', ['swiftc', ...sourcePaths, '-o', stagedExecutable], {
-            encoding: 'utf8',
-            timeout: NATIVE_COMPILE_TIMEOUT_MS,
-            maxBuffer: NATIVE_MAX_BUFFER_BYTES,
-            windowsHide: true,
-          });
-          await rename(stagedExecutable, executable);
-        } finally {
-          await rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined);
-        }
-        return executable;
+      // The digest-keyed path is shared across processes. Compile in a
+      // per-process private staging directory and atomically rename into
+      // place: a concurrent swiftc writing the same -o target directly can
+      // leave a partially linked binary that access(X_OK) approves — and
+      // the rename makes a visible path always a complete binary. Staging
+      // is unconditional: an injected `execute` seam must compile the same
+      // way production does, or the seam cannot cover the staging path.
+      await mkdir(cacheDirectory, { recursive: true, mode: 0o700 });
+      const stagingDirectory = await mkdtemp(join(cacheDirectory, '.compile-'));
+      const stagedExecutable = join(stagingDirectory, 'reader');
+      try {
+        await execute('/usr/bin/xcrun', ['swiftc', ...sourcePaths, '-o', stagedExecutable], {
+          encoding: 'utf8',
+          timeout: NATIVE_COMPILE_TIMEOUT_MS,
+          maxBuffer: NATIVE_MAX_BUFFER_BYTES,
+          windowsHide: true,
+        });
+        await rename(stagedExecutable, executable);
+      } finally {
+        await rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined);
       }
-      await execute('/usr/bin/xcrun', ['swiftc', ...sourcePaths, '-o', executable], {
-        encoding: 'utf8',
-        timeout: NATIVE_COMPILE_TIMEOUT_MS,
-        maxBuffer: NATIVE_MAX_BUFFER_BYTES,
-        windowsHide: true,
-      });
       return executable;
     })();
     return executablePromise;

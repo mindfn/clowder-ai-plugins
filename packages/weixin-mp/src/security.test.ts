@@ -85,7 +85,15 @@ test('handlers enforce temporary-file size boundaries and controlled output path
     await writeFile(markdown, '# Safe');
     const converted = await invoke(handlers['weixin-mp:convert_markdown']!, { markdownFilePath: markdown });
     assert.equal(converted.success, true);
-    assert.match(String((converted as { data: { filePath: string } }).data.filePath), /wx-converted-\d+.*\.html$/);
+    assert.match(String((converted as { data: { filePath: string } }).data.filePath), /wx-converted-[^/]+\/article\.html$/);
+
+    // Each conversion lands in its own private mkdtemp directory — concurrent
+    // workers/processes must never share an output file.
+    const converted2 = await invoke(handlers['weixin-mp:convert_markdown']!, { markdownFilePath: markdown });
+    assert.equal(converted2.success, true);
+    const filePath1 = String((converted as { data: { filePath: string } }).data.filePath);
+    const filePath2 = String((converted2 as { data: { filePath: string } }).data.filePath);
+    assert.notEqual(filePath1, filePath2);
 
     const oversizedText = join(root, 'oversized.md');
     await writeFile(oversizedText, Buffer.alloc(2 * 1024 * 1024 + 1, 0x41));

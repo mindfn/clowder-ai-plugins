@@ -2,7 +2,7 @@
  * Weixin-MP invoke handlers — platform-specific logic for commands
  * that cannot be expressed as pure REST calls in YAML.
  */
-import { readFile, realpath, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { extname, join, resolve } from 'node:path';
 import { fetchExternalUrlPinned } from './safe-fetch.js';
@@ -31,11 +31,12 @@ export type InvokeHandler = (
 const TIMEOUT_MS = 30_000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_TEXT_READ_BYTES = 2 * 1024 * 1024; // 2 MB text read limit
-let wxConvertedOutputSequence = 0;
-
-function createWxConvertedOutputPath(): string {
-  wxConvertedOutputSequence = (wxConvertedOutputSequence + 1) % 1_000_000;
-  return join(tmpdir(), `wx-converted-${Date.now()}${process.hrtime.bigint()}${wxConvertedOutputSequence}.html`);
+function createWxConvertedOutputPath(): Promise<string> {
+  // Private per-conversion directory: mkdtemp gives a 0700 dir with a random
+  // suffix, so concurrent workers/processes can never collide on the output
+  // file (Date.now()/hrtime sequences repeat across processes; a shared
+  // tmpdir filename let one article's HTML overwrite another's).
+  return mkdtemp(join(tmpdir(), 'wx-converted-')).then((dir) => join(dir, 'article.html'));
 }
 
 /**
@@ -263,7 +264,7 @@ export function createWeixinMpHandlers(deps: WeixinMpHandlerDeps = {}): Record<s
     if (!markdown) return { success: false, error: 'markdown or markdownFilePath is required' };
     const html = markdownToWxHtml(markdown);
     // Always write to controlled temp directory — never derive output from input path
-    const outputPath = createWxConvertedOutputPath();
+    const outputPath = await createWxConvertedOutputPath();
     await resolvedDeps.writeLocalFile(outputPath, html);
     return { success: true, data: { filePath: outputPath } };
   };

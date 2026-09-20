@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { createWeChatVisibleReaderHandlers } from './handlers.js';
@@ -181,7 +184,13 @@ test('default compilation uses only package-owned native sources and compiles on
   const calls: Array<{ file: string; args: readonly string[] }> = [];
   const execute: NativeCommandExecutor = async (file, args) => {
     calls.push({ file, args });
-    if (file === '/usr/bin/xcrun') return { stdout: '' };
+    if (file === '/usr/bin/xcrun') {
+      // Mirror production swiftc: actually produce the -o binary inside the
+      // private staging directory, so the atomic-rename path is exercised.
+      const outputIndex = args.indexOf('-o');
+      await writeFile(String(args[outputIndex + 1]), '#!/bin/sh\n');
+      return { stdout: '' };
+    }
     return {
       stdout: JSON.stringify({
         ok: true,
@@ -191,23 +200,35 @@ test('default compilation uses only package-owned native sources and compiles on
       }),
     };
   };
-  const runner = createWeChatVisibleReaderNativeRunner({
-    sourceDigest: 'fixture-digest',
-    cacheDirectory: '/safe/cache',
-    execute,
-  });
+  const cacheRoot = await mkdtemp(join(tmpdir(), 'wechat-reader-compile-test-'));
+  try {
+    const runner = createWeChatVisibleReaderNativeRunner({
+      sourceDigest: 'fixture-digest',
+      cacheDirectory: cacheRoot,
+      execute,
+    });
 
-  assert.equal((await runner.probe()).ok, true);
-  assert.equal((await runner.probe()).ok, true);
-  const compile = calls.find(call => call.file === '/usr/bin/xcrun');
-  assert.ok(compile);
-  const sources = compile.args.slice(1, -2);
-  assert.equal(sources.length, 7);
-  for (const source of sources) {
-    assert.match(source, /packages\/wechat-visible-reader\/native\/[^/]+\.swift$/);
-    assert.doesNotMatch(source, /packages\/api\/src\/plugins/);
+    assert.equal((await runner.probe()).ok, true);
+    assert.equal((await runner.probe()).ok, true);
+    const compile = calls.find(call => call.file === '/usr/bin/xcrun');
+    assert.ok(compile);
+    const sources = compile.args.slice(1, -2);
+    assert.equal(sources.length, 7);
+    for (const source of sources) {
+      assert.match(source, /packages\/wechat-visible-reader\/native\/[^/]+\.swift$/);
+      assert.doesNotMatch(source, /packages\/api\/src\/plugins/);
+    }
+    assert.equal(calls.filter(call => call.file === '/usr/bin/xcrun').length, 1);
+    // The compile target was the per-process staging path, renamed atomically
+    // into the digest-keyed cache entry — never written in place.
+    const stagedTarget = String(compile.args[compile.args.indexOf('-o') + 1]);
+    assert.match(stagedTarget, /\.compile-[^/]+\/reader$/);
+    const executable = join(cacheRoot, 'cat-cafe-wechat-reader-fixture-digest');
+    assert.notEqual(stagedTarget, executable);
+    await access(executable);
+  } finally {
+    await rm(cacheRoot, { recursive: true, force: true });
   }
-  assert.equal(calls.filter(call => call.file === '/usr/bin/xcrun').length, 1);
 });
 
 test('metrics retain only aggregate outcomes, never visible message text', () => {

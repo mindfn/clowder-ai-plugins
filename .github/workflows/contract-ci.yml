@@ -52,6 +52,9 @@ jobs:
   validate:
     name: Typecheck + Conformance
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,11 +67,17 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          node scripts/assert-pr-head.mjs
-          "${{ github.repository }}"
-          "${{ github.event.pull_request.number }}"
-          "${{ github.event.pull_request.head.sha }}"
+        run: |
+          checked_out="$(git rev-parse HEAD)"
+          expected="${{ github.event.pull_request.head.sha }}"
+          if [ "$checked_out" != "$expected" ]; then
+            echo "checkout mismatch: git rev-parse HEAD=$checked_out but PR head is $expected" >&2
+            exit 1
+          fi
+          node scripts/assert-pr-head.mjs \
+            "${{ github.repository }}" \
+            "${{ github.event.pull_request.number }}" \
+            "$expected"
 
       - uses: pnpm/action-setup@v4
         with:
@@ -209,7 +218,7 @@ jobs:
       # B4 class: catalog:check packs with --ignore-scripts, so a broken
       # prepack is invisible until the post-merge publish job. Pack every
       # publishable package WITH lifecycle scripts on the PR instead.
-      - name: Pack gate (publishability with lifecycle scripts)
+      - name: Pack gate (prepack must pass with lifecycle scripts)
         run: pnpm pack:gate
 
       - name: Loopback fixture typecheck

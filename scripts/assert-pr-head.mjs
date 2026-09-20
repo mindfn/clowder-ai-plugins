@@ -6,6 +6,13 @@ import { execFileSync } from 'node:child_process';
 // claims are newer; without this check a stale run can be read as "the new
 // head is green".
 //
+// Scope limit, stated honestly: this gate only fires when a run EXISTS. A
+// push to the wrong remote produces no PR run at all, so nothing here turns
+// red — that class is caught by the human/agent delivery ritual of running
+// this script locally before announcing a new HEAD (see CONTRIBUTING), not
+// by CI. Also run a fresh `gh run list` against the PR branch when consuming
+// CI results.
+//
 // Usage: node scripts/assert-pr-head.mjs <owner/repo> <pr-number> <tested-sha>
 
 const [repo, prNumber, testedSha] = process.argv.slice(2);

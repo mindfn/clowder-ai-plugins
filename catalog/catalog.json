@@ -535,8 +535,8 @@
             "packageName": "@clowder-ai/wechat-visible-reader",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/wechat-visible-reader/-/wechat-visible-reader-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-BqEksERf90fdLeEtVj9av+lU3SZMkoFSalDbNRO7RQzPvk87reK84pTDq7r5DCvoRRAIIdRMGBTYgqqoLtrAXQ==",
-            "shasum": "66f1e756752113a07f2736cb2fad9ebe444a3e99",
+            "integrity": "sha512-vFASd/Uv0gvWcNb2Bg/hE27EldB6Jw+edgw5fPwddztOd1B69MXG8yKMYpMe4niwRPfmqnB/k5gpsp+RqcnYKg==",
+            "shasum": "f3e867d0e9654ac941871412aa0145acc52a90e0",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/wechat-visible-reader"
@@ -577,8 +577,8 @@
             "packageName": "@clowder-ai/weixin-mp",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/weixin-mp/-/weixin-mp-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-h3OCBRWPDkzAeneCLcDTlWMnHvkdVFeYNBpnkcZY5lTfQ1iVCec+cHYRyAKaGTKleGYYa9JpMzRHOG/eyFEpPQ==",
-            "shasum": "b3fa9929d6306f9c3810961d0cf8e2264a7e9297",
+            "integrity": "sha512-PNHXGlMDXrK11VLHYwVkb0rwETw6GCh4e6SRYjNUaazStaOnsDyFUIrrTEqQBv2ZdFvhaaQVwA0CQzS/uu9Qzw==",
+            "shasum": "c7780b588e29a3f3eb90151d229e49407ef0933d",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/weixin-mp"
