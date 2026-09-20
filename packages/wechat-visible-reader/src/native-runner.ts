@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
-import { access, mkdir, readFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -158,6 +158,25 @@ export function createWeChatVisibleReaderNativeRunner(
       }
       if (execute === defaultExecutor) {
         await mkdir(cacheDirectory, { recursive: true });
+        // The digest-keyed path is shared across processes. Compile in a
+        // per-process private staging directory and atomically rename into
+        // place: a concurrent swiftc writing the same -o target directly can
+        // leave a partially linked binary that access(X_OK) approves — and
+        // the rename makes a visible path always a complete binary.
+        const stagingDirectory = await mkdtemp(join(cacheDirectory, '.compile-'));
+        const stagedExecutable = join(stagingDirectory, 'reader');
+        try {
+          await execute('/usr/bin/xcrun', ['swiftc', ...sourcePaths, '-o', stagedExecutable], {
+            encoding: 'utf8',
+            timeout: NATIVE_COMPILE_TIMEOUT_MS,
+            maxBuffer: NATIVE_MAX_BUFFER_BYTES,
+            windowsHide: true,
+          });
+          await rename(stagedExecutable, executable);
+        } finally {
+          await rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined);
+        }
+        return executable;
       }
       await execute('/usr/bin/xcrun', ['swiftc', ...sourcePaths, '-o', executable], {
         encoding: 'utf8',

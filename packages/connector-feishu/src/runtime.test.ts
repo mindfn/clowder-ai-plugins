@@ -262,6 +262,73 @@ test('runtime keeps retrying when the reconnect attempt lands on a dead socket',
   await runtime.stop();
 });
 
+// B3: H1 made start() throw on dead sockets, which moved client-start failure
+// onto the routine path. A failed client must be closed by the runtime —
+// otherwise its registered socket, ping loop and close hook leak (the F2
+// orphan), and its late close callback would tear down a healthy successor.
+test('runtime closes a ws client whose start() throws', async () => {
+  const closed: unknown[] = [];
+  const runtime = createFeishuConnectorRuntime({
+    config: { appId: 'app', appSecret: 'secret', connectionMode: 'websocket' },
+    host: { deliver: async () => undefined },
+    logger,
+    fetchFn,
+    createAdapter: () => adapter(),
+    createWsClient: () => ({
+      async start() { throw new Error('Feishu WSClient registered a socket that is not OPEN (readyState=3)'); },
+      close(options?: unknown) { closed.push(options); },
+    }),
+  });
+  await assert.rejects(runtime.start(), /registered a socket that is not OPEN/);
+  assert.deepEqual(closed, [{ force: true }], 'the failed client must be force-closed by the runtime');
+  await runtime.stop();
+});
+
+// B3: identity check — a close callback from a client that is no longer the
+// current one (orphaned by a failed start, or a drained predecessor) must not
+// close the healthy current client nor schedule a reconnect. Scenario: A runs
+// and drops → reconnect lands on B whose start() throws (H1 rejection, closed
+// by the runtime but its socket close may still fire late) → retry lands on
+// healthy C → B's orphan close fires and must be ignored.
+test('orphan close callback cannot tear down the healthy current client', async () => {
+  const created: Array<{ onClose?: () => void }> = [];
+  const closes: number[] = [];
+  const errors: string[] = [];
+  const runtime = createFeishuConnectorRuntime({
+    config: { appId: 'app', appSecret: 'secret', connectionMode: 'websocket' },
+    host: { deliver: async () => undefined },
+    logger: {
+      info() {}, warn() {}, debug() {},
+      error(msg: unknown) { errors.push(String(msg)); },
+    },
+    fetchFn,
+    reconnectDelayMs: 20,
+    createAdapter: () => adapter(),
+    createWsClient: config => {
+      const index = created.length;
+      created.push({ onClose: config.onClose });
+      return {
+        async start() {
+          if (index === 1) throw new Error('Feishu WSClient registered a socket that is not OPEN (readyState=3)');
+        },
+        close() { closes.push(index); },
+      };
+    },
+  });
+  await runtime.start();
+  assert.equal(created.length, 1);
+  created[0]?.onClose?.(); // A drops unexpectedly → supervised reconnect
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.equal(created.length, 3, 'A reconnect + B failure retry must produce clients B and C');
+  assert.deepEqual(closes, [0, 1], 'A closed by the drop handler, B closed by the failed-start path');
+  created[1]?.onClose?.(); // B's orphan close fires after C is current
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.deepEqual(closes, [0, 1], 'the orphan close must not close the healthy C');
+  assert.equal(created.length, 3, 'the orphan close must not schedule a reconnect');
+  assert.equal(errors.filter(entry => entry.includes('closed unexpectedly')).length, 1, 'only A\'s drop is an unexpected close');
+  await runtime.stop();
+});
+
 test('PausableLarkWsClient stop before open kills the socket born afterwards', async () => {
   const inner = fakeLarkInner();
   const client = new PausableLarkWsClient('app-id', 'app-secret', inner);

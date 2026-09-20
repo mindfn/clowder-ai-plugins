@@ -410,17 +410,31 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
     const createWs = options.createWsClient ?? ((value: Readonly<{ appId: string; appSecret: string; onClose?: () => void }>) => (
       new PausableLarkWsClient(value.appId, value.appSecret, undefined, { onClose: value.onClose })
     ));
-    const client = createWs({ appId, appSecret, onClose: handleUnexpectedClose });
+    const client = createWs({ appId, appSecret, onClose: () => handleUnexpectedClose(client) });
     wsClient = client;
     // PausableLarkWsClient.start() settles only once the socket is really
     // open (or stop/timeout/SDK give-up aborts it), so no outer timer needed.
-    await client.start({ eventDispatcher: dispatcher });
+    // On rejection the client must be torn down here: an un-closed client
+    // keeps its registered socket, ping loop and close hook alive — the F2
+    // orphan the facade exists to prevent, now on the routine failure path
+    // (H1 made start() throw for dead sockets instead of accepting them).
+    try {
+      await client.start({ eventDispatcher: dispatcher });
+    } catch (error) {
+      client.close({ force: true });
+      if (wsClient === client) wsClient = undefined;
+      throw error;
+    }
   };
 
   // G1: the only trustworthy signal of a dead ingress is the socket's own
   // 'close' event (the lark SDK leaves a dead socket registered when
   // autoReconnect is off, so polling its registry would report 'alive').
-  const handleUnexpectedClose = (): void => {
+  // B3: the callback carries its originating client and only the CURRENT
+  // client may tear the connection down — a leaked/orphaned client's late
+  // close must not kill a healthy successor.
+  const handleUnexpectedClose = (caller: FeishuWsClient): void => {
+    if (wsClient !== caller) return; // orphan close: not our connection
     // PausableLarkWsClient suppresses the callback for stop-initiated closes
     // via its stopped guard, so reaching here means an unexpected drop.
     if (state !== 'running') return;

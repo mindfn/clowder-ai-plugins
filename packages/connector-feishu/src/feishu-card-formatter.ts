@@ -57,7 +57,10 @@ export function formatFeishuCard(blocks: RichBlock[], catDisplayName: string, te
   const title =
     firstCard && firstCard.kind === 'card' ? `【${catDisplayName}🐱】${firstCard.title}` : `【${catDisplayName}🐱】`;
   const tone = (firstCard?.kind === 'card' && firstCard.tone) || 'info';
-  const template = TONE_TO_COLOR[tone] || 'blue';
+  // hasOwn: `||` does not stop a truthy prototype hit — tone is a free-form
+  // string from the caller, and tone='constructor' would put a FUNCTION into
+  // `template`, which JSON.stringify then silently drops (malformed card).
+  const template = Object.hasOwn(TONE_TO_COLOR, tone) ? TONE_TO_COLOR[tone] : 'blue';
 
   const elements: LarkCardElement[] = [];
   if (textContent) {

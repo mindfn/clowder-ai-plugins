@@ -21,6 +21,7 @@
     "plugin.yaml",
     "manifest.json",
     "source-lock.json",
+    "README.md",
     "LICENSE",
     "NOTICE",
     "THIRD_PARTY_NOTICES.md"
