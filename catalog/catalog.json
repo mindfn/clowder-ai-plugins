@@ -94,8 +94,8 @@
             "packageName": "@clowder-ai/video-analysis",
             "version": "0.1.0-alpha.1",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/video-analysis/-/video-analysis-0.1.0-alpha.1.tgz",
-            "integrity": "sha512-hubGeq+d5Pd8Juy4Jt8+Eu1d8PZ2m/MINyGTmIIcnRov+dVr032b/JCbyPrACIp/GajaCsbevlhsC2GUXsI4iQ==",
-            "shasum": "fedd1ff91c007e3ddbcc576985ff209e94990879",
+            "integrity": "sha512-G6679VEzbzRji3jCaxOMpvN65aw63D51DzkHIoMp/1ViIpTqehQTHVyYjIB3BtuK2OsZuK7ObEk6WJMqebSPdA==",
+            "shasum": "8b5545da053867a7052cf2b51d7c14b0009c04ea",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/video-analysis"
@@ -153,8 +153,8 @@
             "packageName": "@clowder-ai/video-generation",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/video-generation/-/video-generation-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-V4qcOujuGulbYRGq/ak89XIK51unUMYL0hHHRp8MW6YSbZ32a+WuqBNafIWR8FYAUOlFctwxpa9XBT04PB2IKA==",
-            "shasum": "da11b432d1e50161bf42a1eb5bfb2432f110e492",
+            "integrity": "sha512-aRzbGd/Q4sZ+3Fr1Ok2YXTxZpJq65d1sEZrMXpFLNm8631lzaAXYIiLjvTXFU4TVWxQX9YzJiVQfuk+4dqqYzw==",
+            "shasum": "e4390ed9293d1b0f90ea2419dcaf69732c00710c",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/video-generation"
