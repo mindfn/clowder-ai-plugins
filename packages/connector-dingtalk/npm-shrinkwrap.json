@@ -9,7 +9,7 @@
       "version": "0.1.0-alpha.0",
       "license": "MIT",
       "dependencies": {
-        "@clowder-ai/plugin-sdk": "0.1.0-beta.12",
+        "@clowder-ai/plugin-sdk": "0.1.0-beta.13",
         "dingtalk-stream": "2.1.6-beta.1"
       },
       "engines": {
@@ -17,9 +17,9 @@
       }
     },
     "node_modules/@clowder-ai/plugin-contract": {
-      "version": "0.1.0-beta.16",
-      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.1.0-beta.16.tgz",
-      "integrity": "sha512-2N5gOXCOiG1MRiXweHJ+awuqgYHe+uHdHImdtumqeMfOaNzBMHJW1uKJrwu1Ib2QjjmcKx0R/mmOPTlK5AKNBg==",
+      "version": "0.1.0-beta.17",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.1.0-beta.17.tgz",
+      "integrity": "sha512-aujUPSkIAfs3HYc/ubbQVXwxPMG4i3KUTXLi4Y3mokqpOvwgwNz5zz1mJgiiImh3RyojIf+p156b+KSoQ12ZXw==",
       "license": "MIT",
       "dependencies": {
         "ajv": "^8.17.0",
@@ -30,9 +30,9 @@
       }
     },
     "node_modules/@clowder-ai/plugin-sdk": {
-      "version": "0.1.0-beta.12",
-      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.1.0-beta.12.tgz",
-      "integrity": "sha512-VgiBDaWB6Lvc94qhQqbcxXo+3icsmaGCLNYYqLUvf+z5fXm27kyp2y4RXD9FAVsYkFgbBU3U+Twt3YIUOiB5pA==",
+      "version": "0.1.0-beta.13",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.1.0-beta.13.tgz",
+      "integrity": "sha512-MwgSp3/pselTMCaOpeIW1wb2Gi8pAiB4SZlAZQdHToCQCZg1qgZ1fPd89V0boo6nc9B8Et5rCLGqDiJMFo0Nrw==",
       "license": "MIT",
       "dependencies": {
         "@clowder-ai/plugin-contract": "0.1.0-beta.16"
