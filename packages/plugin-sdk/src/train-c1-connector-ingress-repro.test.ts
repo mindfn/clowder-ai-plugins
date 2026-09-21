@@ -5,6 +5,8 @@ import {
   METHOD_NOT_FOUND_CODE,
   METHOD_NOT_FOUND_MESSAGE,
   WIRE_METHOD_NAMES,
+  classifyFrame,
+  type InFlightEntry,
   validateMessagingRowInput,
   validateSessionBinding,
 } from '@clowder-ai/plugin-contract';
@@ -13,8 +15,6 @@ import {
   type DecodedNdjsonFrame,
   type JsonObject,
 } from '@clowder-ai/plugin-contract/conformance';
-
-import { classifyFrame, type InFlightEntry } from './wire-dispatch.js';
 
 const NO_IN_FLIGHT: ReadonlyMap<string, InFlightEntry> = new Map();
 

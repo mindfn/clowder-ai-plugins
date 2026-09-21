@@ -6,12 +6,14 @@ import {
   DEADLINE_EXPIRED_MESSAGE,
   DELIVERY_REJECTED_CODE,
   DELIVERY_REJECTED_MESSAGE,
+  classifyFrame,
   validateEffectiveGrants,
   isWireUInt53,
   type CandidateHello,
   type DeliverInput,
   type DeliveryRejectReason,
   type GrantSnapshot,
+  type InFlightEntry,
   type MessagingRowInputByMethod,
   type MessagingRowResultByMethod,
   type RequestSnapshot,
@@ -41,7 +43,6 @@ import {
   type StdioChannel,
   type StdioRuntimeFatalError,
 } from './stdio-runtime.js';
-import { classifyFrame, type InFlightEntry } from './wire-dispatch.js';
 
 type HostBoundPluginMethod = OutboundMessagingMethod | 'events.publish';
 
