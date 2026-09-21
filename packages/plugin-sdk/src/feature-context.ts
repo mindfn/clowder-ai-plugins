@@ -2,8 +2,9 @@ import {
   validateManifest,
   type Capability,
   type ContentEditorProviderContribution,
-  type ConnectorContribution,
   type DirectToolContribution,
+  type MessagingRowInputByMethod,
+  type MessagingRowResultByMethod,
   type DesktopWindowContribution,
   type IdentityContribution,
   type LimbContribution,
@@ -68,11 +69,14 @@ export interface FeatureHostAdapter {
     contribution: StaticContribution,
   ): Promise<HostContributionReceipt>;
   disposeContribution(binding: FeatureBinding, receipt: HostContributionReceipt): Promise<void>;
-  deliverConnectorMessage(
+  /**
+   * Executes one frozen `messaging.send` row on the Host-owned messaging plane.
+   * The Host remains the admission authority for addresses, grants, and formatting.
+   */
+  sendMessage(
     binding: FeatureBinding,
-    contributionId: string,
-    message: ConnectorInboundMessage,
-  ): Promise<void>;
+    input: MessagingRowInputByMethod['messaging.send'],
+  ): Promise<MessagingRowResultByMethod['messaging.send']>;
   log(
     binding: FeatureBinding,
     level: PluginLogLevel,
@@ -123,11 +127,11 @@ export interface FeatureContext {
   readonly webhooks: ContributionRegistrar<WebhookContribution>;
   readonly messaging: {
     readonly subscribe: ContributionRegistrar<MessageSubscriptionContribution>['register'];
+    readonly send: (
+      input: MessagingRowInputByMethod['messaging.send'],
+    ) => Promise<MessagingRowResultByMethod['messaging.send']>;
   };
   readonly services: ContributionRegistrar<ServiceContribution>;
-  readonly connectors: ContributionRegistrar<ConnectorContribution> & {
-    deliver(contributionId: string, message: ConnectorInboundMessage): Promise<void>;
-  };
   readonly logger: Readonly<Record<PluginLogLevel, (...args: readonly unknown[]) => void>>;
   readonly ui: ContributionRegistrar<UiContribution>;
   readonly contentEditors: ContributionRegistrar<ContentEditorProviderContribution>;
@@ -296,12 +300,10 @@ export function createFeatureContextSession(
     return runWhileActive(() => adapter.writeState(binding, key, value));
   };
 
-  const connectorRegistrar = registrar<ConnectorContribution>('connector');
-  const deliverConnectorMessage = async (
-    contributionId: string,
-    message: ConnectorInboundMessage,
-  ): Promise<void> => {
-    return runWhileActive(() => adapter.deliverConnectorMessage(binding, contributionId, message));
+  const sendMessage = (
+    input: MessagingRowInputByMethod['messaging.send'],
+  ): Promise<MessagingRowResultByMethod['messaging.send']> => {
+    return runWhileActive(() => adapter.sendMessage(binding, input));
   };
 
   const log = (
@@ -325,9 +327,8 @@ export function createFeatureContextSession(
     skills: registrar<SkillContribution>('skill'),
     limbs: registrar<LimbContribution>('limb'),
     webhooks: registrar<WebhookContribution>('webhook'),
-    messaging: { subscribe: subscriptions.register },
+    messaging: { subscribe: subscriptions.register, send: sendMessage },
     services: registrar<ServiceContribution>('service'),
-    connectors: { ...connectorRegistrar, deliver: deliverConnectorMessage },
     logger: {
       debug: (...args) => log('debug', args),
       info: (...args) => log('info', args),
@@ -416,8 +417,6 @@ export function definePluginModule(
 
 function actionMethods(contribution: StaticContribution): readonly string[] {
   switch (contribution.type) {
-    case 'connector':
-      return [contribution.outboundMethod];
     case 'schedule':
     case 'tool':
     case 'webhook':

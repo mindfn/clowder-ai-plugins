@@ -92,12 +92,17 @@ class RecordingAdapter implements FeatureHostAdapter {
     }
   }
 
-  async deliverConnectorMessage(
+  async sendMessage(
     binding: FeatureBinding,
-    contributionId: string,
-    message: Parameters<FeatureHostAdapter['deliverConnectorMessage']>[2],
-  ): Promise<void> {
-    this.calls.push({ operation: 'connectors.deliver', binding, value: { contributionId, message } });
+    input: Parameters<FeatureHostAdapter['sendMessage']>[1],
+  ): Promise<Awaited<ReturnType<FeatureHostAdapter['sendMessage']>>> {
+    this.calls.push({ operation: 'messaging.send', binding, value: input });
+    return {
+      messageId: 'message-1',
+      threadId: 'thread-1',
+      revision: 1,
+      messageHandle: { kind: 'message', token: 'handle-1' },
+    };
   }
 
   log(
@@ -256,13 +261,12 @@ test('module entrypoint guard rejects absent or ambiguous default exports', () =
 test('feature activation closes declared method handlers and owns idempotent disposal', async () => {
   const candidate = manifest();
   candidate.contributions.push({
-    type: 'connector',
+    type: 'message-subscription',
     id: 'fixture-connector',
-    identityRef: 'cat',
-    inboundMethod: 'fixture.inbound',
-    outboundMethod: 'fixture.outbound',
+    binding: 'fixture-binding',
+    action: { method: 'fixture.outbound' },
   } as never);
-  candidate.features[0]!.contributions.push({ type: 'connector', id: 'fixture-connector' } as never);
+  candidate.features[0]!.contributions.push({ type: 'message-subscription', id: 'fixture-connector' } as never);
   let disposeCalls = 0;
   const defined = definePlugin({
     manifest: candidate,
@@ -286,10 +290,10 @@ test('feature activation closes declared method handlers and owns idempotent dis
 test('feature activation rolls back missing or undeclared package handlers', async (t) => {
   const candidate = manifest();
   candidate.contributions.push({
-    type: 'connector', id: 'fixture-connector', identityRef: 'cat',
-    inboundMethod: 'fixture.inbound', outboundMethod: 'fixture.outbound',
+    type: 'message-subscription', id: 'fixture-connector', binding: 'fixture-binding',
+    action: { method: 'fixture.outbound' },
   } as never);
-  candidate.features[0]!.contributions.push({ type: 'connector', id: 'fixture-connector' } as never);
+  candidate.features[0]!.contributions.push({ type: 'message-subscription', id: 'fixture-connector' } as never);
   const cases: ReadonlyArray<readonly [
     string,
     Readonly<Record<string, (input: unknown) => unknown>>,
@@ -314,30 +318,36 @@ test('feature activation rolls back missing or undeclared package handlers', asy
   }
 });
 
-test('connector ingress and logs retain Host-issued feature authority', async () => {
+test('messaging send ingress and logs retain Host-issued feature authority', async () => {
   const adapter = new RecordingAdapter();
   const session = createFeatureContextSession(BINDING, adapter);
-  await session.context.connectors.deliver('fixture-connector', {
-    externalConversationId: 'provider-chat-1',
-    providerMessageId: 'provider-message-1',
-    text: 'hello',
-    sender: { id: 'provider-user-1', name: 'Maine Coon' },
-  });
+  const draft = {
+    address: { kind: 'thread_handle', handle: 'thread-handle-1' },
+    idempotencyKey: 'provider-message-1',
+    payload: {
+      provenance: {
+        origin: {
+          kind: 'external',
+          connectorId: 'fixture-connector',
+          sourceAddress: {
+            connectorId: 'fixture-connector',
+            chatId: 'provider-chat-1',
+            messageId: 'provider-message-1',
+          },
+        },
+        epistemicStatus: 'observation',
+      },
+      elements: [{ elementId: 'text-1', kind: 'text', payload: { text: 'hello' } }],
+    },
+  } as const;
+  await session.context.messaging.send(draft);
   session.context.logger.info('provider connected', { connectorId: 'fixture-connector' });
 
   assert.deepEqual(adapter.calls.slice(-2), [
     {
-      operation: 'connectors.deliver',
+      operation: 'messaging.send',
       binding: BINDING,
-      value: {
-        contributionId: 'fixture-connector',
-        message: {
-          externalConversationId: 'provider-chat-1',
-          providerMessageId: 'provider-message-1',
-          text: 'hello',
-          sender: { id: 'provider-user-1', name: 'Maine Coon' },
-        },
-      },
+      value: draft,
     },
     {
       operation: 'log.info',
@@ -348,8 +358,9 @@ test('connector ingress and logs retain Host-issued feature authority', async ()
 
   await session.revoke();
   await assert.rejects(
-    session.context.connectors.deliver('fixture-connector', {
-      externalConversationId: 'provider-chat-1', providerMessageId: 'provider-message-2', text: 'late',
+    session.context.messaging.send({
+      ...draft,
+      idempotencyKey: 'provider-message-2',
     }),
     FeatureContextRevokedError,
   );

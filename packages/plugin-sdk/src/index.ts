@@ -129,3 +129,12 @@ export {
   type ConnectorOutboundMedia,
   type ConnectorPresentation,
 } from './connector-runtime.js';
+
+export {
+  InboundThreadHandleMissingError,
+  INBOUND_THREAD_HANDLE_CONFIG_KEY,
+  createInboundMessageSender,
+  requireInboundThreadHandle,
+  type InboundMessageSender,
+  type InboundMessageSenderOptions,
+} from './connector-ingress.js';
