@@ -87,7 +87,7 @@ function requireValidManifest(value: unknown): PluginManifest {
 
 function requireStdioManifest(value: unknown): PluginManifest {
   const manifest = requireValidManifest(value);
-  if (manifest.runtime.transport !== 'stdio') {
+  if (manifest.runtime?.transport !== 'stdio') {
     throw new TypeError('standalone stdio host requires a manifest with runtime.transport "stdio"');
   }
   return manifest;
