@@ -149,6 +149,49 @@ export function validateManifest(value: unknown): ManifestValidationResult {
       }
     }
 
+    for (const [index, field] of configuration.entries()) {
+      if (field.kind !== 'operation') continue;
+
+      const actionIds = new Set<string>();
+      for (const [actionIndex, action] of field.actions.entries()) {
+        if (actionIds.has(action.id)) {
+          return semanticError(
+            `/configuration/${index}/actions/${actionIndex}/id`,
+            '#/$defs/ActionDef/uniqueActionIds',
+            'uniqueActionIds',
+            'operation action id must be unique within the same operation',
+          );
+        }
+        actionIds.add(action.id);
+      }
+
+      for (const [actionIndex, action] of field.actions.entries()) {
+        for (const reference of ['next', 'rollback'] as const) {
+          const target = action[reference];
+          if (target !== undefined && !actionIds.has(target)) {
+            return semanticError(
+              `/configuration/${index}/actions/${actionIndex}/${reference}`,
+              `#/$defs/ActionDef/${reference}DeclaredByOperation`,
+              `${reference}DeclaredByOperation`,
+              `operation action ${reference} must reference an action in the same operation`,
+            );
+          }
+        }
+      }
+
+      for (const [targetIndex, target] of (field.target ?? []).entries()) {
+        const targetField = configByKey.get(target);
+        if (targetField === undefined || targetField.kind === 'operation') {
+          return semanticError(
+            `/configuration/${index}/target/${targetIndex}`,
+            '#/$defs/ConfigurationField/declaredValueTarget',
+            'declaredValueTarget',
+            'operation target must reference a declared non-operation configuration key',
+          );
+        }
+      }
+    }
+
     const contributions = manifest.contributions ?? [];
     const contributionByKey = new Map<string, (typeof contributions)[number]>();
     for (const [index, contribution] of contributions.entries()) {
@@ -197,6 +240,44 @@ export function validateManifest(value: unknown): ManifestValidationResult {
             'webhook verificationSecretRef must reference a declared secret field',
           );
         }
+      }
+    }
+
+    if (manifest.runtime === undefined) {
+      const runtimeConfigurationIndex = configuration.findIndex(
+        (field) => field.kind === 'operation',
+      );
+      if (runtimeConfigurationIndex !== -1) {
+        const field = configuration[runtimeConfigurationIndex];
+        return semanticError(
+          `/configuration/${runtimeConfigurationIndex}`,
+          '#/$defs/ConfigurationField/runtimeRequired',
+          'runtimeRequired',
+          `runtime is required by configuration ${field.key}`,
+        );
+      }
+      if (manifest.test !== undefined) {
+        return semanticError(
+          '/test',
+          '#/$defs/PluginTestDeclaration/runtimeRequired',
+          'runtimeRequired',
+          `runtime is required by test ${manifest.pluginId}`,
+        );
+      }
+      const runtimeContributionIndex = contributions.findIndex(
+        (contribution) =>
+          'action' in contribution ||
+          contribution.type === 'limb' ||
+          contribution.type === 'connector',
+      );
+      if (runtimeContributionIndex !== -1) {
+        const contribution = contributions[runtimeContributionIndex];
+        return semanticError(
+          `/contributions/${runtimeContributionIndex}`,
+          '#/$defs/StaticContribution/runtimeRequired',
+          'runtimeRequired',
+          `runtime is required by contribution ${contribution.id}`,
+        );
       }
     }
 
