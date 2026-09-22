@@ -21,7 +21,7 @@ export type PluginIcon = 'github' | PackageIcon;
 export type SemVer = string;
 export type DataClass = 'cache' | 'ephemeral' | 'user-authored' | 'derived-user-visible' | 'relationship' | 'interaction-history';
 export type DataStrategy = 'lifecycle' | 'retained' | 'ask-on-uninstall';
-export type Capability = 'plugin.config.read' | 'plugin.state.get' | 'plugin.state.set' | 'messaging.send' | 'schedule.register' | 'events.publish' | 'messaging.appendElements' | 'onMessage' | 'message.event.subscribe' | 'secret.read' | 'thread.listMetadata' | 'thread.readContent' | 'memory.query' | 'memory.append' | 'memory.retrieve' | 'windows.create' | 'whisper.extend';
+export type Capability = 'plugin.config.read' | 'plugin.state.get' | 'plugin.state.set' | 'messaging.send' | 'schedule.register' | 'events.publish' | 'messaging.appendElements' | 'onMessage' | 'message.event.subscribe' | 'secret.read' | 'thread.listMetadata' | 'thread.readContent' | 'thread.write' | 'task.read' | 'task.write' | 'memory.query' | 'memory.append' | 'memory.retrieve' | 'windows.create' | 'whisper.extend';
 export type DataDeclaration = {
   readonly name: string;
   readonly dataClass: 'cache';
@@ -76,6 +76,8 @@ export type ConfigurationField = {
   readonly required: boolean;
   readonly default?: string;
   readonly options?: never;
+  readonly target?: never;
+  readonly actions?: never;
 } | {
   readonly key: string;
   readonly label: string;
@@ -84,6 +86,8 @@ export type ConfigurationField = {
   readonly required: boolean;
   readonly default?: never;
   readonly options?: never;
+  readonly target?: never;
+  readonly actions?: never;
 } | {
   readonly key: string;
   readonly label: string;
@@ -92,6 +96,8 @@ export type ConfigurationField = {
   readonly required: boolean;
   readonly default?: string;
   readonly options: readonly ConfigurationOption[];
+  readonly target?: never;
+  readonly actions?: never;
 } | {
   readonly key: string;
   readonly label: string;
@@ -100,6 +106,8 @@ export type ConfigurationField = {
   readonly required: boolean;
   readonly default?: boolean;
   readonly options?: never;
+  readonly target?: never;
+  readonly actions?: never;
 } | {
   readonly key: string;
   readonly label: string;
@@ -108,6 +116,8 @@ export type ConfigurationField = {
   readonly required: boolean;
   readonly default?: number;
   readonly options?: never;
+  readonly target?: never;
+  readonly actions?: never;
 } | {
   readonly key: string;
   readonly label: string;
@@ -116,6 +126,18 @@ export type ConfigurationField = {
   readonly required: boolean;
   readonly default?: string;
   readonly options?: never;
+  readonly target?: never;
+  readonly actions?: never;
+} | {
+  readonly key: string;
+  readonly label: string;
+  readonly description?: string;
+  readonly kind: 'operation';
+  readonly required: boolean;
+  readonly default?: never;
+  readonly options?: never;
+  readonly target?: readonly string[];
+  readonly actions: readonly ActionDef[];
 };
 export type EnvironmentBinding = {
   readonly source: 'config';
@@ -132,6 +154,35 @@ export type ContributionRuntime = {
 export type CallbackAction = {
   readonly method: string;
   readonly params?: Readonly<Record<string, unknown>>;
+};
+export type ActionDef = {
+  readonly id: string;
+  readonly label: string;
+  readonly render: 'button' | 'polling' | 'status';
+  readonly action: CallbackAction;
+  readonly resultRender?: string;
+  readonly next?: string;
+  readonly rollback?: string;
+  readonly timeout?: number;
+};
+export type OperationActionResult = {
+  readonly render: string;
+  readonly data: unknown;
+  readonly label?: string;
+  readonly targetValues?: Readonly<Record<string, string>>;
+  readonly advance?: boolean;
+  readonly activate?: boolean;
+};
+export type PluginTestDeclaration = {
+  readonly action: CallbackAction;
+};
+export type PluginTestResult = {
+  readonly ok: boolean;
+  readonly message?: string;
+  readonly details?: Readonly<Record<string, unknown>>;
+};
+export type SetupStep = {
+  readonly text: string;
 };
 export type IdentityContribution = {
   readonly type: 'identity';
@@ -315,7 +366,9 @@ export type PluginManifest = {
   readonly contributions?: readonly StaticContribution[];
   readonly features: readonly PluginFeature[];
   readonly data?: readonly DataDeclaration[];
-  readonly runtime: RuntimeDeclaration;
+  readonly runtime?: RuntimeDeclaration;
+  readonly test?: PluginTestDeclaration;
+  readonly steps?: readonly SetupStep[];
   readonly signals?: SignalContribution;
 };
 
@@ -1236,7 +1289,7 @@ export const L0_CAPABILITIES = ['plugin.config.read', 'plugin.state.get', 'plugi
 export type L0Capability = (typeof L0_CAPABILITIES)[number];
 export const L1_CAPABILITIES = ['messaging.send', 'schedule.register', 'events.publish', 'messaging.appendElements'] as const;
 export type L1Capability = (typeof L1_CAPABILITIES)[number];
-export const L2_CAPABILITIES = ['onMessage', 'message.event.subscribe', 'secret.read', 'thread.listMetadata', 'thread.readContent', 'memory.query', 'memory.append', 'memory.retrieve', 'windows.create', 'whisper.extend'] as const;
+export const L2_CAPABILITIES = ['onMessage', 'message.event.subscribe', 'secret.read', 'thread.listMetadata', 'thread.readContent', 'thread.write', 'task.read', 'task.write', 'memory.query', 'memory.append', 'memory.retrieve', 'windows.create', 'whisper.extend'] as const;
 export type L2Capability = (typeof L2_CAPABILITIES)[number];
 export const CAPABILITY_TABLE = {
   L0: L0_CAPABILITIES,

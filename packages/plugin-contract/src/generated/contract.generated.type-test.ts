@@ -6,7 +6,10 @@ import type {
   M0CAckInput,
   M0CSubscribeInput,
   MessagingErrorCode,
+  OperationActionResult,
   PackageIcon,
+  PluginManifest,
+  PluginTestResult,
   RuntimeDeclaration,
   SideEffectAssertion,
 } from './contract.generated.js';
@@ -87,6 +90,42 @@ const booleanField: ConfigurationField = {
   default: true,
 };
 
+const operationField: ConfigurationField = {
+  key: 'login',
+  label: 'Log in',
+  kind: 'operation',
+  required: true,
+  target: ['account'],
+  actions: [{
+    id: 'begin',
+    label: 'Begin',
+    render: 'button',
+    action: { method: 'login.begin' },
+  }],
+};
+
+const operationResult: OperationActionResult = {
+  render: 'status',
+  data: { connected: true },
+  targetValues: { account: 'owner' },
+  advance: true,
+  activate: true,
+};
+
+const pluginTestResult: PluginTestResult = {
+  ok: true,
+  message: 'Connected',
+  details: { latencyMs: 12 },
+};
+
+const staticOnlyManifest: PluginManifest = {
+  pluginId: 'dev.clowder.static',
+  version: '1.0.0',
+  contractVersion: '0.1.0-beta.18',
+  name: 'Static package',
+  features: [{ id: 'static', name: 'Static', resources: [], capabilities: [] }],
+};
+
 const svgIcon: PackageIcon = {
   type: 'svg',
   src: 'assets/icon.svg',
@@ -106,6 +145,12 @@ const invalidSecretDefault: ConfigurationField = { key: 'api-key', label: 'API k
 
 // @ts-expect-error boolean configuration fields require boolean defaults.
 const invalidBooleanDefault: ConfigurationField = { key: 'enabled', label: 'Enabled', kind: 'boolean', required: false, default: 'yes' };
+
+// @ts-expect-error operation configuration fields require actions.
+const invalidOperationWithoutActions: ConfigurationField = { key: 'login', label: 'Log in', kind: 'operation', required: true };
+
+// @ts-expect-error operation configuration fields forbid defaults.
+const invalidOperationDefault: ConfigurationField = { key: 'login', label: 'Log in', kind: 'operation', required: true, actions: [{ id: 'begin', label: 'Begin', render: 'button', action: { method: 'login.begin' } }], default: false };
 
 const valueBearingAssertion: SideEffectAssertion = {
   target: 'messages',
@@ -160,6 +205,10 @@ const sendBehaviorCase: BehaviorCase = {
 const invalidSendBehaviorCase: BehaviorCase = { ...behaviorCaseBase, when: { operation: 'send', input: { address: {}, idempotencyKey: 'send-1', payload: {} } }, execution: { plane: 'plugin-to-host-wire', method: 'messaging.read', verdictOracle: { kind: 'behavior-expectation' } } };
 
 void [
+  operationField,
+  operationResult,
+  pluginTestResult,
+  staticOnlyManifest,
   lifecycleCache,
   retainedUserData,
   invalidLifecycleUserData,
@@ -174,6 +223,8 @@ void [
   invalidStringWithOptions,
   invalidSecretDefault,
   invalidBooleanDefault,
+  invalidOperationWithoutActions,
+  invalidOperationDefault,
   valueBearingAssertion,
   valuelessAssertion,
   invalidValueBearingAssertion,
