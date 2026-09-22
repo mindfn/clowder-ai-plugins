@@ -40,11 +40,11 @@ contributions:
   - type: identity
     id: feishu-bot
     displayName: Feishu bot
-  - type: connector
+  - type: message-subscription
     id: feishu
-    identityRef: feishu-bot
-    inboundMethod: feishu.inbound
-    outboundMethod: feishu.outbound
+    binding: feishu-bot
+    action:
+      method: feishu.outbound
   - type: webhook
     id: feishu-events
     path: feishu/events
@@ -59,11 +59,11 @@ features:
     contributions:
       - type: identity
         id: feishu-bot
-      - type: connector
+      - type: message-subscription
         id: feishu
       - type: webhook
         id: feishu-events
-    capabilities: [plugin.config.read, messaging.send, secret.read]
+    capabilities: [plugin.config.read, message.event.subscribe, messaging.send, secret.read, thread.listMetadata, thread.write]
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js

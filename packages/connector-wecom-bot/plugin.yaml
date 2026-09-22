@@ -22,11 +22,11 @@ contributions:
   - type: identity
     id: wecom-bot
     displayName: WeCom intelligent bot
-  - type: connector
+  - type: message-subscription
     id: wecom-bot
-    identityRef: wecom-bot
-    inboundMethod: wecom-bot.inbound
-    outboundMethod: wecom-bot.outbound
+    binding: wecom-bot
+    action:
+      method: wecom-bot.outbound
 features:
   - id: wecom-bot-messaging
     name: WeCom bot messaging
@@ -34,12 +34,15 @@ features:
     contributions:
       - type: identity
         id: wecom-bot
-      - type: connector
+      - type: message-subscription
         id: wecom-bot
     capabilities:
       - plugin.config.read
+      - message.event.subscribe
       - messaging.send
       - secret.read
+      - thread.listMetadata
+      - thread.write
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js

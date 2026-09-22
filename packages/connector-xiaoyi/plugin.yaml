@@ -26,11 +26,11 @@ contributions:
   - type: identity
     id: xiaoyi-agent
     displayName: XiaoYi agent
-  - type: connector
+  - type: message-subscription
     id: xiaoyi
-    identityRef: xiaoyi-agent
-    inboundMethod: xiaoyi.inbound
-    outboundMethod: xiaoyi.outbound
+    binding: xiaoyi-agent
+    action:
+      method: xiaoyi.outbound
 features:
   - id: xiaoyi-messaging
     name: XiaoYi messaging
@@ -38,12 +38,15 @@ features:
     contributions:
       - type: identity
         id: xiaoyi-agent
-      - type: connector
+      - type: message-subscription
         id: xiaoyi
     capabilities:
       - plugin.config.read
+      - message.event.subscribe
       - messaging.send
       - secret.read
+      - thread.listMetadata
+      - thread.write
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js

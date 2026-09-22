@@ -319,9 +319,9 @@ test('packed public packages install and import in a fresh npm consumer', async 
         'utf8',
       ),
     );
-    assert.equal(contractPackage.version, '0.1.0-beta.17');
-    assert.equal(sdkPackage.version, '0.1.0-beta.13');
-    assert.equal(sdkPackage.dependencies['@clowder-ai/plugin-contract'], '0.1.0-beta.17');
+    assert.equal(contractPackage.version, '0.1.0-beta.18');
+    assert.equal(sdkPackage.version, '0.2.0-beta.2');
+    assert.equal(sdkPackage.dependencies['@clowder-ai/plugin-contract'], '0.1.0-beta.18');
     assert.equal(
       feishuPackage.dependencies['@clowder-ai/plugin-contract'],
       '0.1.0-beta.9',
@@ -388,11 +388,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       );
       const entrypoint = installedSdk.requirePluginModuleEntrypoint(namespace.default);
       const definition = entrypoint.create(manifest);
-      assert.equal(definition.manifest.pluginId, manifest.pluginId);
-      assert.deepEqual(
-        Object.keys(definition.activate).sort(),
-        manifest.features.map((feature) => feature.id).sort(),
-      );
+      assert.equal(typeof definition.start, 'function');
     }
     const videoManifestText = await readFile(
       join(consumer, 'node_modules/@clowder-ai/video-analysis/plugin.yaml'),

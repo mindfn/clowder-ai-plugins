@@ -3,10 +3,14 @@ import {
   definePluginModule,
   requireConnectorOutboundDelivery,
   type ConnectorOutboundDelivery,
+  type FeatureContext,
+  type PluginMessagingDelivery,
+  type PluginMessagingDraft,
 } from '@clowder-ai/plugin-sdk';
 
 import {
   createTelegramConnectorRuntime,
+  type TelegramHostInboundMessage,
   type TelegramConnectorRuntime,
   type TelegramConnectorRuntimeOptions,
 } from './runtime.js';
@@ -16,8 +20,128 @@ type TelegramRuntimeFactory = (
   options: TelegramConnectorRuntimeOptions<TelegramAdapter>,
 ) => TelegramConnectorRuntime<TelegramAdapter>;
 
-async function deliver(adapter: TelegramAdapter, candidate: unknown): Promise<void> {
-  const input: ConnectorOutboundDelivery = requireConnectorOutboundDelivery(candidate);
+const CONNECTOR_ID = 'telegram';
+const IDENTITY_ID = 'telegram-bot';
+
+function object(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function requireDelivery(candidate: unknown): PluginMessagingDelivery {
+  if (!object(candidate)) throw new TypeError('telegram delivery must be an object');
+  if (Object.keys(candidate).some(key => !['deliveryId', 'threadId', 'envelope'].includes(key))) {
+    throw new TypeError('telegram delivery contains an unsupported field');
+  }
+  if (typeof candidate.deliveryId !== 'string' || candidate.deliveryId.length === 0) {
+    throw new TypeError('telegram deliveryId must be non-empty');
+  }
+  if (typeof candidate.threadId !== 'string' || candidate.threadId.length === 0) {
+    throw new TypeError('telegram threadId must be non-empty');
+  }
+  if (!object(candidate.envelope) || candidate.envelope.threadId !== candidate.threadId) {
+    throw new TypeError('telegram delivery envelope must match threadId');
+  }
+  return structuredClone(candidate) as unknown as PluginMessagingDelivery;
+}
+
+function threadTitle(externalConversationId: string): string {
+  const value = `Telegram ${externalConversationId}`;
+  return value.length <= 200 ? value : value.slice(0, 200);
+}
+
+function draft(message: TelegramHostInboundMessage): PluginMessagingDraft {
+  return {
+    idempotencyKey: message.providerMessageId,
+    sourceEventId: message.providerMessageId,
+    identity: IDENTITY_ID,
+    sender: { id: message.externalSenderId },
+    payload: {
+      provenance: {
+        origin: {
+          kind: 'external',
+          connectorId: CONNECTOR_ID,
+          sourceAddress: {
+            connectorId: CONNECTOR_ID,
+            chatId: message.externalConversationId,
+            messageId: message.providerMessageId,
+          },
+        },
+        epistemicStatus: 'observation',
+      },
+      elements: [
+        { elementId: 'text-1', kind: 'text', payload: { text: message.text } },
+        ...(message.attachments ?? []).map((attachment, index) => ({
+          elementId: `media-${index + 1}`,
+          kind: 'media_ref' as const,
+          payload: {
+            type: attachment.type,
+            reference: attachment.platformKey,
+            ...(attachment.fileName === undefined ? {} : { fileName: attachment.fileName }),
+            ...(attachment.duration === undefined ? {} : { duration: attachment.duration }),
+          },
+        })),
+      ],
+    },
+  };
+}
+
+async function createMessageBridge(context: FeatureContext) {
+  const subscriptions = new Map<string, Promise<void>>();
+  const subscribe = (threadId: string): Promise<void> => {
+    const current = subscriptions.get(threadId);
+    if (current !== undefined) return current;
+    let pending!: Promise<void>;
+    pending = context.messaging.subscribe(threadId, { contributionId: CONNECTOR_ID })
+      .catch((error: unknown) => {
+        if (subscriptions.get(threadId) === pending) subscriptions.delete(threadId);
+        throw error;
+      });
+    subscriptions.set(threadId, pending);
+    return pending;
+  };
+  for (const binding of await context.threads.listBindings()) await subscribe(binding.threadId);
+  return {
+    async deliver(message: TelegramHostInboundMessage): Promise<void> {
+      const thread = await context.threads.ensureByKey(message.externalConversationId, {
+        title: threadTitle(message.externalConversationId),
+      });
+      await subscribe(thread.id);
+      await context.messaging.send(thread.id, draft(message));
+    },
+    async outbound(candidate: unknown): Promise<ConnectorOutboundDelivery> {
+      const input = requireDelivery(candidate);
+      const binding = (await context.threads.listBindings()).find(item => item.threadId === input.threadId);
+      if (binding === undefined) throw new TypeError(`telegram thread ${input.threadId} has no provider binding`);
+      const text = input.envelope.payload.elements
+        .filter(element => element.kind === 'text')
+        .map(element => element.payload.text)
+        .join('\n\n');
+      const richBlocks = input.envelope.payload.elements
+        .filter(element => element.kind === 'rich_block')
+        .map(element => element.payload);
+      const media = input.envelope.payload.elements.flatMap((element) => {
+        if (element.kind !== 'media_ref' || !object(element.payload)) return [];
+        const type = element.payload.type;
+        const reference = element.payload.reference;
+        if (!['image', 'file', 'audio', 'video'].includes(String(type)) || typeof reference !== 'string') return [];
+        return [{ type, reference, ...(typeof element.payload.fileName === 'string' ? { fileName: element.payload.fileName } : {}) }];
+      });
+      return requireConnectorOutboundDelivery({
+        deliveryId: input.deliveryId,
+        externalConversationId: binding.key,
+        presentation: {
+          header: input.envelope.actor.id,
+          body: text,
+          origin: input.envelope.actor.kind === 'cat' ? 'agent' : input.envelope.actor.kind === 'system' ? 'system' : 'direct',
+        },
+        ...(richBlocks.length === 0 ? {} : { richBlocks }),
+        ...(media.length === 0 ? {} : { media }),
+      });
+    },
+  };
+}
+
+async function deliver(adapter: TelegramAdapter, input: ConnectorOutboundDelivery): Promise<void> {
   const blocks = [...(input.richBlocks ?? [])];
   if (blocks.length > 0) {
     await adapter.sendRichMessage(
@@ -53,14 +177,16 @@ export function createTelegramPluginModule(
     activate: {
       'telegram-messaging': async (context) => {
         const botToken = await context.secrets.get('botToken');
+        if (typeof botToken !== 'string') throw new TypeError('botToken must be a declared secret');
+        const bridge = await createMessageBridge(context);
         const runtime = createRuntime({
           config: { botToken },
-          host: { deliver: (message) => context.connectors.deliver('telegram', message) },
+          host: { deliver: bridge.deliver },
           logger: context.logger,
         });
         await runtime.start();
         return {
-          actions: { 'telegram.outbound': (input) => deliver(runtime.outbound, input) },
+          actions: { 'telegram.outbound': async (input) => deliver(runtime.outbound, await bridge.outbound(input)) },
           dispose: () => runtime.stop(),
         };
       },

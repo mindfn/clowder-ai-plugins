@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { activateDefinedFeature, type FeatureContext } from '@clowder-ai/plugin-sdk';
+import type { ModulePluginHostShape } from '@clowder-ai/plugin-sdk';
 import { parse } from 'yaml';
 
 import moduleEntrypoint, { createFeishuPluginModule } from './plugin-entrypoint.js';
@@ -10,9 +10,21 @@ import type { FeishuAdapter } from './FeishuAdapter.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
 
+function host(config: Record<string, unknown>, secrets: Record<string, string>): ModulePluginHostShape {
+  return {
+    config: { get: async key => config[key] },
+    secrets: { get: async key => secrets[key] },
+    storage: {} as never,
+    tasks: {} as never,
+    threads: { listBindings: async () => [] } as never,
+    messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async input => ({ messageId: 'message-1', threadId: input.threadId }) },
+    log() {},
+  };
+}
+
 test('default export is the deterministic package module entrypoint', () => {
   assert.equal(typeof moduleEntrypoint.create, 'function');
-  assert.equal(moduleEntrypoint.create(manifest).manifest.pluginId, 'official.connector.feishu');
+  assert.equal(typeof moduleEntrypoint.create(manifest).start, 'function');
 });
 
 test('module exposes both manifest-declared connector and webhook actions', async () => {
@@ -26,14 +38,8 @@ test('module exposes both manifest-declared connector and webhook actions', asyn
   } as FeishuConnectorRuntime<FeishuAdapter>));
   const config: Record<string, unknown> = { appId: 'app', connectionMode: 'webhook' };
   const secrets: Record<string, string> = { appSecret: 'secret', verificationToken: '' };
-  const context = {
-    featureId: 'feishu-messaging',
-    config: { get: async (key: string) => config[key] },
-    secrets: { get: async (key: string) => secrets[key]! },
-    connectors: { deliver: async () => undefined },
-    logger: { info() {}, warn() {}, error() {}, debug() {} },
-  } as unknown as FeatureContext;
-  const active = await activateDefinedFeature(entrypoint.create(manifest), 'feishu-messaging', context);
+  const active = await entrypoint.create(manifest).start(host(config, secrets));
   assert.deepEqual(Object.keys(active.actions).sort(), ['feishu.outbound', 'feishu.webhook']);
   assert.deepEqual(await active.actions['feishu.webhook']?.({}), { kind: 'skipped', reason: 'test' });
+  await active.stop();
 });

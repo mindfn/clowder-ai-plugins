@@ -19,11 +19,14 @@ test('manifest keeps credentials and connector authority in their intended domai
     { key: 'secretKey', label: 'Secret Key', kind: 'secret', required: true },
     { key: 'agentId', label: 'Agent ID', kind: 'string', required: true },
   ]);
-  assert.ok(manifest.contributions.some(item => item.type === 'connector' && item.id === 'xiaoyi'));
+  assert.ok(manifest.contributions.some(item => item.type === 'message-subscription' && item.id === 'xiaoyi'));
   assert.deepEqual(manifest.features[0]?.capabilities, [
     'plugin.config.read',
+    'message.event.subscribe',
     'messaging.send',
     'secret.read',
+    'thread.listMetadata',
+    'thread.write',
   ]);
   assert.deepEqual(manifest.runtime, { transport: 'builtin', entrypoint: 'dist/plugin-entrypoint.js' });
 });

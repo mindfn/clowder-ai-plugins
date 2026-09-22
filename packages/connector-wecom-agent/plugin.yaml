@@ -34,11 +34,11 @@ contributions:
   - type: identity
     id: wecom-agent
     displayName: WeCom custom application
-  - type: connector
+  - type: message-subscription
     id: wecom-agent
-    identityRef: wecom-agent
-    inboundMethod: wecom-agent.inbound
-    outboundMethod: wecom-agent.outbound
+    binding: wecom-agent
+    action:
+      method: wecom-agent.outbound
   - type: webhook
     id: wecom-agent-callback
     path: connectors/wecom-agent
@@ -53,14 +53,17 @@ features:
     contributions:
       - type: identity
         id: wecom-agent
-      - type: connector
+      - type: message-subscription
         id: wecom-agent
       - type: webhook
         id: wecom-agent-callback
     capabilities:
       - plugin.config.read
+      - message.event.subscribe
       - messaging.send
       - secret.read
+      - thread.listMetadata
+      - thread.write
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { activateDefinedFeature, type FeatureContext } from '@clowder-ai/plugin-sdk';
+import type { ModulePluginHostShape } from '@clowder-ai/plugin-sdk';
 import { parse } from 'yaml';
 
 import moduleEntrypoint, { createWeixinPluginModule } from './plugin-entrypoint.js';
@@ -10,9 +10,20 @@ import type { WeixinAdapter } from './WeixinAdapter.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
 
+function delivery() {
+  return {
+    deliveryId: 'delivery-1', threadId: 'thread-1',
+    envelope: {
+      messageId: 'message-1', revision: 1, threadId: 'thread-1',
+      actor: { kind: 'cat', id: '砚砚' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
+      payload: { provenance: { origin: { kind: 'host' }, epistemicStatus: 'observation' }, elements: [{ elementId: 'text-1', kind: 'text', payload: { text: 'hello' } }] },
+    },
+  };
+}
+
 test('default export is the deterministic package module entrypoint', () => {
   assert.equal(typeof moduleEntrypoint.create, 'function');
-  assert.equal(moduleEntrypoint.create(manifest).manifest.pluginId, 'official.connector.weixin');
+  assert.equal(typeof moduleEntrypoint.create(manifest).start, 'function');
 });
 
 test('module binds Host-owned state and exposes only its declared outbound action', async () => {
@@ -35,25 +46,23 @@ test('module binds Host-owned state and exposes only its declared outbound actio
     enableUnsafeVoiceModes: false,
     captureInboundVoiceMedia: false,
   };
-  const context = {
-    featureId: 'weixin-messaging',
+  const host: ModulePluginHostShape = {
     config: { get: async (key: string) => values[key] },
     secrets: { get: async () => 'token' },
-    state: {
-      get: async () => null,
-      set: async (key: string, value: unknown) => { writes.push([key, value]); },
+    storage: {
+      get: async () => undefined, list: async () => ({}),
+      set: async (key: string, value: unknown) => { writes.push([key, value]); return { revision: 1 }; },
+      compareAndSet: async () => ({ applied: false }), delete: async () => ({ deleted: false }),
     },
-    connectors: { deliver: async () => undefined },
-    logger: { info() {}, warn() {}, error() {}, debug() {} },
-  } as unknown as FeatureContext;
+    tasks: {} as never,
+    threads: { listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }] } as never,
+    messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async input => ({ messageId: 'message-1', threadId: input.threadId }) },
+    log() {},
+  };
 
-  const active = await activateDefinedFeature(entrypoint.create(manifest), 'weixin-messaging', context);
-  await active.actions['weixin.outbound']?.({
-    deliveryId: 'delivery-1',
-    externalConversationId: 'chat-1',
-    presentation: { header: '砚砚', body: 'hello', origin: 'agent' },
-  });
-  await active.dispose();
+  const active = await entrypoint.create(manifest).start(host);
+  await active.actions['weixin.outbound']?.(delivery());
+  await active.stop();
   assert.deepEqual(writes, [['provider-session', { getUpdatesBuf: 'cursor' }]]);
   assert.deepEqual(replies, [['chat-1', '砚砚\n\nhello']]);
   assert.equal(stops, 1);

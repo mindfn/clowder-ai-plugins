@@ -47,11 +47,11 @@ contributions:
   - type: identity
     id: weixin-bot
     displayName: WeChat bot
-  - type: connector
+  - type: message-subscription
     id: weixin
-    identityRef: weixin-bot
-    inboundMethod: weixin.inbound
-    outboundMethod: weixin.outbound
+    binding: weixin-bot
+    action:
+      method: weixin.outbound
 features:
   - id: weixin-messaging
     name: WeChat Personal messaging
@@ -59,9 +59,9 @@ features:
     contributions:
       - type: identity
         id: weixin-bot
-      - type: connector
+      - type: message-subscription
         id: weixin
-    capabilities: [plugin.config.read, plugin.state.get, plugin.state.set, messaging.send, secret.read]
+    capabilities: [plugin.config.read, plugin.state.get, plugin.state.set, message.event.subscribe, messaging.send, secret.read, thread.listMetadata, thread.write]
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js

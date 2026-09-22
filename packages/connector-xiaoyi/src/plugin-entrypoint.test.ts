@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { activateDefinedFeature, type FeatureContext } from '@clowder-ai/plugin-sdk';
+import type { ModulePluginHostShape } from '@clowder-ai/plugin-sdk';
 import { parse } from 'yaml';
 
 import moduleEntrypoint, { createXiaoyiPluginModule } from './plugin-entrypoint.js';
@@ -10,9 +10,30 @@ import type { XiaoyiAdapter } from './XiaoyiAdapter.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
 
+function host(values: Record<string, unknown>): ModulePluginHostShape {
+  return {
+    config: { get: async key => values[key] }, secrets: { get: async () => 'sk' },
+    storage: {} as never, tasks: {} as never,
+    threads: { listBindings: async () => [{ key: 'agent:session', threadId: 'thread-1', createdAt: 1 }] } as never,
+    messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async input => ({ messageId: 'message-1', threadId: input.threadId }) },
+    log() {},
+  };
+}
+
+function delivery() {
+  return {
+    deliveryId: 'delivery-1', threadId: 'thread-1',
+    envelope: {
+      messageId: 'message-1', revision: 1, threadId: 'thread-1',
+      actor: { kind: 'cat', id: '砚砚' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
+      payload: { provenance: { origin: { kind: 'host' }, epistemicStatus: 'observation' }, elements: [{ elementId: 'text-1', kind: 'text', payload: { text: 'hello' } }] },
+    },
+  };
+}
+
 test('default export is the deterministic package module entrypoint', () => {
   assert.equal(typeof moduleEntrypoint.create, 'function');
-  assert.equal(moduleEntrypoint.create(manifest).manifest.pluginId, 'official.connector.xiaoyi');
+  assert.equal(typeof moduleEntrypoint.create(manifest).start, 'function');
 });
 
 test('module settles the provider task after the declared outbound action completes', async () => {
@@ -26,20 +47,8 @@ test('module settles the provider task after the declared outbound action comple
     return { outbound, async start() {}, async stop() {} } as XiaoyiConnectorRuntime<XiaoyiAdapter>;
   });
   const values: Record<string, unknown> = { accessKey: 'ak', agentId: 'agent' };
-  const context = {
-    featureId: 'xiaoyi-messaging',
-    config: { get: async (key: string) => values[key] },
-    secrets: { get: async () => 'sk' },
-    connectors: { deliver: async () => undefined },
-    logger: { info() {}, warn() {}, error() {}, debug() {} },
-  } as unknown as FeatureContext;
-
-  const active = await activateDefinedFeature(entrypoint.create(manifest), 'xiaoyi-messaging', context);
-  await active.actions['xiaoyi.outbound']?.({
-    deliveryId: 'delivery-1',
-    externalConversationId: 'agent:session',
-    presentation: { header: '砚砚', body: 'hello', origin: 'agent' },
-  });
+  const active = await entrypoint.create(manifest).start(host(values));
+  await active.actions['xiaoyi.outbound']?.(delivery());
   assert.deepEqual(events, [
     ['reply', 'agent:session', '砚砚\n\nhello'],
     ['done', 'agent:session', true],

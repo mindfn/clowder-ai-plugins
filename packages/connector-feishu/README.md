@@ -23,4 +23,4 @@ binding and declared configuration/secret surfaces. No package-local persistence
 
 ## Exposed capability
 
-The connector contributes one Feishu identity, connector surface, and verified webhook, requests `plugin.config.read`, `messaging.send`, `secret.read`. QR setup obtains credentials but does not transfer Host configuration authority.
+The connector contributes one Feishu identity, message subscription, and verified webhook, requests `plugin.config.read`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`. QR setup obtains credentials but does not transfer Host configuration authority.

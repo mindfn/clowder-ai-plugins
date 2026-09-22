@@ -22,11 +22,11 @@ contributions:
   - type: identity
     id: dingtalk-bot
     displayName: DingTalk bot
-  - type: connector
+  - type: message-subscription
     id: dingtalk
-    identityRef: dingtalk-bot
-    inboundMethod: dingtalk.inbound
-    outboundMethod: dingtalk.outbound
+    binding: dingtalk-bot
+    action:
+      method: dingtalk.outbound
 features:
   - id: dingtalk-messaging
     name: DingTalk messaging
@@ -34,12 +34,15 @@ features:
     contributions:
       - type: identity
         id: dingtalk-bot
-      - type: connector
+      - type: message-subscription
         id: dingtalk
     capabilities:
       - plugin.config.read
+      - message.event.subscribe
       - messaging.send
       - secret.read
+      - thread.listMetadata
+      - thread.write
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js

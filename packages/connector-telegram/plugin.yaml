@@ -18,11 +18,11 @@ contributions:
   - type: identity
     id: telegram-bot
     displayName: Telegram bot
-  - type: connector
+  - type: message-subscription
     id: telegram
-    identityRef: telegram-bot
-    inboundMethod: telegram.inbound
-    outboundMethod: telegram.outbound
+    binding: telegram-bot
+    action:
+      method: telegram.outbound
 features:
   - id: telegram-messaging
     name: Telegram messaging
@@ -30,11 +30,14 @@ features:
     contributions:
       - type: identity
         id: telegram-bot
-      - type: connector
+      - type: message-subscription
         id: telegram
     capabilities:
+      - message.event.subscribe
       - messaging.send
       - secret.read
+      - thread.listMetadata
+      - thread.write
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js
