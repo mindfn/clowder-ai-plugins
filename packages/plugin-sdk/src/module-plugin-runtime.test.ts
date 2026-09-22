@@ -289,6 +289,92 @@ test('top-level operation and test callbacks join the closed module action table
   await activation.stop();
 });
 
+test('top-level callbacks are required once across a multi-feature module', async (t) => {
+  const candidate = manifest() as ReturnType<typeof manifest> & {
+    configuration: unknown[];
+    test: { action: { method: string } };
+  };
+  candidate.configuration = [{
+    key: 'login', label: 'Login', kind: 'operation', required: false,
+    actions: [{ id: 'go', label: 'Go', render: 'button', action: { method: 'login.go' } }],
+  }];
+  candidate.test = { action: { method: 'self.test' } };
+  candidate.features.push({
+    id: 'aux', name: 'Auxiliary', resources: [], contributions: [], capabilities: [],
+  } as never);
+
+  const featureActions = {
+    'fixture.outbound': () => undefined,
+    'fixture.echo': () => undefined,
+  };
+  const globalActions = (include: boolean): Readonly<Record<string, () => undefined>> => include
+    ? { 'login.go': () => undefined, 'self.test': () => undefined }
+    : {};
+  const createModule = (
+    mainGlobals: boolean,
+    auxGlobals: boolean,
+  ) => definePluginModule((input) => definePlugin({
+    manifest: input,
+    activate: {
+      'feature-1': () => ({
+        actions: {
+          ...featureActions,
+          ...globalActions(mainGlobals),
+        },
+        dispose: () => undefined,
+      }),
+      aux: () => ({
+        actions: globalActions(auxGlobals),
+        dispose: () => undefined,
+      }),
+    },
+  }));
+
+  await t.test('one feature supplies both top-level callbacks', async () => {
+    const activation = await createModule(true, false).create(candidate).start(host([]));
+    assert.deepEqual(Object.keys(activation.actions).sort(), [
+      'fixture.echo', 'fixture.outbound', 'login.go', 'self.test',
+    ]);
+    await activation.stop();
+  });
+  await t.test('no feature supplies the callbacks', async () => {
+    await assert.rejects(
+      createModule(false, false).create(candidate).start(host([])),
+      /^TypeError: declared action login\.go has no plugin handler$/,
+    );
+  });
+  await t.test('two features supply the same callback', async () => {
+    await assert.rejects(
+      createModule(true, true).create(candidate).start(host([])),
+      /action handler login\.go is exposed by multiple plugin features/i,
+    );
+  });
+});
+
+test('feature activation cleanup is optional and never masks handler validation', async () => {
+  const withoutDispose = definePluginModule((input) => definePlugin({
+    manifest: input,
+    activate: {
+      'feature-1': () => ({
+        actions: { 'fixture.outbound': () => undefined, 'fixture.echo': () => undefined },
+      }),
+    },
+  }));
+  const activation = await withoutDispose.create(manifest()).start(host([]));
+  await activation.stop();
+
+  const missingHandler = definePluginModule((input) => definePlugin({
+    manifest: input,
+    activate: {
+      'feature-1': () => ({ actions: { 'fixture.outbound': () => undefined } }),
+    },
+  }));
+  await assert.rejects(
+    missingHandler.create(manifest()).start(host([])),
+    /^TypeError: declared action fixture\.echo has no handler for feature feature-1$/,
+  );
+});
+
 test('limb handlers pass through while duplicate callback and limb names fail closed', async () => {
   const candidate = manifest();
   candidate.contributions.push({ type: 'limb', id: 'commands', manifestPath: 'limbs/commands.yaml' } as never);

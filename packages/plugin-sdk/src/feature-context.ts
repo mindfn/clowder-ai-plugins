@@ -426,7 +426,7 @@ export type PluginActionHandler = (input: unknown) => unknown | Promise<unknown>
 
 export interface FeatureActivation {
   readonly actions?: Readonly<Record<string, PluginActionHandler>>;
-  dispose(): void | Promise<void>;
+  dispose?(): void | Promise<void>;
 }
 
 export type FeatureActivator = (
@@ -497,27 +497,29 @@ export async function activateDefinedFeature(
     throw new TypeError(`feature ${featureId} has no package activator`);
   }
   const result = await activate(context);
-  const activation = result ?? { dispose: () => undefined };
+  const activation = result ?? {};
+  const disposeActivation = activation.dispose ?? (() => undefined);
   const actions = Object.freeze({ ...(activation.actions ?? {}) });
-  const allowedMethods = new Set(featureActionMethods(plugin.manifest, featureId));
+  const requiredMethods = featureActionMethods(plugin.manifest, featureId);
+  const allowedMethods = new Set(requiredMethods);
   for (const method of options.additionalMethods ?? []) allowedMethods.add(method);
   const undeclared = options.allowLimbHandlers === true
     ? undefined
     : Object.keys(actions).find((method) => !allowedMethods.has(method));
   if (undeclared !== undefined) {
-    await Promise.resolve(activation.dispose()).catch(() => undefined);
+    await Promise.resolve(disposeActivation()).catch(() => undefined);
     throw new TypeError(`action handler ${undeclared} is not declared by feature ${featureId}`);
   }
-  const missing = [...allowedMethods].find((method) => actions[method] === undefined);
+  const missing = [...requiredMethods].find((method) => actions[method] === undefined);
   if (missing !== undefined) {
-    await Promise.resolve(activation.dispose()).catch(() => undefined);
+    await Promise.resolve(disposeActivation()).catch(() => undefined);
     throw new TypeError(`declared action ${missing} has no handler for feature ${featureId}`);
   }
   let disposePromise: Promise<void> | undefined;
   return Object.freeze({
     actions,
     dispose: () => {
-      disposePromise ??= Promise.resolve().then(() => activation.dispose());
+      disposePromise ??= Promise.resolve().then(() => disposeActivation());
       return disposePromise;
     },
   });
