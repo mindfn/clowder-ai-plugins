@@ -180,7 +180,7 @@ test('generated configuration fields preserve kind-dependent schema constraints'
     source.indexOf('export type EnvironmentBinding ='),
   );
 
-  assert.equal(configurationField.match(/readonly kind:/g)?.length, 6);
+  assert.equal(configurationField.match(/readonly kind:/g)?.length, 7);
   assert.match(
     configurationField,
     /readonly kind: 'select';[\s\S]*readonly default\?: string;[\s\S]*readonly options: readonly ConfigurationOption\[\];/,
@@ -196,6 +196,10 @@ test('generated configuration fields preserve kind-dependent schema constraints'
   assert.match(
     configurationField,
     /readonly kind: 'number';[\s\S]*readonly default\?: number;[\s\S]*readonly options\?: never;/,
+  );
+  assert.match(
+    configurationField,
+    /readonly kind: 'operation';[\s\S]*readonly default\?: never;[\s\S]*readonly options\?: never;[\s\S]*readonly target\?: readonly string\[\];[\s\S]*readonly actions: readonly ActionDef\[\];/,
   );
 });
 
