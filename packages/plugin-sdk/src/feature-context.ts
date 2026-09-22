@@ -3,8 +3,6 @@ import {
   type Capability,
   type ContentEditorProviderContribution,
   type DirectToolContribution,
-  type MessagingRowInputByMethod,
-  type MessagingRowResultByMethod,
   type DesktopWindowContribution,
   type IdentityContribution,
   type LimbContribution,
@@ -18,6 +16,15 @@ import {
   type UiContribution,
   type WebhookContribution,
 } from '@clowder-ai/plugin-contract';
+import type {
+  ModulePluginLogLevel,
+  PluginMessagingDraft,
+  PluginMessagingHost,
+  PluginMessagingSubscribeOptions,
+  PluginStorageHost,
+  PluginTaskHost,
+  PluginThreadHost,
+} from './module-host.js';
 
 export interface FeatureBinding {
   readonly pluginInstanceId: string;
@@ -36,51 +43,37 @@ export interface HostContributionReceipt {
   readonly registryRevision: number;
 }
 
-export type PluginLogLevel = 'debug' | 'info' | 'warn' | 'error';
-
-export interface ConnectorInboundAttachment {
-  readonly type: 'image' | 'file' | 'audio' | 'video';
-  readonly platformKey: string;
-  readonly fileName?: string;
-  readonly duration?: number;
-}
-
-/** Provider facts only. The Host resolves binding, admission, thread, and wake authority. */
-export interface ConnectorInboundMessage {
-  readonly externalConversationId: string;
-  readonly providerMessageId: string;
-  readonly text: string;
-  readonly attachments?: readonly ConnectorInboundAttachment[];
-  readonly sender?: Readonly<{ id: string; name?: string }>;
-  readonly conversation?: Readonly<{
-    type: 'direct' | 'group';
-    providerId?: string;
-    title?: string;
-  }>;
-}
+export type PluginLogLevel = ModulePluginLogLevel;
 
 export interface FeatureHostAdapter {
   readConfig(binding: FeatureBinding, key: string): Promise<unknown>;
-  readSecret(binding: FeatureBinding, key: string): Promise<string>;
-  readState(binding: FeatureBinding, key: string): Promise<unknown>;
-  writeState(binding: FeatureBinding, key: string, value: unknown): Promise<void>;
+  readSecret(binding: FeatureBinding, key: string): Promise<string | undefined>;
+  readonly storage: PluginStorageHost;
+  readonly tasks: PluginTaskHost;
+  readonly threads: PluginThreadHost;
   registerContribution(
     binding: FeatureBinding,
     contribution: StaticContribution,
   ): Promise<HostContributionReceipt>;
   disposeContribution(binding: FeatureBinding, receipt: HostContributionReceipt): Promise<void>;
-  /**
-   * Executes one frozen `messaging.send` row on the Host-owned messaging plane.
-   * The Host remains the admission authority for addresses, grants, and formatting.
-   */
   sendMessage(
     binding: FeatureBinding,
-    input: MessagingRowInputByMethod['messaging.send'],
-  ): Promise<MessagingRowResultByMethod['messaging.send']>;
+    threadId: string,
+    input: PluginMessagingDraft,
+  ): ReturnType<PluginMessagingHost['send']>;
+  subscribeMessage(
+    binding: FeatureBinding,
+    input: Parameters<PluginMessagingHost['subscribe']>[0],
+  ): ReturnType<PluginMessagingHost['subscribe']>;
+  unsubscribeMessage(
+    binding: FeatureBinding,
+    input: Parameters<PluginMessagingHost['unsubscribe']>[0],
+  ): ReturnType<PluginMessagingHost['unsubscribe']>;
   log(
     binding: FeatureBinding,
     level: PluginLogLevel,
-    args: readonly unknown[],
+    message: string,
+    fields?: Readonly<Record<string, unknown>>,
   ): void;
 }
 
@@ -113,11 +106,12 @@ export interface ContributionRegistrar<T extends StaticContribution> {
 export interface FeatureContext {
   readonly featureId: string;
   readonly config: { get(key: string): Promise<unknown> };
-  readonly secrets: { get(key: string): Promise<string> };
-  readonly state: {
-    get(key: string): Promise<unknown>;
-    set(key: string, value: unknown): Promise<void>;
-  };
+  readonly secrets: { get(key: string): Promise<string | undefined> };
+  readonly storage: PluginStorageHost;
+  /** @deprecated Use storage. Retained for one SDK beta as the same object. */
+  readonly state: PluginStorageHost;
+  readonly tasks: PluginTaskHost;
+  readonly threads: PluginThreadHost;
   readonly identity: ContributionRegistrar<IdentityContribution>;
   readonly scheduler: ContributionRegistrar<ScheduleContribution>;
   readonly tools: ContributionRegistrar<DirectToolContribution>;
@@ -126,12 +120,23 @@ export interface FeatureContext {
   readonly limbs: ContributionRegistrar<LimbContribution>;
   readonly webhooks: ContributionRegistrar<WebhookContribution>;
   readonly messaging: {
-    readonly subscribe: ContributionRegistrar<MessageSubscriptionContribution>['register'];
+    readonly subscribe: (
+      threadId: string,
+      options?: PluginMessagingSubscribeOptions,
+    ) => Promise<void>;
+    readonly unsubscribe: (threadId: string) => Promise<void>;
     readonly send: (
-      input: MessagingRowInputByMethod['messaging.send'],
-    ) => Promise<MessagingRowResultByMethod['messaging.send']>;
+      threadId: string,
+      input: PluginMessagingDraft,
+    ) => ReturnType<PluginMessagingHost['send']>;
   };
   readonly services: ContributionRegistrar<ServiceContribution>;
+  readonly log: (
+    level: PluginLogLevel,
+    message: string,
+    fields?: Readonly<Record<string, unknown>>,
+  ) => void;
+  /** @deprecated Use log. */
   readonly logger: Readonly<Record<PluginLogLevel, (...args: readonly unknown[]) => void>>;
   readonly ui: ContributionRegistrar<UiContribution>;
   readonly contentEditors: ContributionRegistrar<ContentEditorProviderContribution>;
@@ -143,13 +148,18 @@ export interface FeatureContextSession {
   revoke(): Promise<void>;
 }
 
+export interface FeatureContextSessionOptions {
+  readonly messageSubscriptions?: readonly MessageSubscriptionContribution[];
+}
+
 interface ActiveRegistration {
   readonly digest: string;
   readonly promise: Promise<ContributionRegistration>;
   disposePromise?: Promise<void>;
 }
 
-function canonicalJson(value: unknown, ancestors = new Set<object>()): string {
+/** @internal Stable JSON identity shared by contribution validation and module startup. */
+export function canonicalJson(value: unknown, ancestors = new Set<object>()): string {
   if (value === null) return 'null';
   if (typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
   if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value);
@@ -203,6 +213,7 @@ function deepFreeze<T>(value: T): T {
 export function createFeatureContextSession(
   binding: FeatureBinding,
   adapter: FeatureHostAdapter,
+  options: FeatureContextSessionOptions = {},
 ): FeatureContextSession {
   let revoked = false;
   let revokePromise: Promise<void> | undefined;
@@ -290,36 +301,87 @@ export function createFeatureContextSession(
   const readConfig = async (key: string): Promise<unknown> => {
     return runWhileActive(() => adapter.readConfig(binding, key));
   };
-  const readSecret = async (key: string): Promise<string> => {
+  const readSecret = async (key: string): Promise<string | undefined> => {
     return runWhileActive(() => adapter.readSecret(binding, key));
   };
-  const readState = async (key: string): Promise<unknown> => {
-    return runWhileActive(() => adapter.readState(binding, key));
-  };
-  const writeState = async (key: string, value: unknown): Promise<void> => {
-    return runWhileActive(() => adapter.writeState(binding, key, value));
-  };
 
-  const sendMessage = (
-    input: MessagingRowInputByMethod['messaging.send'],
-  ): Promise<MessagingRowResultByMethod['messaging.send']> => {
-    return runWhileActive(() => adapter.sendMessage(binding, input));
+  const storage: PluginStorageHost = {
+    get: (key) => runWhileActive(() => adapter.storage.get(key)),
+    list: () => runWhileActive(() => adapter.storage.list()),
+    set: (key, value) => runWhileActive(() => adapter.storage.set(key, value)),
+    compareAndSet: (key, expectedRevision, value) =>
+      runWhileActive(() => adapter.storage.compareAndSet(key, expectedRevision, value)),
+    delete: (key, expectedRevision) =>
+      runWhileActive(() => adapter.storage.delete(key, expectedRevision)),
   };
+  const tasks: PluginTaskHost = {
+    get: (taskId) => runWhileActive(() => adapter.tasks.get(taskId)),
+    listByThread: (threadId) => runWhileActive(() => adapter.tasks.listByThread(threadId)),
+    listByKind: (kind) => runWhileActive(() => adapter.tasks.listByKind(kind)),
+    getBySubject: (subjectKey) => runWhileActive(() => adapter.tasks.getBySubject(subjectKey)),
+    create: (input) => runWhileActive(() => adapter.tasks.create(input)),
+    upsertBySubject: (input) => runWhileActive(() => adapter.tasks.upsertBySubject(input)),
+    update: (taskId, input) => runWhileActive(() => adapter.tasks.update(taskId, input)),
+    updateIfThreadId: (taskId, expectedThreadId, input) =>
+      runWhileActive(() => adapter.tasks.updateIfThreadId(taskId, expectedThreadId, input)),
+  };
+  const threads: PluginThreadHost = {
+    get: (threadId) => runWhileActive(() => adapter.threads.get(threadId)),
+    create: (input) => runWhileActive(() => adapter.threads.create(input)),
+    update: (threadId, patch) => runWhileActive(() => adapter.threads.update(threadId, patch)),
+    findByKey: (key) => runWhileActive(() => adapter.threads.findByKey(key)),
+    ensureByKey: (key, input) => runWhileActive(() => adapter.threads.ensureByKey(key, input)),
+    bind: (key, threadId) => runWhileActive(() => adapter.threads.bind(key, threadId)),
+    unbind: (key) => runWhileActive(() => adapter.threads.unbind(key)),
+    listBindings: () => runWhileActive(() => adapter.threads.listBindings()),
+    ensureSystemThread: () => runWhileActive(() => adapter.threads.ensureSystemThread()),
+  };
+  const sendMessage = (threadId: string, input: PluginMessagingDraft) =>
+    runWhileActive(() => adapter.sendMessage(binding, threadId, input));
+  const subscribeMessage = (
+    threadId: string,
+    subscriptionOptions: PluginMessagingSubscribeOptions = {},
+  ): Promise<void> => {
+    const candidates = options.messageSubscriptions ?? [];
+    const contribution = subscriptionOptions.contributionId === undefined
+      ? candidates.length === 1 ? candidates[0] : undefined
+      : candidates.find((candidate) => candidate.id === subscriptionOptions.contributionId);
+    if (contribution === undefined) {
+      const reason = candidates.length === 0
+        ? 'feature declares no message-subscription contribution'
+        : subscriptionOptions.contributionId === undefined
+          ? 'feature declares multiple message-subscription contributions; contributionId is required'
+          : `message-subscription ${subscriptionOptions.contributionId} is not declared by this feature`;
+      return Promise.reject(new TypeError(reason));
+    }
+    return runWhileActive(() => adapter.subscribeMessage(binding, {
+      threadId,
+      method: contribution.action.method,
+      ...(subscriptionOptions.includeOwnMessages === undefined
+        ? {}
+        : { includeOwnMessages: subscriptionOptions.includeOwnMessages }),
+    }));
+  };
+  const unsubscribeMessage = (threadId: string): Promise<void> =>
+    runWhileActive(() => adapter.unsubscribeMessage(binding, { threadId }));
 
   const log = (
     level: PluginLogLevel,
-    args: readonly unknown[],
+    message: string,
+    fields?: Readonly<Record<string, unknown>>,
   ): void => {
     assertActive();
-    adapter.log(binding, level, args);
+    adapter.log(binding, level, message, fields);
   };
 
-  const subscriptions = registrar<MessageSubscriptionContribution>('message-subscription');
   const context: FeatureContext = {
     featureId: binding.featureId,
     config: { get: readConfig },
     secrets: { get: readSecret },
-    state: { get: readState, set: writeState },
+    storage,
+    state: storage,
+    tasks,
+    threads,
     identity: registrar<IdentityContribution>('identity'),
     scheduler: registrar<ScheduleContribution>('schedule'),
     tools: registrar<DirectToolContribution>('tool'),
@@ -327,13 +389,14 @@ export function createFeatureContextSession(
     skills: registrar<SkillContribution>('skill'),
     limbs: registrar<LimbContribution>('limb'),
     webhooks: registrar<WebhookContribution>('webhook'),
-    messaging: { subscribe: subscriptions.register, send: sendMessage },
+    messaging: { subscribe: subscribeMessage, unsubscribe: unsubscribeMessage, send: sendMessage },
     services: registrar<ServiceContribution>('service'),
+    log,
     logger: {
-      debug: (...args) => log('debug', args),
-      info: (...args) => log('info', args),
-      warn: (...args) => log('warn', args),
-      error: (...args) => log('error', args),
+      debug: (...args) => log('debug', String(args[0]), args[1] as Readonly<Record<string, unknown>> | undefined),
+      info: (...args) => log('info', String(args[0]), args[1] as Readonly<Record<string, unknown>> | undefined),
+      warn: (...args) => log('warn', String(args[0]), args[1] as Readonly<Record<string, unknown>> | undefined),
+      error: (...args) => log('error', String(args[0]), args[1] as Readonly<Record<string, unknown>> | undefined),
     },
     ui: registrar<UiContribution>('ui'),
     contentEditors: registrar<ContentEditorProviderContribution>('content-editor-provider'),
@@ -385,34 +448,11 @@ export interface ActivePluginFeature {
   dispose(): Promise<void>;
 }
 
-export interface PluginModuleEntrypoint {
-  create(manifest: unknown): DefinedPlugin;
-}
-
-export class PluginModuleEntrypointError extends TypeError {
-  constructor() {
-    super('builtin runtime entrypoint default export must satisfy PluginModuleEntrypoint');
-    this.name = 'PluginModuleEntrypointError';
-  }
-}
-
-/** Fail-closed guard for a dynamically imported package module's default export. */
-export function requirePluginModuleEntrypoint(candidate: unknown): PluginModuleEntrypoint {
-  if (
-    candidate === null
-    || (typeof candidate !== 'object' && typeof candidate !== 'function')
-    || typeof (candidate as { create?: unknown }).create !== 'function'
-  ) {
-    throw new PluginModuleEntrypointError();
-  }
-  return candidate as PluginModuleEntrypoint;
-}
-
-/** Stable package-module export consumed by a Host-selected runtime carrier. */
-export function definePluginModule(
-  create: (manifest: unknown) => DefinedPlugin,
-): PluginModuleEntrypoint {
-  return Object.freeze({ create });
+export interface ActivePluginFeatureOptions {
+  /** CallbackAction methods declared outside a feature contribution (operation/test). */
+  readonly additionalMethods?: ReadonlySet<string>;
+  /** Limb handler names live in limb YAML, so the SDK passes extra handlers through. */
+  readonly allowLimbHandlers?: boolean;
 }
 
 function actionMethods(contribution: StaticContribution): readonly string[] {
@@ -431,7 +471,7 @@ function actionMethods(contribution: StaticContribution): readonly string[] {
   }
 }
 
-function featureActionMethods(manifest: PluginManifest, featureId: string): ReadonlySet<string> {
+export function featureActionMethods(manifest: PluginManifest, featureId: string): ReadonlySet<string> {
   const feature = manifest.features.find((candidate) => candidate.id === featureId);
   if (feature === undefined) throw new TypeError(`feature ${featureId} is not declared by the plugin manifest`);
   const keys = new Set((feature.contributions ?? []).map((item) => `${item.type}:${item.id}`));
@@ -447,6 +487,7 @@ export async function activateDefinedFeature(
   plugin: DefinedPlugin,
   featureId: string,
   context: FeatureContext,
+  options: ActivePluginFeatureOptions = {},
 ): Promise<ActivePluginFeature> {
   if (context.featureId !== featureId) {
     throw new TypeError(`feature context ${context.featureId} cannot activate ${featureId}`);
@@ -458,8 +499,11 @@ export async function activateDefinedFeature(
   const result = await activate(context);
   const activation = result ?? { dispose: () => undefined };
   const actions = Object.freeze({ ...(activation.actions ?? {}) });
-  const allowedMethods = featureActionMethods(plugin.manifest, featureId);
-  const undeclared = Object.keys(actions).find((method) => !allowedMethods.has(method));
+  const allowedMethods = new Set(featureActionMethods(plugin.manifest, featureId));
+  for (const method of options.additionalMethods ?? []) allowedMethods.add(method);
+  const undeclared = options.allowLimbHandlers === true
+    ? undefined
+    : Object.keys(actions).find((method) => !allowedMethods.has(method));
   if (undeclared !== undefined) {
     await Promise.resolve(activation.dispose()).catch(() => undefined);
     throw new TypeError(`action handler ${undeclared} is not declared by feature ${featureId}`);

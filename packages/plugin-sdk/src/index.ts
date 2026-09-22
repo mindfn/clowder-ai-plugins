@@ -97,15 +97,11 @@ export {
 export {
   ContributionConflictError,
   FeatureContextRevokedError,
-  PluginModuleEntrypointError,
   activateDefinedFeature,
   createFeatureContextSession,
   definePlugin,
-  definePluginModule,
-  requirePluginModuleEntrypoint,
   type ActivePluginFeature,
-  type ConnectorInboundAttachment,
-  type ConnectorInboundMessage,
+  type ActivePluginFeatureOptions,
   type ContributionRegistration,
   type ContributionRegistrar,
   type DefinedPlugin,
@@ -114,13 +110,45 @@ export {
   type FeatureBinding,
   type FeatureContext,
   type FeatureContextSession,
+  type FeatureContextSessionOptions,
   type FeatureHostAdapter,
   type HostContributionReceipt,
   type PluginActionHandler,
   type PluginDefinitionInput,
   type PluginLogLevel,
-  type PluginModuleEntrypoint,
 } from './feature-context.js';
+
+export {
+  PluginModuleEntrypointError,
+  definePluginModule,
+  requirePluginModuleEntrypoint,
+  type PluginModuleDefinition,
+  type PluginModuleEntrypoint,
+} from './module-plugin.js';
+
+export type {
+  ModulePluginHostShape,
+  ModulePluginLogLevel,
+  PluginMessageContent,
+  PluginMessagingDelivery,
+  PluginMessagingDraft,
+  PluginMessagingHost,
+  PluginMessagingSubscribeOptions,
+  PluginModuleActivationShape,
+  PluginStorageCompareAndSetResult,
+  PluginStorageDeleteResult,
+  PluginStorageEntry,
+  PluginStorageHost,
+  PluginTaskCreateInput,
+  PluginTaskHost,
+  PluginTaskItem,
+  PluginTaskKind,
+  PluginTaskStatus,
+  PluginTaskUpdateInput,
+  PluginThreadBindingSummary,
+  PluginThreadHost,
+  PluginThreadSummary,
+} from './module-host.js';
 
 export {
   ConnectorOutboundDeliveryError,
@@ -130,12 +158,3 @@ export {
   type ConnectorOutboundMedia,
   type ConnectorPresentation,
 } from './connector-runtime.js';
-
-export {
-  InboundThreadHandleMissingError,
-  INBOUND_THREAD_HANDLE_CONFIG_KEY,
-  createInboundMessageSender,
-  requireInboundThreadHandle,
-  type InboundMessageSender,
-  type InboundMessageSenderOptions,
-} from './connector-ingress.js';

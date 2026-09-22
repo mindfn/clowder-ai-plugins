@@ -9,13 +9,12 @@ import {
   activateDefinedFeature,
   createFeatureContextSession,
   definePlugin,
-  definePluginModule,
-  requirePluginModuleEntrypoint,
   type FeatureBinding,
   type FeatureContext,
   type FeatureHostAdapter,
   type HostContributionReceipt,
 } from './feature-context.js';
+import { definePluginModule, requirePluginModuleEntrypoint } from './module-plugin.js';
 
 const BINDING: FeatureBinding = {
   pluginInstanceId: 'instance-1',
@@ -72,6 +71,49 @@ class RecordingAdapter implements FeatureHostAdapter {
     this.calls.push({ operation: 'state.set', binding, value: { key, value } });
   }
 
+  readonly storage: FeatureHostAdapter['storage'] = {
+    get: async (key) => {
+      await this.readState(BINDING, key);
+      return undefined;
+    },
+    list: async () => ({}),
+    set: async (key, value) => {
+      await this.writeState(BINDING, key, value);
+      return { revision: 1 };
+    },
+    compareAndSet: async (key, expectedRevision, value) => {
+      this.calls.push({ operation: 'state.compareAndSet', binding: BINDING, value: { key, expectedRevision, value } });
+      return { applied: true, revision: 1 };
+    },
+    delete: async (key, expectedRevision) => {
+      this.calls.push({ operation: 'state.delete', binding: BINDING, value: { key, expectedRevision } });
+      return { deleted: true, revision: 1 };
+    },
+  };
+
+  readonly tasks = {
+    get: async () => null,
+    listByThread: async () => [],
+    listByKind: async () => [],
+    getBySubject: async () => null,
+    create: async () => { throw new Error('not implemented by fixture'); },
+    upsertBySubject: async () => { throw new Error('not implemented by fixture'); },
+    update: async () => null,
+    updateIfThreadId: async () => null,
+  } satisfies FeatureHostAdapter['tasks'];
+
+  readonly threads = {
+    get: async () => null,
+    create: async () => { throw new Error('not implemented by fixture'); },
+    update: async () => { throw new Error('not implemented by fixture'); },
+    findByKey: async () => null,
+    ensureByKey: async () => { throw new Error('not implemented by fixture'); },
+    bind: async () => { throw new Error('not implemented by fixture'); },
+    unbind: async () => false,
+    listBindings: async () => [],
+    ensureSystemThread: async () => { throw new Error('not implemented by fixture'); },
+  } satisfies FeatureHostAdapter['threads'];
+
   async registerContribution(
     binding: FeatureBinding,
     contribution: StaticContribution,
@@ -94,23 +136,37 @@ class RecordingAdapter implements FeatureHostAdapter {
 
   async sendMessage(
     binding: FeatureBinding,
-    input: Parameters<FeatureHostAdapter['sendMessage']>[1],
+    threadId: string,
+    input: Parameters<FeatureHostAdapter['sendMessage']>[2],
   ): Promise<Awaited<ReturnType<FeatureHostAdapter['sendMessage']>>> {
-    this.calls.push({ operation: 'messaging.send', binding, value: input });
+    this.calls.push({ operation: 'messaging.send', binding, value: { threadId, ...input } });
     return {
       messageId: 'message-1',
       threadId: 'thread-1',
-      revision: 1,
-      messageHandle: { kind: 'message', token: 'handle-1' },
     };
+  }
+
+  async subscribeMessage(
+    binding: FeatureBinding,
+    input: Parameters<FeatureHostAdapter['subscribeMessage']>[1],
+  ): Promise<void> {
+    this.calls.push({ operation: 'messaging.subscribe', binding, value: input });
+  }
+
+  async unsubscribeMessage(
+    binding: FeatureBinding,
+    input: Parameters<FeatureHostAdapter['unsubscribeMessage']>[1],
+  ): Promise<void> {
+    this.calls.push({ operation: 'messaging.unsubscribe', binding, value: input });
   }
 
   log(
     binding: FeatureBinding,
     level: Parameters<FeatureHostAdapter['log']>[1],
-    args: readonly unknown[],
+    message: string,
+    fields?: Readonly<Record<string, unknown>>,
   ): void {
-    this.calls.push({ operation: `log.${level}`, binding, value: args });
+    this.calls.push({ operation: `log.${level}`, binding, value: { message, fields } });
   }
 }
 
@@ -249,8 +305,10 @@ test('definePlugin validates the manifest and rejects undeclared activators', ()
 
 test('module entrypoint accepts the Host-validated manifest without embedding a second copy', () => {
   const module = definePluginModule((candidate) => definePlugin({ manifest: candidate }));
-  const defined = requirePluginModuleEntrypoint(module).create(manifest());
-  assert.equal(defined.manifest.pluginId, 'dev.clowder.fixture');
+  const candidate = manifest();
+  candidate.runtime = { transport: 'builtin', entrypoint: 'dist/plugin.js' };
+  const defined = requirePluginModuleEntrypoint(module).create(candidate);
+  assert.equal(typeof defined.start, 'function');
 });
 
 test('module entrypoint guard rejects absent or ambiguous default exports', () => {
@@ -322,7 +380,6 @@ test('messaging send ingress and logs retain Host-issued feature authority', asy
   const adapter = new RecordingAdapter();
   const session = createFeatureContextSession(BINDING, adapter);
   const draft = {
-    address: { kind: 'thread_handle', handle: 'thread-handle-1' },
     idempotencyKey: 'provider-message-1',
     payload: {
       provenance: {
@@ -340,25 +397,25 @@ test('messaging send ingress and logs retain Host-issued feature authority', asy
       elements: [{ elementId: 'text-1', kind: 'text', payload: { text: 'hello' } }],
     },
   } as const;
-  await session.context.messaging.send(draft);
+  await session.context.messaging.send('thread-1', draft);
   session.context.logger.info('provider connected', { connectorId: 'fixture-connector' });
 
   assert.deepEqual(adapter.calls.slice(-2), [
     {
       operation: 'messaging.send',
       binding: BINDING,
-      value: draft,
+      value: { threadId: 'thread-1', ...draft },
     },
     {
       operation: 'log.info',
       binding: BINDING,
-      value: ['provider connected', { connectorId: 'fixture-connector' }],
+      value: { message: 'provider connected', fields: { connectorId: 'fixture-connector' } },
     },
   ]);
 
   await session.revoke();
   await assert.rejects(
-    session.context.messaging.send({
+    session.context.messaging.send('thread-1', {
       ...draft,
       idempotencyKey: 'provider-message-2',
     }),
