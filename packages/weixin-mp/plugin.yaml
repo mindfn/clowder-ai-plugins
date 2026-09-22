@@ -1,5 +1,5 @@
 pluginId: official.weixin-mp
-version: 0.1.0-alpha.0
+version: 0.1.0-alpha.1
 contractVersion: 0.1.0
 name: WeChat Official Account
 description:
@@ -25,6 +25,9 @@ contributions:
   - type: skill
     id: weixin-mp-skill
     path: skills/weixin-mp
+test:
+  action:
+    method: weixin-mp:test_connection
 features:
   - id: publish-official-account-content
     name: Publish WeChat Official Account content
@@ -39,3 +42,4 @@ features:
       - secret.read
 runtime:
   transport: builtin
+  entrypoint: dist/plugin-entrypoint.js

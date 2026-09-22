@@ -358,7 +358,9 @@ test('packed public packages install and import in a fresh npm consumer', async 
     assert.deepEqual(videoGenerationPackage.bin, {
       'clowder-video-generation-mcp': './dist/mcp-entrypoint.js',
     });
-    assert.equal(weixinMpPackage.version, '0.1.0-alpha.0');
+    assert.equal(weixinMpPackage.version, '0.1.0-alpha.1');
+    assert.equal(weixinMpPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.2');
+    assert.doesNotMatch(JSON.stringify(weixinMpPackage), /"workspace:/u);
     assert.equal(wechatReaderPackage.version, '0.1.0-alpha.0');
     assert.deepEqual(wechatReaderPackage.os, ['darwin']);
     const installedContract = await import(
@@ -458,6 +460,15 @@ test('packed public packages install and import in a fresh npm consumer', async 
         : JSON.stringify(weixinMpManifestValidation.errors),
     );
     assert.equal(weixinMpManifest.contractVersion, installedContract.CONTRACT_VERSION);
+    assert.deepEqual(weixinMpManifest.runtime, {
+      transport: 'builtin',
+      entrypoint: 'dist/plugin-entrypoint.js',
+    });
+    const weixinMpRoot = join(consumer, 'node_modules/@clowder-ai/weixin-mp');
+    const weixinMpEntrypoint = installedSdk.requirePluginModuleEntrypoint(
+      (await import(pathToFileURL(join(weixinMpRoot, weixinMpManifest.runtime.entrypoint)).href)).default,
+    );
+    assert.equal(typeof weixinMpEntrypoint.create(weixinMpManifest).start, 'function');
     assert.match(
       await readFile(join(consumer, 'node_modules/@clowder-ai/weixin-mp/README.md'), 'utf8'),
       /^# WeChat Official Account\n/m,

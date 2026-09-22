@@ -1,18 +1,46 @@
 {
   "name": "@clowder-ai/weixin-mp",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "@clowder-ai/weixin-mp",
-      "version": "0.1.0-alpha.0",
+      "version": "0.1.0-alpha.1",
       "license": "MIT",
+      "dependencies": {
+        "@clowder-ai/plugin-sdk": "0.2.0-beta.2"
+      },
       "devDependencies": {
         "@types/node": "^20.17.0",
         "tsx": "^4.19.0",
         "typescript": "^5.7.0",
         "yaml": "2.9.0"
+      },
+      "engines": {
+        "node": ">=20.0.0"
+      }
+    },
+    "node_modules/@clowder-ai/plugin-contract": {
+      "version": "0.1.0-beta.18",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.1.0-beta.18.tgz",
+      "integrity": "sha512-b1FxW4m4+sfyqfP96x5rFiTMjsJKYGfEl/WYY0NbyYL+mI8SKd1Ewtg0r5n2HNzFSyzVBtVBJMRHrsSQIeyGWA==",
+      "license": "MIT",
+      "dependencies": {
+        "ajv": "^8.17.0",
+        "ajv-formats": "^3.0.0"
+      },
+      "engines": {
+        "node": ">=20.0.0"
+      }
+    },
+    "node_modules/@clowder-ai/plugin-sdk": {
+      "version": "0.2.0-beta.2",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.2.tgz",
+      "integrity": "sha512-5QoWnuWDEMO4LxfwRJLZn3UbusbF7b4Ab1cBnZysJz5lpHDMLJK7C4i0Yr1onho2AFmrA99QtE8vwRWyRYfZPQ==",
+      "license": "MIT",
+      "dependencies": {
+        "@clowder-ai/plugin-contract": "0.1.0-beta.18"
       },
       "engines": {
         "node": ">=20.0.0"

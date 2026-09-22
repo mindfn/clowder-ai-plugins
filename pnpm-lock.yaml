@@ -428,6 +428,10 @@ importers:
         version: 2.9.0
 
   packages/weixin-mp:
+    dependencies:
+      '@clowder-ai/plugin-sdk':
+        specifier: 0.2.0-beta.2
+        version: link:../plugin-sdk
     devDependencies:
       '@types/node':
         specifier: ^20.17.0

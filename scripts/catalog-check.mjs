@@ -194,7 +194,12 @@ async function verifyCatalogEntry(catalogEntry) {
         descriptions.every(description => [...description].length <= 100),
         'weixin-mp Agent introductions must not exceed 100 characters per locale',
       );
-      for (const member of ['README.md', 'limbs/weixin-mp.yml', 'skills/weixin-mp/SKILL.md']) {
+      for (const member of [
+        'README.md',
+        'dist/plugin-entrypoint.js',
+        'limbs/weixin-mp.yml',
+        'skills/weixin-mp/SKILL.md',
+      ]) {
         assert.ok(
           artifact.files.some((file) => file.path === member),
           `packed weixin-mp artifact is missing ${member}`,

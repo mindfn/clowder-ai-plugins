@@ -15,6 +15,8 @@ export {
   fetchExternalUrlPinned,
   validateExternalUrl,
 } from './safe-fetch.js';
+export { WeixinAccessTokenManager } from './access-token-manager.js';
+export { createWeixinMpPluginModule } from './plugin-entrypoint.js';
 export type {
   DnsLookup,
   PinnedFetchOptions,

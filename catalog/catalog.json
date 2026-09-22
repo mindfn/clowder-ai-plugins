@@ -586,16 +586,16 @@
       ],
       "versions": [
         {
-          "version": "0.1.0-alpha.0",
+          "version": "0.1.0-alpha.1",
           "contractVersion": "0.1.0",
           "manifestPath": "plugin.yaml",
           "artifact": {
             "kind": "npm",
             "packageName": "@clowder-ai/weixin-mp",
-            "version": "0.1.0-alpha.0",
-            "tarballUrl": "https://registry.npmjs.org/@clowder-ai/weixin-mp/-/weixin-mp-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-PNHXGlMDXrK11VLHYwVkb0rwETw6GCh4e6SRYjNUaazStaOnsDyFUIrrTEqQBv2ZdFvhaaQVwA0CQzS/uu9Qzw==",
-            "shasum": "c7780b588e29a3f3eb90151d229e49407ef0933d",
+            "version": "0.1.0-alpha.1",
+            "tarballUrl": "https://registry.npmjs.org/@clowder-ai/weixin-mp/-/weixin-mp-0.1.0-alpha.1.tgz",
+            "integrity": "sha512-7hR0h9BBXt37i+Dn2xLbMwEptdhDi9/TEJQ6zFoS6rBoW6+5BEHeWb/WzRopZhs0Zua39+gPLD4Js+rEhYbsoA==",
+            "shasum": "d8eed810a768f11873c49b658885e30d66d46c94",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/weixin-mp"

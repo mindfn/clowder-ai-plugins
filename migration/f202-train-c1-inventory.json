@@ -201,9 +201,9 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "no direct SDK dependency required by current builtin limb/skill runtime",
+      "sdkClosure": "direct @clowder-ai/plugin-sdk 0.2.0-beta.2 dependency exposes the Host-loadable module entrypoint",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
-      "runtimeClosure": "builtin limb/skill members are packed; Core carrier-neutral action mapping remains C1",
+      "runtimeClosure": "builtin module entrypoint exposes six limb handlers through the frozen { params, invocation? } action envelope plus a Manager test action",
       "catalogClosure": "listed as official.weixin-mp",
       "freshConsumerClosure": "covered by repository fresh-consumer install/import journey"
     },

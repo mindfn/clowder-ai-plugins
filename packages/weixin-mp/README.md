@@ -29,7 +29,8 @@ cap the response at 10 MiB.
 
 ## Security and failure behavior
 
-- WeChat access tokens are obtained and refreshed by the Host-provided invocation context.
+- Host-projected credentials are consumed only by the verified package runtime; its access-token cache is
+  process-local, bounded by provider expiry, and discarded when the runtime stops.
 - API token expiry is retried once only after invalidating the cached token.
 - Markdown HTML and URL attributes are escaped; unsafe URL schemes are omitted.
 - Missing inputs, oversized files, unsafe paths or URLs, unexpected content types, HTTP failures, and

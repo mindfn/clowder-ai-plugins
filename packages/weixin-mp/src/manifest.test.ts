@@ -12,10 +12,13 @@ test('manifest and package metadata remain one exact package truth', async () =>
     description: { default: string; translations: Record<string, string> };
     configuration: Array<{ key: string; kind: string; required: boolean }>;
     contributions: Array<{ type: string; id: string; manifestPath?: string; path?: string }>;
+    test: { action: { method: string } };
+    runtime: { transport: string; entrypoint: string };
   };
   const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
     version: string;
     files: string[];
+    dependencies: Record<string, string>;
   };
 
   assert.equal(manifest.pluginId, 'official.weixin-mp');
@@ -32,6 +35,12 @@ test('manifest and package metadata remain one exact package truth', async () =>
     { type: 'limb', id: 'weixin-mp-limb', manifestPath: 'limbs/weixin-mp.yml' },
     { type: 'skill', id: 'weixin-mp-skill', path: 'skills/weixin-mp' },
   ]);
+  assert.deepEqual(manifest.test, { action: { method: 'weixin-mp:test_connection' } });
+  assert.deepEqual(manifest.runtime, {
+    transport: 'builtin',
+    entrypoint: 'dist/plugin-entrypoint.js',
+  });
+  assert.equal(packageJson.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.2');
   for (const member of ['README.md', 'plugin.yaml', 'assets', 'limbs', 'skills']) {
     assert.ok(packageJson.files.includes(member), `package omits ${member}`);
   }
