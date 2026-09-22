@@ -1,0 +1,28 @@
+#!/bin/bash
+# .githooks/pre-push — fork-only push guard (clowder-ai-plugins)
+#
+# origin 是上游镜像（origin = zts212653/clowder-ai-plugins），fork 是个人
+# fork（fork = mindfn/clowder-ai-plugins）。特性分支只允许推到 fork；
+# 2026-09 已连续三次误推到上游 origin——缺的是机器闸门，不是注意力。
+#
+# 规则：push 的 remote URL 必须包含 mindfn/clowder-ai-plugins（覆盖
+# https/ssh 各种写法），否则拒绝。参数缺失一律 fail closed。
+# 可被 --no-verify 绕过；防的是肌肉记忆，不是恶意。
+
+REMOTE="$1"
+URL="$2"
+
+if [ -z "${REMOTE}" ] || [ -z "${URL}" ]; then
+  echo "pre-push: missing remote name/url args; refusing to guess." >&2
+  echo "  Feature branches must be pushed to the fork: mindfn/clowder-ai-plugins." >&2
+  exit 1
+fi
+
+case "$URL" in
+  *mindfn/clowder-ai-plugins*) exit 0 ;;
+esac
+
+echo "pre-push: refusing to push to '${REMOTE}' (${URL})." >&2
+echo "  Feature branches must be pushed to the fork: mindfn/clowder-ai-plugins." >&2
+echo "  If you really mean it: git push --no-verify" >&2
+exit 1
