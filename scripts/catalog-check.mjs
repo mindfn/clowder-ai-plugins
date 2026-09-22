@@ -152,6 +152,12 @@ async function verifyCatalogEntry(catalogEntry) {
         artifact.files.some((file) => file.path === 'README.md'),
         'packed video-analysis artifact is missing README.md',
       );
+      for (const member of ['protocols/gemini.yaml', 'protocols/zhipu.yaml']) {
+        assert.ok(
+          artifact.files.some((file) => file.path === member),
+          `packed video-analysis artifact is missing ${member}`,
+        );
+      }
       assert.match(
         await readFile(join(unpackedDirectory, 'package', 'README.md'), 'utf8'),
         /^# Video Analysis\n/m,

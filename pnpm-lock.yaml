@@ -368,10 +368,13 @@ importers:
     dependencies:
       '@modelcontextprotocol/sdk':
         specifier: 1.26.0
-        version: 1.26.0(zod@4.4.3)
+        version: 1.26.0(zod@3.25.76)
+      yaml:
+        specifier: 2.8.1
+        version: 2.8.1
       zod:
-        specifier: 4.4.3
-        version: 4.4.3
+        specifier: 3.25.76
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^20.17.0
@@ -382,9 +385,6 @@ importers:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
-      yaml:
-        specifier: ^2.8.1
-        version: 2.9.0
 
   packages/video-generation:
     dependencies:

@@ -128,6 +128,9 @@ test('packed public packages install and import in a fresh npm consumer', async 
     );
     assert.doesNotMatch(JSON.stringify(stagedVideoPackageJson), /"workspace:/u);
     await readFile(join(stagedVideoPackage, 'npm-shrinkwrap.json'), 'utf8');
+    for (const member of ['protocols/gemini.yaml', 'protocols/zhipu.yaml']) {
+      await readFile(join(stagedVideoPackage, member), 'utf8');
+    }
     runNpm(
       [
         'ci',
@@ -347,7 +350,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
     assert.deepEqual(companionPackage.bin, {
       'clowder-personal-chrome-host': 'native-host/native-host-cli.mjs',
     });
-    assert.equal(videoPackage.version, '0.1.0-alpha.1');
+    assert.equal(videoPackage.version, '0.1.0-alpha.2');
     assert.deepEqual(videoPackage.bin, {
       'clowder-video-analysis-mcp': './dist/mcp-entrypoint.js',
     });
