@@ -15,6 +15,8 @@ import {
   type WeComAgentConnectorRuntime,
   type WeComAgentConnectorRuntimeOptions,
   type WeComAgentHostInboundMessage,
+  type WeComAgentWebhookInput,
+  type WeComAgentWebhookResult,
 } from './runtime.js';
 
 type RuntimeFactory = (
@@ -105,6 +107,30 @@ async function createMessageBridge(context: FeatureContext) {
   };
 }
 
+function forwardedWebhookInput(candidate: unknown): WeComAgentWebhookInput {
+  if (!object(candidate) || !object(candidate.request)) {
+    throw new TypeError('wecom-agent webhook action requires a forwarded request');
+  }
+  if (Object.keys(candidate).some(key => key !== 'request')) {
+    throw new TypeError('wecom-agent webhook action contains an unsupported field');
+  }
+  const request = candidate.request;
+  if ((request.method !== 'GET' && request.method !== 'POST') || request.path !== 'connectors/wecom-agent') {
+    throw new TypeError('wecom-agent webhook request must match the declared GET or POST path');
+  }
+  return requireWeComAgentWebhookInput({ body: request.body, query: request.query });
+}
+
+function webhookHttpResponse(result: WeComAgentWebhookResult) {
+  switch (result.kind) {
+    case 'challenge': return { status: 200, headers: { 'content-type': 'text/plain' }, body: result.response };
+    case 'processed': return { status: 200, headers: {}, body: { ok: true, messageId: result.messageId } };
+    case 'skipped': return { status: 200, headers: {}, body: { ok: true, skipped: result.reason } };
+    case 'error': return { status: result.status, headers: {}, body: { error: result.message } };
+    default: throw new TypeError('wecom-agent webhook runtime returned an invalid result');
+  }
+}
+
 export function createWeComAgentPluginModule(createRuntime: RuntimeFactory = createWeComAgentConnectorRuntime) {
   return definePluginModule((manifest) => definePlugin({
     manifest,
@@ -152,7 +178,9 @@ export function createWeComAgentPluginModule(createRuntime: RuntimeFactory = cre
                 }
               }
             },
-            'wecom-agent.webhook': candidate => runtime.handleWebhook(requireWeComAgentWebhookInput(candidate)),
+            'wecom-agent.webhook': async candidate => webhookHttpResponse(
+              await runtime.handleWebhook(forwardedWebhookInput(candidate)),
+            ),
           },
           dispose: () => runtime.stop(),
         };

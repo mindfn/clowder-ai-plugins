@@ -298,8 +298,8 @@
             "packageName": "@clowder-ai/connector-feishu",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-feishu/-/connector-feishu-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-x7C0pcjYus3zEDcU0Daf0ATuDnSBU0Sbyh1BsnsDlRT8jGt+ZuYZF1AxFtrrgeF5uqu8Cx/cpowHdBN/E0sxeA==",
-            "shasum": "e7a123b7db45a94459e0d783d832b959cdbef311",
+            "integrity": "sha512-YNf3YMVE4SiN1LXWsBiNH8FY2L4DWXvoD7h6z+A0mHxkLkfeUjjNkZJgIEPDYYctYgc5bdFgpS2MO3Uj1HneTw==",
+            "shasum": "083d2d98f733220881e26ae1373e4fb484d43fec",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-feishu"
@@ -382,8 +382,8 @@
             "packageName": "@clowder-ai/connector-wecom-agent",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-wecom-agent/-/connector-wecom-agent-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-SAqSprxvPdwUksfFdEsj3FwwvJ63x21XOZQZvJ15bFPIil+HY+Ygii1Jklpa4W65FDzIHvMlNMyM5QhJ01FMTQ==",
-            "shasum": "59a6bbb75ed0287f6a3925394ffdb33d3a2132ab",
+            "integrity": "sha512-g/lvNxsajJhtYKj73snRKVo8bUUiW/+iH8uohyd/5cjqbvZSmm3AnHtW0O4S4L3NpFID38XMKRfCD/7u+vsk1A==",
+            "shasum": "ac081d11d941033b0b6629f6a90c71317a2556fc",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-wecom-agent"

@@ -70,6 +70,23 @@ test('encrypted inbound XML validates before normalizing text and media', () => 
   });
 });
 
+test('provider MsgId is stable on replay; a malformed ordinary message is rejected and warned', () => {
+  const subject = adapter();
+  const withId = '<xml><MsgType>text</MsgType><FromUserName>user-1</FromUserName><MsgId>42</MsgId><Content>hello</Content></xml>';
+  assert.equal(subject.parseEvent(withId)?.messageId, '42');
+  assert.equal(subject.parseEvent(withId)?.messageId, '42');
+  const warnings: Array<{ type?: string }> = [];
+  const guarded = new WeComAgentAdapter({
+    ...logger,
+    warn(data: unknown) { warnings.push(data as { type?: string }); },
+  }, { corpId, agentId: '1000002', agentSecret: 'agent-secret', token: 'callback-token', encodingAesKey });
+  const withoutId = '<xml><MsgType>text</MsgType><FromUserName>user-1</FromUserName><Content>hello</Content></xml>';
+  assert.equal(guarded.parseEvent(withoutId), null);
+  assert.deepEqual(warnings, [{ type: 'text' }]);
+  assert.equal(guarded.parseEvent('<xml><MsgType>event</MsgType><FromUserName>user-1</FromUserName></xml>'), null);
+  assert.deepEqual(warnings, [{ type: 'text' }], 'unsupported provider events must not be called malformed messages');
+});
+
 test('outbound delivery obtains a short-lived token and sends only the intended recipient body', async () => {
   const subject = adapter();
   const calls: Array<{ url: string; init?: RequestInit }> = [];

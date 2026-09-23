@@ -237,9 +237,18 @@ export class WeComAgentAdapter {
 
     const msgType = root.MsgType as string | undefined;
     const fromUser = root.FromUserName as string | undefined;
-    const msgId = root.MsgId != null ? String(root.MsgId) : `wa-${Date.now()}`;
-
     if (!msgType || !fromUser) return null;
+    if (msgType === 'event') {
+      this.log.debug({ eventType: root.Event }, '[WeComAgentAdapter] Event message skipped');
+      return null;
+    }
+    // Every supported ordinary message has a provider MsgId. A local clock
+    // fallback would turn a malformed redelivery into a new Host source.
+    const msgId = root.MsgId != null ? String(root.MsgId) : undefined;
+    if (msgId === undefined || msgId.trim() === '') {
+      this.log.warn({ type: msgType }, '[WeComAgentAdapter] Ordinary message missing MsgId');
+      return null;
+    }
 
     const base = {
       chatId: fromUser,
@@ -300,10 +309,6 @@ export class WeComAgentAdapter {
       case 'location': {
         const label = (root.Label as string) ?? `${root.Location_X ?? ''},${root.Location_Y ?? ''}`;
         return { ...base, text: `[位置] ${label}` };
-      }
-      case 'event': {
-        this.log.debug({ eventType: root.Event }, '[WeComAgentAdapter] Event message skipped');
-        return null;
       }
       default:
         this.log.debug({ msgType }, '[WeComAgentAdapter] Unsupported message type');

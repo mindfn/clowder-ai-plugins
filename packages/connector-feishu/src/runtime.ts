@@ -323,7 +323,7 @@ async function cardMessage(adapter: FeishuRuntimeAdapter, action: FeishuCardActi
   if (chatType === undefined) return null;
   return {
     externalConversationId: action.chatId,
-    providerMessageId: `card-action-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    providerMessageId: action.eventId,
     text: command ?? JSON.stringify(action.actionValue),
     ...(command === undefined || action.senderId === '' ? {} : { sender: { id: action.senderId } }),
     conversation: { type: chatType === 'group' ? 'group' : 'direct' },
@@ -369,13 +369,16 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
   // Both return the real delivery outcome so callers can derive their
   // reported state from it instead of asserting success independently (G3):
   // a message dropped by the state recheck must never be reported 'processed'.
-  const routeEvent = async (message: FeishuInboundMessage): Promise<boolean> => {
+  const routeEvent = async (message: FeishuInboundMessage, webhookEventId?: string): Promise<boolean> => {
     if (state !== 'running') return false;
     const hostMessage = await providerMessage(outbound, message);
     // Group chats await name-resolution round-trips above; stop() landing in
     // that window must not still deliver (TOCTOU recheck after the await).
     if (state !== 'running') return false;
-    await options.host.deliver(hostMessage);
+    // The webhook transport has a provider delivery ID distinct from the IM
+    // message ID. Replays of that delivery must carry the same Host source key.
+    await options.host.deliver(webhookEventId === undefined
+      ? hostMessage : { ...hostMessage, providerMessageId: webhookEventId });
     return true;
   };
   const routeCard = async (action: FeishuCardAction): Promise<'delivered' | 'not_running' | 'chat_type_unknown'> => {
@@ -403,7 +406,9 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
         if (parsed !== null) await routeEvent(parsed);
       },
       'card.action.trigger': async (data: Record<string, unknown>) => {
-        const parsed = outbound.parseCardAction({ header: { event_type: 'card.action.trigger' }, event: data });
+        const parsed = outbound.parseCardAction({
+          header: { event_type: 'card.action.trigger', event_id: data.event_id }, event: data,
+        });
         if (parsed !== null) await routeCard(parsed);
       },
     });
@@ -532,8 +537,13 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
       }
       const parsed = outbound.parseEvent(body);
       if (parsed === null) return { kind: 'skipped', reason: 'unsupported_event' };
-      return await routeEvent(parsed)
-        ? { kind: 'processed', messageId: parsed.messageId }
+      const header = body !== null && typeof body === 'object' && !Array.isArray(body)
+        ? (body as Record<string, unknown>).header : undefined;
+      const eventId = header !== null && typeof header === 'object' && !Array.isArray(header)
+        ? (header as Record<string, unknown>).event_id : undefined;
+      const stableEventId = typeof eventId === 'string' && eventId.length > 0 ? eventId : undefined;
+      return await routeEvent(parsed, stableEventId)
+        ? { kind: 'processed', messageId: stableEventId ?? parsed.messageId }
         : { kind: 'skipped', reason: 'not_running' };
     },
   };

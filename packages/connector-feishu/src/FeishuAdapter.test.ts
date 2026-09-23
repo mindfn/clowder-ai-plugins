@@ -52,7 +52,33 @@ test('parses authenticated direct text without deriving Host wake authority', ()
     senderId: 'ou_sender_123',
     chatType: 'p2p',
   });
+  assert.equal(subject.parseEvent({
+    ...event, event: { ...event.event, message: { ...event.event.message, message_id: '' } },
+  }), null, 'a malformed message cannot reach Host without a stable provider message ID');
   assert.equal(subject.verifyEventToken({ header: { token: 'wrong' } }), false);
+});
+
+test('card action carries its provider event ID, not the card message ID', () => {
+  const subject = new FeishuAdapter('app-id', 'app-secret', logger);
+  const body = {
+    header: { event_type: 'card.action.trigger', event_id: 'event-click-1' },
+    event: {
+      operator: { open_id: 'user-1' }, action: { value: { cmd: '/status' } },
+      context: { open_chat_id: 'chat-1', open_chat_type: 'p2p', open_message_id: 'card-1' },
+    },
+  };
+  assert.deepEqual(subject.parseCardAction(body), {
+    eventId: 'event-click-1', chatId: 'chat-1', senderId: 'user-1',
+    actionValue: { cmd: '/status' }, option: undefined, chatType: 'p2p',
+  });
+  assert.deepEqual(subject.parseCardAction({
+    header: { event_type: 'card.action.trigger' },
+    event: { ...body.event, event_id: 'event-click-2' },
+  }), {
+    eventId: 'event-click-2', chatId: 'chat-1', senderId: 'user-1',
+    actionValue: { cmd: '/status' }, option: undefined, chatType: 'p2p',
+  });
+  assert.equal(subject.parseCardAction({ ...body, header: { event_type: 'card.action.trigger' } }), null);
 });
 
 test('sends configured mention aliases as provider-native mentions', async () => {

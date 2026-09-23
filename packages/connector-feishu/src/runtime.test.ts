@@ -6,6 +6,7 @@ import {
   PausableLarkWsClient,
   type FeishuRuntimeAdapter,
 } from './runtime.js';
+import { FeishuAdapter } from './FeishuAdapter.js';
 import type { ConnectorLogger } from './types.js';
 
 const logger: ConnectorLogger = { info() {}, warn() {}, error() {}, debug() {} };
@@ -66,6 +67,71 @@ test('webhook runtime verifies provider input and delivers resolved provider fac
   }]);
 });
 
+test('webhook replay uses the provider event ID as the stable Host source key', async () => {
+  const delivered: Array<{ providerMessageId: string }> = [];
+  const runtime = createFeishuConnectorRuntime({
+    config: { appId: 'app', appSecret: 'secret', connectionMode: 'webhook' },
+    host: { deliver: async message => { delivered.push(message); } },
+    logger, fetchFn, createAdapter: () => adapter(),
+  });
+  await runtime.start();
+  const body = { header: { event_id: 'event-1' }, event: { message: { message_id: 'message-1' } } };
+  await runtime.handleWebhook({ body });
+  await runtime.handleWebhook({ body });
+  assert.deepEqual(delivered.map(message => message.providerMessageId), ['event-1', 'event-1']);
+  await runtime.stop();
+});
+
+test('webhook card replay keeps the provider click ID, distinct from the card message ID', async () => {
+  const delivered: Array<{ providerMessageId: string }> = [];
+  const subject = adapter();
+  subject.parseCardAction = new FeishuAdapter('app', 'secret', logger).parseCardAction;
+  const runtime = createFeishuConnectorRuntime({
+    config: { appId: 'app', appSecret: 'secret', connectionMode: 'webhook' },
+    host: { deliver: async message => { delivered.push(message); } },
+    logger, fetchFn, createAdapter: () => subject,
+  });
+  await runtime.start();
+  const body = {
+    header: { event_type: 'card.action.trigger', event_id: 'card-event-1' },
+    event: {
+      operator: { open_id: 'user-1' }, action: { value: { cmd: '/status' } },
+      context: { open_chat_id: 'chat-1', open_chat_type: 'p2p', open_message_id: 'card-1' },
+    },
+  };
+  await runtime.handleWebhook({ body });
+  await runtime.handleWebhook({ body });
+  assert.deepEqual(delivered.map(message => message.providerMessageId), ['card-event-1', 'card-event-1']);
+  await runtime.stop();
+});
+
+test('WebSocket card replay preserves the flattened provider event ID', async () => {
+  let dispatcher: { handles: Map<string, (data: Record<string, unknown>) => Promise<void>> } | undefined;
+  const delivered: Array<{ providerMessageId: string }> = [];
+  const subject = adapter();
+  subject.parseCardAction = new FeishuAdapter('app', 'secret', logger).parseCardAction;
+  const runtime = createFeishuConnectorRuntime({
+    config: { appId: 'app', appSecret: 'secret', connectionMode: 'websocket' },
+    host: { deliver: async message => { delivered.push(message); } },
+    logger, fetchFn, createAdapter: () => subject,
+    createWsClient: () => ({
+      async start({ eventDispatcher }) { dispatcher = eventDispatcher as unknown as typeof dispatcher; },
+      close() {},
+    }),
+  });
+  await runtime.start();
+  const data = {
+    event_id: 'card-event-2', operator: { open_id: 'user-1' }, action: { value: { cmd: '/status' } },
+    context: { open_chat_id: 'chat-1', open_chat_type: 'p2p', open_message_id: 'card-1' },
+  };
+  const callback = dispatcher?.handles.get('card.action.trigger');
+  assert.ok(callback);
+  await callback(data);
+  await callback(data);
+  assert.deepEqual(delivered.map(message => message.providerMessageId), ['card-event-2', 'card-event-2']);
+  await runtime.stop();
+});
+
 test('webhook events received before start are reported as skipped, not processed', async () => {
   const delivered: unknown[] = [];
   const runtime = createFeishuConnectorRuntime({
@@ -89,6 +155,7 @@ test('webhook events received before start are reported as skipped, not processe
 test('card action with unresolvable chat type is reported as chat_type_unknown while running', async () => {
   const subject = adapter();
   subject.parseCardAction = () => ({
+    eventId: 'card-event-3',
     chatId: 'chat-9',
     senderId: 'user-1',
     actionValue: { cmd: '/status' },
@@ -425,6 +492,7 @@ test('webhook card killed by the guard is not misreported as chat_type_unknown',
   const delivered: unknown[] = [];
   const subject = adapter();
   subject.parseCardAction = () => ({
+    eventId: 'card-event-4',
     chatId: 'chat-9',
     senderId: 'user-1',
     actionValue: { cmd: '/status' },

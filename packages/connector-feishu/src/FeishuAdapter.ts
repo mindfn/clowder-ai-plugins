@@ -41,6 +41,7 @@ export interface FeishuInboundMessage {
 }
 
 export interface FeishuCardAction {
+  eventId: string;
   chatId: string;
   senderId: string;
   actionValue: Record<string, unknown>;
@@ -162,6 +163,7 @@ export class FeishuAdapter {
 
     const message = event.message as Record<string, unknown> | undefined;
     if (!message) return null;
+    if (typeof message.message_id !== 'string' || message.message_id.trim() === '') return null;
 
     const msgType = message.message_type as string;
     const chatType = message.chat_type as string;
@@ -302,6 +304,15 @@ export class FeishuAdapter {
     const event = body.event as Record<string, unknown> | undefined;
     if (!event) return null;
 
+    // Webhook callbacks carry header.event_id; the Lark WebSocket SDK passes
+    // the same provider ID in its flattened event data. The card message ID
+    // is not a click ID and must never be used to deduplicate card actions.
+    const headerEventId = header.event_id;
+    const flattenedEventId = event.event_id;
+    if (headerEventId !== undefined && flattenedEventId !== undefined && headerEventId !== flattenedEventId) return null;
+    const eventId = headerEventId ?? flattenedEventId;
+    if (typeof eventId !== 'string' || eventId.trim() === '') return null;
+
     const operator = event.operator as Record<string, unknown> | undefined;
     const action = event.action as Record<string, unknown> | undefined;
     const context = event.context as Record<string, unknown> | undefined;
@@ -316,6 +327,7 @@ export class FeishuAdapter {
     const chatType = rawChatType === 'p2p' || rawChatType === 'group' ? rawChatType : undefined;
 
     return {
+      eventId,
       chatId: context.open_chat_id as string,
       senderId: operator.open_id as string,
       actionValue,

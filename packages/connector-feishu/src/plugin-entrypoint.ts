@@ -15,6 +15,7 @@ import {
   type FeishuConnectorRuntime,
   type FeishuConnectorRuntimeOptions,
   type FeishuHostInboundMessage,
+  type FeishuWebhookResult,
 } from './runtime.js';
 
 type RuntimeFactory = (
@@ -129,6 +130,30 @@ function optionalString(value: unknown, key: string): string | undefined {
   return value;
 }
 
+function forwardedWebhookBody(candidate: unknown): unknown {
+  if (!object(candidate) || !object(candidate.request)) {
+    throw new TypeError('feishu webhook action requires a forwarded request');
+  }
+  if (Object.keys(candidate).some(key => key !== 'request')) {
+    throw new TypeError('feishu webhook action contains an unsupported field');
+  }
+  const request = candidate.request;
+  if (request.method !== 'POST' || request.path !== 'feishu/events') {
+    throw new TypeError('feishu webhook request must match the declared POST path');
+  }
+  return requireFeishuWebhookInput({ body: request.body }).body;
+}
+
+function webhookHttpResponse(result: FeishuWebhookResult) {
+  switch (result.kind) {
+    case 'challenge': return { status: 200, headers: {}, body: result.response };
+    case 'processed': return { status: 200, headers: {}, body: { ok: true, messageId: result.messageId } };
+    case 'skipped': return { status: 200, headers: {}, body: { ok: true, skipped: result.reason } };
+    case 'error': return { status: result.status, headers: {}, body: { error: result.message } };
+    default: throw new TypeError('feishu webhook runtime returned an invalid result');
+  }
+}
+
 export function createFeishuPluginModule(createRuntime: RuntimeFactory = createFeishuConnectorRuntime) {
   return definePluginModule((manifest) => definePlugin({
     manifest,
@@ -184,7 +209,9 @@ export function createFeishuPluginModule(createRuntime: RuntimeFactory = createF
                 }
               }
             },
-            'feishu.webhook': candidate => runtime.handleWebhook(requireFeishuWebhookInput(candidate)),
+            'feishu.webhook': async candidate => webhookHttpResponse(
+              await runtime.handleWebhook({ body: forwardedWebhookBody(candidate) }),
+            ),
           },
           dispose: () => runtime.stop(),
         };

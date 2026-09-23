@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { copyFile, link, lstat, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { copyFile, link, lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -84,7 +84,9 @@ async function main() {
     await mkdir(packRoot);
     run('tar', ['-xzf', canonicalArchive, '-C', stageRoot], temporaryRoot);
     const stagedPackage = join(stageRoot, 'package');
-    const stagedManifest = JSON.parse(await readFile(join(stagedPackage, 'package.json'), 'utf8'));
+    const stagedManifestPath = join(stagedPackage, 'package.json');
+    const stagedManifestBytes = await readFile(stagedManifestPath);
+    const stagedManifest = JSON.parse(stagedManifestBytes.toString('utf8'));
     assert.equal(stagedManifest.name, sourcePackage.name, 'canonical package name differs from checkout');
     assert.equal(stagedManifest.version, sourcePackage.version, 'canonical package version differs from checkout');
     const shrinkwrap = JSON.parse(await readFile(join(stagedPackage, 'npm-shrinkwrap.json'), 'utf8'));
@@ -103,11 +105,19 @@ async function main() {
     }
 
     await mkdir(join(stagedPackage, 'node_modules'), { recursive: true });
+    // npm resolves dev dependencies into its ideal tree even with --omit=dev.
+    // A dev-only version can then displace the publisher-locked production
+    // transitive version. Install from a production-only temporary manifest,
+    // then restore the exact canonical manifest bytes before archiving.
+    const installManifest = { ...stagedManifest };
+    delete installManifest.devDependencies;
+    await writeFile(stagedManifestPath, `${JSON.stringify(installManifest, null, 2)}\n`);
     run('npm', [
       'install', '--omit=dev', '--ignore-scripts', '--no-save', '--package-lock=false',
       '--no-bin-links', '--no-audit', '--no-fund', '--registry=https://registry.npmjs.org',
       ...localPacks,
     ], stagedPackage);
+    await writeFile(stagedManifestPath, stagedManifestBytes);
 
     const candidate = join(temporaryRoot, 'candidate.tgz');
     run('tar', [
