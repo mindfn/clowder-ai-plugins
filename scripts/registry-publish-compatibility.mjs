@@ -89,36 +89,28 @@ export function addImmutableClaim(claims, claim) {
   }
 }
 
-export function readRegistryIntegrity(name, version, { spawn = spawnSync } = {}) {
-  const result = spawn(
-    'npm',
-    [
-      'view',
-      `${name}@${version}`,
-      'dist.integrity',
-      '--json',
-      '--registry',
-      OFFICIAL_NPM_REGISTRY,
-    ],
-    { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 },
+export async function readRegistryIntegrity(name, version, { fetchFn = globalThis.fetch } = {}) {
+  const url = new URL(
+    `${OFFICIAL_NPM_REGISTRY}/${encodeURIComponent(name)}/${encodeURIComponent(version)}`,
   );
-  if (result.status === 0) {
-    const integrity = JSON.parse(result.stdout);
-    if (typeof integrity !== 'string' || integrity.length === 0) {
-      throw new Error(`registry returned no dist.integrity for ${name}@${version}`);
-    }
-    return integrity;
+  let response;
+  try {
+    response = await fetchFn(url, { headers: { accept: 'application/json' } });
+  } catch (error) {
+    throw new Error(`npm registry lookup failed for ${name}@${version}`, { cause: error });
   }
-  if (/E404|404 Not Found/u.test(`${result.stdout ?? ''}\n${result.stderr ?? ''}`)) {
-    return undefined;
+  if (response.status === 404) return undefined;
+  if (!response.ok) {
+    throw new Error(
+      `npm registry lookup failed for ${name}@${version}: HTTP ${response.status}`,
+    );
   }
-  throw new Error(
-    [
-      `npm registry lookup failed for ${name}@${version}`,
-      result.stdout,
-      result.stderr,
-    ].filter(Boolean).join('\n'),
-  );
+  const metadata = await response.json();
+  const integrity = metadata?.dist?.integrity;
+  if (typeof integrity !== 'string' || integrity.length === 0) {
+    throw new Error(`registry returned no dist.integrity for ${name}@${version}`);
+  }
+  return integrity;
 }
 
 export async function assertRegistryCompatibility({

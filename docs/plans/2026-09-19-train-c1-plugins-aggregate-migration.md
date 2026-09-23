@@ -241,8 +241,9 @@ Every version this PR claims is provisional: companion `0.1.0-alpha.5`, genoffic
 video-analysis `0.1.0-alpha.2`, plugin-contract `0.1.0-beta.19`, plugin-sdk `0.2.0-beta.2`, and the first version
 of each package this PR adds. Right before merging, a version is free only if it is absent from
 `https://registry.npmjs.org` **and** not claimed by `main`'s `package.json` or catalog; if either check fails,
-re-bump to the next free version and re-pack with the fixed toolchain. Always pass
-`--registry https://registry.npmjs.org`: a local npm config may point at a mirror that lags. On 2026-09-23
+re-bump to the next free version and re-pack with the fixed toolchain. Query `registry.npmjs.org` directly:
+a scope-level npm registry configuration overrides `--registry`, and a local npm config may point at a mirror that
+lags. On 2026-09-23
 `registry.npmmirror.com` still ended at companion `0.1.0-alpha.3` after npmjs.org had published
 `0.1.0-alpha.4`, and an earlier version of this paragraph repeated that mistake.
 

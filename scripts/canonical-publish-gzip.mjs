@@ -13,6 +13,9 @@ export function normalizeBundledPublishGzip(bytes) {
   ) {
     throw new Error('bundled publish artifact is not a gzip archive');
   }
+  if ((bytes[3] & 0x02) !== 0) {
+    throw new Error('bundled publish gzip has FHCRC; refusing to rewrite header');
+  }
   const normalized = Buffer.from(bytes);
   normalized[9] = 3; // RFC 1952 OS=Unix, matching the Ubuntu publisher.
   return normalized;
