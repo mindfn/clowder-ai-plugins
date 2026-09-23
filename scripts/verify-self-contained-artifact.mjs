@@ -4,6 +4,7 @@ import { lstat, mkdtemp, readFile, readdir, realpath, rm } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { parse as parseYaml } from 'yaml';
 
 import { assertProductionDependencyClosure } from './catalog-package-shrinkwrap.mjs';
 
@@ -115,28 +116,53 @@ export async function verifySelfContainedArchive(archivePath) {
     }
 
     const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'));
+    const pluginManifest = parseYaml(await readFile(join(packageRoot, 'plugin.yaml'), 'utf8'));
     const shrinkwrap = JSON.parse(await readFile(join(packageRoot, 'npm-shrinkwrap.json'), 'utf8'));
     assertProductionDependencyClosure(manifest, shrinkwrap);
     const installedPackages = await assertInstalledVersions(packageRoot, shrinkwrap);
     run('npm', ['ls', '--omit=dev', '--all', '--depth=100'], packageRoot);
 
-    const entrypoint = manifest.main ?? manifest.exports?.['.']?.import;
-    assert.equal(typeof entrypoint, 'string', 'package must declare a loadable main entrypoint');
+    const mainEntrypoint = manifest.main ?? manifest.exports?.['.']?.import;
+    const runtimeEntrypoint = pluginManifest?.runtime?.entrypoint;
+    if (runtimeEntrypoint !== undefined && pluginManifest.runtime.transport !== 'builtin') {
+      throw new Error(`runtime transport ${pluginManifest.runtime.transport} needs a transport-specific relocation probe`);
+    }
+    assert.equal(typeof mainEntrypoint, 'string', 'package must declare a loadable main entrypoint');
+    if (runtimeEntrypoint !== undefined) {
+      assert.equal(typeof runtimeEntrypoint, 'string', 'builtin runtime must declare a string entrypoint');
+    }
     const evaluation = `
       import { readFileSync, realpathSync } from 'node:fs';
       import { resolve, relative, sep, isAbsolute } from 'node:path';
       import { fileURLToPath, pathToFileURL } from 'node:url';
       const root = realpathSync('.');
       const manifest = JSON.parse(readFileSync('package.json', 'utf8'));
-      const entry = realpathSync(resolve(root, ${JSON.stringify(entrypoint)}));
       const inside = path => { const r = relative(root, path); return r !== '..' && !r.startsWith('..' + sep) && !isAbsolute(r); };
-      if (!inside(entry)) throw new Error('entrypoint escaped extracted package');
-      await import(pathToFileURL(entry).href);
+      const load = async declared => {
+        const entry = realpathSync(resolve(root, declared));
+        if (!inside(entry)) throw new Error('entrypoint escaped extracted package');
+        return { entry, namespace: await import(pathToFileURL(entry).href) };
+      };
+      const main = await load(${JSON.stringify(mainEntrypoint)});
+      const runtimeDeclaration = ${JSON.stringify(runtimeEntrypoint ?? null)};
+      const runtime = runtimeDeclaration === null ? null : await load(runtimeDeclaration);
+      if (runtime !== null) {
+        const candidate = runtime.namespace.default;
+        if ((candidate === null || (typeof candidate !== 'object' && typeof candidate !== 'function'))
+          || typeof candidate.create !== 'function') {
+          throw new TypeError('builtin runtime entrypoint default export must satisfy PluginModuleEntrypoint');
+        }
+      }
       for (const name of Object.keys(manifest.dependencies ?? {})) {
         const resolved = realpathSync(fileURLToPath(import.meta.resolve(name)));
         if (!inside(resolved)) throw new Error(name + ' resolved outside extracted package: ' + resolved);
       }
-      console.log(JSON.stringify({ entry, checkedDirectDependencies: Object.keys(manifest.dependencies ?? {}).length }));
+      console.log(JSON.stringify({
+        entry: main.entry,
+        runtimeEntry: runtime?.entry ?? null,
+        runtimeEntrypointLoaded: runtime !== null,
+        checkedDirectDependencies: Object.keys(manifest.dependencies ?? {}).length,
+      }));
     `;
     const relocation = JSON.parse(run(
       process.execPath,
@@ -144,6 +170,9 @@ export async function verifySelfContainedArchive(archivePath) {
       packageRoot,
     ).trim());
     assert.ok(contained(await realpath(packageRoot), relocation.entry));
+    if (relocation.runtimeEntry !== null) {
+      assert.ok(contained(await realpath(packageRoot), relocation.runtimeEntry));
+    }
     return {
       archive: absoluteArchive,
       package: `${manifest.name}@${manifest.version}`,

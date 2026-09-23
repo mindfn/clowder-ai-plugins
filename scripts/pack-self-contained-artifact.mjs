@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { copyFile, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm } from 'node:fs/promises';
+import { copyFile, link, lstat, mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assertProductionDependencyClosure } from './catalog-package-shrinkwrap.mjs';
@@ -43,6 +43,18 @@ function packCheckoutPackage(directory, destination) {
   return join(destination, artifact.filename);
 }
 
+export async function publishImmutableArtifact(candidate, destination) {
+  const pending = join(dirname(destination), `.${basename(destination)}.${randomUUID()}.tmp`);
+  try {
+    await copyFile(candidate, pending);
+    // Hard-link publication is atomic and fails with EEXIST instead of
+    // replacing any existing artifact, including identical bytes.
+    await link(pending, destination);
+  } finally {
+    await rm(pending, { force: true });
+  }
+}
+
 async function main() {
   const [packageDirectory, artifactRootArg] = process.argv.slice(2);
   if (!/^packages\/[a-z0-9-]+$/u.test(packageDirectory ?? '') || !artifactRootArg) {
@@ -65,7 +77,6 @@ async function main() {
   assertPackageArchiveLayout(canonicalArchive);
 
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'clowder-self-contained-build-'));
-  let pendingOutput;
   try {
     const stageRoot = join(temporaryRoot, 'stage');
     const packRoot = join(temporaryRoot, 'local-packs');
@@ -104,27 +115,26 @@ async function main() {
       '-czf', candidate, '-C', stageRoot, 'package',
     ], temporaryRoot);
     const verification = await verifySelfContainedArchive(candidate);
-    const filename = `${base}-${process.platform}-${process.arch}.tgz`;
+    const digest = createHash('sha256').update(await readFile(candidate)).digest('hex');
+    // The checksum is part of the dev-wave coordinate: a rebuild must never
+    // silently replace bytes already handed to a Host consumer.
+    const filename = `${base}-${process.platform}-${process.arch}-${digest.slice(0, 12)}.tgz`;
     const destination = join(outputDirectory, filename);
-    pendingOutput = join(outputDirectory, `.${filename}.${randomUUID()}.tmp`);
-    await copyFile(candidate, pendingOutput);
-    await rename(pendingOutput, destination);
-    pendingOutput = undefined;
-    const bytes = await readFile(destination);
+    await publishImmutableArtifact(candidate, destination);
     process.stdout.write(`${JSON.stringify({
       destination,
-      sha256: createHash('sha256').update(bytes).digest('hex'),
+      sha256: digest,
       package: verification.package,
       members: verification.members,
       symlinks: verification.symlinks,
       installedPackages: verification.installedPackages,
       relocatedEntrypointLoaded: true,
+      runtimeEntrypointLoaded: verification.relocation.runtimeEntrypointLoaded,
       checkedDirectDependencies: verification.relocation.checkedDirectDependencies,
     }, null, 2)}\n`);
   } finally {
-    if (pendingOutput) await rm(pendingOutput, { force: true });
     await rm(temporaryRoot, { recursive: true, force: true });
   }
 }
 
-await main();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
