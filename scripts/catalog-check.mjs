@@ -36,6 +36,7 @@ assert.deepEqual(
     'official.connector.wecom-bot',
     'official.connector.weixin',
     'official.connector.xiaoyi',
+    'official.enterprise-workflow',
     'official.wechat-visible-reader',
     'official.weixin-mp',
   ],
@@ -51,6 +52,7 @@ assert.equal(
 
 let videoAnalysisChecks = 0;
 let videoGenerationChecks = 0;
+let enterpriseWorkflowChecks = 0;
 let wechatVisibleReaderChecks = 0;
 let weixinMpChecks = 0;
 let connectorChecks = 0;
@@ -211,6 +213,31 @@ async function verifyCatalogEntry(catalogEntry) {
       );
     }
 
+    if (catalogEntry.pluginId === 'official.enterprise-workflow') {
+      enterpriseWorkflowChecks += 1;
+      const descriptions = typeof catalogEntry.description === 'string'
+        ? [catalogEntry.description]
+        : [catalogEntry.description.default, ...Object.values(catalogEntry.description.translations)];
+      assert.ok(
+        descriptions.every(description => [...description].length <= 100),
+        'enterprise-workflow Agent introductions must not exceed 100 characters per locale',
+      );
+      for (const member of [
+        'README.md',
+        'dist/plugin-entrypoint.js',
+        'skills/enterprise-workflow/SKILL.md',
+      ]) {
+        assert.ok(
+          artifact.files.some((file) => file.path === member),
+          `packed enterprise-workflow artifact is missing ${member}`,
+        );
+      }
+      assert.match(
+        await readFile(join(unpackedDirectory, 'package', 'README.md'), 'utf8'),
+        /^# Enterprise Workflow\n/m,
+      );
+    }
+
     if (catalogEntry.pluginId === 'official.wechat-visible-reader') {
       wechatVisibleReaderChecks += 1;
       const descriptions = typeof catalogEntry.description === 'string'
@@ -314,6 +341,11 @@ async function verifyCatalogEntry(catalogEntry) {
 for (const entry of listCatalogPlugins(validation.catalog)) await verifyCatalogEntry(entry);
 assert.equal(videoAnalysisChecks, 1, 'video-analysis package-owned metadata checks must run exactly once');
 assert.equal(videoGenerationChecks, 1, 'video-generation package-owned metadata checks must run exactly once');
+assert.equal(
+  enterpriseWorkflowChecks,
+  1,
+  'enterprise-workflow package-owned metadata checks must run exactly once',
+);
 assert.equal(
   wechatVisibleReaderChecks,
   1,

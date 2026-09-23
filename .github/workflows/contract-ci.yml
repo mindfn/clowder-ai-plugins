@@ -20,6 +20,7 @@ on:
       - 'packages/connector-wecom-bot/**'
       - 'packages/connector-weixin/**'
       - 'packages/connector-xiaoyi/**'
+      - 'packages/enterprise-workflow/**'
       - 'packages/feishu-meeting-intake/**'
       - 'packages/video-analysis/**'
       - 'packages/video-generation/**'
@@ -131,6 +132,9 @@ jobs:
             pnpm --filter "$package" test
             pnpm --filter "$package" build
           done
+
+      - name: Enterprise workflow package gates
+        run: pnpm --filter @clowder-ai/enterprise-workflow typecheck && pnpm --filter @clowder-ai/enterprise-workflow test && pnpm --filter @clowder-ai/enterprise-workflow lint && pnpm --filter @clowder-ai/enterprise-workflow build
 
       - name: Desktop window packed consumer
         run: node --test scripts/desktop-window-consumer.test.mjs
@@ -416,6 +420,9 @@ jobs:
             pnpm --filter "$package" build
           done
 
+      - name: Build enterprise workflow package
+        run: pnpm --filter @clowder-ai/enterprise-workflow build
+
       - name: Build companion package
         run: pnpm --filter @clowder-ai/companion build
 
@@ -449,6 +456,12 @@ jobs:
         uses: ./.github/actions/publish-prerelease
         with:
           package-directory: packages/plugin-sdk
+          npm-token: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish enterprise workflow prerelease
+        uses: ./.github/actions/publish-prerelease
+        with:
+          package-directory: packages/enterprise-workflow
           npm-token: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish Telegram connector prerelease

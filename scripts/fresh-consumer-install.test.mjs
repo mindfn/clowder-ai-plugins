@@ -70,6 +70,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       '@clowder-ai/weixin-mp',
       '@clowder-ai/wechat-visible-reader',
       '@clowder-ai/genoffice-docx',
+      '@clowder-ai/enterprise-workflow',
       ...connectorPackages.map(({ name }) => name),
     ]) {
       const build = packageName === '@clowder-ai/genoffice-docx' ? 'build:renderer' : 'build';
@@ -77,6 +78,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
     }
     run(process.execPath, ['packages/genoffice-docx/scripts/assert-pack-ready.mjs'], repoRoot);
 
+    const enterpriseTarball = pack('packages/enterprise-workflow', packs);
     const tarballs = [
       pack('packages/plugin-contract', packs),
       pack('packages/plugin-sdk', packs),
@@ -88,6 +90,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       pack('packages/wechat-visible-reader', packs),
       pack('packages/genoffice-docx', packs),
       ...connectorPackages.map(({ directory }) => pack(directory, packs)),
+      enterpriseTarball,
     ];
 
     const staged = join(root, 'staged');
@@ -285,6 +288,9 @@ test('packed public packages install and import in a fresh npm consumer', async 
     const genofficePackage = JSON.parse(
       await readFile(join(consumer, 'node_modules/@clowder-ai/genoffice-docx/package.json'), 'utf8'),
     );
+    const enterprisePackage = JSON.parse(
+      await readFile(join(consumer, 'node_modules/@clowder-ai/enterprise-workflow/package.json'), 'utf8'),
+    );
     assert.equal(genofficePackage.version, '0.1.0-alpha.1');
     assert.equal(genofficePackage.dependencies['@clowder-ai/plugin-contract'], '0.1.0-beta.15');
     assert.doesNotMatch(JSON.stringify(genofficePackage), /"workspace:/u);
@@ -363,6 +369,9 @@ test('packed public packages install and import in a fresh npm consumer', async 
     assert.doesNotMatch(JSON.stringify(weixinMpPackage), /"workspace:/u);
     assert.equal(wechatReaderPackage.version, '0.1.0-alpha.0');
     assert.deepEqual(wechatReaderPackage.os, ['darwin']);
+    assert.equal(enterprisePackage.version, '0.1.0-alpha.0');
+    assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.2');
+    assert.doesNotMatch(JSON.stringify(enterprisePackage), /"workspace:/u);
     const installedContract = await import(
       pathToFileURL(
         join(consumer, 'node_modules/@clowder-ai/plugin-contract/dist/index.js'),
@@ -494,6 +503,28 @@ test('packed public packages install and import in a fresh npm consumer', async 
       ),
       /^# WeChat Visible Reader\n/m,
     );
+    const enterpriseRoot = join(consumer, 'node_modules/@clowder-ai/enterprise-workflow');
+    const enterpriseManifestText = await readFile(join(enterpriseRoot, 'plugin.yaml'), 'utf8');
+    const enterpriseManifest = parseYaml(enterpriseManifestText);
+    const enterpriseManifestValidation = installedContract.validateManifest(enterpriseManifest);
+    assert.equal(
+      enterpriseManifestValidation.valid,
+      true,
+      enterpriseManifestValidation.valid ? undefined : JSON.stringify(enterpriseManifestValidation.errors),
+    );
+    assert.deepEqual(enterpriseManifest.runtime, {
+      transport: 'builtin',
+      entrypoint: 'dist/plugin-entrypoint.js',
+    });
+    assert.deepEqual(
+      enterpriseManifest.features.flatMap((feature) => feature.capabilities),
+      ['plugin.config.read'],
+    );
+    const enterpriseEntrypoint = installedSdk.requirePluginModuleEntrypoint(
+      (await import(pathToFileURL(join(enterpriseRoot, enterpriseManifest.runtime.entrypoint)).href)).default,
+    );
+    assert.equal(typeof enterpriseEntrypoint.create(enterpriseManifest).start, 'function');
+    assert.match(await readFile(join(enterpriseRoot, 'skills/enterprise-workflow/SKILL.md'), 'utf8'), /plugin_call/u);
     await readFile(
       join(consumer, 'node_modules/@clowder-ai/personal-chrome-companion/extension/manifest.json'),
       'utf8',
@@ -512,7 +543,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       [
         '--input-type=module',
         '--eval',
-        "const { createRequire } = await import('node:module'); const require = createRequire(import.meta.url); const contract = await import('@clowder-ai/plugin-contract'); const conformance = await import('@clowder-ai/plugin-contract/conformance'); const metadata = require('@clowder-ai/plugin-contract/schemas/plugin-metadata'); const fixture = require('@clowder-ai/plugin-contract/fixtures/behavior/messaging/adversarial-invariants'); const sdk = await import('@clowder-ai/plugin-sdk'); const plugin = await import('@clowder-ai/feishu-meeting-intake'); const companion = await import('@clowder-ai/personal-chrome-companion'); const video = await import('@clowder-ai/video-analysis'); const generation = await import('@clowder-ai/video-generation'); const weixinMp = await import('@clowder-ai/weixin-mp'); const wechatReader = await import('@clowder-ai/wechat-visible-reader'); const request = companion.parsePersonalChromeAppendRequest({ v: 1, kind: 'append_message', requestId: 'fresh-1', conversationId: 'conversation-1', text: 'fresh consumer', idempotencyKey: 'delivery-1' }); if (typeof contract.validateManifest !== 'function' || typeof contract.validatePluginCatalog !== 'function' || metadata.title !== 'Clowder AI Plugin Product Metadata (v1)' || conformance.M0C_BEHAVIOR_CASE_IDS.length !== 18 || fixture.cases.length !== 18 || typeof sdk.definePlugin !== 'function' || typeof plugin.createFeishuMeetingIntakeRuntime !== 'function' || typeof video.createVideoAnalysisMcpServer !== 'function' || typeof generation.startVideoGenerationServer !== 'function' || typeof weixinMp.createWeixinMpHandlers !== 'function' || typeof wechatReader.createWeChatVisibleReaderHandlers !== 'function' || request.conversationId !== 'conversation-1') process.exit(1);",
+        "const { createRequire } = await import('node:module'); const require = createRequire(import.meta.url); const contract = await import('@clowder-ai/plugin-contract'); const conformance = await import('@clowder-ai/plugin-contract/conformance'); const metadata = require('@clowder-ai/plugin-contract/schemas/plugin-metadata'); const fixture = require('@clowder-ai/plugin-contract/fixtures/behavior/messaging/adversarial-invariants'); const sdk = await import('@clowder-ai/plugin-sdk'); const plugin = await import('@clowder-ai/feishu-meeting-intake'); const companion = await import('@clowder-ai/personal-chrome-companion'); const video = await import('@clowder-ai/video-analysis'); const generation = await import('@clowder-ai/video-generation'); const weixinMp = await import('@clowder-ai/weixin-mp'); const wechatReader = await import('@clowder-ai/wechat-visible-reader'); const enterprise = await import('@clowder-ai/enterprise-workflow'); const request = companion.parsePersonalChromeAppendRequest({ v: 1, kind: 'append_message', requestId: 'fresh-1', conversationId: 'conversation-1', text: 'fresh consumer', idempotencyKey: 'delivery-1' }); if (typeof contract.validateManifest !== 'function' || typeof contract.validatePluginCatalog !== 'function' || metadata.title !== 'Clowder AI Plugin Product Metadata (v1)' || conformance.M0C_BEHAVIOR_CASE_IDS.length !== 18 || fixture.cases.length !== 18 || typeof sdk.definePlugin !== 'function' || typeof plugin.createFeishuMeetingIntakeRuntime !== 'function' || typeof video.createVideoAnalysisMcpServer !== 'function' || typeof generation.startVideoGenerationServer !== 'function' || typeof weixinMp.createWeixinMpHandlers !== 'function' || typeof wechatReader.createWeChatVisibleReaderHandlers !== 'function' || typeof enterprise.createEnterpriseWorkflowPluginModule !== 'function' || request.conversationId !== 'conversation-1') process.exit(1);",
       ],
       consumer,
     );

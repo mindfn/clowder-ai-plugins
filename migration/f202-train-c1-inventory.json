@@ -136,6 +136,18 @@
       "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey"
     },
     {
+      "directory": "enterprise-workflow",
+      "packageName": "@clowder-ai/enterprise-workflow",
+      "classification": "manager-installable-official-public",
+      "managerInstallable": true,
+      "contractClosure": "plugin.yaml contractVersion 0.1.0",
+      "sdkClosure": "direct @clowder-ai/plugin-sdk 0.2.0-beta.2 dependency exposes the Host-loadable module entrypoint",
+      "yamlClosure": "plugin.yaml is the sole manifest truth",
+      "runtimeClosure": "builtin module entrypoint exposes two Host-governed direct tools backed by locally configured CLI paths",
+      "catalogClosure": "listed as official.enterprise-workflow",
+      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey"
+    },
+    {
       "directory": "genoffice-docx",
       "packageName": "@clowder-ai/genoffice-docx",
       "classification": "manager-installable-official-public",

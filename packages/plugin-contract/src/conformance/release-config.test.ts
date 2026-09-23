@@ -423,6 +423,7 @@ test('main publishes the public dependency chain through one hardened action', (
   const orderedPackages = [
     'packages/plugin-contract',
     'packages/plugin-sdk',
+    'packages/enterprise-workflow',
     'packages/connector-telegram',
     'packages/connector-dingtalk',
     'packages/connector-feishu',
