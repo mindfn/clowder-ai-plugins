@@ -147,33 +147,94 @@ the ordinary-text negative path.
 
 ## Implementation checkpoint
 
-The first clean checkpoint (`60bc85a`) contains five provider adapter slices plus video generation, WeChat
-visible reader, Weixin MP, the frozen SDK rows, and a generic pack-time assertion that every declared runtime
-entrypoint is an archive member. A second bounded slice adds Feishu and Weixin provider adapters plus the
-GitHub Operations schedule/Host-port declaration, completing all eleven package directories without crossing
-the Host authority boundary. GitHub Operations is explicitly `port-declared,
-implementation-pending-in-plugins`: unlike the Feishu and Weixin adapters, its tracking, cursor, lease,
-binding, and event-publication implementation has not yet been migrated from Core. That is remaining package
-work, not a contract blocker.
+> **Current as of 2026-09-23. If you are picking this up without having followed the thread, read this
+> section first.** The previous checkpoint text (2026-09-20) is recoverable from git history; parts of it are
+> now stale and one sentence is actively misleading (see "Weixin QR login" under Known drift).
 
-Feishu retains verified webhook parsing, token refresh, cards, media transfer, and QR credential acquisition.
-Weixin retains iLink polling, QR login, media transfer, and explicit cursor/context-token injection; its old
-ambient voice-mode and Host API URL discovery has been replaced by manifest-declared inputs. GitHub Operations
-freezes the seven schedule identities, polling periods, timeouts, and action methods while leaving tracking
-registrations, cursors, leases, deduplication, repository bindings, and event publication behind one Host port.
+### Where things stand
 
-The seven connector packages now expose real `builtin` package modules, are present in the catalog, and pass
-the repository fresh-consumer journey. That journey installs their packed tarballs, validates each canonical
-manifest, imports its declared root entrypoint, applies `requirePluginModuleEntrypoint` to the ESM default
-export, and creates the declared feature definition. Their catalog coordinates were produced under the pinned
-Node 24.18.0 / npm 11.16.0 / zlib 1.3.1-e00f703 toolchain. GitHub Operations remains the one honest RED: its
-generic schedule/event implementation, catalog entry, and fresh-consumer proof are not complete yet.
+PR #54 is a **draft** served from the fork (`mindfn/clowder-ai-plugins`, branch
+`feat/f202-train-c1-plugins-migration`). **Do not merge or publish it** until the cutover gate below clears.
+The contract is at `0.1.0-beta.18` and the SDK at `0.2.0-beta.2`; neither is published to npm, and neither
+needs to be for the dev wave, because the Host now installs owner-supplied self-contained artifacts (Host S10).
 
-The packed-member guard remains wired into `scripts/catalog-check.mjs` and covered by
-`scripts/catalog-runtime-entrypoints.test.mjs`; it evaluates archive members rather than source paths, so no
-draft manifest can enter the catalog with a dangling runtime declaration. The fresh-consumer default-export
-guard closes the separate case where the entrypoint file exists but does not expose the Host-loadable module
-shape.
+| Wave | Scope | State |
+|---|---|---|
+| a / b step | contract + SDK; the seven connectors moved to the A2 shape (`message-subscription`, `context.messaging.*`, `{ params, invocation }` envelope) | done, cross-individually reviewed |
+| W1 | video-generation, video-analysis, weixin-mp, enterprise-workflow (new package), wechat-visible-reader | **5/5 done on both sides**; Host copies deleted |
+| W2 | the seven connectors + ChatGPT Pro | **in progress** — see below |
+| W3 / W4 | GitHub cluster / collective + GenOffice docx | not started |
+
+### W2 (in progress)
+
+- **W2-1**: feishu + wecom-agent webhook actions aligned to the Host S6b forwarding contract (input arrives as
+  `{ ...declaredParams, request }`, strict `{ status, headers, body }` response). Same slice makes the
+  idempotency key a stable provider identifier on every accepted inbound path: feishu `header.event_id` on
+  both webhook and WebSocket card callbacks; wecom-agent `MsgId`, with ordinary messages missing it rejected
+  and logged instead of keyed by the clock. Followed by a Host-side wecom-agent local end-to-end run, which is
+  the intended evidence for the cutover gate.
+- **W2-2**: user-visible parity for weixin / feishu / wecom-bot (see Known drift).
+- **W2-3**: ChatGPT Pro as an installable wrapper around the existing `personal-chrome-companion` closure,
+  not a second copy of its code.
+- **W2-4**: Host-side removal of the connector-specific framework and IM pages, plus a new generic
+  thread-to-external-conversation binding list (it does not exist in the frontend today).
+
+### Cutover gate on this PR
+
+PR #54 must not merge or publish until **both** hold:
+
+1. the Host cutover branch is actually running in the Host, and
+2. **one of the seven connector packages** carries an external-origin `messaging.send` end to end on the real
+   Host and it is accepted.
+
+Condition 2 is deliberately narrow. Every W1 package installing and running cleanly does **not** satisfy it:
+none of them is a connector, and none exercises the Host's external identity resolution. CI being green does
+not satisfy it either — this PR was fully green at a point where inbound was broken end to end.
+
+### Known drift (not yet fixed)
+
+- **Weixin QR login**: the adapter code still contains QR credential acquisition, but the manifest declares
+  no `weixin_qr_login` operation and exposes `botToken` as a hand-entered secret. An owner cannot reach QR
+  login today. Feishu (`feishu_qr_login`) and wecom-bot (`wecom_validate`) have the same class of gap. W2-2.
+- Weixin also exposes the Host-projected `apiBaseUrl` and env-only voice toggles as owner-editable fields.
+
+### Dev-wave artifacts
+
+Built outside the repo under `/Users/lang/workspace/github-lab/f202-w1-tarballs/`. Two kinds, kept apart on
+purpose, because the Host's local admission does not compare catalog integrity and installing the wrong one
+fails silently:
+
+| | location | bytes | publishable |
+|---|---|---|---|
+| canonical npm tarball | top level | equal to the catalog pin (pinned toolchain) | yes |
+| self-contained dev artifact | `self-contained/` | never equal to any pin; platform-bound | never |
+
+Self-contained artifacts come only from `scripts/pack-self-contained-artifact.mjs`, which runs
+`scripts/verify-self-contained-artifact.mjs` before publishing: `package/` layout per the Host staging rule,
+zero symlinks, production closure equal to the shrinkwrap, and the Host `runtime.entrypoint` really loaded from
+a relocated copy. Filenames carry a content digest and existing files are never overwritten. **Hand artifacts
+over by full sha256, never by path.** Superseded ones live in `f202-w1-tarballs.superseded/`, outside the
+delivery tree.
+
+### Guards that must stay green
+
+- install consent surface: a package README must disclose every capability any of its features declares
+- offline shrinkwrap closure gate: the packed lock must contain the full transitive production closure
+- packed-member guard (`scripts/catalog-check.mjs`, `scripts/catalog-runtime-entrypoints.test.mjs`): every
+  declared runtime entrypoint must be an archive member, evaluated against archive members rather than source
+  paths
+- fresh-consumer default-export guard: the entrypoint must expose the Host-loadable module shape
+
+### Where the truth lives
+
+- Host ledger (slice-by-slice status, wave table): `clowder-ai`, fork branch `feat/f202-c1-core-cutover`,
+  `docs/plans/2026-09-21-f202-c1-contract.md`; Host PR zts212653/clowder-ai#1487
+- Per-slice review records: the Cat Cafe thread "F202 Train C1 — Plugins aggregate migration"
+- zts212653/clowder-ai-plugins#57 (git guards) is independent and can be merged first; its `package.json`
+  overlap with this PR is two purely additive hunks, which will be carried over here
+- `origin` (`zts212653`) still has three stale branches pushed by mistake — `feat/f202-train-c1-plugins-migration`
+  at `839eaf8`, `feat/f202-c1-contract-sdk-a-step`, `feat/f202-c1-p1p2-wire-dispatch-into-contract`. This PR's
+  real head is on the fork; those can be deleted.
 
 ## Preservation matrix and acceptance
 
