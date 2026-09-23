@@ -227,11 +227,16 @@ delivery tree.
 
 ### Merge-time step — companion version is provisional
 
-PR #54 touches `packages/companion` only because its own install-consent gate requires the README change;
-it is the only non-F202 package in this PR. The version it claims (`0.1.0-alpha.5`) is provisional:
-companion is upstream-owned and actively developed. At merge time, check the registry; if upstream has
-already published that version, re-bump to the next free version and re-pack before merging. CI cannot catch
-this — `catalog:check` compares against the catalog pin, not the registry.
+PR #54 is the only non-F202 change to `packages/companion`: its own install-consent gate requires a README
+consent surface, and review round 3 fixed a prototype-key leak in `src/errors.mjs` (`explainError`). The
+version it claims (`0.1.0-alpha.5`) is provisional. companion is upstream-owned and actively developed, and
+upstream claims a version in `main` (package.json + catalog pin) before anyone publishes it — publishing is a
+manual step (`scripts/pack-publish-artifact.mjs`; there is no release workflow). On 2026-09-23 `main` pinned
+`0.1.0-alpha.4` while the registry still stopped at `0.1.0-alpha.3`. So at merge time a version is taken if
+**either** the registry has it **or** `main`'s `packages/companion/package.json` / catalog entry already claims
+it; if taken, re-bump to the next free version and re-pack with the fixed toolchain before merging. CI cannot
+catch this — `catalog:check` compares against the branch's own catalog pin, not against the registry or
+`main`.
 
 ### Where the truth lives
 
