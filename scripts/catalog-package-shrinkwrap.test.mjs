@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { assertDirectDependencyClosure } from './catalog-package-shrinkwrap.mjs';
+import { assertProductionDependencyClosure } from './catalog-package-shrinkwrap.mjs';
 
 test('accepts direct dependencies whose packed lock entries close over the package declaration', () => {
-  assert.doesNotThrow(() => assertDirectDependencyClosure(
+  assert.doesNotThrow(() => assertProductionDependencyClosure(
     {
       dependencies: {
         '@clowder-ai/plugin-sdk': '0.2.0-beta.2',
@@ -13,8 +13,20 @@ test('accepts direct dependencies whose packed lock entries close over the packa
     },
     {
       packages: {
-        'node_modules/@clowder-ai/plugin-sdk': { version: '0.2.0-beta.2' },
-        'node_modules/yaml': { version: '2.9.0' },
+        '': {
+          dependencies: {
+            '@clowder-ai/plugin-sdk': '0.2.0-beta.2',
+            yaml: '^2.9.0',
+          },
+        },
+        'node_modules/@clowder-ai/plugin-sdk': {
+          version: '0.2.0-beta.2',
+          resolved: 'https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.2.tgz',
+        },
+        'node_modules/yaml': {
+          version: '2.9.0',
+          resolved: 'https://registry.npmjs.org/yaml/-/yaml-2.9.0.tgz',
+        },
       },
     },
   ));
@@ -22,24 +34,128 @@ test('accepts direct dependencies whose packed lock entries close over the packa
 
 test('rejects a missing direct dependency entry', () => {
   assert.throws(
-    () => assertDirectDependencyClosure(
+    () => assertProductionDependencyClosure(
       { dependencies: { '@clowder-ai/plugin-sdk': '0.2.0-beta.2' } },
-      { packages: {} },
+      {
+        packages: {
+          '': { dependencies: { '@clowder-ai/plugin-sdk': '0.2.0-beta.2' } },
+        },
+      },
     ),
     /missing direct dependency node_modules\/@clowder-ai\/plugin-sdk/u,
   );
 });
 
+test('rejects root dependency declarations that drift from package.json', () => {
+  assert.throws(
+    () => assertProductionDependencyClosure(
+      { dependencies: { runtime: '1.0.0' } },
+      {
+        packages: {
+          '': { dependencies: { runtime: '0.9.0' } },
+          'node_modules/runtime': {
+            version: '1.0.0',
+            resolved: 'https://registry.npmjs.org/runtime/-/runtime-1.0.0.tgz',
+          },
+        },
+      },
+    ),
+    /root dependencies do not match package\.json/u,
+  );
+});
+
 test('rejects a stale exact-version direct dependency entry', () => {
   assert.throws(
-    () => assertDirectDependencyClosure(
+    () => assertProductionDependencyClosure(
       { dependencies: { '@clowder-ai/plugin-sdk': '0.2.0-beta.2' } },
       {
         packages: {
+          '': { dependencies: { '@clowder-ai/plugin-sdk': '0.2.0-beta.2' } },
           'node_modules/@clowder-ai/plugin-sdk': { version: '0.1.0-beta.13' },
         },
       },
     ),
     /resolves @clowder-ai\/plugin-sdk to 0\.1\.0-beta\.13, expected 0\.2\.0-beta\.2/u,
+  );
+});
+
+test('rejects a missing transitive production dependency entry', () => {
+  assert.throws(
+    () => assertProductionDependencyClosure(
+      { dependencies: { '@clowder-ai/plugin-sdk': '0.2.0-beta.2' } },
+      {
+        packages: {
+          '': { dependencies: { '@clowder-ai/plugin-sdk': '0.2.0-beta.2' } },
+          'node_modules/@clowder-ai/plugin-sdk': {
+            version: '0.2.0-beta.2',
+            resolved: 'https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.2.tgz',
+            dependencies: { '@clowder-ai/plugin-contract': '0.1.0-beta.18' },
+          },
+        },
+      },
+    ),
+    /@clowder-ai\/plugin-sdk requires missing production dependency @clowder-ai\/plugin-contract/u,
+  );
+});
+
+test('resolves nested production dependencies using node module ancestry', () => {
+  assert.doesNotThrow(() => assertProductionDependencyClosure(
+    { dependencies: { parent: '1.0.0' } },
+    {
+      packages: {
+        '': { dependencies: { parent: '1.0.0' } },
+        'node_modules/parent': {
+          version: '1.0.0',
+          resolved: 'https://registry.npmjs.org/parent/-/parent-1.0.0.tgz',
+          dependencies: { child: '^2.0.0' },
+        },
+        'node_modules/parent/node_modules/child': {
+          version: '2.0.0',
+          resolved: 'https://registry.npmjs.org/child/-/child-2.0.0.tgz',
+          dependencies: { leaf: '^3.0.0' },
+        },
+        'node_modules/parent/node_modules/leaf': {
+          version: '3.0.0',
+          resolved: 'https://registry.npmjs.org/leaf/-/leaf-3.0.0.tgz',
+        },
+      },
+    },
+  ));
+});
+
+test('rejects a production dependency resolved outside the npm registry', () => {
+  assert.throws(
+    () => assertProductionDependencyClosure(
+      { dependencies: { runtime: '1.0.0' } },
+      {
+        packages: {
+          '': { dependencies: { runtime: '1.0.0' } },
+          'node_modules/runtime': {
+            version: '1.0.0',
+            resolved: 'file:../runtime',
+          },
+        },
+      },
+    ),
+    /node_modules\/runtime must resolve from https:\/\/registry\.npmjs\.org\//u,
+  );
+});
+
+test('includes optional dependencies in the production closure', () => {
+  assert.throws(
+    () => assertProductionDependencyClosure(
+      { dependencies: { runtime: '1.0.0' } },
+      {
+        packages: {
+          '': { dependencies: { runtime: '1.0.0' } },
+          'node_modules/runtime': {
+            version: '1.0.0',
+            resolved: 'https://registry.npmjs.org/runtime/-/runtime-1.0.0.tgz',
+            optionalDependencies: { optional: '^1.0.0' },
+          },
+        },
+      },
+    ),
+    /runtime requires missing optional production dependency optional/u,
   );
 });

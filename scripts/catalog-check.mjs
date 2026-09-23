@@ -13,7 +13,7 @@ import {
   validatePluginCatalog,
 } from '../packages/plugin-contract/dist/index.js';
 import { parse } from 'yaml';
-import { assertDirectDependencyClosure } from './catalog-package-shrinkwrap.mjs';
+import { assertProductionDependencyClosure } from './catalog-package-shrinkwrap.mjs';
 import { assertStaticPackageDependencies } from './catalog-static-package.mjs';
 import { assertPackedRuntimeEntrypoints } from './catalog-runtime-entrypoints.mjs';
 
@@ -261,7 +261,7 @@ async function verifyCatalogEntry(catalogEntry) {
         shrinkwrap.packages?.['']?.optionalDependencies ?? {},
         packageJson.optionalDependencies ?? {},
       );
-      assertDirectDependencyClosure(packageJson, shrinkwrap);
+      assertProductionDependencyClosure(packageJson, shrinkwrap);
       for (const [packagePath, entry] of Object.entries(shrinkwrap.packages ?? {})) {
         if (packagePath.length === 0) continue;
         assert.match(packagePath, /^node_modules\//u);
