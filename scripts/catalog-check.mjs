@@ -81,8 +81,16 @@ async function verifyCatalogEntry(catalogEntry) {
     const [artifact] = JSON.parse(packed.stdout);
     assert.equal(artifact.name, version.artifact.packageName);
     assert.equal(artifact.version, version.version);
-    assert.equal(artifact.integrity, version.artifact.integrity);
-    assert.equal(artifact.shasum, version.artifact.shasum);
+    // Report every stale field in one run: integrity and shasum both come
+    // from CI-packed bytes, so a pin refresh needs both actuals at once.
+    const staleFields = [];
+    if (artifact.integrity !== version.artifact.integrity) {
+      staleFields.push(`integrity\n+ actual - expected\n\n+ '${artifact.integrity}'\n- '${version.artifact.integrity}'`);
+    }
+    if (artifact.shasum !== version.artifact.shasum) {
+      staleFields.push(`shasum\n+ actual - expected\n\n+ '${artifact.shasum}'\n- '${version.artifact.shasum}'`);
+    }
+    assert.equal(staleFields.length, 0, staleFields.join('\n\n---\n\n'));
     const registryFilename = `${version.artifact.packageName.split('/').at(-1)}-${version.version}.tgz`;
     assert.ok(version.artifact.tarballUrl.endsWith(`/${registryFilename}`));
 
