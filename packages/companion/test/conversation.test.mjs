@@ -91,6 +91,16 @@ test('a confirmed late send retires its id before the next conversation', async 
   await f.conversation.begin(); await f.conversation.send('好'); await f.conversation.end();
   assert.notEqual(ids[0], ids[1]);
 });
+test('an accepted text reply after voice stops still clears the sent draft without reviving voice', async () => {
+  const receipt = deferred(); const f = fixture({ text: () => receipt.promise });
+  await f.conversation.begin();
+  const sending = f.conversation.send('已收到的一句');
+  await f.conversation.end('通话已经停止'); receipt.resolve();
+  assert.equal(await sending, true, 'the composer must consume the successful receipt');
+  assert.equal(f.conversation.phase, 'idle');
+  assert.equal(f.events.at(-1).message, '通话已经停止');
+  assert.equal(f.calls.filter(call => call === 'connect').length, 1);
+});
 test('changing microphone preference while connecting never claims to be listening', async () => {
   const ready = deferred(); const f = fixture({ prepare: () => ready.promise });
   const begin = f.conversation.begin();
@@ -104,6 +114,20 @@ test('a closed Host session releases local media and keeps the next start availa
   await f.conversation.refresh();
   assert.equal(f.conversation.active, false); assert.ok(f.calls.includes('close'));
   assert.equal(f.events.at(-1).phase, 'idle');
+});
+test('unexpected Host revocation stays visible across status polls without auto-reopening audio', async () => {
+  const f = fixture({ state: async () => state('idle') }); await f.conversation.begin();
+  await f.conversation.hostStopped('closed'); await f.conversation.refresh();
+  assert.equal(f.conversation.active, false);
+  assert.equal(f.events.at(-1).failed, true);
+  assert.match(f.events.at(-1).message, /中断/);
+  assert.equal(f.calls.filter(call => call === 'connect').length, 1);
+});
+test('the stop echo cannot replace the failure with a generic stopped message', async () => {
+  const f = fixture(); await f.conversation.begin();
+  await f.conversation.end('连接未恢复 · 点击语音聊重试', true);
+  await f.conversation.hostStopped('revoked'); await f.conversation.refresh();
+  assert.equal(f.events.at(-1).message, '连接未恢复 · 点击语音聊重试');
 });
 test('pausing household access invokes the gesture-bound bridge before awaiting cleanup and never auto-restarts', async () => {
   const f = fixture({ documents: allowed => { f.calls.push(['documents', allowed]); return Promise.resolve({ ...state('idle'), documentsAllowed: allowed }); } });

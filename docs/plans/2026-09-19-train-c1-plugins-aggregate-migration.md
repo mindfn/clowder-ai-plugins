@@ -225,6 +225,14 @@ delivery tree.
   paths
 - fresh-consumer default-export guard: the entrypoint must expose the Host-loadable module shape
 
+### Merge-time step — companion version is provisional
+
+PR #54 touches `packages/companion` only because its own install-consent gate requires the README change;
+it is the only non-F202 package in this PR. The version it claims (`0.1.0-alpha.5`) is provisional:
+companion is upstream-owned and actively developed. At merge time, check the registry; if upstream has
+already published that version, re-bump to the next free version and re-pack before merging. CI cannot catch
+this — `catalog:check` compares against the catalog pin, not the registry.
+
 ### Where the truth lives
 
 - Host ledger (slice-by-slice status, wave table): `clowder-ai`, fork branch `feat/f202-c1-core-cutover`,
