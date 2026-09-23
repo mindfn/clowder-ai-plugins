@@ -7,6 +7,7 @@ import {
   DELIVERY_REJECTED_CODE,
   DELIVERY_REJECTED_MESSAGE,
   DELIVERY_REJECT_REASONS,
+  LIFECYCLE_REJECT_REASONS,
   METHOD_NOT_FOUND_CODE,
   METHOD_NOT_FOUND_MESSAGE,
   PARSE_ERROR_CODE,
@@ -14,6 +15,7 @@ import {
   validateManifest,
   type DeliverInput,
   type DeliveryRejectReason,
+  type LifecycleRejectReason,
   type ManifestValidationError,
   type HostMessagingLifecycleInput,
   type PluginManifest,
@@ -64,13 +66,17 @@ export type StandaloneMessageDisposition =
   | { readonly accepted: true }
   | { readonly accepted: false; readonly reason: DeliveryRejectReason };
 
+export type StandaloneLifecycleDisposition =
+  | { readonly accepted: true }
+  | { readonly accepted: false; readonly reason: LifecycleRejectReason };
+
 export type StandaloneMessageHandler = (
   input: DeliverInput,
 ) => StandaloneMessageDisposition | Promise<StandaloneMessageDisposition>;
 
 export type StandaloneLifecycleHandler = (
   input: HostMessagingLifecycleInput,
-) => StandaloneMessageDisposition | Promise<StandaloneMessageDisposition>;
+) => StandaloneLifecycleDisposition | Promise<StandaloneLifecycleDisposition>;
 
 export interface StandaloneHost extends StdioChannel {
   readonly manifest: PluginManifest;
@@ -145,7 +151,7 @@ function methodNotFoundResponse(id: string): JsonObject {
   };
 }
 
-function deliveryRejectedResponse(id: string, reason: DeliveryRejectReason): JsonObject {
+function deliveryRejectedResponse(id: string, reason: LifecycleRejectReason): JsonObject {
   return {
     jsonrpc: '2.0',
     id,
@@ -158,6 +164,7 @@ function deliveryRejectedResponse(id: string, reason: DeliveryRejectReason): Jso
 }
 
 const DELIVERY_REJECT_REASON_SET = new Set<string>(DELIVERY_REJECT_REASONS);
+const LIFECYCLE_REJECT_REASON_SET = new Set<string>(LIFECYCLE_REJECT_REASONS);
 const HOST_BOUND_REQUEST_METHODS = new Set([
   'broker.hello',
   'broker.ready',
@@ -171,7 +178,10 @@ const HOST_BOUND_REQUEST_METHODS = new Set([
   'media.read',
 ]);
 
-function isStandaloneMessageDisposition(value: unknown): value is StandaloneMessageDisposition {
+function isStandaloneDisposition(
+  value: unknown,
+  reasons: ReadonlySet<string>,
+): value is StandaloneLifecycleDisposition {
   if (!isObject(value) || typeof value.accepted !== 'boolean') {
     return false;
   }
@@ -180,7 +190,7 @@ function isStandaloneMessageDisposition(value: unknown): value is StandaloneMess
   }
   return Object.keys(value).length === 2
     && typeof value.reason === 'string'
-    && DELIVERY_REJECT_REASON_SET.has(value.reason);
+    && reasons.has(value.reason);
 }
 
 async function dispatchMessage(
@@ -199,7 +209,7 @@ async function dispatchMessage(
     return deliveryRejectedResponse(id, 'PLUGIN_INTERNAL');
   }
 
-  if (!isStandaloneMessageDisposition(disposition)) {
+  if (!isStandaloneDisposition(disposition, DELIVERY_REJECT_REASON_SET)) {
     return deliveryRejectedResponse(id, 'PLUGIN_INTERNAL');
   }
   if (!disposition.accepted) {
@@ -220,7 +230,7 @@ async function dispatchLifecycle(
   } catch {
     return deliveryRejectedResponse(id, 'PLUGIN_INTERNAL');
   }
-  if (!isStandaloneMessageDisposition(disposition)) {
+  if (!isStandaloneDisposition(disposition, LIFECYCLE_REJECT_REASON_SET)) {
     return deliveryRejectedResponse(id, 'PLUGIN_INTERNAL');
   }
   if (!disposition.accepted) return deliveryRejectedResponse(id, disposition.reason);

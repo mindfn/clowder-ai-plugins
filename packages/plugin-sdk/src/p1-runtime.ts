@@ -7,6 +7,7 @@ import {
   type DeliveryPresentationContext,
   type HostMessagingLifecycleInput,
   type HostMessagingLifecycleResult,
+  type LifecycleRejectReason,
   type MediaReadInput,
   type MediaReadResult,
   type MediaSourceReadInput,
@@ -246,6 +247,20 @@ export function decideLifecycleTransition(
     rebuilt.push(candidate);
   }
   return nextLifecycleDecision(rebuilt, event);
+}
+
+/** Map an SDK lifecycle decision onto the closed wire rejection taxonomy. */
+export function lifecycleRejectReason(
+  decision: Extract<LifecycleTransitionDecision, { readonly kind: 'reject' }>,
+): LifecycleRejectReason {
+  switch (decision.reason) {
+    case 'OUT_OF_ORDER':
+      return 'LIFECYCLE_OUT_OF_ORDER';
+    case 'DELIVERY_CONFLICT':
+      return 'LIFECYCLE_DELIVERY_CONFLICT';
+    case 'INVALID_HISTORY':
+      return 'PLUGIN_INTERNAL';
+  }
 }
 
 export function isMediaWarningMessageElement(value: unknown): value is MediaWarningMessageElement {

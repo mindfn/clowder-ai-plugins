@@ -6,12 +6,15 @@ import {
   DEADLINE_EXPIRED_MESSAGE,
   DELIVERY_REJECTED_CODE,
   DELIVERY_REJECTED_MESSAGE,
+  DELIVERY_REJECT_REASONS,
+  LIFECYCLE_REJECT_REASONS,
   classifyFrame,
   validateEffectiveGrants,
   isWireUInt53,
   type CandidateHello,
   type DeliverInput,
   type DeliveryRejectReason,
+  type LifecycleRejectReason,
   type GrantSnapshot,
   type HostMessagingLifecycleInput,
   type InFlightEntry,
@@ -57,13 +60,17 @@ export type HostBoundMessageDisposition =
   | { readonly accepted: true }
   | { readonly accepted: false; readonly reason: DeliveryRejectReason };
 
+export type HostBoundLifecycleDisposition =
+  | { readonly accepted: true }
+  | { readonly accepted: false; readonly reason: LifecycleRejectReason };
+
 export type HostBoundMessageHandler = (
   input: DeliverInput,
 ) => HostBoundMessageDisposition | Promise<HostBoundMessageDisposition>;
 
 export type HostBoundLifecycleHandler = (
   input: HostMessagingLifecycleInput,
-) => HostBoundMessageDisposition | Promise<HostBoundMessageDisposition>;
+) => HostBoundLifecycleDisposition | Promise<HostBoundLifecycleDisposition>;
 
 export interface HostBoundSessionOptions {
   readonly claims: CandidateHello;
@@ -121,12 +128,8 @@ interface PendingCall {
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
-const DELIVERY_REASONS = new Set<DeliveryRejectReason>([
-  'UNSUPPORTED_PAYLOAD',
-  'NO_HANDLER',
-  'PLUGIN_BUSY',
-  'PLUGIN_INTERNAL',
-]);
+const DELIVERY_REASONS = new Set<string>(DELIVERY_REJECT_REASONS);
+const LIFECYCLE_REASONS = new Set<string>(LIFECYCLE_REJECT_REASONS);
 
 function deferred<Value>(): Deferred<Value> {
   let settled = false;
@@ -170,7 +173,7 @@ function requestSnapshot(method: HostBoundPluginMethod | 'broker.hello' | 'broke
   return undefined;
 }
 
-function deliveryRejected(id: string, reason: DeliveryRejectReason): JsonObject {
+function deliveryRejected(id: string, reason: LifecycleRejectReason): JsonObject {
   return {
     jsonrpc: '2.0',
     id,
@@ -387,7 +390,7 @@ export function createHostBoundSession(options: HostBoundSessionOptions): HostBo
       throw new HostBoundSessionError('PROTOCOL_VIOLATION', 'Host lifecycle arrived without active onMessage authority');
     }
     if (options.onLifecycle === undefined) return deliveryRejected(id, 'NO_HANDLER');
-    let disposition: HostBoundMessageDisposition;
+    let disposition: HostBoundLifecycleDisposition;
     try {
       disposition = await options.onLifecycle(structuredClone(input));
     } catch {
@@ -397,7 +400,7 @@ export function createHostBoundSession(options: HostBoundSessionOptions): HostBo
       return deliveryRejected(id, 'PLUGIN_INTERNAL');
     }
     if (!disposition.accepted) {
-      if (!DELIVERY_REASONS.has(disposition.reason)) return deliveryRejected(id, 'PLUGIN_INTERNAL');
+      if (!LIFECYCLE_REASONS.has(disposition.reason)) return deliveryRejected(id, 'PLUGIN_INTERNAL');
       return deliveryRejected(id, disposition.reason);
     }
     if (Object.keys(disposition).length !== 1) return deliveryRejected(id, 'PLUGIN_INTERNAL');

@@ -54,6 +54,7 @@ import {
   DELIVERY_REJECTED_CODE,
   DELIVERY_REJECTED_MESSAGE,
   DELIVERY_REJECT_REASONS,
+  LIFECYCLE_REJECT_REASONS,
   DOMAIN_ERROR_CODE,
   DOMAIN_ERROR_MESSAGE,
   DEADLINE_EXPIRED_CODE,
@@ -564,6 +565,25 @@ export function deliveryRejectedErrorTemplate(): ByteProofInput {
       code: DELIVERY_REJECTED_CODE,
       message: DELIVERY_REJECTED_MESSAGE,
       data: { reason: longestValue(DELIVERY_REJECT_REASONS) },
+    },
+  };
+
+  return {
+    template,
+    leaves: [REQUEST_ID_LEAF],
+    frameLimitBytes: MAX_FRAME_BYTES,
+  };
+}
+
+/** Lifecycle-row DELIVERY_REJECTED template with its extended reason set. */
+export function lifecycleRejectedErrorTemplate(): ByteProofInput {
+  const template: JsonValue = {
+    jsonrpc: '2.0',
+    id: '',
+    error: {
+      code: DELIVERY_REJECTED_CODE,
+      message: DELIVERY_REJECTED_MESSAGE,
+      data: { reason: longestValue(LIFECYCLE_REJECT_REASONS) },
     },
   };
 

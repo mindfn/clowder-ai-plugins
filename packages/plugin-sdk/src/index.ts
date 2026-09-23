@@ -36,6 +36,7 @@ export {
   type StandaloneHost,
   type StandaloneHostOptions,
   type StandaloneMessageDisposition,
+  type StandaloneLifecycleDisposition,
   type StandaloneMessageHandler,
   type StandaloneLifecycleHandler,
 } from './standalone-host.js';
@@ -92,6 +93,7 @@ export {
   PresentationDeliveryInputError,
   createMediaReader,
   decideLifecycleTransition,
+  lifecycleRejectReason,
   defineMediaSourceReadAction,
   defineMediaSourceSettleAction,
   defineLifecycleAction,
@@ -121,6 +123,7 @@ export {
   HostBoundSessionError,
   createHostBoundSession,
   type HostBoundMessageDisposition,
+  type HostBoundLifecycleDisposition,
   type HostBoundMessageHandler,
   type HostBoundLifecycleHandler,
   type HostBoundEventPublishingOptions,

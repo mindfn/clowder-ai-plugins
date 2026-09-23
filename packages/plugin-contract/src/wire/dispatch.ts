@@ -60,6 +60,7 @@ import {
   ERROR_CODE_TO_MESSAGE,
   HANDSHAKE_REJECT_REASONS,
   DELIVERY_REJECT_REASONS,
+  LIFECYCLE_REJECT_REASONS,
   SNAPSHOT_UNAVAILABLE_REASONS,
 } from './errors.js';
 import {
@@ -420,6 +421,7 @@ const APPLICATION_CODES = new Set<number>(APPLICATION_ERROR_CODES);
 // Reason enum sets (built from contract arrays).
 const HANDSHAKE_REASONS = new Set<string>(HANDSHAKE_REJECT_REASONS);
 const DELIVERY_REASONS = new Set<string>(DELIVERY_REJECT_REASONS);
+const LIFECYCLE_REASONS = new Set<string>(LIFECYCLE_REJECT_REASONS);
 const SNAPSHOT_REASONS = new Set<string>(SNAPSHOT_UNAVAILABLE_REASONS);
 const MESSAGING_METHODS = new Set<WireMethodName>(MESSAGING_ROW_METHODS);
 
@@ -545,6 +547,7 @@ function classifyResponseCandidate(
       const dataCheck = validateApplicationErrorData(
         errObj.code,
         errObj.data as Record<string, unknown>,
+        inFlightEntry.method,
       );
       if (dataCheck !== null) return dataCheck;
     } else {
@@ -600,6 +603,7 @@ function classifyResponseCandidate(
 function validateApplicationErrorData(
   code: number,
   data: Record<string, unknown>,
+  method: WireMethodName,
 ): DispatchResult | null {
   switch (code) {
     case HANDSHAKE_REJECTED_CODE: {
@@ -613,12 +617,16 @@ function validateApplicationErrorData(
     }
 
     case DELIVERY_REJECTED_CODE: {
-      // data: { reason: DeliveryRejectReason } — closed
+      // data: { reason: DeliveryRejectReason | LifecycleRejectReason } —
+      // closed and selected by the in-flight row.
       for (const key of Object.keys(data)) {
         if (!REASON_DATA_KEYS.has(key)) return close('T-H');
       }
       if (typeof data.reason !== 'string') return close('T-H');
-      if (!DELIVERY_REASONS.has(data.reason)) return close('T-H');
+      const reasons = method === 'host.messaging.lifecycle'
+        ? LIFECYCLE_REASONS
+        : DELIVERY_REASONS;
+      if (!reasons.has(data.reason)) return close('T-H');
       return null;
     }
 

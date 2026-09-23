@@ -525,7 +525,10 @@
       "allOf": [
         {
           "if": { "properties": { "done": { "const": false } }, "required": ["done"] },
-          "then": { "required": ["nextOffset"] },
+          "then": {
+            "properties": { "dataBase64": { "minLength": 4 } },
+            "required": ["nextOffset"]
+          },
           "else": { "not": { "required": ["nextOffset"] } }
         }
       ]

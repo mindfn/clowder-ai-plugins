@@ -5,6 +5,7 @@ import {
   LifecycleActionInputError,
   createMediaReader,
   decideLifecycleTransition,
+  lifecycleRejectReason,
   defineMediaSourceReadAction,
   defineMediaSourceSettleAction,
   defineLifecycleAction,
@@ -43,6 +44,18 @@ test('Gate M: media reader exposes bounded chunks as AsyncIterable without readA
       // Drain the stream to execute the protocol guard.
     }
   }, /discontinuous media cursor/);
+
+  const stalled = createMediaReader(async () => ({
+    offset: 0,
+    dataBase64: '',
+    nextOffset: 1,
+    done: false,
+  }));
+  await assert.rejects(async () => {
+    for await (const _chunk of stalled.read('hmr_1')) {
+      // Drain the stream to execute the contract guard.
+    }
+  }, /invalid media\.read result/);
 });
 
 test('Gate M: media-source actions expose typed chunk, rejection, and settlement boundaries', async () => {
@@ -181,4 +194,8 @@ test('Gate L: lifecycle transition helper accepts, replays and rejects the froze
   assert.deepEqual(decideLifecycleTransition([started, blocked], catchingUp1), { kind: 'reject', reason: 'OUT_OF_ORDER' });
   assert.deepEqual(decideLifecycleTransition([started, settled], blocked), { kind: 'reject', reason: 'OUT_OF_ORDER' });
   assert.deepEqual(decideLifecycleTransition([started, started], settled), { kind: 'reject', reason: 'INVALID_HISTORY' });
+
+  assert.equal(lifecycleRejectReason({ kind: 'reject', reason: 'OUT_OF_ORDER' }), 'LIFECYCLE_OUT_OF_ORDER');
+  assert.equal(lifecycleRejectReason({ kind: 'reject', reason: 'DELIVERY_CONFLICT' }), 'LIFECYCLE_DELIVERY_CONFLICT');
+  assert.equal(lifecycleRejectReason({ kind: 'reject', reason: 'INVALID_HISTORY' }), 'PLUGIN_INTERNAL');
 });

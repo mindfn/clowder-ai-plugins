@@ -48,6 +48,7 @@ import {
   STANDARD_ERROR_CODES,
   HANDSHAKE_REJECT_REASONS,
   DELIVERY_REJECT_REASONS,
+  LIFECYCLE_REJECT_REASONS,
   SNAPSHOT_UNAVAILABLE_REASONS,
   // Disposition
   DISPOSITION_CLASSES,
@@ -252,6 +253,10 @@ test('reject-reason taxonomies are frozen', () => {
 
   assert.equal(DELIVERY_REJECT_REASONS.length, 4);
   assert.ok(DELIVERY_REJECT_REASONS.includes('NO_HANDLER'));
+
+  assert.equal(LIFECYCLE_REJECT_REASONS.length, 6);
+  assert.ok(LIFECYCLE_REJECT_REASONS.includes('LIFECYCLE_OUT_OF_ORDER'));
+  assert.ok(LIFECYCLE_REJECT_REASONS.includes('LIFECYCLE_DELIVERY_CONFLICT'));
 
   assert.equal(SNAPSHOT_UNAVAILABLE_REASONS.length, 3);
   assert.ok(SNAPSHOT_UNAVAILABLE_REASONS.includes('VIEW_EXPIRED'));

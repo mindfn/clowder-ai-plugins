@@ -1388,6 +1388,25 @@ test('deliver response with delivery_rejected is T-L (row 9 allows it)', () => {
   assert.equal(result.outcome, 'accept');
 });
 
+test('lifecycle rejection reasons are accepted only on the lifecycle row', () => {
+  const rawFrame = '{"jsonrpc":"2.0","id":"d1","error":{"code":-32091,"message":"delivery rejected","data":{"reason":"LIFECYCLE_OUT_OF_ORDER"}}}';
+  const frame: DecodedNdjsonFrame = {
+    raw: Buffer.from(rawFrame, 'utf8'),
+    value: JSON.parse(rawFrame) as JsonObject,
+  };
+  const lifecycle = classifyFrame(frame, new Map<string, InFlightEntry>([
+    ['d1', { method: 'host.messaging.lifecycle', requestSnapshot: { deliveryId: 'abc' } }],
+  ]));
+  assert.equal(lifecycle.disposition, 'T-L');
+  assert.equal(lifecycle.outcome, 'accept');
+
+  const delivery = classifyFrame(frame, new Map<string, InFlightEntry>([
+    ['d1', { method: 'host.messaging.deliver', requestSnapshot: { deliveryId: 'abc' } }],
+  ]));
+  assert.equal(delivery.disposition, 'T-H');
+  assert.equal(delivery.outcome, 'close');
+});
+
 test('drain response with handshake_rejected is T-H (wrong-row error)', () => {
   // Negative: HANDSHAKE_REJECTED only allowed on rows 1-2, not row 12.
   const rawFrame = '{"jsonrpc":"2.0","id":"r1","error":{"code":-32090,"message":"handshake rejected","data":{"reason":"MALFORMED_HELLO"}}}';

@@ -161,6 +161,12 @@ test('Gate M closes media.read and media-source contribution shapes', () => {
     nextOffset: 3,
     done: false,
   }).valid, true);
+  assert.equal(validateMessagingRowResult('media.read', {
+    offset: 0,
+    dataBase64: '',
+    nextOffset: 1,
+    done: false,
+  }).valid, false);
   assert.equal(validateMessagingRowInput('media.read', {
     reference: 'hmr_opaque',
     offset: 0,
@@ -175,6 +181,9 @@ test('Gate M closes media.read and media-source contribution shapes', () => {
   }), true);
   assert.equal(isMediaSourceReadResult({
     kind: 'chunk', requestId: 'request-1', offset: 0, dataBase64: 'AQID', done: false,
+  }), false);
+  assert.equal(isMediaSourceReadResult({
+    kind: 'chunk', requestId: 'request-1', offset: 0, dataBase64: '', nextOffset: 1, done: false,
   }), false);
   assert.equal(isMediaSourceReadResult({
     kind: 'chunk', requestId: 'request-1', offset: 0, dataBase64: '', nextOffset: 1, done: true,

@@ -689,7 +689,13 @@
       "required": ["offset", "dataBase64", "done"],
       "additionalProperties": false,
       "allOf": [
-        { "if": { "properties": { "done": { "const": false } }, "required": ["done"] }, "then": { "required": ["nextOffset"] } },
+        {
+          "if": { "properties": { "done": { "const": false } }, "required": ["done"] },
+          "then": {
+            "properties": { "dataBase64": { "minLength": 4 } },
+            "required": ["nextOffset"]
+          }
+        },
         { "if": { "properties": { "done": { "const": true } }, "required": ["done"] }, "then": { "not": { "required": ["nextOffset"] } } }
       ]
     },

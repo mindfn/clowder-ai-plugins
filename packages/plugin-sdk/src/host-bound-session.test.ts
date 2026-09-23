@@ -5,6 +5,8 @@ import test from 'node:test';
 import {
   createHostBoundSession,
   createStdioChannel,
+  decideLifecycleTransition,
+  lifecycleRejectReason,
   type HostBoundSession,
   type JsonObject,
 } from '@clowder-ai/plugin-sdk';
@@ -81,12 +83,13 @@ const eventPublishing = {
 function createHarness(
   onMessage?: Parameters<typeof createHostBoundSession>[0]['onMessage'],
   publishing?: Parameters<typeof createHostBoundSession>[0]['eventPublishing'],
+  onLifecycle?: Parameters<typeof createHostBoundSession>[0]['onLifecycle'],
 ) {
   const pluginInput = new PassThrough();
   const pluginOutput = new PassThrough();
   const calls: Array<{ method: string; input: unknown }> = [];
   let hostSequence = 0;
-  const hostInFlight = new Map<string, { method: 'host.lifecycle.ping' | 'host.lifecycle.drain' | 'host.messaging.deliver'; resolve(value: unknown): void; reject(error: unknown): void }>();
+  const hostInFlight = new Map<string, { method: 'host.lifecycle.ping' | 'host.lifecycle.drain' | 'host.messaging.deliver' | 'host.messaging.lifecycle'; resolve(value: unknown): void; reject(error: unknown): void }>();
 
   const host = createStdioChannel(pluginOutput, pluginInput, {
     async onFrame(frame) {
@@ -139,11 +142,12 @@ function createHarness(
     output: pluginOutput,
     requestTimeoutMs: 1_000,
     onMessage,
+    onLifecycle,
     eventPublishing: publishing,
   });
 
   const hostCall = <Result>(
-    method: 'host.lifecycle.ping' | 'host.lifecycle.drain' | 'host.messaging.deliver',
+    method: 'host.lifecycle.ping' | 'host.lifecycle.drain' | 'host.messaging.deliver' | 'host.messaging.lifecycle',
     input: JsonObject,
   ): Promise<Result> => {
     hostSequence += 1;
@@ -283,6 +287,35 @@ test('handles Host delivery, ping, monotonic grant replacement, and drain on one
     }),
     /not live/,
   );
+  await closeHarness(harness.session, harness.host);
+});
+
+test('returns the exact lifecycle rejection reason through a Host-bound session', async () => {
+  const harness = createHarness(undefined, undefined, input => {
+    const decision = decideLifecycleTransition([], input);
+    assert.equal(decision.kind, 'reject');
+    if (decision.kind !== 'reject') return { accepted: true };
+    return { accepted: false, reason: lifecycleRejectReason(decision) };
+  });
+  await harness.session.ready;
+
+  let rejected: unknown;
+  try {
+    await harness.hostCall('host.messaging.lifecycle', {
+      lifecycleId: 'lifecycle-1',
+      deliveryId: 'delivery-1',
+      state: 'settled',
+      chainDone: true,
+      outcome: 'completed',
+    });
+  } catch (error) {
+    rejected = error;
+  }
+  assert.deepEqual(rejected, {
+    code: -32091,
+    message: 'delivery rejected',
+    data: { reason: 'LIFECYCLE_OUT_OF_ORDER' },
+  });
   await closeHarness(harness.session, harness.host);
 });
 

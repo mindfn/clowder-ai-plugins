@@ -72,6 +72,7 @@ export {
   // Reject-reason taxonomies
   HANDSHAKE_REJECT_REASONS,
   DELIVERY_REJECT_REASONS,
+  LIFECYCLE_REJECT_REASONS,
   SNAPSHOT_UNAVAILABLE_REASONS,
   // Collected code arrays
   APPLICATION_ERROR_CODES,
@@ -87,6 +88,7 @@ export {
 export type {
   HandshakeRejectReason,
   DeliveryRejectReason,
+  LifecycleRejectReason,
   SnapshotUnavailableReason,
   MessagingErrorCode,
   // Application error body types

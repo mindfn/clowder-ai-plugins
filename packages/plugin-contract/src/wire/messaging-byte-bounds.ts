@@ -45,6 +45,7 @@ import {
   DELIVERY_REJECTED_CODE,
   DELIVERY_REJECTED_MESSAGE,
   DELIVERY_REJECT_REASONS,
+  LIFECYCLE_REJECT_REASONS,
   DOMAIN_ERROR_CODE,
   DOMAIN_ERROR_MESSAGE,
   ERROR_CODE_TO_MESSAGE,
@@ -731,7 +732,7 @@ function applicationErrorEnvelopes(method: MessagingRowMethod) {
       error: {
         code: DELIVERY_REJECTED_CODE,
         message: DELIVERY_REJECTED_MESSAGE,
-        data: { reason: longest(DELIVERY_REJECT_REASONS) },
+        data: { reason: longest(LIFECYCLE_REJECT_REASONS) },
       },
     }];
   }
