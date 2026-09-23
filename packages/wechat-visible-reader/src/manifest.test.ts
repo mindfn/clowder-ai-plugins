@@ -45,5 +45,10 @@ test('manifest and package metadata remain one exact package truth', async () =>
   const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
   assert.match(readme, /short-lived authorization/i);
   assert.match(readme, /scope and expiry only/i);
+  for (const capability of manifest.features[0]?.capabilities ?? []) {
+    assert.ok(readme.includes(`\`${capability}\``), `README omits install-consent capability ${capability}`);
+  }
+  assert.match(readme, /never an operator identity/i);
+  assert.match(readme, /expired or unreadable record cannot authorize a read/i);
   assert.match(readme, /currently visible in the\s+desktop WeChat/i);
 });

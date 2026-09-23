@@ -595,8 +595,8 @@
             "packageName": "@clowder-ai/wechat-visible-reader",
             "version": "0.1.0-alpha.1",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/wechat-visible-reader/-/wechat-visible-reader-0.1.0-alpha.1.tgz",
-            "integrity": "sha512-lnoNM3iwfuDqGJHhGjAPhVECnussD7axNBPz0hfLX7YI64ofpMniufboX3tV8sVSW9ovUZYEI+HLQ/9X2rWNKA==",
-            "shasum": "b0c1d2529e6a6523b81660e401862e0e8ee7b036",
+            "integrity": "sha512-fkcFOa0+ZLkJegUTK12nBkOWcvwS6h7bOI2EJhEO+0ymP5r8Agcd4/kK9Bmm07AfN/Yl+szO2m7ZHQyxVvfZBA==",
+            "shasum": "aa9d81684763cec75970c457e8362ac3721b12b3",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/wechat-visible-reader"

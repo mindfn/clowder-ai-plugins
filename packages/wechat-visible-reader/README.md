@@ -22,6 +22,10 @@ or retain screenshots. Returned text enters the requesting Agent's invocation co
 The arm lease is stored in Host plugin state as a scope and expiry only: it carries no operator identity,
 expires after 1–30 minutes, is cleared on runtime start/stop, and can be revoked immediately. The package
 trusts the Host's local-owner guard for arm/disarm operations, not any identity field in caller input.
+At installation, `plugin.state.get` lets the package read that authorization record, and
+`plugin.state.set` lets it write or revoke the record. The record contains only the
+`visible-conversation` authorization scope and its expiry time—never an operator identity,
+message text, or screenshot. An expired or unreadable record cannot authorize a read.
 Screenshot bytes exist only inside the native process. Metrics retain success/failure outcomes and typed error counts, never
 OCR text, message hashes, screenshots, contacts, or conversation identifiers.
 
