@@ -104,6 +104,15 @@ const operationField: ConfigurationField = {
   }],
 };
 
+const hiddenConditionalField: ConfigurationField = {
+  key: 'verificationToken',
+  label: 'Verification token',
+  kind: 'secret',
+  required: true,
+  hidden: true,
+  requiredWhen: { key: 'mode', value: ['webhook', 'callback'] },
+};
+
 const operationResult: OperationActionResult = {
   render: 'status',
   data: { connected: true },
@@ -151,6 +160,12 @@ const invalidOperationWithoutActions: ConfigurationField = { key: 'login', label
 
 // @ts-expect-error operation configuration fields forbid defaults.
 const invalidOperationDefault: ConfigurationField = { key: 'login', label: 'Log in', kind: 'operation', required: true, actions: [{ id: 'begin', label: 'Begin', render: 'button', action: { method: 'login.begin' } }], default: false };
+
+// @ts-expect-error operation configuration fields are actions, not hidden values.
+const invalidHiddenOperation: ConfigurationField = { key: 'login', label: 'Log in', kind: 'operation', required: true, hidden: true, actions: [{ id: 'begin', label: 'Begin', render: 'button', action: { method: 'login.begin' } }] };
+
+// @ts-expect-error operation configuration fields cannot be conditionally required values.
+const invalidConditionalOperation: ConfigurationField = { key: 'login', label: 'Log in', kind: 'operation', required: true, requiredWhen: { key: 'mode', value: 'webhook' }, actions: [{ id: 'begin', label: 'Begin', render: 'button', action: { method: 'login.begin' } }] };
 
 const valueBearingAssertion: SideEffectAssertion = {
   target: 'messages',

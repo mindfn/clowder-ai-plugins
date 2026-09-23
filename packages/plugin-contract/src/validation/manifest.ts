@@ -73,6 +73,24 @@ function semanticError(
   };
 }
 
+function requiredWhenScalarType(
+  field: NonNullable<PluginManifest['configuration']>[number],
+): 'string' | 'number' | 'boolean' | undefined {
+  switch (field.kind) {
+    case 'string':
+    case 'secret':
+    case 'select':
+    case 'url':
+      return 'string';
+    case 'number':
+      return 'number';
+    case 'boolean':
+      return 'boolean';
+    case 'operation':
+      return undefined;
+  }
+}
+
 /**
  * Validates an untrusted plugin manifest against the contract-owned schema.
  *
@@ -146,6 +164,42 @@ export function validateManifest(value: unknown): ManifestValidationResult {
             'select default must equal one of the declared option values',
           );
         }
+      }
+    }
+
+    for (const [index, field] of configuration.entries()) {
+      if (field.requiredWhen === undefined) continue;
+
+      const conditionField = configByKey.get(field.requiredWhen.key);
+      if (conditionField === undefined) {
+        return semanticError(
+          `/configuration/${index}/requiredWhen/key`,
+          '#/$defs/ConfigurationField/requiredWhenDeclaredKey',
+          'requiredWhenDeclaredKey',
+          'requiredWhen key must reference a declared configuration field',
+        );
+      }
+
+      const scalarType = requiredWhenScalarType(conditionField);
+      if (scalarType === undefined) {
+        return semanticError(
+          `/configuration/${index}/requiredWhen/key`,
+          '#/$defs/ConfigurationField/requiredWhenScalarKey',
+          'requiredWhenScalarKey',
+          'requiredWhen key must reference a non-operation scalar configuration field',
+        );
+      }
+
+      const conditionValues = Array.isArray(field.requiredWhen.value)
+        ? field.requiredWhen.value
+        : [field.requiredWhen.value];
+      if (!conditionValues.every((value) => typeof value === scalarType)) {
+        return semanticError(
+          `/configuration/${index}/requiredWhen/value`,
+          '#/$defs/ConfigurationField/requiredWhenCompatibleValue',
+          'requiredWhenCompatibleValue',
+          `requiredWhen value must match the referenced ${scalarType} configuration field`,
+        );
       }
     }
 

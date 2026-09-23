@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://clowder-ai.dev/schemas/manifest/v0.1",
   "title": "Clowder AI Plugin Manifest (v0.1)",
-  "description": "Machine-readable truth source for the static plugin.yaml access protocol (§3.4/§3.5). beta.18 adds operation, test and setup-step declarations, static-only packages without a root runtime, and thread/task capability vocabulary. Window, media and conversation authorities remain separate Host runtime decisions; the signed broker wire is unchanged.",
+  "description": "Machine-readable truth source for the static plugin.yaml access protocol (§3.4/§3.5). beta.19 adds hidden and conditionally required configuration fields. Window, media and conversation authorities remain separate Host runtime decisions; the signed broker wire is unchanged.",
   "x-clowder-capability-layers": {
     "L0": ["plugin.config.read", "plugin.state.get", "plugin.state.set"],
     "L1": ["messaging.send", "schedule.register", "events.publish", "messaging.appendElements"],
@@ -134,6 +134,25 @@
       "additionalProperties": false
     },
 
+    "RequiredWhen": {
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z][A-Za-z0-9._-]*$" },
+        "value": {
+          "oneOf": [
+            { "type": ["string", "number", "boolean"] },
+            {
+              "type": "array",
+              "items": { "type": ["string", "number", "boolean"] },
+              "minItems": 1
+            }
+          ]
+        }
+      },
+      "required": ["key", "value"],
+      "additionalProperties": false
+    },
+
     "ConfigurationField": {
       "type": "object",
       "properties": {
@@ -142,6 +161,11 @@
         "description": { "type": "string" },
         "kind": { "type": "string", "enum": ["string", "secret", "select", "boolean", "number", "url", "operation"] },
         "required": { "type": "boolean" },
+        "hidden": {
+          "type": "boolean",
+          "description": "Hide a value field from manual owner editing while retaining it as an operation target or runtime value."
+        },
+        "requiredWhen": { "$ref": "#/$defs/RequiredWhen" },
         "default": { "type": ["string", "number", "boolean"] },
         "options": {
           "type": "array",
@@ -192,7 +216,11 @@
           "if": { "properties": { "kind": { "const": "operation" } }, "required": ["kind"] },
           "then": {
             "required": ["actions"],
-            "properties": { "default": false }
+            "properties": {
+              "default": false,
+              "hidden": false,
+              "requiredWhen": false
+            }
           },
           "else": {
             "properties": {

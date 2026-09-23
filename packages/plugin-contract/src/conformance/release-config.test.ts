@@ -368,8 +368,8 @@ function replaceNamedActionStepOnce(
   return prereleasePublishAction.replace(step, mutatedStep);
 }
 
-test('plugin operation declarations publish beta.18 while the broker protocol stays at signed v0.1', () => {
-  assert.equal(contractPackage.version, '0.1.0-beta.18');
+test('conditional configuration declarations publish beta.19 while the broker protocol stays at signed v0.1', () => {
+  assert.equal(contractPackage.version, '0.1.0-beta.19');
   assert.equal(contractPackage.private, false);
   assert.equal(messagingBehaviorSuite._meta?.contractVersion, '0.1.0');
 });

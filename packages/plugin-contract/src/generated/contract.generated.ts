@@ -68,12 +68,18 @@ export type ConfigurationOption = {
   readonly hint?: string;
   readonly docsUrl?: string;
 };
+export type RequiredWhen = {
+  readonly key: string;
+  readonly value: string | number | boolean | readonly (string | number | boolean)[];
+};
 export type ConfigurationField = {
   readonly key: string;
   readonly label: string;
   readonly description?: string;
   readonly kind: 'string';
   readonly required: boolean;
+  readonly hidden?: boolean;
+  readonly requiredWhen?: RequiredWhen;
   readonly default?: string;
   readonly options?: never;
   readonly target?: never;
@@ -84,6 +90,8 @@ export type ConfigurationField = {
   readonly description?: string;
   readonly kind: 'secret';
   readonly required: boolean;
+  readonly hidden?: boolean;
+  readonly requiredWhen?: RequiredWhen;
   readonly default?: never;
   readonly options?: never;
   readonly target?: never;
@@ -94,6 +102,8 @@ export type ConfigurationField = {
   readonly description?: string;
   readonly kind: 'select';
   readonly required: boolean;
+  readonly hidden?: boolean;
+  readonly requiredWhen?: RequiredWhen;
   readonly default?: string;
   readonly options: readonly ConfigurationOption[];
   readonly target?: never;
@@ -104,6 +114,8 @@ export type ConfigurationField = {
   readonly description?: string;
   readonly kind: 'boolean';
   readonly required: boolean;
+  readonly hidden?: boolean;
+  readonly requiredWhen?: RequiredWhen;
   readonly default?: boolean;
   readonly options?: never;
   readonly target?: never;
@@ -114,6 +126,8 @@ export type ConfigurationField = {
   readonly description?: string;
   readonly kind: 'number';
   readonly required: boolean;
+  readonly hidden?: boolean;
+  readonly requiredWhen?: RequiredWhen;
   readonly default?: number;
   readonly options?: never;
   readonly target?: never;
@@ -124,6 +138,8 @@ export type ConfigurationField = {
   readonly description?: string;
   readonly kind: 'url';
   readonly required: boolean;
+  readonly hidden?: boolean;
+  readonly requiredWhen?: RequiredWhen;
   readonly default?: string;
   readonly options?: never;
   readonly target?: never;
@@ -134,6 +150,8 @@ export type ConfigurationField = {
   readonly description?: string;
   readonly kind: 'operation';
   readonly required: boolean;
+  readonly hidden?: never;
+  readonly requiredWhen?: never;
   readonly default?: never;
   readonly options?: never;
   readonly target?: readonly string[];

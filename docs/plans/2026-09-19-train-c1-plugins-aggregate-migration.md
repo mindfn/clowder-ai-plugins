@@ -155,7 +155,7 @@ the ordinary-text negative path.
 
 PR #54 is a **draft** served from the fork (`mindfn/clowder-ai-plugins`, branch
 `feat/f202-train-c1-plugins-migration`). **Do not merge or publish it** until the cutover gate below clears.
-The contract is at `0.1.0-beta.18` and the SDK at `0.2.0-beta.2`; neither is published to npm, and neither
+The contract is at `0.1.0-beta.19` and the SDK at `0.2.0-beta.2`; neither is published to npm, and neither
 needs to be for the dev wave, because the Host now installs owner-supplied self-contained artifacts (Host S10).
 
 | Wave | Scope | State |
