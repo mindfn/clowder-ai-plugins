@@ -8,7 +8,7 @@ import test from 'node:test';
 import { publishImmutableArtifact } from './pack-self-contained-artifact.mjs';
 import { verifySelfContainedArchive } from './verify-self-contained-artifact.mjs';
 
-async function fixture(t, runtimeSource, transport = 'builtin', installedDependencies = {}) {
+async function fixture(t, runtimeSource, transport = 'builtin', installedDependencies = {}, lockedVersions = {}) {
   const root = await mkdtemp(join(tmpdir(), 'clowder-self-contained-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const stage = join(root, 'stage');
@@ -23,7 +23,7 @@ async function fixture(t, runtimeSource, transport = 'builtin', installedDepende
       name,
       version: installedVersion,
     }));
-    shrinkwrapPackages[`node_modules/${name}`] = { version: installedVersion.replace(/^v/u, '') };
+    shrinkwrapPackages[`node_modules/${name}`] = { version: lockedVersions[name] ?? installedVersion.trim().replace(/^[=v]+/u, '') };
   }
   await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
     name: '@clowder-ai/relocation-fixture',
@@ -118,6 +118,36 @@ test('installed dependency version that differs beyond a v prefix is still rejec
   const archive = join(root, 'fixture.tgz');
   const tar = spawnSync('tar', ['-czf', archive, '-C', stage, 'package'], { encoding: 'utf8' });
   assert.equal(tar.status, 0, tar.stderr);
+  await assert.rejects(verifySelfContainedArchive(archive), /version differs from shrinkwrap/u);
+});
+
+test('installed dependency version may carry a leading = that npm normalizes away', async (t) => {
+  const archive = await fixture(t, 'export default { create() {} };\n', 'builtin', {
+    'upstream-eq-prefixed': '=1.0.0',
+  });
+  const result = await verifySelfContainedArchive(archive);
+  assert.equal(result.installedPackages, 1);
+});
+
+test('installed dependency version may carry surrounding whitespace that npm trims', async (t) => {
+  const archive = await fixture(t, 'export default { create() {} };\n', 'builtin', {
+    'upstream-padded': ' 1.0.0 ',
+  });
+  const result = await verifySelfContainedArchive(archive);
+  assert.equal(result.installedPackages, 1);
+});
+
+test('installed dependency version differing beyond a v prefix is rejected', async (t) => {
+  const archive = await fixture(t, 'export default { create() {} };\n', 'builtin',
+    { 'upstream-v-prefixed': 'v1.0.1' },
+    { 'upstream-v-prefixed': '1.0.0' });
+  await assert.rejects(verifySelfContainedArchive(archive), /version differs from shrinkwrap/u);
+});
+
+test('installed dependency version differing without any prefix is rejected', async (t) => {
+  const archive = await fixture(t, 'export default { create() {} };\n', 'builtin',
+    { 'upstream-mismatch': '1.0.1' },
+    { 'upstream-mismatch': '1.0.0' });
   await assert.rejects(verifySelfContainedArchive(archive), /version differs from shrinkwrap/u);
 });
 

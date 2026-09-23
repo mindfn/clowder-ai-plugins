@@ -85,8 +85,12 @@ async function assertInstalledVersions(packageRoot, shrinkwrap) {
         const locked = packages[path];
         assert.ok(locked, `installed production package is absent from shrinkwrap: ${path}`);
         const installed = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
-        const normalizedInstalledVersion = installed.version.replace(/^v/u, '');
-        assert.equal(normalizedInstalledVersion, locked.version, `${path} version differs from shrinkwrap`);
+        const normalizedInstalledVersion = installed.version.trim().replace(/^[=v]+/u, '');
+        assert.equal(
+          normalizedInstalledVersion,
+          locked.version,
+          `${path} version differs from shrinkwrap (installed: ${JSON.stringify(installed.version)}, shrinkwrap: ${JSON.stringify(locked.version)})`,
+        );
         count += 1;
         const nested = join(directory, 'node_modules');
         try {
