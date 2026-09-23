@@ -22,9 +22,9 @@
       }
     },
     "node_modules/@clowder-ai/plugin-contract": {
-      "version": "0.1.0-beta.18",
-      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.1.0-beta.18.tgz",
-      "integrity": "sha512-b1FxW4m4+sfyqfP96x5rFiTMjsJKYGfEl/WYY0NbyYL+mI8SKd1Ewtg0r5n2HNzFSyzVBtVBJMRHrsSQIeyGWA==",
+      "version": "0.1.0-beta.19",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.1.0-beta.19.tgz",
+      "integrity": "sha512-V6N/jOpHJvRrfshc37UGoJnpMM7h7xSAzGdg+FOvr+A4w/CP/TLVbLPQskiTqqEVzDR/kN9nWqVY2b8fIgAVkQ==",
       "license": "MIT",
       "dependencies": {
         "ajv": "^8.17.0",
@@ -40,7 +40,7 @@
       "integrity": "sha512-5QoWnuWDEMO4LxfwRJLZn3UbusbF7b4Ab1cBnZysJz5lpHDMLJK7C4i0Yr1onho2AFmrA99QtE8vwRWyRYfZPQ==",
       "license": "MIT",
       "dependencies": {
-        "@clowder-ai/plugin-contract": "0.1.0-beta.18"
+        "@clowder-ai/plugin-contract": "0.1.0-beta.19"
       },
       "engines": {
         "node": ">=20.0.0"

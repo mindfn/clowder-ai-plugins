@@ -136,6 +136,7 @@
 
     "RequiredWhen": {
       "type": "object",
+      "description": "Makes the containing field conditionally required and overrides its required flag. The condition compares against the referenced field's effective value (stored value, otherwise default); an array matches when any listed value is strictly equal.",
       "properties": {
         "key": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z][A-Za-z0-9._-]*$" },
         "value": {
@@ -160,12 +161,18 @@
         "label": { "type": "string", "minLength": 1 },
         "description": { "type": "string" },
         "kind": { "type": "string", "enum": ["string", "secret", "select", "boolean", "number", "url", "operation"] },
-        "required": { "type": "boolean" },
+        "required": {
+          "type": "boolean",
+          "description": "Makes the field unconditionally required unless requiredWhen is present; requiredWhen overrides this flag."
+        },
         "hidden": {
           "type": "boolean",
           "description": "Hide a value field from manual owner editing while retaining it as an operation target or runtime value."
         },
-        "requiredWhen": { "$ref": "#/$defs/RequiredWhen" },
+        "requiredWhen": {
+          "$ref": "#/$defs/RequiredWhen",
+          "description": "Overrides required and makes this field required only when the referenced field's effective value (stored value, otherwise default) strictly equals value, or any member when value is an array."
+        },
         "default": { "type": ["string", "number", "boolean"] },
         "options": {
           "type": "array",

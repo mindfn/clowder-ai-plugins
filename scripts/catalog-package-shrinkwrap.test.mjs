@@ -1,7 +1,88 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { assertProductionDependencyClosure } from './catalog-package-shrinkwrap.mjs';
+import {
+  assertProductionDependencyClosure,
+  assertWorkspaceSdkContractClosure,
+} from './catalog-package-shrinkwrap.mjs';
+
+const workspaceContract = JSON.parse(
+  await readFile(new URL('../packages/plugin-contract/package.json', import.meta.url), 'utf8'),
+);
+
+test('every released Train C1 SDK consumer closes over the current workspace contract', async () => {
+  for (const directory of [
+    'connector-dingtalk',
+    'connector-feishu',
+    'connector-telegram',
+    'connector-wecom-agent',
+    'connector-wecom-bot',
+    'connector-weixin',
+    'connector-xiaoyi',
+    'enterprise-workflow',
+    'wechat-visible-reader',
+    'weixin-mp',
+  ]) {
+    const shrinkwrap = JSON.parse(
+      await readFile(new URL(`../packages/${directory}/npm-shrinkwrap.json`, import.meta.url), 'utf8'),
+    );
+    assertWorkspaceSdkContractClosure(shrinkwrap, {
+      contractVersion: workspaceContract.version,
+    });
+  }
+});
+
+test('rejects a workspace SDK shrinkwrap that still pins the previous contract', () => {
+  assert.throws(
+    () => assertWorkspaceSdkContractClosure(
+      {
+        packages: {
+          'node_modules/@clowder-ai/plugin-contract': { version: '0.1.0-beta.18' },
+          'node_modules/@clowder-ai/plugin-sdk': {
+            version: '0.2.0-beta.2',
+            dependencies: { '@clowder-ai/plugin-contract': '0.1.0-beta.18' },
+          },
+        },
+      },
+      { contractVersion: '0.1.0-beta.19' },
+    ),
+    /@clowder-ai\/plugin-sdk@0\.2\.0-beta\.2 through a stale @clowder-ai\/plugin-contract/u,
+  );
+});
+
+test('a different SDK version cannot bypass the current contract closure', () => {
+  assert.throws(
+    () => assertWorkspaceSdkContractClosure(
+      {
+        packages: {
+          'node_modules/@clowder-ai/plugin-contract': { version: '0.1.0-beta.18' },
+          'node_modules/@clowder-ai/plugin-sdk': {
+            version: '0.2.0-beta.3',
+            dependencies: { '@clowder-ai/plugin-contract': '0.1.0-beta.18' },
+          },
+        },
+      },
+      { contractVersion: '0.1.0-beta.19' },
+    ),
+    /@clowder-ai\/plugin-sdk@0\.2\.0-beta\.3 through a stale @clowder-ai\/plugin-contract/u,
+  );
+});
+
+test('accepts a workspace SDK shrinkwrap closed over the current contract', () => {
+  assert.doesNotThrow(() => assertWorkspaceSdkContractClosure(
+    {
+      packages: {
+        'node_modules/@clowder-ai/plugin-contract': { version: '0.1.0-beta.19' },
+        'node_modules/@clowder-ai/plugin-sdk': {
+          version: '0.2.0-beta.2',
+          dependencies: { '@clowder-ai/plugin-contract': '0.1.0-beta.19' },
+        },
+      },
+    },
+    { contractVersion: '0.1.0-beta.19' },
+  ));
+});
 
 test('accepts direct dependencies whose packed lock entries close over the package declaration', () => {
   assert.doesNotThrow(() => assertProductionDependencyClosure(
