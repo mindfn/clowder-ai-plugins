@@ -1,29 +1,65 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import {
   assertProductionDependencyClosure,
   assertWorkspaceSdkContractClosure,
+  collectWorkspacePackageIntegrityMismatches,
 } from './catalog-package-shrinkwrap.mjs';
 
+const repoRoot = new URL('../', import.meta.url);
 const workspaceContract = JSON.parse(
   await readFile(new URL('../packages/plugin-contract/package.json', import.meta.url), 'utf8'),
 );
+const workspaceSdk = JSON.parse(
+  await readFile(new URL('../packages/plugin-sdk/package.json', import.meta.url), 'utf8'),
+);
+const releasedTrainC1Consumers = [
+  'connector-dingtalk',
+  'connector-feishu',
+  'connector-telegram',
+  'connector-wecom-agent',
+  'connector-wecom-bot',
+  'connector-weixin',
+  'connector-xiaoyi',
+  'enterprise-workflow',
+  'wechat-visible-reader',
+  'weixin-mp',
+];
+
+async function packWorkspacePackage(packageDirectory) {
+  const destination = await mkdtemp(join(tmpdir(), 'clowder-shrinkwrap-identity-'));
+  try {
+    const result = spawnSync(
+      process.execPath,
+      ['scripts/pack-publish-artifact.mjs', packageDirectory, destination],
+      {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        env: process.env,
+        maxBuffer: 64 * 1024 * 1024,
+      },
+    );
+    assert.equal(
+      result.status,
+      0,
+      [result.stdout, result.stderr].filter(Boolean).join('\n'),
+    );
+    const [artifact] = JSON.parse(result.stdout);
+    assert.equal(typeof artifact?.version, 'string');
+    assert.equal(typeof artifact?.integrity, 'string');
+    return { version: artifact.version, integrity: artifact.integrity };
+  } finally {
+    await rm(destination, { recursive: true, force: true });
+  }
+}
 
 test('every released Train C1 SDK consumer closes over the current workspace contract', async () => {
-  for (const directory of [
-    'connector-dingtalk',
-    'connector-feishu',
-    'connector-telegram',
-    'connector-wecom-agent',
-    'connector-wecom-bot',
-    'connector-weixin',
-    'connector-xiaoyi',
-    'enterprise-workflow',
-    'wechat-visible-reader',
-    'weixin-mp',
-  ]) {
+  for (const directory of releasedTrainC1Consumers) {
     const shrinkwrap = JSON.parse(
       await readFile(new URL(`../packages/${directory}/npm-shrinkwrap.json`, import.meta.url), 'utf8'),
     );
@@ -31,6 +67,28 @@ test('every released Train C1 SDK consumer closes over the current workspace con
       contractVersion: workspaceContract.version,
     });
   }
+});
+
+test('current workspace contract and SDK shrinkwrap entries pin exact-head packed bytes', async () => {
+  const workspacePackages = {
+    [workspaceContract.name]: await packWorkspacePackage('packages/plugin-contract'),
+    [workspaceSdk.name]: await packWorkspacePackage('packages/plugin-sdk'),
+  };
+  const mismatches = [];
+
+  for (const directory of releasedTrainC1Consumers) {
+    const shrinkwrap = JSON.parse(
+      await readFile(new URL(`../packages/${directory}/npm-shrinkwrap.json`, import.meta.url), 'utf8'),
+    );
+    for (const mismatch of collectWorkspacePackageIntegrityMismatches(
+      shrinkwrap,
+      workspacePackages,
+    )) {
+      mismatches.push({ directory, ...mismatch });
+    }
+  }
+
+  assert.deepEqual(mismatches, []);
 });
 
 test('rejects a workspace SDK shrinkwrap that still pins the previous contract', () => {
@@ -82,6 +140,64 @@ test('accepts a workspace SDK shrinkwrap closed over the current contract', () =
     },
     { contractVersion: '0.1.0-beta.19' },
   ));
+});
+
+test('exact-head integrity only constrains shrinkwrap entries at the current workspace version', () => {
+  assert.deepEqual(
+    collectWorkspacePackageIntegrityMismatches(
+      {
+        packages: {
+          'node_modules/@clowder-ai/plugin-contract': {
+            version: '0.1.0-beta.15',
+            integrity: 'sha512-historical',
+          },
+          'node_modules/@clowder-ai/plugin-sdk': {
+            version: '0.2.0-beta.3',
+            integrity: 'sha512-current-sdk',
+          },
+        },
+      },
+      {
+        '@clowder-ai/plugin-contract': {
+          version: '0.1.0-beta.20',
+          integrity: 'sha512-current-contract',
+        },
+        '@clowder-ai/plugin-sdk': {
+          version: '0.2.0-beta.3',
+          integrity: 'sha512-current-sdk',
+        },
+      },
+    ),
+    [],
+  );
+});
+
+test('reports current-version workspace package integrity drift', () => {
+  assert.deepEqual(
+    collectWorkspacePackageIntegrityMismatches(
+      {
+        packages: {
+          'node_modules/@clowder-ai/plugin-contract': {
+            version: '0.1.0-beta.20',
+            integrity: 'sha512-stale-contract',
+          },
+        },
+      },
+      {
+        '@clowder-ai/plugin-contract': {
+          version: '0.1.0-beta.20',
+          integrity: 'sha512-current-contract',
+        },
+      },
+    ),
+    [{
+      packageName: '@clowder-ai/plugin-contract',
+      packagePath: 'node_modules/@clowder-ai/plugin-contract',
+      version: '0.1.0-beta.20',
+      actualIntegrity: 'sha512-stale-contract',
+      expectedIntegrity: 'sha512-current-contract',
+    }],
+  );
 });
 
 test('accepts direct dependencies whose packed lock entries close over the package declaration', () => {

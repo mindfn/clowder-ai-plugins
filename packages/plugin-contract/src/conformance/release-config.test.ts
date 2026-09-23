@@ -79,6 +79,11 @@ const publishArtifactPacker = existsSync(publishArtifactPackerUrl)
   ? readFileSync(publishArtifactPackerUrl, 'utf8')
   : '';
 
+const exactHeadPackEvidence = readFileSync(
+  new URL('../../../../scripts/capture-exact-head-pack-evidence.mjs', import.meta.url),
+  'utf8',
+);
+
 const artifactToolchainVerifierUrl = new URL(
   '../../scripts/verify-artifact-toolchain.mjs',
   import.meta.url,
@@ -527,6 +532,14 @@ test('required CI binds pack evidence to the exact checked-out head', () => {
     releaseWorkflow,
     'Upload exact-head pack evidence',
   );
+  const sdkCaptureStep = namedWorkflowStep(
+    releaseWorkflow,
+    'Capture exact-head SDK pack evidence',
+  );
+  const sdkUploadStep = namedWorkflowStep(
+    releaseWorkflow,
+    'Upload exact-head SDK pack evidence',
+  );
 
   assert.ok(validateJob, 'validate job must be active');
   assert.match(
@@ -537,17 +550,18 @@ test('required CI binds pack evidence to the exact checked-out head', () => {
     captureStep,
     /^          EXPECTED_HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}$/m,
   );
-  assert.match(captureStep, /ACTUAL_HEAD_SHA=\$\(git rev-parse HEAD\)/);
-  assert.match(captureStep, /"\$ACTUAL_HEAD_SHA" != "\$EXPECTED_HEAD_SHA"/);
-  assert.match(captureStep, /git status --porcelain --untracked-files=no/);
+  assert.match(captureStep, /scripts\/capture-exact-head-pack-evidence\.mjs packages\/plugin-contract/);
+  assert.match(sdkCaptureStep, /scripts\/capture-exact-head-pack-evidence\.mjs packages\/plugin-sdk/);
   assert.match(
-    captureStep,
-    /npm pack --json --ignore-scripts --pack-destination "\$RUNNER_TEMP"/,
+    exactHeadPackEvidence,
+    /\['status', '--porcelain', '--untracked-files=no'\]/,
   );
-  assert.match(captureStep, /headSha: process\.env\.ACTUAL_HEAD_SHA/);
-  assert.match(captureStep, /node: process\.version/);
-  assert.match(captureStep, /execFileSync\('npm', \['--version'\]/);
-  assert.match(captureStep, /zlib: process\.versions\.zlib/);
+  assert.match(exactHeadPackEvidence, /actualHeadSha !== expectedHeadSha/);
+  assert.match(exactHeadPackEvidence, /'pack',[\s\S]*'--json',[\s\S]*'--ignore-scripts'/);
+  assert.match(exactHeadPackEvidence, /headSha: actualHeadSha/);
+  assert.match(exactHeadPackEvidence, /node: process\.version/);
+  assert.match(exactHeadPackEvidence, /execFileSync\('npm', \['--version'\]/);
+  assert.match(exactHeadPackEvidence, /zlib: process\.versions\.zlib/);
   assert.match(
     uploadStep,
     /^          name: plugin-contract-pack-evidence-\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}$/m,
@@ -555,6 +569,14 @@ test('required CI binds pack evidence to the exact checked-out head', () => {
   assert.match(
     uploadStep,
     /^          path: \$\{\{ runner\.temp \}\}\/plugin-contract-pack-evidence\.json$/m,
+  );
+  assert.match(
+    sdkUploadStep,
+    /^          name: plugin-sdk-pack-evidence-\$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}$/m,
+  );
+  assert.match(
+    sdkUploadStep,
+    /^          path: \$\{\{ runner\.temp \}\}\/plugin-sdk-pack-evidence\.json$/m,
   );
 });
 

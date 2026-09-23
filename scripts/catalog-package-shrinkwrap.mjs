@@ -120,3 +120,28 @@ export function assertWorkspaceSdkContractClosure(
     `npm-shrinkwrap.json resolves the workspace SDK contract to ${resolved.entry.version}, expected ${contractVersion}`,
   );
 }
+
+export function collectWorkspacePackageIntegrityMismatches(
+  shrinkwrap,
+  workspacePackages,
+) {
+  const packages = shrinkwrap.packages ?? {};
+  const mismatches = [];
+
+  for (const [packageName, expected] of Object.entries(workspacePackages)) {
+    const packagePath = `node_modules/${packageName}`;
+    const entry = packages[packagePath];
+    if (!entry || entry.version !== expected.version) continue;
+    if (entry.integrity === expected.integrity) continue;
+
+    mismatches.push({
+      packageName,
+      packagePath,
+      version: entry.version,
+      actualIntegrity: entry.integrity,
+      expectedIntegrity: expected.integrity,
+    });
+  }
+
+  return mismatches;
+}
