@@ -170,6 +170,12 @@ function renderObject(schema: JsonSchema): string {
   return renderObjectShape(properties, new Set(schema.required ?? []));
 }
 
+function renderOpenObject(schema: JsonSchema): string {
+  const structural = renderObject(schema);
+  if (structural === 'Readonly<Record<string, unknown>>') return structural;
+  return structural.replace(/\n\}$/u, '\n  readonly [key: string]: unknown;\n}');
+}
+
 function renderDiscriminatedObject(schema: JsonSchema, discriminator: string): string {
   if (schema.type !== 'object') {
     throw new Error(`Discriminated schema must be an object: ${discriminator}`);
@@ -338,6 +344,27 @@ function renderDefinition(schema: JsonSchema, name: string, definition: JsonSche
   }
   if (name === 'PackageIcon') {
     return renderDiscriminatedObject(definition, 'type');
+  }
+  if (name === 'MediaRefElementPayload') {
+    // The remaining provider-specific metadata is intentionally open, while
+    // JSON Schema owns the conditional pmr/hmr relation.
+    return renderOpenObject(definition);
+  }
+  if (
+    name === 'MediaReadResult'
+    || name === 'MediaSourceReadChunkResult'
+    || name === 'MessageDraft'
+    || name === 'MessageSubscriptionContribution'
+  ) {
+    // JSON Schema owns conditional cross-field relations. The TypeScript
+    // projection remains structural because these rules depend on nested
+    // values (pmr/hmr, done/nextOffset, and whisper media admission).
+    // The generated structural projection keeps every declared property while
+    // runtime validation enforces the cross-field constraints.
+    return renderObject(definition);
+  }
+  if (name === 'RichBlockElementPayload') {
+    return renderOpenObject(definition);
   }
   if (definition.allOf?.length) {
     throw new Error(`Unhandled conditional schema definition: ${name}`);

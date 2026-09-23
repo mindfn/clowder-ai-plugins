@@ -321,7 +321,7 @@ function hasNonCanonicalUInt53Token(
       if (requestMethod === 'messaging.snapshot' && typeof inputObj.maxItems === 'number') {
         if (!isCanonicalUInt53Token(String(inputObj.maxItems))) return true;
       }
-      if (requestMethod === 'host.messaging.deliver') {
+      if (requestMethod === 'host.messaging.deliver' || requestMethod === 'host.messaging.lifecycle') {
         const envelope = inputObj.envelope;
         if (envelope !== null && typeof envelope === 'object' && !Array.isArray(envelope)) {
           const envelopeObj = envelope as Record<string, unknown>;
@@ -474,6 +474,8 @@ const METHOD_APPLICATION_ERROR_ALLOW: Readonly<Record<WireMethodName, ReadonlySe
   'host.lifecycle.ping': EMPTY_ERROR_SET,  // standard only
   'host.lifecycle.drain': DEADLINE_ONLY_SET,
   'events.publish': EMPTY_ERROR_SET,
+  'media.read': MESSAGING_ERROR_SET,
+  'host.messaging.lifecycle': DELIVERY_ERROR_SET,
 };
 
 // ---------------------------------------------------------------------------
@@ -721,11 +723,11 @@ function validateResponseResult(
       }
     }
 
-    if (method === 'host.messaging.deliver') {
+    if (method === 'host.messaging.deliver' || method === 'host.messaging.lifecycle') {
       const deliveryId = entry.requestSnapshot?.deliveryId;
       if (
         deliveryId === undefined ||
-        !validateMessagingRowResult('host.messaging.deliver', { deliveryId }).valid ||
+        !validateMessagingRowResult(method, { deliveryId }).valid ||
         (validated.value as DeliverResult).deliveryId !== deliveryId
       ) {
         return close('T-H');

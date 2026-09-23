@@ -94,6 +94,8 @@ const ALL_MESSAGING_ERROR_CODES = [
   'CONFLICT',
   'RETRYABLE_INFLIGHT',
   'STALE_CURSOR',
+  'MEDIA_ACCESS_DENIED',
+  'MESSAGE_NOT_PUBLISHED',
 ] as const;
 
 // ---------------------------------------------------------------------------

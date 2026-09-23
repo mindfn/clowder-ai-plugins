@@ -185,7 +185,11 @@ test('every messaging error bound covers exactly its admitted error arms', () =>
       domain,
       deadline,
       ...(method === 'messaging.snapshot' ? [snapshot] : []),
-      ...(method === 'host.messaging.deliver' ? [delivery] : []),
+      ...(
+        method === 'host.messaging.deliver' || method === 'host.messaging.lifecycle'
+          ? [delivery]
+          : []
+      ),
     );
     assert.equal(MESSAGING_ERROR_BYTE_PROOFS[method].maxEncodedBytes, expected);
     assert.equal(

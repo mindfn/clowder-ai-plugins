@@ -17,6 +17,7 @@ import {
   type PluginActionHandler,
 } from './feature-context.js';
 import type { ModulePluginHostShape, PluginModuleActivationShape } from './module-host.js';
+import { requireDeliveryPresentation } from './p1-runtime.js';
 
 export interface PluginModuleDefinition {
   start(host: ModulePluginHostShape): Promise<PluginModuleActivationShape>;
@@ -114,6 +115,7 @@ function declaredContributionAdapter(
     sendMessage: (_binding, threadId, input) => host.messaging.send({ ...input, threadId }),
     subscribeMessage: (_binding, input) => host.messaging.subscribe(input),
     unsubscribeMessage: (_binding, input) => host.messaging.unsubscribe(input),
+    readMedia: (_binding, input) => host.media.read(input),
     log: (_binding, level, message, fields) => host.log(level, message, fields),
   };
 }
@@ -179,11 +181,22 @@ async function startDefinedPluginModule(
         allowLimbHandlers: contributions.some((contribution) => contribution.type === 'limb'),
       });
       active.push(activated);
+      const presentationMethods = new Set(
+        contributions
+          .filter((contribution): contribution is MessageSubscriptionContribution =>
+            contribution.type === 'message-subscription' && contribution.presentation === 'v1')
+          .map(contribution => contribution.action.method),
+      );
       for (const [method, handler] of Object.entries(activated.actions)) {
         if (Object.hasOwn(actions, method)) {
           throw new TypeError(`action handler ${method} is exposed by multiple plugin features`);
         }
-        actions[method] = handler;
+        actions[method] = presentationMethods.has(method)
+          ? (input: unknown) => {
+              requireDeliveryPresentation(input);
+              return handler(input);
+            }
+          : handler;
       }
     }
     const expected = new Set<string>(globalMethods);

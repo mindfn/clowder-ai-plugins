@@ -20,6 +20,7 @@ function manifest() {
         id: 'outbound',
         binding: 'fixture',
         action: { method: 'fixture.outbound' },
+        presentation: 'v1',
       },
       {
         type: 'tool',
@@ -105,6 +106,13 @@ function host(calls: Array<{ operation: string; value?: unknown }>, sendError?: 
       subscribe: async (input: unknown) => { calls.push({ operation: 'messaging.subscribe', value: input }); },
       unsubscribe: async (input: unknown) => { calls.push({ operation: 'messaging.unsubscribe', value: input }); },
     },
+    media: {
+      read: async (input: { readonly offset: number }) => ({
+        offset: input.offset,
+        dataBase64: '',
+        done: true,
+      }),
+    },
     log: (level: string, message: string, fields?: Readonly<Record<string, unknown>>) => {
       calls.push({ operation: 'log', value: { level, message, fields } });
     },
@@ -157,9 +165,18 @@ test('module entrypoint mirrors the Host lifecycle and thin host surfaces', asyn
   const activation = await entrypoint.create(manifest()).start(host(calls));
 
   assert.deepEqual(Object.keys(activation.actions).sort(), ['fixture.echo', 'fixture.outbound']);
-  const delivery = { deliveryId: 'delivery-1', threadId: 'thread-1', envelope: { messageId: 'message-1' } };
+  const delivery = {
+    deliveryId: 'delivery-1', threadId: 'thread-1', envelope: { messageId: 'message-1' },
+    presentation: { actor: { displayName: 'Fixture', emoji: '🐱' }, thread: { shortId: 'abc123' } },
+  };
   await activation.actions['fixture.outbound']?.(delivery);
   assert.deepEqual(received, [delivery]);
+  await assert.rejects(
+    Promise.resolve().then(() => activation.actions['fixture.outbound']?.({
+      deliveryId: 'delivery-2', threadId: 'thread-1', envelope: { messageId: 'message-2' },
+    })),
+    /delivery presentation is required/,
+  );
   assert.deepEqual(calls.find((call) => call.operation === 'messaging.send')?.value, {
     threadId: 'thread-1',
     idempotencyKey: 'message-1',

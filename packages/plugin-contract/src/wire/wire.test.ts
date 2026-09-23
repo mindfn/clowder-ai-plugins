@@ -626,7 +626,7 @@ test('validateBindingNonce boundary cases', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 test('MAX_GRANT_ITEMS is frozen at the complete v0 capability cardinality', () => {
-  assert.equal(MAX_GRANT_ITEMS, 20);
+  assert.equal(MAX_GRANT_ITEMS, 21);
 });
 
 test('validateEffectiveGrants accepts valid arrays', () => {
@@ -669,9 +669,9 @@ test('validateEffectiveGrants rejects unknown capabilities (FC-52-4: fail-closed
 // §8 Registry regression locks
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('beta.9 appends one C-2 publish row without renumbering the original 12', () => {
-  assert.equal(WIRE_METHOD_NAMES.length, 13);
-  assert.equal(WIRE_METHOD_COUNT, 13);
+test('beta.20 appends media and lifecycle rows without renumbering the original 13', () => {
+  assert.equal(WIRE_METHOD_NAMES.length, 15);
+  assert.equal(WIRE_METHOD_COUNT, 15);
 });
 
 test('method names are frozen in order', () => {
@@ -689,11 +689,13 @@ test('method names are frozen in order', () => {
     'host.lifecycle.ping',
     'host.lifecycle.drain',
     'events.publish',
+    'media.read',
+    'host.messaging.lifecycle',
   ];
   assert.deepEqual([...WIRE_METHOD_NAMES], expected);
 });
 
-test('beta.11 readies the complete 13-row standalone contract', () => {
+test('beta.20 readies the complete 15-row standalone contract', () => {
   const expectedReady = new Set(WIRE_METHOD_NAMES);
   for (const method of WIRE_METHOD_NAMES) {
     const row = WIRE_METHOD_REGISTRY[method];
@@ -717,6 +719,8 @@ test('beta.11 readies the complete 13-row standalone contract', () => {
     'host.lifecycle.ping',
     'host.lifecycle.drain',
     'events.publish',
+    'media.read',
+    'host.messaging.lifecycle',
   ]);
   assert.deepEqual(
     {
@@ -776,7 +780,7 @@ test('beta.11 readies the complete 13-row standalone contract', () => {
   }
 });
 
-test('row numbers are sequential 1-13', () => {
+test('row numbers are sequential 1-15', () => {
   WIRE_METHOD_NAMES.forEach((method, i) => {
     assert.equal(
       WIRE_METHOD_REGISTRY[method].rowNumber,
@@ -789,7 +793,7 @@ test('row numbers are sequential 1-13', () => {
 test('beta.11 closes every registry leaf', () => {
   const closed = [...WIRE_METHOD_NAMES];
 
-  assert.equal(CLOSED_LEAF_ROWS.length, 13, '13 closed rows');
+  assert.equal(CLOSED_LEAF_ROWS.length, 15, '15 closed rows');
   assert.equal(RESERVED_LEAF_ROWS.length, 0, 'no reserved rows');
 
   for (const m of closed) {
@@ -798,11 +802,11 @@ test('beta.11 closes every registry leaf', () => {
 });
 
 test('direction partition appends events.publish to plugin-to-host', () => {
-  const p2h = ['broker.hello', 'broker.ready', 'messaging.send', 'messaging.appendElements', 'messaging.subscribe', 'messaging.read', 'messaging.ack', 'messaging.snapshot', 'events.publish'];
-  const h2p = ['host.messaging.deliver', 'host.grants.changed', 'host.lifecycle.ping', 'host.lifecycle.drain'];
+  const p2h = ['broker.hello', 'broker.ready', 'messaging.send', 'messaging.appendElements', 'messaging.subscribe', 'messaging.read', 'messaging.ack', 'messaging.snapshot', 'events.publish', 'media.read'];
+  const h2p = ['host.messaging.deliver', 'host.grants.changed', 'host.lifecycle.ping', 'host.lifecycle.drain', 'host.messaging.lifecycle'];
 
-  assert.equal(PLUGIN_TO_HOST_METHODS.length, 9, '9 plugin-to-host');
-  assert.equal(HOST_TO_PLUGIN_METHODS.length, 4, '4 host-to-plugin');
+  assert.equal(PLUGIN_TO_HOST_METHODS.length, 10, '10 plugin-to-host');
+  assert.equal(HOST_TO_PLUGIN_METHODS.length, 5, '5 host-to-plugin');
 
   for (const m of p2h) {
     assert.equal(WIRE_METHOD_REGISTRY[m as keyof typeof WIRE_METHOD_REGISTRY].direction, 'plugin-to-host', `${m}`);

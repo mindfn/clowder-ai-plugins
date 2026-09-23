@@ -344,7 +344,7 @@ test('generated M0C key sets match their schema-declared members and order', () 
   assert.deepEqual([...M0CACK_INPUT_KEYS], ['subscriptionId', 'ackToken']);
   assert.deepEqual([...M0CREAD_INPUT_KEYS], ['subscriptionId', 'limit']);
   assert.deepEqual([...M0CDELIVER_RESULT_KEYS], ['deliveryId']);
-  assert.deepEqual([...M0CDELIVER_INPUT_KEYS], ['deliveryId', 'threadHandle', 'envelope']);
+  assert.deepEqual([...M0CDELIVER_INPUT_KEYS], ['deliveryId', 'lifecycleId', 'threadHandle', 'envelope', 'presentation']);
 });
 
 test('generated MESSAGING_ERROR_CODE_VALUES matches the MessagingErrorCode union', () => {
@@ -355,7 +355,9 @@ test('generated MESSAGING_ERROR_CODE_VALUES matches the MessagingErrorCode union
     'CONFLICT',
     'RETRYABLE_INFLIGHT',
     'STALE_CURSOR',
+    'MEDIA_ACCESS_DENIED',
+    'MESSAGE_NOT_PUBLISHED',
   ]);
   const asType: readonly MessagingErrorCode[] = MESSAGING_ERROR_CODE_VALUES;
-  assert.equal(asType.length, 6);
+  assert.equal(asType.length, 8);
 });

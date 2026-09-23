@@ -317,9 +317,9 @@ test('packed public packages install and import in a fresh npm consumer', async 
         'utf8',
       ),
     );
-    assert.equal(contractPackage.version, '0.1.0-beta.19');
-    assert.equal(sdkPackage.version, '0.2.0-beta.2');
-    assert.equal(sdkPackage.dependencies['@clowder-ai/plugin-contract'], '0.1.0-beta.19');
+    assert.equal(contractPackage.version, '0.1.0-beta.20');
+    assert.equal(sdkPackage.version, '0.2.0-beta.3');
+    assert.equal(sdkPackage.dependencies['@clowder-ai/plugin-contract'], '0.1.0-beta.20');
     assert.equal(
       feishuPackage.dependencies['@clowder-ai/plugin-contract'],
       '0.1.0-beta.9',
@@ -354,14 +354,14 @@ test('packed public packages install and import in a fresh npm consumer', async 
       'clowder-video-generation-mcp': './dist/mcp-entrypoint.js',
     });
     assert.equal(weixinMpPackage.version, '0.1.0-alpha.1');
-    assert.equal(weixinMpPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.2');
+    assert.equal(weixinMpPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.3');
     assert.doesNotMatch(JSON.stringify(weixinMpPackage), /"workspace:/u);
     assert.equal(wechatReaderPackage.version, '0.1.0-alpha.1');
-    assert.equal(wechatReaderPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.2');
+    assert.equal(wechatReaderPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.3');
     assert.doesNotMatch(JSON.stringify(wechatReaderPackage), /"workspace:/u);
     assert.deepEqual(wechatReaderPackage.os, ['darwin']);
     assert.equal(enterprisePackage.version, '0.1.0-alpha.0');
-    assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.2');
+    assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.3');
     assert.doesNotMatch(JSON.stringify(enterprisePackage), /"workspace:/u);
     const installedContract = await import(
       pathToFileURL(

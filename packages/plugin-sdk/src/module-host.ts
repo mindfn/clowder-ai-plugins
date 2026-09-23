@@ -1,4 +1,10 @@
-import type { MessageDraft, MessageEnvelope } from '@clowder-ai/plugin-contract';
+import type {
+  DeliveryPresentationContext,
+  MediaReadInput,
+  MediaReadResult,
+  MessageDraft,
+  MessageEnvelope,
+} from '@clowder-ai/plugin-contract';
 
 export type ModulePluginLogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -136,8 +142,14 @@ export interface PluginMessagingSubscribeOptions {
 
 export interface PluginMessagingDelivery {
   readonly deliveryId: string;
+  readonly lifecycleId?: string;
   readonly threadId: string;
   readonly envelope: MessageEnvelope;
+  readonly presentation?: DeliveryPresentationContext;
+}
+
+export interface PluginMediaHost {
+  read(input: MediaReadInput): Promise<MediaReadResult>;
 }
 
 export interface PluginMessagingHost {
@@ -161,6 +173,7 @@ export interface ModulePluginHostShape {
   readonly tasks: PluginTaskHost;
   readonly threads: PluginThreadHost;
   readonly messaging: PluginMessagingHost;
+  readonly media: PluginMediaHost;
   readonly log: (
     level: ModulePluginLogLevel,
     message: string,

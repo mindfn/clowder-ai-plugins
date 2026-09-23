@@ -8,6 +8,9 @@ import {
   type LimbContribution,
   type McpContribution,
   type MessageSubscriptionContribution,
+  type MediaReadInput,
+  type MediaReadResult,
+  type MediaSourceContribution,
   type PluginManifest,
   type ScheduleContribution,
   type ServiceContribution,
@@ -25,6 +28,7 @@ import type {
   PluginTaskHost,
   PluginThreadHost,
 } from './module-host.js';
+import { createMediaReader, type PluginMediaReader } from './p1-runtime.js';
 
 export interface FeatureBinding {
   readonly pluginInstanceId: string;
@@ -69,6 +73,10 @@ export interface FeatureHostAdapter {
     binding: FeatureBinding,
     input: Parameters<PluginMessagingHost['unsubscribe']>[0],
   ): ReturnType<PluginMessagingHost['unsubscribe']>;
+  readMedia(
+    binding: FeatureBinding,
+    input: MediaReadInput,
+  ): Promise<MediaReadResult>;
   log(
     binding: FeatureBinding,
     level: PluginLogLevel,
@@ -130,6 +138,8 @@ export interface FeatureContext {
       input: PluginMessagingDraft,
     ) => ReturnType<PluginMessagingHost['send']>;
   };
+  readonly media: PluginMediaReader;
+  readonly mediaSources: ContributionRegistrar<MediaSourceContribution>;
   readonly services: ContributionRegistrar<ServiceContribution>;
   readonly log: (
     level: PluginLogLevel,
@@ -364,6 +374,7 @@ export function createFeatureContextSession(
   };
   const unsubscribeMessage = (threadId: string): Promise<void> =>
     runWhileActive(() => adapter.unsubscribeMessage(binding, { threadId }));
+  const media = createMediaReader(input => runWhileActive(() => adapter.readMedia(binding, input)));
 
   const log = (
     level: PluginLogLevel,
@@ -390,6 +401,8 @@ export function createFeatureContextSession(
     limbs: registrar<LimbContribution>('limb'),
     webhooks: registrar<WebhookContribution>('webhook'),
     messaging: { subscribe: subscribeMessage, unsubscribe: unsubscribeMessage, send: sendMessage },
+    media,
+    mediaSources: registrar<MediaSourceContribution>('media-source'),
     services: registrar<ServiceContribution>('service'),
     log,
     logger: {
@@ -460,8 +473,14 @@ function actionMethods(contribution: StaticContribution): readonly string[] {
     case 'schedule':
     case 'tool':
     case 'webhook':
-    case 'message-subscription':
       return [contribution.action.method];
+    case 'message-subscription':
+      return [
+        contribution.action.method,
+        ...(contribution.lifecycleAction === undefined ? [] : [contribution.lifecycleAction.method]),
+      ];
+    case 'media-source':
+      return [contribution.readAction.method, contribution.settleAction.method];
     case 'service':
       return [contribution.healthMethod];
     case 'ui':

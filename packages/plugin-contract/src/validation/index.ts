@@ -24,6 +24,11 @@ export {
   type ManifestValidationResult,
 } from './manifest.js';
 export {
+  isMediaSourceReadInput,
+  isMediaSourceReadResult,
+  isMediaSourceSettleInput,
+} from './media-source.js';
+export {
   getCatalogPlugin,
   listCatalogPlugins,
   searchCatalogPlugins,

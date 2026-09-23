@@ -2,10 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://clowder-ai.dev/schemas/manifest/v0.1",
   "title": "Clowder AI Plugin Manifest (v0.1)",
-  "description": "Machine-readable truth source for the static plugin.yaml access protocol (§3.4/§3.5). beta.19 adds hidden and conditionally required configuration fields. Window, media and conversation authorities remain separate Host runtime decisions; the signed broker wire is unchanged.",
+  "description": "Machine-readable truth source for the static plugin.yaml access protocol (§3.4/§3.5). beta.20 freezes typed messaging media, presentation, lifecycle, and media-source authority boundaries.",
   "x-clowder-capability-layers": {
     "L0": ["plugin.config.read", "plugin.state.get", "plugin.state.set"],
-    "L1": ["messaging.send", "schedule.register", "events.publish", "messaging.appendElements"],
+    "L1": ["messaging.send", "schedule.register", "events.publish", "messaging.appendElements", "media.read"],
     "L2": ["onMessage", "message.event.subscribe", "secret.read", "thread.listMetadata", "thread.readContent", "thread.write", "task.read", "task.write", "memory.query", "memory.append", "memory.retrieve", "windows.create", "whisper.extend"]
   },
   "x-clowder-data-class-strategies": {
@@ -45,6 +45,7 @@
         "schedule.register",
         "events.publish",
         "messaging.appendElements",
+        "media.read",
         "onMessage",
         "message.event.subscribe",
         "secret.read",
@@ -108,7 +109,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["identity", "schedule", "tool", "mcp", "skill", "limb", "webhook", "message-subscription", "service", "connector", "ui", "content-editor-provider", "desktop-window"]
+          "enum": ["identity", "schedule", "tool", "mcp", "skill", "limb", "webhook", "message-subscription", "media-source", "service", "connector", "ui", "content-editor-provider", "desktop-window"]
         },
         "id": { "type": "string", "minLength": 1 }
       },
@@ -467,9 +468,95 @@
         "id": { "type": "string", "minLength": 1 },
         "binding": { "type": "string", "minLength": 1 },
         "filter": { "type": "object", "additionalProperties": true },
-        "action": { "$ref": "#/$defs/CallbackAction" }
+        "action": { "$ref": "#/$defs/CallbackAction" },
+        "lifecycleAction": { "$ref": "#/$defs/CallbackAction" },
+        "presentation": { "const": "v1" }
       },
       "required": ["type", "id", "binding", "action"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "required": ["lifecycleAction"] },
+          "then": {
+            "properties": { "presentation": { "const": "v1" } },
+            "required": ["presentation"]
+          }
+        }
+      ]
+    },
+
+    "MediaSourceContribution": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "media-source" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "binding": { "type": "string", "minLength": 1 },
+        "readAction": { "$ref": "#/$defs/CallbackAction" },
+        "settleAction": { "$ref": "#/$defs/CallbackAction" }
+      },
+      "required": ["type", "id", "binding", "readAction", "settleAction"],
+      "additionalProperties": false
+    },
+
+    "MediaSourceReadInput": {
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "reference": { "type": "string", "pattern": "^pmr_", "maxLength": 2048 },
+        "offset": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 524288 }
+      },
+      "required": ["requestId", "reference", "offset", "limit"],
+      "additionalProperties": false
+    },
+
+    "MediaSourceReadChunkResult": {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "chunk" },
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "offset": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "dataBase64": { "type": "string", "maxLength": 699052, "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$" },
+        "nextOffset": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "done": { "type": "boolean" }
+      },
+      "required": ["kind", "requestId", "offset", "dataBase64", "done"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "done": { "const": false } }, "required": ["done"] },
+          "then": { "required": ["nextOffset"] },
+          "else": { "not": { "required": ["nextOffset"] } }
+        }
+      ]
+    },
+
+    "MediaSourceReadRejectedResult": {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "rejected" },
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "code": { "const": "MEDIA_SOURCE_UNAVAILABLE" }
+      },
+      "required": ["kind", "requestId", "code"],
+      "additionalProperties": false
+    },
+
+    "MediaSourceReadResult": {
+      "oneOf": [
+        { "$ref": "#/$defs/MediaSourceReadChunkResult" },
+        { "$ref": "#/$defs/MediaSourceReadRejectedResult" }
+      ]
+    },
+
+    "MediaSourceSettleInput": {
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "reference": { "type": "string", "pattern": "^pmr_", "maxLength": 2048 },
+        "outcome": { "type": "string", "enum": ["imported", "unavailable"] }
+      },
+      "required": ["requestId", "reference", "outcome"],
       "additionalProperties": false
     },
 
@@ -687,6 +774,7 @@
         { "$ref": "#/$defs/LimbContribution" },
         { "$ref": "#/$defs/WebhookContribution" },
         { "$ref": "#/$defs/MessageSubscriptionContribution" },
+        { "$ref": "#/$defs/MediaSourceContribution" },
         { "$ref": "#/$defs/ServiceContribution" },
         { "$ref": "#/$defs/ConnectorContribution" },
         { "$ref": "#/$defs/UiContribution" },

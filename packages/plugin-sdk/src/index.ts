@@ -37,6 +37,7 @@ export {
   type StandaloneHostOptions,
   type StandaloneMessageDisposition,
   type StandaloneMessageHandler,
+  type StandaloneLifecycleHandler,
 } from './standalone-host.js';
 
 export {
@@ -85,10 +86,43 @@ export {
 } from './messaging-client.js';
 
 export {
+  LifecycleActionInputError,
+  MediaReadProtocolError,
+  MediaSourceActionInputError,
+  PresentationDeliveryInputError,
+  createMediaReader,
+  decideLifecycleTransition,
+  defineMediaSourceReadAction,
+  defineMediaSourceSettleAction,
+  defineLifecycleAction,
+  isDeliveryPresentationContext,
+  isMediaUnavailableMessageElement,
+  isMediaWarningMessageElement,
+  requireDeliveryPresentation,
+  requireLifecycleInput,
+  type LifecycleAction,
+  type LifecycleTransitionDecision,
+  type LifecycleTransitionRejectReason,
+  type MediaChunkReader,
+  type MediaSourceReadAction,
+  type MediaSourceSettleAction,
+  type PluginMediaReader,
+} from './p1-runtime.js';
+
+export type {
+  MediaSourceReadChunkResult,
+  MediaSourceReadInput,
+  MediaSourceReadRejectedResult,
+  MediaSourceReadResult,
+  MediaSourceSettleInput,
+} from '@clowder-ai/plugin-contract';
+
+export {
   HostBoundSessionError,
   createHostBoundSession,
   type HostBoundMessageDisposition,
   type HostBoundMessageHandler,
+  type HostBoundLifecycleHandler,
   type HostBoundEventPublishingOptions,
   type HostBoundSession,
   type HostBoundSessionOptions,
@@ -134,6 +168,7 @@ export type {
   PluginMessagingDraft,
   PluginMessagingHost,
   PluginMessagingSubscribeOptions,
+  PluginMediaHost,
   PluginModuleActivationShape,
   PluginStorageCompareAndSetResult,
   PluginStorageDeleteResult,

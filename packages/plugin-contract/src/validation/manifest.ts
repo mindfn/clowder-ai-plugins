@@ -321,6 +321,7 @@ export function validateManifest(value: unknown): ManifestValidationResult {
       const runtimeContributionIndex = contributions.findIndex(
         (contribution) =>
           'action' in contribution ||
+          contribution.type === 'media-source' ||
           contribution.type === 'limb' ||
           contribution.type === 'connector',
       );
@@ -398,6 +399,38 @@ export function validateManifest(value: unknown): ManifestValidationResult {
             '#/$defs/ConnectorContribution/sameFeatureOwner',
             'sameFeatureOwner',
             'connector identityRef must reference an identity owned by the same feature',
+          );
+        }
+      }
+      if (contribution.type === 'media-source') {
+        const identityKey = `identity\0${contribution.binding}`;
+        if (!contributionByKey.has(identityKey)) {
+          return semanticError(
+            `/contributions/${index}/binding`,
+            '#/$defs/MediaSourceContribution/declaredIdentityBinding',
+            'declaredIdentityBinding',
+            'media-source binding must reference a declared identity contribution',
+          );
+        }
+        if (referenceOwners.get(identityKey) !== owner) {
+          return semanticError(
+            `/contributions/${index}/binding`,
+            '#/$defs/MediaSourceContribution/sameFeatureOwner',
+            'sameFeatureOwner',
+            'media-source binding must reference an identity owned by the same feature',
+          );
+        }
+        const feature = manifest.features.find((candidate) => candidate.id === owner);
+        if (
+          feature === undefined ||
+          !feature.capabilities.includes('plugin.state.get') ||
+          !feature.capabilities.includes('plugin.state.set')
+        ) {
+          return semanticError(
+            `/features/${manifest.features.indexOf(feature!)}/capabilities`,
+            '#/$defs/MediaSourceContribution/stateCapabilitiesRequired',
+            'stateCapabilitiesRequired',
+            'media-source requires plugin.state.get and plugin.state.set for durable PMR retention',
           );
         }
       }

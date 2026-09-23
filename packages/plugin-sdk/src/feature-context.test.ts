@@ -160,6 +160,14 @@ class RecordingAdapter implements FeatureHostAdapter {
     this.calls.push({ operation: 'messaging.unsubscribe', binding, value: input });
   }
 
+  async readMedia(
+    binding: FeatureBinding,
+    input: Parameters<FeatureHostAdapter['readMedia']>[1],
+  ): Promise<Awaited<ReturnType<FeatureHostAdapter['readMedia']>>> {
+    this.calls.push({ operation: 'media.read', binding, value: input });
+    return { offset: input.offset, dataBase64: '', done: true };
+  }
+
   log(
     binding: FeatureBinding,
     level: Parameters<FeatureHostAdapter['log']>[1],

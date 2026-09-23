@@ -497,6 +497,7 @@
             { "capability": "schedule.register", "layer": "L1", "firstPartyPreset": true },
             { "capability": "events.publish", "layer": "L1", "firstPartyPreset": true },
             { "capability": "messaging.appendElements", "layer": "L1", "firstPartyPreset": true },
+            { "capability": "media.read", "layer": "L1", "firstPartyPreset": true },
             { "capability": "onMessage", "layer": "L2", "firstPartyPreset": false },
             { "capability": "message.event.subscribe", "layer": "L2", "firstPartyPreset": false },
             { "capability": "secret.read", "layer": "L2", "firstPartyPreset": false },

@@ -15,6 +15,7 @@ import {
   type DeliverInput,
   type DeliveryRejectReason,
   type ManifestValidationError,
+  type HostMessagingLifecycleInput,
   type PluginManifest,
 } from '@clowder-ai/plugin-contract';
 
@@ -55,6 +56,7 @@ export interface StandaloneHostOptions {
    * plugin-observed delivery fact. Retry and dead-letter policy remain Host-owned.
    */
   readonly onMessage?: StandaloneMessageHandler;
+  readonly onLifecycle?: StandaloneLifecycleHandler;
   readonly onFatal?: (error: StdioRuntimeFatalError) => void;
 }
 
@@ -64,6 +66,10 @@ export type StandaloneMessageDisposition =
 
 export type StandaloneMessageHandler = (
   input: DeliverInput,
+) => StandaloneMessageDisposition | Promise<StandaloneMessageDisposition>;
+
+export type StandaloneLifecycleHandler = (
+  input: HostMessagingLifecycleInput,
 ) => StandaloneMessageDisposition | Promise<StandaloneMessageDisposition>;
 
 export interface StandaloneHost extends StdioChannel {
@@ -162,6 +168,7 @@ const HOST_BOUND_REQUEST_METHODS = new Set([
   'messaging.read',
   'messaging.ack',
   'messaging.snapshot',
+  'media.read',
 ]);
 
 function isStandaloneMessageDisposition(value: unknown): value is StandaloneMessageDisposition {
@@ -198,6 +205,25 @@ async function dispatchMessage(
   if (!disposition.accepted) {
     return deliveryRejectedResponse(id, disposition.reason);
   }
+  return { jsonrpc: '2.0', id, result: { deliveryId: input.deliveryId } };
+}
+
+async function dispatchLifecycle(
+  id: string,
+  input: JsonObject,
+  onLifecycle: StandaloneHostOptions['onLifecycle'],
+): Promise<JsonObject> {
+  if (onLifecycle === undefined) return deliveryRejectedResponse(id, 'NO_HANDLER');
+  let disposition: unknown;
+  try {
+    disposition = await onLifecycle(structuredClone(input) as HostMessagingLifecycleInput);
+  } catch {
+    return deliveryRejectedResponse(id, 'PLUGIN_INTERNAL');
+  }
+  if (!isStandaloneMessageDisposition(disposition)) {
+    return deliveryRejectedResponse(id, 'PLUGIN_INTERNAL');
+  }
+  if (!disposition.accepted) return deliveryRejectedResponse(id, disposition.reason);
   return { jsonrpc: '2.0', id, result: { deliveryId: input.deliveryId } };
 }
 
@@ -273,6 +299,9 @@ function createFrameHandler(options: StandaloneHostOptions) {
     }
     if (request.method === 'host.messaging.deliver') {
       return dispatchMessage(request.id, request.input, options.onMessage);
+    }
+    if (request.method === 'host.messaging.lifecycle') {
+      return dispatchLifecycle(request.id, request.input, options.onLifecycle);
     }
     if (request.method === 'host.lifecycle.drain') {
       const deadlineUnixMs = request.input.deadlineUnixMs;

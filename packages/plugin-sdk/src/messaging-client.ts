@@ -11,7 +11,10 @@ import {
 import type { LocalHandshakeState } from './handshake-client.js';
 import type { StdioSessionLiveness } from './events-publisher.js';
 
-export type OutboundMessagingMethod = Exclude<MessagingRowMethod, 'host.messaging.deliver'>;
+export type OutboundMessagingMethod = Exclude<
+  MessagingRowMethod,
+  'host.messaging.deliver' | 'host.messaging.lifecycle'
+>;
 
 export type MessagingClientErrorCode =
   | 'SESSION_NOT_ACTIVATED'
@@ -51,6 +54,7 @@ export interface MessagingClient {
   read(input: MessagingRowInputByMethod['messaging.read']): Promise<MessagingRowResultByMethod['messaging.read']>;
   ack(input: MessagingRowInputByMethod['messaging.ack']): Promise<MessagingRowResultByMethod['messaging.ack']>;
   snapshot(input: MessagingRowInputByMethod['messaging.snapshot']): Promise<MessagingRowResultByMethod['messaging.snapshot']>;
+  readMedia(input: MessagingRowInputByMethod['media.read']): Promise<MessagingRowResultByMethod['media.read']>;
 }
 
 const GRANT_BY_METHOD = {
@@ -60,6 +64,7 @@ const GRANT_BY_METHOD = {
   'messaging.read': 'message.event.subscribe',
   'messaging.ack': 'message.event.subscribe',
   'messaging.snapshot': 'message.event.subscribe',
+  'media.read': 'media.read',
 } as const satisfies Readonly<Record<OutboundMessagingMethod, string>>;
 
 function validationMessage(
@@ -137,5 +142,6 @@ export function createMessagingClient(options: MessagingClientOptions): Messagin
     read: input => callValidated(options, 'messaging.read', input),
     ack: input => callValidated(options, 'messaging.ack', input),
     snapshot: input => callValidated(options, 'messaging.snapshot', input),
+    readMedia: input => callValidated(options, 'media.read', input),
   };
 }

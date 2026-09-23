@@ -309,7 +309,7 @@ test('generated closed-shape key sets and enum values mirror messaging $defs', a
   assert.match(source, /export const M0CDELIVER_RESULT_KEYS = \['deliveryId'\] as const;/);
   assert.match(
     source,
-    /export const MESSAGING_ERROR_CODE_VALUES = \['VALIDATION', 'PERMISSION', 'NOT_FOUND', 'CONFLICT', 'RETRYABLE_INFLIGHT', 'STALE_CURSOR'\] as const;/,
+    /export const MESSAGING_ERROR_CODE_VALUES = \['VALIDATION', 'PERMISSION', 'NOT_FOUND', 'CONFLICT', 'RETRYABLE_INFLIGHT', 'STALE_CURSOR', 'MEDIA_ACCESS_DENIED', 'MESSAGE_NOT_PUBLISHED'\] as const;/,
   );
 
   // Every additionalProperties:false object def gets a _KEYS const, and every

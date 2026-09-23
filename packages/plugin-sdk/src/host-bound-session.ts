@@ -13,6 +13,7 @@ import {
   type DeliverInput,
   type DeliveryRejectReason,
   type GrantSnapshot,
+  type HostMessagingLifecycleInput,
   type InFlightEntry,
   type MessagingRowInputByMethod,
   type MessagingRowResultByMethod,
@@ -37,6 +38,7 @@ import {
   type MessagingHostTransport,
   type OutboundMessagingMethod,
 } from './messaging-client.js';
+import { createMediaReader, type PluginMediaReader } from './p1-runtime.js';
 import {
   createStdioChannel,
   type JsonObject,
@@ -59,6 +61,10 @@ export type HostBoundMessageHandler = (
   input: DeliverInput,
 ) => HostBoundMessageDisposition | Promise<HostBoundMessageDisposition>;
 
+export type HostBoundLifecycleHandler = (
+  input: HostMessagingLifecycleInput,
+) => HostBoundMessageDisposition | Promise<HostBoundMessageDisposition>;
+
 export interface HostBoundSessionOptions {
   readonly claims: CandidateHello;
   readonly input?: Readable;
@@ -67,6 +73,7 @@ export interface HostBoundSessionOptions {
   readonly now?: () => number;
   readonly eventPublishing?: HostBoundEventPublishingOptions;
   readonly onMessage?: HostBoundMessageHandler;
+  readonly onLifecycle?: HostBoundLifecycleHandler;
   readonly onDrain?: (input: { readonly deadlineUnixMs: number }) => void | Promise<void>;
   readonly onGrantsChanged?: (snapshot: GrantSnapshot) => void | Promise<void>;
   readonly onFatal?: (error: Error) => void;
@@ -78,6 +85,7 @@ export interface HostBoundSession {
   readonly state: LocalHandshakeState;
   readonly liveness: { readonly kind: 'stdio-session'; isLive(): boolean };
   readonly messaging: MessagingClient;
+  readonly media: PluginMediaReader;
   readonly events: EventsPublisher | undefined;
   close(): void;
 }
@@ -371,6 +379,31 @@ export function createHostBoundSession(options: HostBoundSessionOptions): HostBo
     return { jsonrpc: '2.0', id, result: { deliveryId: input.deliveryId } };
   };
 
+  const dispatchHostLifecycle = async (
+    id: string,
+    input: HostMessagingLifecycleInput,
+  ): Promise<JsonObject> => {
+    if (state.phase !== 'activated' || !state.binding.effectiveGrants.includes('onMessage')) {
+      throw new HostBoundSessionError('PROTOCOL_VIOLATION', 'Host lifecycle arrived without active onMessage authority');
+    }
+    if (options.onLifecycle === undefined) return deliveryRejected(id, 'NO_HANDLER');
+    let disposition: HostBoundMessageDisposition;
+    try {
+      disposition = await options.onLifecycle(structuredClone(input));
+    } catch {
+      return deliveryRejected(id, 'PLUGIN_INTERNAL');
+    }
+    if (!isObject(disposition) || typeof disposition.accepted !== 'boolean') {
+      return deliveryRejected(id, 'PLUGIN_INTERNAL');
+    }
+    if (!disposition.accepted) {
+      if (!DELIVERY_REASONS.has(disposition.reason)) return deliveryRejected(id, 'PLUGIN_INTERNAL');
+      return deliveryRejected(id, disposition.reason);
+    }
+    if (Object.keys(disposition).length !== 1) return deliveryRejected(id, 'PLUGIN_INTERNAL');
+    return { jsonrpc: '2.0', id, result: { deliveryId: input.deliveryId } };
+  };
+
   const dispatchRequest = async (value: JsonObject): Promise<JsonObject | undefined> => {
     const params = value.params as { meta: { deadlineUnixMs: number }; input: JsonObject };
     const method = value.method as string;
@@ -396,6 +429,9 @@ export function createHostBoundSession(options: HostBoundSessionOptions): HostBo
     }
     if (method === 'host.messaging.deliver') {
       return dispatchHostMessage(id, params.input as DeliverInput);
+    }
+    if (method === 'host.messaging.lifecycle') {
+      return dispatchHostLifecycle(id, params.input as HostMessagingLifecycleInput);
     }
     if (method === 'host.lifecycle.drain') {
       const deadlineUnixMs = params.input.deadlineUnixMs as number;
@@ -450,6 +486,7 @@ export function createHostBoundSession(options: HostBoundSessionOptions): HostBo
     getHandshakeState: () => state,
     liveness,
   });
+  const media = createMediaReader(input => messaging.readMedia(input));
   const events = options.eventPublishing === undefined
     ? undefined
     : createEventsPublisher({
@@ -470,6 +507,7 @@ export function createHostBoundSession(options: HostBoundSessionOptions): HostBo
     },
     liveness,
     messaging,
+    media,
     events,
     close: () => {
       if (closed.settled) return;

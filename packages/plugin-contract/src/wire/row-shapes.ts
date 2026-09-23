@@ -29,6 +29,10 @@ import type {
   M0CSnapshotResult,
   M0CSubscribeInput,
   M0CSubscribeResult,
+  HostMessagingLifecycleInput,
+  HostMessagingLifecycleResult,
+  MediaReadInput as GeneratedMediaReadInput,
+  MediaReadResult as GeneratedMediaReadResult,
   MessageDraft,
   SendReceipt,
 } from '../generated/contract.generated.js';
@@ -354,3 +358,12 @@ export type DeliverResult = HostMessagingDeliverResult;
 
 export const DELIVER_DELIVERY_ID_MIN_LENGTH = 1 as const;
 export const DELIVER_DELIVERY_ID_MAX_LENGTH = 128 as const;
+
+/** P1 media byte streaming row. Each result is bounded to one 512 KiB chunk. */
+export type MediaReadInput = GeneratedMediaReadInput;
+export type MediaReadResult = GeneratedMediaReadResult;
+export const MEDIA_READ_CHUNK_MAX_BYTES = 524_288 as const;
+
+/** P1 Host-to-plugin lifecycle callback row. */
+export type LifecycleInput = HostMessagingLifecycleInput;
+export type LifecycleResult = HostMessagingLifecycleResult;

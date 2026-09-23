@@ -16,15 +16,15 @@ importers:
     devDependencies:
       '@clowder-ai/plugin-contract':
         specifier: 0.1.0-beta.17
-        version: link:../plugin-contract
+        version: 0.1.0-beta.17
       '@clowder-ai/plugin-sdk':
         specifier: 0.1.0-beta.13
-        version: link:../plugin-sdk
+        version: 0.1.0-beta.13
 
   packages/connector-dingtalk:
     dependencies:
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.2
+        specifier: 0.2.0-beta.3
         version: link:../plugin-sdk
       dingtalk-stream:
         specifier: 2.1.6-beta.1
@@ -46,7 +46,7 @@ importers:
   packages/connector-feishu:
     dependencies:
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.2
+        specifier: 0.2.0-beta.3
         version: link:../plugin-sdk
       '@larksuiteoapi/node-sdk':
         specifier: 1.59.0
@@ -74,7 +74,7 @@ importers:
   packages/connector-telegram:
     dependencies:
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.2
+        specifier: 0.2.0-beta.3
         version: link:../plugin-sdk
       grammy:
         specifier: 1.41.1
@@ -96,7 +96,7 @@ importers:
   packages/connector-wecom-agent:
     dependencies:
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.2
+        specifier: 0.2.0-beta.3
         version: link:../plugin-sdk
       fast-xml-parser:
         specifier: 5.5.9
@@ -118,7 +118,7 @@ importers:
   packages/connector-wecom-bot:
     dependencies:
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.2
+        specifier: 0.2.0-beta.3
         version: link:../plugin-sdk
       '@wecom/aibot-node-sdk':
         specifier: 1.0.4
@@ -140,7 +140,7 @@ importers:
   packages/connector-weixin:
     dependencies:
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.2
+        specifier: 0.2.0-beta.3
         version: link:../plugin-sdk
       silk-wasm:
         specifier: 3.7.1
@@ -162,7 +162,7 @@ importers:
   packages/connector-xiaoyi:
     dependencies:
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.2
+        specifier: 0.2.0-beta.3
         version: link:../plugin-sdk
       ws:
         specifier: 8.21.3
@@ -187,14 +187,14 @@ importers:
   packages/enterprise-workflow:
     dependencies:
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.2
+        specifier: 0.2.0-beta.3
         version: link:../plugin-sdk
       ajv:
         specifier: 8.20.0
         version: 8.20.0
     devDependencies:
       '@clowder-ai/plugin-contract':
-        specifier: 0.1.0-beta.19
+        specifier: 0.1.0-beta.20
         version: link:../plugin-contract
       '@types/node':
         specifier: ^20.17.0
@@ -351,7 +351,7 @@ importers:
   packages/plugin-sdk:
     dependencies:
       '@clowder-ai/plugin-contract':
-        specifier: 0.1.0-beta.19
+        specifier: 0.1.0-beta.20
         version: link:../plugin-contract
     devDependencies:
       '@types/node':
@@ -436,7 +436,7 @@ importers:
   packages/wechat-visible-reader:
     dependencies:
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.2
+        specifier: 0.2.0-beta.3
         version: link:../plugin-sdk
       zod:
         specifier: 3.25.76
@@ -458,7 +458,7 @@ importers:
   packages/weixin-mp:
     dependencies:
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.2
+        specifier: 0.2.0-beta.3
         version: link:../plugin-sdk
     devDependencies:
       '@types/node':
@@ -488,8 +488,16 @@ packages:
     resolution: {integrity: sha512-i6M6d6bEhL97gVsop2V5hG0lGMrmOVc2/0+7PAHxLhFCg2zIZ0LCd8HDJRYrD3E7QpcezgRzUiWbzRTMnTGdYA==}
     engines: {node: '>=20.0.0'}
 
+  '@clowder-ai/plugin-contract@0.1.0-beta.17':
+    resolution: {integrity: sha512-aujUPSkIAfs3HYc/ubbQVXwxPMG4i3KUTXLi4Y3mokqpOvwgwNz5zz1mJgiiImh3RyojIf+p156b+KSoQ12ZXw==}
+    engines: {node: '>=20.0.0'}
+
   '@clowder-ai/plugin-contract@0.1.0-beta.9':
     resolution: {integrity: sha512-YPpJguiVd0qdoOX8HdU26k36b+58zj0V9w02z/GpRnF8WBubfwuoZ5RBQPE2gf5qwSQwCl/+WVRhsMG/i65Epg==}
+    engines: {node: '>=20.0.0'}
+
+  '@clowder-ai/plugin-sdk@0.1.0-beta.13':
+    resolution: {integrity: sha512-MwgSp3/pselTMCaOpeIW1wb2Gi8pAiB4SZlAZQdHToCQCZg1qgZ1fPd89V0boo6nc9B8Et5rCLGqDiJMFo0Nrw==}
     engines: {node: '>=20.0.0'}
 
   '@clowder-ai/plugin-sdk@0.1.0-beta.5':
@@ -1400,10 +1408,19 @@ snapshots:
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
 
+  '@clowder-ai/plugin-contract@0.1.0-beta.17':
+    dependencies:
+      ajv: 8.20.0
+      ajv-formats: 3.0.1(ajv@8.20.0)
+
   '@clowder-ai/plugin-contract@0.1.0-beta.9':
     dependencies:
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
+
+  '@clowder-ai/plugin-sdk@0.1.0-beta.13':
+    dependencies:
+      '@clowder-ai/plugin-contract': 0.1.0-beta.17
 
   '@clowder-ai/plugin-sdk@0.1.0-beta.5':
     dependencies:
