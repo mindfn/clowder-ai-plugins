@@ -1,5 +1,5 @@
 pluginId: official.wechat-visible-reader
-version: 0.1.0-alpha.0
+version: 0.1.0-alpha.1
 contractVersion: 0.1.0
 name: WeChat Visible Reader
 description:
@@ -9,6 +9,32 @@ description:
 icon:
   type: svg
   src: assets/icon.svg
+configuration:
+  - key: visibleReadingAuthorization
+    label: Visible WeChat reading authorization
+    description: Local owner authorization for a bounded read of the current WeChat conversation.
+    kind: operation
+    required: false
+    actions:
+      - id: arm
+        label: Authorize for 10 minutes
+        render: button
+        action:
+          method: wechat-visible-reader:arm
+          params:
+            minutes: 10
+        next: disarm
+      - id: disarm
+        label: Revoke authorization
+        render: button
+        action:
+          method: wechat-visible-reader:disarm
+        next: arm
+      - id: status
+        label: Authorization status
+        render: status
+        action:
+          method: wechat-visible-reader:status
 contributions:
   - type: limb
     id: wechat-visible-reader-limb
@@ -20,6 +46,9 @@ features:
     contributions:
       - type: limb
         id: wechat-visible-reader-limb
-    capabilities: []
+    capabilities:
+      - plugin.state.get
+      - plugin.state.set
 runtime:
   transport: builtin
+  entrypoint: dist/plugin-entrypoint.js

@@ -11,6 +11,9 @@ test('manifest and package metadata remain one exact package truth', async () =>
     contractVersion: string;
     description: { default: string; translations: Record<string, string> };
     contributions: Array<{ type: string; id: string; manifestPath?: string }>;
+    configuration: Array<{ key: string; kind: string; actions: Array<{ action: { method: string } }> }>;
+    features: Array<{ capabilities: string[] }>;
+    runtime: { transport: string; entrypoint: string };
   };
   const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
     version: string;
@@ -25,14 +28,22 @@ test('manifest and package metadata remain one exact package truth', async () =>
   assert.deepEqual(manifest.contributions, [
     { type: 'limb', id: 'wechat-visible-reader-limb', manifestPath: 'limbs/wechat-visible-reader.yml' },
   ]);
+  assert.deepEqual(manifest.runtime, { transport: 'builtin', entrypoint: 'dist/plugin-entrypoint.js' });
+  assert.deepEqual(manifest.features[0]?.capabilities, ['plugin.state.get', 'plugin.state.set']);
+  assert.equal(manifest.configuration[0]?.kind, 'operation');
+  assert.deepEqual(manifest.configuration[0]?.actions.map(({ action }) => action.method), [
+    'wechat-visible-reader:arm',
+    'wechat-visible-reader:disarm',
+    'wechat-visible-reader:status',
+  ]);
   for (const value of [manifest.description.default, ...Object.values(manifest.description.translations)]) {
     assert.ok([...value].length <= 100);
   }
-  for (const member of ['README.md', 'plugin.yaml', 'assets', 'limbs', 'native']) {
+  for (const member of ['README.md', 'plugin.yaml', 'assets', 'limbs', 'native', 'dist']) {
     assert.ok(packageJson.files.includes(member), `package omits ${member}`);
   }
   const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
   assert.match(readme, /short-lived authorization/i);
-  assert.match(readme, /process-local/i);
+  assert.match(readme, /scope and expiry only/i);
   assert.match(readme, /currently visible in the\s+desktop WeChat/i);
 });

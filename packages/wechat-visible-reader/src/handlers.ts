@@ -29,7 +29,7 @@ export interface WeChatVisibleReaderHandlerDeps {
 
 export function createWeChatVisibleReaderHandlers(deps: WeChatVisibleReaderHandlerDeps): Record<string, InvokeHandler> {
   const readVisibleConversation: InvokeHandler = async (params) => {
-    if (!deps.armStore.isArmed()) {
+    if (!await deps.armStore.isArmed()) {
       return {
         success: true,
         data: {

@@ -1,69 +1,82 @@
+import type { FeatureContext } from '@clowder-ai/plugin-sdk';
+
+type PluginStorageHost = FeatureContext['storage'];
+
+const ARM_KEY = 'visible-conversation-arm';
+const ARM_SCOPE = 'visible-conversation';
+const MAX_ARM_MS = 30 * 60_000;
+
 export interface WeChatVisibleReaderArmStatus {
-  armed: boolean;
-  remainingMs: number;
-  armedBy?: string;
-  armedAt?: string;
-  expiresAt?: string;
+  readonly armed: boolean;
+  readonly remainingMs: number;
+  readonly expiresAt?: string;
 }
 
 interface ArmState {
-  operator: string;
-  armedAt: number;
-  expiresAt: number;
+  readonly scope: typeof ARM_SCOPE;
+  readonly expiresAt: number;
 }
 
 export interface WeChatVisibleReaderArmStoreOptions {
-  now?: () => number;
+  readonly storage: PluginStorageHost;
+  readonly now?: () => number;
+}
+
+function isArmState(value: unknown, now: number): value is ArmState {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const state = value as Record<string, unknown>;
+  return Object.keys(state).length === 2
+    && state.scope === ARM_SCOPE
+    && typeof state.expiresAt === 'number'
+    && Number.isSafeInteger(state.expiresAt)
+    && state.expiresAt > now
+    && state.expiresAt - now <= MAX_ARM_MS;
 }
 
 export class WeChatVisibleReaderArmStore {
+  private readonly storage: PluginStorageHost;
   private readonly now: () => number;
-  private current: ArmState | null = null;
 
-  constructor(options: WeChatVisibleReaderArmStoreOptions = {}) {
+  constructor(options: WeChatVisibleReaderArmStoreOptions) {
+    this.storage = options.storage;
     this.now = options.now ?? Date.now;
   }
 
-  arm(input: { operator: string; minutes: number }): WeChatVisibleReaderArmStatus {
+  async arm(input: { readonly minutes: number }): Promise<WeChatVisibleReaderArmStatus> {
     if (!Number.isInteger(input.minutes) || input.minutes < 1 || input.minutes > 30) {
       throw new RangeError('Arm TTL must be a whole number between 1 and 30 minutes');
     }
-    const operator = input.operator.trim();
-    if (!operator) {
-      throw new Error('Arm operator is required');
-    }
-
-    const armedAt = this.now();
-    this.current = {
-      operator,
-      armedAt,
-      expiresAt: armedAt + input.minutes * 60_000,
-    };
-    return this.status();
+    const now = this.now();
+    const expiresAt = now + input.minutes * 60_000;
+    await this.storage.set(ARM_KEY, { scope: ARM_SCOPE, expiresAt } satisfies ArmState);
+    return { armed: true, remainingMs: expiresAt - now, expiresAt: new Date(expiresAt).toISOString() };
   }
 
-  status(): WeChatVisibleReaderArmStatus {
-    if (!this.current) return { armed: false, remainingMs: 0 };
-    const remainingMs = this.current.expiresAt - this.now();
-    if (remainingMs <= 0) {
-      this.current = null;
+  async status(): Promise<WeChatVisibleReaderArmStatus> {
+    const entry = await this.storage.get(ARM_KEY);
+    const now = this.now();
+    if (!isArmState(entry?.value, now)) {
+      if (entry !== undefined) await this.storage.delete(ARM_KEY, entry.revision);
       return { armed: false, remainingMs: 0 };
     }
     return {
       armed: true,
-      remainingMs,
-      armedBy: this.current.operator,
-      armedAt: new Date(this.current.armedAt).toISOString(),
-      expiresAt: new Date(this.current.expiresAt).toISOString(),
+      remainingMs: entry.value.expiresAt - now,
+      expiresAt: new Date(entry.value.expiresAt).toISOString(),
     };
   }
 
-  isArmed(): boolean {
-    return this.status().armed;
+  async isArmed(): Promise<boolean> {
+    try {
+      return (await this.status()).armed;
+    } catch {
+      // Storage failures cannot authorize a screenshot.
+      return false;
+    }
   }
 
-  disarm(): WeChatVisibleReaderArmStatus {
-    this.current = null;
+  async disarm(): Promise<WeChatVisibleReaderArmStatus> {
+    await this.storage.delete(ARM_KEY);
     return { armed: false, remainingMs: 0 };
   }
 }

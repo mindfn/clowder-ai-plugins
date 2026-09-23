@@ -249,6 +249,7 @@ async function verifyCatalogEntry(catalogEntry) {
       );
       for (const member of [
         'README.md',
+        'dist/plugin-entrypoint.js',
         'limbs/wechat-visible-reader.yml',
         'native/WeChatReaderModels.swift',
         'native/WeChatReaderCore.swift',

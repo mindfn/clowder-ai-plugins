@@ -435,6 +435,9 @@ importers:
 
   packages/wechat-visible-reader:
     dependencies:
+      '@clowder-ai/plugin-sdk':
+        specifier: 0.2.0-beta.2
+        version: link:../plugin-sdk
       zod:
         specifier: 3.25.76
         version: 3.25.76

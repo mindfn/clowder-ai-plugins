@@ -19,8 +19,10 @@ or retain screenshots. Returned text enters the requesting Agent's invocation co
 
 ## Local authorization and privacy
 
-The arm lease is process-local, expires after 1–30 minutes, and can be revoked immediately. Screenshot bytes
-exist only inside the native process. Metrics retain success/failure outcomes and typed error counts, never
+The arm lease is stored in Host plugin state as a scope and expiry only: it carries no operator identity,
+expires after 1–30 minutes, is cleared on runtime start/stop, and can be revoked immediately. The package
+trusts the Host's local-owner guard for arm/disarm operations, not any identity field in caller input.
+Screenshot bytes exist only inside the native process. Metrics retain success/failure outcomes and typed error counts, never
 OCR text, message hashes, screenshots, contacts, or conversation identifiers.
 
 ## Runtime boundary

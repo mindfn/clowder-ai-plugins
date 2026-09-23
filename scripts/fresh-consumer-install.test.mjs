@@ -194,22 +194,11 @@ test('packed public packages install and import in a fresh npm consumer', async 
       'native/WeChatReaderCore.swift',
       'native/WeChatVisibleReader.swift',
       'dist/index.js',
+      'dist/plugin-entrypoint.js',
       'npm-shrinkwrap.json',
     ]) {
       await readFile(join(stagedWechatReaderPackage, member), 'utf8');
     }
-    runNpm(
-      [
-        'ci',
-        '--ignore-scripts',
-        '--omit=dev',
-        '--registry=https://registry.npmjs.org/',
-        '--no-audit',
-        '--no-fund',
-        ...(process.platform === 'darwin' ? [] : ['--force']),
-      ],
-      stagedWechatReaderPackage,
-    );
     run(
       process.execPath,
       [
@@ -367,7 +356,9 @@ test('packed public packages install and import in a fresh npm consumer', async 
     assert.equal(weixinMpPackage.version, '0.1.0-alpha.1');
     assert.equal(weixinMpPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.2');
     assert.doesNotMatch(JSON.stringify(weixinMpPackage), /"workspace:/u);
-    assert.equal(wechatReaderPackage.version, '0.1.0-alpha.0');
+    assert.equal(wechatReaderPackage.version, '0.1.0-alpha.1');
+    assert.equal(wechatReaderPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.2');
+    assert.doesNotMatch(JSON.stringify(wechatReaderPackage), /"workspace:/u);
     assert.deepEqual(wechatReaderPackage.os, ['darwin']);
     assert.equal(enterprisePackage.version, '0.1.0-alpha.0');
     assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.2');
@@ -496,6 +487,15 @@ test('packed public packages install and import in a fresh npm consumer', async 
         : JSON.stringify(wechatReaderManifestValidation.errors),
     );
     assert.equal(wechatReaderManifest.contractVersion, installedContract.CONTRACT_VERSION);
+    assert.deepEqual(wechatReaderManifest.runtime, {
+      transport: 'builtin',
+      entrypoint: 'dist/plugin-entrypoint.js',
+    });
+    const wechatReaderRoot = join(consumer, 'node_modules/@clowder-ai/wechat-visible-reader');
+    const wechatReaderEntrypoint = installedSdk.requirePluginModuleEntrypoint(
+      (await import(pathToFileURL(join(wechatReaderRoot, wechatReaderManifest.runtime.entrypoint)).href)).default,
+    );
+    assert.equal(typeof wechatReaderEntrypoint.create(wechatReaderManifest).start, 'function');
     assert.match(
       await readFile(
         join(consumer, 'node_modules/@clowder-ai/wechat-visible-reader/README.md'),

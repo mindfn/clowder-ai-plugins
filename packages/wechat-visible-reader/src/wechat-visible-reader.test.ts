@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import type { FeatureContext } from '@clowder-ai/plugin-sdk';
+
 import { createWeChatVisibleReaderHandlers } from './handlers.js';
 import {
   createWeChatVisibleReaderNativeRunner,
@@ -14,6 +16,27 @@ import { WeChatVisibleReaderArmStore } from './WeChatVisibleReaderArmStore.js';
 import { WeChatVisibleReaderMetrics } from './WeChatVisibleReaderMetrics.js';
 
 const rect = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 };
+
+function memoryStorage(): FeatureContext['storage'] {
+  const entries = new Map<string, { revision: number; value: unknown }>();
+  let revision = 0;
+  return {
+    get: async (key) => entries.get(key),
+    list: async () => Object.fromEntries(entries),
+    set: async (key, value) => {
+      const next = ++revision;
+      entries.set(key, { revision: next, value });
+      return { revision: next };
+    },
+    compareAndSet: async (key, expected, value) => {
+      if ((entries.get(key)?.revision ?? null) !== expected) return { applied: false };
+      const next = ++revision;
+      entries.set(key, { revision: next, value });
+      return { applied: true, revision: next };
+    },
+    delete: async (key) => ({ deleted: entries.delete(key) }),
+  };
+}
 
 function successfulRead(text = 'target text') {
   return {
@@ -45,7 +68,7 @@ function successfulRead(text = 'target text') {
 }
 
 function makeHandlers(runner?: WeChatVisibleReaderNativeRunner) {
-  const armStore = new WeChatVisibleReaderArmStore();
+  const armStore = new WeChatVisibleReaderArmStore({ storage: memoryStorage() });
   const calls = { visible: 0, recent: 0 };
   const fixtureRunner: WeChatVisibleReaderNativeRunner = runner ?? {
     read: async () => {
@@ -92,7 +115,7 @@ function makeHandlers(runner?: WeChatVisibleReaderNativeRunner) {
 
 test('passive reads require a bounded local arm and expiry fails closed', async () => {
   let now = Date.parse('2026-09-19T00:00:00.000Z');
-  const armStore = new WeChatVisibleReaderArmStore({ now: () => now });
+  const armStore = new WeChatVisibleReaderArmStore({ storage: memoryStorage(), now: () => now });
   let reads = 0;
   const runner = {
     read: async () => {
@@ -114,8 +137,8 @@ test('passive reads require a bounded local arm and expiry fails closed', async 
   })['wechat-visible-reader:read_visible_conversation']!;
 
   assert.equal(((await handler({}, {})).data as { ok: boolean }).ok, false);
-  assert.throws(() => armStore.arm({ operator: 'owner', minutes: 31 }), /between 1 and 30/);
-  armStore.arm({ operator: 'owner', minutes: 1 });
+  await assert.rejects(armStore.arm({ minutes: 31 }), /between 1 and 30/);
+  await armStore.arm({ minutes: 1 });
   assert.equal(((await handler({}, {})).data as { ok: boolean }).ok, true);
   now += 60_001;
   assert.equal(((await handler({}, {})).data as { ok: boolean }).ok, false);
