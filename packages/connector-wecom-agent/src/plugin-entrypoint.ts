@@ -162,9 +162,12 @@ export function createWeComAgentPluginModule(createRuntime: RuntimeFactory = cre
               const input = await bridge.outbound(candidate);
               const blocks = [...(input.richBlocks ?? [])];
               if (blocks.length > 0) {
+                const text = [input.presentation.header, input.presentation.subtitle, input.presentation.body, input.presentation.footer]
+                  .filter((value): value is string => value !== undefined && value.length > 0)
+                  .join('\n\n');
                 await runtime.outbound.sendReply(
                   input.externalConversationId,
-                  input.presentation.body + '\n\n' + renderAllRichBlocksPlaintext(blocks),
+                  text + '\n\n' + renderAllRichBlocksPlaintext(blocks),
                 );
               } else {
                 await runtime.outbound.sendFormattedReply(input.externalConversationId, {

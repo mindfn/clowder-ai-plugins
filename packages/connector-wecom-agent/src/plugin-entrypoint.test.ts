@@ -162,7 +162,7 @@ test('rich blocks fall back to sendReply with rendered plaintext blocks', async 
   const active = await entrypoint.create(manifest).start(host);
   await active.actions['wecom-agent.outbound']?.(richDelivery());
   assert.deepEqual(calls, [
-    { operation: 'provider.send', value: ['chat-1', '正文\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'] },
+    { operation: 'provider.send', value: ['chat-1', 'cat-1\n\n正文\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'] },
   ]);
   await active.stop();
 });
