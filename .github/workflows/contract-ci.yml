@@ -30,16 +30,7 @@ on:
       - 'packages/github-operations/**'
       - 'packages/stackchan/**'
       - 'catalog/**'
-      - 'scripts/fresh-consumer-install.test.mjs'
-      - 'scripts/train-c1-inventory*'
-      - 'scripts/desktop-window-consumer.test.mjs'
-      - 'scripts/catalog-check.mjs'
-      - 'scripts/catalog-static-package*'
-      - 'scripts/canonical-publish-gzip.mjs'
-      - 'scripts/pack-publish-artifact.mjs'
-      - 'scripts/pack-gate.mjs'
-      - 'scripts/registry-publish-compatibility*'
-      - 'scripts/assert-pr-head.mjs'
+      - 'scripts/**'
       - 'package.json'
       - '.npmrc'
       - 'pnpm-lock.yaml'
@@ -137,6 +128,12 @@ jobs:
 
       - name: Enterprise workflow package gates
         run: pnpm --filter @clowder-ai/enterprise-workflow typecheck && pnpm --filter @clowder-ai/enterprise-workflow test && pnpm --filter @clowder-ai/enterprise-workflow lint && pnpm --filter @clowder-ai/enterprise-workflow build
+
+      - name: Script test coverage
+        run: node scripts/assert-script-tests-covered.mjs
+
+      - name: Script-only unit tests
+        run: pnpm test:scripts
 
       - name: Desktop window packed consumer
         run: node --test scripts/desktop-window-consumer.test.mjs

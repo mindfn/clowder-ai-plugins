@@ -81,7 +81,7 @@ test('static package without runtime entrypoint still loads its main', async (t)
 test('installed dependency version may carry a leading v prefix that npm normalizes away', async (t) => {
   const archive = await fixture(t, 'export default { create() {} };\n', 'builtin', {
     'upstream-v-prefixed': 'v2.1.6-beta.1',
-  });
+  }, { 'upstream-v-prefixed': '2.1.6-beta.1' });
   const result = await verifySelfContainedArchive(archive);
   assert.equal(result.installedPackages, 1);
 });
@@ -124,7 +124,7 @@ test('installed dependency version that differs beyond a v prefix is still rejec
 test('installed dependency version may carry a leading = that npm normalizes away', async (t) => {
   const archive = await fixture(t, 'export default { create() {} };\n', 'builtin', {
     'upstream-eq-prefixed': '=1.0.0',
-  });
+  }, { 'upstream-eq-prefixed': '1.0.0' });
   const result = await verifySelfContainedArchive(archive);
   assert.equal(result.installedPackages, 1);
 });
@@ -132,7 +132,7 @@ test('installed dependency version may carry a leading = that npm normalizes awa
 test('installed dependency version may carry surrounding whitespace that npm trims', async (t) => {
   const archive = await fixture(t, 'export default { create() {} };\n', 'builtin', {
     'upstream-padded': ' 1.0.0 ',
-  });
+  }, { 'upstream-padded': '1.0.0' });
   const result = await verifySelfContainedArchive(archive);
   assert.equal(result.installedPackages, 1);
 });

@@ -9,6 +9,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r --workspace-concurrency=1 test",
+    "test:scripts": "node --test scripts/catalog-runtime-entrypoints.test.mjs scripts/verify-self-contained-artifact.test.mjs",
     "test:fresh-consumer": "node --test scripts/fresh-consumer-install.test.mjs",
     "test:train-c1-inventory": "node --test scripts/train-c1-inventory.test.mjs",
     "registry:check": "node --test scripts/registry-publish-compatibility.test.mjs && node scripts/registry-publish-compatibility.mjs",
