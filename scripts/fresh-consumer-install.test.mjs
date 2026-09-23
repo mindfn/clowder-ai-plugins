@@ -280,7 +280,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
     const enterprisePackage = JSON.parse(
       await readFile(join(consumer, 'node_modules/@clowder-ai/enterprise-workflow/package.json'), 'utf8'),
     );
-    assert.equal(genofficePackage.version, '0.1.0-alpha.1');
+    assert.equal(genofficePackage.version, '0.1.0-alpha.2');
     assert.equal(genofficePackage.dependencies['@clowder-ai/plugin-contract'], '0.1.0-beta.15');
     assert.doesNotMatch(JSON.stringify(genofficePackage), /"workspace:/u);
     const sourceLock = JSON.parse(await readFile(join(repoRoot, 'packages/genoffice-docx/source-lock.json'), 'utf8'));

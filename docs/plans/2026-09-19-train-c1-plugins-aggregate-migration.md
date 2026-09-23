@@ -225,18 +225,31 @@ delivery tree.
   paths
 - fresh-consumer default-export guard: the entrypoint must expose the Host-loadable module shape
 
-### Merge-time step — companion version is provisional
+### Merge-time step — every version this PR claims is provisional
 
-PR #54 is the only non-F202 change to `packages/companion`: its own install-consent gate requires a README
-consent surface, and review round 3 fixed a prototype-key leak in `src/errors.mjs` (`explainError`). The
-version it claims (`0.1.0-alpha.5`) is provisional. companion is upstream-owned and actively developed, and
-upstream claims a version in `main` (package.json + catalog pin) before anyone publishes it — publishing is a
-manual step (`scripts/pack-publish-artifact.mjs`; there is no release workflow). On 2026-09-23 `main` pinned
-`0.1.0-alpha.4` while the registry still stopped at `0.1.0-alpha.3`. So at merge time a version is taken if
-**either** the registry has it **or** `main`'s `packages/companion/package.json` / catalog entry already claims
-it; if taken, re-bump to the next free version and re-pack with the fixed toolchain before merging. CI cannot
-catch this — `catalog:check` compares against the branch's own catalog pin, not against the registry or
-`main`.
+PR #54 changes two upstream-owned packages outside F202, both because its own install-consent gate requires a
+README consent surface on every Manager-installable package: `packages/companion` (README, plus the round-3 fix
+for a prototype-key leak in `src/errors.mjs` `explainError`) and `packages/genoffice-docx` (README only).
+Publishing is automated: on a push to `main` that touches a public package, Contract CI's `publish` job
+(`.github/actions/publish-prerelease`) publishes every package version the registry does not have yet, with tag
+`next`, and fails if an already-published version packs to different bytes. A version is therefore taken as soon
+as it lands on `main` (#58 put companion `0.1.0-alpha.4` on `main` at 08:31Z on 2026-09-23; CI published it at
+08:38Z), and a published version never gets new bytes — which is why this PR bumps companion to
+`0.1.0-alpha.5` and genoffice-docx to `0.1.0-alpha.2`.
+
+Every version this PR claims is provisional: companion `0.1.0-alpha.5`, genoffice-docx `0.1.0-alpha.2`,
+video-analysis `0.1.0-alpha.2`, plugin-contract `0.1.0-beta.19`, plugin-sdk `0.2.0-beta.2`, and the first version
+of each package this PR adds. Right before merging, a version is free only if it is absent from
+`https://registry.npmjs.org` **and** not claimed by `main`'s `package.json` or catalog; if either check fails,
+re-bump to the next free version and re-pack with the fixed toolchain. Always pass
+`--registry https://registry.npmjs.org`: a local npm config may point at a mirror that lags. On 2026-09-23
+`registry.npmmirror.com` still ended at companion `0.1.0-alpha.3` after npmjs.org had published
+`0.1.0-alpha.4`, and an earlier version of this paragraph repeated that mistake.
+
+What CI covers: `scripts/registry-publish-compatibility.mjs` fails when a catalog pin or a public package's
+current version is already published with different bytes (it caught genoffice `0.1.0-alpha.1`, which round 5
+had re-pinned without a version bump). It cannot see a version that `main` has claimed but not yet published,
+and `catalog:check` only compares the branch against its own pins — hence the manual check above.
 
 ### Where the truth lives
 

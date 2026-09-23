@@ -35,8 +35,10 @@ on:
       - 'scripts/desktop-window-consumer.test.mjs'
       - 'scripts/catalog-check.mjs'
       - 'scripts/catalog-static-package*'
+      - 'scripts/canonical-publish-gzip.mjs'
       - 'scripts/pack-publish-artifact.mjs'
       - 'scripts/pack-gate.mjs'
+      - 'scripts/registry-publish-compatibility*'
       - 'scripts/assert-pr-head.mjs'
       - 'package.json'
       - '.npmrc'
@@ -218,6 +220,9 @@ jobs:
 
       - name: Machine catalog
         run: pnpm catalog:check
+
+      - name: Immutable registry compatibility
+        run: pnpm registry:check
 
       # B4 class: catalog:check packs with --ignore-scripts, so a broken
       # prepack is invisible until the post-merge publish job. Pack every

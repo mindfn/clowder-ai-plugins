@@ -11,6 +11,7 @@
     "test": "pnpm -r --workspace-concurrency=1 test",
     "test:fresh-consumer": "node --test scripts/fresh-consumer-install.test.mjs",
     "test:train-c1-inventory": "node --test scripts/train-c1-inventory.test.mjs",
+    "registry:check": "node --test scripts/registry-publish-compatibility.test.mjs && node scripts/registry-publish-compatibility.mjs",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "conformance": "pnpm --filter @clowder-ai/plugin-contract conformance",
