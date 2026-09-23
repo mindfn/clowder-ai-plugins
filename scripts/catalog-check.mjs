@@ -348,7 +348,21 @@ async function verifyCatalogEntry(catalogEntry) {
 
 }
 
-for (const entry of listCatalogPlugins(validation.catalog)) await verifyCatalogEntry(entry);
+// Aggregate per-entry failures instead of failing fast: a stale pin surfaces
+// every affected plugin in one run, so one CI cycle is enough to refresh them.
+const entryFailures = [];
+for (const entry of listCatalogPlugins(validation.catalog)) {
+  try {
+    await verifyCatalogEntry(entry);
+  } catch (error) {
+    entryFailures.push(`[${entry.pluginId}] ${error.message}`);
+  }
+}
+if (entryFailures.length > 0) {
+  assert.fail(
+    `catalog verification failed for ${entryFailures.length} plugin(s):\n\n${entryFailures.join('\n\n---\n\n')}`,
+  );
+}
 assert.equal(videoAnalysisChecks, 1, 'video-analysis package-owned metadata checks must run exactly once');
 assert.equal(videoGenerationChecks, 1, 'video-generation package-owned metadata checks must run exactly once');
 assert.equal(
