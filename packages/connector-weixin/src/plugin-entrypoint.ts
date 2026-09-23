@@ -15,6 +15,7 @@ import {
   type WeixinHostInboundMessage,
 } from './runtime.js';
 import { WeixinAdapter, type WeixinSessionState, type WeixinSessionStateStore } from './WeixinAdapter.js';
+import { renderAllRichBlocksPlaintext } from './rich-block-plaintext.js';
 
 type RuntimeFactory = (
   options: WeixinConnectorRuntimeOptions<WeixinAdapter>,
@@ -166,7 +167,11 @@ export function createWeixinPluginModule(createRuntime: RuntimeFactory = createW
               const text = [input.presentation.header, input.presentation.subtitle, input.presentation.body, input.presentation.footer]
                 .filter((value): value is string => value !== undefined && value.length > 0)
                 .join('\n\n');
-              await runtime.outbound.sendReply(input.externalConversationId, text);
+              const blocks = [...(input.richBlocks ?? [])];
+              await runtime.outbound.sendReply(
+                input.externalConversationId,
+                blocks.length > 0 ? text + '\n\n' + renderAllRichBlocksPlaintext(blocks) : text,
+              );
               for (const media of input.media ?? []) {
                 if (media.type === 'video') {
                   await runtime.outbound.sendReply(input.externalConversationId, `🎬 ${media.reference}`);

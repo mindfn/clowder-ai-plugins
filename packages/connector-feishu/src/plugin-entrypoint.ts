@@ -188,15 +188,26 @@ export function createFeishuPluginModule(createRuntime: RuntimeFactory = createF
           actions: {
             'feishu.outbound': async (candidate) => {
               const input = await bridge.outbound(candidate);
-              await runtime.outbound.sendFormattedReply(input.externalConversationId, {
-                header: input.presentation.header,
-                subtitle: input.presentation.subtitle ?? '',
-                body: input.presentation.body,
-                footer: input.presentation.footer ?? '',
-                origin: input.presentation.origin === 'callback' ? 'callback' : 'agent',
-                ...(input.presentation.cardActions === undefined
-                  ? {} : { cardActions: input.presentation.cardActions.map(action => ({ label: action.label, value: { ...action.value } })) }),
-              }, input.metadata);
+              const blocks = [...(input.richBlocks ?? [])];
+              if (blocks.length > 0) {
+                await runtime.outbound.sendRichMessage(
+                  input.externalConversationId,
+                  input.presentation.body,
+                  blocks as unknown as Parameters<FeishuAdapter['sendRichMessage']>[2],
+                  input.presentation.header,
+                  input.metadata,
+                );
+              } else {
+                await runtime.outbound.sendFormattedReply(input.externalConversationId, {
+                  header: input.presentation.header,
+                  subtitle: input.presentation.subtitle ?? '',
+                  body: input.presentation.body,
+                  footer: input.presentation.footer ?? '',
+                  origin: input.presentation.origin === 'callback' ? 'callback' : 'agent',
+                  ...(input.presentation.cardActions === undefined
+                    ? {} : { cardActions: input.presentation.cardActions.map(action => ({ label: action.label, value: { ...action.value } })) }),
+                }, input.metadata);
+              }
               for (const media of input.media ?? []) {
                 if (media.type === 'video') {
                   await runtime.outbound.sendReply(input.externalConversationId, `🎬 ${media.reference}`);

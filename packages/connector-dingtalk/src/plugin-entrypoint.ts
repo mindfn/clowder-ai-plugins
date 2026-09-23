@@ -164,14 +164,25 @@ export function createDingTalkPluginModule(
           actions: {
             'dingtalk.outbound': async (candidate) => {
               const input = await bridge.outbound(candidate);
-              await runtime.outbound.sendFormattedReply(
-                input.externalConversationId,
-                {
-                  ...input.presentation,
-                  origin: input.presentation.origin === 'callback' ? 'callback' : 'direct',
-                },
-                input.metadata,
-              );
+              const blocks = [...(input.richBlocks ?? [])];
+              if (blocks.length > 0) {
+                await runtime.outbound.sendRichMessage(
+                  input.externalConversationId,
+                  input.presentation.body,
+                  blocks as unknown as Parameters<DingTalkAdapter['sendRichMessage']>[2],
+                  input.presentation.header,
+                  input.metadata,
+                );
+              } else {
+                await runtime.outbound.sendFormattedReply(
+                  input.externalConversationId,
+                  {
+                    ...input.presentation,
+                    origin: input.presentation.origin === 'callback' ? 'callback' : 'direct',
+                  },
+                  input.metadata,
+                );
+              }
               for (const media of input.media ?? []) {
                 if (media.type === 'video') {
                   await runtime.outbound.sendReply(input.externalConversationId, `🎬 ${media.reference}`);

@@ -65,3 +65,52 @@ test('module bridges provider ingress and Host subscription egress without conne
   await assert.rejects(() => active.actions['telegram.outbound']?.({ ...delivery(), externalConversationId: 'forbidden' }), /unsupported field/);
   await active.stop();
 });
+
+function richDelivery() {
+  return {
+    deliveryId: 'delivery-1', threadId: 'thread-1',
+    envelope: {
+      messageId: 'message-1', revision: 1, threadId: 'thread-1',
+      actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
+      payload: { provenance: { origin: { kind: 'host' }, epistemicStatus: 'observation' }, elements: [
+        { elementId: 't1', kind: 'text', payload: { text: '正文' } },
+        { elementId: 'r1', kind: 'rich_block', payload: { id: 'b1', kind: 'card', v: 1, title: 'T', bodyMarkdown: 'B' } },
+        { elementId: 'r2', kind: 'rich_block', payload: { id: 'b2', kind: 'checklist', v: 1, title: 'L', items: [{ id: 'i1', text: 'a', checked: true }, { id: 'i2', text: 'b' }] } },
+      ] },
+    },
+  };
+}
+
+test('rich blocks route to sendRichMessage instead of sendReply', async () => {
+  const calls: Array<{ operation: string; value: unknown }> = [];
+  const outbound = {
+    async sendRichMessage(...args: unknown[]) { calls.push({ operation: 'provider.rich', value: args }); },
+    async sendReply(...args: unknown[]) { calls.push({ operation: 'provider.send', value: args }); },
+    async sendMedia() {},
+  } as unknown as TelegramAdapter;
+  const entrypoint = createTelegramPluginModule(() => ({ outbound, async start() {}, async stop() {} }) as TelegramConnectorRuntime<TelegramAdapter>);
+  const host: ModulePluginHostShape = {
+    config: { get: async () => undefined }, secrets: { get: async () => 'bot-token' },
+    storage: {} as never, tasks: {} as never,
+    threads: {
+      listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
+      ensureByKey: async (key: string) => ({ id: 'thread-1', title: key, createdAt: 1, lastActiveAt: 1 }),
+    } as never,
+    messaging: {
+      subscribe: async () => undefined,
+      unsubscribe: async () => undefined,
+      send: async input => ({ messageId: 'host-message-1', threadId: input.threadId }),
+    },
+    log() {},
+  };
+
+  const active = await entrypoint.create(manifest).start(host);
+  await active.actions['telegram.outbound']?.(richDelivery());
+  assert.deepEqual(calls, [
+    { operation: 'provider.rich', value: ['chat-1', '正文', [
+      { id: 'b1', kind: 'card', v: 1, title: 'T', bodyMarkdown: 'B' },
+      { id: 'b2', kind: 'checklist', v: 1, title: 'L', items: [{ id: 'i1', text: 'a', checked: true }, { id: 'i2', text: 'b' }] },
+    ], 'cat-1'] },
+  ]);
+  await active.stop();
+});

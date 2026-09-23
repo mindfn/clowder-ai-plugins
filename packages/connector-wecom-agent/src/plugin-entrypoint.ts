@@ -9,6 +9,7 @@ import {
 } from '@clowder-ai/plugin-sdk';
 
 import { WeComAgentAdapter } from './WeComAgentAdapter.js';
+import { renderAllRichBlocksPlaintext } from './rich-block-plaintext.js';
 import {
   createWeComAgentConnectorRuntime,
   requireWeComAgentWebhookInput,
@@ -159,13 +160,21 @@ export function createWeComAgentPluginModule(createRuntime: RuntimeFactory = cre
           actions: {
             'wecom-agent.outbound': async (candidate) => {
               const input = await bridge.outbound(candidate);
-              await runtime.outbound.sendFormattedReply(input.externalConversationId, {
-                header: input.presentation.header,
-                body: input.presentation.body,
-                origin: input.presentation.origin === 'callback' ? 'callback' : 'direct',
-                ...(input.presentation.subtitle === undefined ? {} : { subtitle: input.presentation.subtitle }),
-                ...(input.presentation.footer === undefined ? {} : { footer: input.presentation.footer }),
-              });
+              const blocks = [...(input.richBlocks ?? [])];
+              if (blocks.length > 0) {
+                await runtime.outbound.sendReply(
+                  input.externalConversationId,
+                  input.presentation.body + '\n\n' + renderAllRichBlocksPlaintext(blocks),
+                );
+              } else {
+                await runtime.outbound.sendFormattedReply(input.externalConversationId, {
+                  header: input.presentation.header,
+                  body: input.presentation.body,
+                  origin: input.presentation.origin === 'callback' ? 'callback' : 'direct',
+                  ...(input.presentation.subtitle === undefined ? {} : { subtitle: input.presentation.subtitle }),
+                  ...(input.presentation.footer === undefined ? {} : { footer: input.presentation.footer }),
+                });
+              }
               for (const media of input.media ?? []) {
                 if (media.type === 'video') {
                   await runtime.outbound.sendReply(input.externalConversationId, `🎬 ${media.reference}`);

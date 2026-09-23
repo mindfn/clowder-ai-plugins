@@ -122,17 +122,28 @@ export function createWeComBotPluginModule(createRuntime: RuntimeFactory = creat
           actions: {
             'wecom-bot.outbound': async (candidate) => {
               const input = await bridge.outbound(candidate);
-              await runtime.outbound.sendFormattedReply(
-                input.externalConversationId,
-                {
-                  header: input.presentation.header,
-                  body: input.presentation.body,
-                  origin: input.presentation.origin === 'callback' ? 'callback' : 'direct',
-                  ...(input.presentation.subtitle === undefined ? {} : { subtitle: input.presentation.subtitle }),
-                  ...(input.presentation.footer === undefined ? {} : { footer: input.presentation.footer }),
-                },
-                input.metadata,
-              );
+              const blocks = [...(input.richBlocks ?? [])];
+              if (blocks.length > 0) {
+                await runtime.outbound.sendRichMessage(
+                  input.externalConversationId,
+                  input.presentation.body,
+                  blocks as unknown as Parameters<WeComBotAdapter['sendRichMessage']>[2],
+                  input.presentation.header,
+                  input.metadata,
+                );
+              } else {
+                await runtime.outbound.sendFormattedReply(
+                  input.externalConversationId,
+                  {
+                    header: input.presentation.header,
+                    body: input.presentation.body,
+                    origin: input.presentation.origin === 'callback' ? 'callback' : 'direct',
+                    ...(input.presentation.subtitle === undefined ? {} : { subtitle: input.presentation.subtitle }),
+                    ...(input.presentation.footer === undefined ? {} : { footer: input.presentation.footer }),
+                  },
+                  input.metadata,
+                );
+              }
               for (const media of input.media ?? []) {
                 if (media.type === 'video') {
                   await runtime.outbound.sendReply(input.externalConversationId, `🎬 ${media.reference}`);

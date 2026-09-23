@@ -54,3 +54,34 @@ test('module settles the provider task after the declared outbound action comple
     ['done', 'agent:session', true],
   ]);
 });
+
+function richDelivery() {
+  return {
+    deliveryId: 'delivery-1', threadId: 'thread-1',
+    envelope: {
+      messageId: 'message-1', revision: 1, threadId: 'thread-1',
+      actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
+      payload: { provenance: { origin: { kind: 'host' }, epistemicStatus: 'observation' }, elements: [
+        { elementId: 't1', kind: 'text', payload: { text: '正文' } },
+        { elementId: 'r1', kind: 'rich_block', payload: { id: 'b1', kind: 'card', v: 1, title: 'T', bodyMarkdown: 'B' } },
+        { elementId: 'r2', kind: 'rich_block', payload: { id: 'b2', kind: 'checklist', v: 1, title: 'L', items: [{ id: 'i1', text: 'a', checked: true }, { id: 'i2', text: 'b' }] } },
+      ] },
+    },
+  };
+}
+
+test('rich blocks append rendered plaintext blocks to the joined reply before batch done', async () => {
+  const events: unknown[] = [];
+  const outbound = {
+    async sendReply(...args: unknown[]) { events.push(['reply', ...args]); },
+    async onDeliveryBatchDone(...args: unknown[]) { events.push(['done', ...args]); },
+  } as unknown as XiaoyiAdapter;
+  const entrypoint = createXiaoyiPluginModule(() => ({ outbound, async start() {}, async stop() {} }) as XiaoyiConnectorRuntime<XiaoyiAdapter>);
+  const values: Record<string, unknown> = { accessKey: 'ak', agentId: 'agent' };
+  const active = await entrypoint.create(manifest).start(host(values));
+  await active.actions['xiaoyi.outbound']?.(richDelivery());
+  assert.deepEqual(events, [
+    ['reply', 'agent:session', 'cat-1\n\n正文\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'],
+    ['done', 'agent:session', true],
+  ]);
+});
