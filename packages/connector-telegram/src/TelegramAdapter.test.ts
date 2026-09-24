@@ -121,7 +121,7 @@ test('media upload failure removes the package-owned temporary file', async () =
   await assert.rejects(access(uploadPath));
 });
 
-test('inbound media deadline aborts Telegram getFile instead of waiting for the SDK default', async () => {
+test('inbound media deadline aborts Telegram getFile instead of waiting for the SDK default', { timeout: 5_000 }, async () => {
   const { logger } = recordingLogger();
   const subject = new TelegramAdapter('123456:abcdefghij_ABC-123', logger);
   subject._injectInboundMediaTimeout(5);

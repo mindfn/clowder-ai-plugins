@@ -73,7 +73,7 @@ test('inbound resource success and failure never print the private file key', as
   assert.equal(JSON.stringify(captured).includes(privateFileKey), false);
 });
 
-test('inbound resource aborts the underlying header request at the adapter deadline', async () => {
+test('inbound resource aborts the underlying header request at the adapter deadline', { timeout: 5_000 }, async () => {
   const subject = new FeishuAdapter('app-id', 'app-secret', logger);
   subject._injectTokenManager({ async getTenantAccessToken() { return 'token'; } } as never);
   subject._injectInboundMediaTimeout(5);

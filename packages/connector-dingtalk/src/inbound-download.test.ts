@@ -38,7 +38,7 @@ test('bounded inbound fetch rejects declared oversize content without reading it
   assert.equal(cancelled, true);
 });
 
-test('bounded inbound fetch aborts a provider request at its deadline', async () => {
+test('bounded inbound fetch aborts a provider request at its deadline', { timeout: 5_000 }, async () => {
   const fetchFn = (_input: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
     init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
   });

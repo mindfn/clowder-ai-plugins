@@ -135,7 +135,7 @@ test('media upload failure removes the package-owned temporary file', async () =
   await assert.rejects(access(uploadPath));
 });
 
-test('inbound media deadline aborts the DingTalk access-token request', async () => {
+test('inbound media deadline aborts the DingTalk access-token request', { timeout: 5_000 }, async () => {
   const subject = adapter();
   subject._injectInboundMediaTimeout(5);
   let aborted = false;
