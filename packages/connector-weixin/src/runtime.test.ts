@@ -75,6 +75,51 @@ test('runtime restores Host-owned state before ingress and forwards provider fac
   assert.equal(delivered.length, 1, 'provider callbacks after stop must not reach the Host');
 });
 
+test('disconnect during session restore supersedes the stale chain; a later connect still polls', async () => {
+  const events: string[] = [];
+  let releaseRestore: (() => void) | undefined;
+  const restoreGate = new Promise<void>(resolve => { releaseRestore = resolve; });
+  const makeAdapter = (label: string) => {
+    let polling = false;
+    return {
+      connectorId: 'weixin',
+      async restoreSessionState() { events.push(`${label}:restore`); await restoreGate; },
+      startPolling() { polling = true; events.push(`${label}:poll`); },
+      async stopPolling() { polling = false; },
+      async sendReply() {}, async sendMedia() {},
+      hasBotToken() { return true; },
+      isPolling() { return polling; },
+      setBotToken() {},
+      async disconnect() { events.push(`${label}:disconnect`); polling = false; },
+    } as unknown as WeixinRuntimeAdapter;
+  };
+  const runtime = createWeixinConnectorRuntime({
+    config: { botToken: '' },
+    state: sessionState,
+    logger,
+    host: { deliver: async () => undefined },
+    createAdapter: (token) => makeAdapter(token),
+  });
+  await runtime.start();
+  // Connect t1 while its session restore is still in flight, then drop the
+  // connection before the chain resumes.
+  const connecting = runtime.connect('token-1');
+  await runtime.disconnect();
+  releaseRestore?.();
+  await connecting;
+  // A later connect must begin polling with the new token: the superseded
+  // chain must neither poll the stale adapter nor publish state='running'
+  // (which would make this connect skip beginPolling entirely).
+  await runtime.connect('token-2');
+  // disconnect() runs before the superseded chain's first microtask, so its
+  // event lands first; the essential facts are: the stale chain never polls
+  // token-1, and the replacement connection restores + polls token-2.
+  assert.deepEqual(events, ['token-1:disconnect', 'token-1:restore', 'token-2:restore', 'token-2:poll']);
+  assert.equal(events.includes('token-1:poll'), false, 'the superseded chain must not start polling the dropped adapter');
+  assert.equal(runtime.isConnected(), true, 'the replacement connection must be live');
+  await runtime.stop();
+});
+
 test('stop during state restoration cannot claim drain before polling is stopped', async () => {
   const fake = provider();
   const runtime = createWeixinConnectorRuntime({

@@ -102,6 +102,11 @@ export function createWeixinConnectorRuntime<Adapter extends WeixinRuntimeAdapte
   let armed = false;
   let startPromise: Promise<void> | undefined;
   let stopPromise: Promise<void> | undefined;
+  // Bumped by every connect()/disconnect() that supersedes in-flight work: a
+  // polling chain captured an older generation must not start polling on a
+  // stale adapter or publish state after the connection it belongs to was
+  // dropped or replaced.
+  let generation = 0;
   const deliverIfRunning = async (message: WeixinInboundMessage) => {
     if (state !== 'running') return;
     await options.host.deliver(hostMessage(message));
@@ -114,18 +119,25 @@ export function createWeixinConnectorRuntime<Adapter extends WeixinRuntimeAdapte
   };
   const beginPolling = (): Promise<void> => {
     const adapter = requireOutbound();
+    const generationAtStart = generation;
     state = 'starting';
     startPromise = Promise.resolve()
       .then(() => adapter.restoreSessionState())
-      .then(() => adapter.startPolling(deliverIfRunning))
       .then(() => {
-        if (state !== 'stopped') {
+        // disconnect() or a newer connect() superseded this chain while the
+        // session state was restoring: polling must not start on the stale
+        // adapter (it may already be disconnected, with an empty token).
+        if (generationAtStart !== generation) return;
+        return adapter.startPolling(deliverIfRunning);
+      })
+      .then(() => {
+        if (state !== 'stopped' && generationAtStart === generation) {
           state = 'running';
           options.logger.info('[WeixinRuntime] Provider polling started');
         }
       })
       .catch((error: unknown) => {
-        if (state !== 'stopped') {
+        if (state !== 'stopped' && generationAtStart === generation) {
           state = 'idle';
           startPromise = undefined;
         }
@@ -159,9 +171,13 @@ export function createWeixinConnectorRuntime<Adapter extends WeixinRuntimeAdapte
         outbound.setBotToken(token);
       }
       if (!armed || state === 'running') return Promise.resolve();
+      generation += 1;
       return beginPolling();
     },
     async disconnect() {
+      // Supersede any polling chain still restoring session state: it belongs
+      // to the connection being dropped and must not publish state afterwards.
+      generation += 1;
       const adapter = outbound;
       outbound = undefined;
       state = 'idle';
