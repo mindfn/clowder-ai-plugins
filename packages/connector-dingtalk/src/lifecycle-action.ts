@@ -36,14 +36,34 @@ export interface ConnectorLifecycleCallbacks {
 }
 
 interface StoredLifecycle {
-  readonly version: 1;
+  readonly version: 1 | 2;
   readonly history: readonly LifecycleEvent[];
   readonly platformMessageId?: string;
   readonly actorDisplayName: string;
+  /** v2 only: last write time, drives stranded-record sweep TTL. */
+  readonly updatedAt?: number;
+  /** v2 tombstone only: compressed settled record with the minimum replay/reject identity. */
+  readonly tombstone?: boolean;
+  /** v2 tombstone only: every accepted deliveryId, so pre-settle redeliveries still answer replay. */
+  readonly deliveryIds?: readonly string[];
+  /** v2 tombstone only: when the lifecycle settled, drives tombstone sweep TTL. */
+  readonly settledAt?: number;
 }
 
 const STARTED_TEXT = '🤔 思考中...';
 const CATCHING_UP_TEXT = '🔄 收到新消息，正在重新整理回复…';
+
+const LIFECYCLE_KEY_PREFIX = 'lifecycle/';
+// A settled tombstone only answers Host redeliveries with replay/reject; a
+// day is far beyond any sane redelivery horizon, so keeping it longer only
+// accumulates dead keys.
+const LIFECYCLE_TOMBSTONE_TTL_MS = 24 * 60 * 60 * 1000;
+// Records that never settled are Host-crash orphans: their placeholder text
+// is already terminal. The TTL must exceed the longest legitimate in-flight
+// turn (cat work can span many hours), so 24h bounds orphans without
+// deleting lifecycles that are still actively running.
+const LIFECYCLE_STRANDED_TTL_MS = 24 * 60 * 60 * 1000;
+const SWEEP_EVERY_WRITES = 25;
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -55,10 +75,14 @@ function lifecycleError(code: string, message: string): Error & { readonly code:
 
 function storedLifecycle(value: unknown): StoredLifecycle {
   if (!object(value)
-    || value.version !== 1
+    || (value.version !== 1 && value.version !== 2)
     || !Array.isArray(value.history)
     || typeof value.actorDisplayName !== 'string'
-    || (value.platformMessageId !== undefined && typeof value.platformMessageId !== 'string')) {
+    || (value.platformMessageId !== undefined && typeof value.platformMessageId !== 'string')
+    || (value.updatedAt !== undefined && typeof value.updatedAt !== 'number')
+    || (value.tombstone !== undefined && typeof value.tombstone !== 'boolean')
+    || (value.deliveryIds !== undefined && (!Array.isArray(value.deliveryIds) || value.deliveryIds.some(id => typeof id !== 'string')))
+    || (value.settledAt !== undefined && typeof value.settledAt !== 'number')) {
     throw lifecycleError('PLUGIN_INTERNAL', 'stored lifecycle state is invalid');
   }
   return structuredClone(value) as unknown as StoredLifecycle;
@@ -73,11 +97,82 @@ export function createConnectorLifecycleAction(
   callbacks: ConnectorLifecycleCallbacks,
 ) {
   const tails = new Map<string, Promise<void>>();
+  let writesSinceSweep = 0;
+  let sweepInFlight = false;
+
+  const sweep = async (): Promise<void> => {
+    let listed: Readonly<Record<string, { readonly value: unknown }>>;
+    try {
+      listed = await context.storage.list();
+    } catch (error) {
+      context.log('warn', 'Connector lifecycle sweep failed', {
+        errorName: error instanceof Error ? error.name : 'unknown',
+      });
+      return;
+    }
+    const now = Date.now();
+    for (const [key, item] of Object.entries(listed)) {
+      if (!key.startsWith(LIFECYCLE_KEY_PREFIX)) continue;
+      let record: StoredLifecycle;
+      try {
+        record = storedLifecycle(item?.value);
+      } catch {
+        continue;
+      }
+      if (record.tombstone === true) {
+        const settledAt = record.settledAt ?? record.updatedAt;
+        if (settledAt !== undefined && settledAt + LIFECYCLE_TOMBSTONE_TTL_MS < now) {
+          await context.storage.delete(key).catch(() => undefined);
+        }
+        continue;
+      }
+      // v1 records carry no updatedAt, so their age is unknown; the v2 write
+      // path re-binds them with a timestamp on the next transition.
+      if (record.updatedAt !== undefined && record.updatedAt + LIFECYCLE_STRANDED_TTL_MS < now) {
+        await context.storage.delete(key).catch(() => undefined);
+      }
+    }
+  };
+
+  // Single-flight background sweep, mirroring reply-sender-map: the hot path
+  // only counts writes. console.warn (not context.log) is deliberate here —
+  // log() throws FeatureContextRevokedError after feature shutdown, which
+  // would turn this last-resort guard into an unhandled rejection.
+  const sweepInBackground = (): void => {
+    if (sweepInFlight) return;
+    sweepInFlight = true;
+    void sweep()
+      .catch((error: unknown) => {
+        console.warn('Connector lifecycle sweep failed', {
+          errorName: error instanceof Error ? error.name : 'unknown',
+        });
+      })
+      .finally(() => {
+        sweepInFlight = false;
+      });
+  };
+
+  const countWrite = (): void => {
+    writesSinceSweep += 1;
+    if (writesSinceSweep < SWEEP_EVERY_WRITES) return;
+    writesSinceSweep = 0;
+    sweepInBackground();
+  };
 
   const handle = async (event: LifecycleEvent) => {
     const stateKey = `lifecycle/${event.lifecycleId}`;
     const entry = await context.storage.get(stateKey);
     const stored = entry === undefined ? undefined : storedLifecycle(entry.value);
+    if (stored?.tombstone === true) {
+      // The tombstone keeps the settled event plus every accepted deliveryId:
+      // an exact redelivery of anything the Host already acked is still
+      // answered as replay, anything else is out of order.
+      const deliveryIds = stored.deliveryIds ?? stored.history.map(candidate => candidate.deliveryId);
+      if (deliveryIds.includes(event.deliveryId)) {
+        return { deliveryId: event.deliveryId };
+      }
+      throw lifecycleError('LIFECYCLE_OUT_OF_ORDER', 'lifecycle is already settled');
+    }
     const history = stored?.history ?? [];
     const decision = decideLifecycleTransition(history, event);
     if (decision.kind === 'replay') return { deliveryId: event.deliveryId };
@@ -91,25 +186,36 @@ export function createConnectorLifecycleAction(
     }
 
     let platformMessageId = stored?.platformMessageId;
-    let actorDisplayName = event.state === 'started'
+    const actorDisplayName = event.state === 'started'
       ? event.presentation.actor.displayName
       : stored?.actorDisplayName ?? '';
+
+    // Settled records compress into a tombstone: the settled event plus the
+    // deliveryId set is the minimum needed to answer redeliveries, so the
+    // full event history stops accumulating.
+    const nextRecord = (messageId: string | undefined): StoredLifecycle => ({
+      version: 2,
+      history: event.state === 'settled' ? [event] : [...history, event],
+      ...(messageId === undefined ? {} : { platformMessageId: messageId }),
+      actorDisplayName,
+      updatedAt: Date.now(),
+      ...(event.state === 'settled'
+        ? { tombstone: true, deliveryIds: [...history.map(candidate => candidate.deliveryId), event.deliveryId], settledAt: Date.now() }
+        : {}),
+    });
 
     // Write-ahead: persist the accepted event before any platform side
     // effect, so a crash between effect and store cannot leave later events
     // orphaned as OUT_OF_ORDER. If even the identical retry fails we throw
     // before any side effect: no half-persisted record, no duplicate sends.
-    const preWrite = {
-      version: 1,
-      history: [...history, event],
-      ...(stored?.platformMessageId === undefined ? {} : { platformMessageId: stored.platformMessageId }),
-      actorDisplayName,
-    } satisfies StoredLifecycle;
+    const preWrite = nextRecord(stored?.platformMessageId);
     try {
       await context.storage.set(stateKey, preWrite);
+      countWrite();
     } catch {
       try {
         await context.storage.set(stateKey, preWrite);
+        countWrite();
       } catch (error) {
         throw lifecycleError(
           'PLUGIN_INTERNAL',
@@ -209,12 +315,8 @@ export function createConnectorLifecycleAction(
     }
 
     try {
-      await context.storage.set(stateKey, {
-        version: 1,
-        history: [...history, event],
-        ...(platformMessageId === undefined ? {} : { platformMessageId }),
-        actorDisplayName,
-      } satisfies StoredLifecycle);
+      await context.storage.set(stateKey, nextRecord(platformMessageId));
+      countWrite();
     } catch (error) {
       // Post-write failure is warn-only: the event already sits in history
       // via the write-ahead, so a Host replay of this delivery is answered
@@ -230,7 +332,7 @@ export function createConnectorLifecycleAction(
     return { deliveryId: event.deliveryId };
   };
 
-  return defineLifecycleAction(async (event) => {
+  const action = defineLifecycleAction(async (event) => {
     const previous = tails.get(event.lifecycleId) ?? Promise.resolve();
     const current = previous.catch(() => undefined).then(() => handle(event));
     const tail = current.then(() => undefined, () => undefined);
@@ -241,4 +343,6 @@ export function createConnectorLifecycleAction(
       if (tails.get(event.lifecycleId) === tail) tails.delete(event.lifecycleId);
     }
   });
+  // Test/debug hook: force the background sweep synchronously.
+  return Object.assign(action, { sweepNow: sweep });
 }
