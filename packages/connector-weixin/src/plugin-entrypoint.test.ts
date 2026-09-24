@@ -83,7 +83,11 @@ test('provider media locator stays in private state while ingress emits only pmr
     storage: {
       get: async key => state.get(key), list: async () => Object.fromEntries(state),
       set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
-      compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
+      compareAndSet: async (key, expectedRevision, value) => {
+        if (expectedRevision !== null || state.has(key)) return { applied: false };
+        state.set(key, { revision: 1, value });
+        return { applied: true, revision: 1 };
+      }, delete: async key => ({ deleted: state.delete(key) }),
     },
     tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },

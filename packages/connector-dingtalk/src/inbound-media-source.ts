@@ -30,6 +30,14 @@ function isLocator(value: unknown): value is InboundMediaLocator {
     && typeof candidate.platformKey === 'string';
 }
 
+function sameLocator(left: InboundMediaLocator, right: InboundMediaLocator): boolean {
+  return left.sourceEventId === right.sourceEventId
+    && left.type === right.type
+    && left.platformKey === right.platformKey
+    && left.fileName === right.fileName
+    && left.duration === right.duration;
+}
+
 export function privateMediaReference(connectorId: string, sourceEventId: string, elementId: string): string {
   const digest = createHash('sha256').update(`${connectorId}\0${sourceEventId}\0${elementId}`).digest('hex');
   return `pmr_${connectorId}_${digest}`;
@@ -48,8 +56,16 @@ export async function retainInboundMedia(
     for (const [index, attachment] of attachments.entries()) {
       const elementId = `media-${index + 1}`;
       const reference = privateMediaReference(connectorId, sourceEventId, elementId);
-      await context.state.set(stateKey(reference), { sourceEventId, ...attachment });
-      retained.push(reference);
+      const locator = { sourceEventId, ...attachment };
+      const inserted = await context.state.compareAndSet(stateKey(reference), null, locator);
+      if (inserted.applied) {
+        retained.push(reference);
+      } else {
+        const existing = await context.state.get(stateKey(reference));
+        if (existing === undefined || !isLocator(existing.value) || !sameLocator(existing.value, locator)) {
+          throw new Error('Inbound media reference conflicts with retained locator');
+        }
+      }
       elements.push({
         elementId,
         kind: 'media_ref' as const,

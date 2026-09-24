@@ -16,9 +16,14 @@ test('private media source retains locator, chunks bytes, settles, and rejects s
         state.set(key, { revision, value });
         return { revision };
       },
-      compareAndSet: async () => ({ applied: false }),
+      compareAndSet: async (key: string, expectedRevision: number | null, value: unknown) => {
+        if (expectedRevision !== null || state.has(key)) return { applied: false };
+        state.set(key, { revision: 1, value });
+        return { applied: true, revision: 1 };
+      },
       delete: async (key: string) => ({ deleted: state.delete(key) }),
     },
+    log() {},
   } as unknown as FeatureContext;
   const elements = await retainInboundMedia(context, 'test', 'test-media', 'provider-event-1', [{
     type: 'image', platformKey: 'provider-secret-locator', fileName: 'photo.png',
@@ -30,6 +35,15 @@ test('private media source retains locator, chunks bytes, settles, and rejects s
   assert.match(element.payload.reference, /^pmr_test_/u);
   assert.equal(element.payload.sourceId, 'test-media');
   assert.equal(JSON.stringify(elements).includes('provider-secret-locator'), false);
+  const replay = await retainInboundMedia(context, 'test', 'test-media', 'provider-event-1', [{
+    type: 'image', platformKey: 'provider-secret-locator', fileName: 'photo.png',
+  }]);
+  assert.deepEqual(replay, elements);
+  const conflict = await retainInboundMedia(context, 'test', 'test-media', 'provider-event-1', [{
+    type: 'image', platformKey: 'different-provider-locator', fileName: 'photo.png',
+  }]);
+  assert.equal(conflict[0]?.kind, 'media_unavailable');
+  assert.equal(JSON.stringify([...state.values()]).includes('different-provider-locator'), false);
 
   const actions = createInboundMediaSourceActions(context, async (locator) => {
     assert.equal(locator.platformKey, 'provider-secret-locator');
@@ -64,7 +78,9 @@ test('state failure preserves text delivery with typed unavailable media and no 
   const warnings: unknown[] = [];
   const context = {
     state: {
+      get: async () => undefined,
       set: async () => { throw new Error('state unavailable'); },
+      compareAndSet: async () => { throw new Error('state unavailable'); },
       delete: async () => ({ deleted: false }),
     },
     log: (...args: unknown[]) => { warnings.push(args); },

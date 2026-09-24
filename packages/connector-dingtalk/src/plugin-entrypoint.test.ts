@@ -94,7 +94,11 @@ test('inbound media is retained as a private locator and exposed through bounded
       get: async key => state.get(key),
       list: async () => Object.fromEntries(state),
       set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
-      compareAndSet: async () => ({ applied: false }),
+      compareAndSet: async (key, expectedRevision, value) => {
+        if (expectedRevision !== null || state.has(key)) return { applied: false };
+        state.set(key, { revision: 1, value });
+        return { applied: true, revision: 1 };
+      },
       delete: async key => ({ deleted: state.delete(key) }),
     },
     tasks: {} as never,
