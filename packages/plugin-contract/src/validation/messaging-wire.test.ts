@@ -67,6 +67,7 @@ test('all nine messaging request shapes have one executable contract validator',
       {
         lifecycleId: 'life-1',
         deliveryId: 'delivery-2',
+        threadId: 'thread-1',
         state: 'settled',
         chainDone: true,
         outcome: 'completed',

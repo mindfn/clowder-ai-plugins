@@ -325,8 +325,9 @@ export function messagingMaximumRequestInput(
       return {
         lifecycleId: maximumString(family, 128, 1),
         deliveryId: maximumString(family, 128, 2),
+        threadId: maximumString(family, 512, 3),
         state: 'started',
-        presentation: maximumPresentation(family, 2),
+        presentation: maximumPresentation(family, 4),
       };
   }
 }
@@ -538,6 +539,7 @@ export function messagingRequestNPlusOneInputs(
       return [
         { leaf: 'lifecycleId', input: { ...maximum, lifecycleId: maximumString(family, 129) } },
         { leaf: 'deliveryId', input: { ...maximum, deliveryId: maximumString(family, 129) } },
+        { leaf: 'threadId', input: { ...maximum, threadId: maximumString(family, 513) } },
       ];
     }
   }

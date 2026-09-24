@@ -646,10 +646,11 @@ export type MessageDraft = {
   readonly payload: DraftPayload;
 };
 export type OccurredAt = string | string;
+export type ThreadId = string;
 export type MessageEnvelope = {
   readonly messageId: string;
   readonly revision: number;
-  readonly threadId: string;
+  readonly threadId: ThreadId;
   readonly replyTo?: string;
   readonly actor: ActorRef;
   readonly audience: CanonicalAudience;
@@ -667,7 +668,7 @@ export type MessageElementsAppendEvent = {
   readonly sequence: number;
   readonly type: 'message.elements.append';
   readonly messageId: string;
-  readonly threadId: string;
+  readonly threadId: ThreadId;
   readonly operationId: string;
   readonly baseRevision?: number;
   readonly revision: number;
@@ -676,7 +677,7 @@ export type MessageElementsAppendEvent = {
 export type MessageOutputEvent = MessagePublishEvent | MessageElementsAppendEvent;
 export type SendReceipt = {
   readonly messageId: string;
-  readonly threadId: string;
+  readonly threadId: ThreadId;
   readonly revision: number;
   readonly messageHandle: MessageHandle;
   readonly publishSequence?: number;
@@ -749,17 +750,20 @@ export type MediaReadResult = {
 export type LifecycleStartedEvent = {
   readonly lifecycleId: string;
   readonly deliveryId: string;
+  readonly threadId: ThreadId;
   readonly state: 'started';
   readonly presentation: DeliveryPresentationContext;
 };
 export type LifecycleCatchingUpEvent = {
   readonly lifecycleId: string;
   readonly deliveryId: string;
+  readonly threadId: ThreadId;
   readonly state: 'catching_up';
 };
 export type LifecycleBlockedEvent = {
   readonly lifecycleId: string;
   readonly deliveryId: string;
+  readonly threadId: ThreadId;
   readonly state: 'blocked';
   readonly reason: string;
   readonly recoveryUrl?: FrontendDisplayUrl;
@@ -767,6 +771,7 @@ export type LifecycleBlockedEvent = {
 export type LifecycleSettledEvent = {
   readonly lifecycleId: string;
   readonly deliveryId: string;
+  readonly threadId: ThreadId;
   readonly state: 'settled';
   readonly chainDone: boolean;
   readonly outcome: 'completed' | 'failed' | 'cancelled';
@@ -877,10 +882,10 @@ export const DELIVERY_PRESENTATION_THREAD_KEYS = ['shortId', 'title', 'featId'] 
 export const DELIVERY_PRESENTATION_CONTEXT_KEYS = ['actor', 'thread', 'deepLinkUrl'] as const;
 export const MEDIA_READ_INPUT_KEYS = ['reference', 'offset', 'limit'] as const;
 export const MEDIA_READ_RESULT_KEYS = ['offset', 'dataBase64', 'nextOffset', 'done'] as const;
-export const LIFECYCLE_STARTED_EVENT_KEYS = ['lifecycleId', 'deliveryId', 'state', 'presentation'] as const;
-export const LIFECYCLE_CATCHING_UP_EVENT_KEYS = ['lifecycleId', 'deliveryId', 'state'] as const;
-export const LIFECYCLE_BLOCKED_EVENT_KEYS = ['lifecycleId', 'deliveryId', 'state', 'reason', 'recoveryUrl'] as const;
-export const LIFECYCLE_SETTLED_EVENT_KEYS = ['lifecycleId', 'deliveryId', 'state', 'chainDone', 'outcome'] as const;
+export const LIFECYCLE_STARTED_EVENT_KEYS = ['lifecycleId', 'deliveryId', 'threadId', 'state', 'presentation'] as const;
+export const LIFECYCLE_CATCHING_UP_EVENT_KEYS = ['lifecycleId', 'deliveryId', 'threadId', 'state'] as const;
+export const LIFECYCLE_BLOCKED_EVENT_KEYS = ['lifecycleId', 'deliveryId', 'threadId', 'state', 'reason', 'recoveryUrl'] as const;
+export const LIFECYCLE_SETTLED_EVENT_KEYS = ['lifecycleId', 'deliveryId', 'threadId', 'state', 'chainDone', 'outcome'] as const;
 export const HOST_MESSAGING_LIFECYCLE_RESULT_KEYS = ['deliveryId'] as const;
 export const M0CSUBSCRIBE_INPUT_KEYS = ['handle'] as const;
 export const M0CSUBSCRIBE_RESULT_KEYS = ['subscriptionId'] as const;

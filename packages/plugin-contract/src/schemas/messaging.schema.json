@@ -444,12 +444,17 @@
         }
       ]
     },
+    "ThreadId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
     "MessageEnvelope": {
       "type": "object",
       "properties": {
         "messageId": { "type": "string", "minLength": 1, "maxLength": 512 },
         "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
-        "threadId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "threadId": { "$ref": "#/$defs/ThreadId" },
         "replyTo": { "type": "string", "minLength": 1, "maxLength": 256 },
         "actor": { "$ref": "#/$defs/ActorRef" },
         "audience": { "$ref": "#/$defs/CanonicalAudience" },
@@ -477,7 +482,7 @@
         "sequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
         "type": { "const": "message.elements.append" },
         "messageId": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "threadId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "threadId": { "$ref": "#/$defs/ThreadId" },
         "operationId": { "type": "string", "minLength": 1, "maxLength": 200 },
         "baseRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
@@ -501,7 +506,7 @@
       "type": "object",
       "properties": {
         "messageId": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "threadId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "threadId": { "$ref": "#/$defs/ThreadId" },
         "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "messageHandle": { "$ref": "#/$defs/MessageHandle" },
         "publishSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
@@ -704,10 +709,11 @@
       "properties": {
         "lifecycleId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "deliveryId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "threadId": { "$ref": "#/$defs/ThreadId" },
         "state": { "const": "started" },
         "presentation": { "$ref": "#/$defs/DeliveryPresentationContext" }
       },
-      "required": ["lifecycleId", "deliveryId", "state", "presentation"],
+      "required": ["lifecycleId", "deliveryId", "threadId", "state", "presentation"],
       "additionalProperties": false
     },
     "LifecycleCatchingUpEvent": {
@@ -715,9 +721,10 @@
       "properties": {
         "lifecycleId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "deliveryId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "threadId": { "$ref": "#/$defs/ThreadId" },
         "state": { "const": "catching_up" }
       },
-      "required": ["lifecycleId", "deliveryId", "state"],
+      "required": ["lifecycleId", "deliveryId", "threadId", "state"],
       "additionalProperties": false
     },
     "LifecycleBlockedEvent": {
@@ -725,11 +732,12 @@
       "properties": {
         "lifecycleId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "deliveryId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "threadId": { "$ref": "#/$defs/ThreadId" },
         "state": { "const": "blocked" },
         "reason": { "type": "string", "minLength": 1, "maxLength": 512 },
         "recoveryUrl": { "$ref": "#/$defs/FrontendDisplayUrl" }
       },
-      "required": ["lifecycleId", "deliveryId", "state", "reason"],
+      "required": ["lifecycleId", "deliveryId", "threadId", "state", "reason"],
       "additionalProperties": false
     },
     "LifecycleSettledEvent": {
@@ -737,11 +745,12 @@
       "properties": {
         "lifecycleId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "deliveryId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "threadId": { "$ref": "#/$defs/ThreadId" },
         "state": { "const": "settled" },
         "chainDone": { "type": "boolean" },
         "outcome": { "type": "string", "enum": ["completed", "failed", "cancelled"] }
       },
-      "required": ["lifecycleId", "deliveryId", "state", "chainDone", "outcome"],
+      "required": ["lifecycleId", "deliveryId", "threadId", "state", "chainDone", "outcome"],
       "additionalProperties": false
     },
     "HostMessagingLifecycleInput": {

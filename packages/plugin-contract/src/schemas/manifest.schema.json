@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://clowder-ai.dev/schemas/manifest/v0.1",
   "title": "Clowder AI Plugin Manifest (v0.1)",
-  "description": "Machine-readable truth source for the static plugin.yaml access protocol (§3.4/§3.5). beta.20 freezes typed messaging media, presentation, lifecycle, and media-source authority boundaries.",
+  "description": "Machine-readable truth source for the static plugin.yaml access protocol (§3.4/§3.5). beta.21 adds the canonical thread route to typed lifecycle delivery while preserving the beta.20 media, presentation, lifecycle, and media-source authority boundaries.",
   "x-clowder-capability-layers": {
     "L0": ["plugin.config.read", "plugin.state.get", "plugin.state.set"],
     "L1": ["messaging.send", "schedule.register", "events.publish", "messaging.appendElements", "media.read"],

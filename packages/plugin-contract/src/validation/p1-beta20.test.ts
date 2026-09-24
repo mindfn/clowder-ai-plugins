@@ -201,7 +201,7 @@ test('Gate M closes media.read and media-source contribution shapes', () => {
   const manifest = {
     pluginId: 'dev.clowder.media-source',
     version: '0.1.0',
-    contractVersion: '0.1.0-beta.20',
+    contractVersion: '0.1.0-beta.21',
     name: 'Media source',
     features: [{
       id: 'media',
@@ -241,6 +241,7 @@ test('Gate L closes presentation, lifecycle and pending publication receipts', (
   assert.equal(validateMessagingRowInput('host.messaging.lifecycle', {
     lifecycleId: 'life-1',
     deliveryId: 'delivery-1',
+    threadId: 'thread-1',
     state: 'started',
     presentation,
   }).valid, true);
@@ -257,6 +258,18 @@ test('Gate L closes presentation, lifecycle and pending publication receipts', (
   assert.equal(validateMessagingRowInput('host.messaging.lifecycle', {
     lifecycleId: 'life-1', deliveryId: 'delivery-2', state: 'started', presentation: forbidden,
   }).valid, false);
+
+  const lifecycleEvents = [
+    { lifecycleId: 'life-1', deliveryId: 'delivery-3', threadId: 'thread-1', state: 'started', presentation },
+    { lifecycleId: 'life-1', deliveryId: 'delivery-4', threadId: 'thread-1', state: 'catching_up' },
+    { lifecycleId: 'life-1', deliveryId: 'delivery-5', threadId: 'thread-1', state: 'blocked', reason: 'waiting_for_input' },
+    { lifecycleId: 'life-1', deliveryId: 'delivery-6', threadId: 'thread-1', state: 'settled', chainDone: true, outcome: 'completed' },
+  ] as const;
+  for (const event of lifecycleEvents) {
+    assert.equal(validateMessagingRowInput('host.messaging.lifecycle', event).valid, true);
+    const { threadId: _threadId, ...withoutThreadId } = event;
+    assert.equal(validateMessagingRowInput('host.messaging.lifecycle', withoutThreadId).valid, false);
+  }
 
   assert.equal(validateMessagingRowResult('messaging.send', {
     messageId: 'reserved-1',
@@ -277,7 +290,7 @@ test('Gate L closes presentation, lifecycle and pending publication receipts', (
   const lifecycleManifest = {
     pluginId: 'dev.clowder.lifecycle',
     version: '0.1.0',
-    contractVersion: '0.1.0-beta.20',
+    contractVersion: '0.1.0-beta.21',
     name: 'Lifecycle',
     features: [{
       id: 'messages', name: 'Messages', resources: [], capabilities: [],
