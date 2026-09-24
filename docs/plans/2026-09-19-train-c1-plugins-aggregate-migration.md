@@ -147,56 +147,85 @@ the ordinary-text negative path.
 
 ## Implementation checkpoint
 
-> **Current as of 2026-09-23. If you are picking this up without having followed the thread, read this
-> section first.** The previous checkpoint text (2026-09-20) is recoverable from git history; parts of it are
-> now stale and one sentence is actively misleading (see "Weixin QR login" under Known drift).
+> **Current as of 2026-09-24. If you are picking this up without having followed the thread, read this
+> section first.** Earlier checkpoint texts (2026-09-20, 2026-09-23) are recoverable from git history. The
+> Host ledger remains the truth source for per-slice specs, review verdicts and artifact sha256 (see "Where the
+> truth lives").
 
 ### Where things stand
 
 PR #54 is a **draft** served from the fork (`mindfn/clowder-ai-plugins`, branch
-`feat/f202-train-c1-plugins-migration`). **Do not merge or publish it** until the cutover gate below clears.
-The contract is at `0.1.0-beta.19` and the SDK at `0.2.0-beta.2`; neither is published to npm, and neither
-needs to be for the dev wave, because the Host now installs owner-supplied self-contained artifacts (Host S10).
+`feat/f202-train-c1-plugins-migration`). **Do not merge or publish it yet**: it leaves draft only when it and the
+Host PR zts212653/clowder-ai#1487 can merge together (owner decision, 2026-09-23). The contract is at
+`0.1.0-beta.22` and the SDK at `0.2.0-beta.5`; neither is published to npm, and neither needs to be for the dev
+wave, because the Host installs owner-supplied self-contained artifacts (Host S10).
 
 | Wave | Scope | State |
 |---|---|---|
 | a / b step | contract + SDK; the seven connectors moved to the A2 shape (`message-subscription`, `context.messaging.*`, `{ params, invocation }` envelope) | done, cross-individually reviewed |
 | W1 | video-generation, video-analysis, weixin-mp, enterprise-workflow (new package), wechat-visible-reader | **5/5 done on both sides**; Host copies deleted |
-| W2 | the seven connectors + ChatGPT Pro | **in progress** — see below |
-| W3 / W4 | GitHub cluster / collective + GenOffice docx | not started |
+| W2 | the seven connectors + ChatGPT Pro | **package side done for the seven connectors**; ChatGPT Pro not started; non-blocking follow-ups queued — see below |
+| W3 / W4 | GitHub cluster / collective + GenOffice docx | not started (Host side) |
 
-### W2 (in progress)
+### Contract / SDK line
 
-- **W2-1**: feishu + wecom-agent webhook actions aligned to the Host S6b forwarding contract (input arrives as
-  `{ ...declaredParams, request }`, strict `{ status, headers, body }` response). Same slice makes the
-  idempotency key a stable provider identifier on every accepted inbound path: feishu `header.event_id` on
-  both webhook and WebSocket card callbacks; wecom-agent `MsgId`, with ordinary messages missing it rejected
-  and logged instead of keyed by the clock. Followed by a Host-side wecom-agent local end-to-end run, which is
-  the intended evidence for the cutover gate.
-- **W2-2**: user-visible parity for weixin / feishu / wecom-bot (see Known drift).
-- **W2-3**: ChatGPT Pro as an installable wrapper around the existing `personal-chrome-companion` closure,
-  not a second copy of its code.
-- **W2-4**: Host-side removal of the connector-specific framework and IM pages, plus a new generic
-  thread-to-external-conversation binding list (it does not exist in the frontend today).
+Each version's shape was frozen in the Host ledger before it was implemented here.
 
-### Cutover gate on this PR
+| Version | What it added |
+|---|---|
+| contract `0.1.0-beta.19` | configuration fields `hidden` / `requiredWhen` (W2-2a) |
+| contract `0.1.0-beta.20` / SDK `0.2.0-beta.3` | media entitlements (`media_ref`, `media.read`, media sources), a minimal `rich_block`, typed lifecycle delivery, subscription `presentation: 'v1'` |
+| contract `0.1.0-beta.21` / SDK `0.2.0-beta.4` | shared `ThreadId`; the four lifecycle events carry a required `threadId` |
+| contract `0.1.0-beta.22` / SDK `0.2.0-beta.5` | shared `MessageId` (Host message id); `LifecycleStartedEvent.placeholderLine?` and `replyTo?`; subscription `presentation: 'v1' \| 'v2'` — the Host sends the two new fields only to v2 subscriptions, and only Feishu declares v2 |
 
-PR #54 must not merge or publish until **both** hold:
+### W2 on the package side
+
+- **W2-1** (done): feishu + wecom-agent webhook actions aligned to the Host S6b forwarding contract, with a
+  stable provider idempotency key on every accepted inbound path. Its Host-side wecom-agent end-to-end run met
+  the cutover gate below.
+- **W2-2** (done): user-visible parity for weixin / feishu / wecom-bot. QR login and credential validation are
+  reachable again as operations (`weixin_qr_login`, `feishu_qr_login`, `wecom_validate`), and Host-projected or
+  env-only settings are hidden. This closes the drift listed in the 2026-09-23 checkpoint.
+- **Consumption wave** (done) — the seven connectors on contract beta.20 and later:
+  - typed message elements; media send and receive through `media.read` and media sources, with bounded
+    inbound downloads;
+  - lifecycle receipts: placeholder, catching up, blocked recovery, settle;
+  - cat display names in the old Host shape — `【显示名🐱】` before text sent with `sendReply`, the card header
+    otherwise — and group @ via `envelope.replyTo` resolved to the recorded inbound sender;
+  - the Feishu placeholder (`【显示名🐱→发送者】` plus a receipt line picked by the Host, contract beta.22);
+  - lifecycle hardening: state written before platform side effects, with a pending-effect marker so a crash
+    cannot drop a blocked recovery message; settled records kept as tombstones and swept after 24 hours;
+    delivery to every binding of a thread with per-binding isolation; the Telegram placeholder correlation
+    keyed by lifecycle and chat and persisted across restarts.
+  - Non-blocking follow-ups from the last review are queued in the thread (the outbound failure predicate,
+    Telegram consumed-marker cleanup, "message is not modified" edits, missing tests).
+- **W2-3** (not started): ChatGPT Pro as an installable wrapper around the existing `personal-chrome-companion`
+  closure, not a second copy of its code.
+- **W2-4** (Host side): removal of the connector-specific framework and IM pages, plus a generic
+  thread-to-external-conversation binding list.
+- The Host-side slices that consume these packages — the outbound media materializer (W2-5b), vendoring
+  contract beta.22 (W2-5c-p2) and the real-artifact gate against the packed connectors — wait for a Host
+  developer.
+
+### Cutover gate on this PR (met 2026-09-23)
+
+PR #54 was not to merge or publish until **both** held:
 
 1. the Host cutover branch is actually running in the Host, and
 2. **one of the seven connector packages** carries an external-origin `messaging.send` end to end on the real
    Host and it is accepted.
 
-Condition 2 is deliberately narrow. Every W1 package installing and running cleanly does **not** satisfy it:
-none of them is a connector, and none exercises the Host's external identity resolution. CI being green does
-not satisfy it either — this PR was fully green at a point where inbound was broken end to end.
+Both were met on 2026-09-23 by W2-1: the full cutover branch ran in an isolated Host, installed the approved
+wecom-agent artifact, and accepted real provider traffic. The gate was deliberately narrow — every W1 package
+installing cleanly did not satisfy it, and neither did green CI.
 
-### Known drift (not yet fixed)
+### Known drift
 
-- **Weixin QR login**: the adapter code still contains QR credential acquisition, but the manifest declares
-  no `weixin_qr_login` operation and exposes `botToken` as a hand-entered secret. An owner cannot reach QR
-  login today. Feishu (`feishu_qr_login`) and wecom-bot (`wecom_validate`) have the same class of gap. W2-2.
-- Weixin also exposes the Host-projected `apiBaseUrl` and env-only voice toggles as owner-editable fields.
+- Nothing open from the 2026-09-23 list (see W2-2).
+- Multi-binding: the plugin thread API lets a plugin bind a second external conversation to an existing thread
+  (`threads.bind`), but today's connectors only use `ensureByKey`, so in practice a thread has one binding. The
+  packages already deliver to every binding, so nothing changes when a Host flow starts binding a second
+  conversation.
 
 ### Dev-wave artifacts
 
@@ -215,6 +244,10 @@ zero symlinks, production closure equal to the shrinkwrap, and the Host `runtime
 a relocated copy. Filenames carry a content digest and existing files are never overwritten. **Hand artifacts
 over by full sha256, never by path.** Superseded ones live in `f202-w1-tarballs.superseded/`, outside the
 delivery tree.
+
+The current connector batch is the third one, built from `b3118d4`; the batches built from `6d03b02` and
+`c19fdfd` are superseded. The full sha256 of every artifact is in the Host ledger and in the hand-over messages;
+they are not repeated here because they go stale.
 
 ### Guards that must stay green
 
@@ -238,7 +271,7 @@ as it lands on `main` (#58 put companion `0.1.0-alpha.4` on `main` at 08:31Z on 
 `0.1.0-alpha.5` and genoffice-docx to `0.1.0-alpha.2`.
 
 Every version this PR claims is provisional: companion `0.1.0-alpha.5`, genoffice-docx `0.1.0-alpha.2`,
-video-analysis `0.1.0-alpha.2`, plugin-contract `0.1.0-beta.19`, plugin-sdk `0.2.0-beta.2`, and the first version
+video-analysis `0.1.0-alpha.2`, plugin-contract `0.1.0-beta.22`, plugin-sdk `0.2.0-beta.5`, and the first version
 of each package this PR adds. Right before merging, a version is free only if it is absent from
 `https://registry.npmjs.org` **and** not claimed by `main`'s `package.json` or catalog; if either check fails,
 re-bump to the next free version and re-pack with the fixed toolchain. Query `registry.npmjs.org` directly:
