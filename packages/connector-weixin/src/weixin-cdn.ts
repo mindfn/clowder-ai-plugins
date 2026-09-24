@@ -93,7 +93,7 @@ function resolveWeChatCdnFullUrl(fullUrl: string, fieldName: 'full_url' | 'uploa
   try {
     parsed = new URL(fullUrl);
   } catch {
-    throw new Error(`[weixin-cdn] Invalid ${fieldName}: ${fullUrl.slice(0, 80)}`);
+    throw new Error(`[weixin-cdn] Invalid ${fieldName}`);
   }
 
   const host = parsed.hostname.toLowerCase();
@@ -136,7 +136,7 @@ export async function downloadMediaFromCdn(params: {
     throw new Error('[weixin-cdn] CDN platformKey missing encryptQueryParam or fullUrl');
   }
 
-  log.info({ cdnUrl: cdnUrl.slice(0, 80) }, '[weixin-cdn] Downloading media from CDN');
+  log.info({ source: fullUrl ? 'full_url' : 'encrypted_query_param' }, '[weixin-cdn] Downloading media from CDN');
 
   const res = await fetchFn(cdnUrl, {
     method: 'GET',
@@ -144,8 +144,7 @@ export async function downloadMediaFromCdn(params: {
   });
 
   if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`CDN download HTTP ${res.status}: ${errText}`);
+    throw new Error(`CDN download HTTP ${res.status}`);
   }
 
   const ciphertext = Buffer.from(await res.arrayBuffer());
