@@ -46,7 +46,7 @@ test('Gate L accepts repeated catching-up deliveries and replays without duplica
   for (const event of events) assert.deepEqual(await action(event), { deliveryId: event.deliveryId });
   assert.deepEqual(await action(events[2]), { deliveryId: 'delivery-3' });
   assert.deepEqual(calls, [
-    ['sendPlaceholder', 'chat-1', '🤔 思考中...'],
+    ['sendPlaceholder', 'chat-1', '【砚砚🐱】🤔 思考中...'],
     ['editPlaceholder', 'chat-1', 'placeholder-1', '🔄 收到新消息，正在重新整理回复…', 'catching_up', 'life-1'],
     ['editPlaceholder', 'chat-1', 'placeholder-1', '🔄 收到新消息，正在重新整理回复…', 'catching_up', 'life-1'],
     ['settle', {

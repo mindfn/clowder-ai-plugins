@@ -17,6 +17,7 @@ import { DingTalkAdapter } from './DingTalkAdapter.js';
 import { renderTypedMediaNotice } from './media-notice.js';
 import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia, type InboundMediaLocator } from './inbound-media-source.js';
 import { createConnectorLifecycleAction } from './lifecycle-action.js';
+import { createReplySenderMap } from './reply-sender-map.js';
 
 type DingTalkRuntimeFactory = (
   options: DingTalkConnectorRuntimeOptions<DingTalkAdapter>,
@@ -90,6 +91,7 @@ async function draft(context: FeatureContext, message: DingTalkHostInboundMessag
 }
 
 async function createMessageBridge(context: FeatureContext) {
+  const replySenders = createReplySenderMap(context);
   const subscriptions = new Map<string, Promise<void>>();
   const subscribe = (threadId: string): Promise<void> => {
     const current = subscriptions.get(threadId);
@@ -112,7 +114,16 @@ async function createMessageBridge(context: FeatureContext) {
       await subscribe(thread.id);
       const prepared = await draft(context, message);
       try {
-        await context.messaging.send(thread.id, prepared.messageDraft);
+        const sent = await context.messaging.send(thread.id, prepared.messageDraft);
+        if (prepared.messageDraft.sender !== undefined) {
+          try {
+            await replySenders.record(sent.messageId, prepared.messageDraft.sender);
+          } catch (error) {
+            context.log('warn', 'DingTalk reply-sender mapping record failed', {
+              errorName: error instanceof Error ? error.name : 'unknown',
+            });
+          }
+        }
       } catch (error) {
         await releaseInboundMedia(context, prepared.ownership, error);
         throw error;
@@ -140,17 +151,24 @@ async function createMessageBridge(context: FeatureContext) {
         if (!['image', 'file', 'audio', 'video'].includes(String(type)) || typeof reference !== 'string') return [];
         return [{ type, reference, ...(typeof element.payload.fileName === 'string' ? { fileName: element.payload.fileName } : {}) }];
       });
-      return requireConnectorOutboundDelivery({
+      const displayName = input.presentation?.actor.displayName || input.envelope.actor.id;
+      const replyPrefix = input.envelope.actor.kind === 'cat' ? `【${displayName}🐱】\n` : '';
+      const replyToSender = await replySenders.resolve(input.envelope.replyTo);
+      return {
+        replyPrefix,
+        input: requireConnectorOutboundDelivery({
         deliveryId: input.deliveryId,
         externalConversationId: binding.key,
         presentation: {
-          header: input.envelope.actor.id,
+          header: displayName,
           body: text,
           origin: input.envelope.actor.kind === 'cat' ? 'agent' : input.envelope.actor.kind === 'system' ? 'system' : 'direct',
         },
+        ...(replyToSender === undefined ? {} : { metadata: { replyToSender } }),
         ...(richBlocks.length === 0 ? {} : { richBlocks }),
         ...(media.length === 0 ? {} : { media }),
-      });
+        }),
+      };
     },
   };
 }
@@ -193,7 +211,7 @@ export function createDingTalkPluginModule(
             'dingtalk.media-source.read': mediaSource.read,
             'dingtalk.media-source.settle': mediaSource.settle,
             'dingtalk.outbound': async (candidate) => {
-              const input = await bridge.outbound(candidate);
+              const { input, replyPrefix } = await bridge.outbound(candidate);
               const blocks = [...(input.richBlocks ?? [])];
               if (blocks.length > 0) {
                 await runtime.outbound.sendRichMessage(
@@ -215,11 +233,11 @@ export function createDingTalkPluginModule(
               }
               for (const media of input.media ?? []) {
                 if (media.type === 'video') {
-                  await runtime.outbound.sendReply(input.externalConversationId, '⚠️ 视频附件暂不支持发送');
+                  await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 视频附件暂不支持发送`, input.metadata);
                   continue;
                 }
                 if (!media.reference.startsWith('hmr_')) {
-                  await runtime.outbound.sendReply(input.externalConversationId, '⚠️ 媒体不可用（旧引用无法读取）');
+                  await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 媒体不可用（旧引用无法读取）`, input.metadata);
                   continue;
                 }
                 try {
@@ -235,7 +253,8 @@ export function createDingTalkPluginModule(
                   });
                   await runtime.outbound.sendReply(
                     input.externalConversationId,
-                    error instanceof RangeError ? '⚠️ 媒体过大，超过钉钉发送上限' : '⚠️ 媒体不可用（读取或上传失败）',
+                    `${replyPrefix}${error instanceof RangeError ? '⚠️ 媒体过大，超过钉钉发送上限' : '⚠️ 媒体不可用（读取或上传失败）'}`,
+                    input.metadata,
                   );
                 }
               }

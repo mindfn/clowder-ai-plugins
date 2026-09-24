@@ -2,7 +2,6 @@ import {
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
-  type ConnectorOutboundDelivery,
   type FeatureContext,
   type PluginMessagingDelivery,
   type PluginMessagingDraft,
@@ -18,6 +17,7 @@ import { WeixinAdapter, type WeixinSessionState, type WeixinSessionStateStore } 
 import { renderTypedMediaNotice } from './media-notice.js';
 import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia } from './inbound-media-source.js';
 import { renderAllRichBlocksPlaintext } from './rich-block-plaintext.js';
+import { createReplySenderMap } from './reply-sender-map.js';
 
 type RuntimeFactory = (
   options: WeixinConnectorRuntimeOptions<WeixinAdapter>,
@@ -32,7 +32,7 @@ function object(value: unknown): value is Record<string, unknown> {
 
 function requireDelivery(candidate: unknown): PluginMessagingDelivery {
   if (!object(candidate)) throw new TypeError('weixin delivery must be an object');
-  if (Object.keys(candidate).some(key => !['deliveryId', 'threadId', 'envelope'].includes(key))) throw new TypeError('weixin delivery contains an unsupported field');
+  if (Object.keys(candidate).some(key => !['deliveryId', 'threadId', 'envelope', 'presentation'].includes(key))) throw new TypeError('weixin delivery contains an unsupported field');
   if (typeof candidate.deliveryId !== 'string' || candidate.deliveryId.length === 0) throw new TypeError('weixin deliveryId must be non-empty');
   if (typeof candidate.threadId !== 'string' || candidate.threadId.length === 0) throw new TypeError('weixin threadId must be non-empty');
   if (!object(candidate.envelope) || candidate.envelope.threadId !== candidate.threadId) throw new TypeError('weixin delivery envelope must match threadId');
@@ -67,6 +67,7 @@ async function draft(context: FeatureContext, message: WeixinHostInboundMessage)
 }
 
 async function createMessageBridge(context: FeatureContext) {
+  const replySenders = createReplySenderMap(context);
   const subscriptions = new Map<string, Promise<void>>();
   const subscribe = (threadId: string): Promise<void> => {
     const current = subscriptions.get(threadId);
@@ -86,13 +87,22 @@ async function createMessageBridge(context: FeatureContext) {
       await subscribe(thread.id);
       const prepared = await draft(context, message);
       try {
-        await context.messaging.send(thread.id, prepared.messageDraft);
+        const sent = await context.messaging.send(thread.id, prepared.messageDraft);
+        if (prepared.messageDraft.sender !== undefined) {
+          try {
+            await replySenders.record(sent.messageId, prepared.messageDraft.sender);
+          } catch (error) {
+            context.log('warn', 'Weixin reply-sender mapping record failed', {
+              errorName: error instanceof Error ? error.name : 'unknown',
+            });
+          }
+        }
       } catch (error) {
         await releaseInboundMedia(context, prepared.ownership, error);
         throw error;
       }
     },
-    async outbound(candidate: unknown): Promise<ConnectorOutboundDelivery> {
+    async outbound(candidate: unknown) {
       const input = requireDelivery(candidate);
       const binding = (await context.threads.listBindings()).find(item => item.threadId === input.threadId);
       if (binding === undefined) throw new TypeError(`weixin thread ${input.threadId} has no provider binding`);
@@ -112,13 +122,20 @@ async function createMessageBridge(context: FeatureContext) {
         if (!['image', 'file', 'audio', 'video'].includes(String(type)) || typeof reference !== 'string') return [];
         return [{ type, reference, ...(typeof element.payload.fileName === 'string' ? { fileName: element.payload.fileName } : {}) }];
       });
-      return requireConnectorOutboundDelivery({
+      const displayName = input.presentation?.actor.displayName || input.envelope.actor.id;
+      const replyPrefix = input.envelope.actor.kind === 'cat' ? `【${displayName}🐱】\n` : '';
+      const replyToSender = await replySenders.resolve(input.envelope.replyTo);
+      return {
+        replyPrefix,
+        input: requireConnectorOutboundDelivery({
         deliveryId: input.deliveryId,
         externalConversationId: binding.key,
-        presentation: { header: input.envelope.actor.id, body: text, origin: input.envelope.actor.kind === 'cat' ? 'agent' : input.envelope.actor.kind === 'system' ? 'system' : 'direct' },
+        presentation: { header: displayName, body: text, origin: input.envelope.actor.kind === 'cat' ? 'agent' : input.envelope.actor.kind === 'system' ? 'system' : 'direct' },
+        ...(replyToSender === undefined ? {} : { metadata: { replyToSender } }),
         ...(richBlocks.length === 0 ? {} : { richBlocks }),
         ...(media.length === 0 ? {} : { media }),
-      });
+        }),
+      };
     },
   };
 }
@@ -237,22 +254,23 @@ export function createWeixinPluginModule(createRuntime: RuntimeFactory = createW
               return { ok, ...(ok ? {} : { message: '微信未连接（需要扫码登录）' }) };
             },
             'weixin.outbound': async (candidate) => {
-              const input = await bridge.outbound(candidate);
+              const { input, replyPrefix } = await bridge.outbound(candidate);
               const text = [input.presentation.header, input.presentation.subtitle, input.presentation.body, input.presentation.footer]
                 .filter((value): value is string => value !== undefined && value.length > 0)
                 .join('\n\n');
               const blocks = [...(input.richBlocks ?? [])];
               await runtime.outbound.sendReply(
                 input.externalConversationId,
-                blocks.length > 0 ? text + '\n\n' + renderAllRichBlocksPlaintext(blocks) : text,
+                `${replyPrefix}${blocks.length > 0 ? text + '\n\n' + renderAllRichBlocksPlaintext(blocks) : text}`,
+                input.metadata,
               );
               for (const media of input.media ?? []) {
                 if (media.type === 'video') {
-                  await runtime.outbound.sendReply(input.externalConversationId, '⚠️ 视频附件暂不支持发送');
+                  await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 视频附件暂不支持发送`, input.metadata);
                   continue;
                 }
                 if (!media.reference.startsWith('hmr_')) {
-                  await runtime.outbound.sendReply(input.externalConversationId, '⚠️ 媒体不可用（旧引用无法读取）');
+                  await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 媒体不可用（旧引用无法读取）`, input.metadata);
                   continue;
                 }
                 try {
@@ -268,7 +286,8 @@ export function createWeixinPluginModule(createRuntime: RuntimeFactory = createW
                   });
                   await runtime.outbound.sendReply(
                     input.externalConversationId,
-                    error instanceof RangeError ? '⚠️ 媒体过大，超过插件的安全上限 25 MiB' : '⚠️ 媒体不可用（读取或上传失败）',
+                    `${replyPrefix}${error instanceof RangeError ? '⚠️ 媒体过大，超过插件的安全上限 25 MiB' : '⚠️ 媒体不可用（读取或上传失败）'}`,
+                    input.metadata,
                   );
                 }
               }

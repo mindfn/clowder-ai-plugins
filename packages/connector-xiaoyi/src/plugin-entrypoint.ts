@@ -2,7 +2,6 @@ import {
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
-  type ConnectorOutboundDelivery,
   type FeatureContext,
   type PluginMessagingDelivery,
   type PluginMessagingDraft,
@@ -18,6 +17,7 @@ import { XiaoyiAdapter } from './XiaoyiAdapter.js';
 import { renderTypedMediaNotice } from './media-notice.js';
 import { renderAllRichBlocksPlaintext } from './rich-block-plaintext.js';
 import { createConnectorLifecycleAction } from './lifecycle-action.js';
+import { createReplySenderMap } from './reply-sender-map.js';
 
 type RuntimeFactory = (
   options: XiaoyiConnectorRuntimeOptions<XiaoyiAdapter>,
@@ -56,6 +56,7 @@ function draft(message: XiaoyiHostInboundMessage): PluginMessagingDraft {
 }
 
 async function createMessageBridge(context: FeatureContext) {
+  const replySenders = createReplySenderMap(context);
   const subscriptions = new Map<string, Promise<void>>();
   const subscribe = (threadId: string): Promise<void> => {
     const current = subscriptions.get(threadId);
@@ -73,9 +74,19 @@ async function createMessageBridge(context: FeatureContext) {
     async deliver(message: XiaoyiHostInboundMessage): Promise<void> {
       const thread = await context.threads.ensureByKey(message.externalConversationId, { title: `XiaoYi ${message.externalConversationId}`.slice(0, 200) });
       await subscribe(thread.id);
-      await context.messaging.send(thread.id, draft(message));
+      const messageDraft = draft(message);
+      const sent = await context.messaging.send(thread.id, messageDraft);
+      if (messageDraft.sender !== undefined) {
+        try {
+          await replySenders.record(sent.messageId, messageDraft.sender);
+        } catch (error) {
+          context.log('warn', 'XiaoYi reply-sender mapping record failed', {
+            errorName: error instanceof Error ? error.name : 'unknown',
+          });
+        }
+      }
     },
-    async outbound(candidate: unknown): Promise<ConnectorOutboundDelivery> {
+    async outbound(candidate: unknown) {
       const input = requireDelivery(candidate);
       const binding = (await context.threads.listBindings()).find(item => item.threadId === input.threadId);
       if (binding === undefined) throw new TypeError(`xiaoyi thread ${input.threadId} has no provider binding`);
@@ -95,13 +106,20 @@ async function createMessageBridge(context: FeatureContext) {
         if (!['image', 'file', 'audio', 'video'].includes(String(type)) || typeof reference !== 'string') return [];
         return [{ type, reference, ...(typeof element.payload.fileName === 'string' ? { fileName: element.payload.fileName } : {}) }];
       });
-      return requireConnectorOutboundDelivery({
+      const displayName = input.presentation?.actor.displayName || input.envelope.actor.id;
+      const replyPrefix = input.envelope.actor.kind === 'cat' ? `【${displayName}🐱】\n` : '';
+      const replyToSender = await replySenders.resolve(input.envelope.replyTo);
+      return {
+        replyPrefix,
+        input: requireConnectorOutboundDelivery({
         deliveryId: input.deliveryId,
         externalConversationId: binding.key,
-        presentation: { header: input.envelope.actor.id, body: text, origin: input.envelope.actor.kind === 'cat' ? 'agent' : input.envelope.actor.kind === 'system' ? 'system' : 'direct' },
+        presentation: { header: displayName, body: text, origin: input.envelope.actor.kind === 'cat' ? 'agent' : input.envelope.actor.kind === 'system' ? 'system' : 'direct' },
+        ...(replyToSender === undefined ? {} : { metadata: { replyToSender } }),
         ...(richBlocks.length === 0 ? {} : { richBlocks }),
         ...(media.length === 0 ? {} : { media }),
-      });
+        }),
+      };
     },
   };
 }
@@ -139,7 +157,7 @@ export function createXiaoyiPluginModule(createRuntime: RuntimeFactory = createX
           actions: {
             'host.messaging.lifecycle': lifecycle,
             'xiaoyi.outbound': async (candidate) => {
-              const input = await bridge.outbound(candidate);
+              const { input, replyPrefix } = await bridge.outbound(candidate);
               const text = [input.presentation.header, input.presentation.subtitle, input.presentation.body, input.presentation.footer]
                 .filter((value): value is string => value !== undefined && value.length > 0)
                 .join('\n\n');
@@ -153,7 +171,7 @@ export function createXiaoyiPluginModule(createRuntime: RuntimeFactory = createX
                   : media.type === 'image' ? '图片'
                     : media.type === 'video' ? '视频'
                       : '文件';
-                await runtime.outbound.sendReply(input.externalConversationId, `⚠️ 这条${label}无法在小艺里发送`);
+                await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 这条${label}无法在小艺里发送`, input.metadata);
               }
             },
           },

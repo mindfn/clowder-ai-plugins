@@ -147,7 +147,7 @@ test('lifecycle action edits the WeCom stream once for blocked and finalizes it 
     lifecycleId: 'life-1', deliveryId: 'delivery-4', threadId: 'thread-1', state: 'settled', chainDone: false, outcome: 'failed',
   });
   assert.deepEqual(calls, [
-    ['placeholder', 'chat-1', '🤔 思考中...'],
+    ['placeholder', 'chat-1', '【砚砚🐱】🤔 思考中...'],
     ['edit', 'chat-1', 'stream-1', '⚠️ 未能完成最新消息重读（needs_user）。请打开 Clowder AI 重试。', { bypassThrottle: true }],
     ['delete', 'stream-1'],
   ]);
@@ -220,12 +220,12 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
     { operation: 'provider.rich', value: ['chat-1', '正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：voice.amr（转写处理失败）', [
       { id: 'b1', kind: 'card', v: 1, title: 'T', bodyMarkdown: 'B' },
       { id: 'b2', kind: 'checklist', v: 1, title: 'L', items: [{ id: 'i1', text: 'a', checked: true }, { id: 'i2', text: 'b' }] },
-    ], 'cat-1', undefined] },
+    ], 'Cat', undefined] },
     { operation: 'provider.media', value: ['chat-1', 'audio', 'voice-bytes', 'voice.amr'] },
-    { operation: 'provider.notice', value: ['chat-1', '⚠️ 媒体不可用（读取或上传失败）'] },
-    { operation: 'provider.notice', value: ['chat-1', '⚠️ 媒体不可用（旧引用无法读取）'] },
-    { operation: 'provider.notice', value: ['chat-1', '⚠️ 视频附件暂不支持发送'] },
-    { operation: 'provider.notice', value: ['chat-1', '⚠️ 媒体过大，超过企业微信发送上限'] },
+    { operation: 'provider.notice', value: ['chat-1', '【Cat🐱】\n⚠️ 媒体不可用（读取或上传失败）', undefined] },
+    { operation: 'provider.notice', value: ['chat-1', '【Cat🐱】\n⚠️ 媒体不可用（旧引用无法读取）', undefined] },
+    { operation: 'provider.notice', value: ['chat-1', '【Cat🐱】\n⚠️ 视频附件暂不支持发送', undefined] },
+    { operation: 'provider.notice', value: ['chat-1', '【Cat🐱】\n⚠️ 媒体过大，超过企业微信发送上限', undefined] },
   ]);
   calls.length = 0;
   const typedOnly = richDelivery();
@@ -235,5 +235,62 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
   ));
   await active.actions['wecom-bot.outbound']?.(typedOnly);
   assert.deepEqual(calls.map(call => call.operation), ['provider.formatted']);
+  await active.stop();
+});
+
+test('outbound attaches replyToSender metadata from the recorded inbound mapping (group @ parity)', async () => {
+  const calls: Array<{ operation: string; value: unknown }> = [];
+  let inbound!: (message: WeComBotHostInboundMessage) => Promise<void>;
+  const state = new Map<string, { revision: number; value: unknown }>();
+  const outbound = {
+    async sendFormattedReply(...args: unknown[]) { calls.push({ operation: 'provider.send', value: args }); },
+    async sendMedia() {}, async sendReply() {},
+  } as unknown as WeComBotAdapter;
+  const entrypoint = createWeComBotPluginModule((options) => {
+    inbound = options.host.deliver;
+    return { outbound, async start() {}, async stop() {} } as WeComBotConnectorRuntime<WeComBotAdapter>;
+  });
+  const host: ModulePluginHostShape = {
+    config: { get: async () => 'bot' }, secrets: { get: async () => 'secret' },
+    storage: {
+      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
+      compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
+    },
+    tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
+    threads: {
+      listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
+      ensureByKey: async (key: string) => ({ id: 'thread-1', title: key, createdAt: 1, lastActiveAt: 1 }),
+    } as never,
+    messaging: {
+      subscribe: async () => undefined, unsubscribe: async () => undefined,
+      send: async input => ({ messageId: 'host-message-1', threadId: input.threadId }),
+    },
+    log() {},
+  };
+  const active = await entrypoint.create(manifest).start(host);
+  const sender = { id: 'sender-1', name: 'Sender' };
+  await inbound({
+    externalConversationId: 'chat-1',
+    providerMessageId: 'provider-1',
+    text: 'inbound',
+    sender,
+    conversation: { type: 'group' },
+  });
+  const matched = structuredClone(delivery) as typeof delivery & { envelope: { replyTo?: string } };
+  matched.envelope.replyTo = 'host-message-1';
+  await active.actions['wecom-bot.outbound']?.(matched);
+  const sent = calls.find(call => call.operation === 'provider.send')?.value as unknown[];
+  assert.equal(sent[0], 'chat-1');
+  assert.equal((sent[1] as { header: string }).header, 'Cat');
+  assert.deepEqual(sent[2], { replyToSender: { id: 'sender-1', name: 'Sender' } });
+  calls.length = 0;
+  const missed = structuredClone(delivery) as typeof delivery & { envelope: { replyTo?: string } };
+  missed.deliveryId = 'delivery-2';
+  missed.envelope.replyTo = 'host-unknown';
+  await active.actions['wecom-bot.outbound']?.(missed);
+  const missedSent = calls.find(call => call.operation === 'provider.send')?.value as unknown[];
+  assert.equal(missedSent[2], undefined);
   await active.stop();
 });

@@ -85,7 +85,7 @@ export class XiaoyiAdapter {
 
   // ── IStreamableOutboundAdapter ──
 
-  async sendReply(externalChatId: string, content: string): Promise<void> {
+  async sendReply(externalChatId: string, content: string, _metadata?: Record<string, unknown>): Promise<void> {
     const sessionId = this.sessionFrom(externalChatId);
     const rec = this.currentTask(sessionId);
     if (!rec) {

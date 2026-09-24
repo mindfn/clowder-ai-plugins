@@ -86,6 +86,7 @@ contributions:
     binding: weixin-bot
     action:
       method: weixin.outbound
+    presentation: v1
   - type: media-source
     id: weixin-media
     binding: weixin-bot

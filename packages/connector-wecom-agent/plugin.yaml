@@ -39,6 +39,7 @@ contributions:
     binding: wecom-agent
     action:
       method: wecom-agent.outbound
+    presentation: v1
   - type: media-source
     id: wecom-agent-media
     binding: wecom-agent

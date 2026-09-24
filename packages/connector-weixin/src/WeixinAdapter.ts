@@ -740,7 +740,9 @@ export class WeixinAdapter {
 
   // ── Outbound: Send reply ──
 
-  async sendReply(externalChatId: string, content: string): Promise<void> {
+  // Weixin's legacy adapter path does not consume outbound metadata (no group @ capability);
+  // the optional parameter keeps parity with the connector contract so callers can pass it through.
+  async sendReply(externalChatId: string, content: string, _metadata?: Record<string, unknown>): Promise<void> {
     const currentToken = this.contextTokens.get(externalChatId) ?? '';
     this.log.info(
       { chatId: externalChatId, contentLen: content.length, tokenHash: currentToken.slice(-8) || 'none' },

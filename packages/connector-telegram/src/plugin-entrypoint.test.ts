@@ -181,7 +181,7 @@ test('lifecycle registers the Telegram placeholder before final delivery and cle
     lifecycleId: 'life-1', deliveryId: 'delivery-2', threadId: 'thread-1', state: 'settled', chainDone: true, outcome: 'completed',
   });
   assert.deepEqual(calls, [
-    ['placeholder', 'chat-1', '🤔 思考中...'],
+    ['placeholder', 'chat-1', '【砚砚🐱】🤔 思考中...'],
     ['register', 'chat-1', '42', 'life-1'],
     ['final', 'chat-1', 'hello', undefined, 'life-1'],
     ['clear', 'chat-1', '42', 'life-1'],
@@ -278,12 +278,12 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
     { operation: 'provider.rich', value: ['chat-1', '正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：voice.ogg（转写处理失败）', [
       { id: 'b1', kind: 'card', v: 1, title: 'T', bodyMarkdown: 'B' },
       { id: 'b2', kind: 'checklist', v: 1, title: 'L', items: [{ id: 'i1', text: 'a', checked: true }, { id: 'i2', text: 'b' }] },
-    ], 'cat-1'] },
+    ], 'Cat'] },
     { operation: 'provider.media', value: ['chat-1', 'audio', 'voice-bytes', 'voice.ogg'] },
-    { operation: 'provider.send', value: ['chat-1', '⚠️ 媒体不可用（读取或上传失败）'] },
-    { operation: 'provider.send', value: ['chat-1', '⚠️ 媒体不可用（旧引用无法读取）'] },
-    { operation: 'provider.send', value: ['chat-1', '⚠️ 视频附件暂不支持发送'] },
-    { operation: 'provider.send', value: ['chat-1', '⚠️ 媒体过大，超过 Telegram 发送上限'] },
+    { operation: 'provider.send', value: ['chat-1', '【Cat🐱】\n⚠️ 媒体不可用（读取或上传失败）', undefined] },
+    { operation: 'provider.send', value: ['chat-1', '【Cat🐱】\n⚠️ 媒体不可用（旧引用无法读取）', undefined] },
+    { operation: 'provider.send', value: ['chat-1', '【Cat🐱】\n⚠️ 视频附件暂不支持发送', undefined] },
+    { operation: 'provider.send', value: ['chat-1', '【Cat🐱】\n⚠️ 媒体过大，超过 Telegram 发送上限', undefined] },
   ]);
   calls.length = 0;
   const typedOnly = richDelivery();
@@ -293,5 +293,68 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
   ));
   await active.actions['telegram.outbound']?.(typedOnly);
   assert.deepEqual(calls.map(call => call.operation), ['provider.send']);
+  await active.stop();
+});
+
+test('outbound attaches replyToSender metadata from the recorded inbound mapping (group @ parity)', async () => {
+  const calls: Array<{ operation: string; value: unknown }> = [];
+  let inbound!: (message: TelegramHostInboundMessage) => Promise<void>;
+  const state = new Map<string, { revision: number; value: unknown }>();
+  const outbound = {
+    async sendRichMessage(...args: unknown[]) { calls.push({ operation: 'provider.rich', value: args }); },
+    async sendReply(...args: unknown[]) { calls.push({ operation: 'provider.send', value: args }); },
+    async sendMedia() {},
+  } as unknown as TelegramAdapter;
+  const entrypoint = createTelegramPluginModule((options) => {
+    inbound = options.host.deliver;
+    return { outbound, async start() {}, async stop() {} } as TelegramConnectorRuntime<TelegramAdapter>;
+  });
+  const host: ModulePluginHostShape = {
+    config: { get: async () => undefined }, secrets: { get: async () => 'bot-token' },
+    storage: {
+      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
+      compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
+    },
+    tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
+    threads: {
+      listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
+      ensureByKey: async (key: string) => ({ id: 'thread-1', title: key, createdAt: 1, lastActiveAt: 1 }),
+    } as never,
+    messaging: {
+      subscribe: async () => undefined, unsubscribe: async () => undefined,
+      send: async input => ({ messageId: 'host-message-1', threadId: input.threadId }),
+    },
+    log() {},
+  };
+  const withVideo = (candidate: ReturnType<typeof delivery> & { envelope: { replyTo?: string } }) => {
+    (candidate.envelope.payload.elements as unknown[]).push(
+      { elementId: 'v1', kind: 'media_ref', payload: { type: 'video', reference: 'hmr_video-1' } },
+      { elementId: 'r1', kind: 'rich_block', payload: { id: 'b1', kind: 'card', v: 1, title: 'T', bodyMarkdown: 'B' } },
+    );
+    return candidate;
+  };
+  const active = await entrypoint.create(manifest).start(host);
+  await inbound({
+    externalConversationId: 'chat-1', externalSenderId: 'user-1', providerMessageId: 'provider-1', text: 'inbound',
+  });
+  const matched = withVideo(delivery() as ReturnType<typeof delivery> & { envelope: { replyTo?: string } });
+  matched.envelope.replyTo = 'host-message-1';
+  await active.actions['telegram.outbound']?.(matched);
+  const rich = calls.find(call => call.operation === 'provider.rich')?.value as unknown[];
+  assert.equal(rich[3], 'Cat');
+  const sent = calls.find(call => call.operation === 'provider.send')?.value as unknown[];
+  assert.equal(sent[0], 'chat-1');
+  assert.equal(sent[1], '【Cat🐱】\n⚠️ 视频附件暂不支持发送');
+  assert.deepEqual(sent[2], { replyToSender: { id: 'user-1' } });
+  calls.length = 0;
+  const missed = withVideo(delivery() as ReturnType<typeof delivery> & { envelope: { replyTo?: string } });
+  missed.deliveryId = 'delivery-2';
+  missed.envelope.replyTo = 'host-unknown';
+  await active.actions['telegram.outbound']?.(missed);
+  const missedSent = calls.find(call => call.operation === 'provider.send')?.value as unknown[];
+  assert.equal(missedSent[1], '【Cat🐱】\n⚠️ 视频附件暂不支持发送');
+  assert.equal(missedSent[2], undefined);
   await active.stop();
 });

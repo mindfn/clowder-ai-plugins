@@ -57,7 +57,7 @@ test('module leaves provider task settlement to the lifecycle action', async () 
   const active = await entrypoint.create(manifest).start(host(values));
   await active.actions['xiaoyi.outbound']?.(delivery());
   assert.deepEqual(events, [
-    ['reply', 'agent:session', '砚砚\n\nhello'],
+    ['reply', 'agent:session', 'Cat\n\nhello'],
   ]);
 });
 
@@ -92,10 +92,10 @@ test('lifecycle sends one standalone blocked recovery and preserves chainDone fa
     lifecycleId: 'life-2', deliveryId: 'delivery-5', threadId: 'thread-1', state: 'settled', chainDone: true, outcome: 'completed',
   });
   assert.deepEqual(events, [
-    ['placeholder', 'agent:session', '🤔 思考中...'],
+    ['placeholder', 'agent:session', '【砚砚🐱】🤔 思考中...'],
     ['reply', 'agent:session', '⚠️ 未能完成最新消息重读（needs_user）。请打开 Clowder AI 重试。'],
     ['done', 'agent:session', false],
-    ['placeholder', 'agent:session', '🤔 思考中...'],
+    ['placeholder', 'agent:session', '【砚砚🐱】🤔 思考中...'],
     ['done', 'agent:session', true],
   ]);
   await active.stop();
@@ -131,8 +131,8 @@ test('rich blocks and typed media notices append rendered plaintext blocks befor
   const active = await entrypoint.create(manifest).start(host(values));
   await active.actions['xiaoyi.outbound']?.(richDelivery());
   assert.deepEqual(events, [
-    ['reply', 'agent:session', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：音频（转写处理失败）\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'],
-    ['reply', 'agent:session', '⚠️ 这条语音无法在小艺里发送'],
+    ['reply', 'agent:session', 'Cat\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：音频（转写处理失败）\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'],
+    ['reply', 'agent:session', '【Cat🐱】\n⚠️ 这条语音无法在小艺里发送', undefined],
   ]);
   events.length = 0;
   const typedOnly = richDelivery();
@@ -142,7 +142,58 @@ test('rich blocks and typed media notices append rendered plaintext blocks befor
   ));
   await active.actions['xiaoyi.outbound']?.(typedOnly);
   assert.deepEqual(events, [
-    ['reply', 'agent:session', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）'],
+    ['reply', 'agent:session', 'Cat\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）'],
+  ]);
+  await active.stop();
+});
+
+test('outbound attaches replyToSender metadata from the recorded inbound mapping (group @ parity)', async () => {
+  const events: unknown[] = [];
+  let inbound!: (message: import('./runtime.js').XiaoyiHostInboundMessage) => Promise<void>;
+  const outbound = {
+    async sendReply(...args: unknown[]) { events.push(['reply', ...args]); },
+  } as unknown as XiaoyiAdapter;
+  const entrypoint = createXiaoyiPluginModule((options) => {
+    inbound = options.host.deliver;
+    return { outbound, async start() {}, async stop() {} } as XiaoyiConnectorRuntime<XiaoyiAdapter>;
+  });
+  const hostWithEnsure = {
+    ...host({ accessKey: 'ak', agentId: 'agent' }),
+    threads: {
+      listBindings: async () => [{ key: 'agent:session', threadId: 'thread-1', createdAt: 1 }],
+      ensureByKey: async (key: string) => ({ id: 'thread-1', title: key, createdAt: 1, lastActiveAt: 1 }),
+    } as never,
+  } as ModulePluginHostShape;
+  const active = await entrypoint.create(manifest).start(hostWithEnsure);
+  await inbound({
+    externalConversationId: 'agent:session',
+    externalSenderId: 'sender-1',
+    providerMessageId: 'provider-1',
+    text: 'inbound',
+  });
+  const matched = delivery() as ReturnType<typeof delivery> & { envelope: { replyTo?: string } };
+  matched.envelope.replyTo = 'message-1';
+  matched.envelope.payload.elements = [
+    ...matched.envelope.payload.elements,
+    { elementId: 'm1', kind: 'media_ref', payload: { type: 'audio', reference: 'hmr_audio-1' } },
+  ] as typeof matched.envelope.payload.elements;
+  await active.actions['xiaoyi.outbound']?.(matched);
+  assert.deepEqual(events, [
+    ['reply', 'agent:session', 'Cat\n\nhello'],
+    ['reply', 'agent:session', '【Cat🐱】\n⚠️ 这条语音无法在小艺里发送', { replyToSender: { id: 'sender-1' } }],
+  ]);
+  events.length = 0;
+  const missed = delivery() as ReturnType<typeof delivery> & { envelope: { replyTo?: string } };
+  missed.deliveryId = 'delivery-2';
+  missed.envelope.replyTo = 'host-unknown';
+  missed.envelope.payload.elements = [
+    ...missed.envelope.payload.elements,
+    { elementId: 'm1', kind: 'media_ref', payload: { type: 'audio', reference: 'hmr_audio-1' } },
+  ] as typeof missed.envelope.payload.elements;
+  await active.actions['xiaoyi.outbound']?.(missed);
+  assert.deepEqual(events, [
+    ['reply', 'agent:session', 'Cat\n\nhello'],
+    ['reply', 'agent:session', '【Cat🐱】\n⚠️ 这条语音无法在小艺里发送', undefined],
   ]);
   await active.stop();
 });

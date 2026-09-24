@@ -109,7 +109,7 @@ test('lifecycle action drives Feishu placeholder edit and completion card throug
     lifecycleId: 'life-1', deliveryId: 'delivery-3', threadId: 'thread-1', state: 'settled', chainDone: true, outcome: 'completed',
   });
   assert.deepEqual(calls, [
-    ['placeholder', 'chat-1', '🤔 思考中...'],
+    ['placeholder', 'chat-1', '【砚砚🐱】🤔 思考中...'],
     ['edit', 'chat-1', 'message-1', '🔄 收到新消息，正在重新整理回复…'],
     ['finalize', 'chat-1', 'message-1', '砚砚', 'completed'],
   ]);
@@ -275,12 +275,12 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
     { operation: 'provider.rich', value: ['chat-1', '正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：voice.opus（转写处理失败）', [
       { id: 'b1', kind: 'card', v: 1, title: 'T', bodyMarkdown: 'B' },
       { id: 'b2', kind: 'checklist', v: 1, title: 'L', items: [{ id: 'i1', text: 'a', checked: true }, { id: 'i2', text: 'b' }] },
-    ], 'cat-1', undefined] },
+    ], 'Cat', undefined] },
     { operation: 'provider.media', value: ['chat-1', 'audio', 'voice-bytes', 'voice.opus'] },
-    { operation: 'provider.notice', value: ['chat-1', '⚠️ 媒体不可用（读取或上传失败）'] },
-    { operation: 'provider.notice', value: ['chat-1', '⚠️ 媒体不可用（旧引用无法读取）'] },
-    { operation: 'provider.notice', value: ['chat-1', '⚠️ 视频附件暂不支持发送'] },
-    { operation: 'provider.notice', value: ['chat-1', '⚠️ 媒体过大，超过飞书发送上限'] },
+    { operation: 'provider.notice', value: ['chat-1', '【Cat🐱】\n⚠️ 媒体不可用（读取或上传失败）', undefined] },
+    { operation: 'provider.notice', value: ['chat-1', '【Cat🐱】\n⚠️ 媒体不可用（旧引用无法读取）', undefined] },
+    { operation: 'provider.notice', value: ['chat-1', '【Cat🐱】\n⚠️ 视频附件暂不支持发送', undefined] },
+    { operation: 'provider.notice', value: ['chat-1', '【Cat🐱】\n⚠️ 媒体过大，超过飞书发送上限', undefined] },
   ]);
   calls.length = 0;
   const typedOnly = richDelivery();
@@ -290,5 +290,55 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
   ));
   await active.actions['feishu.outbound']?.(typedOnly);
   assert.deepEqual(calls.map(call => call.operation), ['provider.formatted']);
+  await active.stop();
+});
+
+test('outbound attaches replyToSender metadata from the recorded inbound mapping (group @ parity)', async () => {
+  const calls: Array<{ operation: string; value: unknown }> = [];
+  let inbound!: (message: import('./runtime.js').FeishuHostInboundMessage) => Promise<void>;
+  const outbound = {
+    async sendFormattedReply(...args: unknown[]) { calls.push({ operation: 'provider.send', value: args }); },
+    async sendMedia() {}, async sendReply() {},
+  } as unknown as FeishuAdapter;
+  const entrypoint = createFeishuPluginModule((options) => {
+    inbound = options.host.deliver;
+    return { outbound, async start() {}, async stop() {} } as FeishuConnectorRuntime<FeishuAdapter>;
+  });
+  const active = await entrypoint.create(manifest).start(host(
+    { appId: 'app', connectionMode: 'webhook' },
+    { appSecret: 'secret', verificationToken: '' },
+  ));
+  await inbound({
+    externalConversationId: 'chat-1',
+    providerMessageId: 'provider-1',
+    text: 'inbound',
+    sender: { id: 'sender-1', name: 'Sender' },
+    conversation: { type: 'group' },
+  });
+  const delivery = () => ({
+    deliveryId: 'delivery-1', threadId: 'thread-1',
+    presentation: { actor: { displayName: 'Cat', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
+    envelope: {
+      messageId: 'message-1', revision: 1, threadId: 'thread-1',
+      actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
+      payload: { provenance: { origin: { kind: 'host' }, epistemicStatus: 'observation' }, elements: [
+        { elementId: 't1', kind: 'text', payload: { text: '正文' } },
+      ] },
+    },
+  });
+  const matched = delivery() as ReturnType<typeof delivery> & { envelope: { replyTo?: string } };
+  matched.envelope.replyTo = 'message-1';
+  await active.actions['feishu.outbound']?.(matched);
+  const sent = calls.find(call => call.operation === 'provider.send')?.value as unknown[];
+  assert.equal(sent[0], 'chat-1');
+  assert.equal((sent[1] as { header: string }).header, 'Cat');
+  assert.deepEqual(sent[2], { replyToSender: { id: 'sender-1', name: 'Sender' } });
+  calls.length = 0;
+  const missed = delivery() as ReturnType<typeof delivery> & { envelope: { replyTo?: string } };
+  missed.deliveryId = 'delivery-2';
+  missed.envelope.replyTo = 'host-unknown';
+  await active.actions['feishu.outbound']?.(missed);
+  const missedSent = calls.find(call => call.operation === 'provider.send')?.value as unknown[];
+  assert.equal(missedSent[2], undefined);
   await active.stop();
 });

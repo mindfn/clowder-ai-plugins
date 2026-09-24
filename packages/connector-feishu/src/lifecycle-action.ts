@@ -108,7 +108,11 @@ export function createConnectorLifecycleAction(
       case 'started':
         actorDisplayName = event.presentation.actor.displayName;
         await safely('placeholder send', async () => {
-          const candidate = await callbacks.sendPlaceholder(binding.key, STARTED_TEXT);
+          const displayName = actorDisplayName || '猫猫';
+          const candidate = await callbacks.sendPlaceholder(
+            binding.key,
+            `【${displayName}🐱】${STARTED_TEXT}`,
+          );
           platformMessageId = candidate.length > 0 ? candidate : undefined;
           if (platformMessageId !== undefined) {
             await callbacks.onPlaceholder?.(binding.key, platformMessageId, event.lifecycleId);

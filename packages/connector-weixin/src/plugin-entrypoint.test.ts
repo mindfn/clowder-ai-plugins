@@ -13,6 +13,7 @@ const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url)
 function delivery() {
   return {
     deliveryId: 'delivery-1', threadId: 'thread-1',
+    presentation: { actor: { displayName: '小狸', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
     envelope: {
       messageId: 'message-1', revision: 1, threadId: 'thread-1',
       actor: { kind: 'cat', id: '砚砚' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
@@ -65,7 +66,7 @@ test('module binds Host-owned state and exposes only its declared outbound actio
   await active.actions['weixin.outbound']?.(delivery());
   await active.stop();
   assert.deepEqual(writes, [['provider-session', { getUpdatesBuf: 'cursor' }]]);
-  assert.deepEqual(replies, [['chat-1', '砚砚\n\nhello']]);
+  assert.deepEqual(replies, [['chat-1', '【小狸🐱】\n小狸\n\nhello', undefined]]);
   assert.equal(stops, 1);
 });
 
@@ -132,6 +133,7 @@ test('provider media locator stays in private state while ingress emits only pmr
 function richDelivery() {
   return {
     deliveryId: 'delivery-1', threadId: 'thread-1',
+    presentation: { actor: { displayName: 'Cat', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
     envelope: {
       messageId: 'message-1', revision: 1, threadId: 'thread-1',
       actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
@@ -194,12 +196,12 @@ test('rich blocks and typed media notices append rendered plaintext blocks to th
   const active = await entrypoint.create(manifest).start(host);
   await active.actions['weixin.outbound']?.(richDelivery());
   assert.deepEqual(replies, [
-    ['chat-1', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：voice.wav（转写处理失败）\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'],
+    ['chat-1', '【Cat🐱】\nCat\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：voice.wav（转写处理失败）\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b', undefined],
     ['chat-1', 'audio', 'voice-bytes', 'voice.wav'],
-    ['chat-1', '⚠️ 媒体不可用（读取或上传失败）'],
-    ['chat-1', '⚠️ 媒体不可用（旧引用无法读取）'],
-    ['chat-1', '⚠️ 视频附件暂不支持发送'],
-    ['chat-1', '⚠️ 媒体过大，超过插件的安全上限 25 MiB'],
+    ['chat-1', '【Cat🐱】\n⚠️ 媒体不可用（读取或上传失败）', undefined],
+    ['chat-1', '【Cat🐱】\n⚠️ 媒体不可用（旧引用无法读取）', undefined],
+    ['chat-1', '【Cat🐱】\n⚠️ 视频附件暂不支持发送', undefined],
+    ['chat-1', '【Cat🐱】\n⚠️ 媒体过大，超过插件的安全上限 25 MiB', undefined],
   ]);
   replies.length = 0;
   const typedOnly = richDelivery();
@@ -209,6 +211,56 @@ test('rich blocks and typed media notices append rendered plaintext blocks to th
   ));
   await active.actions['weixin.outbound']?.(typedOnly);
   assert.equal(replies.length, 1);
-  assert.equal((replies[0] as unknown[])[1], 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）');
+  assert.equal((replies[0] as unknown[])[1], '【Cat🐱】\nCat\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）');
+  await active.stop();
+});
+
+test('outbound attaches replyToSender metadata from the recorded inbound mapping (group @ parity)', async () => {
+  const replies: unknown[] = [];
+  let inbound!: (message: WeixinHostInboundMessage) => Promise<void>;
+  const state = new Map<string, { revision: number; value: unknown }>();
+  const outbound = {
+    async sendReply(...args: unknown[]) { replies.push(args); },
+    async sendMedia() {},
+  } as unknown as WeixinAdapter;
+  const entrypoint = createWeixinPluginModule((options) => {
+    inbound = options.host.deliver;
+    return { outbound, async start() {}, async stop() {} } as WeixinConnectorRuntime<WeixinAdapter>;
+  });
+  const host: ModulePluginHostShape = {
+    config: { get: async () => undefined }, secrets: { get: async () => 'token' },
+    storage: {
+      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
+      compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
+    },
+    tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
+    threads: {
+      listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
+      ensureByKey: async (key: string) => ({ id: 'thread-1', title: key, createdAt: 1, lastActiveAt: 1 }),
+    } as never,
+    messaging: {
+      subscribe: async () => undefined, unsubscribe: async () => undefined,
+      send: async input => ({ messageId: 'host-message-1', threadId: input.threadId }),
+    },
+    log() {},
+  };
+  const active = await entrypoint.create(manifest).start(host);
+  await inbound({
+    externalConversationId: 'chat-1', externalSenderId: 'user-1', providerMessageId: 'provider-1', text: 'inbound',
+  });
+  const matched = delivery() as ReturnType<typeof delivery> & { envelope: { replyTo?: string } };
+  matched.envelope.replyTo = 'host-message-1';
+  await active.actions['weixin.outbound']?.(matched);
+  assert.equal((replies[0] as unknown[])[0], 'chat-1');
+  assert.match((replies[0] as unknown[])[1] as string, /^【小狸🐱】\n小狸\n\nhello$/);
+  assert.deepEqual((replies[0] as unknown[])[2], { replyToSender: { id: 'user-1' } });
+  replies.length = 0;
+  const missed = delivery() as ReturnType<typeof delivery> & { envelope: { replyTo?: string } };
+  missed.deliveryId = 'delivery-2';
+  missed.envelope.replyTo = 'host-unknown';
+  await active.actions['weixin.outbound']?.(missed);
+  assert.equal((replies[0] as unknown[])[2], undefined);
   await active.stop();
 });
