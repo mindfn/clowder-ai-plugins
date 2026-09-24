@@ -86,9 +86,9 @@ test('Gate M: media-source actions expose typed chunk, rejection, and settlement
 });
 
 test('Gate L: lifecycle action guard preserves the discriminated union', async () => {
-  const observed: unknown[] = [];
+  const observedThreadIds: string[] = [];
   const action = defineLifecycleAction(async (input) => {
-    observed.push(input);
+    observedThreadIds.push(input.threadId);
     return { deliveryId: input.deliveryId };
   });
   assert.deepEqual(await action({
@@ -99,8 +99,7 @@ test('Gate L: lifecycle action guard preserves the discriminated union', async (
     chainDone: true,
     outcome: 'completed',
   }), { deliveryId: 'delivery-1' });
-  assert.equal(observed.length, 1);
-  assert.equal((observed[0] as { threadId?: string }).threadId, 'thread-1');
+  assert.deepEqual(observedThreadIds, ['thread-1']);
   await assert.rejects(
     action({ lifecycleId: 'lifecycle-1', deliveryId: 'delivery-2', state: 'settled' }),
     LifecycleActionInputError,

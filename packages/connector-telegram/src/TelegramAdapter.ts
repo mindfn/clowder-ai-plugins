@@ -10,6 +10,7 @@
  */
 
 import { Bot, GrammyError, InputFile } from 'grammy';
+import { fetchBoundedInboundMedia } from './inbound-download.js';
 import type { ConnectorLogger, RichBlock } from './types.js';
 import { formatTelegramHtml } from './telegram-html-formatter.js';
 import { materializeMedia } from './materialize-media.js';
@@ -144,12 +145,12 @@ export class TelegramAdapter {
   async downloadInboundMedia(locator: { readonly platformKey: string }): Promise<Buffer> {
     const file = await this.bot.api.getFile(locator.platformKey);
     if (!file.file_path) throw new Error('Telegram getFile returned no file_path');
-    const response = await fetch(
+    const { response, bytes } = await fetchBoundedInboundMedia(
+      globalThis.fetch,
       `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`,
-      { signal: AbortSignal.timeout(30_000) },
     );
     if (!response.ok) throw new Error(`Telegram media download HTTP ${response.status}`);
-    return Buffer.from(await response.arrayBuffer());
+    return bytes;
   }
 
   private getPollingControls(): TelegramPollingControls {

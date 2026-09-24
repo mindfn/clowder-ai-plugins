@@ -85,8 +85,8 @@ test('rich blocks and typed media notices append rendered plaintext blocks befor
   const active = await entrypoint.create(manifest).start(host(values));
   await active.actions['xiaoyi.outbound']?.(richDelivery());
   assert.deepEqual(events, [
-    ['reply', 'agent:session', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：转写处理失败\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'],
-    ['reply', 'agent:session', '📎 hmr_audio-1'],
+    ['reply', 'agent:session', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：音频（转写处理失败）\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'],
+    ['reply', 'agent:session', '⚠️ 这条语音无法在小艺里发送'],
     ['done', 'agent:session', true],
   ]);
 });

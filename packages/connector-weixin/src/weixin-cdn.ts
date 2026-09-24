@@ -7,6 +7,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
+import { fetchBoundedInboundMedia } from './inbound-download.js';
 import type { ConnectorLogger } from './types.js';
 
 const ILINK_BASE_URL = 'https://ilinkai.weixin.qq.com';
@@ -80,7 +81,7 @@ export function decodeAesKey(aesKey: string, log?: ConnectorLogger): Buffer {
   }
 
   log?.warn(
-    { aesKeyLen: aesKey.length, decodedLen: key.length, prefix: aesKey.slice(0, 8) },
+    { aesKeyLen: aesKey.length, decodedLen: key.length },
     '[weixin-cdn] Invalid AES key length after decode',
   );
   throw new Error(`Invalid AES key: decoded ${key.length} bytes from ${aesKey.length}-char string (expected 16)`);
@@ -138,16 +139,14 @@ export async function downloadMediaFromCdn(params: {
 
   log.info({ source: fullUrl ? 'full_url' : 'encrypted_query_param' }, '[weixin-cdn] Downloading media from CDN');
 
-  const res = await fetchFn(cdnUrl, {
+  const { response: res, bytes: ciphertext } = await fetchBoundedInboundMedia(fetchFn, cdnUrl, {
     method: 'GET',
-    signal: AbortSignal.timeout(30_000),
   });
 
   if (!res.ok) {
     throw new Error(`CDN download HTTP ${res.status}`);
   }
 
-  const ciphertext = Buffer.from(await res.arrayBuffer());
   const key = decodeAesKey(aesKey, log);
   const plaintext = decryptAesEcb(ciphertext, key);
 

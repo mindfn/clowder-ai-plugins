@@ -201,7 +201,7 @@ test('rich blocks and typed media notices fall back to sendReply with rendered p
   const active = await entrypoint.create(manifest).start(host);
   await active.actions['wecom-agent.outbound']?.(richDelivery());
   assert.deepEqual(calls, [
-    { operation: 'provider.send', value: ['chat-1', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：转写处理失败\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'] },
+    { operation: 'provider.send', value: ['chat-1', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：voice.amr（转写处理失败）\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'] },
     { operation: 'provider.media', value: ['chat-1', 'audio', 'voice-bytes', 'voice.amr'] },
     { operation: 'provider.send', value: ['chat-1', '⚠️ 媒体不可用（读取或上传失败）'] },
     { operation: 'provider.send', value: ['chat-1', '⚠️ 媒体不可用（旧引用无法读取）'] },

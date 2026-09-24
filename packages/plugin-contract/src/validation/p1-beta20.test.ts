@@ -256,7 +256,7 @@ test('Gate L closes presentation, lifecycle and pending publication receipts', (
   const forbidden = structuredClone(presentation);
   forbidden.deepLinkUrl = 'https://cafe.example/thread/1?ToKeN=secret';
   assert.equal(validateMessagingRowInput('host.messaging.lifecycle', {
-    lifecycleId: 'life-1', deliveryId: 'delivery-2', state: 'started', presentation: forbidden,
+    lifecycleId: 'life-1', deliveryId: 'delivery-2', threadId: 'thread-1', state: 'started', presentation: forbidden,
   }).valid, false);
 
   const lifecycleEvents = [

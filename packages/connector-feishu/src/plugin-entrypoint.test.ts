@@ -213,7 +213,7 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
   const active = await entrypoint.create(manifest).start(host);
   await active.actions['feishu.outbound']?.(richDelivery());
   assert.deepEqual(calls, [
-    { operation: 'provider.rich', value: ['chat-1', '正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：转写处理失败', [
+    { operation: 'provider.rich', value: ['chat-1', '正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：voice.opus（转写处理失败）', [
       { id: 'b1', kind: 'card', v: 1, title: 'T', bodyMarkdown: 'B' },
       { id: 'b2', kind: 'checklist', v: 1, title: 'L', items: [{ id: 'i1', text: 'a', checked: true }, { id: 'i2', text: 'b' }] },
     ], 'cat-1', undefined] },

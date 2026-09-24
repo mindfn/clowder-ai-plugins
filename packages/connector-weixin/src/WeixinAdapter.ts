@@ -15,8 +15,9 @@ import crypto from 'node:crypto';
 import type { ConnectorLogger } from './types.js';
 import { materializeMedia } from './materialize-media.js';
 
-// Tencent's reference connector bounds one media file to 25 MiB.
-// Source: https://github.com/Tencent/openclaw-weixin (maxSingleMediaBytes).
+// Plugin safety bound. The iLink send API does not publish a stable per-file
+// limit; this prevents unbounded local materialization and must not be
+// presented to users as a provider limit.
 export const WEIXIN_MEDIA_MAX_BYTES = 25 * 1024 * 1024;
 
 const ILINK_BASE_URL = 'https://ilinkai.weixin.qq.com';

@@ -15,6 +15,7 @@ import * as lark from '@larksuiteoapi/node-sdk';
 import { DEFAULT_QUICK_ACTIONS, type ConnectorLogger, type MessageEnvelope, type RichBlock } from './types.js';
 import type { FeishuTokenManager } from './FeishuTokenManager.js';
 import { formatFeishuCard } from './feishu-card-formatter.js';
+import { collectBoundedInboundMedia, INBOUND_MEDIA_TIMEOUT_MS } from './inbound-download.js';
 import { materializeMedia } from './materialize-media.js';
 
 // Feishu IM upload limits: message images 10 MB; files (including audio) 30 MB.
@@ -117,6 +118,9 @@ export class FeishuAdapter {
       appId,
       appSecret,
       appType: lark.AppType.SelfBuild,
+      // The SDK includes request URLs (and therefore file_key locators) in
+      // failure logs. Connector-owned logs retain only safe metadata.
+      logger: { error() {}, warn() {}, info() {}, debug() {}, trace() {} },
     });
     this.log = log;
     this.verificationToken = options?.verificationToken ?? null;
@@ -128,13 +132,31 @@ export class FeishuAdapter {
     readonly type: 'image' | 'file' | 'audio' | 'video';
     readonly platformKey: string;
   }): Promise<Buffer> {
-    const response = await this.client.im.messageResource.get({
-      path: { message_id: locator.sourceEventId, file_key: locator.platformKey },
-      params: { type: locator.type === 'image' ? 'image' : 'file' },
+    let requestTimer: ReturnType<typeof setTimeout> | undefined;
+    const response = await Promise.race([
+      this.client.im.messageResource.get({
+        path: { message_id: locator.sourceEventId, file_key: locator.platformKey },
+        params: { type: locator.type === 'image' ? 'image' : 'file' },
+      }),
+      new Promise<never>((_, reject) => {
+        requestTimer = setTimeout(() => reject(new Error('Feishu inbound media download timed out')), INBOUND_MEDIA_TIMEOUT_MS);
+        requestTimer.unref?.();
+      }),
+    ]).finally(() => {
+      if (requestTimer !== undefined) clearTimeout(requestTimer);
     });
-    const chunks: Buffer[] = [];
-    for await (const chunk of response.getReadableStream()) chunks.push(Buffer.from(chunk));
-    return Buffer.concat(chunks);
+    const stream = response.getReadableStream();
+    const streamTimer = setTimeout(
+      () => stream.destroy(new Error('Feishu inbound media download timed out')),
+      INBOUND_MEDIA_TIMEOUT_MS,
+    );
+    streamTimer.unref?.();
+    try {
+      return await collectBoundedInboundMedia(stream);
+    } finally {
+      clearTimeout(streamTimer);
+      stream.destroy();
+    }
   }
 
   /**

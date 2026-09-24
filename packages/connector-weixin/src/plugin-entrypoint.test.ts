@@ -194,12 +194,12 @@ test('rich blocks and typed media notices append rendered plaintext blocks to th
   const active = await entrypoint.create(manifest).start(host);
   await active.actions['weixin.outbound']?.(richDelivery());
   assert.deepEqual(replies, [
-    ['chat-1', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：转写处理失败\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'],
+    ['chat-1', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：voice.wav（转写处理失败）\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'],
     ['chat-1', 'audio', 'voice-bytes', 'voice.wav'],
     ['chat-1', '⚠️ 媒体不可用（读取或上传失败）'],
     ['chat-1', '⚠️ 媒体不可用（旧引用无法读取）'],
     ['chat-1', '⚠️ 视频附件暂不支持发送'],
-    ['chat-1', '⚠️ 媒体过大，超过微信发送上限'],
+    ['chat-1', '⚠️ 媒体过大，超过插件的安全上限 25 MiB'],
   ]);
   await active.stop();
 });

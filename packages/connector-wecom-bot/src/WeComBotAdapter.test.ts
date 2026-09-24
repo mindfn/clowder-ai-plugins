@@ -65,6 +65,52 @@ test('proactive replies preserve the Host-selected external chat destination', a
   }]);
 });
 
+test('formatted replies longer than the card limit keep the complete media notice', async () => {
+  const subject = adapter();
+  const cards: unknown[] = [];
+  const messages: Array<{ chatId: string; body: Record<string, unknown> }> = [];
+  subject._setLastFrame('group-1', { headers: { req_id: 'request-1' } });
+  subject._injectReplyTemplateCard(async (_frame, card) => { cards.push(card); });
+  subject._injectSendMessage(async (chatId, body) => { messages.push({ chatId, body }); });
+  const notice = '⚠️ 媒体不可用：diagram.png（无法获取）';
+  const body = `${'正文'.repeat(110)}\n\n${notice}`;
+
+  await subject.sendFormattedReply('group-1', {
+    header: 'Cat', body, origin: 'direct',
+  });
+
+  assert.deepEqual(cards, []);
+  assert.equal(messages.length, 1);
+  assert.equal(JSON.stringify(messages[0]).includes(notice), true);
+});
+
+test('SDK and download logging never expose media URLs or AES keys on success or failure', async () => {
+  const entries: unknown[] = [];
+  const recording: ConnectorLogger = {
+    info: (...args) => { entries.push(args); },
+    warn: (...args) => { entries.push(args); },
+    error: (...args) => { entries.push(args); },
+    debug: (...args) => { entries.push(args); },
+  };
+  const subject = new WeComBotAdapter(recording, { botId: 'bot-id', secret: 'bot-secret' });
+  const internal = subject as unknown as {
+    sdkLogger(): { info(message: string): void; warn(message: string): void };
+  };
+  const privateUrl = 'https://media.example/download?locator=private';
+  const aesKey = 'private-aes-key';
+  internal.sdkLogger().info(`download ${privateUrl} aeskey=${aesKey}`);
+  internal.sdkLogger().warn(`failed aes_key: "${aesKey}"`);
+  subject._injectDownloadFile(async () => ({ buffer: Buffer.from('bytes'), filename: 'media.bin' }));
+  await subject.downloadMedia(privateUrl, aesKey);
+  subject._injectDownloadFile(async () => { throw new Error('provider failed'); });
+  await assert.rejects(subject.downloadMedia(privateUrl, aesKey), /provider failed/u);
+
+  const observable = JSON.stringify(entries);
+  assert.equal(observable.includes(privateUrl), false);
+  assert.equal(observable.includes(aesKey), false);
+  assert.match(observable, /REDACTED/u);
+});
+
 test('frame-bound stream is explicitly finished and removed during settlement', async () => {
   const subject = adapter();
   const calls: Array<{ streamId: string; content: string; finish?: boolean }> = [];

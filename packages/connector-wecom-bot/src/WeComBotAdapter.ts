@@ -7,6 +7,7 @@
  */
 
 import { collectProviderMedia } from './collect-media.js';
+import { fetchBoundedInboundMedia, INBOUND_MEDIA_MAX_BYTES } from './inbound-download.js';
 import type { ConnectorLogger, MessageEnvelope, RichBlock } from './types.js';
 
 // ── Types ──
@@ -51,6 +52,13 @@ interface ActiveStream {
 // ── Throttle Config ──
 
 const STREAM_THROTTLE_MS = 300;
+const NOOP_SDK_LOGGER = { debug() {}, info() {}, warn() {}, error() {} };
+
+function redactSdkLogMessage(value: unknown): string {
+  return String(value)
+    .replace(/https?:\/\/[^"'\s]+/giu, '[REDACTED_URL]')
+    .replace(/((?:aeskey|aes_key)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^,\s}]+)/giu, '$1[REDACTED]');
+}
 
 // ── Adapter ──
 
@@ -116,6 +124,15 @@ export class WeComBotAdapter {
     this.secret = options.secret;
   }
 
+  private sdkLogger() {
+    return {
+      debug: (message: string) => this.log.debug?.(redactSdkLogMessage(message)),
+      info: (message: string) => this.log.info(redactSdkLogMessage(message)),
+      warn: (message: string) => this.log.warn(redactSdkLogMessage(message)),
+      error: (message: string) => this.log.error(redactSdkLogMessage(message)),
+    };
+  }
+
   // ── Connection Health ──
 
   getConnectionState(): 'connected' | 'disconnected' | 'reconnecting' {
@@ -150,6 +167,7 @@ export class WeComBotAdapter {
       botId,
       secret,
       maxReconnectAttempts: 0,
+      logger: NOOP_SDK_LOGGER,
     });
 
     return new Promise((resolve) => {
@@ -343,7 +361,10 @@ export class WeComBotAdapter {
 
     // Try template card via frame-based replyTemplateCard first
     const frame = this.lastFrameByChat.get(externalChatId);
-    if (frame) {
+    // text_notice.sub_title_text is capped at 200 characters. Long bodies can
+    // contain user-visible media notices, so use the markdown fallback rather
+    // than truncating them out of the card.
+    if (frame && envelope.body.length <= 200) {
       try {
         const templateCard: Record<string, unknown> = {
           card_type: 'text_notice',
@@ -479,22 +500,38 @@ export class WeComBotAdapter {
   }
 
   /**
-   * Download an encrypted media file using the SDK's downloadFile + AES decryption.
-   * Returns a temporary file path after writing to disk.
+   * Download an encrypted media file with a streaming safety bound, then use
+   * the SDK's audited AES routine after the bounded ciphertext is complete.
    * AC-B5: Inbound media download
    */
   async downloadMedia(url: string, aesKey?: string): Promise<{ buffer: Buffer; filename?: string }> {
-    if (this.downloadFileFn) return this.downloadFileFn(url, aesKey);
+    if (this.downloadFileFn) {
+      const downloaded = await this.downloadFileFn(url, aesKey);
+      if (downloaded.buffer.byteLength > INBOUND_MEDIA_MAX_BYTES) {
+        throw new Error('inbound media exceeds the plugin safety limit');
+      }
+      return downloaded;
+    }
 
-    const client = this.wsClient as {
-      downloadFile(url: string, aesKey?: string): Promise<{ buffer: Buffer; filename?: string }>;
-    } | null;
-
-    if (!client) {
+    if (this.wsClient === null) {
       throw new Error('[WeComBotAdapter] downloadMedia: wsClient not connected');
     }
 
-    return client.downloadFile(url, aesKey);
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') throw new Error('WeCom bot media download URL must use HTTPS');
+    const { response, bytes } = await fetchBoundedInboundMedia(globalThis.fetch, parsed);
+    if (!response.ok) throw new Error(`WeCom bot media download HTTP ${response.status}`);
+    const disposition = response.headers.get('content-disposition') ?? '';
+    const encodedName = disposition.match(/filename\*=UTF-8''([^;\s]+)/iu)?.[1];
+    const plainName = disposition.match(/filename="?([^";\s]+)"?/iu)?.[1];
+    const filename = encodedName === undefined
+      ? plainName
+      : decodeURIComponent(encodedName);
+    if (aesKey === undefined) return { buffer: bytes, ...(filename === undefined ? {} : { filename }) };
+    const { decryptFile } = await import('@wecom/aibot-node-sdk');
+    const buffer = decryptFile(bytes, aesKey);
+    if (buffer.byteLength > INBOUND_MEDIA_MAX_BYTES) throw new Error('inbound media exceeds the plugin safety limit');
+    return { buffer, ...(filename === undefined ? {} : { filename }) };
   }
 
   // ── WebSocket Connection ──
@@ -516,6 +553,8 @@ export class WeComBotAdapter {
         botId: this.botId,
         secret: this.secret,
         maxReconnectAttempts: -1, // Infinite reconnect
+        requestTimeout: 30_000,
+        logger: this.sdkLogger(),
       });
 
       // Message dedup set (msgid → timestamp)

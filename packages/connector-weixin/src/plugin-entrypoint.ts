@@ -87,7 +87,7 @@ async function createMessageBridge(context: FeatureContext) {
       try {
         await context.messaging.send(thread.id, prepared);
       } catch (error) {
-        await releaseInboundMedia(context, prepared.payload.elements);
+        await releaseInboundMedia(context, prepared.payload.elements, error);
         throw error;
       }
     },
@@ -97,7 +97,10 @@ async function createMessageBridge(context: FeatureContext) {
       if (binding === undefined) throw new TypeError(`weixin thread ${input.threadId} has no provider binding`);
       const text = input.envelope.payload.elements.flatMap((element) => {
         if (element.kind === 'text') return [element.payload.text];
-        const notice = renderTypedMediaNotice(element);
+        const notice = renderTypedMediaNotice(element, {
+          elements: input.envelope.payload.elements,
+          warnInvalid: elementId => context.log('warn', 'Invalid typed media notice ignored', { elementId }),
+        });
         return notice === undefined ? [] : [notice];
       }).join('\n\n');
       const richBlocks = input.envelope.payload.elements.filter(element => element.kind === 'rich_block').map(element => element.payload);
@@ -264,7 +267,7 @@ export function createWeixinPluginModule(createRuntime: RuntimeFactory = createW
                   });
                   await runtime.outbound.sendReply(
                     input.externalConversationId,
-                    error instanceof RangeError ? '⚠️ 媒体过大，超过微信发送上限' : '⚠️ 媒体不可用（读取或上传失败）',
+                    error instanceof RangeError ? '⚠️ 媒体过大，超过插件的安全上限 25 MiB' : '⚠️ 媒体不可用（读取或上传失败）',
                   );
                 }
               }

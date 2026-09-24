@@ -80,7 +80,10 @@ async function createMessageBridge(context: FeatureContext) {
       if (binding === undefined) throw new TypeError(`xiaoyi thread ${input.threadId} has no provider binding`);
       const text = input.envelope.payload.elements.flatMap((element) => {
         if (element.kind === 'text') return [element.payload.text];
-        const notice = renderTypedMediaNotice(element);
+        const notice = renderTypedMediaNotice(element, {
+          elements: input.envelope.payload.elements,
+          warnInvalid: elementId => context.log('warn', 'Invalid typed media notice ignored', { elementId }),
+        });
         return notice === undefined ? [] : [notice];
       }).join('\n\n');
       const richBlocks = input.envelope.payload.elements.filter(element => element.kind === 'rich_block').map(element => element.payload);
@@ -135,7 +138,11 @@ export function createXiaoyiPluginModule(createRuntime: RuntimeFactory = createX
                 blocks.length > 0 ? text + '\n\n' + renderAllRichBlocksPlaintext(blocks) : text,
               );
               for (const media of input.media ?? []) {
-                await runtime.outbound.sendReply(input.externalConversationId, `📎 ${media.reference}`);
+                const label = media.type === 'audio' ? '语音'
+                  : media.type === 'image' ? '图片'
+                    : media.type === 'video' ? '视频'
+                      : '文件';
+                await runtime.outbound.sendReply(input.externalConversationId, `⚠️ 这条${label}无法在小艺里发送`);
               }
               await runtime.outbound.onDeliveryBatchDone(input.externalConversationId, true);
             },

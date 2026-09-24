@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { Readable } from 'node:stream';
 import test from 'node:test';
 
 import { FeishuAdapter, inferFeishuFileType } from './FeishuAdapter.js';
@@ -48,6 +49,31 @@ test('parses authenticated direct text without deriving Host wake authority', ()
     ...event, event: { ...event.event, message: { ...event.event.message, message_id: '' } },
   }), null, 'a malformed message cannot reach Host without a stable provider message ID');
   assert.equal(subject.verifyEventToken({ header: { token: 'wrong' } }), false);
+});
+
+test('inbound resource success and failure never print the private file key', async () => {
+  const subject = new FeishuAdapter('app-id', 'app-secret', logger);
+  const privateFileKey = 'private-file-key';
+  const captured: unknown[] = [];
+  const methods = ['debug', 'info', 'warn', 'error'] as const;
+  const original = Object.fromEntries(methods.map(method => [method, console[method]])) as Record<typeof methods[number], typeof console.log>;
+  for (const method of methods) console[method] = (...args: unknown[]) => { captured.push(args); };
+  const internal = subject as unknown as {
+    client: { im: { messageResource: { get(input: unknown): Promise<{ getReadableStream(): Readable }> } } };
+  };
+  try {
+    internal.client.im.messageResource.get = async () => ({ getReadableStream: () => Readable.from([Buffer.from('bytes')]) });
+    assert.deepEqual(await subject.downloadInboundMedia({
+      sourceEventId: 'message-1', type: 'file', platformKey: privateFileKey,
+    }), Buffer.from('bytes'));
+    internal.client.im.messageResource.get = async () => { throw new Error('provider failed'); };
+    await assert.rejects(subject.downloadInboundMedia({
+      sourceEventId: 'message-1', type: 'file', platformKey: privateFileKey,
+    }), /provider failed/u);
+  } finally {
+    for (const method of methods) console[method] = original[method];
+  }
+  assert.equal(JSON.stringify(captured).includes(privateFileKey), false);
 });
 
 test('card action carries its provider event ID, not the card message ID', () => {

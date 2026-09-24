@@ -91,7 +91,7 @@ async function createMessageBridge(context: FeatureContext) {
       try {
         await context.messaging.send(thread.id, prepared);
       } catch (error) {
-        await releaseInboundMedia(context, prepared.payload.elements);
+        await releaseInboundMedia(context, prepared.payload.elements, error);
         throw error;
       }
     },
@@ -101,7 +101,10 @@ async function createMessageBridge(context: FeatureContext) {
       if (binding === undefined) throw new TypeError(`wecom-bot thread ${input.threadId} has no provider binding`);
       const text = input.envelope.payload.elements.flatMap((element) => {
         if (element.kind === 'text') return [element.payload.text];
-        const notice = renderTypedMediaNotice(element);
+        const notice = renderTypedMediaNotice(element, {
+          elements: input.envelope.payload.elements,
+          warnInvalid: elementId => context.log('warn', 'Invalid typed media notice ignored', { elementId }),
+        });
         return notice === undefined ? [] : [notice];
       }).join('\n\n');
       const richBlocks = input.envelope.payload.elements.filter(element => element.kind === 'rich_block').map(element => element.payload);

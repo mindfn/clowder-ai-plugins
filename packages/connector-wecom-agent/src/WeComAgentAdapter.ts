@@ -8,6 +8,7 @@
 
 import crypto from 'node:crypto';
 import { collectProviderMedia } from './collect-media.js';
+import { fetchBoundedInboundMedia } from './inbound-download.js';
 import { XMLParser } from 'fast-xml-parser';
 import type { ConnectorLogger, MessageEnvelope } from './types.js';
 
@@ -468,15 +469,13 @@ export class WeComAgentAdapter {
     const token = await this.getAccessToken();
     const url = `${WECOM_API_BASE}/media/get?access_token=${encodeURIComponent(token)}&media_id=${encodeURIComponent(mediaId)}`;
 
-    const res = await this.fetchFn(url, {
-      signal: AbortSignal.timeout(30_000),
-    });
+    const { response: res, bytes } = await fetchBoundedInboundMedia(this.fetchFn, url);
 
     if (!res.ok) {
       throw new Error(`[WeComAgentAdapter] media/get HTTP ${res.status}: ${res.statusText}`);
     }
 
-    return Buffer.from(await res.arrayBuffer());
+    return bytes;
   }
 
   // ── Private: API Calls ──

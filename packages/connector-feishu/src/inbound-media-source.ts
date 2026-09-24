@@ -18,6 +18,10 @@ export interface InboundMediaLocator {
 
 const STATE_PREFIX = 'media-source/';
 const stateKey = (reference: string): string => `${STATE_PREFIX}${reference}`;
+const ownedReferencesByElements = new WeakMap<object, readonly string[]>();
+const DEFINITIVE_SEND_REJECTION_CODES = new Set([
+  'VALIDATION', 'PERMISSION', 'NOT_FOUND', 'CONFLICT',
+]);
 
 function isLocator(value: unknown): value is InboundMediaLocator {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -73,6 +77,7 @@ export async function retainInboundMedia(
         },
       });
     }
+    if (retained.length > 0) ownedReferencesByElements.set(elements, [...retained]);
     return elements;
   } catch (error) {
     const cleanup = await Promise.allSettled(retained.map(reference => context.state.delete(stateKey(reference))));
@@ -98,10 +103,17 @@ export async function retainInboundMedia(
 export async function releaseInboundMedia(
   context: FeatureContext,
   elements: PluginMessagingDraft['payload']['elements'],
+  sendError?: unknown,
 ): Promise<void> {
-  await Promise.all(elements.flatMap(element => element.kind === 'media_ref'
-    ? [context.state.delete(stateKey(element.payload.reference))]
-    : []));
+  if (sendError !== undefined) {
+    const code = sendError !== null && typeof sendError === 'object'
+      ? (sendError as { code?: unknown }).code
+      : undefined;
+    if (typeof code !== 'string' || !DEFINITIVE_SEND_REJECTION_CODES.has(code)) return;
+  }
+  const owned = ownedReferencesByElements.get(elements) ?? [];
+  ownedReferencesByElements.delete(elements);
+  await Promise.all(owned.map(reference => context.state.delete(stateKey(reference))));
 }
 
 export function createInboundMediaSourceActions(

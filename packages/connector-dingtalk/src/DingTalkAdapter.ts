@@ -11,6 +11,7 @@
 
 import { openAsBlob } from 'node:fs';
 import { basename } from 'node:path';
+import { fetchBoundedInboundMedia, INBOUND_MEDIA_TIMEOUT_MS } from './inbound-download.js';
 import { materializeMedia } from './materialize-media.js';
 
 // DingTalk robot media upload limits: image/file 20 MB, voice 2 MB.
@@ -491,6 +492,7 @@ export class DingTalkAdapter {
         'x-acs-dingtalk-access-token': accessToken,
       },
       body: JSON.stringify({ downloadCode, robotCode: this.robotCode }),
+      signal: AbortSignal.timeout(INBOUND_MEDIA_TIMEOUT_MS),
     });
 
     if (!res.ok) {
@@ -507,9 +509,9 @@ export class DingTalkAdapter {
     const downloadUrl = await this.downloadMedia(locator.platformKey);
     const parsed = new URL(downloadUrl);
     if (parsed.protocol !== 'https:') throw new Error('DingTalk media download URL must use HTTPS');
-    const response = await fetch(parsed, { signal: AbortSignal.timeout(30_000) });
+    const { response, bytes } = await fetchBoundedInboundMedia(globalThis.fetch, parsed);
     if (!response.ok) throw new Error(`DingTalk media download HTTP ${response.status}`);
-    return Buffer.from(await response.arrayBuffer());
+    return bytes;
   }
 
   // ── Stream Connection ──

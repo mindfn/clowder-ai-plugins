@@ -39,11 +39,33 @@ test('private media source retains locator, chunks bytes, settles, and rejects s
     type: 'image', platformKey: 'provider-secret-locator', fileName: 'photo.png',
   }]);
   assert.deepEqual(replay, elements);
+  await releaseInboundMedia(
+    context,
+    elements,
+    Object.assign(new Error('still owned by the in-flight send'), { code: 'RETRYABLE_INFLIGHT' }),
+  );
+  assert.equal(state.size, 1, 'an indeterminate send result must retain its locator');
+  await releaseInboundMedia(
+    context,
+    replay,
+    Object.assign(new Error('replay rejected'), { code: 'VALIDATION' }),
+  );
+  assert.equal(state.size, 1, 'a replay must not release the first delivery\'s locator');
   const conflict = await retainInboundMedia(context, 'test', 'test-media', 'provider-event-1', [{
     type: 'image', platformKey: 'different-provider-locator', fileName: 'photo.png',
   }]);
   assert.equal(conflict[0]?.kind, 'media_unavailable');
   assert.equal(JSON.stringify([...state.values()]).includes('different-provider-locator'), false);
+
+  for (const providerFailure of [
+    new RangeError('inbound media exceeds the plugin safety limit'),
+    new Error('inbound media download timed out'),
+  ]) {
+    const failedActions = createInboundMediaSourceActions(context, async () => { throw providerFailure; });
+    assert.deepEqual(await failedActions.read({ requestId: 'failed-import', reference: element.payload.reference, offset: 0, limit: 1 }), {
+      kind: 'rejected', requestId: 'failed-import', code: 'MEDIA_SOURCE_UNAVAILABLE',
+    });
+  }
 
   const actions = createInboundMediaSourceActions(context, async (locator) => {
     assert.equal(locator.platformKey, 'provider-secret-locator');

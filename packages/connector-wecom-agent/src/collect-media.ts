@@ -1,7 +1,9 @@
 const MEBIBYTE = 1024 * 1024;
 
+// WeCom temporary-media upload (`media/upload`, document 90253):
+// image 10 MiB, voice 2 MiB, ordinary file 20 MiB.
 const MAX_MEDIA_BYTES = {
-  image: 2 * MEBIBYTE,
+  image: 10 * MEBIBYTE,
   audio: 2 * MEBIBYTE,
   file: 20 * MEBIBYTE,
 } as const;

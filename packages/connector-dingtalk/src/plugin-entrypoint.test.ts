@@ -146,7 +146,7 @@ test('inbound media is retained as a private locator and exposed through bounded
     externalConversationId: 'chat-1', providerConversationId: 'provider-chat-1', providerMessageId: 'provider-2', text: 'failed', chatType: 'group',
     attachments: [{ type: 'image', platformKey: 'private-download-code' }],
   }), /Host rejected draft/u);
-  assert.equal(state.size, 0);
+  assert.equal(state.size, 1, 'an indeterminate send failure retains the locator for an idempotent retry');
   await active.stop();
 });
 
@@ -212,7 +212,7 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
   const active = await entrypoint.create(manifest).start(host);
   await active.actions['dingtalk.outbound']?.(richDelivery());
   assert.deepEqual(calls, [
-    { operation: 'provider.rich', value: ['chat-1', '正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：转写处理失败', [
+    { operation: 'provider.rich', value: ['chat-1', '正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：voice.opus（转写处理失败）', [
       { id: 'b1', kind: 'card', v: 1, title: 'T', bodyMarkdown: 'B' },
       { id: 'b2', kind: 'checklist', v: 1, title: 'L', items: [{ id: 'i1', text: 'a', checked: true }, { id: 'i2', text: 'b' }] },
     ], 'cat-1', undefined] },

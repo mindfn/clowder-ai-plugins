@@ -14,7 +14,12 @@ test('collectProviderMedia joins bounded provider chunks', async () => {
 
 test('collectProviderMedia rejects before buffering beyond the provider limit', async () => {
   await assert.rejects(
-    collectProviderMedia('image', chunks(new Uint8Array(2 * 1024 * 1024), new Uint8Array([1]))),
+    collectProviderMedia('image', chunks(new Uint8Array(10 * 1024 * 1024), new Uint8Array([1]))),
     ProviderMediaLimitError,
   );
+});
+
+test('collectProviderMedia accepts images larger than the unrelated 2 MiB webhook-card limit', async () => {
+  const bytes = await collectProviderMedia('image', chunks(new Uint8Array(5 * 1024 * 1024)));
+  assert.equal(bytes.byteLength, 5 * 1024 * 1024);
 });
