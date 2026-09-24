@@ -113,6 +113,23 @@ export interface TelegramInboundMessage {
   attachments?: TelegramAttachment[];
 }
 
+/**
+ * Durable backing for the lifecycle-keyed inline-final map. The Host-owned
+ * plugin storage survives restarts; the adapter stays storage-agnostic.
+ */
+export interface InlineFinalPersistence {
+  save(entry: {
+    readonly lifecycleId: string;
+    readonly externalChatId: string;
+    readonly platformMessageId: string;
+    readonly registeredAt: number;
+  }): Promise<void>;
+  remove(lifecycleId: string): Promise<void>;
+}
+
+/** Lifecycle-keyed placeholders already consumed by a K2 inline final must not be edited again. */
+const CONSUMED_INLINE_FINAL_TTL_MS = 24 * 60 * 60 * 1000;
+
 function isTelegramConflictError(err: unknown): boolean {
   if (err instanceof GrammyError) return err.error_code === 409;
   if (!err || typeof err !== 'object') return false;
@@ -132,8 +149,11 @@ export class TelegramAdapter {
   private readonly pendingInlineFinal = new Map<string, string[]>();
   private readonly pendingInlineFinalByLifecycle = new Map<
     string,
-    { readonly externalChatId: string; readonly platformMessageId: string }
+    { readonly externalChatId: string; readonly platformMessageId: string; readonly registeredAt: number }
   >();
+  /** lifecycleId -> consumedAt. In-memory only: a fresh `started` clears the marker for its lifecycleId. */
+  private readonly consumedInlineFinal = new Map<string, number>();
+  private readonly inlineFinalPersistence: InlineFinalPersistence | undefined;
   private botApiSendMessageFn: ((chatId: number, text: string) => Promise<{ message_id: number }>) | null = null;
   private botApiEditMessageFn:
     | ((chatId: number, messageId: number, text: string, options?: Record<string, unknown>) => Promise<void>)
@@ -151,10 +171,11 @@ export class TelegramAdapter {
   private inboundMediaTimeoutMs = INBOUND_MEDIA_TIMEOUT_MS;
   private getFileFn: ((fileId: string, signal: AbortSignal) => Promise<{ file_path?: string }>) | null = null;
 
-  constructor(botToken: string, log: ConnectorLogger) {
+  constructor(botToken: string, log: ConnectorLogger, inlineFinalPersistence?: InlineFinalPersistence) {
     this.botToken = botToken;
     this.bot = new Bot(botToken);
     this.log = log;
+    this.inlineFinalPersistence = inlineFinalPersistence;
   }
 
   async downloadInboundMedia(locator: { readonly platformKey: string }): Promise<Buffer> {
@@ -696,6 +717,7 @@ export class TelegramAdapter {
     const pending = this.pendingInlineFinalByLifecycle.get(lifecycleId);
     if (pending?.externalChatId === externalChatId && pending.platformMessageId === platformMessageId) {
       this.pendingInlineFinalByLifecycle.delete(lifecycleId);
+      this.persistRemove(lifecycleId);
     }
     this.placeholderChats.delete(platformMessageId);
   }
@@ -704,6 +726,8 @@ export class TelegramAdapter {
    * K2: Register a pending inline-final placeholder.
    * Lifecycle-aware deliveries use lifecycleId as the exact correlation key; callers
    * without one retain the legacy per-chat FIFO behavior. Consumed on first use.
+   * A new registration for a lifecycleId also clears any consumed marker left by
+   * the previous round so its fresh placeholder stays editable.
    */
   registerInlinePlaceholder(
     externalChatId: string,
@@ -711,7 +735,11 @@ export class TelegramAdapter {
     lifecycleId?: string,
   ): void {
     if (lifecycleId !== undefined) {
-      this.pendingInlineFinalByLifecycle.set(lifecycleId, { externalChatId, platformMessageId });
+      this.consumedInlineFinal.delete(lifecycleId);
+      this.pruneConsumedInlineFinals();
+      const registeredAt = Date.now();
+      this.pendingInlineFinalByLifecycle.set(lifecycleId, { externalChatId, platformMessageId, registeredAt });
+      this.persistSave({ lifecycleId, externalChatId, platformMessageId, registeredAt });
       return;
     }
     const queue = this.pendingInlineFinal.get(externalChatId) ?? [];
@@ -719,11 +747,46 @@ export class TelegramAdapter {
     this.pendingInlineFinal.set(externalChatId, queue);
   }
 
+  /** True once a K2 inline final consumed this lifecycle's placeholder; later lifecycle edits must not overwrite the delivered body. */
+  isInlineFinalConsumed(lifecycleId: string): boolean {
+    return this.consumedInlineFinal.has(lifecycleId);
+  }
+
+  /** Seed a pending inline-final recovered from durable storage after a plugin restart. */
+  restoreInlinePlaceholder(lifecycleId: string, externalChatId: string, platformMessageId: string, registeredAt: number): void {
+    this.pendingInlineFinalByLifecycle.set(lifecycleId, { externalChatId, platformMessageId, registeredAt });
+  }
+
+  private persistSave(entry: { readonly lifecycleId: string; readonly externalChatId: string; readonly platformMessageId: string; readonly registeredAt: number }): void {
+    if (this.inlineFinalPersistence === undefined) return;
+    this.inlineFinalPersistence.save(entry).catch((error: unknown) => {
+      this.log.warn({ err: error }, '[TelegramAdapter] inline-final persistence save failed');
+    });
+  }
+
+  private persistRemove(lifecycleId: string): void {
+    if (this.inlineFinalPersistence === undefined) return;
+    this.inlineFinalPersistence.remove(lifecycleId).catch((error: unknown) => {
+      this.log.warn({ err: error }, '[TelegramAdapter] inline-final persistence remove failed');
+    });
+  }
+
+  private pruneConsumedInlineFinals(): void {
+    const cutoff = Date.now() - CONSUMED_INLINE_FINAL_TTL_MS;
+    for (const [lifecycleId, consumedAt] of this.consumedInlineFinal) {
+      if (consumedAt < cutoff) this.consumedInlineFinal.delete(lifecycleId);
+    }
+  }
+
   private takeInlinePlaceholder(externalChatId: string, lifecycleId?: string): string | undefined {
     if (lifecycleId !== undefined) {
       const pending = this.pendingInlineFinalByLifecycle.get(lifecycleId);
       if (pending?.externalChatId !== externalChatId) return undefined;
       this.pendingInlineFinalByLifecycle.delete(lifecycleId);
+      this.persistRemove(lifecycleId);
+      // The final body now lives in the placeholder message; any later
+      // catching_up/blocked edit for this lifecycle must not overwrite it.
+      this.consumedInlineFinal.set(lifecycleId, Date.now());
       return pending.platformMessageId;
     }
     const queue = this.pendingInlineFinal.get(externalChatId);
@@ -750,6 +813,7 @@ export class TelegramAdapter {
         const pending = this.pendingInlineFinalByLifecycle.get(lifecycleId);
         if (pending?.externalChatId === chatId && pending.platformMessageId === platformMessageId) {
           this.pendingInlineFinalByLifecycle.delete(lifecycleId);
+          this.persistRemove(lifecycleId);
           await this.deleteMessage(platformMessageId, chatId).catch(() => {});
         } else {
           // The matching final delivery already consumed this lifecycle placeholder.
@@ -776,6 +840,7 @@ export class TelegramAdapter {
     } else {
       if (lifecycleId !== undefined) {
         this.pendingInlineFinalByLifecycle.delete(lifecycleId);
+        this.persistRemove(lifecycleId);
       } else {
         this.pendingInlineFinal.delete(chatId);
       }

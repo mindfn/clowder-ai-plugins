@@ -30,6 +30,11 @@ type TelegramOutboundDelivery = ConnectorOutboundDelivery & {
 
 const CONNECTOR_ID = 'telegram';
 const IDENTITY_ID = 'telegram-bot';
+const INLINE_FINAL_PREFIX = 'tg-inline-final:';
+// A pending inline-final that outlives a day was almost certainly orphaned by
+// a crash or skipped delivery; the sweeping settle path already deleted the
+// Telegram card, so hydrating it would only resurrect a stale correlation.
+const INLINE_FINAL_TTL_MS = 24 * 60 * 60 * 1000;
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -91,6 +96,60 @@ async function draft(context: FeatureContext, message: TelegramHostInboundMessag
     },
   };
   return { messageDraft, ownership: retained.ownership };
+}
+
+interface StoredInlineFinal {
+  readonly version: 1;
+  readonly lifecycleId: string;
+  readonly externalChatId: string;
+  readonly platformMessageId: string;
+  readonly registeredAt: number;
+}
+
+function parseStoredInlineFinal(value: unknown): StoredInlineFinal | undefined {
+  if (!object(value)
+    || value.version !== 1
+    || typeof value.lifecycleId !== 'string'
+    || typeof value.externalChatId !== 'string'
+    || typeof value.platformMessageId !== 'string'
+    || typeof value.registeredAt !== 'number') {
+    return undefined;
+  }
+  return value as unknown as StoredInlineFinal;
+}
+
+/** Durable backing for the lifecycle-keyed inline-final map, so a plugin restart cannot lose final↔placeholder correlation. */
+function createInlineFinalPersistence(context: FeatureContext) {
+  return {
+    async save(entry: Omit<StoredInlineFinal, 'version'>): Promise<void> {
+      await context.storage.set(`${INLINE_FINAL_PREFIX}${entry.lifecycleId}`, { version: 1, ...entry });
+    },
+    async remove(lifecycleId: string): Promise<void> {
+      await context.storage.delete(`${INLINE_FINAL_PREFIX}${lifecycleId}`).catch(() => undefined);
+    },
+  };
+}
+
+async function hydrateInlineFinals(context: FeatureContext, outbound: TelegramAdapter): Promise<void> {
+  let listed: Readonly<Record<string, { readonly value: unknown }>>;
+  try {
+    listed = await context.storage.list();
+  } catch (error) {
+    context.log('warn', 'Telegram inline-final hydration failed', {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    });
+    return;
+  }
+  const now = Date.now();
+  for (const [key, item] of Object.entries(listed)) {
+    if (!key.startsWith(INLINE_FINAL_PREFIX)) continue;
+    const entry = parseStoredInlineFinal(item?.value);
+    if (entry === undefined || entry.registeredAt + INLINE_FINAL_TTL_MS < now) {
+      await context.storage.delete(key).catch(() => undefined);
+      continue;
+    }
+    outbound.restoreInlinePlaceholder?.(entry.lifecycleId, entry.externalChatId, entry.platformMessageId, entry.registeredAt);
+  }
 }
 
 async function createMessageBridge(context: FeatureContext) {
@@ -264,8 +323,10 @@ export function createTelegramPluginModule(
             config: { botToken },
             host: { deliver: bridge.deliver },
             logger: context.logger,
+            inlineFinalPersistence: createInlineFinalPersistence(context),
           })
           : undefined;
+        if (runtime !== undefined) await hydrateInlineFinals(context, runtime.outbound);
         await runtime?.start();
         const mediaSource = createInboundMediaSourceActions(context, async locator => {
           if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
@@ -278,6 +339,11 @@ export function createTelegramPluginModule(
           },
           editPlaceholder: async (externalConversationId, platformMessageId, text, phase, lifecycleId) => {
             if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
+            // A consumed inline final already shows the delivered body in this
+            // message; editing it again would overwrite the final content.
+            // Returning false keeps the lifecycle action on its existing
+            // fallbacks (e.g. blocked recovery send).
+            if (runtime.outbound.isInlineFinalConsumed?.(lifecycleId)) return false;
             const edited = await runtime.outbound.editMessage(externalConversationId, platformMessageId, text);
             if (edited && phase === 'blocked') {
               runtime.outbound.preserveInlinePlaceholder(externalConversationId, platformMessageId, lifecycleId);

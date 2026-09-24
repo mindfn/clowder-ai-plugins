@@ -1,5 +1,6 @@
 import {
   TelegramAdapter,
+  type InlineFinalPersistence,
   type TelegramInboundMessage,
 } from './TelegramAdapter.js';
 import { normalizeTelegramBotToken } from './token.js';
@@ -63,7 +64,9 @@ export interface TelegramConnectorRuntimeOptions<Adapter extends TelegramRuntime
   readonly config: TelegramRuntimeConfig;
   readonly host: TelegramRuntimeHost;
   readonly logger: ConnectorLogger;
-  readonly createAdapter?: (normalizedBotToken: string, logger: ConnectorLogger) => Adapter;
+  /** Durable backing for the lifecycle-keyed inline-final map; omitting keeps it in-memory only. */
+  readonly inlineFinalPersistence?: InlineFinalPersistence;
+  readonly createAdapter?: (normalizedBotToken: string, logger: ConnectorLogger, persistence?: InlineFinalPersistence) => Adapter;
 }
 
 function hostMessage(message: TelegramInboundMessage): TelegramHostInboundMessage {
@@ -94,10 +97,10 @@ export function createTelegramConnectorRuntime<Adapter extends TelegramRuntimeAd
   const token = normalizeTelegramBotToken(options.config.botToken);
   if (token === null) throw new TypeError('botToken must be a valid Telegram Bot token');
 
-  const createAdapter = options.createAdapter ?? ((value: string, logger: ConnectorLogger) => (
-    new TelegramAdapter(value, logger) as unknown as Adapter
+  const createAdapter = options.createAdapter ?? ((value: string, logger: ConnectorLogger, persistence?: InlineFinalPersistence) => (
+    new TelegramAdapter(value, logger, persistence) as unknown as Adapter
   ));
-  const outbound = createAdapter(token, options.logger);
+  const outbound = createAdapter(token, options.logger, options.inlineFinalPersistence);
   let state: 'idle' | 'starting' | 'running' | 'stopped' = 'idle';
   let startPromise: Promise<void> | undefined;
   let stopPromise: Promise<void> | undefined;
