@@ -61,6 +61,33 @@ test('module leaves provider task settlement to the lifecycle action', async () 
   ]);
 });
 
+test('multi-binding outbound fans the same delivery out to every binding', async () => {
+  const events: unknown[] = [];
+  const outbound = {
+    async sendReply(...args: unknown[]) { events.push(args); },
+    async onDeliveryBatchDone() {},
+  } as unknown as XiaoyiAdapter;
+  const entrypoint = createXiaoyiPluginModule(() => ({
+    outbound, async start() {}, async stop() {},
+  }) as XiaoyiConnectorRuntime<XiaoyiAdapter>);
+  const multiHost: ModulePluginHostShape = {
+    ...host({ accessKey: 'ak', agentId: 'agent' }),
+    threads: {
+      listBindings: async () => [
+        { key: 'agent:session-a', threadId: 'thread-1', createdAt: 1 },
+        { key: 'agent:session-b', threadId: 'thread-1', createdAt: 2 },
+      ],
+    } as never,
+  };
+  const active = await entrypoint.create(manifest).start(multiHost);
+  await active.actions['xiaoyi.outbound']?.(delivery());
+  assert.deepEqual(events, [
+    ['agent:session-a', '【Cat🐱】\nhello', undefined],
+    ['agent:session-b', '【Cat🐱】\nhello', undefined],
+  ]);
+  await active.stop();
+});
+
 test('lifecycle sends one standalone blocked recovery and preserves chainDone false and true', async () => {
   const events: unknown[] = [];
   const outbound = {

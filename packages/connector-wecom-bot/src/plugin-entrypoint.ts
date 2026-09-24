@@ -2,6 +2,7 @@ import {
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
+  type ConnectorOutboundDelivery,
   type FeatureContext,
   type PluginMessagingDelivery,
   type PluginMessagingDraft,
@@ -148,6 +149,65 @@ async function createMessageBridge(context: FeatureContext) {
   };
 }
 
+async function deliverOutbound(
+  outbound: WeComBotAdapter,
+  input: ConnectorOutboundDelivery,
+  context: FeatureContext,
+  replyPrefix: string,
+): Promise<void> {
+  const blocks = [...(input.richBlocks ?? [])];
+  if (blocks.length > 0) {
+    await outbound.sendRichMessage(
+      input.externalConversationId,
+      input.presentation.body,
+      blocks as unknown as Parameters<WeComBotAdapter['sendRichMessage']>[2],
+      input.presentation.header,
+      input.metadata,
+    );
+  } else {
+    await outbound.sendFormattedReply(
+      input.externalConversationId,
+      {
+        header: input.presentation.header,
+        body: input.presentation.body,
+        origin: input.presentation.origin === 'callback' ? 'callback' : 'direct',
+        ...(input.presentation.subtitle === undefined ? {} : { subtitle: input.presentation.subtitle }),
+        ...(input.presentation.footer === undefined ? {} : { footer: input.presentation.footer }),
+      },
+      input.metadata,
+    );
+  }
+  for (const media of input.media ?? []) {
+    if (media.type === 'video') {
+      await outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 视频附件暂不支持发送`, input.metadata);
+      continue;
+    }
+    if (!media.reference.startsWith('hmr_')) {
+      await outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 媒体不可用（旧引用无法读取）`, input.metadata);
+      continue;
+    }
+    try {
+      await outbound.sendMedia(input.externalConversationId, {
+        type: media.type,
+        content: context.media.read(media.reference),
+        ...(media.fileName === undefined ? {} : { fileName: media.fileName }),
+      });
+    } catch (error) {
+      context.log('warn', 'WeCom bot outbound media delivery failed', {
+        mediaType: media.type,
+        errorName: error instanceof Error ? error.name : 'unknown',
+      });
+      await outbound.sendReply(
+        input.externalConversationId,
+        `${replyPrefix}${error instanceof RangeError || (error instanceof Error && error.name === 'ProviderMediaLimitError')
+          ? '⚠️ 媒体过大，超过企业微信发送上限'
+          : '⚠️ 媒体不可用（读取或上传失败）'}`,
+        input.metadata,
+      );
+    }
+  }
+}
+
 export function createWeComBotPluginModule(
   createRuntime: RuntimeFactory = createWeComBotConnectorRuntime,
   validateCredentials: ValidateCredentialsFn = (botId, secret) => WeComBotAdapter.validateCredentials(botId, secret),
@@ -265,59 +325,26 @@ export function createWeComBotPluginModule(
             },
             'wecom-bot.outbound': async (candidate) => {
               const { inputs, replyPrefix } = await bridge.outbound(candidate);
+              // Per-binding isolation: one thread can fan out to several
+              // provider bindings, and a failure on one chat must not block
+              // or fail the others. A single binding keeps the old fail-fast
+              // behavior so the Host redelivers; with several bindings the
+              // action only rejects when every binding failed.
+              let firstFailure: unknown;
+              let delivered = 0;
               for (const input of inputs) {
-                const blocks = [...(input.richBlocks ?? [])];
-                if (blocks.length > 0) {
-                  await runtime.outbound.sendRichMessage(
-                    input.externalConversationId,
-                    input.presentation.body,
-                    blocks as unknown as Parameters<WeComBotAdapter['sendRichMessage']>[2],
-                    input.presentation.header,
-                    input.metadata,
-                  );
-                } else {
-                  await runtime.outbound.sendFormattedReply(
-                    input.externalConversationId,
-                    {
-                      header: input.presentation.header,
-                      body: input.presentation.body,
-                      origin: input.presentation.origin === 'callback' ? 'callback' : 'direct',
-                      ...(input.presentation.subtitle === undefined ? {} : { subtitle: input.presentation.subtitle }),
-                      ...(input.presentation.footer === undefined ? {} : { footer: input.presentation.footer }),
-                    },
-                    input.metadata,
-                  );
-                }
-                for (const media of input.media ?? []) {
-                  if (media.type === 'video') {
-                    await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 视频附件暂不支持发送`, input.metadata);
-                    continue;
-                  }
-                  if (!media.reference.startsWith('hmr_')) {
-                    await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 媒体不可用（旧引用无法读取）`, input.metadata);
-                    continue;
-                  }
-                  try {
-                    await runtime.outbound.sendMedia(input.externalConversationId, {
-                      type: media.type,
-                      content: context.media.read(media.reference),
-                      ...(media.fileName === undefined ? {} : { fileName: media.fileName }),
-                    });
-                  } catch (error) {
-                    context.log('warn', 'WeCom bot outbound media delivery failed', {
-                      mediaType: media.type,
-                      errorName: error instanceof Error ? error.name : 'unknown',
-                    });
-                    await runtime.outbound.sendReply(
-                      input.externalConversationId,
-                      `${replyPrefix}${error instanceof RangeError || (error instanceof Error && error.name === 'ProviderMediaLimitError')
-                        ? '⚠️ 媒体过大，超过企业微信发送上限'
-                        : '⚠️ 媒体不可用（读取或上传失败）'}`,
-                      input.metadata,
-                    );
-                  }
+                try {
+                  await deliverOutbound(runtime.outbound, input, context, replyPrefix);
+                  delivered += 1;
+                } catch (error) {
+                  if (firstFailure === undefined) firstFailure = error;
+                  context.log('warn', 'WeCom bot outbound delivery to one binding failed', {
+                    externalConversationId: input.externalConversationId,
+                    errorName: error instanceof Error ? error.name : 'unknown',
+                  });
                 }
               }
+              if (delivered === 0 && firstFailure !== undefined) throw firstFailure;
             },
           },
           dispose: () => runtime.stop(),

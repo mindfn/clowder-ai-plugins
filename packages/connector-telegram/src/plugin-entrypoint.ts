@@ -433,7 +433,26 @@ export function createTelegramPluginModule(
             'telegram.outbound': async (input) => {
               if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
               const { inputs, replyPrefix } = await bridge.outbound(input);
-              for (const delivery of inputs) await deliver(runtime.outbound, delivery, context, replyPrefix);
+              // Per-binding isolation: one thread can fan out to several
+              // provider bindings, and a failure on one chat must not block
+              // or fail the others. A single binding keeps the old fail-fast
+              // behavior so the Host redelivers; with several bindings the
+              // action only rejects when every binding failed.
+              let firstFailure: unknown;
+              let delivered = 0;
+              for (const delivery of inputs) {
+                try {
+                  await deliver(runtime.outbound, delivery, context, replyPrefix);
+                  delivered += 1;
+                } catch (error) {
+                  if (firstFailure === undefined) firstFailure = error;
+                  context.log('warn', 'Telegram outbound delivery to one binding failed', {
+                    externalConversationId: delivery.externalConversationId,
+                    errorName: error instanceof Error ? error.name : 'unknown',
+                  });
+                }
+              }
+              if (delivered === 0 && firstFailure !== undefined) throw firstFailure;
             },
           },
           dispose: () => runtime?.stop() ?? Promise.resolve(),
