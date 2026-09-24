@@ -185,6 +185,11 @@ export function createWeComBotPluginModule(
             },
             'wecom-bot.disconnect': async () => {
               await runtime.disconnect();
+              // Forget in-process adopted credentials: otherwise a later validate
+              // with empty input would silently reconnect with the credentials the
+              // owner just disconnected (Host write-back does not restart the plugin).
+              adoptedBotId = '';
+              adoptedBotSecret = '';
               return {
                 render: 'status',
                 data: { status: 'disconnected' },

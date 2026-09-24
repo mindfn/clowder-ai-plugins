@@ -213,3 +213,34 @@ test('validate falls back to the stored secret when input only carries botId', a
   await active.actions['wecom-bot.validate']?.({ input: { botId: 'input-bot' } });
   await active.stop();
 });
+
+test('disconnect clears adopted credentials so an empty-input validate cannot silently reconnect', async () => {
+  const calls: Record<string, unknown[][]> = { connect: [], disconnect: [] };
+  let providerCalls = 0;
+  const entrypoint = createWeComBotPluginModule(
+    () => fakeRuntime(calls),
+    async (botId: string, secret: string) => {
+      providerCalls += 1;
+      assert.equal(botId, 'bot');
+      assert.equal(secret, 'secret');
+      return { valid: true };
+    },
+  );
+  // Host stores nothing: the only credentials in play are the card input.
+  const active = await entrypoint.create(manifest).start(hostWith({}));
+  const first = await active.actions['wecom-bot.validate']?.({ input: { botId: 'bot', botSecret: 'secret' } });
+  assertOperationResultShape(first);
+  assert.deepEqual(first.data, { status: 'confirmed' });
+  assert.equal(providerCalls, 1);
+  await active.actions['wecom-bot.disconnect']?.({});
+  const second = await active.actions['wecom-bot.validate']?.({});
+  assertOperationResultShape(second);
+  assert.deepEqual(second, {
+    render: 'status',
+    data: { status: 'error', message: '未填写 Bot ID / Bot Secret — 在面板里填好，直接点测试并连接' },
+    advance: false,
+  });
+  assert.equal(providerCalls, 1, 'provider validation must not run after disconnect');
+  assert.equal(calls.connect.length, 1, 'runtime.connect must not run after disconnect');
+  await active.stop();
+});

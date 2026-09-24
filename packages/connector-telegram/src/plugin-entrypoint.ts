@@ -191,8 +191,9 @@ export function createTelegramPluginModule(
         return {
           actions: {
             'telegram.test': async () => {
-              const ok = runtime?.isPolling() === true;
-              return { ok, ...(ok ? {} : { message: 'Telegram Bot Token 未配置' }) };
+              if (runtime === undefined) return { ok: false, message: 'Telegram Bot Token 未配置' };
+              const ok = runtime.isPolling();
+              return { ok, ...(ok ? {} : { message: 'Telegram 未在轮询（Token 已配置）' }) };
             },
             'telegram.outbound': async (input) => {
               if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');

@@ -101,6 +101,25 @@ test('telegram.test reports not configured when the token is missing', async () 
   await active.stop();
 });
 
+test('telegram.test reports not-polling separately from a missing token', async () => {
+  const entrypoint = createTelegramPluginModule(() => ({
+    outbound: {} as TelegramAdapter,
+    async start() {},
+    async stop() {},
+    isPolling: () => false,
+  }) as TelegramConnectorRuntime<TelegramAdapter>);
+  const host: ModulePluginHostShape = {
+    config: { get: async () => undefined }, secrets: { get: async () => '123456:ABCdefGHIJKL' },
+    storage: {} as never, tasks: {} as never,
+    threads: { listBindings: async () => [], ensureByKey: async () => { throw new Error('unused'); } } as never,
+    messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async () => { throw new Error('unused'); } },
+    log() {},
+  };
+  const active = await entrypoint.create(manifest).start(host);
+  assert.deepEqual(await active.actions['telegram.test']?.(undefined), { ok: false, message: 'Telegram 未在轮询（Token 已配置）' });
+  await active.stop();
+});
+
 function richDelivery() {
   return {
     deliveryId: 'delivery-1', threadId: 'thread-1',

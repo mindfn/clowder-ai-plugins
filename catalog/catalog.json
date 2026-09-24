@@ -357,8 +357,8 @@
             "packageName": "@clowder-ai/connector-telegram",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-telegram/-/connector-telegram-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-Cfioxz9xyJ1bC3tfKdKb5NKo+LWDsPzqfBEiKWAdV2gjmoAf60jBigRcsAEN8Kv2Tnqmlb3sFX6sSL96eFHVOQ==",
-            "shasum": "0e93e68f3bbc557b2358d5c0eae2cd8cf167b4c2",
+            "integrity": "sha512-Tlrry3tmVsLRbcZwnNtSAnHS4pIoGSuxA9AABVPy9UMYCabyYfhL0pdxZq55+J6e3aSq8djtes4B/MoSqQVeoA==",
+            "shasum": "5d2ae68d3a66898b5251a8d507afa5acc8749996",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-telegram"
@@ -442,8 +442,8 @@
             "packageName": "@clowder-ai/connector-wecom-bot",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-wecom-bot/-/connector-wecom-bot-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-d4xM0ZN7TOdK5BcBj6ArlNVHdharqErFfYD5ywugaxYmvVNB8iFxB6dL2oB6KEMgCk/WEc8BqGzsMCompIskAw==",
-            "shasum": "7cb905c18527e3fa622f9cc9e0d7b6211adb40b1",
+            "integrity": "sha512-roGKH+Y9FchHSm1y1YTx5upx92+oFnEL2uiYAP50t7uJW1Xa6ZSgp+7Na9NcDc3qQSiLexMFA3764GnGo4ij9w==",
+            "shasum": "20bfce03f0e0f214519a042fc0ca7349c3e631ff",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-wecom-bot"
