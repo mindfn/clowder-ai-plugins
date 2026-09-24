@@ -109,12 +109,25 @@ export function createConnectorLifecycleAction(
     switch (event.state) {
       case 'started':
         actorDisplayName = event.presentation.actor.displayName;
+        // Resolve the sender name before the safely() wrapper: a throwing
+        // callback must not take down the whole placeholder send. resolve()
+        // in reply-sender-map already swallows storage errors; this catch
+        // covers every other failure reason.
+        let senderName: string | undefined;
+        if (event.replyTo !== undefined && callbacks.resolveReplySenderName !== undefined) {
+          try {
+            senderName = await callbacks.resolveReplySenderName(event.replyTo);
+          } catch (error) {
+            context.log('warn', 'Connector lifecycle sender name resolution failed', {
+              lifecycleId: event.lifecycleId,
+              errorName: error instanceof Error ? error.name : 'unknown',
+            });
+            senderName = undefined;
+          }
+        }
+        const senderSuffix = senderName ? `→${senderName}` : '';
         await safely('placeholder send', async () => {
           const displayName = actorDisplayName || '猫猫';
-          const senderName = event.replyTo === undefined
-            ? undefined
-            : await callbacks.resolveReplySenderName?.(event.replyTo);
-          const senderSuffix = senderName ? `→${senderName}` : '';
           const placeholderLine = event.placeholderLine ?? STARTED_TEXT;
           const candidate = await callbacks.sendPlaceholder(
             binding.key,

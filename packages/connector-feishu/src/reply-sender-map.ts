@@ -77,8 +77,11 @@ export function createReplySenderMap(context: FeatureContext) {
 
   // Sweep single-flight in the background: recording stays on the inbound
   // hot path and overlapping bursts never stack sweeps. sweep() already
-  // swallows and logs its own storage failures; the catch below is the
-  // last-resort guard so a sweep defect can never propagate into record.
+  // swallows and logs its own storage failures. context.log is intentionally
+  // NOT used here: log() runs assertActive() and throws
+  // FeatureContextRevokedError after stop/revoke, so a sweep racing feature
+  // shutdown would turn into an unhandled rejection; console.warn is the
+  // reviewer-sanctioned exception that stays callable past revocation.
   const sweepInBackground = (): void => {
     if (sweepInFlight) return;
     sweepInFlight = true;
