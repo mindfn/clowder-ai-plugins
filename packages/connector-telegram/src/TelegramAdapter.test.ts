@@ -78,7 +78,7 @@ test('concurrent lifecycle finals edit their exact Telegram placeholders even wh
   let nextMessageId = 42;
   subject._injectBotApiSendMessage(async () => ({ message_id: nextMessageId++ }));
   subject._injectSendMessage(async (...args) => { sends.push(args); });
-  subject.editMessage = async (...args) => { edits.push(args); };
+  subject.editMessage = async (...args) => { edits.push(args); return true; };
   subject.deleteMessage = async (...args) => { deletes.push(args); };
 
   const firstPlaceholderId = await subject.sendPlaceholder('123', '🤔 思考中...');

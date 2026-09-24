@@ -816,10 +816,10 @@ export class FeishuAdapter {
    * Uses Lark im.message.patch API — only supports interactive (card) messages.
    * The text is rendered as markdown inside the card body.
    */
-  async editMessage(_externalChatId: string, platformMessageId: string, text: string): Promise<void> {
+  async editMessage(_externalChatId: string, platformMessageId: string, text: string): Promise<boolean> {
     if (this.editMessageFn) {
       await this.editMessageFn({ messageId: platformMessageId, content: text });
-      return;
+      return true;
     }
 
     const card = {
@@ -833,6 +833,7 @@ export class FeishuAdapter {
         content: JSON.stringify(card),
       },
     });
+    return true;
   }
 
   /**
@@ -870,15 +871,25 @@ export class FeishuAdapter {
   }
 
   /**
-   * F157: Edit a streaming card to a minimal "✅ 已回复" completion state.
+   * F157: Edit a streaming card to a truthful terminal state.
    * Preferred over deleteMessage to avoid Feishu's "recalled" notification.
    */
-  async finalizeStreamCard(_externalChatId: string, platformMessageId: string, catDisplayName: string): Promise<void> {
+  async finalizeStreamCard(
+    _externalChatId: string,
+    platformMessageId: string,
+    catDisplayName: string,
+    outcome: 'completed' | 'failed' | 'cancelled' = 'completed',
+  ): Promise<void> {
+    const title = outcome === 'completed'
+      ? `✅ ${catDisplayName || '猫猫'}已回复`
+      : outcome === 'failed'
+        ? `⚠️ ${catDisplayName || '猫猫'}未能完成回复`
+        : `⏹️ ${catDisplayName || '猫猫'}已取消回复`;
     const card = {
       config: { update_multi: true },
       header: {
-        title: { tag: 'plain_text' as const, content: `✅ ${catDisplayName || '猫猫'}已回复` },
-        template: 'green' as const,
+        title: { tag: 'plain_text' as const, content: title },
+        template: (outcome === 'completed' ? 'green' : 'grey') as 'green' | 'grey',
       },
       elements: [] as unknown[],
     };

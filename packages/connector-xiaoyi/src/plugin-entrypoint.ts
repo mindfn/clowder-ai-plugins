@@ -128,7 +128,7 @@ export function createXiaoyiPluginModule(createRuntime: RuntimeFactory = createX
         await runtime.start();
         const lifecycle = createConnectorLifecycleAction(context, {
           sendPlaceholder: (externalConversationId, text) => runtime.outbound.sendPlaceholder(externalConversationId, text),
-          editPlaceholder: () => runtime.outbound.editMessage(),
+          editPlaceholder: async () => { await runtime.outbound.editMessage(); return false; },
           sendRecovery: (externalConversationId, text) => runtime.outbound.sendReply(externalConversationId, text),
           settle: ({ externalConversationId, event }) => runtime.outbound.onDeliveryBatchDone(
             externalConversationId,

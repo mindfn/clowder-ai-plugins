@@ -112,6 +112,11 @@ test('AI Card failure falls back to one markdown send', async () => {
   assert.deepEqual(sends, ['markdown']);
 });
 
+test('lifecycle edit reports a lost in-memory AI Card session instead of pretending success', async () => {
+  const subject = adapter();
+  assert.equal(await subject.editMessage('chat-1', 'missing-card', 'recovery', { bypassThrottle: true }), false);
+});
+
 test('media upload failure removes the package-owned temporary file', async () => {
   const subject = adapter();
   let uploadPath = '';

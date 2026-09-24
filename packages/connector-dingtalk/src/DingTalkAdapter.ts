@@ -400,16 +400,21 @@ export class DingTalkAdapter {
    * Edit an AI Card via streaming update.
    * AC-A4: AI Card streaming (update phase, 300ms throttle)
    */
-  async editMessage(_externalChatId: string, platformMessageId: string, text: string): Promise<void> {
+  async editMessage(
+    _externalChatId: string,
+    platformMessageId: string,
+    text: string,
+    options: { readonly bypassThrottle?: boolean } = {},
+  ): Promise<boolean> {
     const card = this.activeCards.get(platformMessageId);
     if (!card) {
       this.log.warn({ platformMessageId }, '[DingTalkAdapter] editMessage: no active card found');
-      return;
+      return false;
     }
 
     // 300ms throttle (AC-A4)
     const now = Date.now();
-    if (now - card.lastUpdateAt < AI_CARD_THROTTLE_MS) return;
+    if (!options.bypassThrottle && now - card.lastUpdateAt < AI_CARD_THROTTLE_MS) return false;
 
     try {
       // Transition to INPUTING if still PROCESSING
@@ -420,8 +425,10 @@ export class DingTalkAdapter {
       card.state = newState;
       card.lastUpdateAt = now;
       card.lastContentLength = text.length;
+      return true;
     } catch (err) {
       this.log.warn({ err, platformMessageId }, '[DingTalkAdapter] editMessage streaming update failed');
+      return false;
     }
   }
 
@@ -429,12 +436,12 @@ export class DingTalkAdapter {
    * Delete/finish an AI Card (transition to FINISHED state).
    * StreamingOutboundHook calls this for cleanup.
    */
-  async deleteMessage(platformMessageId: string): Promise<void> {
+  async deleteMessage(platformMessageId: string, finalContent = ''): Promise<void> {
     const card = this.activeCards.get(platformMessageId);
     if (!card) return;
 
     try {
-      await this.updateAICardStreaming(platformMessageId, '', 'FINISHED');
+      await this.updateAICardStreaming(platformMessageId, finalContent, 'FINISHED');
     } catch (err) {
       this.log.warn({ err, platformMessageId }, '[DingTalkAdapter] deleteMessage (finish card) failed');
     } finally {

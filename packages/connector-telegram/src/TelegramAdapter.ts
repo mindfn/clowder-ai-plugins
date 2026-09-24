@@ -131,6 +131,9 @@ export class TelegramAdapter {
     { readonly externalChatId: string; readonly platformMessageId: string }
   >();
   private botApiSendMessageFn: ((chatId: number, text: string) => Promise<{ message_id: number }>) | null = null;
+  private botApiEditMessageFn:
+    | ((chatId: number, messageId: number, text: string, options?: Record<string, unknown>) => Promise<void>)
+    | null = null;
   private botApiDeleteMessageFn: ((chatId: number, messageId: number) => Promise<void>) | null = null;
   private sendMediaFns: {
     sendPhoto: (chatId: number, input: string | InputFile) => Promise<unknown>;
@@ -645,10 +648,12 @@ export class TelegramAdapter {
     platformMessageId: string,
     text: string,
     opts?: { parse_mode?: string },
-  ): Promise<void> {
+  ): Promise<boolean> {
     const truncated =
       text.length > TELEGRAM_MAX_MESSAGE_LENGTH ? `${text.slice(0, TELEGRAM_MAX_MESSAGE_LENGTH - 1)}…` : text;
-    if (opts?.parse_mode) {
+    if (this.botApiEditMessageFn) {
+      await this.botApiEditMessageFn(Number(externalChatId), Number(platformMessageId), truncated, opts);
+    } else if (opts?.parse_mode) {
       await this.bot.api.editMessageText(
         Number(externalChatId),
         Number(platformMessageId),
@@ -658,6 +663,16 @@ export class TelegramAdapter {
     } else {
       await this.bot.api.editMessageText(Number(externalChatId), Number(platformMessageId), truncated);
     }
+    return true;
+  }
+
+  /** Stop lifecycle-final correlation while leaving a blocked recovery message visible. */
+  preserveInlinePlaceholder(externalChatId: string, platformMessageId: string, lifecycleId: string): void {
+    const pending = this.pendingInlineFinalByLifecycle.get(lifecycleId);
+    if (pending?.externalChatId === externalChatId && pending.platformMessageId === platformMessageId) {
+      this.pendingInlineFinalByLifecycle.delete(lifecycleId);
+    }
+    this.placeholderChats.delete(platformMessageId);
   }
 
   /**
@@ -803,6 +818,13 @@ export class TelegramAdapter {
   /** @internal */
   _injectBotApiSendMessage(fn: (chatId: number, text: string) => Promise<{ message_id: number }>): void {
     this.botApiSendMessageFn = fn;
+  }
+
+  /** @internal */
+  _injectBotApiEditMessage(
+    fn: (chatId: number, messageId: number, text: string, options?: Record<string, unknown>) => Promise<void>,
+  ): void {
+    this.botApiEditMessageFn = fn;
   }
 
   /** @internal */

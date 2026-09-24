@@ -6,7 +6,7 @@ import { parse } from 'yaml';
 
 import moduleEntrypoint, { createFeishuPluginModule } from './plugin-entrypoint.js';
 import type { FeishuConnectorRuntime } from './runtime.js';
-import type { FeishuAdapter } from './FeishuAdapter.js';
+import { FeishuAdapter } from './FeishuAdapter.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
 
@@ -88,7 +88,7 @@ test('lifecycle action drives Feishu placeholder edit and completion card throug
   const calls: unknown[][] = [];
   const outbound = {
     async sendPlaceholder(...args: unknown[]) { calls.push(['placeholder', ...args]); return 'message-1'; },
-    async editMessage(...args: unknown[]) { calls.push(['edit', ...args]); },
+    async editMessage(...args: unknown[]) { calls.push(['edit', ...args]); return true; },
     async sendReply(...args: unknown[]) { calls.push(['reply', ...args]); },
     async finalizeStreamCard(...args: unknown[]) { calls.push(['finalize', ...args]); },
   } as unknown as FeishuAdapter;
@@ -111,8 +111,31 @@ test('lifecycle action drives Feishu placeholder edit and completion card throug
   assert.deepEqual(calls, [
     ['placeholder', 'chat-1', '🤔 思考中...'],
     ['edit', 'chat-1', 'message-1', '🔄 收到新消息，正在重新整理回复…'],
-    ['finalize', 'chat-1', 'message-1', '砚砚'],
+    ['finalize', 'chat-1', 'message-1', '砚砚', 'completed'],
   ]);
+  await active.stop();
+});
+
+test('blocked then settled failed leaves the Feishu recovery card untouched', async () => {
+  const edits: Array<{ messageId: string; content: string }> = [];
+  const outbound = new FeishuAdapter('app', 'secret', { info() {}, warn() {}, error() {}, debug() {} });
+  outbound._injectSendMessage(async () => ({ data: { message_id: 'message-1' } }));
+  outbound._injectEditMessage(async input => { edits.push(input); });
+  const entrypoint = createFeishuPluginModule(() => ({
+    outbound, async start() {}, async stop() {},
+  }) as FeishuConnectorRuntime<FeishuAdapter>);
+  const active = await entrypoint.create(manifest).start(host(
+    { appId: 'app', connectionMode: 'webhook' },
+    { appSecret: 'secret', verificationToken: 'token' },
+  ));
+  const action = active.actions['host.messaging.lifecycle']!;
+  await action({ lifecycleId: 'blocked-life', deliveryId: 'delivery-1', threadId: 'thread-1', state: 'started', presentation: { actor: { displayName: '砚砚', emoji: '🐱' }, thread: { shortId: 'thread-1' } } });
+  await action({ lifecycleId: 'blocked-life', deliveryId: 'delivery-2', threadId: 'thread-1', state: 'blocked', reason: 'needs_user' });
+  await action({ lifecycleId: 'blocked-life', deliveryId: 'delivery-3', threadId: 'thread-1', state: 'settled', chainDone: false, outcome: 'failed' });
+  assert.deepEqual(edits, [{
+    messageId: 'message-1',
+    content: '⚠️ 未能完成最新消息重读（needs_user）。请打开 Clowder AI 重试。',
+  }]);
   await active.stop();
 });
 

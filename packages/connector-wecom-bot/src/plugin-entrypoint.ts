@@ -169,7 +169,12 @@ export function createWeComBotPluginModule(
         });
         const lifecycle = createConnectorLifecycleAction(context, {
           sendPlaceholder: (externalConversationId, text) => runtime.outbound.sendPlaceholder(externalConversationId, text),
-          editPlaceholder: (externalConversationId, platformMessageId, text) => runtime.outbound.editMessage(externalConversationId, platformMessageId, text),
+          editPlaceholder: (externalConversationId, platformMessageId, text, phase) => runtime.outbound.editMessage(
+            externalConversationId,
+            platformMessageId,
+            text,
+            { bypassThrottle: phase === 'blocked' },
+          ),
           sendRecovery: (externalConversationId, text) => runtime.outbound.sendReply(externalConversationId, text),
           settle: async ({ platformMessageId }) => {
             if (platformMessageId !== undefined) await runtime.outbound.deleteMessage(platformMessageId);

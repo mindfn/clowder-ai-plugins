@@ -123,7 +123,7 @@ test('lifecycle action edits the WeCom stream once for blocked and finalizes it 
   const calls: unknown[][] = [];
   const outbound = {
     async sendPlaceholder(...args: unknown[]) { calls.push(['placeholder', ...args]); return 'stream-1'; },
-    async editMessage(...args: unknown[]) { calls.push(['edit', ...args]); },
+    async editMessage(...args: unknown[]) { calls.push(['edit', ...args]); return true; },
     async sendReply(...args: unknown[]) { calls.push(['reply', ...args]); },
     async deleteMessage(...args: unknown[]) { calls.push(['delete', ...args]); },
   } as unknown as WeComBotAdapter;
@@ -148,7 +148,7 @@ test('lifecycle action edits the WeCom stream once for blocked and finalizes it 
   });
   assert.deepEqual(calls, [
     ['placeholder', 'chat-1', '🤔 思考中...'],
-    ['edit', 'chat-1', 'stream-1', '⚠️ 未能完成最新消息重读（needs_user）。请打开 Clowder AI 重试。'],
+    ['edit', 'chat-1', 'stream-1', '⚠️ 未能完成最新消息重读（needs_user）。请打开 Clowder AI 重试。', { bypassThrottle: true }],
     ['delete', 'stream-1'],
   ]);
   await active.stop();

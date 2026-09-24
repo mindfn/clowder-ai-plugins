@@ -430,23 +430,30 @@ export class WeComBotAdapter {
    * Edit a streaming message via replyStream (update phase, throttled).
    * AC-B3: Native streaming (update phase, 300ms throttle)
    */
-  async editMessage(_externalChatId: string, platformMessageId: string, text: string): Promise<void> {
+  async editMessage(
+    _externalChatId: string,
+    platformMessageId: string,
+    text: string,
+    options: { readonly bypassThrottle?: boolean } = {},
+  ): Promise<boolean> {
     const session = this.activeStreams.get(platformMessageId);
     if (!session) {
       this.log.warn({ platformMessageId }, '[WeComBotAdapter] editMessage: no active stream found');
-      return;
+      return false;
     }
 
     // 300ms throttle
     const now = Date.now();
-    if (now - session.lastUpdateAt < STREAM_THROTTLE_MS) return;
+    if (!options.bypassThrottle && now - session.lastUpdateAt < STREAM_THROTTLE_MS) return false;
 
     try {
       await this.wecomReplyStream(session.frame, session.streamId, text, false);
       session.lastContent = text;
       session.lastUpdateAt = now;
+      return true;
     } catch (err) {
       this.log.warn({ err, platformMessageId }, '[WeComBotAdapter] editMessage streaming update failed');
+      return false;
     }
   }
 

@@ -127,6 +127,23 @@ test('frame-bound stream is explicitly finished and removed during settlement', 
   assert.equal(subject._getActiveStreams().size, 0);
 });
 
+test('blocked lifecycle bypasses stream throttling and finishes with the recovery text', async () => {
+  const subject = adapter();
+  const calls: Array<{ content: string; finish?: boolean }> = [];
+  subject._setLastFrame('user-1', { headers: { req_id: 'request-1' } });
+  subject._injectGenerateReqId(() => 'stream-1');
+  subject._injectReplyStream(async (_frame, _streamId, content, finish) => { calls.push({ content, finish }); });
+  const streamId = await subject.sendPlaceholder('user-1', 'thinking');
+  assert.equal(await subject.editMessage('user-1', streamId, 'recovery', { bypassThrottle: true }), true);
+  await subject.deleteMessage(streamId);
+  assert.deepEqual(calls, [
+    { content: 'thinking', finish: false },
+    { content: 'recovery', finish: false },
+    { content: 'recovery', finish: true },
+  ]);
+  assert.equal(await subject.editMessage('user-1', streamId, 'late recovery', { bypassThrottle: true }), false);
+});
+
 test('drain clears stale provider frames and active streams', async () => {
   const subject = adapter();
   subject._setLastFrame('user-1', { headers: { req_id: 'request-1' } });

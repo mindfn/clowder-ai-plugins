@@ -11,7 +11,13 @@ type SettledEvent = Extract<LifecycleEvent, { readonly state: 'settled' }>;
 
 export interface ConnectorLifecycleCallbacks {
   sendPlaceholder(externalConversationId: string, text: string): Promise<string>;
-  editPlaceholder(externalConversationId: string, platformMessageId: string, text: string): Promise<void>;
+  editPlaceholder(
+    externalConversationId: string,
+    platformMessageId: string,
+    text: string,
+    phase: 'catching_up' | 'blocked',
+    lifecycleId: string,
+  ): Promise<boolean>;
   sendRecovery(externalConversationId: string, text: string): Promise<void>;
   onPlaceholder?(
     externalConversationId: string,
@@ -22,6 +28,7 @@ export interface ConnectorLifecycleCallbacks {
     readonly externalConversationId: string;
     readonly platformMessageId?: string;
     readonly actorDisplayName: string;
+    readonly recoveryText?: string;
     readonly event: SettledEvent;
   }): Promise<void>;
 }
@@ -83,15 +90,17 @@ export function createConnectorLifecycleAction(
 
     let platformMessageId = stored?.platformMessageId;
     let actorDisplayName = stored?.actorDisplayName ?? '';
-    const safely = async (label: string, effect: () => void | Promise<void>): Promise<void> => {
+    const safely = async (label: string, effect: () => unknown | Promise<unknown>): Promise<boolean> => {
       try {
         await effect();
+        return true;
       } catch (error) {
         context.log('warn', `Connector lifecycle ${label} failed`, {
           lifecycleId: event.lifecycleId,
           state: event.state,
           errorName: error instanceof Error ? error.name : 'unknown',
         });
+        return false;
       }
     };
 
@@ -112,28 +121,42 @@ export function createConnectorLifecycleAction(
             binding.key,
             platformMessageId!,
             CATCHING_UP_TEXT,
+            'catching_up',
+            event.lifecycleId,
           ));
         }
         break;
       case 'blocked':
-        if (platformMessageId !== undefined) {
-          await safely('blocked edit', () => callbacks.editPlaceholder(
-            binding.key,
-            platformMessageId!,
-            recoveryText(event),
-          ));
-        } else {
-          await safely('blocked recovery send', () => callbacks.sendRecovery(binding.key, recoveryText(event)));
+        {
+          const text = recoveryText(event);
+          const edited = platformMessageId !== undefined && await safely('blocked edit', async () => {
+            const applied = await callbacks.editPlaceholder(
+              binding.key,
+              platformMessageId!,
+              text,
+              'blocked',
+              event.lifecycleId,
+            );
+            if (!applied) throw new Error('placeholder is no longer editable');
+          });
+          if (!edited) {
+            await safely('blocked recovery send', () => callbacks.sendRecovery(binding.key, text));
+          }
         }
         break;
-      case 'settled':
+      case 'settled': {
+        const blocked = [...history].reverse().find((candidate): candidate is Extract<LifecycleEvent, { readonly state: 'blocked' }> => (
+          candidate.state === 'blocked'
+        ));
         await safely('settlement', () => callbacks.settle({
           externalConversationId: binding.key,
           ...(platformMessageId === undefined ? {} : { platformMessageId }),
           actorDisplayName,
+          ...(blocked === undefined ? {} : { recoveryText: recoveryText(blocked) }),
           event,
         }));
         break;
+      }
     }
 
     await context.storage.set(stateKey, {

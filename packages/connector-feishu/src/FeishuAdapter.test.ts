@@ -99,6 +99,17 @@ test('card action carries its provider event ID, not the card message ID', () =>
   assert.equal(subject.parseCardAction({ ...body, header: { event_type: 'card.action.trigger' } }), null);
 });
 
+test('failed and cancelled lifecycle settlements never claim the cat replied', async () => {
+  const subject = new FeishuAdapter('app-id', 'app-secret', logger);
+  const cards: string[] = [];
+  subject._injectEditMessage(async ({ content }) => { cards.push(content); });
+  await subject.finalizeStreamCard('chat-1', 'message-1', '砚砚', 'failed');
+  await subject.finalizeStreamCard('chat-1', 'message-2', '砚砚', 'cancelled');
+  assert.match(cards[0] ?? '', /未能完成回复/u);
+  assert.match(cards[1] ?? '', /已取消回复/u);
+  assert.equal(cards.some(card => card.includes('已回复')), false);
+});
+
 test('sends configured mention aliases as provider-native mentions', async () => {
   const subject = new FeishuAdapter('app-id', 'app-secret', logger, {
     groupBotMentions: { helper: { openId: 'ou_helper', displayName: 'Helper' } },

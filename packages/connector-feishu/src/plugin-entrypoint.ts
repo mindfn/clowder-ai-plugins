@@ -211,9 +211,14 @@ export function createFeishuPluginModule(
           sendPlaceholder: (externalConversationId, text) => runtime.outbound.sendPlaceholder(externalConversationId, text),
           editPlaceholder: (externalConversationId, platformMessageId, text) => runtime.outbound.editMessage(externalConversationId, platformMessageId, text),
           sendRecovery: (externalConversationId, text) => runtime.outbound.sendReply(externalConversationId, text),
-          settle: async ({ externalConversationId, platformMessageId, actorDisplayName }) => {
-            if (platformMessageId !== undefined) {
-              await runtime.outbound.finalizeStreamCard(externalConversationId, platformMessageId, actorDisplayName);
+          settle: async ({ externalConversationId, platformMessageId, actorDisplayName, recoveryText, event }) => {
+            if (platformMessageId !== undefined && recoveryText === undefined) {
+              await runtime.outbound.finalizeStreamCard(
+                externalConversationId,
+                platformMessageId,
+                actorDisplayName,
+                event.outcome,
+              );
             }
           },
         });

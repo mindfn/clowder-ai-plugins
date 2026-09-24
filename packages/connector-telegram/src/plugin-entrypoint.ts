@@ -252,9 +252,13 @@ export function createTelegramPluginModule(
             if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
             return runtime.outbound.sendPlaceholder(externalConversationId, text);
           },
-          editPlaceholder: async (externalConversationId, platformMessageId, text) => {
+          editPlaceholder: async (externalConversationId, platformMessageId, text, phase, lifecycleId) => {
             if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
-            await runtime.outbound.editMessage(externalConversationId, platformMessageId, text);
+            const edited = await runtime.outbound.editMessage(externalConversationId, platformMessageId, text);
+            if (edited && phase === 'blocked') {
+              runtime.outbound.preserveInlinePlaceholder(externalConversationId, platformMessageId, lifecycleId);
+            }
+            return edited;
           },
           sendRecovery: async (externalConversationId, text) => {
             if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
@@ -264,8 +268,9 @@ export function createTelegramPluginModule(
             if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
             runtime.outbound.registerInlinePlaceholder(externalConversationId, platformMessageId, lifecycleId);
           },
-          settle: async ({ externalConversationId, platformMessageId, event }) => {
+          settle: async ({ externalConversationId, platformMessageId, recoveryText, event }) => {
             if (runtime !== undefined && platformMessageId !== undefined) {
+              if (recoveryText !== undefined) return;
               await runtime.outbound.clearInlinePlaceholder(
                 externalConversationId,
                 platformMessageId,

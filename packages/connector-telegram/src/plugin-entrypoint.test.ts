@@ -5,12 +5,12 @@ import type { ModulePluginHostShape } from '@clowder-ai/plugin-sdk';
 import { parse } from 'yaml';
 
 import moduleEntrypoint, { createTelegramPluginModule } from './plugin-entrypoint.js';
-import type { TelegramAdapter } from './TelegramAdapter.js';
+import { TelegramAdapter } from './TelegramAdapter.js';
 import type { TelegramConnectorRuntime, TelegramHostInboundMessage } from './runtime.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
 
-function lifecycleHost(): ModulePluginHostShape {
+function lifecycleHost(externalChatId = 'chat-1'): ModulePluginHostShape {
   const state = new Map<string, { revision: number; value: unknown }>();
   return {
     config: { get: async () => undefined }, secrets: { get: async () => 'bot-token' },
@@ -21,7 +21,7 @@ function lifecycleHost(): ModulePluginHostShape {
     }, tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: {
-      listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
+      listBindings: async () => [{ key: externalChatId, threadId: 'thread-1', createdAt: 1 }],
       ensureByKey: async () => ({ id: 'thread-1' }),
     } as never,
     messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async input => ({ messageId: 'message-1', threadId: input.threadId }) },
@@ -163,7 +163,7 @@ test('lifecycle registers the Telegram placeholder before final delivery and cle
   const outbound = {
     async sendPlaceholder(...args: unknown[]) { calls.push(['placeholder', ...args]); return '42'; },
     registerInlinePlaceholder(...args: unknown[]) { calls.push(['register', ...args]); },
-    async editMessage(...args: unknown[]) { calls.push(['edit', ...args]); },
+    async editMessage(...args: unknown[]) { calls.push(['edit', ...args]); return true; },
     async sendReply(...args: unknown[]) { calls.push(['final', ...args]); },
     async clearInlinePlaceholder(...args: unknown[]) { calls.push(['clear', ...args]); },
   } as unknown as TelegramAdapter;
@@ -186,6 +186,30 @@ test('lifecycle registers the Telegram placeholder before final delivery and cle
     ['final', 'chat-1', 'hello', undefined, 'life-1'],
     ['clear', 'chat-1', '42', 'life-1'],
   ]);
+  await active.stop();
+});
+
+test('blocked then settled failed preserves the real Telegram recovery message and revokes inline-final correlation', async () => {
+  const edits: unknown[][] = [];
+  const sends: unknown[][] = [];
+  const deletes: unknown[][] = [];
+  const outbound = new TelegramAdapter('123456:abcdefghij_ABC-123', { info() {}, warn() {}, error() {} });
+  outbound._injectBotApiSendMessage(async () => ({ message_id: 42 }));
+  outbound._injectBotApiEditMessage(async (...args) => { edits.push(args); });
+  outbound._injectBotApiDeleteMessage(async (...args) => { deletes.push(args); });
+  outbound._injectSendMessage(async (...args) => { sends.push(args); });
+  const entrypoint = createTelegramPluginModule(() => ({
+    outbound, async start() {}, async stop() {}, isPolling: () => true,
+  }) as TelegramConnectorRuntime<TelegramAdapter>);
+  const active = await entrypoint.create(manifest).start(lifecycleHost('42'));
+  const action = active.actions['host.messaging.lifecycle']!;
+  await action({ lifecycleId: 'blocked-life', deliveryId: 'delivery-1', threadId: 'thread-1', state: 'started', presentation: { actor: { displayName: '砚砚', emoji: '🐱' }, thread: { shortId: 'thread-1' } } });
+  await action({ lifecycleId: 'blocked-life', deliveryId: 'delivery-2', threadId: 'thread-1', state: 'blocked', reason: 'needs_user' });
+  await action({ lifecycleId: 'blocked-life', deliveryId: 'delivery-3', threadId: 'thread-1', state: 'settled', chainDone: false, outcome: 'failed' });
+  await outbound.sendReply('42', 'late final must not replace recovery', undefined, 'blocked-life');
+  assert.deepEqual(edits, [[42, 42, '⚠️ 未能完成最新消息重读（needs_user）。请打开 Clowder AI 重试。', undefined]]);
+  assert.deepEqual(deletes, []);
+  assert.deepEqual(sends, [['42', 'late final must not replace recovery']]);
   await active.stop();
 });
 

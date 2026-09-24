@@ -5,7 +5,7 @@ import type { ModulePluginHostShape } from '@clowder-ai/plugin-sdk';
 import { parse } from 'yaml';
 
 import moduleEntrypoint, { createDingTalkPluginModule } from './plugin-entrypoint.js';
-import type { DingTalkAdapter } from './DingTalkAdapter.js';
+import { DingTalkAdapter } from './DingTalkAdapter.js';
 import type { DingTalkConnectorRuntime, DingTalkHostInboundMessage } from './runtime.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
@@ -80,7 +80,7 @@ test('lifecycle action drives DingTalk placeholder updates and cleanup through t
   const state = new Map<string, { revision: number; value: unknown }>();
   const outbound = {
     async sendPlaceholder(...args: unknown[]) { calls.push(['placeholder', ...args]); return 'card-1'; },
-    async editMessage(...args: unknown[]) { calls.push(['edit', ...args]); },
+    async editMessage(...args: unknown[]) { calls.push(['edit', ...args]); return true; },
     async sendReply(...args: unknown[]) { calls.push(['reply', ...args]); },
     async deleteMessage(...args: unknown[]) { calls.push(['delete', ...args]); },
   } as unknown as DingTalkAdapter;
@@ -114,8 +114,48 @@ test('lifecycle action drives DingTalk placeholder updates and cleanup through t
   });
   assert.deepEqual(calls, [
     ['placeholder', 'chat-1', '🤔 思考中...'],
-    ['edit', 'chat-1', 'card-1', '🔄 收到新消息，正在重新整理回复…'],
-    ['delete', 'card-1'],
+    ['edit', 'chat-1', 'card-1', '🔄 收到新消息，正在重新整理回复…', { bypassThrottle: false }],
+    ['delete', 'card-1', undefined],
+  ]);
+  await active.stop();
+});
+
+test('blocked then settled keeps the DingTalk recovery card visible and finishes it with the same text', async () => {
+  const updates: Array<{ content: string; state: string }> = [];
+  const outbound = new DingTalkAdapter(
+    { info() {}, warn() {}, error() {}, debug() {} },
+    { appKey: 'app-key', appSecret: 'app-secret' },
+  );
+  outbound._injectCreateCard(async () => undefined);
+  outbound._injectStreamingCard(async ({ content, state }) => { updates.push({ content, state }); });
+  outbound.parseEvent({
+    msgtype: 'text', conversationType: '2', conversationId: 'conversation-1',
+    openConversationId: 'chat-1', msgId: 'message-1', senderStaffId: 'staff-1', text: { content: 'seed' },
+  });
+  const entrypoint = createDingTalkPluginModule(() => ({
+    outbound, async start() {}, async stop() {},
+  }) as DingTalkConnectorRuntime<DingTalkAdapter>);
+  const state = new Map<string, { revision: number; value: unknown }>();
+  const active = await entrypoint.create(manifest).start({
+    config: { get: async () => 'app-key' }, secrets: { get: async () => 'app-secret' },
+    storage: {
+      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
+      compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
+    }, tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
+    threads: { listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }], ensureByKey: async () => ({ id: 'thread-1' }) } as never,
+    messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async input => ({ messageId: 'message-1', threadId: input.threadId }) },
+    log() {},
+  });
+  const action = active.actions['host.messaging.lifecycle']!;
+  await action({ lifecycleId: 'blocked-life', deliveryId: 'delivery-1', threadId: 'thread-1', state: 'started', presentation: { actor: { displayName: '砚砚', emoji: '🐱' }, thread: { shortId: 'thread-1' } } });
+  await action({ lifecycleId: 'blocked-life', deliveryId: 'delivery-2', threadId: 'thread-1', state: 'blocked', reason: 'needs_user' });
+  await action({ lifecycleId: 'blocked-life', deliveryId: 'delivery-3', threadId: 'thread-1', state: 'settled', chainDone: false, outcome: 'failed' });
+  const recovery = '⚠️ 未能完成最新消息重读（needs_user）。请打开 Clowder AI 重试。';
+  assert.deepEqual(updates, [
+    { content: recovery, state: 'INPUTING' },
+    { content: recovery, state: 'FINISHED' },
   ]);
   await active.stop();
 });
