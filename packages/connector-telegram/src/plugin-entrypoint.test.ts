@@ -386,3 +386,31 @@ test('telegram.outbound rejects a delivery without presentation (subscription pr
   await assert.rejects(async () => active.actions['telegram.outbound']?.(withoutPresentation), /presentation/i);
   await active.stop();
 });
+
+test('non-cat media-only outbound skips the empty text send and still delivers media', async () => {
+  const calls: Array<{ operation: string; value: unknown }> = [];
+  const outbound = {
+    async sendRichMessage() {},
+    async sendReply(...args: unknown[]) { calls.push({ operation: 'provider.send', value: args }); },
+    async sendMedia(chatId: string, payload: Record<string, unknown>) {
+      calls.push({ operation: 'provider.media', value: [chatId, payload.type] });
+    },
+  } as unknown as TelegramAdapter;
+  const entrypoint = createTelegramPluginModule(() => ({ outbound, async start() {}, async stop() {} }) as TelegramConnectorRuntime<TelegramAdapter>);
+  const host = lifecycleHost();
+  const active = await entrypoint.create(manifest).start(host);
+  const mediaOnly = {
+    deliveryId: 'delivery-1', threadId: 'thread-1',
+    presentation: { actor: { displayName: 'Human', emoji: '👤' }, thread: { shortId: 'thread-1' } },
+    envelope: {
+      messageId: 'message-1', revision: 1, threadId: 'thread-1',
+      actor: { kind: 'human', id: 'user-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
+      payload: { provenance: { origin: { kind: 'host' }, epistemicStatus: 'observation' }, elements: [
+        { elementId: 'm1', kind: 'media_ref', payload: { type: 'image', reference: 'hmr_image-1' } },
+      ] },
+    },
+  };
+  await active.actions['telegram.outbound']?.(mediaOnly);
+  assert.deepEqual(calls, [{ operation: 'provider.media', value: ['chat-1', 'image'] }]);
+  await active.stop();
+});

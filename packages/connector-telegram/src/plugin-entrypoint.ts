@@ -209,10 +209,14 @@ async function deliver(
     const text = replyPrefix + [input.presentation.subtitle, input.presentation.body, input.presentation.footer]
       .filter((value): value is string => value !== undefined && value.length > 0)
       .join('\n\n');
-    if (input.lifecycleId === undefined) {
-      await adapter.sendReply(input.externalConversationId, text);
-    } else {
-      await adapter.sendReply(input.externalConversationId, text, undefined, input.lifecycleId);
+    // A non-cat media-only delivery assembles to empty text; Telegram rejects
+    // empty sendMessage calls, so only send when there is something to say.
+    if (text.length > 0) {
+      if (input.lifecycleId === undefined) {
+        await adapter.sendReply(input.externalConversationId, text);
+      } else {
+        await adapter.sendReply(input.externalConversationId, text, undefined, input.lifecycleId);
+      }
     }
   }
   for (const media of input.media ?? []) {
