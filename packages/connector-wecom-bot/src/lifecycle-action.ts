@@ -91,7 +91,33 @@ export function createConnectorLifecycleAction(
     }
 
     let platformMessageId = stored?.platformMessageId;
-    let actorDisplayName = stored?.actorDisplayName ?? '';
+    let actorDisplayName = event.state === 'started'
+      ? event.presentation.actor.displayName
+      : stored?.actorDisplayName ?? '';
+
+    // Write-ahead: persist the accepted event before any platform side
+    // effect, so a crash between effect and store cannot leave later events
+    // orphaned as OUT_OF_ORDER. If even the identical retry fails we throw
+    // before any side effect: no half-persisted record, no duplicate sends.
+    const preWrite = {
+      version: 1,
+      history: [...history, event],
+      ...(stored?.platformMessageId === undefined ? {} : { platformMessageId: stored.platformMessageId }),
+      actorDisplayName,
+    } satisfies StoredLifecycle;
+    try {
+      await context.storage.set(stateKey, preWrite);
+    } catch {
+      try {
+        await context.storage.set(stateKey, preWrite);
+      } catch (error) {
+        throw lifecycleError(
+          'PLUGIN_INTERNAL',
+          `lifecycle ${event.lifecycleId} state pre-write failed: ${error instanceof Error ? error.message : 'unknown'}`,
+        );
+      }
+    }
+
     const safely = async (label: string, effect: () => unknown | Promise<unknown>): Promise<boolean> => {
       try {
         await effect();
@@ -108,7 +134,6 @@ export function createConnectorLifecycleAction(
 
     switch (event.state) {
       case 'started':
-        actorDisplayName = event.presentation.actor.displayName;
         // Resolve the sender name before the safely() wrapper: a throwing
         // callback must not take down the whole placeholder send. resolve()
         // in reply-sender-map already swallows storage errors; this catch
@@ -183,12 +208,25 @@ export function createConnectorLifecycleAction(
       }
     }
 
-    await context.storage.set(stateKey, {
-      version: 1,
-      history: [...history, event],
-      ...(platformMessageId === undefined ? {} : { platformMessageId }),
-      actorDisplayName,
-    } satisfies StoredLifecycle);
+    try {
+      await context.storage.set(stateKey, {
+        version: 1,
+        history: [...history, event],
+        ...(platformMessageId === undefined ? {} : { platformMessageId }),
+        actorDisplayName,
+      } satisfies StoredLifecycle);
+    } catch (error) {
+      // Post-write failure is warn-only: the event already sits in history
+      // via the write-ahead, so a Host replay of this delivery is answered
+      // as replay and never re-runs the platform side effects. The only
+      // loss is the fresh platformMessageId, covered by the existing
+      // undefined-platformMessageId fallback for later edits.
+      context.log('warn', 'Connector lifecycle state post-write failed', {
+        lifecycleId: event.lifecycleId,
+        state: event.state,
+        errorName: error instanceof Error ? error.name : 'unknown',
+      });
+    }
     return { deliveryId: event.deliveryId };
   };
 
