@@ -160,6 +160,7 @@ export function isDeliveryPresentationContext(value: unknown): value is Delivery
   return validateMessagingRowInput('host.messaging.lifecycle', {
     lifecycleId: 'sdk-presentation-guard',
     deliveryId: 'sdk-presentation-guard',
+    threadId: 'sdk-presentation-guard',
     state: 'started',
     presentation: value,
   }).valid;

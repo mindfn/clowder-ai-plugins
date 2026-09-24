@@ -304,6 +304,7 @@ test('returns the exact lifecycle rejection reason through a Host-bound session'
     await harness.hostCall('host.messaging.lifecycle', {
       lifecycleId: 'lifecycle-1',
       deliveryId: 'delivery-1',
+      threadId: 'thread-1',
       state: 'settled',
       chainDone: true,
       outcome: 'completed',

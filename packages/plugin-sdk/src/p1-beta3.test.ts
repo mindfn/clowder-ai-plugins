@@ -94,11 +94,13 @@ test('Gate L: lifecycle action guard preserves the discriminated union', async (
   assert.deepEqual(await action({
     lifecycleId: 'lifecycle-1',
     deliveryId: 'delivery-1',
+    threadId: 'thread-1',
     state: 'settled',
     chainDone: true,
     outcome: 'completed',
   }), { deliveryId: 'delivery-1' });
   assert.equal(observed.length, 1);
+  assert.equal((observed[0] as { threadId?: string }).threadId, 'thread-1');
   await assert.rejects(
     action({ lifecycleId: 'lifecycle-1', deliveryId: 'delivery-2', state: 'settled' }),
     LifecycleActionInputError,
@@ -166,17 +168,17 @@ test('Gates P/L: presentation and typed media element guards fail closed', () =>
 
 test('Gate L: lifecycle transition helper accepts, replays and rejects the frozen sequence', () => {
   const started = {
-    lifecycleId: 'life-1', deliveryId: 'delivery-1', state: 'started',
+    lifecycleId: 'life-1', deliveryId: 'delivery-1', threadId: 'thread-1', state: 'started',
     presentation: { actor: { displayName: 'Opus', emoji: '🐱' }, thread: { shortId: 'abc123' } },
   } as const;
-  const catchingUp1 = { lifecycleId: 'life-1', deliveryId: 'delivery-2', state: 'catching_up' } as const;
-  const catchingUp2 = { lifecycleId: 'life-1', deliveryId: 'delivery-3', state: 'catching_up' } as const;
+  const catchingUp1 = { lifecycleId: 'life-1', deliveryId: 'delivery-2', threadId: 'thread-1', state: 'catching_up' } as const;
+  const catchingUp2 = { lifecycleId: 'life-1', deliveryId: 'delivery-3', threadId: 'thread-1', state: 'catching_up' } as const;
   const blocked = {
-    lifecycleId: 'life-1', deliveryId: 'delivery-4', state: 'blocked',
+    lifecycleId: 'life-1', deliveryId: 'delivery-4', threadId: 'thread-1', state: 'blocked',
     reason: 'waiting_for_input', recoveryUrl: 'https://example.test/recover',
   } as const;
   const settled = {
-    lifecycleId: 'life-1', deliveryId: 'delivery-5', state: 'settled', chainDone: true, outcome: 'completed',
+    lifecycleId: 'life-1', deliveryId: 'delivery-5', threadId: 'thread-1', state: 'settled', chainDone: true, outcome: 'completed',
   } as const;
 
   assert.deepEqual(decideLifecycleTransition([], started), { kind: 'accept' });
