@@ -158,13 +158,14 @@ export function createXiaoyiPluginModule(createRuntime: RuntimeFactory = createX
             'host.messaging.lifecycle': lifecycle,
             'xiaoyi.outbound': async (candidate) => {
               const { input, replyPrefix } = await bridge.outbound(candidate);
-              const text = [input.presentation.header, input.presentation.subtitle, input.presentation.body, input.presentation.footer]
+              const text = [input.presentation.subtitle, input.presentation.body, input.presentation.footer]
                 .filter((value): value is string => value !== undefined && value.length > 0)
                 .join('\n\n');
               const blocks = [...(input.richBlocks ?? [])];
               await runtime.outbound.sendReply(
                 input.externalConversationId,
-                blocks.length > 0 ? text + '\n\n' + renderAllRichBlocksPlaintext(blocks) : text,
+                replyPrefix + (blocks.length > 0 ? text + '\n\n' + renderAllRichBlocksPlaintext(blocks) : text),
+                input.metadata,
               );
               for (const media of input.media ?? []) {
                 const label = media.type === 'audio' ? '语音'

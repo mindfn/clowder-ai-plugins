@@ -202,7 +202,7 @@ test('rich blocks and typed media notices fall back to sendReply with rendered p
   const active = await entrypoint.create(manifest).start(host);
   await active.actions['wecom-agent.outbound']?.(richDelivery());
   assert.deepEqual(calls, [
-    { operation: 'provider.send', value: ['chat-1', 'Cat\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：voice.amr（转写处理失败）\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'] },
+    { operation: 'provider.send', value: ['chat-1', '【Cat🐱】\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：voice.amr（转写处理失败）\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'] },
     { operation: 'provider.media', value: ['chat-1', 'audio', 'voice-bytes', 'voice.amr'] },
     { operation: 'provider.send', value: ['chat-1', '【Cat🐱】\n⚠️ 媒体不可用（读取或上传失败）', undefined] },
     { operation: 'provider.send', value: ['chat-1', '【Cat🐱】\n⚠️ 媒体不可用（旧引用无法读取）', undefined] },
@@ -289,5 +289,21 @@ test('outbound attaches replyToSender metadata from the recorded inbound mapping
   await active.actions['wecom-agent.outbound']?.(missed);
   const missedReply = calls.find(call => call.operation === 'provider.reply')?.value as unknown[];
   assert.equal(missedReply[2], undefined);
+  await active.stop();
+});
+
+test('outbound rejects a delivery without presentation (presentation v1 subscription)', async () => {
+  const outbound = { async sendFormattedReply() {}, async sendMedia() {}, async sendReply() {} } as unknown as WeComAgentAdapter;
+  const entrypoint = createWeComAgentPluginModule(() => ({ outbound, async start() {}, async stop() {} }) as WeComAgentConnectorRuntime<WeComAgentAdapter>);
+  const active = await entrypoint.create(manifest).start(host(
+    { corpId: 'corp', agentId: 'agent' },
+    { agentSecret: 'secret', callbackToken: 'token', encodingAesKey: 'aes' },
+  ));
+  const noPresentation = delivery() as Record<string, unknown>;
+  delete noPresentation.presentation;
+  await assert.rejects(
+    async () => active.actions['wecom-agent.outbound']?.(noPresentation),
+    /presentation/i,
+  );
   await active.stop();
 });

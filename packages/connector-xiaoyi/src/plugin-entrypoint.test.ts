@@ -57,7 +57,7 @@ test('module leaves provider task settlement to the lifecycle action', async () 
   const active = await entrypoint.create(manifest).start(host(values));
   await active.actions['xiaoyi.outbound']?.(delivery());
   assert.deepEqual(events, [
-    ['reply', 'agent:session', 'Cat\n\nhello'],
+    ['reply', 'agent:session', '【Cat🐱】\nhello', undefined],
   ]);
 });
 
@@ -131,7 +131,7 @@ test('rich blocks and typed media notices append rendered plaintext blocks befor
   const active = await entrypoint.create(manifest).start(host(values));
   await active.actions['xiaoyi.outbound']?.(richDelivery());
   assert.deepEqual(events, [
-    ['reply', 'agent:session', 'Cat\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：音频（转写处理失败）\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'],
+    ['reply', 'agent:session', '【Cat🐱】\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：音频（转写处理失败）\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b', undefined],
     ['reply', 'agent:session', '【Cat🐱】\n⚠️ 这条语音无法在小艺里发送', undefined],
   ]);
   events.length = 0;
@@ -142,7 +142,7 @@ test('rich blocks and typed media notices append rendered plaintext blocks befor
   ));
   await active.actions['xiaoyi.outbound']?.(typedOnly);
   assert.deepEqual(events, [
-    ['reply', 'agent:session', 'Cat\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）'],
+    ['reply', 'agent:session', '【Cat🐱】\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）', undefined],
   ]);
   await active.stop();
 });
@@ -179,7 +179,7 @@ test('outbound attaches replyToSender metadata from the recorded inbound mapping
   ] as typeof matched.envelope.payload.elements;
   await active.actions['xiaoyi.outbound']?.(matched);
   assert.deepEqual(events, [
-    ['reply', 'agent:session', 'Cat\n\nhello'],
+    ['reply', 'agent:session', '【Cat🐱】\nhello', { replyToSender: { id: 'sender-1' } }],
     ['reply', 'agent:session', '【Cat🐱】\n⚠️ 这条语音无法在小艺里发送', { replyToSender: { id: 'sender-1' } }],
   ]);
   events.length = 0;
@@ -192,8 +192,22 @@ test('outbound attaches replyToSender metadata from the recorded inbound mapping
   ] as typeof missed.envelope.payload.elements;
   await active.actions['xiaoyi.outbound']?.(missed);
   assert.deepEqual(events, [
-    ['reply', 'agent:session', 'Cat\n\nhello'],
+    ['reply', 'agent:session', '【Cat🐱】\nhello', undefined],
     ['reply', 'agent:session', '【Cat🐱】\n⚠️ 这条语音无法在小艺里发送', undefined],
   ]);
+  await active.stop();
+});
+
+test('xiaoyi.outbound rejects a delivery without presentation (subscription presentation v1)', async () => {
+  const events: unknown[] = [];
+  const outbound = {
+    async sendReply(...args: unknown[]) { events.push(['reply', ...args]); },
+  } as unknown as XiaoyiAdapter;
+  const entrypoint = createXiaoyiPluginModule(() => ({ outbound, async start() {}, async stop() {} }) as XiaoyiConnectorRuntime<XiaoyiAdapter>);
+  const active = await entrypoint.create(manifest).start(host({ accessKey: 'ak', agentId: 'agent' }));
+  const withoutPresentation = delivery() as Record<string, unknown>;
+  delete withoutPresentation.presentation;
+  await assert.rejects(async () => active.actions['xiaoyi.outbound']?.(withoutPresentation), /presentation/i);
+  assert.deepEqual(events, [], 'the provider must not be reached for a rejected delivery');
   await active.stop();
 });

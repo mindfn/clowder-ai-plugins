@@ -342,3 +342,34 @@ test('outbound attaches replyToSender metadata from the recorded inbound mapping
   assert.equal(missedSent[2], undefined);
   await active.stop();
 });
+
+test('outbound delivery without presentation is rejected by the subscription guard', async () => {
+  const calls: unknown[][] = [];
+  const outbound = {
+    async sendFormattedReply(...args: unknown[]) { calls.push(['formatted', ...args]); },
+    async sendMedia() {}, async sendReply() {},
+  } as unknown as FeishuAdapter;
+  const entrypoint = createFeishuPluginModule(() => ({
+    outbound, async start() {}, async stop() {},
+  }) as FeishuConnectorRuntime<FeishuAdapter>);
+  const active = await entrypoint.create(manifest).start(host(
+    { appId: 'app', connectionMode: 'webhook' },
+    { appSecret: 'secret', verificationToken: '' },
+  ));
+  const delivery = {
+    deliveryId: 'delivery-1', threadId: 'thread-1',
+    envelope: {
+      messageId: 'message-1', revision: 1, threadId: 'thread-1',
+      actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
+      payload: { provenance: { origin: { kind: 'host' }, epistemicStatus: 'observation' }, elements: [
+        { elementId: 't1', kind: 'text', payload: { text: '正文' } },
+      ] },
+    },
+  };
+  await assert.rejects(
+    async () => active.actions['feishu.outbound']?.(delivery),
+    /presentation/i,
+  );
+  assert.deepEqual(calls, [], 'the provider must not be reached for a rejected delivery');
+  await active.stop();
+});

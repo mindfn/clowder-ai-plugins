@@ -97,6 +97,9 @@ test('module bridges provider ingress and Host subscription egress without conne
   assert.match(JSON.stringify(sent), /"reference":"pmr_telegram_/u);
   assert.equal(JSON.stringify(sent).includes('private-file-id'), false);
   assert.equal((calls.find(call => call.operation === 'provider.send')?.value as unknown[])[0], 'chat-1');
+  assert.deepEqual(calls.find(call => call.operation === 'provider.send')?.value, [
+    'chat-1', '【Cat🐱】\nhello',
+  ]);
   await assert.rejects(async () => active.actions['telegram.outbound']?.({ ...delivery(), externalConversationId: 'forbidden' }), /unsupported field/);
   await active.stop();
 });
@@ -183,7 +186,7 @@ test('lifecycle registers the Telegram placeholder before final delivery and cle
   assert.deepEqual(calls, [
     ['placeholder', 'chat-1', '【砚砚🐱】🤔 思考中...'],
     ['register', 'chat-1', '42', 'life-1'],
-    ['final', 'chat-1', 'hello', undefined, 'life-1'],
+    ['final', 'chat-1', '【Cat🐱】\nhello', undefined, 'life-1'],
     ['clear', 'chat-1', '42', 'life-1'],
   ]);
   await active.stop();
@@ -293,6 +296,9 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
   ));
   await active.actions['telegram.outbound']?.(typedOnly);
   assert.deepEqual(calls.map(call => call.operation), ['provider.send']);
+  assert.deepEqual(calls[0]?.value, [
+    'chat-1', '【Cat🐱】\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）',
+  ]);
   await active.stop();
 });
 
@@ -356,5 +362,27 @@ test('outbound attaches replyToSender metadata from the recorded inbound mapping
   const missedSent = calls.find(call => call.operation === 'provider.send')?.value as unknown[];
   assert.equal(missedSent[1], '【Cat🐱】\n⚠️ 视频附件暂不支持发送');
   assert.equal(missedSent[2], undefined);
+  await active.stop();
+});
+
+test('telegram.outbound rejects a delivery without presentation (subscription presentation v1)', async () => {
+  const entrypoint = createTelegramPluginModule(() => ({
+    outbound: {} as TelegramAdapter,
+    async start() {},
+    async stop() {},
+    isPolling: () => true,
+  }) as TelegramConnectorRuntime<TelegramAdapter>);
+  const host: ModulePluginHostShape = {
+    config: { get: async () => undefined }, secrets: { get: async () => 'bot-token' },
+    storage: {} as never, tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
+    threads: { listBindings: async () => [], ensureByKey: async () => { throw new Error('unused'); } } as never,
+    messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async () => { throw new Error('unused'); } },
+    log() {},
+  };
+  const active = await entrypoint.create(manifest).start(host);
+  const withoutPresentation = delivery() as Record<string, unknown>;
+  delete withoutPresentation.presentation;
+  await assert.rejects(async () => active.actions['telegram.outbound']?.(withoutPresentation), /presentation/i);
   await active.stop();
 });

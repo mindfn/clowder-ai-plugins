@@ -119,6 +119,23 @@ test('module exposes the declared outbound action and disposes the runtime once'
   assert.equal((sent[0] as unknown[])[0], 'chat-1');
 });
 
+test('delivery without presentation is rejected by the module presentation guard', async () => {
+  const entrypoint = createWeComBotPluginModule(() => ({
+    outbound: { async sendFormattedReply() {}, async sendMedia() {}, async sendReply() {} },
+    async start() {}, async stop() {},
+  }) as unknown as WeComBotConnectorRuntime<WeComBotAdapter>);
+  const active = await entrypoint.create(manifest).start(host());
+  const missingPresentation = structuredClone(delivery) as Record<string, unknown>;
+  delete missingPresentation.presentation;
+  await assert.rejects(
+    async () => { await active.actions['wecom-bot.outbound']?.(missingPresentation); },
+    (error: unknown) => error instanceof Error
+      && error.name === 'PresentationDeliveryInputError'
+      && /presentation/i.test(error.message),
+  );
+  await active.stop();
+});
+
 test('lifecycle action edits the WeCom stream once for blocked and finalizes it on settled', async () => {
   const calls: unknown[][] = [];
   const outbound = {

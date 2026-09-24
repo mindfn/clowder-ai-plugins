@@ -341,6 +341,30 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
   await active.stop();
 });
 
+test('outbound rejects a delivery without presentation at the subscription boundary', async () => {
+  const entrypoint = createDingTalkPluginModule(() => ({
+    outbound: {} as DingTalkAdapter, async start() {}, async stop() {},
+  }) as DingTalkConnectorRuntime<DingTalkAdapter>);
+  const active = await entrypoint.create(manifest).start({
+    config: { get: async () => 'app-key' }, secrets: { get: async () => 'app-secret' },
+    storage: {} as never, tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
+    threads: {
+      listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
+      ensureByKey: async (key: string) => ({ id: 'thread-1', title: key, createdAt: 1, lastActiveAt: 1 }),
+    } as never,
+    messaging: {
+      subscribe: async () => undefined, unsubscribe: async () => undefined,
+      send: async input => ({ messageId: 'host-message-1', threadId: input.threadId }),
+    },
+    log() {},
+  });
+  const missing = delivery() as Record<string, unknown>;
+  delete missing.presentation;
+  await assert.rejects(async () => active.actions['dingtalk.outbound']?.(missing), /presentation/i);
+  await active.stop();
+});
+
 test('outbound attaches replyToSender metadata from the recorded inbound mapping (group @ parity)', async () => {
   const calls: Array<{ operation: string; value: unknown }> = [];
   let inbound!: (message: DingTalkHostInboundMessage) => Promise<void>;

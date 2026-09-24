@@ -206,7 +206,7 @@ async function deliver(
       );
     }
   } else {
-    const text = [input.presentation.subtitle, input.presentation.body, input.presentation.footer]
+    const text = replyPrefix + [input.presentation.subtitle, input.presentation.body, input.presentation.footer]
       .filter((value): value is string => value !== undefined && value.length > 0)
       .join('\n\n');
     if (input.lifecycleId === undefined) {

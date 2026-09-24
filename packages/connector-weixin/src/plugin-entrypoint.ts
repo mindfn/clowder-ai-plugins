@@ -255,7 +255,7 @@ export function createWeixinPluginModule(createRuntime: RuntimeFactory = createW
             },
             'weixin.outbound': async (candidate) => {
               const { input, replyPrefix } = await bridge.outbound(candidate);
-              const text = [input.presentation.header, input.presentation.subtitle, input.presentation.body, input.presentation.footer]
+              const text = [input.presentation.subtitle, input.presentation.body, input.presentation.footer]
                 .filter((value): value is string => value !== undefined && value.length > 0)
                 .join('\n\n');
               const blocks = [...(input.richBlocks ?? [])];
