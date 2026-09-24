@@ -53,10 +53,22 @@ test('default export is the deterministic package module entrypoint', () => {
 test('provider media locator stays in private state while ingress emits only pmr', async () => {
   const sent: unknown[] = [];
   let inbound!: (message: WeComBotHostInboundMessage) => Promise<void>;
-  const outbound = { async downloadMedia() { return { buffer: Buffer.from('bytes') }; } } as unknown as WeComBotAdapter;
+  let connected = true;
+  let providerDownloads = 0;
+  const outbound = {
+    async downloadMedia() { providerDownloads += 1; return { buffer: Buffer.from('bytes') }; },
+  } as unknown as WeComBotAdapter;
   const entrypoint = createWeComBotPluginModule((options) => {
     inbound = options.host.deliver;
-    return { outbound, async start() {}, async stop() {} } as WeComBotConnectorRuntime<WeComBotAdapter>;
+    return {
+      get outbound() {
+        if (!connected) throw new Error('WeCom bot connector is not configured');
+        return outbound;
+      },
+      async start() {}, async stop() {}, async disconnect() { connected = false; },
+      isConnected() { return connected; },
+      getConnectionState() { return connected ? 'connected' : 'disconnected'; },
+    } as WeComBotConnectorRuntime<WeComBotAdapter>;
   });
   const active = await entrypoint.create(manifest).start(host(sent));
   await inbound({
@@ -68,6 +80,14 @@ test('provider media locator stays in private state while ingress emits only pmr
   assert.match(serialized, /"reference":"pmr_wecom-bot_/u);
   assert.equal(serialized.includes('private.example'), false);
   assert.equal(serialized.includes('aeskey'), false);
+  const reference = ((sent[0] as { payload: { elements: Array<{ kind: string; payload: { reference?: string } }> } })
+    .payload.elements.find(element => element.kind === 'media_ref')?.payload.reference);
+  assert.equal(typeof reference, 'string');
+  await active.actions['wecom-bot.disconnect']?.({});
+  assert.deepEqual(await active.actions['wecom-bot.media-source.read']?.({
+    requestId: 'after-disconnect', reference, offset: 0, limit: 524_288,
+  }), { kind: 'rejected', requestId: 'after-disconnect', code: 'MEDIA_SOURCE_UNAVAILABLE' });
+  assert.equal(providerDownloads, 0, 'activation-time credentials must not download media after disconnect');
   await active.stop();
 });
 

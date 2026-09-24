@@ -73,10 +73,21 @@ test('provider media locator stays in private state while ingress emits only pmr
   const state = new Map<string, { revision: number; value: unknown }>();
   const sent: unknown[] = [];
   let inbound!: (message: WeixinHostInboundMessage) => Promise<void>;
-  const outbound = { async downloadInboundMedia() { return Buffer.from('bytes'); } } as unknown as WeixinAdapter;
+  let connected = true;
+  let providerDownloads = 0;
+  const outbound = {
+    async downloadInboundMedia() { providerDownloads += 1; return Buffer.from('bytes'); },
+  } as unknown as WeixinAdapter;
   const entrypoint = createWeixinPluginModule((options) => {
     inbound = options.host.deliver;
-    return { outbound, async start() {}, async stop() {} } as WeixinConnectorRuntime<WeixinAdapter>;
+    return {
+      get outbound() {
+        if (!connected) throw new Error('Weixin connector is not connected');
+        return outbound;
+      },
+      async start() {}, async stop() {}, async disconnect() { connected = false; },
+      isConnected() { return connected; },
+    } as WeixinConnectorRuntime<WeixinAdapter>;
   });
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => 'token' },
@@ -107,6 +118,14 @@ test('provider media locator stays in private state while ingress emits only pmr
   assert.match(serialized, /"reference":"pmr_weixin_/u);
   assert.equal(serialized.includes('https://private'), false);
   assert.equal(serialized.includes('aesKey'), false);
+  const reference = ((sent[0] as { payload: { elements: Array<{ kind: string; payload: { reference?: string } }> } })
+    .payload.elements.find(element => element.kind === 'media_ref')?.payload.reference);
+  assert.equal(typeof reference, 'string');
+  await active.actions['weixin.disconnect']?.({});
+  assert.deepEqual(await active.actions['weixin.media-source.read']?.({
+    requestId: 'after-disconnect', reference, offset: 0, limit: 524_288,
+  }), { kind: 'rejected', requestId: 'after-disconnect', code: 'MEDIA_SOURCE_UNAVAILABLE' });
+  assert.equal(providerDownloads, 0, 'activation-time credentials must not download media after disconnect');
   await active.stop();
 });
 

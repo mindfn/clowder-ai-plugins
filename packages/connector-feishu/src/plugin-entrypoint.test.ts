@@ -101,9 +101,18 @@ test('Host-shaped Feishu URL verification returns a strict HTTP challenge', asyn
 test('replayed Feishu webhook derives the same Host idempotency and source event keys', async () => {
   const sent: Array<{ idempotencyKey: string; sourceEventId?: string }> = [];
   const drafts: unknown[] = [];
-  const outbound = { async sendFormattedReply() {}, async sendMedia() {}, async sendReply() {} } as unknown as FeishuAdapter;
+  let connected = true;
+  let providerDownloads = 0;
+  const outbound = {
+    async sendFormattedReply() {}, async sendMedia() {}, async sendReply() {},
+    async downloadInboundMedia() { providerDownloads += 1; return Buffer.from('provider-bytes'); },
+  } as unknown as FeishuAdapter;
   const entrypoint = createFeishuPluginModule(options => ({
-    outbound, async start() {}, async stop() {},
+    get outbound() {
+      if (!connected) throw new Error('Feishu connector is not configured');
+      return outbound;
+    },
+    async start() {}, async stop() {}, async disconnect() { connected = false; },
     async handleWebhook(input) {
       assert.deepEqual(input, { body: { event: 'same-provider-message' } });
       await options.host.deliver({
@@ -131,6 +140,14 @@ test('replayed Feishu webhook derives the same Host idempotency and source event
   const serialized = JSON.stringify(drafts);
   assert.equal(serialized.includes('private-image-key'), false);
   assert.equal(drafts.every((item) => /"reference":"pmr_feishu_/u.test(JSON.stringify(item))), true);
+  const reference = ((drafts[0] as { payload: { elements: Array<{ kind: string; payload: { reference?: string } }> } })
+    .payload.elements.find(element => element.kind === 'media_ref')?.payload.reference);
+  assert.equal(typeof reference, 'string');
+  await active.actions['feishu.disconnect']?.({});
+  assert.deepEqual(await active.actions['feishu.media-source.read']?.({
+    requestId: 'after-disconnect', reference, offset: 0, limit: 524_288,
+  }), { kind: 'rejected', requestId: 'after-disconnect', code: 'MEDIA_SOURCE_UNAVAILABLE' });
+  assert.equal(providerDownloads, 0, 'activation-time credentials must not download media after disconnect');
   await active.stop();
 });
 
