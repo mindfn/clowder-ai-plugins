@@ -105,7 +105,7 @@ export function createConnectorLifecycleAction(
   let sweepInFlight = false;
 
   const sweep = async (): Promise<void> => {
-    let listed: Readonly<Record<string, { readonly value: unknown }>>;
+    let listed: Readonly<Record<string, { readonly revision: number; readonly value: unknown }>>;
     try {
       listed = await context.storage.list();
     } catch (error) {
@@ -126,14 +126,14 @@ export function createConnectorLifecycleAction(
       if (record.tombstone === true) {
         const settledAt = record.settledAt ?? record.updatedAt;
         if (settledAt !== undefined && settledAt + LIFECYCLE_TOMBSTONE_TTL_MS < now) {
-          await context.storage.delete(key).catch(() => undefined);
+          await context.storage.delete(key, item.revision).catch(() => undefined);
         }
         continue;
       }
       // v1 records carry no updatedAt, so their age is unknown; the v2 write
       // path re-binds them with a timestamp on the next transition.
       if (record.updatedAt !== undefined && record.updatedAt + LIFECYCLE_STRANDED_TTL_MS < now) {
-        await context.storage.delete(key).catch(() => undefined);
+        await context.storage.delete(key, item.revision).catch(() => undefined);
       }
     }
   };
@@ -168,10 +168,18 @@ export function createConnectorLifecycleAction(
     const entry = await context.storage.get(stateKey);
     const stored = entry === undefined ? undefined : storedLifecycle(entry.value);
     if (stored?.tombstone === true) {
-      // The tombstone keeps the settled event plus every accepted deliveryId:
-      // an exact redelivery of anything the Host already acked is still
-      // answered as replay, anything else is out of order.
-      const deliveryIds = stored.deliveryIds ?? stored.history.map(candidate => candidate.deliveryId);
+      // The tombstone keeps the full event history, so redelivery judgment is
+      // the same as the pre-settle path: an exact redelivery of anything the
+      // Host already acked answers replay, the same deliveryId with different
+      // content is a delivery conflict, and anything else is out of order.
+      const tombstoneDecision = decideLifecycleTransition(stored.history, event);
+      if (tombstoneDecision.kind === 'replay') return { deliveryId: event.deliveryId };
+      if (tombstoneDecision.kind === 'reject' && tombstoneDecision.reason === 'DELIVERY_CONFLICT') {
+        throw lifecycleError(lifecycleRejectReason(tombstoneDecision), `lifecycle ${tombstoneDecision.reason.toLowerCase()}`);
+      }
+      // Tombstones written before the full history was retained only know the
+      // accepted deliveryId set; for them that set is the only replay identity.
+      const deliveryIds = stored.deliveryIds ?? [];
       if (deliveryIds.includes(event.deliveryId)) {
         return { deliveryId: event.deliveryId };
       }
@@ -204,12 +212,12 @@ export function createConnectorLifecycleAction(
       messageIds = { [bindings[0].key]: stored.platformMessageId };
     }
 
-    // Settled records compress into a tombstone: the settled event plus the
-    // deliveryId set is the minimum needed to answer redeliveries, so the
-    // full event history stops accumulating.
+    // Settled records compress into a tombstone: platform effects stop, but
+    // the full event history is retained so redelivery judgment can still
+    // distinguish an exact replay from a same-deliveryId content conflict.
     const nextRecord = (ids: Record<string, string>): StoredLifecycle => ({
       version: 2,
-      history: event.state === 'settled' ? [event] : [...history, event],
+      history: [...history, event],
       // Keep the legacy single-id field only when it is unambiguous.
       ...(Object.keys(ids).length === 1 ? { platformMessageId: Object.values(ids)[0] } : {}),
       ...(Object.keys(ids).length === 0 ? {} : { platformMessageByKey: ids }),

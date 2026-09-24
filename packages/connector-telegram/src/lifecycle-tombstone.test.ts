@@ -17,7 +17,15 @@ function harness(state: Map<string, { revision: number; value: unknown }>) {
         state.set(key, { revision, value });
         return { revision };
       },
-      delete: async (key: string) => ({ deleted: state.delete(key) }),
+      delete: async (key: string, expectedRevision?: number) => {
+        calls.push(['delete', key, expectedRevision]);
+        const entry = state.get(key);
+        if (entry === undefined || (expectedRevision !== undefined && entry.revision !== expectedRevision)) {
+          return { deleted: false };
+        }
+        state.delete(key);
+        return { deleted: true };
+      },
     },
     threads: {
       listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
@@ -50,15 +58,14 @@ async function settleLifecycle(action: Action) {
   });
 }
 
-test('settled lifecycle compresses into a v2 tombstone with a single-event history', async () => {
+test('settled lifecycle compresses into a v2 tombstone retaining the full event history', async () => {
   const state = new Map<string, { revision: number; value: unknown }>();
   const { action } = harness(state);
   await settleLifecycle(action);
   const record = state.get('lifecycle/life-1')?.value as Record<string, unknown>;
   assert.equal(record.version, 2);
   assert.equal(record.tombstone, true);
-  assert.equal(Array.isArray(record.history) && record.history.length, 1);
-  assert.equal((record.history as unknown[])[0] && ((record.history as Record<string, unknown>[])[0]).state, 'settled');
+  assert.deepEqual((record.history as Record<string, unknown>[]).map(event => event.state), ['started', 'blocked', 'settled']);
   assert.equal(record.platformMessageId, 'placeholder-1');
   assert.equal(typeof record.settledAt, 'number');
   assert.deepEqual(record.deliveryIds, ['delivery-1', 'delivery-2', 'delivery-3']);
@@ -77,6 +84,47 @@ test('redelivered settled event after tombstone is still answered as replay', as
   assert.equal(calls.filter(call => call[0] === 'settle').length, settleCalls);
 });
 
+test('exact redelivery of an accepted pre-settle deliveryId after tombstone is answered as replay', async () => {
+  const state = new Map<string, { revision: number; value: unknown }>();
+  const { action, calls } = harness(state);
+  await settleLifecycle(action);
+  const effectCalls = calls.length;
+  const replayed = await action(started());
+  assert.deepEqual(replayed, { deliveryId: 'delivery-1' });
+  assert.equal(calls.length, effectCalls, 'a replay must not re-run platform side effects');
+});
+
+test('same deliveryId with different content after tombstone is rejected DELIVERY_CONFLICT', async () => {
+  const state = new Map<string, { revision: number; value: unknown }>();
+  const { action, calls } = harness(state);
+  await settleLifecycle(action);
+  const effectCalls = calls.length;
+  await assert.rejects(
+    action({
+      lifecycleId: 'life-1', deliveryId: 'delivery-3', threadId: 'thread-1', state: 'settled',
+      chainDone: true, outcome: 'completed',
+    }),
+    (error: unknown) => {
+      assert.equal((error as Error & { code?: string }).code, 'LIFECYCLE_DELIVERY_CONFLICT');
+      return true;
+    },
+  );
+  assert.equal(calls.length, effectCalls, 'a rejected redelivery must not re-run platform side effects');
+});
+
+test('started deliveryId re-sent as a different state after tombstone is rejected DELIVERY_CONFLICT', async () => {
+  const state = new Map<string, { revision: number; value: unknown }>();
+  const { action } = harness(state);
+  await settleLifecycle(action);
+  await assert.rejects(
+    action({ lifecycleId: 'life-1', deliveryId: 'delivery-1', threadId: 'thread-1', state: 'catching_up' }),
+    (error: unknown) => {
+      assert.equal((error as Error & { code?: string }).code, 'LIFECYCLE_DELIVERY_CONFLICT');
+      return true;
+    },
+  );
+});
+
 test('late non-settled event after tombstone is rejected OUT_OF_ORDER', async () => {
   const state = new Map<string, { revision: number; value: unknown }>();
   const { action } = harness(state);
@@ -92,7 +140,7 @@ test('late non-settled event after tombstone is rejected OUT_OF_ORDER', async ()
 
 test('sweep deletes expired tombstones and stranded records but keeps fresh ones', async () => {
   const state = new Map<string, { revision: number; value: unknown }>();
-  const { action } = harness(state);
+  const { action, calls } = harness(state);
   const now = Date.now();
   const settledEvent = {
     lifecycleId: 'old-settled', deliveryId: 'd-1', threadId: 'thread-1', state: 'settled', chainDone: true, outcome: 'completed',
@@ -121,6 +169,11 @@ test('sweep deletes expired tombstones and stranded records but keeps fresh ones
   assert.equal(state.has('lifecycle/old-settled'), false);
   assert.equal(state.has('lifecycle/stranded'), false);
   assert.equal(state.has('lifecycle/fresh'), true);
+  const deletes = calls.filter(call => call[0] === 'delete');
+  assert.deepEqual(deletes, [
+    ['delete', 'lifecycle/old-settled', 1],
+    ['delete', 'lifecycle/stranded', 1],
+  ], 'sweep must delete with the revision observed in list() so a rewritten record survives');
 });
 
 test('version 1 records without updatedAt are still readable and never swept', async () => {
