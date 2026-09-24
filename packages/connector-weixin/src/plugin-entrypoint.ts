@@ -104,8 +104,8 @@ async function createMessageBridge(context: FeatureContext) {
     },
     async outbound(candidate: unknown) {
       const input = requireDelivery(candidate);
-      const binding = (await context.threads.listBindings()).find(item => item.threadId === input.threadId);
-      if (binding === undefined) throw new TypeError(`weixin thread ${input.threadId} has no provider binding`);
+      const bindings = (await context.threads.listBindings()).filter(item => item.threadId === input.threadId);
+      if (bindings.length === 0) throw new TypeError(`weixin thread ${input.threadId} has no provider binding`);
       const text = input.envelope.payload.elements.flatMap((element) => {
         if (element.kind === 'text') return [element.payload.text];
         const notice = renderTypedMediaNotice(element, {
@@ -125,16 +125,19 @@ async function createMessageBridge(context: FeatureContext) {
       const displayName = input.presentation?.actor.displayName || input.envelope.actor.id;
       const replyPrefix = input.envelope.actor.kind === 'cat' ? `【${displayName}🐱】\n` : '';
       const replyToSender = await replySenders.resolve(input.envelope.replyTo);
+      // One thread can carry several provider bindings (the Host allows
+      // rebinding different external chats onto the same thread), so the
+      // same Host delivery fans out to every binding.
       return {
         replyPrefix,
-        input: requireConnectorOutboundDelivery({
-        deliveryId: input.deliveryId,
-        externalConversationId: binding.key,
-        presentation: { header: displayName, body: text, origin: input.envelope.actor.kind === 'cat' ? 'agent' : input.envelope.actor.kind === 'system' ? 'system' : 'direct' },
-        ...(replyToSender === undefined ? {} : { metadata: { replyToSender } }),
-        ...(richBlocks.length === 0 ? {} : { richBlocks }),
-        ...(media.length === 0 ? {} : { media }),
-        }),
+        inputs: bindings.map(binding => requireConnectorOutboundDelivery({
+          deliveryId: input.deliveryId,
+          externalConversationId: binding.key,
+          presentation: { header: displayName, body: text, origin: input.envelope.actor.kind === 'cat' ? 'agent' : input.envelope.actor.kind === 'system' ? 'system' : 'direct' },
+          ...(replyToSender === undefined ? {} : { metadata: { replyToSender } }),
+          ...(richBlocks.length === 0 ? {} : { richBlocks }),
+          ...(media.length === 0 ? {} : { media }),
+        })),
       };
     },
   };
@@ -254,41 +257,43 @@ export function createWeixinPluginModule(createRuntime: RuntimeFactory = createW
               return { ok, ...(ok ? {} : { message: '微信未连接（需要扫码登录）' }) };
             },
             'weixin.outbound': async (candidate) => {
-              const { input, replyPrefix } = await bridge.outbound(candidate);
-              const text = [input.presentation.subtitle, input.presentation.body, input.presentation.footer]
-                .filter((value): value is string => value !== undefined && value.length > 0)
-                .join('\n\n');
-              const blocks = [...(input.richBlocks ?? [])];
-              await runtime.outbound.sendReply(
-                input.externalConversationId,
-                `${replyPrefix}${blocks.length > 0 ? text + '\n\n' + renderAllRichBlocksPlaintext(blocks) : text}`,
-                input.metadata,
-              );
-              for (const media of input.media ?? []) {
-                if (media.type === 'video') {
-                  await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 视频附件暂不支持发送`, input.metadata);
-                  continue;
-                }
-                if (!media.reference.startsWith('hmr_')) {
-                  await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 媒体不可用（旧引用无法读取）`, input.metadata);
-                  continue;
-                }
-                try {
-                  await runtime.outbound.sendMedia(input.externalConversationId, {
-                    type: media.type,
-                    content: context.media.read(media.reference),
-                    ...(media.fileName === undefined ? {} : { fileName: media.fileName }),
-                  });
-                } catch (error) {
-                  context.log('warn', 'Weixin outbound media delivery failed', {
-                    mediaType: media.type,
-                    errorName: error instanceof Error ? error.name : 'unknown',
-                  });
-                  await runtime.outbound.sendReply(
-                    input.externalConversationId,
-                    `${replyPrefix}${error instanceof RangeError ? '⚠️ 媒体过大，超过插件的安全上限 25 MiB' : '⚠️ 媒体不可用（读取或上传失败）'}`,
-                    input.metadata,
-                  );
+              const { inputs, replyPrefix } = await bridge.outbound(candidate);
+              for (const input of inputs) {
+                const text = [input.presentation.subtitle, input.presentation.body, input.presentation.footer]
+                  .filter((value): value is string => value !== undefined && value.length > 0)
+                  .join('\n\n');
+                const blocks = [...(input.richBlocks ?? [])];
+                await runtime.outbound.sendReply(
+                  input.externalConversationId,
+                  `${replyPrefix}${blocks.length > 0 ? text + '\n\n' + renderAllRichBlocksPlaintext(blocks) : text}`,
+                  input.metadata,
+                );
+                for (const media of input.media ?? []) {
+                  if (media.type === 'video') {
+                    await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 视频附件暂不支持发送`, input.metadata);
+                    continue;
+                  }
+                  if (!media.reference.startsWith('hmr_')) {
+                    await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 媒体不可用（旧引用无法读取）`, input.metadata);
+                    continue;
+                  }
+                  try {
+                    await runtime.outbound.sendMedia(input.externalConversationId, {
+                      type: media.type,
+                      content: context.media.read(media.reference),
+                      ...(media.fileName === undefined ? {} : { fileName: media.fileName }),
+                    });
+                  } catch (error) {
+                    context.log('warn', 'Weixin outbound media delivery failed', {
+                      mediaType: media.type,
+                      errorName: error instanceof Error ? error.name : 'unknown',
+                    });
+                    await runtime.outbound.sendReply(
+                      input.externalConversationId,
+                      `${replyPrefix}${error instanceof RangeError ? '⚠️ 媒体过大，超过插件的安全上限 25 MiB' : '⚠️ 媒体不可用（读取或上传失败）'}`,
+                      input.metadata,
+                    );
+                  }
                 }
               }
             },

@@ -109,8 +109,8 @@ async function createMessageBridge(context: FeatureContext) {
     },
     async outbound(candidate: unknown) {
       const input = requireDelivery(candidate);
-      const binding = (await context.threads.listBindings()).find(item => item.threadId === input.threadId);
-      if (binding === undefined) throw new TypeError(`wecom-bot thread ${input.threadId} has no provider binding`);
+      const bindings = (await context.threads.listBindings()).filter(item => item.threadId === input.threadId);
+      if (bindings.length === 0) throw new TypeError(`wecom-bot thread ${input.threadId} has no provider binding`);
       const text = input.envelope.payload.elements.flatMap((element) => {
         if (element.kind === 'text') return [element.payload.text];
         const notice = renderTypedMediaNotice(element, {
@@ -130,16 +130,19 @@ async function createMessageBridge(context: FeatureContext) {
       const displayName = input.presentation?.actor.displayName || input.envelope.actor.id;
       const replyPrefix = input.envelope.actor.kind === 'cat' ? `【${displayName}🐱】\n` : '';
       const replyToSender = await replySenders.resolve(input.envelope.replyTo);
+      // One thread can carry several provider bindings (the Host allows
+      // rebinding different external chats onto the same thread), so the
+      // same Host delivery fans out to every binding.
       return {
         replyPrefix,
-        input: requireConnectorOutboundDelivery({
-        deliveryId: input.deliveryId,
-        externalConversationId: binding.key,
-        presentation: { header: displayName, body: text, origin: input.envelope.actor.kind === 'cat' ? 'agent' : input.envelope.actor.kind === 'system' ? 'system' : 'direct' },
-        ...(replyToSender === undefined ? {} : { metadata: { replyToSender } }),
-        ...(richBlocks.length === 0 ? {} : { richBlocks }),
-        ...(media.length === 0 ? {} : { media }),
-        }),
+        inputs: bindings.map(binding => requireConnectorOutboundDelivery({
+          deliveryId: input.deliveryId,
+          externalConversationId: binding.key,
+          presentation: { header: displayName, body: text, origin: input.envelope.actor.kind === 'cat' ? 'agent' : input.envelope.actor.kind === 'system' ? 'system' : 'direct' },
+          ...(replyToSender === undefined ? {} : { metadata: { replyToSender } }),
+          ...(richBlocks.length === 0 ? {} : { richBlocks }),
+          ...(media.length === 0 ? {} : { media }),
+        })),
       };
     },
   };
@@ -261,56 +264,58 @@ export function createWeComBotPluginModule(
               return { ok, ...(ok ? {} : { message: `当前状态: ${runtime.getConnectionState()}` }) };
             },
             'wecom-bot.outbound': async (candidate) => {
-              const { input, replyPrefix } = await bridge.outbound(candidate);
-              const blocks = [...(input.richBlocks ?? [])];
-              if (blocks.length > 0) {
-                await runtime.outbound.sendRichMessage(
-                  input.externalConversationId,
-                  input.presentation.body,
-                  blocks as unknown as Parameters<WeComBotAdapter['sendRichMessage']>[2],
-                  input.presentation.header,
-                  input.metadata,
-                );
-              } else {
-                await runtime.outbound.sendFormattedReply(
-                  input.externalConversationId,
-                  {
-                    header: input.presentation.header,
-                    body: input.presentation.body,
-                    origin: input.presentation.origin === 'callback' ? 'callback' : 'direct',
-                    ...(input.presentation.subtitle === undefined ? {} : { subtitle: input.presentation.subtitle }),
-                    ...(input.presentation.footer === undefined ? {} : { footer: input.presentation.footer }),
-                  },
-                  input.metadata,
-                );
-              }
-              for (const media of input.media ?? []) {
-                if (media.type === 'video') {
-                  await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 视频附件暂不支持发送`, input.metadata);
-                  continue;
-                }
-                if (!media.reference.startsWith('hmr_')) {
-                  await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 媒体不可用（旧引用无法读取）`, input.metadata);
-                  continue;
-                }
-                try {
-                  await runtime.outbound.sendMedia(input.externalConversationId, {
-                    type: media.type,
-                    content: context.media.read(media.reference),
-                    ...(media.fileName === undefined ? {} : { fileName: media.fileName }),
-                  });
-                } catch (error) {
-                  context.log('warn', 'WeCom bot outbound media delivery failed', {
-                    mediaType: media.type,
-                    errorName: error instanceof Error ? error.name : 'unknown',
-                  });
-                  await runtime.outbound.sendReply(
+              const { inputs, replyPrefix } = await bridge.outbound(candidate);
+              for (const input of inputs) {
+                const blocks = [...(input.richBlocks ?? [])];
+                if (blocks.length > 0) {
+                  await runtime.outbound.sendRichMessage(
                     input.externalConversationId,
-                    `${replyPrefix}${error instanceof RangeError || (error instanceof Error && error.name === 'ProviderMediaLimitError')
-                      ? '⚠️ 媒体过大，超过企业微信发送上限'
-                      : '⚠️ 媒体不可用（读取或上传失败）'}`,
+                    input.presentation.body,
+                    blocks as unknown as Parameters<WeComBotAdapter['sendRichMessage']>[2],
+                    input.presentation.header,
                     input.metadata,
                   );
+                } else {
+                  await runtime.outbound.sendFormattedReply(
+                    input.externalConversationId,
+                    {
+                      header: input.presentation.header,
+                      body: input.presentation.body,
+                      origin: input.presentation.origin === 'callback' ? 'callback' : 'direct',
+                      ...(input.presentation.subtitle === undefined ? {} : { subtitle: input.presentation.subtitle }),
+                      ...(input.presentation.footer === undefined ? {} : { footer: input.presentation.footer }),
+                    },
+                    input.metadata,
+                  );
+                }
+                for (const media of input.media ?? []) {
+                  if (media.type === 'video') {
+                    await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 视频附件暂不支持发送`, input.metadata);
+                    continue;
+                  }
+                  if (!media.reference.startsWith('hmr_')) {
+                    await runtime.outbound.sendReply(input.externalConversationId, `${replyPrefix}⚠️ 媒体不可用（旧引用无法读取）`, input.metadata);
+                    continue;
+                  }
+                  try {
+                    await runtime.outbound.sendMedia(input.externalConversationId, {
+                      type: media.type,
+                      content: context.media.read(media.reference),
+                      ...(media.fileName === undefined ? {} : { fileName: media.fileName }),
+                    });
+                  } catch (error) {
+                    context.log('warn', 'WeCom bot outbound media delivery failed', {
+                      mediaType: media.type,
+                      errorName: error instanceof Error ? error.name : 'unknown',
+                    });
+                    await runtime.outbound.sendReply(
+                      input.externalConversationId,
+                      `${replyPrefix}${error instanceof RangeError || (error instanceof Error && error.name === 'ProviderMediaLimitError')
+                        ? '⚠️ 媒体过大，超过企业微信发送上限'
+                        : '⚠️ 媒体不可用（读取或上传失败）'}`,
+                      input.metadata,
+                    );
+                  }
                 }
               }
             },

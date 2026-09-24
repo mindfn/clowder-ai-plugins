@@ -191,10 +191,10 @@ async function createMessageBridge(context: FeatureContext) {
         throw error;
       }
     },
-    async outbound(candidate: unknown): Promise<{ input: TelegramOutboundDelivery; replyPrefix: string }> {
+    async outbound(candidate: unknown): Promise<{ inputs: TelegramOutboundDelivery[]; replyPrefix: string }> {
       const input = requireDelivery(candidate);
-      const binding = (await context.threads.listBindings()).find(item => item.threadId === input.threadId);
-      if (binding === undefined) throw new TypeError(`telegram thread ${input.threadId} has no provider binding`);
+      const bindings = (await context.threads.listBindings()).filter(item => item.threadId === input.threadId);
+      if (bindings.length === 0) throw new TypeError(`telegram thread ${input.threadId} has no provider binding`);
       const text = input.envelope.payload.elements.flatMap((element) => {
         if (element.kind === 'text') return [element.payload.text];
         const notice = renderTypedMediaNotice(element, {
@@ -216,25 +216,28 @@ async function createMessageBridge(context: FeatureContext) {
       const displayName = input.presentation?.actor.displayName || input.envelope.actor.id;
       const replyPrefix = input.envelope.actor.kind === 'cat' ? `【${displayName}🐱】\n` : '';
       const replyToSender = await replySenders.resolve(input.envelope.replyTo);
-      const delivery = requireConnectorOutboundDelivery({
-        deliveryId: input.deliveryId,
-        externalConversationId: binding.key,
-        presentation: {
-          header: displayName,
-          body: text,
-          origin: input.envelope.actor.kind === 'cat' ? 'agent' : input.envelope.actor.kind === 'system' ? 'system' : 'direct',
-        },
-        ...(replyToSender === undefined ? {} : { metadata: { replyToSender } }),
-        ...(richBlocks.length === 0 ? {} : { richBlocks }),
-        ...(media.length === 0 ? {} : { media }),
-      });
-      return {
-        replyPrefix,
-        input: {
+      // One thread can carry several provider bindings (the Host allows
+      // rebinding different external chats onto the same thread), so the
+      // same Host delivery fans out to every binding.
+      const inputs = bindings.map(binding => {
+        const delivery = requireConnectorOutboundDelivery({
+          deliveryId: input.deliveryId,
+          externalConversationId: binding.key,
+          presentation: {
+            header: displayName,
+            body: text,
+            origin: input.envelope.actor.kind === 'cat' ? 'agent' : input.envelope.actor.kind === 'system' ? 'system' : 'direct',
+          },
+          ...(replyToSender === undefined ? {} : { metadata: { replyToSender } }),
+          ...(richBlocks.length === 0 ? {} : { richBlocks }),
+          ...(media.length === 0 ? {} : { media }),
+        });
+        return {
           ...delivery,
           ...(input.lifecycleId === undefined ? {} : { lifecycleId: input.lifecycleId }),
-        },
-      };
+        };
+      });
+      return { replyPrefix, inputs };
     },
   };
 }
@@ -381,8 +384,8 @@ export function createTelegramPluginModule(
             },
             'telegram.outbound': async (input) => {
               if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
-              const { input: delivery, replyPrefix } = await bridge.outbound(input);
-              return deliver(runtime.outbound, delivery, context, replyPrefix);
+              const { inputs, replyPrefix } = await bridge.outbound(input);
+              for (const delivery of inputs) await deliver(runtime.outbound, delivery, context, replyPrefix);
             },
           },
           dispose: () => runtime?.stop() ?? Promise.resolve(),

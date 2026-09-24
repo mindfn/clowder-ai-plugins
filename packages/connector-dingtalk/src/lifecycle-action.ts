@@ -39,6 +39,8 @@ interface StoredLifecycle {
   readonly version: 1 | 2;
   readonly history: readonly LifecycleEvent[];
   readonly platformMessageId?: string;
+  /** v2 only: per-binding placeholder message ids when a thread has multiple bindings. */
+  readonly platformMessageByKey?: Readonly<Record<string, string>>;
   readonly actorDisplayName: string;
   /** v2 only: last write time, drives stranded-record sweep TTL. */
   readonly updatedAt?: number;
@@ -79,6 +81,8 @@ function storedLifecycle(value: unknown): StoredLifecycle {
     || !Array.isArray(value.history)
     || typeof value.actorDisplayName !== 'string'
     || (value.platformMessageId !== undefined && typeof value.platformMessageId !== 'string')
+    || (value.platformMessageByKey !== undefined
+      && (!object(value.platformMessageByKey) || Object.values(value.platformMessageByKey).some(id => typeof id !== 'string')))
     || (value.updatedAt !== undefined && typeof value.updatedAt !== 'number')
     || (value.tombstone !== undefined && typeof value.tombstone !== 'boolean')
     || (value.deliveryIds !== undefined && (!Array.isArray(value.deliveryIds) || value.deliveryIds.some(id => typeof id !== 'string')))
@@ -180,23 +184,35 @@ export function createConnectorLifecycleAction(
       throw lifecycleError(lifecycleRejectReason(decision), `lifecycle ${decision.reason.toLowerCase()}`);
     }
 
-    const binding = (await context.threads.listBindings()).find(candidate => candidate.threadId === event.threadId);
-    if (binding === undefined) {
+    // One thread can carry several provider bindings (the Host allows
+    // rebinding different external chats onto the same thread), so every
+    // matching binding receives the outbound effects.
+    const bindings = (await context.threads.listBindings()).filter(candidate => candidate.threadId === event.threadId);
+    if (bindings.length === 0) {
       throw lifecycleError('PLUGIN_INTERNAL', `lifecycle thread ${event.threadId} has no provider binding`);
     }
 
-    let platformMessageId = stored?.platformMessageId;
     const actorDisplayName = event.state === 'started'
       ? event.presentation.actor.displayName
       : stored?.actorDisplayName ?? '';
 
+    // Per-binding placeholder message ids. Legacy records carry a single
+    // platformMessageId; with exactly one matching binding it can only have
+    // belonged to that binding.
+    let messageIds: Record<string, string> = { ...(stored?.platformMessageByKey ?? {}) };
+    if (Object.keys(messageIds).length === 0 && bindings.length === 1 && stored?.platformMessageId !== undefined) {
+      messageIds = { [bindings[0].key]: stored.platformMessageId };
+    }
+
     // Settled records compress into a tombstone: the settled event plus the
     // deliveryId set is the minimum needed to answer redeliveries, so the
     // full event history stops accumulating.
-    const nextRecord = (messageId: string | undefined): StoredLifecycle => ({
+    const nextRecord = (ids: Record<string, string>): StoredLifecycle => ({
       version: 2,
       history: event.state === 'settled' ? [event] : [...history, event],
-      ...(messageId === undefined ? {} : { platformMessageId: messageId }),
+      // Keep the legacy single-id field only when it is unambiguous.
+      ...(Object.keys(ids).length === 1 ? { platformMessageId: Object.values(ids)[0] } : {}),
+      ...(Object.keys(ids).length === 0 ? {} : { platformMessageByKey: ids }),
       actorDisplayName,
       updatedAt: Date.now(),
       ...(event.state === 'settled'
@@ -208,7 +224,7 @@ export function createConnectorLifecycleAction(
     // effect, so a crash between effect and store cannot leave later events
     // orphaned as OUT_OF_ORDER. If even the identical retry fails we throw
     // before any side effect: no half-persisted record, no duplicate sends.
-    const preWrite = nextRecord(stored?.platformMessageId);
+    const preWrite = nextRecord(messageIds);
     try {
       await context.storage.set(stateKey, preWrite);
       countWrite();
@@ -238,7 +254,9 @@ export function createConnectorLifecycleAction(
       }
     };
 
-    switch (event.state) {
+    for (const binding of bindings) {
+      let platformMessageId: string | undefined = messageIds[binding.key];
+      switch (event.state) {
       case 'started':
         // Resolve the sender name before the safely() wrapper: a throwing
         // callback must not take down the whole placeholder send. resolve()
@@ -312,10 +330,13 @@ export function createConnectorLifecycleAction(
         }));
         break;
       }
+      }
+      if (platformMessageId === undefined) delete messageIds[binding.key];
+      else messageIds[binding.key] = platformMessageId;
     }
 
     try {
-      await context.storage.set(stateKey, nextRecord(platformMessageId));
+      await context.storage.set(stateKey, nextRecord(messageIds));
       countWrite();
     } catch (error) {
       // Post-write failure is warn-only: the event already sits in history
