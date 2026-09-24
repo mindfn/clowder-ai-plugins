@@ -31,5 +31,5 @@ local-file, ambient Redis, or environment fallback.
 
 ## Exposed capability
 
-The connector contributes XiaoYi messaging and requests `plugin.config.read`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`. It does not expose audio
+The connector contributes XiaoYi messaging and requests `plugin.config.read`, `plugin.state.get`, `plugin.state.set`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`. It does not expose audio
 capture, ASR, TTS, embedding, LLM post-processing, mention parsing, public UI slots, or generic public hooks.
