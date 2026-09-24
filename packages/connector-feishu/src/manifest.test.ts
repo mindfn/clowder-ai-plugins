@@ -22,6 +22,7 @@ test('manifest keeps credentials secret and binding authority Host-owned', async
   assert.ok(manifest.contributions.some(item => item.type === 'webhook' && item.id === 'feishu-events'));
   assert.deepEqual(manifest.features[0]?.capabilities, [
     'plugin.config.read',
+    'media.read',
     'message.event.subscribe',
     'messaging.send',
     'secret.read',

@@ -34,6 +34,7 @@ test('manifest keeps Bot Secret private and wake authority out of the package', 
   assert.ok(manifest.contributions.some(item => item.type === 'message-subscription' && item.id === 'wecom-bot'));
   assert.deepEqual(manifest.features[0]?.capabilities, [
     'plugin.config.read',
+    'media.read',
     'message.event.subscribe',
     'messaging.send',
     'secret.read',

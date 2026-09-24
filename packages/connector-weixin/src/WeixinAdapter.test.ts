@@ -48,7 +48,7 @@ test('restores cursor and context tokens only through the injected Host checkpoi
 test('adapter source contains no ambient environment fallback', async () => {
   const source = await readFile(new URL('./WeixinAdapter.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /process\.env|CLOWDER_|CAT_CAFE_API_URL|API_SERVER_PORT/);
-  assert.match(source, /requires an explicit Host-projected apiBaseUrl/);
+  assert.doesNotMatch(source, /apiBaseUrl|relative media URL|downloadToTemp|resolveDownloadUrl/);
 });
 
 test('stopping polling rejects queued replies before they can flush after disposal', async () => {

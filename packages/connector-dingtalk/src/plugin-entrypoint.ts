@@ -187,14 +187,26 @@ export function createDingTalkPluginModule(
               }
               for (const media of input.media ?? []) {
                 if (media.type === 'video') {
-                  await runtime.outbound.sendReply(input.externalConversationId, `🎬 ${media.reference}`);
+                  await runtime.outbound.sendReply(input.externalConversationId, '⚠️ 视频附件暂不支持发送');
                   continue;
                 }
-                await runtime.outbound.sendMedia(input.externalConversationId, {
-                  type: media.type,
-                  url: media.reference,
-                  ...(media.fileName === undefined ? {} : { fileName: media.fileName }),
-                });
+                if (!media.reference.startsWith('hmr_')) {
+                  await runtime.outbound.sendReply(input.externalConversationId, '⚠️ 媒体不可用（旧引用无法读取）');
+                  continue;
+                }
+                try {
+                  await runtime.outbound.sendMedia(input.externalConversationId, {
+                    type: media.type,
+                    content: context.media.read(media.reference),
+                    ...(media.fileName === undefined ? {} : { fileName: media.fileName }),
+                  });
+                } catch (error) {
+                  context.log('warn', 'DingTalk outbound media delivery failed', {
+                    mediaType: media.type,
+                    errorName: error instanceof Error ? error.name : 'unknown',
+                  });
+                  await runtime.outbound.sendReply(input.externalConversationId, '⚠️ 媒体不可用（读取或上传失败）');
+                }
               }
             },
           },

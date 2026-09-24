@@ -6,7 +6,7 @@
  * F132 DingTalk + WeCom Chat Gateway — Phase B
  */
 
-import { basename } from 'node:path';
+import { collectProviderMedia } from './collect-media.js';
 import type { ConnectorLogger, MessageEnvelope, RichBlock } from './types.js';
 
 // ── Types ──
@@ -465,52 +465,17 @@ export class WeComBotAdapter {
     externalChatId: string,
     payload: {
       type: 'image' | 'file' | 'audio';
-      url?: string;
-      absPath?: string;
+      content: AsyncIterable<Uint8Array>;
       fileName?: string;
-      [key: string]: unknown;
     },
   ): Promise<void> {
-    const absPath = typeof payload.absPath === 'string' && payload.absPath.length > 0 ? payload.absPath : undefined;
-    const url = typeof payload.url === 'string' && payload.url.length > 0 ? payload.url : undefined;
-
     // Map 'audio' → 'voice' for WeCom SDK
     const wecomMediaType = payload.type === 'audio' ? 'voice' : payload.type;
-
-    // Path 1: Has absPath → upload + send
-    if (absPath) {
-      try {
-        const { readFile } = await import('node:fs/promises');
-        const fileBuffer = await readFile(absPath);
-        const fileName = payload.fileName ?? basename(absPath);
-        const mediaId = await this.wecomUploadMedia(fileBuffer, wecomMediaType, fileName);
-        if (mediaId) {
-          await this.wecomSendMediaMessage(externalChatId, wecomMediaType, mediaId);
-          return;
-        }
-      } catch (err) {
-        this.log.warn(
-          { err, type: payload.type, absPath },
-          '[WeComBotAdapter] sendMedia: upload failed, falling through',
-        );
-      }
-    }
-
-    // Path 2: Fallback — text link
-    const mediaReference =
-      url ??
-      (typeof payload.fileName === 'string' && payload.fileName.length > 0
-        ? payload.fileName
-        : absPath
-          ? basename(absPath)
-          : undefined);
-
-    if (mediaReference) {
-      const label = payload.type === 'image' ? '🖼️' : payload.type === 'audio' ? '🔊' : '📎';
-      await this.sendReply(externalChatId, `${label} ${mediaReference}`);
-      return;
-    }
-    this.log.warn({ type: payload.type }, '[WeComBotAdapter] sendMedia: no file available, skipping');
+    const fileBuffer = await collectProviderMedia(payload.type, payload.content);
+    const fileName = payload.fileName ?? `media.${payload.type === 'audio' ? 'amr' : payload.type === 'image' ? 'png' : 'bin'}`;
+    const mediaId = await this.wecomUploadMedia(fileBuffer, wecomMediaType, fileName);
+    if (!mediaId) throw new Error('WeCom bot media upload returned no media id');
+    await this.wecomSendMediaMessage(externalChatId, wecomMediaType, mediaId);
   }
 
   /**

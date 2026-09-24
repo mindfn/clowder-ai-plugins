@@ -29,6 +29,7 @@ test('manifest preserves DingTalk config sensitivity and Host authority', async 
   assert.deepEqual(manifest.contributions.map(entry => entry.type), ['identity', 'message-subscription']);
   assert.deepEqual(manifest.features[0]?.capabilities, [
     'plugin.config.read',
+    'media.read',
     'message.event.subscribe',
     'messaging.send',
     'secret.read',

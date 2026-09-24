@@ -25,6 +25,7 @@ test('manifest keeps the Telegram token secret and binding authority Host-owned'
   ]);
   assert.deepEqual(manifest.contributions.map(entry => entry.type), ['identity', 'message-subscription']);
   assert.deepEqual(manifest.features[0]?.capabilities, [
+    'media.read',
     'message.event.subscribe',
     'messaging.send',
     'secret.read',

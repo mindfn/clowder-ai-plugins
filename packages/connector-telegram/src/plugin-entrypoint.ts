@@ -143,7 +143,11 @@ async function createMessageBridge(context: FeatureContext) {
   };
 }
 
-async function deliver(adapter: TelegramAdapter, input: ConnectorOutboundDelivery): Promise<void> {
+async function deliver(
+  adapter: TelegramAdapter,
+  input: ConnectorOutboundDelivery,
+  context: FeatureContext,
+): Promise<void> {
   const blocks = [...(input.richBlocks ?? [])];
   if (blocks.length > 0) {
     await adapter.sendRichMessage(
@@ -160,14 +164,26 @@ async function deliver(adapter: TelegramAdapter, input: ConnectorOutboundDeliver
   }
   for (const media of input.media ?? []) {
     if (media.type === 'video') {
-      await adapter.sendReply(input.externalConversationId, `🎬 ${media.reference}`);
+      await adapter.sendReply(input.externalConversationId, '⚠️ 视频附件暂不支持发送');
       continue;
     }
-    await adapter.sendMedia(input.externalConversationId, {
-      type: media.type,
-      url: media.reference,
-      ...(media.fileName === undefined ? {} : { fileName: media.fileName }),
-    });
+    if (!media.reference.startsWith('hmr_')) {
+      await adapter.sendReply(input.externalConversationId, '⚠️ 媒体不可用（旧引用无法读取）');
+      continue;
+    }
+    try {
+      await adapter.sendMedia(input.externalConversationId, {
+        type: media.type,
+        content: context.media.read(media.reference),
+        ...(media.fileName === undefined ? {} : { fileName: media.fileName }),
+      });
+    } catch (error) {
+      context.log('warn', 'Telegram outbound media delivery failed', {
+        mediaType: media.type,
+        errorName: error instanceof Error ? error.name : 'unknown',
+      });
+      await adapter.sendReply(input.externalConversationId, '⚠️ 媒体不可用（读取或上传失败）');
+    }
   }
 }
 
@@ -199,7 +215,7 @@ export function createTelegramPluginModule(
             },
             'telegram.outbound': async (input) => {
               if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
-              return deliver(runtime.outbound, await bridge.outbound(input));
+              return deliver(runtime.outbound, await bridge.outbound(input), context);
             },
           },
           dispose: () => runtime?.stop() ?? Promise.resolve(),

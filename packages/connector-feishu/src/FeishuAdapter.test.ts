@@ -1,9 +1,5 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { access } from 'node:fs/promises';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import test from 'node:test';
 
 import { FeishuAdapter, inferFeishuFileType } from './FeishuAdapter.js';
@@ -12,15 +8,9 @@ import type { ConnectorLogger } from './types.js';
 const noop = () => undefined;
 const logger: ConnectorLogger = { info: noop, warn: noop, error: noop, debug: noop };
 
-// H2: ogg first-page fixtures. Opus identifies with 'OpusHead' at offset 28;
-// Vorbis/Speex share the OggS container and must not be declared OPUS to Feishu.
-function oggPageWith(codecId: string): Buffer {
-  const head = Buffer.alloc(28);
-  head.write('OggS', 0, 'latin1');
-  return Buffer.concat([head, Buffer.from(`${codecId}payload-payload-payload`, 'latin1')]);
+async function* mediaBytes(value: string | Buffer): AsyncGenerator<Uint8Array> {
+  yield typeof value === 'string' ? Buffer.from(value) : value;
 }
-const opusOggBytes = (): Buffer => oggPageWith('OpusHead');
-const vorbisOggBytes = (): Buffer => oggPageWith('\x01vorbis\x00');
 
 // H3: extension→file_type mapping must never consult the prototype chain.
 test('inferFeishuFileType treats prototype-member extensions as unknown', () => {
@@ -94,32 +84,18 @@ test('sends configured mention aliases as provider-native mentions', async () =>
 });
 
 test('non-Opus audio is delivered as a file without spawning a transcoder', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'clowder-feishu-media-'));
-  const filePath = join(directory, 'voice.mp3');
-  await writeFile(filePath, 'audio-bytes');
-  try {
-    const subject = new FeishuAdapter('app-id', 'app-secret', logger);
-    subject._injectTokenManager({
-      async getTenantAccessToken() { return 'token'; },
-    } as never);
-    subject._injectUploadFetch(async (_input, init) => {
-      const form = init?.body as FormData;
-      assert.equal(form.get('file_name'), 'voice.mp3');
-      assert.equal(form.get('file_type'), 'stream');
-      return new Response(JSON.stringify({ data: { file_key: 'file-key' } }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    });
-    const sent: Array<{ chatId: string; msgType: string }> = [];
-    subject._injectSendMessage(async ({ chatId, msgType }) => { sent.push({ chatId, msgType }); });
-
-    await subject.sendMedia('chat-1', { type: 'audio', absPath: filePath, fileName: 'voice.mp3' });
-
-    assert.deepEqual(sent, [{ chatId: 'chat-1', msgType: 'file' }]);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+  const subject = new FeishuAdapter('app-id', 'app-secret', logger);
+  subject._injectTokenManager({ async getTenantAccessToken() { return 'token'; } } as never);
+  subject._injectUploadFetch(async (_input, init) => {
+    const form = init?.body as FormData;
+    assert.equal(form.get('file_name'), 'voice.mp3');
+    assert.equal(form.get('file_type'), 'stream');
+    return new Response(JSON.stringify({ data: { file_key: 'file-key' } }), { status: 200 });
+  });
+  const sent: Array<{ chatId: string; msgType: string }> = [];
+  subject._injectSendMessage(async ({ chatId, msgType }) => { sent.push({ chatId, msgType }); });
+  await subject.sendMedia('chat-1', { type: 'audio', content: mediaBytes('audio-bytes'), fileName: 'voice.mp3' });
+  assert.deepEqual(sent, [{ chatId: 'chat-1', msgType: 'file' }]);
 });
 
 test('FeishuAdapter holds no process-spawning capability', () => {
@@ -136,49 +112,26 @@ test('FeishuAdapter holds no process-spawning capability', () => {
 });
 
 test('OPUS audio keeps msg_type audio', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'clowder-feishu-media-'));
-  const filePath = join(directory, 'voice.opus');
-  await writeFile(filePath, 'opus-bytes');
-  try {
-    const subject = new FeishuAdapter('app-id', 'app-secret', logger);
-    subject._injectTokenManager({
-      async getTenantAccessToken() { return 'token'; },
-    } as never);
-    subject._injectUploadFetch(async (_input, init) => {
-      const form = init?.body as FormData;
-      assert.equal(form.get('file_name'), 'voice.opus');
-      assert.equal(form.get('file_type'), 'opus');
-      return new Response(JSON.stringify({ data: { file_key: 'file-key' } }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    });
-    const sent: Array<{ chatId: string; msgType: string }> = [];
-    subject._injectSendMessage(async ({ chatId, msgType }) => { sent.push({ chatId, msgType }); });
-
-    await subject.sendMedia('chat-1', { type: 'audio', absPath: filePath, fileName: 'voice.opus' });
-
-    assert.deepEqual(sent, [{ chatId: 'chat-1', msgType: 'audio' }]);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+  const subject = new FeishuAdapter('app-id', 'app-secret', logger);
+  subject._injectTokenManager({ async getTenantAccessToken() { return 'token'; } } as never);
+  subject._injectUploadFetch(async (_input, init) => {
+    const form = init?.body as FormData;
+    assert.equal(form.get('file_name'), 'voice.opus');
+    assert.equal(form.get('file_type'), 'opus');
+    return new Response(JSON.stringify({ data: { file_key: 'file-key' } }), { status: 200 });
+  });
+  const sent: Array<{ chatId: string; msgType: string }> = [];
+  subject._injectSendMessage(async ({ chatId, msgType }) => { sent.push({ chatId, msgType }); });
+  await subject.sendMedia('chat-1', { type: 'audio', content: mediaBytes('opus-bytes'), fileName: 'voice.opus' });
+  assert.deepEqual(sent, [{ chatId: 'chat-1', msgType: 'audio' }]);
 });
 
-// F1: the production outbound path always carries `url:` (never absPath), so a
-// regression here ships to users even when the absPath tests above stay green.
-test('OPUS audio fetched from an external URL keeps msg_type audio', async () => {
+test('OPUS audio from a Host-authorized stream keeps msg_type audio', async () => {
   const subject = new FeishuAdapter('app-id', 'app-secret', logger);
   subject._injectTokenManager({
     async getTenantAccessToken() { return 'token'; },
   } as never);
-  subject._injectUploadFetch(async (input, init) => {
-    const target = String(input);
-    if (target === 'https://cdn.example.com/media/voice.opus') {
-      return new Response(opusOggBytes() as unknown as BodyInit, {
-        status: 200,
-        headers: { 'content-type': 'audio/opus; charset=binary' },
-      });
-    }
+  subject._injectUploadFetch(async (_input, init) => {
     const form = init?.body as FormData;
     assert.equal(form.get('file_name'), 'voice.opus');
     assert.equal(form.get('file_type'), 'opus');
@@ -190,107 +143,63 @@ test('OPUS audio fetched from an external URL keeps msg_type audio', async () =>
   const sent: Array<{ chatId: string; msgType: string }> = [];
   subject._injectSendMessage(async ({ chatId, msgType }) => { sent.push({ chatId, msgType }); });
 
-  await subject.sendMedia('chat-1', { type: 'audio', url: 'https://cdn.example.com/media/voice.opus' });
+  await subject.sendMedia('chat-1', {
+    type: 'audio', content: mediaBytes('opus-bytes'), fileName: 'voice.opus',
+  });
 
   assert.deepEqual(sent, [{ chatId: 'chat-1', msgType: 'audio' }]);
 });
 
-// G2: extensionFor resolves Content-Type first, then the URL pathname, then a
-// type-based default — and never consults the prototype chain for either.
+// Explicit display filenames determine Feishu's upload type. Provider URLs and
+// their headers are no longer accepted as ambient media authority.
 const ladderCases: Array<{
   name: string;
-  contentType: string;
-  url: string;
   type: 'image' | 'file' | 'audio';
-  body?: Buffer;
+  fileName: string;
   expectedMsgType: string;
-  expectedFileName?: string;
   expectedFileType?: string;
 }> = [
   {
-    name: 'audio/ogg (the ogg container static servers use for OPUS) keeps opus delivery',
-    contentType: 'audio/ogg',
-    url: 'https://cdn.example.com/media/voice',
+    name: 'an .opus filename keeps audio delivery',
     type: 'audio',
-    body: opusOggBytes(),
+    fileName: 'voice.opus',
     expectedMsgType: 'audio',
-    expectedFileName: 'media.opus',
     expectedFileType: 'opus',
   },
   {
-    name: 'H2: a Vorbis ogg served as audio/ogg degrades to an honest file card, never declared OPUS',
-    contentType: 'audio/ogg',
-    url: 'https://cdn.example.com/media/music.ogg',
+    name: 'an .ogg filename degrades to an honest file card',
     type: 'audio',
-    body: vorbisOggBytes(),
+    fileName: 'music.ogg',
     expectedMsgType: 'file',
-    expectedFileName: 'music.ogg',
     expectedFileType: 'stream',
   },
   {
-    name: 'audio/opus keeps opus delivery',
-    contentType: 'audio/opus',
-    url: 'https://cdn.example.com/media/voice',
+    name: 'an unknown audio filename degrades to a bin file card',
     type: 'audio',
-    body: opusOggBytes(),
-    expectedMsgType: 'audio',
-    expectedFileName: 'media.opus',
-    expectedFileType: 'opus',
-  },
-  {
-    name: 'unknown Content-Type falls back to the URL pathname extension',
-    contentType: 'application/octet-stream',
-    url: 'https://cdn.example.com/media/voice.opus',
-    type: 'audio',
-    body: opusOggBytes(),
-    expectedMsgType: 'audio',
-    expectedFileName: 'voice.opus',
-    expectedFileType: 'opus',
-  },
-  {
-    name: 'unknown Content-Type without URL extension degrades to a bin file card',
-    contentType: 'application/octet-stream',
-    url: 'https://cdn.example.com/media/voice',
-    type: 'audio',
+    fileName: 'media.bin',
     expectedMsgType: 'file',
-    expectedFileName: 'media.bin',
     expectedFileType: 'stream',
   },
   {
-    name: 'a prototype-chain Content-Type does not resolve to Object members',
-    contentType: 'constructor',
-    url: 'https://cdn.example.com/media/voice.opus',
-    type: 'audio',
-    body: opusOggBytes(),
-    expectedMsgType: 'audio',
-    expectedFileName: 'voice.opus',
-    expectedFileType: 'opus',
-  },
-  {
-    name: 'image without any extension hint defaults to jpg',
-    contentType: 'unknown/xyz',
-    url: 'https://cdn.example.com/pic',
+    name: 'an image filename uses the image upload route',
     type: 'image',
+    fileName: 'media.jpg',
     expectedMsgType: 'image',
   },
 ];
 
 for (const ladder of ladderCases) {
-  test(`extension ladder: ${ladder.name}`, async () => {
+  test(`explicit media filename: ${ladder.name}`, async () => {
     const subject = new FeishuAdapter('app-id', 'app-secret', logger);
     subject._injectTokenManager({
       async getTenantAccessToken() { return 'token'; },
     } as never);
-    subject._injectUploadFetch(async (input, init) => {
-      const target = String(input);
-      if (target === ladder.url) {
-        return new Response((ladder.body ?? Buffer.from('bytes')) as unknown as BodyInit, { status: 200, headers: { 'content-type': ladder.contentType } });
-      }
+    subject._injectUploadFetch(async (_input, init) => {
       const form = init?.body as FormData;
       if (ladder.expectedMsgType === 'image') {
         assert.ok(form.get('image_type'), 'image upload must carry image_type');
       } else {
-        assert.equal(form.get('file_name'), ladder.expectedFileName);
+        assert.equal(form.get('file_name'), ladder.fileName);
         assert.equal(form.get('file_type'), ladder.expectedFileType);
       }
       return new Response(JSON.stringify({ data: { file_key: 'file-key', image_key: 'image-key' } }), {
@@ -301,75 +210,44 @@ for (const ladder of ladderCases) {
     const sent: Array<{ chatId: string; msgType: string }> = [];
     subject._injectSendMessage(async ({ chatId, msgType }) => { sent.push({ chatId, msgType }); });
 
-    await subject.sendMedia('chat-1', { type: ladder.type, url: ladder.url });
+    await subject.sendMedia('chat-1', {
+      type: ladder.type,
+      content: mediaBytes('bytes'),
+      fileName: ladder.fileName,
+    });
 
     assert.deepEqual(sent, [{ chatId: 'chat-1', msgType: ladder.expectedMsgType }]);
   });
 }
 
-// N7: type 'audio' guarantees an opus source path (deliveryTypeFor), but the
-// Host display name may lack the extension; Feishu rejects a file_type /
-// file_name mismatch, so the upload name must be forced to .opus.
-test('audio upload forces a .opus file name when the display name lacks it', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'clowder-feishu-media-'));
-  const filePath = join(directory, 'voice.opus');
-  await writeFile(filePath, 'opus-bytes');
-  try {
-    const subject = new FeishuAdapter('app-id', 'app-secret', logger);
-    subject._injectTokenManager({
-      async getTenantAccessToken() { return 'token'; },
-    } as never);
-    let observed: FormData | undefined;
-    subject._injectUploadFetch(async (_input, init) => {
-      observed = init?.body as FormData;
-      return new Response(JSON.stringify({ data: { file_key: 'file-key' } }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    });
-    const sent: Array<{ chatId: string; msgType: string }> = [];
-    subject._injectSendMessage(async ({ chatId, msgType }) => { sent.push({ chatId, msgType }); });
-
-    await subject.sendMedia('chat-1', { type: 'audio', absPath: filePath, fileName: 'morning-voice' });
-
-    assert.equal(observed?.get('file_name'), 'morning-voice.opus');
-    assert.equal(observed?.get('file_type'), 'opus');
-    assert.deepEqual(sent, [{ chatId: 'chat-1', msgType: 'audio' }]);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+test('audio upload preserves an explicit .opus display name', async () => {
+  const subject = new FeishuAdapter('app-id', 'app-secret', logger);
+  subject._injectTokenManager({ async getTenantAccessToken() { return 'token'; } } as never);
+  let observed: FormData | undefined;
+  subject._injectUploadFetch(async (_input, init) => {
+    observed = init?.body as FormData;
+    return new Response(JSON.stringify({ data: { file_key: 'file-key' } }), { status: 200 });
+  });
+  const sent: Array<{ chatId: string; msgType: string }> = [];
+  subject._injectSendMessage(async ({ chatId, msgType }) => { sent.push({ chatId, msgType }); });
+  await subject.sendMedia('chat-1', {
+    type: 'audio', content: mediaBytes('opus-bytes'), fileName: 'morning-voice.opus',
+  });
+  assert.equal(observed?.get('file_name'), 'morning-voice.opus');
+  assert.equal(observed?.get('file_type'), 'opus');
+  assert.deepEqual(sent, [{ chatId: 'chat-1', msgType: 'audio' }]);
 });
 
 // G5: two concurrent downloads of the same URL used to share one
 // tmpdir()/…-${Date.now()} path; both uploads would then carry the second
 // download's bytes. Each download now gets a private mkdtemp directory.
-test('concurrent sendMedia downloads of the same URL use isolated temp paths', async () => {
-  const loggedPaths: string[] = [];
-  const subject = new FeishuAdapter('app-id', 'app-secret', {
-    info(entry: unknown) {
-      const record = entry as { filePath?: string };
-      if (typeof record.filePath === 'string') loggedPaths.push(record.filePath);
-    },
-    warn: noop, error: noop, debug: noop,
-  });
+test('concurrent Host media streams remain isolated through provider upload', async () => {
+  const subject = new FeishuAdapter('app-id', 'app-secret', logger);
   subject._injectTokenManager({
     async getTenantAccessToken() { return 'token'; },
   } as never);
-  let downloadCount = 0;
-  let bothDownloadsDone!: () => void;
-  const gate = new Promise<void>(resolve => { bothDownloadsDone = resolve; });
   const uploads: Array<{ name: unknown; bytes: string }> = [];
-  subject._injectUploadFetch(async (input, init) => {
-    const target = String(input);
-    if (target === 'https://cdn.example.com/media/voice.opus') {
-      downloadCount += 1;
-      // Valid OpusHead prefix (keeps msg_type audio under byte-sniffing) with
-      // a download-unique tail so the cross-write assertion still has signal.
-      const bytes = Buffer.concat([opusOggBytes(), Buffer.from(`-download-${downloadCount}`)]);
-      if (downloadCount === 2) bothDownloadsDone();
-      return new Response(bytes, { status: 200, headers: { 'content-type': 'audio/ogg' } });
-    }
-    await gate; // hold both uploads until both downloads completed
+  subject._injectUploadFetch(async (_input, init) => {
     const form = init?.body as FormData;
     uploads.push({
       name: form.get('file_name'),
@@ -384,17 +262,13 @@ test('concurrent sendMedia downloads of the same URL use isolated temp paths', a
   subject._injectSendMessage(async ({ msgType }) => { sent.push(msgType); });
 
   await Promise.all([
-    subject.sendMedia('chat-1', { type: 'audio', url: 'https://cdn.example.com/media/voice.opus' }),
-    subject.sendMedia('chat-1', { type: 'audio', url: 'https://cdn.example.com/media/voice.opus' }),
+    subject.sendMedia('chat-1', { type: 'audio', content: mediaBytes('first'), fileName: 'first.opus' }),
+    subject.sendMedia('chat-1', { type: 'audio', content: mediaBytes('second'), fileName: 'second.opus' }),
   ]);
 
-  assert.equal(loggedPaths.length, 2);
-  assert.notEqual(loggedPaths[0], loggedPaths[1], 'concurrent downloads must not share a temp path');
-  const expectedBytes = [1, 2].map(count => Buffer.concat([opusOggBytes(), Buffer.from(`-download-${count}`)]).toString('latin1'));
-  assert.deepEqual(uploads.map(entry => entry.bytes).sort(), expectedBytes.sort(),
-    'each upload must carry its own download, not the clobbered last write');
+  assert.deepEqual(uploads.sort((a, b) => String(a.name).localeCompare(String(b.name))), [
+    { name: 'first.opus', bytes: 'first' },
+    { name: 'second.opus', bytes: 'second' },
+  ]);
   assert.deepEqual(sent, ['audio', 'audio']);
-  for (const filePath of loggedPaths) {
-    await assert.rejects(access(filePath), 'the temp directory must be removed after sendMedia');
-  }
 });

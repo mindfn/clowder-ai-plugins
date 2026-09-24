@@ -50,6 +50,7 @@ test('manifest keeps the bot token secret and checkpoint authority out of packag
     'plugin.config.read',
     'plugin.state.get',
     'plugin.state.set',
+    'media.read',
     'message.event.subscribe',
     'messaging.send',
     'secret.read',

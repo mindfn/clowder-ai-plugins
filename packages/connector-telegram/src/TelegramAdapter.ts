@@ -12,6 +12,7 @@
 import { Bot, GrammyError, InputFile } from 'grammy';
 import type { ConnectorLogger, RichBlock } from './types.js';
 import { formatTelegramHtml } from './telegram-html-formatter.js';
+import { materializeMedia } from './materialize-media.js';
 
 const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
 const TELEGRAM_POLLING_BACKOFF_MS = [5_000, 15_000, 30_000, 60_000] as const;
@@ -673,41 +674,37 @@ export class TelegramAdapter {
     }
   }
 
-  /**
-   * Phase 5+6: Send a media message (image, file, or audio) to a Telegram chat.
-   * Handles both public URLs and local file paths (via grammy InputFile).
-   */
+  /** Send Host-authorized bytes to Telegram before the action entitlement closes. */
   async sendMedia(
     externalChatId: string,
-    payload: { type: 'image' | 'file' | 'audio'; url?: string; absPath?: string; [key: string]: unknown },
+    payload: {
+      type: 'image' | 'file' | 'audio';
+      content: AsyncIterable<Uint8Array>;
+      fileName?: string;
+    },
   ): Promise<void> {
-    if (!payload.url && !payload.absPath) return;
     const chatId = Number(externalChatId);
-    // Priority: absPath (resolved by OutboundDeliveryHook) → local absolute path → URL string
-    const absPath = typeof payload.absPath === 'string' ? payload.absPath : undefined;
-    let source: string | InputFile;
-    if (absPath) {
-      source = new InputFile(absPath);
-    } else if (payload.url?.startsWith('/') && !payload.url.startsWith('/api/')) {
-      source = new InputFile(payload.url);
-    } else {
-      source = payload.url!;
-    }
+    const materialized = await materializeMedia(payload.content, payload.fileName);
+    const source = new InputFile(materialized.path);
     const fns = this.sendMediaFns ?? {
       sendPhoto: (cid: number, input: string | InputFile) => this.bot.api.sendPhoto(cid, input),
       sendDocument: (cid: number, input: string | InputFile) => this.bot.api.sendDocument(cid, input),
       sendVoice: (cid: number, input: string | InputFile) => this.bot.api.sendVoice(cid, input),
     };
-    switch (payload.type) {
-      case 'image':
-        await fns.sendPhoto(chatId, source);
-        break;
-      case 'file':
-        await fns.sendDocument(chatId, source);
-        break;
-      case 'audio':
-        await fns.sendVoice(chatId, source);
-        break;
+    try {
+      switch (payload.type) {
+        case 'image':
+          await fns.sendPhoto(chatId, source);
+          break;
+        case 'file':
+          await fns.sendDocument(chatId, source);
+          break;
+        case 'audio':
+          await fns.sendVoice(chatId, source);
+          break;
+      }
+    } finally {
+      await materialized.cleanup().catch(() => undefined);
     }
   }
 

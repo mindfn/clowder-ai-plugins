@@ -97,7 +97,7 @@ features:
         id: feishu
       - type: webhook
         id: feishu-events
-    capabilities: [plugin.config.read, message.event.subscribe, messaging.send, secret.read, thread.listMetadata, thread.write]
+    capabilities: [plugin.config.read, media.read, message.event.subscribe, messaging.send, secret.read, thread.listMetadata, thread.write]
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js

@@ -63,6 +63,7 @@ features:
         id: wecom-bot
     capabilities:
       - plugin.config.read
+      - media.read
       - message.event.subscribe
       - messaging.send
       - secret.read

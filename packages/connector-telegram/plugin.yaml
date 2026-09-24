@@ -36,6 +36,7 @@ features:
       - type: message-subscription
         id: telegram
     capabilities:
+      - media.read
       - message.event.subscribe
       - messaging.send
       - secret.read

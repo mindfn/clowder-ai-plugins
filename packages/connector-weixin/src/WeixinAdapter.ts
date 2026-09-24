@@ -13,6 +13,7 @@
 
 import crypto from 'node:crypto';
 import type { ConnectorLogger } from './types.js';
+import { materializeMedia } from './materialize-media.js';
 
 const ILINK_BASE_URL = 'https://ilinkai.weixin.qq.com';
 const GETUPDATES_TIMEOUT_MS = 35_000;
@@ -57,7 +58,6 @@ export interface WeixinRuntimeOptions {
   voiceItemMode?: WeixinVoiceItemMode;
   enableUnsafeVoiceModes?: boolean;
   captureInboundVoiceMedia?: boolean;
-  apiBaseUrl?: string;
 }
 
 function readWeixinVoiceItemMode(options: WeixinRuntimeOptions): WeixinVoiceItemMode | undefined {
@@ -831,51 +831,27 @@ export class WeixinAdapter {
     externalChatId: string,
     payload: {
       type: 'image' | 'file' | 'audio';
-      absPath?: string;
-      url?: string;
+      content: AsyncIterable<Uint8Array>;
       fileName?: string;
-      [key: string]: unknown;
     },
   ): Promise<void> {
-    const filePath = payload.absPath ?? payload.url;
-    if (!filePath) {
-      this.log.warn({ chatId: externalChatId, type: payload.type }, '[WeixinAdapter] sendMedia: no file path');
-      return;
-    }
-
     const contextToken = this.contextTokens.get(externalChatId) ?? '';
     if (!contextToken) {
-      this.log.warn({ chatId: externalChatId }, '[WeixinAdapter] sendMedia: no context_token — skipping');
-      return;
+      throw new Error('Weixin media delivery requires an active context token');
     }
 
-    let actualFilePath = filePath;
-    let tempFilePath: string | undefined;
-
-    // HTTPS URLs: download to temp file first (CDN upload needs a local file)
-    if (filePath.startsWith('https://') || filePath.startsWith('http://')) {
-      const downloaded = await this.downloadToTemp(filePath);
-      if (!downloaded) {
-        throw new Error(`Media download failed for ${filePath.slice(0, 80)}`);
-      }
-      actualFilePath = downloaded;
-      tempFilePath = downloaded;
-    }
+    const materialized = await materializeMedia(payload.content, payload.fileName);
+    let actualFilePath = materialized.path;
 
     // Native WeChat voice messages require SILK codec. Keep that path opt-in; default audio is a file attachment.
     const nativeVoiceRequested = payload.type === 'audio' && isNativeVoiceItemRequested(this.runtimeOptions);
     let voiceMeta: { durationMs: number; sampleRate: number } | undefined;
     let silkDirToClean: string | undefined;
+    try {
     if (nativeVoiceRequested && actualFilePath.endsWith('.wav')) {
       const converted = await this.convertWavToSilk(actualFilePath);
       if (converted) {
-        // If we downloaded to temp, clean up the download temp
-        if (tempFilePath) {
-          const { unlink } = await import('node:fs/promises');
-          await unlink(tempFilePath).catch(() => {});
-        }
         actualFilePath = converted.silkPath;
-        tempFilePath = converted.silkPath;
         silkDirToClean = converted.silkDir;
         voiceMeta = { durationMs: converted.durationMs, sampleRate: converted.sampleRate };
       }
@@ -891,11 +867,10 @@ export class WeixinAdapter {
     } as const;
 
     this.log.info(
-      { chatId: externalChatId, type: payload.type, filePath: actualFilePath },
+      { chatId: externalChatId, type: payload.type },
       '[WeixinAdapter] sendMedia: uploading to CDN',
     );
 
-    try {
       const uploaded = await uploadMediaToCdn({
         filePath: actualFilePath,
         toUserId: externalChatId,
@@ -980,54 +955,13 @@ export class WeixinAdapter {
         '[WeixinAdapter] sendMedia: delivered — token retained',
       );
     } finally {
-      if (tempFilePath) {
-        const { rm } = await import('node:fs/promises');
-        await rm(tempFilePath, { force: true }).catch(() => {});
-      }
+      await materialized.cleanup().catch(() => undefined);
       if (silkDirToClean) {
         // Remove the private mkdtemp directory the converted voice.silk lived in.
         const { rm } = await import('node:fs/promises');
         await rm(silkDirToClean, { recursive: true, force: true }).catch(() => {});
       }
     }
-  }
-
-  /** Download an internal route URL or HTTPS URL to a temp file for CDN upload. */
-  private async downloadToTemp(url: string): Promise<string | null> {
-    try {
-      const { writeFile } = await import('node:fs/promises');
-      const { tmpdir } = await import('node:os');
-      const { join, extname } = await import('node:path');
-
-      const downloadUrl = this.resolveDownloadUrl(url);
-      const res = await this.fetchFn(downloadUrl, { signal: AbortSignal.timeout(30_000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const buf = Buffer.from(await res.arrayBuffer());
-      const { randomUUID } = await import('node:crypto');
-      const ext = extname(new URL(downloadUrl).pathname) || '.tmp';
-      const tempPath = join(tmpdir(), `cat-cafe-weixin-dl-${Date.now()}-${randomUUID().slice(0, 8)}${ext}`);
-      await writeFile(tempPath, buf);
-      this.log.info(
-        { url: downloadUrl.slice(0, 80), tempPath, size: buf.length },
-        '[WeixinAdapter] downloadToTemp: success',
-      );
-      return tempPath;
-    } catch (err) {
-      this.log.warn({ err, url: url.slice(0, 80) }, '[WeixinAdapter] downloadToTemp: failed');
-      return null;
-    }
-  }
-
-  private resolveDownloadUrl(url: string): string {
-    if (url.startsWith('https://') || url.startsWith('http://')) return url;
-    if (url.startsWith('/uploads/') || url.startsWith('/api/connector-media/') || url.startsWith('/api/tts/audio/')) {
-      if (!this.runtimeOptions.apiBaseUrl) {
-        throw new Error('[WeixinAdapter] relative media URL requires an explicit Host-projected apiBaseUrl');
-      }
-      const apiBase = this.runtimeOptions.apiBaseUrl.replace(/\/$/, '');
-      return `${apiBase}${url}`;
-    }
-    return url;
   }
 
   /**

@@ -9,7 +9,9 @@
  * F132 DingTalk + WeCom Chat Gateway — Phase A
  */
 
+import { openAsBlob } from 'node:fs';
 import { basename } from 'node:path';
+import { materializeMedia } from './materialize-media.js';
 import type { ConnectorLogger, MessageEnvelope, RichBlock } from './types.js';
 
 // ── Types ──
@@ -441,56 +443,22 @@ export class DingTalkAdapter {
     externalChatId: string,
     payload: {
       type: 'image' | 'file' | 'audio';
-      url?: string;
-      absPath?: string;
+      content: AsyncIterable<Uint8Array>;
       fileName?: string;
       duration?: number;
-      [key: string]: unknown;
     },
   ): Promise<void> {
-    const url = typeof payload.url === 'string' && payload.url.length > 0 ? payload.url : undefined;
-    const absPath = typeof payload.absPath === 'string' && payload.absPath.length > 0 ? payload.absPath : undefined;
-
-    // Path 1: Image with URL — direct photoURL fast path (no upload needed)
-    if (payload.type === 'image' && url && !absPath) {
-      await this.sendDingTalkImageMessage(externalChatId, url);
-      return;
+    const materialized = await materializeMedia(payload.content, payload.fileName);
+    try {
+      const mediaId = await this.uploadToDingTalk(materialized.path, payload.type);
+      if (!mediaId) throw new Error('DingTalk media upload returned no media id');
+      await this.sendDingTalkMediaMessage(externalChatId, payload.type, mediaId, {
+        fileName: payload.fileName ?? basename(materialized.path),
+        duration: payload.duration,
+      });
+    } finally {
+      await materialized.cleanup().catch(() => undefined);
     }
-
-    // Path 2: Has absPath → native media sending via upload
-    if (absPath) {
-      try {
-        const mediaId = await this.uploadToDingTalk(absPath, payload.type);
-        if (mediaId) {
-          await this.sendDingTalkMediaMessage(externalChatId, payload.type, mediaId, {
-            fileName: payload.fileName ?? basename(absPath),
-            duration: payload.duration,
-          });
-          return;
-        }
-      } catch (err) {
-        this.log.warn(
-          { err, type: payload.type, absPath },
-          '[DingTalkAdapter] sendMedia: upload failed, falling through',
-        );
-      }
-    }
-
-    // Path 3: Fallback — text link
-    const mediaReference =
-      url ??
-      (typeof payload.fileName === 'string' && payload.fileName.length > 0
-        ? payload.fileName
-        : absPath
-          ? basename(absPath)
-          : undefined);
-
-    if (mediaReference) {
-      const label = payload.type === 'image' ? '🖼️' : payload.type === 'audio' ? '🔊' : '📎';
-      await this.sendReply(externalChatId, `${label} ${mediaReference}`);
-      return;
-    }
-    this.log.warn({ type: payload.type }, '[DingTalkAdapter] sendMedia: no URL available, skipping');
   }
 
   /**
@@ -711,30 +679,20 @@ export class DingTalkAdapter {
     return this.postRobotMessage(chatId, msgKey, msgContent, msgType, 'send', chatTypeOverride);
   }
 
-  private async sendDingTalkImageMessage(
-    chatId: string,
-    photoURL: string,
-    chatTypeOverride?: 'p2p' | 'group',
-  ): Promise<unknown> {
-    return this.postRobotMessage(chatId, 'sampleImageMsg', { photoURL }, 'image', 'image send', chatTypeOverride);
-  }
-
-  private async uploadToDingTalk(absPath: string, type: string): Promise<string | null> {
+  private async uploadToDingTalk(filePath: string, type: string): Promise<string | null> {
     if (this.uploadMediaFn) {
-      return this.uploadMediaFn({ filePath: absPath, type });
+      return this.uploadMediaFn({ filePath, type });
     }
 
     const accessToken = await this.getAccessToken();
     const uploadUrl = 'https://api.dingtalk.com/v1.0/robot/messageFiles/upload';
 
-    const { readFile } = await import('node:fs/promises');
-    const fileBuffer = await readFile(absPath);
-    const fileName = basename(absPath);
+    const fileName = basename(filePath);
 
     const formData = new FormData();
     formData.append('robotCode', this.robotCode);
     formData.append('mediaType', type === 'image' ? 'image' : 'file');
-    formData.append('file', new Blob([fileBuffer]), fileName);
+    formData.append('file', await openAsBlob(filePath), fileName);
 
     const res = await fetch(uploadUrl, {
       method: 'POST',
