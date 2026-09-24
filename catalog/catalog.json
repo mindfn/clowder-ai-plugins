@@ -357,8 +357,8 @@
             "packageName": "@clowder-ai/connector-telegram",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-telegram/-/connector-telegram-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-0lEf4jova3hxv3GxVDYSN44cDuVWRpKhLjgTBIBDitpC5G1r87QOt1lSHFps1hkPo3iM0V7SUM0NumXmedElTw==",
-            "shasum": "38406c28c0fdc8f164b4d6972dd4694baeee3446",
+            "integrity": "sha512-m9qLt+RPTIdU9w6mgSNfi/jzHQnO8WF9KGQLR1QQKZ4aa6S1G57zY5PCwBedvG/eAx2mfQVYvIMI1TGmYO4cfQ==",
+            "shasum": "176837d6da14d6d6a606d50bd20d4bc9cc3e9bdb",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-telegram"
@@ -527,8 +527,8 @@
             "packageName": "@clowder-ai/connector-xiaoyi",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-xiaoyi/-/connector-xiaoyi-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-xXnOUMmUSrYIBuk31xNEwnrfYAfJMeY0JbOf+GeJ6t4qw5m+DKYJqXbGwB1rBhJxFGJVB+isFnKuO40456fLnw==",
-            "shasum": "3f903ba41fa4f3f9441cec923c56dd63752e1ea4",
+            "integrity": "sha512-NhuLgNIla9vD3CZIa9c4vgNO7keDEdOOdKt4EhDa2+DtUDL4boStE2bRQdNGk1TSCbniI1Li6Q4i4ODFudo+QA==",
+            "shasum": "138da7fc6ca88196129df01cca207a3cac03e3b7",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-xiaoyi"
