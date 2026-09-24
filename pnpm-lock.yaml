@@ -142,6 +142,9 @@ importers:
       '@clowder-ai/plugin-sdk':
         specifier: 0.2.0-beta.3
         version: link:../plugin-sdk
+      qrcode:
+        specifier: 1.5.4
+        version: 1.5.4
       silk-wasm:
         specifier: 3.7.1
         version: 3.7.1
