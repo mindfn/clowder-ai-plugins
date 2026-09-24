@@ -19,6 +19,9 @@ test('manifest keeps credentials secret and binding authority Host-owned', async
     'verificationToken',
   ]);
   assert.ok(manifest.contributions.some(item => item.type === 'message-subscription' && item.id === 'feishu'));
+  assert.ok(manifest.contributions.some(
+    item => item.type === 'message-subscription' && item.id === 'feishu' && item.presentation === 'v2',
+  ), 'feishu must subscribe at presentation v2 to receive placeholderLine/replyTo');
   assert.ok(manifest.contributions.some(item => item.type === 'webhook' && item.id === 'feishu-events'));
   assert.ok(manifest.contributions.some(item => item.type === 'media-source' && item.id === 'feishu-media'));
   assert.deepEqual(manifest.features[0]?.capabilities, [

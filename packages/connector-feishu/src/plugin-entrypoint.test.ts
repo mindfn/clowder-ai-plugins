@@ -116,6 +116,39 @@ test('lifecycle action drives Feishu placeholder edit and completion card throug
   await active.stop();
 });
 
+test('presentation v2 started uses placeholderLine and suffixes the recorded reply sender name', async () => {
+  const calls: unknown[][] = [];
+  let deliver!: (message: Record<string, unknown>) => Promise<void>;
+  const outbound = {
+    async sendPlaceholder(...args: unknown[]) { calls.push(['placeholder', ...args]); return 'message-1'; },
+    async editMessage(...args: unknown[]) { calls.push(['edit', ...args]); return true; },
+    async sendReply(...args: unknown[]) { calls.push(['reply', ...args]); },
+    async finalizeStreamCard(...args: unknown[]) { calls.push(['finalize', ...args]); },
+  } as unknown as FeishuAdapter;
+  const entrypoint = createFeishuPluginModule((options) => {
+    deliver = options.host.deliver as unknown as typeof deliver;
+    return { outbound, async start() {}, async stop() {} } as FeishuConnectorRuntime<FeishuAdapter>;
+  });
+  const active = await entrypoint.create(manifest).start(host(
+    { appId: 'app', connectionMode: 'webhook' },
+    { appSecret: 'secret', verificationToken: 'token' },
+  ));
+  await deliver({
+    externalConversationId: 'chat-1', providerMessageId: 'provider-1', text: 'inbound',
+    conversation: { title: 'Chat' },
+    sender: { id: 'user-1', name: '张三' },
+  });
+  const action = active.actions['host.messaging.lifecycle']!;
+  await action({
+    lifecycleId: 'life-2', deliveryId: 'delivery-1', threadId: 'thread-1', state: 'started',
+    presentation: { actor: { displayName: '砚砚', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
+    placeholderLine: '收到，马上处理…',
+    replyTo: 'message-1',
+  });
+  assert.deepEqual(calls, [['placeholder', 'chat-1', '【砚砚🐱→张三】收到，马上处理…']]);
+  await active.stop();
+});
+
 test('blocked then settled failed leaves the Feishu recovery card untouched', async () => {
   const edits: Array<{ messageId: string; content: string }> = [];
   const outbound = new FeishuAdapter('app', 'secret', { info() {}, warn() {}, error() {}, debug() {} });

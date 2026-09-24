@@ -81,7 +81,7 @@ contributions:
       method: feishu.outbound
     lifecycleAction:
       method: host.messaging.lifecycle
-    presentation: v1
+    presentation: v2
   - type: media-source
     id: feishu-media
     binding: feishu-bot

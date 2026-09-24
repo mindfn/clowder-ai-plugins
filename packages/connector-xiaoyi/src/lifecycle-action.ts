@@ -19,6 +19,8 @@ export interface ConnectorLifecycleCallbacks {
     lifecycleId: string,
   ): Promise<boolean>;
   sendRecovery(externalConversationId: string, text: string): Promise<void>;
+  /** Resolve the sender display name recorded for a Host message id; only connectors with a reply-sender mapping implement this. */
+  resolveReplySenderName?(replyTo: string): Promise<string | undefined>;
   onPlaceholder?(
     externalConversationId: string,
     platformMessageId: string,
@@ -109,9 +111,14 @@ export function createConnectorLifecycleAction(
         actorDisplayName = event.presentation.actor.displayName;
         await safely('placeholder send', async () => {
           const displayName = actorDisplayName || '猫猫';
+          const senderName = event.replyTo === undefined
+            ? undefined
+            : await callbacks.resolveReplySenderName?.(event.replyTo);
+          const senderSuffix = senderName ? `→${senderName}` : '';
+          const placeholderLine = event.placeholderLine ?? STARTED_TEXT;
           const candidate = await callbacks.sendPlaceholder(
             binding.key,
-            `【${displayName}🐱】${STARTED_TEXT}`,
+            `【${displayName}🐱${senderSuffix}】${placeholderLine}`,
           );
           platformMessageId = candidate.length > 0 ? candidate : undefined;
           if (platformMessageId !== undefined) {

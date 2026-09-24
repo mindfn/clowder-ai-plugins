@@ -224,10 +224,15 @@ export function createFeishuPluginModule(
         });
         await runtime.start();
         const mediaSource = createInboundMediaSourceActions(context, locator => runtime.outbound.downloadInboundMedia(locator));
+        const lifecycleReplySenders = createReplySenderMap(context);
         const lifecycle = createConnectorLifecycleAction(context, {
           sendPlaceholder: (externalConversationId, text) => runtime.outbound.sendPlaceholder(externalConversationId, text),
           editPlaceholder: (externalConversationId, platformMessageId, text) => runtime.outbound.editMessage(externalConversationId, platformMessageId, text),
           sendRecovery: (externalConversationId, text) => runtime.outbound.sendReply(externalConversationId, text),
+          resolveReplySenderName: async (replyTo) => {
+            const sender = await lifecycleReplySenders.resolve(replyTo);
+            return sender?.name;
+          },
           settle: async ({ externalConversationId, platformMessageId, actorDisplayName, recoveryText, event }) => {
             if (platformMessageId !== undefined && recoveryText === undefined) {
               await runtime.outbound.finalizeStreamCard(
