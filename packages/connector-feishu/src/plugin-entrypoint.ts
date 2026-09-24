@@ -258,17 +258,15 @@ export function createFeishuPluginModule(
               };
             },
             'feishu.test': async () => {
-              const [currentMode, currentVerificationToken] = await Promise.all([
-                context.config.get('connectionMode'),
-                context.secrets.get('verificationToken'),
-              ]);
-              // Webhook mode: derive readiness from the live runtime (a disconnect
-              // drops the in-process adapter even though the activation-time
-              // config/secrets snapshot below still holds the old values).
-              const ok = currentMode === 'websocket'
-                ? runtime.isConnected()
-                : runtime.isConnected()
-                  && typeof currentVerificationToken === 'string' && currentVerificationToken.trim() !== '';
+              // Readiness comes from the live runtime only: the activation-time
+              // config/secrets snapshot goes stale once qr-status adopts QR
+              // credentials in-process (the Host write-back does not restart
+              // the plugin), so reading it here would report ok:false for a
+              // connection that is actually live.
+              const status = runtime.status();
+              const ok = status.connectionMode === 'websocket'
+                ? status.connected
+                : status.connected && status.hasVerificationToken;
               return { ok, ...(ok ? {} : { message: '飞书未配置或凭据无效' }) };
             },
             'feishu.outbound': async (candidate) => {

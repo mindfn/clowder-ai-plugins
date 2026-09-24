@@ -226,6 +226,12 @@ export interface FeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapter = F
   disconnect(): Promise<void>;
   /** True when the provider ingress is live (webhook mode armed counts as connected once started). */
   isConnected(): boolean;
+  /**
+   * Live connection facts for the `feishu.test` operation. The activation-time
+   * config/secrets snapshot goes stale once `connect()` adopts QR credentials
+   * in-process, so readiness must be derived from runtime state only.
+   */
+  status(): { connectionMode: 'webhook' | 'websocket'; hasVerificationToken: boolean; connected: boolean };
 }
 
 export interface FeishuConnectorRuntimeOptions<Adapter extends FeishuRuntimeAdapter = FeishuAdapter> {
@@ -610,6 +616,14 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
     },
     isConnected() {
       return state === 'running';
+    },
+    status() {
+      const verificationToken = current.verificationToken;
+      return {
+        connectionMode: current.connectionMode,
+        hasVerificationToken: typeof verificationToken === 'string' && verificationToken.trim() !== '',
+        connected: state === 'running',
+      };
     },
     stop() {
       if (stopPromise !== undefined) return stopPromise;

@@ -41,9 +41,12 @@ function hostShape(config: Record<string, unknown>, secrets: Record<string, stri
   };
 }
 
-function runtimeFake(config: { appId: string; appSecret: string }) {
+function runtimeFake(config: { appId: string; appSecret: string; connectionMode?: string; verificationToken?: string }) {
   const calls: { connect?: unknown[]; disconnect?: unknown[] } = {};
   let connected = false;
+  // Mirrors the real runtime: connect() adopts the new connection mode
+  // in-process while the activation-time config snapshot stays unchanged.
+  let mode: 'webhook' | 'websocket' = config.connectionMode === 'websocket' ? 'websocket' : 'webhook';
   const runtime = {
     get outbound() {
       if (!connected) throw new Error('Feishu connector is not configured');
@@ -54,9 +57,16 @@ function runtimeFake(config: { appId: string; appSecret: string }) {
     // runtime stays healthy and idle until connect() adopts credentials.
     async start() { connected = config.appId.trim() !== '' && config.appSecret.trim() !== ''; },
     async stop() { connected = false; },
-    async connect(config: unknown) { calls.connect = [config]; connected = true; },
+    async connect(next: { connectionMode: 'webhook' | 'websocket' }) { calls.connect = [next]; mode = next.connectionMode; connected = true; },
     async disconnect() { calls.disconnect = []; connected = false; },
     isConnected() { return connected; },
+    status() {
+      return {
+        connectionMode: mode,
+        hasVerificationToken: typeof config.verificationToken === 'string' && config.verificationToken.trim() !== '',
+        connected,
+      };
+    },
   } as unknown as FeishuConnectorRuntime<FeishuAdapter>;
   return { runtime, calls };
 }
@@ -198,6 +208,44 @@ test('test action: webhook mode checks fresh credentials including the verificat
   assert.deepEqual(await missing.active.actions['feishu.test']?.({}), { ok: false, message: '飞书未配置或凭据无效' });
   await active.stop();
   await missing.active.stop();
+});
+
+test('test action: QR-confirm against a default-mode snapshot still reports ok (live runtime wins)', async () => {
+  // Fresh install: the activation snapshot keeps the default connectionMode
+  // (webhook) and holds no credentials. The QR flow adopts websocket mode
+  // in-process without a plugin restart, so feishu.test must trust the live
+  // runtime — reading the snapshot would take the webhook branch and report
+  // ok:false for a live connection.
+  const { active, fake } = await activate({ connectionMode: 'webhook' }, {}, [CONFIRMED]);
+  assert.deepEqual(await active.actions['feishu.test']?.({}), { ok: false, message: '飞书未配置或凭据无效' });
+  await active.actions['feishu.qr-generate']?.({});
+  const confirmed = await active.actions['feishu.qr-status']?.({});
+  assertOperationResultShape(confirmed);
+  assert.deepEqual(confirmed, { render: 'status', data: { status: 'confirmed' }, label: '已授权', targetValues: { appId: 'app-1', appSecret: 'secret-1', connectionMode: 'websocket' } });
+  assert.deepEqual(fake.calls.connect, [{ appId: 'app-1', appSecret: 'secret-1', connectionMode: 'websocket' }]);
+  assert.deepEqual(await active.actions['feishu.test']?.({}), { ok: true });
+  await active.stop();
+});
+
+test('feishu.webhook returns 503 once disconnect drops the adapter', async () => {
+  const entrypoint = createFeishuPluginModule();
+  const active = await entrypoint.create(manifest).start(hostShape(
+    { appId: 'app', connectionMode: 'webhook' },
+    { appSecret: 'secret', verificationToken: 'verify' },
+  ));
+  const request = (body: unknown) => ({ request: {
+    method: 'POST', path: 'feishu/events', query: {},
+    body, rawBody: Buffer.from('{}'), headers: {},
+  } });
+  // Live adapter: the token mismatch surfaces as 403, proving ingress exists.
+  assert.deepEqual(await active.actions['feishu.webhook']?.(request({ event: 'x' })), {
+    status: 403, headers: {}, body: { error: 'Invalid verification token' },
+  });
+  await active.actions['feishu.disconnect']?.({});
+  assert.deepEqual(await active.actions['feishu.webhook']?.(request({ event: 'x' })), {
+    status: 503, headers: {}, body: { error: 'feishu connector is not configured' },
+  });
+  await active.stop();
 });
 
 test('runtime starts idle without credentials, connects in-process via connect(), outbound getter guards sends', async () => {
