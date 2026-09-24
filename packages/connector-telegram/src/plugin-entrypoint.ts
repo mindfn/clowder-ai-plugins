@@ -30,10 +30,18 @@ type TelegramOutboundDelivery = ConnectorOutboundDelivery & {
 
 const CONNECTOR_ID = 'telegram';
 const IDENTITY_ID = 'telegram-bot';
+// (lifecycleId, chatId)-keyed: one thread can back several Telegram bindings,
+// and lifecycleId alone is ambiguous across them.
 const INLINE_FINAL_PREFIX = 'tg-inline-final:';
+// Consumed markers survive restarts so a catching_up redelivery in the
+// delivered-but-not-yet-settled window cannot rewrite the delivered body.
+const INLINE_FINAL_CONSUMED_PREFIX = 'tg-inline-final-consumed:';
 // A pending inline-final that outlives a day was almost certainly orphaned by
 // a crash or skipped delivery; the sweeping settle path already deleted the
 // Telegram card, so hydrating it would only resurrect a stale correlation.
+// Consumed markers share the 24h TTL convention: storage has no native TTL,
+// so hydration sweeps by timestamp, exactly like the pending entries. 24h also
+// matches the in-memory CONSUMED_INLINE_FINAL_TTL_MS in the adapter.
 const INLINE_FINAL_TTL_MS = 24 * 60 * 60 * 1000;
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -106,6 +114,13 @@ interface StoredInlineFinal {
   readonly registeredAt: number;
 }
 
+interface StoredInlineFinalConsumed {
+  readonly version: 1;
+  readonly lifecycleId: string;
+  readonly externalChatId: string;
+  readonly consumedAt: number;
+}
+
 function parseStoredInlineFinal(value: unknown): StoredInlineFinal | undefined {
   if (!object(value)
     || value.version !== 1
@@ -118,14 +133,34 @@ function parseStoredInlineFinal(value: unknown): StoredInlineFinal | undefined {
   return value as unknown as StoredInlineFinal;
 }
 
-/** Durable backing for the lifecycle-keyed inline-final map, so a plugin restart cannot lose final↔placeholder correlation. */
+function parseStoredInlineFinalConsumed(value: unknown): StoredInlineFinalConsumed | undefined {
+  if (!object(value)
+    || value.version !== 1
+    || typeof value.lifecycleId !== 'string'
+    || typeof value.externalChatId !== 'string'
+    || typeof value.consumedAt !== 'number') {
+    return undefined;
+  }
+  return value as unknown as StoredInlineFinalConsumed;
+}
+
+/** Durable backing for the (lifecycleId, chatId)-keyed inline-final map and consumed markers, so a plugin restart cannot lose final↔placeholder correlation. */
 function createInlineFinalPersistence(context: FeatureContext) {
   return {
     async save(entry: Omit<StoredInlineFinal, 'version'>): Promise<void> {
-      await context.storage.set(`${INLINE_FINAL_PREFIX}${entry.lifecycleId}`, { version: 1, ...entry });
+      await context.storage.set(`${INLINE_FINAL_PREFIX}${entry.lifecycleId}:${entry.externalChatId}`, { version: 1, ...entry });
     },
-    async remove(lifecycleId: string): Promise<void> {
+    async remove(lifecycleId: string, externalChatId: string): Promise<void> {
+      await context.storage.delete(`${INLINE_FINAL_PREFIX}${lifecycleId}:${externalChatId}`).catch(() => undefined);
+      // Best-effort: also clear a pre-multi-binding record keyed by lifecycleId
+      // alone so an upgrade mid-flight cannot leave a stale pending entry behind.
       await context.storage.delete(`${INLINE_FINAL_PREFIX}${lifecycleId}`).catch(() => undefined);
+    },
+    async saveConsumed(entry: Omit<StoredInlineFinalConsumed, 'version'>): Promise<void> {
+      await context.storage.set(`${INLINE_FINAL_CONSUMED_PREFIX}${entry.lifecycleId}:${entry.externalChatId}`, { version: 1, ...entry });
+    },
+    async removeConsumed(lifecycleId: string, externalChatId: string): Promise<void> {
+      await context.storage.delete(`${INLINE_FINAL_CONSUMED_PREFIX}${lifecycleId}:${externalChatId}`).catch(() => undefined);
     },
   };
 }
@@ -142,12 +177,25 @@ async function hydrateInlineFinals(context: FeatureContext, outbound: TelegramAd
   }
   const now = Date.now();
   for (const [key, item] of Object.entries(listed)) {
+    if (key.startsWith(INLINE_FINAL_CONSUMED_PREFIX)) {
+      const consumed = parseStoredInlineFinalConsumed(item?.value);
+      // TTL sweep: storage has no native TTL, so expired markers are deleted
+      // here, mirroring the pending-entry sweep below.
+      if (consumed === undefined || consumed.consumedAt + INLINE_FINAL_TTL_MS < now) {
+        await context.storage.delete(key).catch(() => undefined);
+        continue;
+      }
+      outbound.restoreInlineFinalConsumed?.(consumed.lifecycleId, consumed.externalChatId, consumed.consumedAt);
+      continue;
+    }
     if (!key.startsWith(INLINE_FINAL_PREFIX)) continue;
     const entry = parseStoredInlineFinal(item?.value);
     if (entry === undefined || entry.registeredAt + INLINE_FINAL_TTL_MS < now) {
       await context.storage.delete(key).catch(() => undefined);
       continue;
     }
+    // Pre-multi-binding records were keyed by lifecycleId alone; their value
+    // still carries externalChatId, so they hydrate onto the composite key.
     outbound.restoreInlinePlaceholder?.(entry.lifecycleId, entry.externalChatId, entry.platformMessageId, entry.registeredAt);
   }
 }
@@ -346,7 +394,7 @@ export function createTelegramPluginModule(
             // message; editing it again would overwrite the final content.
             // Returning false keeps the lifecycle action on its existing
             // fallbacks (e.g. blocked recovery send).
-            if (runtime.outbound.isInlineFinalConsumed?.(lifecycleId)) return false;
+            if (runtime.outbound.isInlineFinalConsumed?.(lifecycleId, externalConversationId)) return false;
             const edited = await runtime.outbound.editMessage(externalConversationId, platformMessageId, text);
             if (edited && phase === 'blocked') {
               runtime.outbound.preserveInlinePlaceholder(externalConversationId, platformMessageId, lifecycleId);

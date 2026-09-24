@@ -75,23 +75,29 @@ test('catching_up and blocked edits never reach editMessageText after the inline
   await active.stop();
 });
 
-test('a fresh started clears the consumed marker for its lifecycleId', async () => {
+test('a fresh started clears the consumed marker for its (lifecycle, chat) key', async () => {
   const edits: unknown[][] = [];
   const outbound = adapterWithEdits(edits);
   outbound.registerInlinePlaceholder('42', '42', 'life-1');
   await outbound.sendReply('42', 'final body', undefined, 'life-1');
-  assert.equal(outbound.isInlineFinalConsumed('life-1'), true);
+  assert.equal(outbound.isInlineFinalConsumed('life-1', '42'), true);
+  // A consumed marker for one chat must not suppress another chat's placeholder.
+  assert.equal(outbound.isInlineFinalConsumed('life-1', '43'), false);
   outbound.registerInlinePlaceholder('42', '43', 'life-1');
-  assert.equal(outbound.isInlineFinalConsumed('life-1'), false);
+  assert.equal(outbound.isInlineFinalConsumed('life-1', '42'), false);
 });
 
-test('register persists and consume removes the lifecycle-keyed inline-final entry', async () => {
+test('register persists and consume removes the (lifecycle, chat)-keyed inline-final entry', async () => {
   const edits: unknown[][] = [];
   const saved: unknown[] = [];
-  const removed: string[] = [];
+  const removed: unknown[][] = [];
+  const consumedSaved: unknown[] = [];
+  const consumedRemoved: unknown[][] = [];
   const persistence: InlineFinalPersistence = {
     async save(entry) { saved.push(entry); },
-    async remove(lifecycleId) { removed.push(lifecycleId); },
+    async remove(lifecycleId, externalChatId) { removed.push([lifecycleId, externalChatId]); },
+    async saveConsumed(entry) { consumedSaved.push(entry); },
+    async removeConsumed(lifecycleId, externalChatId) { consumedRemoved.push([lifecycleId, externalChatId]); },
   };
   const outbound = adapterWithEdits(edits, persistence);
   outbound.registerInlinePlaceholder('42', '42', 'life-1');
@@ -103,12 +109,21 @@ test('register persists and consume removes the lifecycle-keyed inline-final ent
   assert.equal(typeof entry.registeredAt, 'number');
   await outbound.sendReply('42', 'final body', undefined, 'life-1');
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(removed, ['life-1']);
+  assert.deepEqual(removed, [['life-1', '42']]);
+  assert.equal(consumedSaved.length, 1, 'consume must persist the consumed marker');
+  const consumed = consumedSaved[0] as Record<string, unknown>;
+  assert.deepEqual([consumed.lifecycleId, consumed.externalChatId], ['life-1', '42']);
+  assert.equal(typeof consumed.consumedAt, 'number');
+  outbound.registerInlinePlaceholder('42', '43', 'life-1');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(consumedRemoved, [['life-1', '42']], 'a fresh started clears the persisted consumed marker');
 });
 
 test('restart hydrates the persisted inline-final so the final still edits the original placeholder', async () => {
   const state = new Map<string, { revision: number; value: unknown }>();
   const registeredAt = Date.now();
+  // Legacy single-segment key (pre-multi-binding): hydration still works
+  // because the record value carries its externalChatId.
   state.set('tg-inline-final:life-9', {
     revision: 1,
     value: { version: 1, lifecycleId: 'life-9', externalChatId: '42', platformMessageId: '77', registeredAt },
