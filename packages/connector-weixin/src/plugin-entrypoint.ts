@@ -16,6 +16,7 @@ import {
 } from './runtime.js';
 import { WeixinAdapter, type WeixinSessionState, type WeixinSessionStateStore } from './WeixinAdapter.js';
 import { renderTypedMediaNotice } from './media-notice.js';
+import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia } from './inbound-media-source.js';
 import { renderAllRichBlocksPlaintext } from './rich-block-plaintext.js';
 
 type RuntimeFactory = (
@@ -38,7 +39,14 @@ function requireDelivery(candidate: unknown): PluginMessagingDelivery {
   return structuredClone(candidate) as unknown as PluginMessagingDelivery;
 }
 
-function draft(message: WeixinHostInboundMessage): PluginMessagingDraft {
+async function draft(context: FeatureContext, message: WeixinHostInboundMessage): Promise<PluginMessagingDraft> {
+  const media = await retainInboundMedia(
+    context, CONNECTOR_ID, 'weixin-media', message.providerMessageId,
+    (message.attachments ?? []).map(attachment => ({
+      type: attachment.type, platformKey: attachment.platformKey,
+      ...(attachment.fileName === undefined ? {} : { fileName: attachment.fileName }),
+    })),
+  );
   return {
     idempotencyKey: message.providerMessageId,
     sourceEventId: message.providerMessageId,
@@ -51,10 +59,7 @@ function draft(message: WeixinHostInboundMessage): PluginMessagingDraft {
       },
       elements: [
         { elementId: 'text-1', kind: 'text', payload: { text: message.text } },
-        ...(message.attachments ?? []).map((attachment, index) => ({
-          elementId: `media-${index + 1}`, kind: 'media_ref' as const,
-          payload: { type: attachment.type, reference: attachment.platformKey, ...(attachment.fileName === undefined ? {} : { fileName: attachment.fileName }) },
-        })),
+        ...media,
       ],
     },
   };
@@ -78,7 +83,13 @@ async function createMessageBridge(context: FeatureContext) {
     async deliver(message: WeixinHostInboundMessage): Promise<void> {
       const thread = await context.threads.ensureByKey(message.externalConversationId, { title: `WeChat ${message.externalConversationId}`.slice(0, 200) });
       await subscribe(thread.id);
-      await context.messaging.send(thread.id, draft(message));
+      const prepared = await draft(context, message);
+      try {
+        await context.messaging.send(thread.id, prepared);
+      } catch (error) {
+        await releaseInboundMedia(context, prepared.payload.elements);
+        throw error;
+      }
     },
     async outbound(candidate: unknown): Promise<ConnectorOutboundDelivery> {
       const input = requireDelivery(candidate);
@@ -164,11 +175,14 @@ export function createWeixinPluginModule(createRuntime: RuntimeFactory = createW
           logger: context.logger,
         });
         await runtime.start();
+        const mediaSource = createInboundMediaSourceActions(context, locator => runtime.outbound.downloadInboundMedia(locator));
         // Operation state (the in-flight QR payload) lives in runtime memory only —
         // the Host does not pass operation state back to the package.
         let qrPayload: string | undefined;
         return {
           actions: {
+            'weixin.media-source.read': mediaSource.read,
+            'weixin.media-source.settle': mediaSource.settle,
             'weixin.qr-generate': async () => {
               const result = await WeixinAdapter.fetchQrCode();
               qrPayload = result.qrPayload;

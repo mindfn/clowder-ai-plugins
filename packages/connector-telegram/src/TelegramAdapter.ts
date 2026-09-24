@@ -118,6 +118,7 @@ function isTelegramConflictError(err: unknown): boolean {
 export class TelegramAdapter {
   readonly connectorId = 'telegram';
   private readonly bot: Bot;
+  private readonly botToken: string;
   private readonly log: ConnectorLogger;
   private sendMessageFn: ((chatId: string, text: string, opts?: Record<string, unknown>) => Promise<unknown>) | null =
     null;
@@ -135,8 +136,20 @@ export class TelegramAdapter {
   private pollingControls: TelegramPollingControls | null = null;
 
   constructor(botToken: string, log: ConnectorLogger) {
+    this.botToken = botToken;
     this.bot = new Bot(botToken);
     this.log = log;
+  }
+
+  async downloadInboundMedia(locator: { readonly platformKey: string }): Promise<Buffer> {
+    const file = await this.bot.api.getFile(locator.platformKey);
+    if (!file.file_path) throw new Error('Telegram getFile returned no file_path');
+    const response = await fetch(
+      `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`,
+      { signal: AbortSignal.timeout(30_000) },
+    );
+    if (!response.ok) throw new Error(`Telegram media download HTTP ${response.status}`);
+    return Buffer.from(await response.arrayBuffer());
   }
 
   private getPollingControls(): TelegramPollingControls {

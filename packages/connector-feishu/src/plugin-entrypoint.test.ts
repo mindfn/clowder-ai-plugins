@@ -14,11 +14,17 @@ function host(
   config: Record<string, unknown>,
   secrets: Record<string, string>,
   sent: Array<{ idempotencyKey: string; sourceEventId?: string }> = [],
+  drafts: unknown[] = [],
 ): ModulePluginHostShape {
+  const state = new Map<string, { revision: number; value: unknown }>();
   return {
     config: { get: async key => config[key] },
     secrets: { get: async key => secrets[key] },
-    storage: {} as never,
+    storage: {
+      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
+      compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
+    },
     tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: { listBindings: async () => [], ensureByKey: async () => ({ id: 'thread-1' }) } as never,
@@ -26,7 +32,8 @@ function host(
       subscribe: async () => undefined, unsubscribe: async () => undefined,
       send: async input => {
         sent.push({ idempotencyKey: input.idempotencyKey, sourceEventId: input.sourceEventId });
-        return { messageId: 'message-1', threadId: input.threadId };
+        drafts.push(input);
+        return { messageId: 'message-1', threadId: input.threadId, revision: 1, messageHandle: 'handle-1', pendingPublication: true as const };
       },
     },
     log() {},
@@ -54,7 +61,7 @@ test('module exposes both manifest-declared connector and webhook actions', asyn
   const secrets: Record<string, string> = { appSecret: 'secret', verificationToken: '' };
   const active = await entrypoint.create(manifest).start(host(config, secrets));
   assert.deepEqual(Object.keys(active.actions).sort(), [
-    'feishu.disconnect', 'feishu.outbound', 'feishu.qr-generate', 'feishu.qr-status', 'feishu.test', 'feishu.webhook',
+    'feishu.disconnect', 'feishu.media-source.read', 'feishu.media-source.settle', 'feishu.outbound', 'feishu.qr-generate', 'feishu.qr-status', 'feishu.test', 'feishu.webhook',
   ]);
   const request = {
     method: 'POST', path: 'feishu/events', query: {},
@@ -89,6 +96,7 @@ test('Host-shaped Feishu URL verification returns a strict HTTP challenge', asyn
 
 test('replayed Feishu webhook derives the same Host idempotency and source event keys', async () => {
   const sent: Array<{ idempotencyKey: string; sourceEventId?: string }> = [];
+  const drafts: unknown[] = [];
   const outbound = { async sendFormattedReply() {}, async sendMedia() {}, async sendReply() {} } as unknown as FeishuAdapter;
   const entrypoint = createFeishuPluginModule(options => ({
     outbound, async start() {}, async stop() {},
@@ -96,12 +104,13 @@ test('replayed Feishu webhook derives the same Host idempotency and source event
       assert.deepEqual(input, { body: { event: 'same-provider-message' } });
       await options.host.deliver({
         externalConversationId: 'chat-1', providerMessageId: 'provider-message-1', text: 'hello',
+        attachments: [{ type: 'image', platformKey: 'private-image-key' }],
         conversation: { type: 'direct' },
       });
       return { kind: 'processed', messageId: 'provider-message-1' };
     },
   } as FeishuConnectorRuntime<FeishuAdapter>));
-  const active = await entrypoint.create(manifest).start(host({ appId: 'app' }, { appSecret: 'secret', verificationToken: '' }, sent));
+  const active = await entrypoint.create(manifest).start(host({ appId: 'app' }, { appSecret: 'secret', verificationToken: '' }, sent, drafts));
   const payload = { request: {
     method: 'POST', path: 'feishu/events', query: {},
     body: { event: 'same-provider-message' }, rawBody: Buffer.from('{}'), headers: {},
@@ -115,6 +124,9 @@ test('replayed Feishu webhook derives the same Host idempotency and source event
     { idempotencyKey: 'provider-message-1', sourceEventId: 'provider-message-1' },
     { idempotencyKey: 'provider-message-1', sourceEventId: 'provider-message-1' },
   ]);
+  const serialized = JSON.stringify(drafts);
+  assert.equal(serialized.includes('private-image-key'), false);
+  assert.equal(drafts.every((item) => /"reference":"pmr_feishu_/u.test(JSON.stringify(item))), true);
   await active.stop();
 });
 

@@ -46,6 +46,7 @@ test('manifest keeps the bot token secret and checkpoint authority out of packag
   ]);
   assert.equal(manifest.test?.action.method, 'weixin.test');
   assert.ok(manifest.contributions.some(item => item.type === 'message-subscription' && item.id === 'weixin'));
+  assert.ok(manifest.contributions.some(item => item.type === 'media-source' && item.id === 'weixin-media'));
   assert.deepEqual(manifest.features[0]?.capabilities, [
     'plugin.config.read',
     'plugin.state.get',

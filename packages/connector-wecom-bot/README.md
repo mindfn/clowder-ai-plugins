@@ -35,8 +35,14 @@ accepted delivery; package-local files, ambient Redis, and inventory snapshots a
 The Host-loadable builtin runtime is implemented in this package and uses only the existing authenticated
 binding, declared configuration/secret, state, and messaging surfaces; C1 does not add another public wire.
 
+Inbound encrypted-media locators remain in manifest-declared private plugin state. Public messages carry
+only a `pmr_*` reference and `sourceEventId`; the declared media source decrypts into bounded chunks and
+settlement removes the locator.
+
 ## Exposed capability
 
-The connector contributes WeCom messaging and requests `plugin.config.read`, `media.read`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`. It also declares the
+The connector contributes WeCom messaging and a media source, and requests `plugin.config.read`,
+`plugin.state.get`, `plugin.state.set`, `media.read`, `message.event.subscribe`, `messaging.send`,
+`secret.read`, `thread.listMetadata`, `thread.write`. It also declares the
 `wecom_validate` operation (`测试并连接` / `断开连接`) and a `wecom-bot.test` connection check. It does not expose C2 audio
 services, mention parsing, public UI slots, or generic public hooks.

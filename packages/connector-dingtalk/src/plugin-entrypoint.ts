@@ -15,6 +15,7 @@ import {
 } from './runtime.js';
 import { DingTalkAdapter } from './DingTalkAdapter.js';
 import { renderTypedMediaNotice } from './media-notice.js';
+import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia, type InboundMediaLocator } from './inbound-media-source.js';
 
 type DingTalkRuntimeFactory = (
   options: DingTalkConnectorRuntimeOptions<DingTalkAdapter>,
@@ -51,7 +52,15 @@ function title(value: string): string {
   return candidate.length <= 200 ? candidate : candidate.slice(0, 200);
 }
 
-function draft(message: DingTalkHostInboundMessage): PluginMessagingDraft {
+async function draft(context: FeatureContext, message: DingTalkHostInboundMessage): Promise<PluginMessagingDraft> {
+  const media = await retainInboundMedia(
+    context, CONNECTOR_ID, 'dingtalk-media', message.providerMessageId,
+    (message.attachments ?? []).map(attachment => ({
+      type: attachment.type, platformKey: attachment.platformKey,
+      ...(attachment.fileName === undefined ? {} : { fileName: attachment.fileName }),
+      ...(attachment.duration === undefined ? {} : { duration: attachment.duration }),
+    })),
+  );
   return {
     idempotencyKey: message.providerMessageId,
     sourceEventId: message.providerMessageId,
@@ -72,16 +81,7 @@ function draft(message: DingTalkHostInboundMessage): PluginMessagingDraft {
       },
       elements: [
         { elementId: 'text-1', kind: 'text', payload: { text: message.text } },
-        ...(message.attachments ?? []).map((attachment, index) => ({
-          elementId: `media-${index + 1}`,
-          kind: 'media_ref' as const,
-          payload: {
-            type: attachment.type,
-            reference: attachment.platformKey,
-            ...(attachment.fileName === undefined ? {} : { fileName: attachment.fileName }),
-            ...(attachment.duration === undefined ? {} : { duration: attachment.duration }),
-          },
-        })),
+        ...media,
       ],
     },
   };
@@ -108,7 +108,13 @@ async function createMessageBridge(context: FeatureContext) {
         title: title(message.chatName ?? `DingTalk ${message.externalConversationId}`),
       });
       await subscribe(thread.id);
-      await context.messaging.send(thread.id, draft(message));
+      const prepared = await draft(context, message);
+      try {
+        await context.messaging.send(thread.id, prepared);
+      } catch (error) {
+        await releaseInboundMedia(context, prepared.payload.elements);
+        throw error;
+      }
     },
     async outbound(candidate: unknown) {
       const input = requireDelivery(candidate);
@@ -162,8 +168,11 @@ export function createDingTalkPluginModule(
           logger: context.logger,
         });
         await runtime.start();
+        const mediaSource = createInboundMediaSourceActions(context, locator => runtime.outbound.downloadInboundMedia(locator as InboundMediaLocator));
         return {
           actions: {
+            'dingtalk.media-source.read': mediaSource.read,
+            'dingtalk.media-source.settle': mediaSource.settle,
             'dingtalk.outbound': async (candidate) => {
               const input = await bridge.outbound(candidate);
               const blocks = [...(input.richBlocks ?? [])];

@@ -79,6 +79,13 @@ contributions:
     binding: feishu-bot
     action:
       method: feishu.outbound
+  - type: media-source
+    id: feishu-media
+    binding: feishu-bot
+    readAction:
+      method: feishu.media-source.read
+    settleAction:
+      method: feishu.media-source.settle
   - type: webhook
     id: feishu-events
     path: feishu/events
@@ -95,9 +102,11 @@ features:
         id: feishu-bot
       - type: message-subscription
         id: feishu
+      - type: media-source
+        id: feishu-media
       - type: webhook
         id: feishu-events
-    capabilities: [plugin.config.read, media.read, message.event.subscribe, messaging.send, secret.read, thread.listMetadata, thread.write]
+    capabilities: [plugin.config.read, plugin.state.get, plugin.state.set, media.read, message.event.subscribe, messaging.send, secret.read, thread.listMetadata, thread.write]
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js

@@ -26,7 +26,13 @@ The Host-loadable builtin runtime is implemented in this package and uses only t
 config/secret, connector-binding, messaging, and state surfaces. Adapter exports remain testable with
 isolated fixtures.
 
+Inbound Telegram file IDs remain in manifest-declared private plugin state. Public messages contain only a
+`pmr_*` reference and `sourceEventId`; the declared media source serves bounded chunks and settlement deletes
+the private locator.
+
 ## Exposed capability
 
 This package requests these Host capabilities, verbatim from its manifest
-(`plugin.yaml` — kept in sync by `pnpm test:train-c1-inventory`): `media.read`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`.
+(`plugin.yaml` — kept in sync by `pnpm test:train-c1-inventory`): `media.read`, `plugin.state.get`,
+`plugin.state.set`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`,
+`thread.write`.

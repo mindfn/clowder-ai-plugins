@@ -27,6 +27,13 @@ contributions:
     binding: dingtalk-bot
     action:
       method: dingtalk.outbound
+  - type: media-source
+    id: dingtalk-media
+    binding: dingtalk-bot
+    readAction:
+      method: dingtalk.media-source.read
+    settleAction:
+      method: dingtalk.media-source.settle
 features:
   - id: dingtalk-messaging
     name: DingTalk messaging
@@ -36,8 +43,12 @@ features:
         id: dingtalk-bot
       - type: message-subscription
         id: dingtalk
+      - type: media-source
+        id: dingtalk-media
     capabilities:
       - plugin.config.read
+      - plugin.state.get
+      - plugin.state.set
       - media.read
       - message.event.subscribe
       - messaging.send

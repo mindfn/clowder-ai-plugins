@@ -10,6 +10,7 @@ import {
 
 import { WeComBotAdapter } from './WeComBotAdapter.js';
 import { renderTypedMediaNotice } from './media-notice.js';
+import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia } from './inbound-media-source.js';
 import {
   createWeComBotConnectorRuntime,
   type WeComBotConnectorRuntime,
@@ -42,7 +43,14 @@ function requireDelivery(candidate: unknown): PluginMessagingDelivery {
   return structuredClone(candidate) as unknown as PluginMessagingDelivery;
 }
 
-function draft(message: WeComBotHostInboundMessage): PluginMessagingDraft {
+async function draft(context: FeatureContext, message: WeComBotHostInboundMessage): Promise<PluginMessagingDraft> {
+  const media = await retainInboundMedia(
+    context, CONNECTOR_ID, 'wecom-bot-media', message.providerMessageId,
+    (message.attachments ?? []).map(attachment => ({
+      type: attachment.type, platformKey: attachment.platformKey,
+      ...(attachment.fileName === undefined ? {} : { fileName: attachment.fileName }),
+    })),
+  );
   return {
     idempotencyKey: message.providerMessageId,
     sourceEventId: message.providerMessageId,
@@ -55,10 +63,7 @@ function draft(message: WeComBotHostInboundMessage): PluginMessagingDraft {
       },
       elements: [
         { elementId: 'text-1', kind: 'text', payload: { text: message.text } },
-        ...(message.attachments ?? []).map((attachment, index) => ({
-          elementId: `media-${index + 1}`, kind: 'media_ref' as const,
-          payload: { type: attachment.type, reference: attachment.platformKey, ...(attachment.fileName === undefined ? {} : { fileName: attachment.fileName }) },
-        })),
+        ...media,
       ],
     },
   };
@@ -82,7 +87,13 @@ async function createMessageBridge(context: FeatureContext) {
     async deliver(message: WeComBotHostInboundMessage): Promise<void> {
       const thread = await context.threads.ensureByKey(message.externalConversationId, { title: `WeCom ${message.externalConversationId}`.slice(0, 200) });
       await subscribe(thread.id);
-      await context.messaging.send(thread.id, draft(message));
+      const prepared = await draft(context, message);
+      try {
+        await context.messaging.send(thread.id, prepared);
+      } catch (error) {
+        await releaseInboundMedia(context, prepared.payload.elements);
+        throw error;
+      }
     },
     async outbound(candidate: unknown): Promise<ConnectorOutboundDelivery> {
       const input = requireDelivery(candidate);
@@ -144,8 +155,17 @@ export function createWeComBotPluginModule(
           logger: context.logger,
         });
         await runtime.start();
+        const mediaSource = createInboundMediaSourceActions(context, async locator => {
+          const marker = '|aeskey=';
+          const split = locator.platformKey.lastIndexOf(marker);
+          const url = split < 0 ? locator.platformKey : locator.platformKey.slice(0, split);
+          const aesKey = split < 0 ? undefined : locator.platformKey.slice(split + marker.length);
+          return (await runtime.outbound.downloadMedia(url, aesKey)).buffer;
+        });
         return {
           actions: {
+            'wecom-bot.media-source.read': mediaSource.read,
+            'wecom-bot.media-source.settle': mediaSource.settle,
             'wecom-bot.validate': async (params: unknown) => {
               // Host merges stored non-secret values with the card's unsaved input
               // ({ ...stored, ...body }) and delivers it as the action's `input`.

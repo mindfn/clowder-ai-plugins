@@ -73,6 +73,79 @@ test('module bridges provider ingress and Host subscription egress without conne
   await active.stop();
 });
 
+test('inbound media is retained as a private locator and exposed through bounded media-source actions', async () => {
+  const state = new Map<string, { revision: number; value: unknown }>();
+  const sent: unknown[] = [];
+  let sendFails = false;
+  let inbound!: (message: DingTalkHostInboundMessage) => Promise<void>;
+  const outbound = {
+    async downloadInboundMedia(locator: { platformKey: string }) {
+      assert.equal(locator.platformKey, 'private-download-code');
+      return Buffer.from('private-bytes');
+    },
+  } as unknown as DingTalkAdapter;
+  const entrypoint = createDingTalkPluginModule((options) => {
+    inbound = options.host.deliver;
+    return { outbound, async start() {}, async stop() {} } as DingTalkConnectorRuntime<DingTalkAdapter>;
+  });
+  const host: ModulePluginHostShape = {
+    config: { get: async () => 'app-key' }, secrets: { get: async () => 'app-secret' },
+    storage: {
+      get: async key => state.get(key),
+      list: async () => Object.fromEntries(state),
+      set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
+      compareAndSet: async () => ({ applied: false }),
+      delete: async key => ({ deleted: state.delete(key) }),
+    },
+    tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
+    threads: {
+      listBindings: async () => [],
+      ensureByKey: async (key: string) => ({ id: 'thread-1', title: key, createdAt: 1, lastActiveAt: 1 }),
+    } as never,
+    messaging: {
+      subscribe: async () => undefined,
+      unsubscribe: async () => undefined,
+      send: async input => {
+        if (sendFails) throw new Error('Host rejected draft');
+        sent.push(input);
+        return { messageId: 'host-message-1', threadId: input.threadId, revision: 1, messageHandle: 'handle-1', pendingPublication: true as const };
+      },
+    },
+    log() {},
+  };
+
+  const active = await entrypoint.create(manifest).start(host);
+  await inbound({
+    externalConversationId: 'chat-1', providerConversationId: 'provider-chat-1', providerMessageId: 'provider-1', text: 'inbound', chatType: 'group',
+    attachments: [{ type: 'image', platformKey: 'private-download-code', fileName: 'photo.png' }],
+  });
+  const draft = sent[0] as { sourceEventId: string; payload: { elements: Array<{ kind: string; payload: Record<string, unknown> }> } };
+  const element = draft.payload.elements.find(item => item.kind === 'media_ref');
+  assert.equal(draft.sourceEventId, 'provider-1');
+  assert.match(String(element?.payload.reference), /^pmr_/);
+  assert.equal(element?.payload.sourceId, 'dingtalk-media');
+  assert.equal(JSON.stringify(draft).includes('private-download-code'), false);
+
+  const reference = String(element?.payload.reference);
+  const read = await active.actions['dingtalk.media-source.read']?.({ requestId: 'request-1', reference, offset: 0, limit: 7 });
+  assert.deepEqual(read, { kind: 'chunk', requestId: 'request-1', offset: 0, dataBase64: Buffer.from('private').toString('base64'), nextOffset: 7, done: false });
+  const tail = await active.actions['dingtalk.media-source.read']?.({ requestId: 'request-1', reference, offset: 7, limit: 524288 });
+  assert.deepEqual(tail, { kind: 'chunk', requestId: 'request-1', offset: 7, dataBase64: Buffer.from('-bytes').toString('base64'), done: true });
+  await active.actions['dingtalk.media-source.settle']?.({ requestId: 'request-1', reference, outcome: 'imported' });
+  assert.equal(state.size, 0);
+  assert.deepEqual(await active.actions['dingtalk.media-source.read']?.({ requestId: 'request-2', reference, offset: 0, limit: 10 }), {
+    kind: 'rejected', requestId: 'request-2', code: 'MEDIA_SOURCE_UNAVAILABLE',
+  });
+  sendFails = true;
+  await assert.rejects(inbound({
+    externalConversationId: 'chat-1', providerConversationId: 'provider-chat-1', providerMessageId: 'provider-2', text: 'failed', chatType: 'group',
+    attachments: [{ type: 'image', platformKey: 'private-download-code' }],
+  }), /Host rejected draft/u);
+  assert.equal(state.size, 0);
+  await active.stop();
+});
+
 function richDelivery() {
   return {
     deliveryId: 'delivery-1', threadId: 'thread-1',

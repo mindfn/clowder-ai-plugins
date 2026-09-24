@@ -20,8 +20,11 @@ test('manifest keeps WeCom credentials secret and callback authority Host-owned'
   );
   assert.ok(manifest.contributions.some(item => item.type === 'message-subscription' && item.id === 'wecom-agent'));
   assert.ok(manifest.contributions.some(item => item.type === 'webhook' && item.id === 'wecom-agent-callback'));
+  assert.ok(manifest.contributions.some(item => item.type === 'media-source' && item.id === 'wecom-agent-media'));
   assert.deepEqual(manifest.features[0]?.capabilities, [
     'plugin.config.read',
+    'plugin.state.get',
+    'plugin.state.set',
     'media.read',
     'message.event.subscribe',
     'messaging.send',

@@ -26,6 +26,13 @@ contributions:
     binding: telegram-bot
     action:
       method: telegram.outbound
+  - type: media-source
+    id: telegram-media
+    binding: telegram-bot
+    readAction:
+      method: telegram.media-source.read
+    settleAction:
+      method: telegram.media-source.settle
 features:
   - id: telegram-messaging
     name: Telegram messaging
@@ -35,8 +42,12 @@ features:
         id: telegram-bot
       - type: message-subscription
         id: telegram
+      - type: media-source
+        id: telegram-media
     capabilities:
       - media.read
+      - plugin.state.get
+      - plugin.state.set
       - message.event.subscribe
       - messaging.send
       - secret.read

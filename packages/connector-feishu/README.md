@@ -28,6 +28,13 @@ the preserved Core adapter starts, while Host-owned bindings and configuration r
 The Host-loadable builtin runtime is implemented in this package and uses only the existing authenticated
 binding and declared configuration/secret surfaces. No package-local persistence fallback is provided.
 
+Inbound provider media locators remain in manifest-declared private plugin state. Public messages expose
+only a `pmr_*` reference plus `sourceEventId`; the declared media source serves bounded chunks and removes
+the locator when the Host settles the import.
+
 ## Exposed capability
 
-The connector contributes one Feishu identity, message subscription, and verified webhook, requests `plugin.config.read`, `media.read`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`. QR setup obtains credentials but does not transfer Host configuration authority.
+The connector contributes one Feishu identity, message subscription, media source, and verified webhook,
+and requests `plugin.config.read`, `plugin.state.get`, `plugin.state.set`, `media.read`,
+`message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`. QR setup
+obtains credentials but does not transfer Host configuration authority.

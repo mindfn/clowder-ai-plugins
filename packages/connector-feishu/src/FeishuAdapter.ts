@@ -123,6 +123,20 @@ export class FeishuAdapter {
     this.groupBotMentions = options?.groupBotMentions ?? {};
   }
 
+  async downloadInboundMedia(locator: {
+    readonly sourceEventId: string;
+    readonly type: 'image' | 'file' | 'audio' | 'video';
+    readonly platformKey: string;
+  }): Promise<Buffer> {
+    const response = await this.client.im.messageResource.get({
+      path: { message_id: locator.sourceEventId, file_key: locator.platformKey },
+      params: { type: locator.type === 'image' ? 'image' : 'file' },
+    });
+    const chunks: Buffer[] = [];
+    for await (const chunk of response.getReadableStream()) chunks.push(Buffer.from(chunk));
+    return Buffer.concat(chunks);
+  }
+
   /**
    * Check if the request body is a Feishu URL verification challenge.
    * Returns the challenge token if so, null otherwise.

@@ -11,6 +11,7 @@ import {
 import { FeishuAdapter } from './FeishuAdapter.js';
 import { DefaultFeishuQrBindClient, type FeishuQrBindClient } from './FeishuQrBindClient.js';
 import { renderTypedMediaNotice } from './media-notice.js';
+import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia } from './inbound-media-source.js';
 import {
   createFeishuConnectorRuntime,
   requireFeishuWebhookInput,
@@ -53,7 +54,15 @@ function threadTitle(message: FeishuHostInboundMessage): string {
   return value.length <= 200 ? value : value.slice(0, 200);
 }
 
-function draft(message: FeishuHostInboundMessage): PluginMessagingDraft {
+async function draft(context: FeatureContext, message: FeishuHostInboundMessage): Promise<PluginMessagingDraft> {
+  const media = await retainInboundMedia(
+    context, CONNECTOR_ID, 'feishu-media', message.providerMessageId,
+    (message.attachments ?? []).map(attachment => ({
+      type: attachment.type, platformKey: attachment.platformKey,
+      ...(attachment.fileName === undefined ? {} : { fileName: attachment.fileName }),
+      ...(attachment.duration === undefined ? {} : { duration: attachment.duration }),
+    })),
+  );
   return {
     idempotencyKey: message.providerMessageId,
     sourceEventId: message.providerMessageId,
@@ -69,14 +78,7 @@ function draft(message: FeishuHostInboundMessage): PluginMessagingDraft {
       },
       elements: [
         { elementId: 'text-1', kind: 'text', payload: { text: message.text } },
-        ...(message.attachments ?? []).map((attachment, index) => ({
-          elementId: `media-${index + 1}`, kind: 'media_ref' as const,
-          payload: {
-            type: attachment.type, reference: attachment.platformKey,
-            ...(attachment.fileName === undefined ? {} : { fileName: attachment.fileName }),
-            ...(attachment.duration === undefined ? {} : { duration: attachment.duration }),
-          },
-        })),
+        ...media,
       ],
     },
   };
@@ -100,7 +102,13 @@ async function createMessageBridge(context: FeatureContext) {
     async deliver(message: FeishuHostInboundMessage): Promise<void> {
       const thread = await context.threads.ensureByKey(message.externalConversationId, { title: threadTitle(message) });
       await subscribe(thread.id);
-      await context.messaging.send(thread.id, draft(message));
+      const prepared = await draft(context, message);
+      try {
+        await context.messaging.send(thread.id, prepared);
+      } catch (error) {
+        await releaseInboundMedia(context, prepared.payload.elements);
+        throw error;
+      }
     },
     async outbound(candidate: unknown): Promise<ConnectorOutboundDelivery> {
       const input = requireDelivery(candidate);
@@ -193,11 +201,14 @@ export function createFeishuPluginModule(
           logger: context.logger,
         });
         await runtime.start();
+        const mediaSource = createInboundMediaSourceActions(context, locator => runtime.outbound.downloadInboundMedia(locator));
         // Operation state (the in-flight device_code) lives in runtime memory only.
         let qrPayload: string | undefined;
         const qrClient = createQrClient();
         return {
           actions: {
+            'feishu.media-source.read': mediaSource.read,
+            'feishu.media-source.settle': mediaSource.settle,
             'feishu.qr-generate': async () => {
               const result = await qrClient.create();
               qrPayload = result.qrPayload;

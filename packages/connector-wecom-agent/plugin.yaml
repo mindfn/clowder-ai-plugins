@@ -39,6 +39,13 @@ contributions:
     binding: wecom-agent
     action:
       method: wecom-agent.outbound
+  - type: media-source
+    id: wecom-agent-media
+    binding: wecom-agent
+    readAction:
+      method: wecom-agent.media-source.read
+    settleAction:
+      method: wecom-agent.media-source.settle
   - type: webhook
     id: wecom-agent-callback
     path: connectors/wecom-agent
@@ -55,10 +62,14 @@ features:
         id: wecom-agent
       - type: message-subscription
         id: wecom-agent
+      - type: media-source
+        id: wecom-agent-media
       - type: webhook
         id: wecom-agent-callback
     capabilities:
       - plugin.config.read
+      - plugin.state.get
+      - plugin.state.set
       - media.read
       - message.event.subscribe
       - messaging.send

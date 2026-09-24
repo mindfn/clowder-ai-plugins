@@ -26,9 +26,11 @@ test('manifest preserves DingTalk config sensitivity and Host authority', async 
     { key: 'appKey', label: 'App Key', kind: 'string', required: true },
     { key: 'appSecret', label: 'App Secret', kind: 'secret', required: true },
   ]);
-  assert.deepEqual(manifest.contributions.map(entry => entry.type), ['identity', 'message-subscription']);
+  assert.deepEqual(manifest.contributions.map(entry => entry.type), ['identity', 'message-subscription', 'media-source']);
   assert.deepEqual(manifest.features[0]?.capabilities, [
     'plugin.config.read',
+    'plugin.state.get',
+    'plugin.state.set',
     'media.read',
     'message.event.subscribe',
     'messaging.send',

@@ -29,6 +29,13 @@ The Host-loadable builtin runtime is implemented in this package and uses only t
 binding and declared configuration/secret surfaces. No package-local environment or persistence fallback is
 provided.
 
+Inbound provider media IDs remain in manifest-declared private plugin state. Public messages expose only a
+`pmr_*` reference plus `sourceEventId`; the declared media source returns bounded chunks and settlement
+deletes the private locator.
+
 ## Exposed capability
 
-The connector contributes one authenticated webhook and one WeCom message subscription and requests `plugin.config.read`, `media.read`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`. It does not expose C2 audio/AI services, mention parsing, UI slots, or generic public hooks.
+The connector contributes one authenticated webhook, one WeCom message subscription, and one media source,
+and requests `plugin.config.read`, `plugin.state.get`, `plugin.state.set`, `media.read`,
+`message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`. It does not
+expose C2 audio/AI services, mention parsing, UI slots, or generic public hooks.

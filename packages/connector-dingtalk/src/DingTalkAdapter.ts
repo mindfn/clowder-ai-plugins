@@ -503,6 +503,15 @@ export class DingTalkAdapter {
     return data.downloadUrl;
   }
 
+  async downloadInboundMedia(locator: { readonly platformKey: string }): Promise<Buffer> {
+    const downloadUrl = await this.downloadMedia(locator.platformKey);
+    const parsed = new URL(downloadUrl);
+    if (parsed.protocol !== 'https:') throw new Error('DingTalk media download URL must use HTTPS');
+    const response = await fetch(parsed, { signal: AbortSignal.timeout(30_000) });
+    if (!response.ok) throw new Error(`DingTalk media download HTTP ${response.status}`);
+    return Buffer.from(await response.arrayBuffer());
+  }
+
   // ── Stream Connection ──
 
   /**

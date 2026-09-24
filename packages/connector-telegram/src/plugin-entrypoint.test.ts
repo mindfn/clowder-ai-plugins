@@ -27,6 +27,7 @@ test('default export is the deterministic package module entrypoint', () => {
 
 test('module bridges provider ingress and Host subscription egress without connector authority', async () => {
   const calls: Array<{ operation: string; value: unknown }> = [];
+  const state = new Map<string, { revision: number; value: unknown }>();
   let inbound!: (message: TelegramHostInboundMessage) => Promise<void>;
   const outbound = {
     async sendReply(...args: unknown[]) { calls.push({ operation: 'provider.send', value: args }); },
@@ -38,7 +39,11 @@ test('module bridges provider ingress and Host subscription egress without conne
   });
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => 'bot-token' },
-    storage: {} as never, tasks: {} as never,
+    storage: {
+      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
+      compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
+    }, tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: {
       listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
@@ -47,13 +52,16 @@ test('module bridges provider ingress and Host subscription egress without conne
     messaging: {
       subscribe: async input => { calls.push({ operation: 'subscribe', value: input }); },
       unsubscribe: async () => undefined,
-      send: async input => { calls.push({ operation: 'send', value: input }); return { messageId: 'host-message-1', threadId: input.threadId }; },
+      send: async input => { calls.push({ operation: 'send', value: input }); return { messageId: 'host-message-1', threadId: input.threadId, revision: 1, messageHandle: 'handle-1', pendingPublication: true as const }; },
     },
     log() {},
   };
 
   const active = await entrypoint.create(manifest).start(host);
-  await inbound({ externalConversationId: 'chat-1', externalSenderId: 'user-1', providerMessageId: 'provider-1', text: 'inbound' });
+  await inbound({
+    externalConversationId: 'chat-1', externalSenderId: 'user-1', providerMessageId: 'provider-1', text: 'inbound',
+    attachments: [{ type: 'file', platformKey: 'private-file-id', fileName: 'report.pdf' }],
+  });
   await active.actions['telegram.outbound']?.(delivery());
   assert.deepEqual(calls.filter(call => call.operation === 'subscribe').map(call => call.value), [
     { threadId: 'thread-1', method: 'telegram.outbound' },
@@ -62,6 +70,8 @@ test('module bridges provider ingress and Host subscription egress without conne
   assert.equal(sent.threadId, 'thread-1');
   assert.equal(sent.idempotencyKey, 'provider-1');
   assert.equal('address' in sent, false);
+  assert.match(JSON.stringify(sent), /"reference":"pmr_telegram_/u);
+  assert.equal(JSON.stringify(sent).includes('private-file-id'), false);
   assert.equal((calls.find(call => call.operation === 'provider.send')?.value as unknown[])[0], 'chat-1');
   await assert.rejects(async () => active.actions['telegram.outbound']?.({ ...delivery(), externalConversationId: 'forbidden' }), /unsupported field/);
   await active.stop();

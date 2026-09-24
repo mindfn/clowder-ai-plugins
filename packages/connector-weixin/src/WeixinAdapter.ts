@@ -281,6 +281,16 @@ export class WeixinAdapter {
     return this.botToken !== '';
   }
 
+  async downloadInboundMedia(locator: { readonly platformKey: string }): Promise<Buffer> {
+    if (!this.hasBotToken()) throw new Error('Weixin connector is disconnected');
+    const { downloadMediaFromCdn } = await import('./weixin-cdn.js');
+    return downloadMediaFromCdn({
+      platformKey: locator.platformKey,
+      cdnBaseUrl: 'https://novac2c.cdn.weixin.qq.com/c2c',
+      log: this.log,
+    });
+  }
+
   setBotToken(token: string): void {
     const changed = this.botToken !== token;
     this.botToken = token;

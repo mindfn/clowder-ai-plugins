@@ -6,6 +6,7 @@ import { parse } from 'yaml';
 
 import moduleEntrypoint, { createWeComBotPluginModule } from './plugin-entrypoint.js';
 import type { WeComBotConnectorRuntime } from './runtime.js';
+import type { WeComBotHostInboundMessage } from './runtime.js';
 import type { WeComBotAdapter } from './WeComBotAdapter.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
@@ -19,15 +20,23 @@ const delivery = {
   },
 };
 
-function host(): ModulePluginHostShape {
+function host(sent: unknown[] = []): ModulePluginHostShape {
+  const state = new Map<string, { revision: number; value: unknown }>();
   return {
     config: { get: async () => 'bot' },
     secrets: { get: async () => 'secret' },
-    storage: {} as never,
+    storage: {
+      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
+      compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
+    },
     tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
-    threads: { listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }] } as never,
-    messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async input => ({ messageId: 'message-1', threadId: input.threadId }) },
+    threads: {
+      listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
+      ensureByKey: async () => ({ id: 'thread-1', title: 'chat-1', createdAt: 1, lastActiveAt: 1 }),
+    } as never,
+    messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async input => { sent.push(input); return { messageId: 'message-1', threadId: input.threadId, revision: 1, messageHandle: 'handle-1', pendingPublication: true as const }; } },
     log() {},
   };
 }
@@ -35,6 +44,27 @@ function host(): ModulePluginHostShape {
 test('default export is the deterministic package module entrypoint', () => {
   assert.equal(typeof moduleEntrypoint.create, 'function');
   assert.equal(typeof moduleEntrypoint.create(manifest).start, 'function');
+});
+
+test('provider media locator stays in private state while ingress emits only pmr', async () => {
+  const sent: unknown[] = [];
+  let inbound!: (message: WeComBotHostInboundMessage) => Promise<void>;
+  const outbound = { async downloadMedia() { return { buffer: Buffer.from('bytes') }; } } as unknown as WeComBotAdapter;
+  const entrypoint = createWeComBotPluginModule((options) => {
+    inbound = options.host.deliver;
+    return { outbound, async start() {}, async stop() {} } as WeComBotConnectorRuntime<WeComBotAdapter>;
+  });
+  const active = await entrypoint.create(manifest).start(host(sent));
+  await inbound({
+    externalConversationId: 'chat-1', providerMessageId: 'provider-1', text: 'voice',
+    sender: { id: 'user-1' }, conversation: { type: 'direct' },
+    attachments: [{ type: 'audio', platformKey: 'https://private.example/voice|aeskey=secret' }],
+  });
+  const serialized = JSON.stringify(sent[0]);
+  assert.match(serialized, /"reference":"pmr_wecom-bot_/u);
+  assert.equal(serialized.includes('private.example'), false);
+  assert.equal(serialized.includes('aeskey'), false);
+  await active.stop();
 });
 
 test('module exposes the declared outbound action and disposes the runtime once', async () => {

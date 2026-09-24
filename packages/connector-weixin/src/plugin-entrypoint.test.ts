@@ -5,7 +5,7 @@ import type { ModulePluginHostShape } from '@clowder-ai/plugin-sdk';
 import { parse } from 'yaml';
 
 import moduleEntrypoint, { createWeixinPluginModule } from './plugin-entrypoint.js';
-import type { WeixinConnectorRuntime } from './runtime.js';
+import type { WeixinConnectorRuntime, WeixinHostInboundMessage } from './runtime.js';
 import type { WeixinAdapter } from './WeixinAdapter.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
@@ -67,6 +67,43 @@ test('module binds Host-owned state and exposes only its declared outbound actio
   assert.deepEqual(writes, [['provider-session', { getUpdatesBuf: 'cursor' }]]);
   assert.deepEqual(replies, [['chat-1', '砚砚\n\nhello']]);
   assert.equal(stops, 1);
+});
+
+test('provider media locator stays in private state while ingress emits only pmr', async () => {
+  const state = new Map<string, { revision: number; value: unknown }>();
+  const sent: unknown[] = [];
+  let inbound!: (message: WeixinHostInboundMessage) => Promise<void>;
+  const outbound = { async downloadInboundMedia() { return Buffer.from('bytes'); } } as unknown as WeixinAdapter;
+  const entrypoint = createWeixinPluginModule((options) => {
+    inbound = options.host.deliver;
+    return { outbound, async start() {}, async stop() {} } as WeixinConnectorRuntime<WeixinAdapter>;
+  });
+  const host: ModulePluginHostShape = {
+    config: { get: async () => undefined }, secrets: { get: async () => 'token' },
+    storage: {
+      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
+      compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
+    },
+    tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
+    threads: { listBindings: async () => [], ensureByKey: async () => ({ id: 'thread-1' }) } as never,
+    messaging: {
+      subscribe: async () => undefined, unsubscribe: async () => undefined,
+      send: async input => { sent.push(input); return { messageId: 'message-1', threadId: input.threadId, revision: 1, messageHandle: 'handle-1', pendingPublication: true as const }; },
+    },
+    log() {},
+  };
+  const active = await entrypoint.create(manifest).start(host);
+  await inbound({
+    externalConversationId: 'chat-1', externalSenderId: 'user-1', providerMessageId: 'provider-1', text: 'photo',
+    attachments: [{ type: 'image', platformKey: '{"fullUrl":"https://private","aesKey":"secret"}' }],
+  });
+  const serialized = JSON.stringify(sent[0]);
+  assert.match(serialized, /"reference":"pmr_weixin_/u);
+  assert.equal(serialized.includes('https://private'), false);
+  assert.equal(serialized.includes('aesKey'), false);
+  await active.stop();
 });
 
 function richDelivery() {

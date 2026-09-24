@@ -14,11 +14,17 @@ function host(
   config: Record<string, unknown>,
   secrets: Record<string, string>,
   sent: Array<{ idempotencyKey: string; sourceEventId?: string }> = [],
+  drafts: unknown[] = [],
 ): ModulePluginHostShape {
+  const state = new Map<string, { revision: number; value: unknown }>();
   return {
     config: { get: async key => config[key] },
     secrets: { get: async key => secrets[key] },
-    storage: {} as never,
+    storage: {
+      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
+      compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
+    },
     tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: { listBindings: async () => [], ensureByKey: async () => ({ id: 'thread-1' }) } as never,
@@ -26,7 +32,8 @@ function host(
       subscribe: async () => undefined, unsubscribe: async () => undefined,
       send: async input => {
         sent.push({ idempotencyKey: input.idempotencyKey, sourceEventId: input.sourceEventId });
-        return { messageId: 'message-1', threadId: input.threadId };
+        drafts.push(input);
+        return { messageId: 'message-1', threadId: input.threadId, revision: 1, messageHandle: 'handle-1', pendingPublication: true as const };
       },
     },
     log() {},
@@ -53,7 +60,9 @@ test('module exposes both manifest-declared connector and webhook actions', asyn
   const config: Record<string, unknown> = { corpId: 'corp', agentId: 'agent' };
   const secrets: Record<string, string> = { agentSecret: 'secret', callbackToken: 'token', encodingAesKey: 'aes' };
   const active = await entrypoint.create(manifest).start(host(config, secrets));
-  assert.deepEqual(Object.keys(active.actions).sort(), ['wecom-agent.outbound', 'wecom-agent.webhook']);
+  assert.deepEqual(Object.keys(active.actions).sort(), [
+    'wecom-agent.media-source.read', 'wecom-agent.media-source.settle', 'wecom-agent.outbound', 'wecom-agent.webhook',
+  ]);
   const request = {
     method: 'POST', path: 'connectors/wecom-agent', query: {},
     body: '<xml/>', rawBody: Buffer.from('<xml/>'), headers: { 'content-type': 'text/xml' },
@@ -90,6 +99,7 @@ test('Host-shaped WeCom GET echostr returns a strict text/plain HTTP challenge',
 
 test('replayed WeCom webhook derives the same Host idempotency and source event keys', async () => {
   const sent: Array<{ idempotencyKey: string; sourceEventId?: string }> = [];
+  const drafts: unknown[] = [];
   const outbound = { async sendFormattedReply() {}, async sendMedia() {}, async sendReply() {} } as unknown as WeComAgentAdapter;
   const entrypoint = createWeComAgentPluginModule(options => ({
     outbound, async start() {}, async stop() {},
@@ -98,13 +108,14 @@ test('replayed WeCom webhook derives the same Host idempotency and source event 
       await options.host.deliver({
         externalConversationId: 'chat-1', externalSenderId: 'sender-1',
         providerMessageId: 'provider-message-1', text: 'hello',
+        attachments: [{ type: 'file', platformKey: 'private-media-id', fileName: 'document.pdf' }],
       });
       return { kind: 'processed', messageId: 'provider-message-1' };
     },
   } as WeComAgentConnectorRuntime<WeComAgentAdapter>));
   const active = await entrypoint.create(manifest).start(host(
     { corpId: 'corp', agentId: 'agent' },
-    { agentSecret: 'secret', callbackToken: 'token', encodingAesKey: 'aes' }, sent,
+    { agentSecret: 'secret', callbackToken: 'token', encodingAesKey: 'aes' }, sent, drafts,
   ));
   const payload = { request: {
     method: 'POST', path: 'connectors/wecom-agent', query: {},
@@ -119,6 +130,9 @@ test('replayed WeCom webhook derives the same Host idempotency and source event 
     { idempotencyKey: 'provider-message-1', sourceEventId: 'provider-message-1' },
     { idempotencyKey: 'provider-message-1', sourceEventId: 'provider-message-1' },
   ]);
+  const serialized = JSON.stringify(drafts);
+  assert.equal(serialized.includes('private-media-id'), false);
+  assert.equal(drafts.every((item) => /"reference":"pmr_wecom-agent_/u.test(JSON.stringify(item))), true);
   await active.stop();
 });
 

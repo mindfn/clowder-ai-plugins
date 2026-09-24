@@ -21,6 +21,10 @@ The package does not read a repository `.env` file and does not persist credenti
 remain runtime-ephemeral. Group conversation identifiers may be checkpointed only through a Host-owned
 store injected into the adapter.
 
+Inbound provider media locators are retained only in the package's manifest-declared private state. The
+public message carries a `pmr_*` reference and `sourceEventId`; the Host reads bounded chunks through the
+declared media source, then settlement removes the private locator.
+
 ## Safety and recovery
 
 Provider HTTP errors fail closed. Media upload and download responses are bounded by the provider contract;
@@ -35,4 +39,5 @@ conformance tests without claiming that synthetic handles constitute production 
 
 This package requests these Host capabilities, verbatim from its manifest
 (`plugin.yaml` — kept in sync by `pnpm test:train-c1-inventory`): `plugin.config.read`,
-`media.read`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`.
+`plugin.state.get`, `plugin.state.set`, `media.read`, `message.event.subscribe`, `messaging.send`,
+`secret.read`, `thread.listMetadata`, `thread.write`.
