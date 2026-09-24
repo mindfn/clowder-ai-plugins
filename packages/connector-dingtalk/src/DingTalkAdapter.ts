@@ -11,7 +11,11 @@
 
 import { openAsBlob } from 'node:fs';
 import { basename } from 'node:path';
-import { fetchBoundedInboundMedia, INBOUND_MEDIA_TIMEOUT_MS } from './inbound-download.js';
+import {
+  fetchBoundedInboundMedia,
+  INBOUND_MEDIA_MAX_BYTES,
+  INBOUND_MEDIA_TIMEOUT_MS,
+} from './inbound-download.js';
 import { materializeMedia } from './materialize-media.js';
 
 // DingTalk robot media upload limits: image/file 20 MB, voice 2 MB.
@@ -133,6 +137,8 @@ export class DingTalkAdapter {
   private accessTokenFn: (() => Promise<string>) | null = null;
   private downloadMediaFn: ((downloadCode: string) => Promise<string>) | null = null;
   private uploadMediaFn: ((params: { filePath: string; type: string }) => Promise<string>) | null = null;
+  private inboundFetchFn: typeof fetch = globalThis.fetch;
+  private inboundMediaTimeoutMs = INBOUND_MEDIA_TIMEOUT_MS;
   private readonly streamConnectTimeoutMs: number;
 
   constructor(log: ConnectorLogger, options: DingTalkAdapterOptions) {
@@ -486,20 +492,20 @@ export class DingTalkAdapter {
    * Returns a temporary download URL.
    * AC-A5: Inbound media download via POST /v1.0/robot/messageFiles/download
    */
-  async downloadMedia(downloadCode: string): Promise<string> {
+  async downloadMedia(downloadCode: string, signal?: AbortSignal): Promise<string> {
     if (this.downloadMediaFn) return this.downloadMediaFn(downloadCode);
 
-    const accessToken = await this.getAccessToken();
+    const accessToken = await this.getAccessToken(signal);
     const url = 'https://api.dingtalk.com/v1.0/robot/messageFiles/download';
 
-    const res = await fetch(url, {
+    const res = await this.inboundFetchFn(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-acs-dingtalk-access-token': accessToken,
       },
       body: JSON.stringify({ downloadCode, robotCode: this.robotCode }),
-      signal: AbortSignal.timeout(INBOUND_MEDIA_TIMEOUT_MS),
+      signal,
     });
 
     if (!res.ok) {
@@ -513,12 +519,28 @@ export class DingTalkAdapter {
   }
 
   async downloadInboundMedia(locator: { readonly platformKey: string }): Promise<Buffer> {
-    const downloadUrl = await this.downloadMedia(locator.platformKey);
-    const parsed = new URL(downloadUrl);
-    if (parsed.protocol !== 'https:') throw new Error('DingTalk media download URL must use HTTPS');
-    const { response, bytes } = await fetchBoundedInboundMedia(globalThis.fetch, parsed);
-    if (!response.ok) throw new Error(`DingTalk media download HTTP ${response.status}`);
-    return bytes;
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(new Error('DingTalk inbound media download timed out')),
+      this.inboundMediaTimeoutMs,
+    );
+    timer.unref?.();
+    try {
+      const downloadUrl = await this.downloadMedia(locator.platformKey, controller.signal);
+      const parsed = new URL(downloadUrl);
+      if (parsed.protocol !== 'https:') throw new Error('DingTalk media download URL must use HTTPS');
+      const { response, bytes } = await fetchBoundedInboundMedia(
+        this.inboundFetchFn,
+        parsed,
+        { signal: controller.signal },
+        INBOUND_MEDIA_MAX_BYTES,
+        this.inboundMediaTimeoutMs,
+      );
+      if (!response.ok) throw new Error(`DingTalk media download HTTP ${response.status}`);
+      return bytes;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   // ── Stream Connection ──
@@ -943,7 +965,7 @@ export class DingTalkAdapter {
    */
   private cachedToken: { token: string; expiresAt: number } | null = null;
 
-  private async getAccessToken(): Promise<string> {
+  private async getAccessToken(signal?: AbortSignal): Promise<string> {
     if (this.accessTokenFn) return this.accessTokenFn();
 
     const now = Date.now();
@@ -952,10 +974,11 @@ export class DingTalkAdapter {
     }
 
     const url = 'https://api.dingtalk.com/v1.0/oauth2/accessToken';
-    const res = await fetch(url, {
+    const res = await this.inboundFetchFn(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ appKey: this.appKey, appSecret: this.appSecret }),
+      signal,
     });
 
     if (!res.ok) {
@@ -1002,6 +1025,16 @@ export class DingTalkAdapter {
   /** @internal */
   _injectDownloadMedia(fn: (downloadCode: string) => Promise<string>): void {
     this.downloadMediaFn = fn;
+  }
+
+  /** @internal */
+  _injectInboundFetch(fn: typeof fetch): void {
+    this.inboundFetchFn = fn;
+  }
+
+  /** @internal */
+  _injectInboundMediaTimeout(timeoutMs: number): void {
+    this.inboundMediaTimeoutMs = timeoutMs;
   }
 
   /** @internal */

@@ -135,6 +135,40 @@ test('media upload failure removes the package-owned temporary file', async () =
   await assert.rejects(access(uploadPath));
 });
 
+test('inbound media deadline aborts the DingTalk access-token request', async () => {
+  const subject = adapter();
+  subject._injectInboundMediaTimeout(5);
+  let aborted = false;
+  subject._injectInboundFetch((_input, init) => new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener('abort', () => {
+      aborted = true;
+      reject(init.signal?.reason);
+    }, { once: true });
+  }));
+
+  await assert.rejects(
+    subject.downloadInboundMedia({ platformKey: 'download-code' }),
+    /timed out/u,
+  );
+  assert.equal(aborted, true);
+});
+
+test('inbound media rejects provider-declared oversize content before buffering it', async () => {
+  const subject = adapter();
+  subject._injectDownloadMedia(async () => 'https://media.example/private');
+  let cancelled = false;
+  subject._injectInboundFetch(async () => new Response(new ReadableStream<Uint8Array>({
+    pull() {},
+    cancel() { cancelled = true; },
+  }), { status: 200, headers: { 'content-length': String(64 * 1024 * 1024 + 1) } }));
+
+  await assert.rejects(
+    subject.downloadInboundMedia({ platformKey: 'download-code' }),
+    /safety limit/u,
+  );
+  assert.equal(cancelled, true);
+});
+
 test('group routing is learned only from authenticated provider metadata in the live session', async () => {
   const subject = adapter();
   subject.parseEvent({

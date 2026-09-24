@@ -15,7 +15,11 @@ import * as lark from '@larksuiteoapi/node-sdk';
 import { DEFAULT_QUICK_ACTIONS, type ConnectorLogger, type MessageEnvelope, type RichBlock } from './types.js';
 import type { FeishuTokenManager } from './FeishuTokenManager.js';
 import { formatFeishuCard } from './feishu-card-formatter.js';
-import { collectBoundedInboundMedia, INBOUND_MEDIA_TIMEOUT_MS } from './inbound-download.js';
+import {
+  fetchBoundedInboundMedia,
+  INBOUND_MEDIA_MAX_BYTES,
+  INBOUND_MEDIA_TIMEOUT_MS,
+} from './inbound-download.js';
 import { materializeMedia } from './materialize-media.js';
 
 // Feishu IM upload limits: message images 10 MB; files (including audio) 30 MB.
@@ -26,6 +30,8 @@ export const FEISHU_MEDIA_MAX_BYTES = {
   file: 30_000_000,
   audio: 30_000_000,
 } as const;
+
+const NOOP_SDK_LOGGER = Object.freeze({ error() {}, warn() {}, info() {}, debug() {}, trace() {} });
 
 export interface FeishuAttachment {
   type: 'image' | 'file' | 'audio';
@@ -102,6 +108,8 @@ export class FeishuAdapter {
   private readonly groupBotMentions: Record<string, FeishuMentionAlias>;
   private tokenManager: FeishuTokenManager | null = null;
   private uploadFetchFn: typeof fetch = globalThis.fetch;
+  private inboundFetchFn: typeof fetch = globalThis.fetch;
+  private inboundMediaTimeoutMs = INBOUND_MEDIA_TIMEOUT_MS;
   private sendMessageFn: ((params: { chatId: string; content: string; msgType: string }) => Promise<unknown>) | null =
     null;
   private editMessageFn: ((params: { messageId: string; content: string }) => Promise<unknown>) | null = null;
@@ -120,7 +128,7 @@ export class FeishuAdapter {
       appType: lark.AppType.SelfBuild,
       // The SDK includes request URLs (and therefore file_key locators) in
       // failure logs. Connector-owned logs retain only safe metadata.
-      logger: { error() {}, warn() {}, info() {}, debug() {}, trace() {} },
+      logger: NOOP_SDK_LOGGER,
     });
     this.log = log;
     this.verificationToken = options?.verificationToken ?? null;
@@ -132,30 +140,29 @@ export class FeishuAdapter {
     readonly type: 'image' | 'file' | 'audio' | 'video';
     readonly platformKey: string;
   }): Promise<Buffer> {
-    let requestTimer: ReturnType<typeof setTimeout> | undefined;
-    const response = await Promise.race([
-      this.client.im.messageResource.get({
-        path: { message_id: locator.sourceEventId, file_key: locator.platformKey },
-        params: { type: locator.type === 'image' ? 'image' : 'file' },
-      }),
-      new Promise<never>((_, reject) => {
-        requestTimer = setTimeout(() => reject(new Error('Feishu inbound media download timed out')), INBOUND_MEDIA_TIMEOUT_MS);
-        requestTimer.unref?.();
-      }),
-    ]).finally(() => {
-      if (requestTimer !== undefined) clearTimeout(requestTimer);
-    });
-    const stream = response.getReadableStream();
-    const streamTimer = setTimeout(
-      () => stream.destroy(new Error('Feishu inbound media download timed out')),
-      INBOUND_MEDIA_TIMEOUT_MS,
+    if (this.tokenManager === null) throw new Error('Feishu token manager is not configured');
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(new Error('Feishu inbound media download timed out')),
+      this.inboundMediaTimeoutMs,
     );
-    streamTimer.unref?.();
+    timer.unref?.();
     try {
-      return await collectBoundedInboundMedia(stream);
+      const token = await this.tokenManager.getTenantAccessToken(controller.signal);
+      const messageId = encodeURIComponent(locator.sourceEventId);
+      const fileKey = encodeURIComponent(locator.platformKey);
+      const url = `https://open.feishu.cn/open-apis/im/v1/messages/${messageId}/resources/${fileKey}?type=${locator.type === 'image' ? 'image' : 'file'}`;
+      const { response, bytes } = await fetchBoundedInboundMedia(
+        this.inboundFetchFn,
+        url,
+        { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal },
+        INBOUND_MEDIA_MAX_BYTES,
+        this.inboundMediaTimeoutMs,
+      );
+      if (!response.ok) throw new Error(`Feishu inbound media download HTTP ${response.status}`);
+      return bytes;
     } finally {
-      clearTimeout(streamTimer);
-      stream.destroy();
+      clearTimeout(timer);
     }
   }
 
@@ -951,6 +958,16 @@ export class FeishuAdapter {
    */
   _injectUploadFetch(fn: typeof fetch): void {
     this.uploadFetchFn = fn;
+  }
+
+  /** @internal */
+  _injectInboundFetch(fn: typeof fetch): void {
+    this.inboundFetchFn = fn;
+  }
+
+  /** @internal */
+  _injectInboundMediaTimeout(timeoutMs: number): void {
+    this.inboundMediaTimeoutMs = timeoutMs;
   }
 
   /**

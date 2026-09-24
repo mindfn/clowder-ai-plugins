@@ -17,7 +17,7 @@ export class FeishuTokenManager {
     this.fetchFn = opts.fetchFn ?? globalThis.fetch;
   }
 
-  async getTenantAccessToken(): Promise<string> {
+  async getTenantAccessToken(signal?: AbortSignal): Promise<string> {
     if (this.cachedToken && Date.now() < this.expiresAt) {
       return this.cachedToken;
     }
@@ -29,6 +29,7 @@ export class FeishuTokenManager {
         app_id: this.appId,
         app_secret: this.appSecret,
       }),
+      signal,
     });
 
     if (!res.ok) {

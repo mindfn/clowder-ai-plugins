@@ -65,7 +65,7 @@ test('proactive replies preserve the Host-selected external chat destination', a
   }]);
 });
 
-test('formatted replies longer than the card limit keep the complete media notice', async () => {
+test('formatted replies above the 112-character recommendation keep the complete media notice', async () => {
   const subject = adapter();
   const cards: unknown[] = [];
   const messages: Array<{ chatId: string; body: Record<string, unknown> }> = [];
@@ -73,7 +73,8 @@ test('formatted replies longer than the card limit keep the complete media notic
   subject._injectReplyTemplateCard(async (_frame, card) => { cards.push(card); });
   subject._injectSendMessage(async (chatId, body) => { messages.push({ chatId, body }); });
   const notice = '⚠️ 媒体不可用：diagram.png（无法获取）';
-  const body = `${'正文'.repeat(110)}\n\n${notice}`;
+  const body = `${'正'.repeat(112)}\n\n${notice}`;
+  assert.ok(Array.from(body).length > 112 && Array.from(body).length <= 200);
 
   await subject.sendFormattedReply('group-1', {
     header: 'Cat', body, origin: 'direct',

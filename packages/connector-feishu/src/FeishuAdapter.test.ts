@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { Readable } from 'node:stream';
 import test from 'node:test';
 
 import { FeishuAdapter, inferFeishuFileType } from './FeishuAdapter.js';
@@ -53,20 +52,18 @@ test('parses authenticated direct text without deriving Host wake authority', ()
 
 test('inbound resource success and failure never print the private file key', async () => {
   const subject = new FeishuAdapter('app-id', 'app-secret', logger);
+  subject._injectTokenManager({ async getTenantAccessToken() { return 'token'; } } as never);
   const privateFileKey = 'private-file-key';
   const captured: unknown[] = [];
   const methods = ['debug', 'info', 'warn', 'error'] as const;
   const original = Object.fromEntries(methods.map(method => [method, console[method]])) as Record<typeof methods[number], typeof console.log>;
   for (const method of methods) console[method] = (...args: unknown[]) => { captured.push(args); };
-  const internal = subject as unknown as {
-    client: { im: { messageResource: { get(input: unknown): Promise<{ getReadableStream(): Readable }> } } };
-  };
   try {
-    internal.client.im.messageResource.get = async () => ({ getReadableStream: () => Readable.from([Buffer.from('bytes')]) });
+    subject._injectInboundFetch(async () => new Response(Buffer.from('bytes'), { status: 200 }));
     assert.deepEqual(await subject.downloadInboundMedia({
       sourceEventId: 'message-1', type: 'file', platformKey: privateFileKey,
     }), Buffer.from('bytes'));
-    internal.client.im.messageResource.get = async () => { throw new Error('provider failed'); };
+    subject._injectInboundFetch(async () => { throw new Error('provider failed'); });
     await assert.rejects(subject.downloadInboundMedia({
       sourceEventId: 'message-1', type: 'file', platformKey: privateFileKey,
     }), /provider failed/u);
@@ -74,6 +71,39 @@ test('inbound resource success and failure never print the private file key', as
     for (const method of methods) console[method] = original[method];
   }
   assert.equal(JSON.stringify(captured).includes(privateFileKey), false);
+});
+
+test('inbound resource aborts the underlying header request at the adapter deadline', async () => {
+  const subject = new FeishuAdapter('app-id', 'app-secret', logger);
+  subject._injectTokenManager({ async getTenantAccessToken() { return 'token'; } } as never);
+  subject._injectInboundMediaTimeout(5);
+  let aborted = false;
+  subject._injectInboundFetch((_input, init) => new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener('abort', () => {
+      aborted = true;
+      reject(init.signal?.reason);
+    }, { once: true });
+  }));
+
+  await assert.rejects(subject.downloadInboundMedia({
+    sourceEventId: 'message-1', type: 'file', platformKey: 'file-1',
+  }), /timed out/u);
+  assert.equal(aborted, true);
+});
+
+test('inbound resource rejects declared oversize content and cancels its body', async () => {
+  const subject = new FeishuAdapter('app-id', 'app-secret', logger);
+  subject._injectTokenManager({ async getTenantAccessToken() { return 'token'; } } as never);
+  let cancelled = false;
+  subject._injectInboundFetch(async () => new Response(new ReadableStream<Uint8Array>({
+    pull() {},
+    cancel() { cancelled = true; },
+  }), { status: 200, headers: { 'content-length': String(64 * 1024 * 1024 + 1) } }));
+
+  await assert.rejects(subject.downloadInboundMedia({
+    sourceEventId: 'message-1', type: 'file', platformKey: 'file-1',
+  }), /safety limit/u);
+  assert.equal(cancelled, true);
 });
 
 test('card action carries its provider event ID, not the card message ID', () => {
@@ -162,6 +192,7 @@ test('FeishuAdapter holds no process-spawning capability', () => {
   assert.ok(!source.includes('child_process'), 'FeishuAdapter must not import node:child_process');
   assert.ok(!source.includes('ffmpeg'), 'FeishuAdapter must not reference ffmpeg');
   assert.ok(!source.includes('execFile'), 'FeishuAdapter must not spawn child processes');
+  assert.match(source, /logger: NOOP_SDK_LOGGER/u, 'Feishu SDK logging must remain disabled');
 });
 
 test('OPUS audio keeps msg_type audio', async () => {

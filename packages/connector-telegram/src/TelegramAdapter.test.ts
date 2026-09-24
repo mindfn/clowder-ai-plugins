@@ -121,6 +121,42 @@ test('media upload failure removes the package-owned temporary file', async () =
   await assert.rejects(access(uploadPath));
 });
 
+test('inbound media deadline aborts Telegram getFile instead of waiting for the SDK default', async () => {
+  const { logger } = recordingLogger();
+  const subject = new TelegramAdapter('123456:abcdefghij_ABC-123', logger);
+  subject._injectInboundMediaTimeout(5);
+  let aborted = false;
+  subject._injectGetFile((_fileId, signal) => new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => {
+      aborted = true;
+      reject(signal.reason);
+    }, { once: true });
+  }));
+
+  await assert.rejects(
+    subject.downloadInboundMedia({ platformKey: 'file-1' }),
+    /timed out/u,
+  );
+  assert.equal(aborted, true);
+});
+
+test('inbound media rejects provider-declared oversize content before buffering it', async () => {
+  const { logger } = recordingLogger();
+  const subject = new TelegramAdapter('123456:abcdefghij_ABC-123', logger);
+  subject._injectGetFile(async () => ({ file_path: 'private/file.bin' }));
+  let cancelled = false;
+  subject._injectInboundFetch(async () => new Response(new ReadableStream<Uint8Array>({
+    pull() {},
+    cancel() { cancelled = true; },
+  }), { status: 200, headers: { 'content-length': String(64 * 1024 * 1024 + 1) } }));
+
+  await assert.rejects(
+    subject.downloadInboundMedia({ platformKey: 'file-1' }),
+    /safety limit/u,
+  );
+  assert.equal(cancelled, true);
+});
+
 test('rich formatter escapes untrusted HTML and keeps structured content', () => {
   const blocks: RichBlock[] = [{
     id: 'card-1',

@@ -33,6 +33,7 @@ test('inbound CDN failures never expose the private locator or AES key in logs a
   const observable = JSON.stringify(logs);
   assert.equal(observable.includes('secret-locator'), false);
   assert.equal(observable.includes(aesKey), false);
+  assert.equal(observable.includes(aesKey.slice(0, 8)), false, 'even an AES-key prefix is private');
 });
 
 test('successful inbound CDN downloads log only safe metadata', async () => {
@@ -53,4 +54,5 @@ test('successful inbound CDN downloads log only safe metadata', async () => {
   const observable = JSON.stringify(logs);
   assert.equal(observable.includes('secret-locator'), false);
   assert.equal(observable.includes(aesKey), false);
+  assert.equal(observable.includes(aesKey.slice(0, 8)), false, 'even an AES-key prefix is private');
 });

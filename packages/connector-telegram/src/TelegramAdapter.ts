@@ -10,7 +10,11 @@
  */
 
 import { Bot, GrammyError, InputFile } from 'grammy';
-import { fetchBoundedInboundMedia } from './inbound-download.js';
+import {
+  fetchBoundedInboundMedia,
+  INBOUND_MEDIA_MAX_BYTES,
+  INBOUND_MEDIA_TIMEOUT_MS,
+} from './inbound-download.js';
 import type { ConnectorLogger, RichBlock } from './types.js';
 import { formatTelegramHtml } from './telegram-html-formatter.js';
 import { materializeMedia } from './materialize-media.js';
@@ -143,6 +147,9 @@ export class TelegramAdapter {
   private pollingStopped = false;
   private pollingRunId = 0;
   private pollingControls: TelegramPollingControls | null = null;
+  private inboundFetchFn: typeof fetch = globalThis.fetch;
+  private inboundMediaTimeoutMs = INBOUND_MEDIA_TIMEOUT_MS;
+  private getFileFn: ((fileId: string, signal: AbortSignal) => Promise<{ file_path?: string }>) | null = null;
 
   constructor(botToken: string, log: ConnectorLogger) {
     this.botToken = botToken;
@@ -151,14 +158,32 @@ export class TelegramAdapter {
   }
 
   async downloadInboundMedia(locator: { readonly platformKey: string }): Promise<Buffer> {
-    const file = await this.bot.api.getFile(locator.platformKey);
-    if (!file.file_path) throw new Error('Telegram getFile returned no file_path');
-    const { response, bytes } = await fetchBoundedInboundMedia(
-      globalThis.fetch,
-      `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`,
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(new Error('Telegram inbound media download timed out')),
+      this.inboundMediaTimeoutMs,
     );
-    if (!response.ok) throw new Error(`Telegram media download HTTP ${response.status}`);
-    return bytes;
+    timer.unref?.();
+    try {
+      const file = await (this.getFileFn === null
+        ? this.bot.api.getFile(
+            locator.platformKey,
+            controller.signal as unknown as Parameters<typeof this.bot.api.getFile>[1],
+          )
+        : this.getFileFn(locator.platformKey, controller.signal));
+      if (!file.file_path) throw new Error('Telegram getFile returned no file_path');
+      const { response, bytes } = await fetchBoundedInboundMedia(
+        this.inboundFetchFn,
+        `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`,
+        { signal: controller.signal },
+        INBOUND_MEDIA_MAX_BYTES,
+        this.inboundMediaTimeoutMs,
+      );
+      if (!response.ok) throw new Error(`Telegram media download HTTP ${response.status}`);
+      return bytes;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private getPollingControls(): TelegramPollingControls {
@@ -813,6 +838,21 @@ export class TelegramAdapter {
     sendVoice: (chatId: number, input: string | InputFile) => Promise<unknown>;
   }): void {
     this.sendMediaFns = fns;
+  }
+
+  /** @internal */
+  _injectGetFile(fn: (fileId: string, signal: AbortSignal) => Promise<{ file_path?: string }>): void {
+    this.getFileFn = fn;
+  }
+
+  /** @internal */
+  _injectInboundFetch(fn: typeof fetch): void {
+    this.inboundFetchFn = fn;
+  }
+
+  /** @internal */
+  _injectInboundMediaTimeout(timeoutMs: number): void {
+    this.inboundMediaTimeoutMs = timeoutMs;
   }
 
   /** @internal */

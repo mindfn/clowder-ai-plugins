@@ -53,6 +53,9 @@ interface ActiveStream {
 
 const STREAM_THROTTLE_MS = 300;
 const NOOP_SDK_LOGGER = { debug() {}, info() {}, warn() {}, error() {} };
+// WeCom recommends no more than 112 characters for text_notice.sub_title_text.
+// Source: https://developer.work.weixin.qq.com/document/path/101032
+const WECOM_TEXT_NOTICE_RECOMMENDED_MAX_CHARS = 112;
 
 // ── Adapter ──
 
@@ -353,15 +356,14 @@ export class WeComBotAdapter {
 
     // Try template card via frame-based replyTemplateCard first
     const frame = this.lastFrameByChat.get(externalChatId);
-    // text_notice.sub_title_text is capped at 200 characters. Long bodies can
-    // contain user-visible media notices, so use the markdown fallback rather
-    // than truncating them out of the card.
-    if (frame && envelope.body.length <= 200) {
+    // Longer bodies can be folded by clients and hide a trailing media notice,
+    // so use the markdown fallback rather than relying on the 200-char hard cap.
+    if (frame && Array.from(envelope.body).length <= WECOM_TEXT_NOTICE_RECOMMENDED_MAX_CHARS) {
       try {
         const templateCard: Record<string, unknown> = {
           card_type: 'text_notice',
           main_title: { title: headerTitle, ...(envelope.subtitle ? { desc: envelope.subtitle } : {}) },
-          sub_title_text: envelope.body.slice(0, 200),
+          sub_title_text: envelope.body,
           ...(envelope.footer ? { card_action: { type: 0, url: '' } } : {}),
           task_id: `card_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         };

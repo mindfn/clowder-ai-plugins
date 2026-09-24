@@ -34,9 +34,15 @@ export async function fetchBoundedInboundMedia(
 ): Promise<{ readonly response: Response; readonly bytes: Buffer }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error('inbound media download timed out')), timeoutMs);
+  const signal = init.signal === null || init.signal === undefined
+    ? controller.signal
+    : AbortSignal.any([init.signal, controller.signal]);
   try {
-    const response = await fetchFn(input, { ...init, signal: controller.signal });
-    if (!response.ok) return { response, bytes: Buffer.alloc(0) };
+    const response = await fetchFn(input, { ...init, signal });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      return { response, bytes: Buffer.alloc(0) };
+    }
     const contentLength = Number(response.headers.get('content-length'));
     if (Number.isFinite(contentLength) && contentLength > maxBytes) {
       controller.abort();
