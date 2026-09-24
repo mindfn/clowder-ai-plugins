@@ -166,7 +166,7 @@ export function isDeliveryPresentationContext(value: unknown): value is Delivery
   }).valid;
 }
 
-/** Fail closed before package code when a presentation-v1 subscription receives an incomplete delivery. */
+/** Fail closed before package code when a presentation v1/v2 subscription receives an incomplete delivery. */
 export function requireDeliveryPresentation(input: unknown): DeliveryPresentationContext {
   if (!isRecord(input) || !isDeliveryPresentationContext(input.presentation)) {
     throw new PresentationDeliveryInputError();

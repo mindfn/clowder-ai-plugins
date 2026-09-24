@@ -200,6 +200,37 @@ test('module entrypoint mirrors the Host lifecycle and thin host surfaces', asyn
   assert.equal(calls.some((call) => call.operation === 'messaging.unsubscribe'), false);
 });
 
+test('a v2 message subscription registers and still requires delivery presentation', async () => {
+  const calls: Array<{ operation: string; value?: unknown }> = [];
+  const received: unknown[] = [];
+  const v2Manifest = structuredClone(manifest());
+  const subscription = v2Manifest.contributions.find(
+    (contribution) => contribution.type === 'message-subscription',
+  );
+  assert.ok(subscription && 'presentation' in subscription);
+  (subscription as { presentation: string }).presentation = 'v2';
+
+  const entrypoint = moduleWithJourney(received);
+  const activation = await entrypoint.create(v2Manifest).start(host(calls));
+  assert.deepEqual(calls.find((call) => call.operation === 'messaging.subscribe')?.value, {
+    threadId: 'thread-1', method: 'fixture.outbound', includeOwnMessages: true,
+  });
+
+  const delivery = {
+    deliveryId: 'delivery-1', threadId: 'thread-1', envelope: { messageId: 'message-1' },
+    presentation: { actor: { displayName: 'Fixture', emoji: '🐱' }, thread: { shortId: 'abc123' } },
+  };
+  await activation.actions['fixture.outbound']?.(delivery);
+  assert.deepEqual(received, [delivery]);
+  await assert.rejects(
+    Promise.resolve().then(() => activation.actions['fixture.outbound']?.({
+      deliveryId: 'delivery-2', threadId: 'thread-1', envelope: { messageId: 'message-2' },
+    })),
+    /delivery presentation is required/,
+  );
+  await activation.stop();
+});
+
 test('a fresh module start replays subscriptions without an SDK registration store', async () => {
   const calls: Array<{ operation: string; value?: unknown }> = [];
   const entrypoint = moduleWithJourney([]);

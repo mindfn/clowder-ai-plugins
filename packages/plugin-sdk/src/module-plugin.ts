@@ -184,7 +184,8 @@ async function startDefinedPluginModule(
       const presentationMethods = new Set(
         contributions
           .filter((contribution): contribution is MessageSubscriptionContribution =>
-            contribution.type === 'message-subscription' && contribution.presentation === 'v1')
+            contribution.type === 'message-subscription' &&
+            (contribution.presentation === 'v1' || contribution.presentation === 'v2'))
           .map(contribution => contribution.action.method),
       );
       for (const [method, handler] of Object.entries(activated.actions)) {
