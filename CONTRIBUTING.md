@@ -8,6 +8,8 @@
 
 ## 交付前核验（宣布新 HEAD 前必读）
 
+推送前在仓根跑 `pnpm gate:ci`：它按 Contract CI 的顺序本地复跑从工具链检查到 `pack:gate` 的全部检查（workflow 直接调用同一脚本，不会漂移），任一步失败会停在那一步并打印步骤名。注意第 1 步要求当前 shell 的 Node/npm/zlib 与 workflow 钉死的 artifact 工具链一致。
+
 CI 的 `assert-pr-head` 闸只在**有 run 存在**时才拦得住「推错仓」——推错 remote 的 push 根本不产生 PR run，闸不会红。因此每次向 reviewer 交付新 exact HEAD 前，必须在本机手工跑一遍：
 
 ```

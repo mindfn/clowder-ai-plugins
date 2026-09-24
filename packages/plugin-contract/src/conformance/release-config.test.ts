@@ -40,6 +40,8 @@ const releaseWorkflow = readFileSync(
   'utf8',
 );
 
+const localGate = readFileSync(new URL('../../../../scripts/ci-gate.mjs', import.meta.url), 'utf8');
+
 const pluginCatalog = JSON.parse(
   readFileSync(new URL('../../../../catalog/catalog.json', import.meta.url), 'utf8'),
 ) as PluginCatalog;
@@ -183,8 +185,12 @@ function assertAuthorizedTokenPublicationBaseline(workflow: string): void {
     workflow.match(
       /^        run: node packages\/plugin-contract\/scripts\/verify-artifact-toolchain\.mjs$/gm,
     )?.length,
-    2,
-    'both jobs must verify Node, npm, and zlib before producing package bytes',
+    1,
+    'publication must verify Node, npm, and zlib before producing package bytes',
+  );
+  assert.ok(
+    localGate.indexOf('node packages/plugin-contract/scripts/verify-artifact-toolchain.mjs') >= 0,
+    'the local gate must verify Node, npm, and zlib before producing package bytes',
   );
   assert.equal(
     existsSync(artifactToolchainVerifierUrl),
@@ -197,9 +203,9 @@ function assertAuthorizedTokenPublicationBaseline(workflow: string): void {
   assert.match(verifier, /zlib: process\.versions\.zlib/);
   assert.match(verifier, /actual\[name\] !== expected\[name\]/);
   assert.ok(
-    validateJob.indexOf('Verify artifact toolchain') <
-      validateJob.indexOf('- name: Build'),
-    'validation must verify the toolchain before building package bytes',
+    validateJob.indexOf('- name: Local gate (toolchain to pack:gate)') <
+      validateJob.indexOf('- name: Capture exact-head pack evidence'),
+    'validation must run the local gate before capturing pack evidence',
   );
   assert.ok(
     publishJob.indexOf('Verify artifact toolchain') <
@@ -835,19 +841,21 @@ test('SDK changes execute pull-request validation', () => {
   assert.match(releaseWorkflow, /^  pull_request: \{\}$/m);
   assert.match(
     validateJob,
-    /^      - name: SDK typecheck\n        run: pnpm --filter @clowder-ai\/plugin-sdk typecheck$/m,
+    /^      - name: Local gate \(toolchain to pack:gate\)\n        run: pnpm gate:ci$/m,
   );
-  assert.match(
-    validateJob,
-    /^      - name: SDK unit tests\n        run: pnpm --filter @clowder-ai\/plugin-sdk test$/m,
-  );
-  assert.match(
-    validateJob,
-    /^      - name: SDK build\n        run: pnpm --filter @clowder-ai\/plugin-sdk build$/m,
-  );
+  for (const command of [
+    'pnpm --filter @clowder-ai/plugin-sdk typecheck',
+    'pnpm --filter @clowder-ai/plugin-sdk test',
+    'pnpm --filter @clowder-ai/plugin-sdk build',
+  ]) {
+    assert.ok(
+      localGate.includes(`'${command}'`),
+      `local gate must run ${command}`,
+    );
+  }
   assert.ok(
-    validateJob.indexOf('- name: Build\n        run: pnpm --filter @clowder-ai/plugin-contract build') <
-      validateJob.indexOf('- name: SDK typecheck\n        run: pnpm --filter @clowder-ai/plugin-sdk typecheck'),
+    localGate.indexOf('pnpm --filter @clowder-ai/plugin-contract build') <
+      localGate.indexOf('pnpm --filter @clowder-ai/plugin-sdk typecheck'),
     'SDK checks must run after the contract build that provides their conformance import',
   );
 });
@@ -867,12 +875,18 @@ test('connector changes execute the aggregate package gate', () => {
   assert.ok(validateJob, 'validation job must be active');
   for (const directory of connectorDirectories) {
     assert.match(releaseWorkflow, new RegExp(`^      - 'packages/${directory}/\\*\\*'$`, 'm'));
-    assert.match(validateJob, new RegExp(`^            @clowder-ai/${directory}(?: \\\\)?$`, 'm'));
+    assert.ok(
+      localGate.includes(`'@clowder-ai/${directory}'`),
+      `local gate must gate @clowder-ai/${directory}`,
+    );
   }
-  assert.match(
-    validateJob,
-    /^      - name: Connector package gates\n        run: \|\n[\s\S]*?pnpm --filter "\$package" typecheck\n[\s\S]*?pnpm --filter "\$package" test\n[\s\S]*?pnpm --filter "\$package" build$/m,
-  );
+  assert.match(localGate, /name: 'Connector package gates'/);
+  for (const script of ['typecheck', 'test', 'build']) {
+    assert.ok(
+      localGate.includes(`pnpm --filter "$package" ${script}`),
+      `connector package gates must run ${script}`,
+    );
+  }
 });
 
 test('loopback fixture changes execute pull-request validation', () => {
@@ -906,20 +920,15 @@ test('official Feishu intake changes execute pull-request validation', () => {
   const validateJob = releaseWorkflow.match(/^  validate:\n[\s\S]*?(?=^  publish:)/m)?.[0];
 
   assert.ok(validateJob, 'validation job must be active');
-  for (const [name, command] of [
-    ['Feishu intake typecheck', 'pnpm --filter @clowder-ai/feishu-meeting-intake typecheck'],
-    ['Feishu intake tests', 'pnpm --filter @clowder-ai/feishu-meeting-intake test'],
-    ['Feishu intake lint', 'pnpm --filter @clowder-ai/feishu-meeting-intake lint'],
-    ['Feishu intake build', 'pnpm --filter @clowder-ai/feishu-meeting-intake build'],
-  ] as const) {
-    assert.match(
-      validateJob,
-      new RegExp(`^      - name: ${name}\\n        run: ${command.replaceAll('/', '\\/')}$$`, 'm'),
-    );
-  }
+  assert.match(validateJob, /^      - name: Local gate \(toolchain to pack:gate\)\n        run: pnpm gate:ci$/m);
+  assert.match(
+    localGate,
+    /chain\('@clowder-ai\/feishu-meeting-intake', \['typecheck', 'test', 'lint', 'build'\]\)/,
+    'local gate must run Feishu intake typecheck, tests, lint, and build',
+  );
   assert.ok(
-    validateJob.indexOf('- name: SDK build\n        run: pnpm --filter @clowder-ai/plugin-sdk build') <
-      validateJob.indexOf('- name: Feishu intake typecheck\n        run: pnpm --filter @clowder-ai/feishu-meeting-intake typecheck'),
+    localGate.indexOf('pnpm --filter @clowder-ai/plugin-sdk build') <
+      localGate.indexOf("chain('@clowder-ai/feishu-meeting-intake'"),
     'Feishu intake validation must run after its SDK dependency is built',
   );
 });
@@ -928,18 +937,16 @@ test('official video analysis changes execute pull-request validation', () => {
   const validateJob = releaseWorkflow.match(/^  validate:\n[\s\S]*?(?=^  publish:)/m)?.[0];
 
   assert.ok(validateJob, 'validation job must be active');
-  for (const [name, command] of [
-    ['Video analysis typecheck', 'pnpm --filter @clowder-ai/video-analysis typecheck'],
-    ['Video analysis tests', 'pnpm --filter @clowder-ai/video-analysis test'],
-    ['Video analysis lint', 'pnpm --filter @clowder-ai/video-analysis lint'],
-    ['Video analysis build', 'pnpm --filter @clowder-ai/video-analysis build'],
-    ['Machine catalog', 'pnpm catalog:check'],
-  ] as const) {
-    assert.match(
-      validateJob,
-      new RegExp(`^      - name: ${name}\\n        run: ${command.replaceAll('/', '\\/')}$$`, 'm'),
-    );
-  }
+  assert.match(validateJob, /^      - name: Local gate \(toolchain to pack:gate\)\n        run: pnpm gate:ci$/m);
+  assert.match(
+    localGate,
+    /chain\('@clowder-ai\/video-analysis', \['typecheck', 'test', 'lint', 'build'\]\)/,
+    'local gate must run video analysis typecheck, tests, lint, and build',
+  );
+  assert.ok(
+    localGate.includes("'pnpm catalog:check'"),
+    'local gate must run pnpm catalog:check',
+  );
 });
 
 test('public consumer packages contain no workspace protocol and CI installs packed artifacts', () => {
@@ -963,5 +970,5 @@ test('public consumer packages contain no workspace protocol and CI installs pac
     );
   }
   assert.match(npmrc, /^link-workspace-packages=true$/m);
-  assert.match(releaseWorkflow, /pnpm test:fresh-consumer/);
+  assert.match(localGate, /pnpm test:fresh-consumer/);
 });

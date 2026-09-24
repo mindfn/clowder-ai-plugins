@@ -9,6 +9,34 @@ import test from 'node:test';
 
 import { createStdioChannel, type JsonObject } from '@clowder-ai/plugin-sdk';
 
+// Child-process cases must fail on a missed deadline instead of wedging the
+// runner: a stuck child otherwise keeps stdin open and the run never exits.
+const TEST_TIMEOUT_MS = 30_000;
+const CHILD_CLOSE_TIMEOUT_MS = 5_000;
+const boundedTest = (name: string, fn: () => unknown) =>
+  test(name, { timeout: TEST_TIMEOUT_MS }, fn as () => void | Promise<void>);
+
+async function awaitChildClose(
+  child: ReturnType<typeof spawn>,
+): Promise<[number | null, NodeJS.Signals | null]> {
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return (await Promise.race([
+      once(child, 'close'),
+      new Promise<never>((_resolve, reject) => {
+        closeTimer = setTimeout(() => {
+          child.kill('SIGKILL');
+          reject(new Error('child did not close before the deadline'));
+        }, CHILD_CLOSE_TIMEOUT_MS);
+      }),
+    ])) as [number | null, NodeJS.Signals | null];
+  } finally {
+    if (closeTimer !== undefined) {
+      clearTimeout(closeTimer);
+    }
+  }
+}
+
 const childFixture = new URL('./test-fixtures/stdio-child.ts', import.meta.url);
 
 interface ChildResult {
@@ -45,12 +73,15 @@ async function runRuntimeChild(input: readonly Buffer[]): Promise<ChildResult> {
   const stderr: Buffer[] = [];
   child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
   child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+  // An early child death makes stdin writes reject with EPIPE; the exit code
+  // assertion below is the verdict, so the stream error is not fatal here.
+  child.stdin.on('error', () => {});
 
   for (const chunk of input) {
     child.stdin.write(chunk);
   }
   child.stdin.end();
-  const [code] = (await once(child, 'close')) as [number | null];
+  const [code] = await awaitChildClose(child);
   return {
     code,
     stdout: Buffer.concat(stdout),
@@ -67,6 +98,7 @@ async function runFatalRuntimeChildWithoutClosingInput(): Promise<ChildResult | 
   const stderr: Buffer[] = [];
   child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
   child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+  child.stdin.on('error', () => {});
 
   let readyTimer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -99,12 +131,15 @@ async function runFatalRuntimeChildWithoutClosingInput(): Promise<ChildResult | 
       new Promise<undefined>(resolve => setTimeout(resolve, 250)),
     ]);
   } finally {
+    // Always tear the child down and reap it: a fatal-framing child that is
+    // left waiting on stdin keeps the test runner's event loop alive forever.
     child.stdin.end();
     child.kill('SIGKILL');
+    await awaitChildClose(child).catch(() => {});
   }
 }
 
-test('echoes a legal NDJSON frame through a real child that imports only the public SDK runtime', async () => {
+boundedTest('echoes a legal NDJSON frame through a real child that imports only the public SDK runtime', async () => {
   const result = await runRuntimeChild([
     Buffer.from('{"type":"ping","payload":{"sequence":1}}\n', 'utf8'),
   ]);
@@ -116,7 +151,7 @@ test('echoes a legal NDJSON frame through a real child that imports only the pub
   });
 });
 
-test('fails closed when the child runtime receives a malformed NDJSON frame', async () => {
+boundedTest('fails closed when the child runtime receives a malformed NDJSON frame', async () => {
   const result = await runRuntimeChild([
     Buffer.from('this is not JSON\n', 'utf8'),
     Buffer.from('{"type":"must-not-run"}\n', 'utf8'),
@@ -126,7 +161,7 @@ test('fails closed when the child runtime receives a malformed NDJSON frame', as
   assert.equal(result.stdout.byteLength, 0, 'fatal framing must not emit a response');
 });
 
-test('terminates the standalone child immediately after fatal framing instead of waiting for stdin EOF', async () => {
+boundedTest('terminates the standalone child immediately after fatal framing instead of waiting for stdin EOF', async () => {
   const result = await runFatalRuntimeChildWithoutClosingInput();
 
   if (result === undefined) {
@@ -136,7 +171,7 @@ test('terminates the standalone child immediately after fatal framing instead of
   assert.equal(result.stdout.byteLength, 0);
 });
 
-test('keeps protocol stdout free of diagnostics and non-frame bytes', async () => {
+boundedTest('keeps protocol stdout free of diagnostics and non-frame bytes', async () => {
   const result = await runRuntimeChild([
     Buffer.from('{"type":"first"}\n{"type":"second"}\n', 'utf8'),
   ]);
@@ -150,7 +185,7 @@ test('keeps protocol stdout free of diagnostics and non-frame bytes', async () =
   ]);
 });
 
-test('preserves raw frame bytes for pre-parse validation at the SDK handler boundary', async () => {
+boundedTest('preserves raw frame bytes for pre-parse validation at the SDK handler boundary', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   const raw = '{"id":"first","id":"second"}';
@@ -176,7 +211,7 @@ test('preserves raw frame bytes for pre-parse validation at the SDK handler boun
   channel.close();
 });
 
-test('rejects a Readable that is already in text mode before invalid UTF-8 can be replaced', () => {
+boundedTest('rejects a Readable that is already in text mode before invalid UTF-8 can be replaced', () => {
   const input = new PassThrough();
   input.setEncoding('utf8');
 
@@ -186,7 +221,7 @@ test('rejects a Readable that is already in text mode before invalid UTF-8 can b
   );
 });
 
-test('fails closed on an object-mode chunk before a later legal byte frame can run', () => {
+boundedTest('fails closed on an object-mode chunk before a later legal byte frame can run', () => {
   const input = new PassThrough({ objectMode: true });
   const output = new PassThrough();
   let handled = false;
@@ -210,7 +245,7 @@ test('fails closed on an object-mode chunk before a later legal byte frame can r
   channel.close();
 });
 
-test('detaches all caller-owned stream listeners after a fatal frame and later close', () => {
+boundedTest('detaches all caller-owned stream listeners after a fatal frame and later close', () => {
   const input = new PassThrough();
   const output = new PassThrough();
   const channel = createStdioChannel(input, output, { onFrame: () => undefined });
@@ -225,7 +260,7 @@ test('detaches all caller-owned stream listeners after a fatal frame and later c
   assert.equal(output.listenerCount('error'), 0);
 });
 
-test('keeps output error handling through a write that settles after channel close', async () => {
+boundedTest('keeps output error handling through a write that settles after channel close', async () => {
   const input = new PassThrough();
   const writeFailure = new Error('late broken pipe');
   class CallbackThenErrorOutput extends EventEmitter {
@@ -282,7 +317,7 @@ test('keeps output error handling through a write that settles after channel clo
   assert.equal(fatalReason, 'OUTPUT_ERROR');
 });
 
-test('detaches output error handling after a successful pre-close write settles', async () => {
+boundedTest('detaches output error handling after a successful pre-close write settles', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   const channel = createStdioChannel(input, output, { onFrame: () => undefined });
@@ -296,7 +331,7 @@ test('detaches output error handling after a successful pre-close write settles'
   assert.equal(output.listenerCount('error'), 0);
 });
 
-test('fails closed when input closes with a truncated frame instead of ending', async () => {
+boundedTest('fails closed when input closes with a truncated frame instead of ending', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   let fatalReason: string | undefined;
@@ -336,7 +371,7 @@ test('fails closed when input closes with a truncated frame instead of ending', 
   channel.close();
 });
 
-test('fails closed when a destroyed output rejects a public send', async () => {
+boundedTest('fails closed when a destroyed output rejects a public send', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   let fatalReason: string | undefined;
@@ -363,7 +398,7 @@ test('fails closed when a destroyed output rejects a public send', async () => {
   channel.close();
 });
 
-test('classifies a destroyed output during a handler reply as an output fault', async () => {
+boundedTest('classifies a destroyed output during a handler reply as an output fault', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   let fatalReason: string | undefined;
@@ -388,7 +423,7 @@ test('classifies a destroyed output during a handler reply as an output fault', 
   channel.close();
 });
 
-test('classifies a native writable callback failure as an output fault', async () => {
+boundedTest('classifies a native writable callback failure as an output fault', async () => {
   const input = new PassThrough();
   const writeFailure = new Error('broken pipe');
   const output = new Writable({
@@ -419,7 +454,7 @@ test('classifies a native writable callback failure as an output fault', async (
   channel.close();
 });
 
-test('pauses upstream while a handler is pending and resumes in frame order after it settles', async () => {
+boundedTest('pauses upstream while a handler is pending and resumes in frame order after it settles', async () => {
   let framesPulled = 0;
   const input = new Readable({
     highWaterMark: 64,
@@ -477,7 +512,7 @@ test('pauses upstream while a handler is pending and resumes in frame order afte
   channel.close();
 });
 
-test('keeps a multi-frame chunk paused until its first handler settles, then preserves order', async () => {
+boundedTest('keeps a multi-frame chunk paused until its first handler settles, then preserves order', async () => {
   let emitted = false;
   const input = new Readable({
     read() {
@@ -544,7 +579,7 @@ test('keeps a multi-frame chunk paused until its first handler settles, then pre
   channel.close();
 });
 
-test('does not parse a large single chunk past its blocked first frame', async () => {
+boundedTest('does not parse a large single chunk past its blocked first frame', async () => {
   const frameCount = 10_000;
   const input = new PassThrough();
   const output = new PassThrough();
@@ -594,7 +629,7 @@ test('does not parse a large single chunk past its blocked first frame', async (
   channel.close();
 });
 
-test('bounds LF scanning to the current decode slice for an unterminated large chunk', () => {
+boundedTest('bounds LF scanning to the current decode slice for an unterminated large chunk', () => {
   const scanned = { total: 0 };
   const chunk = new TrackingBytes(2 * 1024 * 1024);
   trackedScans.set(chunk.buffer, scanned);
@@ -636,7 +671,7 @@ test('bounds LF scanning to the current decode slice for an unterminated large c
   }
 });
 
-test('excludes stale dist files from the packed SDK artifact', async () => {
+boundedTest('excludes stale dist files from the packed SDK artifact', async () => {
   const packageRoot = new URL('../', import.meta.url).pathname;
   const sentinel = join(packageRoot, 'dist', 'stale-review-sentinel.js');
   const packDirectory = await mkdtemp(join(tmpdir(), 'plugin-sdk-pack-'));
