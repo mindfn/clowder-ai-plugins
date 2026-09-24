@@ -91,7 +91,14 @@ async function runRuntimeChild(input: readonly Buffer[]): Promise<ChildResult> {
 
 // Milliseconds to wait for the fixture runtime to announce readiness before
 // treating the child as wedged. Injectable so a test can force that path.
-const FATAL_CHILD_READY_TIMEOUT_MS = 2_000;
+// A ready fixture reports in well under a second; this only bounds a truly
+// wedged child, so it must outlive CPU contention rather than race it.
+const FATAL_CHILD_READY_TIMEOUT_MS = 10_000;
+
+// Anti-wedge bound for "the runtime must terminate without waiting for stdin
+// EOF": a correct runtime closes promptly, a broken one must fail this test
+// instead of wedging the runner. Not a delay — verdicts are data-driven.
+const FATAL_CLOSE_DEADLINE_MS = 5_000;
 
 function processIsAlive(pid: number): boolean {
   try {
@@ -124,9 +131,6 @@ async function runFatalRuntimeChildWithoutClosingInput(
   // event, so a child that already exited never makes teardown wait out
   // the close deadline.
   const childClosed = once(child, 'close');
-  if (child.pid !== undefined) {
-    options.onSpawn?.(child.pid);
-  }
   const stdout: Buffer[] = [];
   const stderr: Buffer[] = [];
   child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
@@ -134,6 +138,9 @@ async function runFatalRuntimeChildWithoutClosingInput(
   child.stdin.on('error', () => {});
 
   try {
+    if (child.pid !== undefined) {
+      options.onSpawn?.(child.pid);
+    }
     let readyTimer: ReturnType<typeof setTimeout> | undefined;
     try {
       const closedBeforeReady = childClosed.then(([code]) => {
@@ -169,7 +176,7 @@ async function runFatalRuntimeChildWithoutClosingInput(
         stdout: Buffer.concat(stdout),
         stderr: Buffer.concat(stderr).toString('utf8'),
       })),
-      new Promise<undefined>(resolve => setTimeout(resolve, 250)),
+      new Promise<undefined>(resolve => setTimeout(resolve, FATAL_CLOSE_DEADLINE_MS)),
     ]);
   } finally {
     // Every exit path — readiness timeout, fatal framing, assertion
@@ -372,7 +379,7 @@ boundedTest('keeps output error handling through a write that settles after chan
   const outcome = await Promise.race([
     Promise.all([fatalPromise, errorPromise]).then(() => 'completed' as const),
     new Promise<'timed-out'>(resolve => {
-      completionTimer = setTimeout(() => resolve('timed-out'), 250);
+      completionTimer = setTimeout(() => resolve('timed-out'), 5_000);
     }),
   ]);
   if (completionTimer !== undefined) {
@@ -420,7 +427,7 @@ boundedTest('fails closed when input closes with a truncated frame instead of en
   const outcome = await Promise.race([
     fatalPromise.then(() => 'failed' as const),
     new Promise<'timed-out'>(resolve => {
-      completionTimer = setTimeout(() => resolve('timed-out'), 250);
+      completionTimer = setTimeout(() => resolve('timed-out'), 5_000);
     }),
   ]);
   if (completionTimer !== undefined) {
@@ -634,7 +641,7 @@ boundedTest('keeps a multi-frame chunk paused until its first handler settles, t
     allHandledPromise.then(() => 'handled' as const),
     fatalPromise.then(() => 'fatal' as const),
     new Promise<'timed-out'>(resolve => {
-      completionTimer = setTimeout(() => resolve('timed-out'), 250);
+      completionTimer = setTimeout(() => resolve('timed-out'), 5_000);
     }),
   ]);
   if (completionTimer !== undefined) {

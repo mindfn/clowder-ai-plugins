@@ -227,7 +227,11 @@ boundedTest('case timeout kills helpers that inherit the child protocol pipes', 
         {
           command: process.execPath,
           args: ['-e', inheritedPipeHelperScript],
-          timeoutMs: 200,
+          // Verdict window: the callback must observe helperPid before the
+          // case times out. At 200ms a 5x CPU-oversubscribed host left
+          // helperPid undefined in 5/6 rounds; 2000ms passes 4/4 at 10x
+          // while the cleanup-meaning mutation below still turns red.
+          timeoutMs: 2_000,
           terminateGraceMs: 40,
         },
         async (child) => {
@@ -428,14 +432,20 @@ boundedTest('runHarnessCase rejects a fatal backlog even when the callback repor
     runHarnessCase(
       {
         command: process.execPath,
-        args: [
-          '-e',
-          `process.stdout.write(${JSON.stringify(burst)}); setInterval(() => {}, 1_000);`,
-        ],
-        timeoutMs: 1_000,
+        args: ['-e', `process.stdout.write(${JSON.stringify(burst)});`],
+        // Wedge bound only: detection is data-driven below, not a race
+        // against a wall-clock window.
+        timeoutMs: 5_000,
       },
-      async () => {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+      async (child) => {
+        // Once the child has exited, every burst frame has been consumed by
+        // the harness; the queued overflow then surfaces deterministically
+        // as HarnessFrameBacklogError instead of racing a 100ms sleep.
+        await child.waitForExit();
+        await assert.rejects(
+          child.receive({ timeoutMs: 5_000 }),
+          (error: unknown) => error instanceof HarnessFrameBacklogError,
+        );
         return 'reported-success';
       },
     ),
