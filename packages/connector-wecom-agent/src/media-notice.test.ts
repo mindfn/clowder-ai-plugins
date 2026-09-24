@@ -19,16 +19,22 @@ test('typed media notices render every unavailable enum without relying on fileN
 });
 
 test('media warning identifies its referenced media by display name or type', () => {
-  const warning = {
-    elementId: 'warning-1', kind: 'media_warning',
-    payload: { mediaElementId: 'media-1', stage: 'transcription', reason: 'processing_failed' },
-  };
-  assert.equal(renderTypedMediaNotice(warning, { elements: [
-    { elementId: 'media-1', kind: 'media_ref', payload: { type: 'audio', reference: 'hmr_1', fileName: 'voice.opus' } },
-  ] }), '⚠️ 媒体处理警告：voice.opus（转写处理失败）');
-  assert.equal(renderTypedMediaNotice(warning, { elements: [
-    { elementId: 'media-1', kind: 'media_ref', payload: { type: 'audio', reference: 'hmr_1' } },
-  ] }), '⚠️ 媒体处理警告：音频（转写处理失败）');
+  const stages = { transcription: '转写', preview: '预览' } as const;
+  const reasons = { timeout: '超时', processing_failed: '处理失败' } as const;
+  for (const [stage, stageLabel] of Object.entries(stages)) {
+    for (const [reason, reasonLabel] of Object.entries(reasons)) {
+      const warning = {
+        elementId: `warning-${stage}-${reason}`, kind: 'media_warning',
+        payload: { mediaElementId: 'media-1', stage, reason },
+      };
+      assert.equal(renderTypedMediaNotice(warning, { elements: [
+        { elementId: 'media-1', kind: 'media_ref', payload: { type: 'audio', reference: 'hmr_1', fileName: 'voice.opus' } },
+      ] }), `⚠️ 媒体处理警告：voice.opus（${stageLabel}${reasonLabel}）`);
+      assert.equal(renderTypedMediaNotice(warning, { elements: [
+        { elementId: 'media-1', kind: 'media_ref', payload: { type: 'audio', reference: 'hmr_1' } },
+      ] }), `⚠️ 媒体处理警告：音频（${stageLabel}${reasonLabel}）`);
+    }
+  }
 });
 
 test('only typed notice elements render and malformed notices log only their elementId', () => {

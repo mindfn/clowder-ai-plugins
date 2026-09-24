@@ -54,12 +54,6 @@ interface ActiveStream {
 const STREAM_THROTTLE_MS = 300;
 const NOOP_SDK_LOGGER = { debug() {}, info() {}, warn() {}, error() {} };
 
-function redactSdkLogMessage(value: unknown): string {
-  return String(value)
-    .replace(/https?:\/\/[^"'\s]+/giu, '[REDACTED_URL]')
-    .replace(/((?:aeskey|aes_key)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^,\s}]+)/giu, '$1[REDACTED]');
-}
-
 // ── Adapter ──
 
 export class WeComBotAdapter {
@@ -125,12 +119,10 @@ export class WeComBotAdapter {
   }
 
   private sdkLogger() {
-    return {
-      debug: (message: string) => this.log.debug?.(redactSdkLogMessage(message)),
-      info: (message: string) => this.log.info(redactSdkLogMessage(message)),
-      warn: (message: string) => this.log.warn(redactSdkLogMessage(message)),
-      error: (message: string) => this.log.error(redactSdkLogMessage(message)),
-    };
+    // Provider debug payloads include short-lived download URLs and AES keys,
+    // including JSON forms such as `"aeskey":"..."`. Do not forward any
+    // SDK-owned log record into the Host process.
+    return NOOP_SDK_LOGGER;
   }
 
   // ── Connection Health ──

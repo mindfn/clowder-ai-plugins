@@ -99,7 +99,7 @@ test('SDK and download logging never expose media URLs or AES keys on success or
   const privateUrl = 'https://media.example/download?locator=private';
   const aesKey = 'private-aes-key';
   internal.sdkLogger().info(`download ${privateUrl} aeskey=${aesKey}`);
-  internal.sdkLogger().warn(`failed aes_key: "${aesKey}"`);
+  internal.sdkLogger().warn(`body={"aeskey":"${aesKey}","url":"${privateUrl}"}`);
   subject._injectDownloadFile(async () => ({ buffer: Buffer.from('bytes'), filename: 'media.bin' }));
   await subject.downloadMedia(privateUrl, aesKey);
   subject._injectDownloadFile(async () => { throw new Error('provider failed'); });
@@ -108,7 +108,7 @@ test('SDK and download logging never expose media URLs or AES keys on success or
   const observable = JSON.stringify(entries);
   assert.equal(observable.includes(privateUrl), false);
   assert.equal(observable.includes(aesKey), false);
-  assert.match(observable, /REDACTED/u);
+  assert.deepEqual(entries, []);
 });
 
 test('frame-bound stream is explicitly finished and removed during settlement', async () => {

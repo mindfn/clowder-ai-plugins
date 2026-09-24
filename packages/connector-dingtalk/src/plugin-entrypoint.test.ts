@@ -76,7 +76,7 @@ test('module bridges provider ingress and Host subscription egress without conne
 test('inbound media is retained as a private locator and exposed through bounded media-source actions', async () => {
   const state = new Map<string, { revision: number; value: unknown }>();
   const sent: unknown[] = [];
-  let sendFails = false;
+  let sendError: unknown;
   let inbound!: (message: DingTalkHostInboundMessage) => Promise<void>;
   const outbound = {
     async downloadInboundMedia(locator: { platformKey: string }) {
@@ -99,7 +99,13 @@ test('inbound media is retained as a private locator and exposed through bounded
         state.set(key, { revision: 1, value });
         return { applied: true, revision: 1 };
       },
-      delete: async key => ({ deleted: state.delete(key) }),
+      delete: async (key, expectedRevision) => {
+        const current = state.get(key);
+        if (expectedRevision !== undefined && current?.revision !== expectedRevision) {
+          return { deleted: false, revision: current?.revision };
+        }
+        return { deleted: state.delete(key), revision: current?.revision };
+      },
     },
     tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
@@ -111,7 +117,7 @@ test('inbound media is retained as a private locator and exposed through bounded
       subscribe: async () => undefined,
       unsubscribe: async () => undefined,
       send: async input => {
-        if (sendFails) throw new Error('Host rejected draft');
+        if (sendError !== undefined) throw sendError;
         sent.push(input);
         return { messageId: 'host-message-1', threadId: input.threadId, revision: 1, messageHandle: 'handle-1', pendingPublication: true as const };
       },
@@ -141,12 +147,26 @@ test('inbound media is retained as a private locator and exposed through bounded
   assert.deepEqual(await active.actions['dingtalk.media-source.read']?.({ requestId: 'request-2', reference, offset: 0, limit: 10 }), {
     kind: 'rejected', requestId: 'request-2', code: 'MEDIA_SOURCE_UNAVAILABLE',
   });
-  sendFails = true;
+  sendError = new Error('Host rejected draft');
   await assert.rejects(inbound({
     externalConversationId: 'chat-1', providerConversationId: 'provider-chat-1', providerMessageId: 'provider-2', text: 'failed', chatType: 'group',
     attachments: [{ type: 'image', platformKey: 'private-download-code' }],
   }), /Host rejected draft/u);
   assert.equal(state.size, 1, 'an indeterminate send failure retains the locator for an idempotent retry');
+
+  sendError = Object.assign(new Error('Host rejected replay'), { code: 'VALIDATION' });
+  await assert.rejects(inbound({
+    externalConversationId: 'chat-1', providerConversationId: 'provider-chat-1', providerMessageId: 'provider-2', text: 'replay', chatType: 'group',
+    attachments: [{ type: 'image', platformKey: 'private-download-code' }],
+  }), /Host rejected replay/u);
+  assert.equal(state.size, 1, 'a replay cannot delete the first delivery\'s locator');
+
+  sendError = Object.assign(new Error('Host rejected new draft'), { code: 'VALIDATION' });
+  await assert.rejects(inbound({
+    externalConversationId: 'chat-1', providerConversationId: 'provider-chat-1', providerMessageId: 'provider-3', text: 'invalid', chatType: 'group',
+    attachments: [{ type: 'image', platformKey: 'private-download-code' }],
+  }), /Host rejected new draft/u);
+  assert.equal(state.size, 1, 'a definitive rejection deletes only the locator inserted by that delivery');
   await active.stop();
 });
 
@@ -222,5 +242,13 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
     { operation: 'provider.notice', value: ['chat-1', '⚠️ 视频附件暂不支持发送'] },
     { operation: 'provider.notice', value: ['chat-1', '⚠️ 媒体过大，超过钉钉发送上限'] },
   ]);
+  calls.length = 0;
+  const typedOnly = richDelivery();
+  typedOnly.deliveryId = 'delivery-typed-only';
+  typedOnly.envelope.payload.elements = typedOnly.envelope.payload.elements.filter(element => (
+    element.kind === 'text' || element.kind === 'media_unavailable'
+  ));
+  await active.actions['dingtalk.outbound']?.(typedOnly);
+  assert.deepEqual(calls.map(call => call.operation), ['provider.formatted']);
   await active.stop();
 });

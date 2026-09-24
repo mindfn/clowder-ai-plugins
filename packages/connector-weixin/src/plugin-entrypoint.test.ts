@@ -201,5 +201,14 @@ test('rich blocks and typed media notices append rendered plaintext blocks to th
     ['chat-1', '⚠️ 视频附件暂不支持发送'],
     ['chat-1', '⚠️ 媒体过大，超过插件的安全上限 25 MiB'],
   ]);
+  replies.length = 0;
+  const typedOnly = richDelivery();
+  typedOnly.deliveryId = 'delivery-typed-only';
+  typedOnly.envelope.payload.elements = typedOnly.envelope.payload.elements.filter(element => (
+    element.kind === 'text' || element.kind === 'media_unavailable'
+  ));
+  await active.actions['weixin.outbound']?.(typedOnly);
+  assert.equal(replies.length, 1);
+  assert.equal((replies[0] as unknown[])[1], 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）');
   await active.stop();
 });

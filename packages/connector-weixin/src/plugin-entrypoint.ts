@@ -39,15 +39,15 @@ function requireDelivery(candidate: unknown): PluginMessagingDelivery {
   return structuredClone(candidate) as unknown as PluginMessagingDelivery;
 }
 
-async function draft(context: FeatureContext, message: WeixinHostInboundMessage): Promise<PluginMessagingDraft> {
-  const media = await retainInboundMedia(
+async function draft(context: FeatureContext, message: WeixinHostInboundMessage) {
+  const retained = await retainInboundMedia(
     context, CONNECTOR_ID, 'weixin-media', message.providerMessageId,
     (message.attachments ?? []).map(attachment => ({
       type: attachment.type, platformKey: attachment.platformKey,
       ...(attachment.fileName === undefined ? {} : { fileName: attachment.fileName }),
     })),
   );
-  return {
+  const messageDraft: PluginMessagingDraft = {
     idempotencyKey: message.providerMessageId,
     sourceEventId: message.providerMessageId,
     identity: IDENTITY_ID,
@@ -59,10 +59,11 @@ async function draft(context: FeatureContext, message: WeixinHostInboundMessage)
       },
       elements: [
         { elementId: 'text-1', kind: 'text', payload: { text: message.text } },
-        ...media,
+        ...retained.elements,
       ],
     },
   };
+  return { messageDraft, ownership: retained.ownership };
 }
 
 async function createMessageBridge(context: FeatureContext) {
@@ -85,9 +86,9 @@ async function createMessageBridge(context: FeatureContext) {
       await subscribe(thread.id);
       const prepared = await draft(context, message);
       try {
-        await context.messaging.send(thread.id, prepared);
+        await context.messaging.send(thread.id, prepared.messageDraft);
       } catch (error) {
-        await releaseInboundMedia(context, prepared.payload.elements, error);
+        await releaseInboundMedia(context, prepared.ownership, error);
         throw error;
       }
     },

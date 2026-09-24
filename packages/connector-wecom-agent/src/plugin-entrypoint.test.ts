@@ -208,5 +208,13 @@ test('rich blocks and typed media notices fall back to sendReply with rendered p
     { operation: 'provider.send', value: ['chat-1', '⚠️ 视频附件暂不支持发送'] },
     { operation: 'provider.send', value: ['chat-1', '⚠️ 媒体过大，超过企业微信发送上限'] },
   ]);
+  calls.length = 0;
+  const typedOnly = richDelivery();
+  typedOnly.deliveryId = 'delivery-typed-only';
+  typedOnly.envelope.payload.elements = typedOnly.envelope.payload.elements.filter(element => (
+    element.kind === 'text' || element.kind === 'media_unavailable'
+  ));
+  await active.actions['wecom-agent.outbound']?.(typedOnly);
+  assert.deepEqual(calls.map(call => call.operation), ['provider.formatted']);
   await active.stop();
 });

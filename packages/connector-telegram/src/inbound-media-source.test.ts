@@ -21,13 +21,20 @@ test('private media source retains locator, chunks bytes, settles, and rejects s
         state.set(key, { revision: 1, value });
         return { applied: true, revision: 1 };
       },
-      delete: async (key: string) => ({ deleted: state.delete(key) }),
+      delete: async (key: string, expectedRevision?: number) => {
+        const current = state.get(key);
+        if (expectedRevision !== undefined && current?.revision !== expectedRevision) {
+          return { deleted: false, revision: current?.revision };
+        }
+        return { deleted: state.delete(key), revision: current?.revision };
+      },
     },
     log() {},
   } as unknown as FeatureContext;
-  const elements = await retainInboundMedia(context, 'test', 'test-media', 'provider-event-1', [{
+  const retained = await retainInboundMedia(context, 'test', 'test-media', 'provider-event-1', [{
     type: 'image', platformKey: 'provider-secret-locator', fileName: 'photo.png',
   }]);
+  const { elements } = retained;
   assert.equal(elements.length, 1);
   const element = elements[0]!;
   assert.equal(element.kind, 'media_ref');
@@ -35,26 +42,26 @@ test('private media source retains locator, chunks bytes, settles, and rejects s
   assert.match(element.payload.reference, /^pmr_test_/u);
   assert.equal(element.payload.sourceId, 'test-media');
   assert.equal(JSON.stringify(elements).includes('provider-secret-locator'), false);
-  const replay = await retainInboundMedia(context, 'test', 'test-media', 'provider-event-1', [{
+  const replayed = await retainInboundMedia(context, 'test', 'test-media', 'provider-event-1', [{
     type: 'image', platformKey: 'provider-secret-locator', fileName: 'photo.png',
   }]);
-  assert.deepEqual(replay, elements);
+  assert.deepEqual(replayed.elements, elements);
   await releaseInboundMedia(
     context,
-    elements,
+    retained.ownership,
     Object.assign(new Error('still owned by the in-flight send'), { code: 'RETRYABLE_INFLIGHT' }),
   );
   assert.equal(state.size, 1, 'an indeterminate send result must retain its locator');
   await releaseInboundMedia(
     context,
-    replay,
+    replayed.ownership,
     Object.assign(new Error('replay rejected'), { code: 'VALIDATION' }),
   );
   assert.equal(state.size, 1, 'a replay must not release the first delivery\'s locator');
   const conflict = await retainInboundMedia(context, 'test', 'test-media', 'provider-event-1', [{
     type: 'image', platformKey: 'different-provider-locator', fileName: 'photo.png',
   }]);
-  assert.equal(conflict[0]?.kind, 'media_unavailable');
+  assert.equal(conflict.elements[0]?.kind, 'media_unavailable');
   assert.equal(JSON.stringify([...state.values()]).includes('different-provider-locator'), false);
 
   for (const providerFailure of [
@@ -92,7 +99,7 @@ test('private media source retains locator, chunks bytes, settles, and rejects s
   const abandoned = await retainInboundMedia(context, 'test', 'test-media', 'provider-event-2', [{
     type: 'file', platformKey: 'private-abandoned-locator',
   }]);
-  await releaseInboundMedia(context, abandoned);
+  await releaseInboundMedia(context, abandoned.ownership);
   assert.equal(state.size, 0);
 });
 
@@ -107,9 +114,10 @@ test('state failure preserves text delivery with typed unavailable media and no 
     },
     log: (...args: unknown[]) => { warnings.push(args); },
   } as unknown as FeatureContext;
-  const elements = await retainInboundMedia(context, 'test', 'test-media', 'provider-event-1', [{
+  const retained = await retainInboundMedia(context, 'test', 'test-media', 'provider-event-1', [{
     type: 'image', platformKey: 'provider-secret-locator', fileName: 'photo.png',
   }]);
+  const { elements } = retained;
   assert.deepEqual(elements, [{
     elementId: 'media-1', kind: 'media_unavailable',
     payload: { type: 'image', reason: 'unavailable', fileName: 'photo.png' },

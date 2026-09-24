@@ -54,6 +54,17 @@ test('module settles the provider task after the declared outbound action comple
     ['reply', 'agent:session', '砚砚\n\nhello'],
     ['done', 'agent:session', true],
   ]);
+  events.length = 0;
+  const typedOnly = richDelivery();
+  typedOnly.deliveryId = 'delivery-typed-only';
+  typedOnly.envelope.payload.elements = typedOnly.envelope.payload.elements.filter(element => (
+    element.kind === 'text' || element.kind === 'media_unavailable'
+  ));
+  await active.actions['xiaoyi.outbound']?.(typedOnly);
+  assert.deepEqual(events, [
+    ['reply', 'agent:session', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）'],
+    ['done', 'agent:session', true],
+  ]);
 });
 
 function richDelivery() {

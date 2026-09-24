@@ -54,8 +54,8 @@ function threadTitle(message: FeishuHostInboundMessage): string {
   return value.length <= 200 ? value : value.slice(0, 200);
 }
 
-async function draft(context: FeatureContext, message: FeishuHostInboundMessage): Promise<PluginMessagingDraft> {
-  const media = await retainInboundMedia(
+async function draft(context: FeatureContext, message: FeishuHostInboundMessage) {
+  const retained = await retainInboundMedia(
     context, CONNECTOR_ID, 'feishu-media', message.providerMessageId,
     (message.attachments ?? []).map(attachment => ({
       type: attachment.type, platformKey: attachment.platformKey,
@@ -63,7 +63,7 @@ async function draft(context: FeatureContext, message: FeishuHostInboundMessage)
       ...(attachment.duration === undefined ? {} : { duration: attachment.duration }),
     })),
   );
-  return {
+  const messageDraft: PluginMessagingDraft = {
     idempotencyKey: message.providerMessageId,
     sourceEventId: message.providerMessageId,
     identity: IDENTITY_ID,
@@ -78,10 +78,11 @@ async function draft(context: FeatureContext, message: FeishuHostInboundMessage)
       },
       elements: [
         { elementId: 'text-1', kind: 'text', payload: { text: message.text } },
-        ...media,
+        ...retained.elements,
       ],
     },
   };
+  return { messageDraft, ownership: retained.ownership };
 }
 
 async function createMessageBridge(context: FeatureContext) {
@@ -104,9 +105,9 @@ async function createMessageBridge(context: FeatureContext) {
       await subscribe(thread.id);
       const prepared = await draft(context, message);
       try {
-        await context.messaging.send(thread.id, prepared);
+        await context.messaging.send(thread.id, prepared.messageDraft);
       } catch (error) {
-        await releaseInboundMedia(context, prepared.payload.elements, error);
+        await releaseInboundMedia(context, prepared.ownership, error);
         throw error;
       }
     },
