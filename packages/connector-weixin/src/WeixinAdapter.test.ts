@@ -52,6 +52,21 @@ test('adapter source contains no ambient environment fallback', async () => {
   assert.doesNotMatch(source, /apiBaseUrl|relative media URL|downloadToTemp|resolveDownloadUrl/);
 });
 
+// node --test runs each file in its own process against the shared system
+// tmpdir, so a concurrently executing sendMedia in another test file can
+// legitimately hold a clowder-weixin-outbound-* directory for the duration
+// of its upload; those disappear on their own. Poll briefly: only a genuine
+// leak (a directory that is never cleaned up) survives the grace window.
+async function leftoverOutboundDirs(before: Set<string>): Promise<string[]> {
+  const deadline = Date.now() + 2000;
+  for (;;) {
+    const after = (await readdir(tmpdir())).filter(name => name.startsWith('clowder-weixin-outbound-'));
+    const leftover = after.filter(name => !before.has(name));
+    if (leftover.length === 0 || Date.now() >= deadline) return leftover;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+}
+
 test('media upload failure removes the package-owned temporary file', async () => {
   const before = new Set((await readdir(tmpdir())).filter(name => name.startsWith('clowder-weixin-outbound-')));
   const subject = new WeixinAdapter('test-token', logger);
@@ -63,8 +78,7 @@ test('media upload failure removes the package-owned temporary file', async () =
     subject.sendMedia('chat', { type: 'file', content: content(), fileName: 'report.txt' }),
     /provider upload failed/,
   );
-  const after = (await readdir(tmpdir())).filter(name => name.startsWith('clowder-weixin-outbound-'));
-  assert.deepEqual(after.filter(name => !before.has(name)), []);
+  assert.deepEqual(await leftoverOutboundDirs(before), []);
 });
 
 test('stopping polling rejects queued replies before they can flush after disposal', async () => {

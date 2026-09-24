@@ -167,6 +167,21 @@ test('non-Opus audio is delivered as a file without spawning a transcoder', asyn
   assert.deepEqual(sent, [{ chatId: 'chat-1', msgType: 'file' }]);
 });
 
+// node --test runs each file in its own process against the shared system
+// tmpdir, so a concurrently executing sendMedia in another test file can
+// legitimately hold a clowder-feishu-outbound-* directory for the duration
+// of its upload; those disappear on their own. Poll briefly: only a genuine
+// leak (a directory that is never cleaned up) survives the grace window.
+async function leftoverOutboundDirs(before: Set<string>): Promise<string[]> {
+  const deadline = Date.now() + 2000;
+  for (;;) {
+    const after = (await readdir(tmpdir())).filter(name => name.startsWith('clowder-feishu-outbound-'));
+    const leftover = after.filter(name => !before.has(name));
+    if (leftover.length === 0 || Date.now() >= deadline) return leftover;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+}
+
 test('media upload failure removes the package-owned temporary file', async () => {
   const before = new Set((await readdir(tmpdir())).filter(name => name.startsWith('clowder-feishu-outbound-')));
   const subject = new FeishuAdapter('app-id', 'app-secret', logger);
@@ -177,8 +192,7 @@ test('media upload failure removes the package-owned temporary file', async () =
     subject.sendMedia('chat-1', { type: 'file', content: mediaBytes('bytes'), fileName: 'report.txt' }),
     /provider upload failed/,
   );
-  const after = (await readdir(tmpdir())).filter(name => name.startsWith('clowder-feishu-outbound-'));
-  assert.deepEqual(after.filter(name => !before.has(name)), []);
+  assert.deepEqual(await leftoverOutboundDirs(before), []);
 });
 
 test('FeishuAdapter holds no process-spawning capability', () => {
