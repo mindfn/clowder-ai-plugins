@@ -9,6 +9,7 @@ import {
 } from '@clowder-ai/plugin-sdk';
 
 import { FeishuAdapter } from './FeishuAdapter.js';
+import { DefaultFeishuQrBindClient, type FeishuQrBindClient } from './FeishuQrBindClient.js';
 import {
   createFeishuConnectorRuntime,
   requireFeishuWebhookInput,
@@ -154,7 +155,10 @@ function webhookHttpResponse(result: FeishuWebhookResult) {
   }
 }
 
-export function createFeishuPluginModule(createRuntime: RuntimeFactory = createFeishuConnectorRuntime) {
+export function createFeishuPluginModule(
+  createRuntime: RuntimeFactory = createFeishuConnectorRuntime,
+  createQrClient: () => FeishuQrBindClient = () => new DefaultFeishuQrBindClient(),
+) {
   return definePluginModule((manifest) => definePlugin({
     manifest,
     activate: {
@@ -166,15 +170,15 @@ export function createFeishuPluginModule(createRuntime: RuntimeFactory = createF
           context.secrets.get('verificationToken'),
           context.config.get('groupBotMentionsJson'),
         ]);
-        if (typeof appId !== 'string') throw new TypeError('appId must be a declared string');
-        if (typeof appSecret !== 'string') throw new TypeError('appSecret must be a declared secret');
+        // Credentials may arrive only later via the feishu_qr_login operation —
+        // the runtime starts healthy and idle (no ingress) without them.
         const mode = modeValue === undefined ? 'webhook' : modeValue;
         if (mode !== 'webhook' && mode !== 'websocket') throw new TypeError('connectionMode must be webhook or websocket');
         const bridge = await createMessageBridge(context);
         const runtime = createRuntime({
           config: {
-            appId,
-            appSecret,
+            appId: typeof appId === 'string' ? appId : '',
+            appSecret: typeof appSecret === 'string' ? appSecret : '',
             connectionMode: mode,
             ...(verificationToken === '' ? {} : { verificationToken }),
             ...(optionalString(groupBotMentionsJson, 'groupBotMentionsJson') === undefined
@@ -184,8 +188,73 @@ export function createFeishuPluginModule(createRuntime: RuntimeFactory = createF
           logger: context.logger,
         });
         await runtime.start();
+        // Operation state (the in-flight device_code) lives in runtime memory only.
+        let qrPayload: string | undefined;
+        const qrClient = createQrClient();
         return {
           actions: {
+            'feishu.qr-generate': async () => {
+              const result = await qrClient.create();
+              qrPayload = result.qrPayload;
+              // The QR client already encodes the verification page as a PNG data URL.
+              return { render: 'img', data: { url: result.qrUrl } };
+            },
+            'feishu.qr-status': async () => {
+              if (qrPayload === undefined) {
+                return { render: 'polling', data: { status: 'error', message: 'No QR payload — generate first' }, advance: false };
+              }
+              const status = await qrClient.poll(qrPayload);
+              if (status.status === 'confirmed') {
+                if (status.appId === undefined || status.appSecret === undefined) {
+                  return { render: 'polling', data: { status: 'error', message: 'confirmed but no credentials' }, advance: false };
+                }
+                // QR-based login targets WebSocket mode (works without a public URL).
+                await runtime.connect({ appId: status.appId, appSecret: status.appSecret, connectionMode: 'websocket' });
+                qrPayload = undefined;
+                return {
+                  render: 'status',
+                  data: { status: 'confirmed' },
+                  label: '已授权',
+                  targetValues: {
+                    appId: status.appId,
+                    appSecret: status.appSecret,
+                    connectionMode: 'websocket',
+                  },
+                };
+              }
+              if (status.status === 'waiting') {
+                return { render: 'polling', data: { status: 'waiting' }, advance: false };
+              }
+              return {
+                render: 'polling',
+                data: { status: status.status, ...(status.error === undefined ? {} : { message: status.error }) },
+                advance: false,
+              };
+            },
+            'feishu.disconnect': async () => {
+              qrPayload = undefined;
+              await runtime.disconnect();
+              return {
+                render: 'status',
+                data: { status: 'disconnected' },
+                label: '已断开',
+                targetValues: { appId: '', appSecret: '' },
+              };
+            },
+            'feishu.test': async () => {
+              const [currentAppId, currentAppSecret, currentMode, currentVerificationToken] = await Promise.all([
+                context.config.get('appId'),
+                context.secrets.get('appSecret'),
+                context.config.get('connectionMode'),
+                context.secrets.get('verificationToken'),
+              ]);
+              const ok = currentMode === 'websocket'
+                ? runtime.isConnected()
+                : typeof currentAppId === 'string' && currentAppId.trim() !== ''
+                  && typeof currentAppSecret === 'string' && currentAppSecret.trim() !== ''
+                  && typeof currentVerificationToken === 'string' && currentVerificationToken.trim() !== '';
+              return { ok, ...(ok ? {} : { message: '飞书未配置或凭据无效' }) };
+            },
             'feishu.outbound': async (candidate) => {
               const input = await bridge.outbound(candidate);
               const blocks = [...(input.richBlocks ?? [])];

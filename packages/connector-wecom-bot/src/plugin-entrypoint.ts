@@ -20,6 +20,11 @@ type RuntimeFactory = (
   options: WeComBotConnectorRuntimeOptions<WeComBotAdapter>,
 ) => WeComBotConnectorRuntime<WeComBotAdapter>;
 
+type ValidateCredentialsFn = (
+  botId: string,
+  secret: string,
+) => Promise<{ valid: boolean; error?: string }>;
+
 const CONNECTOR_ID = 'wecom-bot';
 const IDENTITY_ID = 'wecom-bot';
 
@@ -102,24 +107,75 @@ async function createMessageBridge(context: FeatureContext) {
   };
 }
 
-export function createWeComBotPluginModule(createRuntime: RuntimeFactory = createWeComBotConnectorRuntime) {
+export function createWeComBotPluginModule(
+  createRuntime: RuntimeFactory = createWeComBotConnectorRuntime,
+  validateCredentials: ValidateCredentialsFn = (botId, secret) => WeComBotAdapter.validateCredentials(botId, secret),
+) {
   return definePluginModule((manifest) => definePlugin({
     manifest,
     activate: {
       'wecom-bot-messaging': async (context) => {
-        const botId = await context.config.get('botId');
-        if (typeof botId !== 'string') throw new TypeError('botId must be a declared string');
-        const botSecret = await context.secrets.get('botSecret');
-        if (typeof botSecret !== 'string') throw new TypeError('botSecret must be a declared secret');
+        // Credentials may be filled only after the plugin is enabled — the runtime
+        // starts healthy and idle (no provider stream) without them.
+        const [botId, botSecret] = await Promise.all([
+          context.config.get('botId'),
+          context.secrets.get('botSecret'),
+        ]);
         const bridge = await createMessageBridge(context);
         const runtime = createRuntime({
-          config: { botId, botSecret },
+          config: {
+            botId: typeof botId === 'string' ? botId : '',
+            botSecret: typeof botSecret === 'string' ? botSecret : '',
+          },
           host: { deliver: bridge.deliver },
           logger: context.logger,
         });
         await runtime.start();
         return {
           actions: {
+            'wecom-bot.validate': async () => {
+              const [currentBotId, currentSecret] = await Promise.all([
+                context.config.get('botId'),
+                context.secrets.get('botSecret'),
+              ]);
+              const id = typeof currentBotId === 'string' ? currentBotId.trim() : '';
+              const secret = typeof currentSecret === 'string' ? currentSecret.trim() : '';
+              if (id.length === 0 || secret.length === 0) {
+                return {
+                  render: 'status',
+                  data: { status: 'error', message: '未填写 Bot ID / Bot Secret — 先在配置中填写并保存' },
+                  advance: false,
+                };
+              }
+              const result = await validateCredentials(id, secret);
+              if (!result.valid) {
+                return {
+                  render: 'status',
+                  data: { status: 'error', message: result.error ?? 'credentials rejected by provider' },
+                  advance: false,
+                };
+              }
+              await runtime.connect({ botId: id, botSecret: secret });
+              return {
+                render: 'status',
+                data: { status: 'confirmed' },
+                label: '已连接',
+                targetValues: { botId: id, botSecret: secret },
+              };
+            },
+            'wecom-bot.disconnect': async () => {
+              await runtime.disconnect();
+              return {
+                render: 'status',
+                data: { status: 'disconnected' },
+                label: '已断开',
+                targetValues: { botId: '', botSecret: '' },
+              };
+            },
+            'wecom-bot.test': async () => {
+              const ok = runtime.isConnected();
+              return { ok, ...(ok ? {} : { message: '企微未连接（需要测试并连接）' }) };
+            },
             'wecom-bot.outbound': async (candidate) => {
               const input = await bridge.outbound(candidate);
               const blocks = [...(input.richBlocks ?? [])];

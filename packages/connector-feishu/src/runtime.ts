@@ -220,6 +220,12 @@ export interface FeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapter = F
   start(): Promise<void>;
   stop(): Promise<void>;
   handleWebhook(input: FeishuWebhookInput): Promise<FeishuWebhookResult>;
+  /** Rebuild the provider connection in-process with new credentials and start ingress. */
+  connect(config: Readonly<{ appId: string; appSecret: string; connectionMode: 'webhook' | 'websocket' }>): Promise<void>;
+  /** Close the in-process ingress (WebSocket/reconnect timers); configuration values untouched. */
+  disconnect(): Promise<void>;
+  /** True when the provider ingress is live (webhook mode armed counts as connected once started). */
+  isConnected(): boolean;
 }
 
 export interface FeishuConnectorRuntimeOptions<Adapter extends FeishuRuntimeAdapter = FeishuAdapter> {
@@ -245,10 +251,20 @@ export interface FeishuConnectorRuntimeOptions<Adapter extends FeishuRuntimeAdap
   readonly reconnectMaxDelayMs?: number;
 }
 
-function required(value: string, key: 'appId' | 'appSecret'): string {
-  const normalized = value.trim();
-  if (normalized.length === 0) throw new TypeError(`${key} must be a non-empty declared value`);
-  return normalized;
+function trimValue(value: string): string {
+  return value.trim();
+}
+
+interface FeishuProviderState {
+  appId: string;
+  appSecret: string;
+  connectionMode: 'webhook' | 'websocket';
+  verificationToken?: string;
+  groupBotMentionsJson?: string;
+}
+
+function hasCredentials(config: FeishuProviderState): boolean {
+  return config.appId.length > 0 && config.appSecret.length > 0;
 }
 
 function parseMentions(value: string | undefined): FeishuAdapterOptions['groupBotMentions'] {
@@ -333,20 +349,44 @@ async function cardMessage(adapter: FeishuRuntimeAdapter, action: FeishuCardActi
 export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapter = FeishuAdapter>(
   options: FeishuConnectorRuntimeOptions<Adapter>,
 ): FeishuConnectorRuntime<Adapter> {
-  const appId = required(options.config.appId, 'appId');
-  const appSecret = required(options.config.appSecret, 'appSecret');
-  const groupBotMentions = parseMentions(options.config.groupBotMentionsJson);
-  const adapterOptions: FeishuAdapterOptions = {
+  // Credentials may arrive only later via the feishu_qr_login operation — empty
+  // values mean the runtime starts healthy and idle (no ingress) until connect().
+  let current: FeishuProviderState = {
+    appId: trimValue(options.config.appId),
+    appSecret: trimValue(options.config.appSecret),
+    connectionMode: options.config.connectionMode,
     ...(options.config.verificationToken === undefined ? {} : { verificationToken: options.config.verificationToken }),
-    ...(groupBotMentions === undefined ? {} : { groupBotMentions }),
+    ...(options.config.groupBotMentionsJson === undefined ? {} : { groupBotMentionsJson: options.config.groupBotMentionsJson }),
   };
   const createAdapter = options.createAdapter ?? ((id, secret, logger, value) => (
     new FeishuAdapter(id, secret, logger, value) as unknown as Adapter
   ));
-  const outbound = createAdapter(appId, appSecret, options.logger, adapterOptions);
-  const tokenManager = new FeishuTokenManager({ appId, appSecret, ...(options.fetchFn === undefined ? {} : { fetchFn: options.fetchFn }) });
-  outbound._injectTokenManager?.(tokenManager);
+  const buildAdapterOptions = (): FeishuAdapterOptions => {
+    const groupBotMentions = parseMentions(current.groupBotMentionsJson);
+    return {
+      ...(current.verificationToken === undefined ? {} : { verificationToken: current.verificationToken }),
+      ...(groupBotMentions === undefined ? {} : { groupBotMentions }),
+    };
+  };
+  let outbound: Adapter | undefined = hasCredentials(current)
+    ? createAdapter(current.appId, current.appSecret, options.logger, buildAdapterOptions())
+    : undefined;
+  let tokenManager: FeishuTokenManager | undefined;
+  const buildTokenManager = (): FeishuTokenManager => (
+    new FeishuTokenManager({ appId: current.appId, appSecret: current.appSecret, ...(options.fetchFn === undefined ? {} : { fetchFn: options.fetchFn }) })
+  );
+  if (outbound !== undefined) {
+    tokenManager = buildTokenManager();
+    outbound._injectTokenManager?.(tokenManager);
+  }
+  const requireOutbound = (): Adapter => {
+    if (outbound === undefined) {
+      throw new Error('Feishu connector is not configured — complete QR authorization (feishu_qr_login) first');
+    }
+    return outbound;
+  };
   let state: 'idle' | 'starting' | 'running' | 'stopped' = 'idle';
+  let armed = false;
   let startPromise: Promise<void> | undefined;
   let stopPromise: Promise<void> | undefined;
   let wsClient: FeishuWsClient | undefined;
@@ -371,7 +411,7 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
   // a message dropped by the state recheck must never be reported 'processed'.
   const routeEvent = async (message: FeishuInboundMessage, webhookEventId?: string): Promise<boolean> => {
     if (state !== 'running') return false;
-    const hostMessage = await providerMessage(outbound, message);
+    const hostMessage = await providerMessage(requireOutbound(), message);
     // Group chats await name-resolution round-trips above; stop() landing in
     // that window must not still deliver (TOCTOU recheck after the await).
     if (state !== 'running') return false;
@@ -383,7 +423,7 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
   };
   const routeCard = async (action: FeishuCardAction): Promise<'delivered' | 'not_running' | 'chat_type_unknown'> => {
     if (state !== 'running') return 'not_running';
-    const message = await cardMessage(outbound, action);
+    const message = await cardMessage(requireOutbound(), action);
     if (message === null) return 'chat_type_unknown';
     if (state !== 'running') return 'not_running';
     await options.host.deliver(message);
@@ -391,22 +431,25 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
   };
 
   const startIngress = async (): Promise<void> => {
-    tokenManager.getTenantAccessToken().then(async token => {
+    const adapter = requireOutbound();
+    const manager = tokenManager ?? buildTokenManager();
+    tokenManager = manager;
+    manager.getTenantAccessToken().then(async token => {
       const response = await (options.fetchFn ?? globalThis.fetch)('https://open.feishu.cn/open-apis/bot/v3/info', {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) return;
       const data = await response.json() as { bot?: { open_id?: string } };
-      if (data.bot?.open_id) outbound.setBotOpenId(data.bot.open_id);
+      if (data.bot?.open_id) adapter.setBotOpenId(data.bot.open_id);
     }).catch(error => options.logger.warn({ error }, '[FeishuRuntime] Bot identity resolution failed'));
-    if (options.config.connectionMode !== 'websocket') return;
+    if (current.connectionMode !== 'websocket') return;
     const dispatcher = new lark.EventDispatcher({}).register({
       'im.message.receive_v1': async (data: Record<string, unknown>) => {
-        const parsed = outbound.parseEvent({ header: { event_type: 'im.message.receive_v1' }, event: data });
+        const parsed = adapter.parseEvent({ header: { event_type: 'im.message.receive_v1' }, event: data });
         if (parsed !== null) await routeEvent(parsed);
       },
       'card.action.trigger': async (data: Record<string, unknown>) => {
-        const parsed = outbound.parseCardAction({
+        const parsed = adapter.parseCardAction({
           header: { event_type: 'card.action.trigger', event_id: data.event_id }, event: data,
         });
         if (parsed !== null) await routeCard(parsed);
@@ -415,7 +458,7 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
     const createWs = options.createWsClient ?? ((value: Readonly<{ appId: string; appSecret: string; onClose?: () => void }>) => (
       new PausableLarkWsClient(value.appId, value.appSecret, undefined, { onClose: value.onClose })
     ));
-    const client = createWs({ appId, appSecret, onClose: () => handleUnexpectedClose(client) });
+    const client = createWs({ appId: current.appId, appSecret: current.appSecret, onClose: () => handleUnexpectedClose(client) });
     wsClient = client;
     // PausableLarkWsClient.start() settles only once the socket is really
     // open (or stop/timeout/SDK give-up aborts it), so no outer timer needed.
@@ -479,11 +522,28 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
     }, delayMs);
   };
 
+  const stopIngress = (): void => {
+    if (reconnectTimer !== undefined) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = undefined;
+    }
+    wsClient?.close({ force: true });
+    wsClient = undefined;
+  };
+
   return {
-    outbound,
+    get outbound() {
+      return requireOutbound();
+    },
     start() {
       if (state === 'stopped') return Promise.reject(new Error('Feishu connector runtime has been stopped'));
       if (startPromise !== undefined) return startPromise;
+      armed = true;
+      if (outbound === undefined) {
+        // Armed but idle: no ingress until connect() supplies credentials.
+        startPromise = Promise.resolve();
+        return startPromise;
+      }
       state = 'starting';
       startPromise = startIngress()
         .then(() => {
@@ -503,31 +563,73 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
         });
       return startPromise;
     },
+    async connect(next) {
+      const appId = trimValue(next.appId);
+      const appSecret = trimValue(next.appSecret);
+      if (appId.length === 0 || appSecret.length === 0) {
+        throw new TypeError('appId and appSecret must be non-empty values');
+      }
+      if (state === 'stopped') throw new Error('Feishu connector runtime has been stopped');
+      // Tear down the previous ingress before rebuilding: a live socket or a
+      // pending reconnect timer from the old credentials must not survive.
+      stopIngress();
+      current = { ...current, appId, appSecret, connectionMode: next.connectionMode };
+      outbound = createAdapter(appId, appSecret, options.logger, buildAdapterOptions());
+      tokenManager = buildTokenManager();
+      outbound._injectTokenManager?.(tokenManager);
+      state = 'idle';
+      startPromise = undefined;
+      if (!armed) return;
+      state = 'starting';
+      startPromise = startIngress()
+        .then(() => {
+          if (state !== 'stopped') {
+            reconnectAttempts = 0;
+            state = 'running';
+            options.logger.info('[FeishuRuntime] Provider ingress started');
+          }
+        })
+        .catch((error: unknown) => {
+          if (state === 'stopped') return;
+          state = 'idle';
+          startPromise = undefined;
+          throw error;
+        });
+      return startPromise;
+    },
+    async disconnect() {
+      // Close the in-process ingress only; credential/config values are left
+      // untouched (the operation targetValues clear appId/appSecret instead).
+      stopIngress();
+      state = 'idle';
+      startPromise = undefined;
+    },
+    isConnected() {
+      return state === 'running';
+    },
     stop() {
       if (stopPromise !== undefined) return stopPromise;
-      if (reconnectTimer !== undefined) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = undefined;
-      }
+      armed = false;
+      stopIngress();
       if (state === 'idle') { state = 'stopped'; return Promise.resolve(); }
       state = 'stopped';
-      wsClient?.close({ force: true });
-      wsClient = undefined;
       stopPromise = Promise.resolve();
       return stopPromise;
     },
     async handleWebhook(candidate) {
       if (state === 'stopped') throw new Error('Feishu connector runtime has been stopped');
-      if (options.config.connectionMode === 'websocket') return { kind: 'skipped', reason: 'websocket_mode' };
+      if (current.connectionMode === 'websocket') return { kind: 'skipped', reason: 'websocket_mode' };
+      if (outbound === undefined) return { kind: 'error', status: 503, message: 'feishu connector is not configured' };
+      const adapter = outbound;
       const { body } = requireFeishuWebhookInput(candidate);
-      const challenge = outbound.isVerificationChallenge(body);
+      const challenge = adapter.isVerificationChallenge(body);
       if (challenge !== null) return { kind: 'challenge', response: challenge };
-      if (!outbound.verifyEventToken(body)) return { kind: 'error', status: 403, message: 'Invalid verification token' };
+      if (!adapter.verifyEventToken(body)) return { kind: 'error', status: 403, message: 'Invalid verification token' };
       // Events arriving before start() completed (state idle/starting) are not
       // delivered; report them honestly instead of dropping silently and
       // claiming they were processed.
       if (state !== 'running') return { kind: 'skipped', reason: 'not_running' };
-      const action = outbound.parseCardAction(body);
+      const action = adapter.parseCardAction(body);
       if (action !== null) {
         const routed = await routeCard(action);
         if (routed === 'delivered') return { kind: 'processed', messageId: 'card-action' };
@@ -535,7 +637,7 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
         // completed route with an unresolvable chat type is chat_type_unknown.
         return { kind: 'skipped', reason: routed === 'not_running' ? 'not_running' : 'chat_type_unknown' };
       }
-      const parsed = outbound.parseEvent(body);
+      const parsed = adapter.parseEvent(body);
       if (parsed === null) return { kind: 'skipped', reason: 'unsupported_event' };
       const header = body !== null && typeof body === 'object' && !Array.isArray(body)
         ? (body as Record<string, unknown>).header : undefined;

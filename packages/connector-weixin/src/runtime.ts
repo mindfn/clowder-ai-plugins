@@ -31,6 +31,10 @@ export interface WeixinRuntimeAdapter {
   restoreSessionState(): Promise<void>;
   startPolling(handler: (message: WeixinInboundMessage) => Promise<void>): void | Promise<void>;
   stopPolling(): Promise<void>;
+  hasBotToken(): boolean;
+  isPolling(): boolean;
+  setBotToken(token: string): void;
+  disconnect(): Promise<void>;
   sendReply: WeixinAdapter['sendReply'];
   sendMedia: WeixinAdapter['sendMedia'];
 }
@@ -39,6 +43,12 @@ export interface WeixinConnectorRuntime<Adapter extends WeixinRuntimeAdapter = W
   readonly outbound: Adapter;
   start(): Promise<void>;
   stop(): Promise<void>;
+  /** Adopt a bot token in-process and begin polling (idles until the runtime is started). */
+  connect(botToken: string): Promise<void>;
+  /** Stop polling and drop the connection in-process (bot token and session cleared). */
+  disconnect(): Promise<void>;
+  /** True when a bot token is adopted and provider polling is live. */
+  isConnected(): boolean;
 }
 
 export interface WeixinConnectorRuntimeOptions<Adapter extends WeixinRuntimeAdapter = WeixinAdapter> {
@@ -72,8 +82,7 @@ function hostMessage(message: WeixinInboundMessage): WeixinHostInboundMessage {
 export function createWeixinConnectorRuntime<Adapter extends WeixinRuntimeAdapter = WeixinAdapter>(
   options: WeixinConnectorRuntimeOptions<Adapter>,
 ): WeixinConnectorRuntime<Adapter> {
-  const botToken = options.config.botToken.trim();
-  if (botToken.length === 0) throw new TypeError('botToken must be a non-empty declared secret');
+  const initialToken = options.config.botToken.trim();
   const { botToken: _botToken, ...runtimeOptions } = options.config;
   const createAdapter = options.createAdapter ?? ((
     token: string,
@@ -81,7 +90,11 @@ export function createWeixinConnectorRuntime<Adapter extends WeixinRuntimeAdapte
     state: WeixinSessionStateStore,
     value: WeixinRuntimeOptions,
   ) => new WeixinAdapter(token, logger, state, value) as unknown as Adapter);
-  const outbound = createAdapter(botToken, options.logger, options.state, runtimeOptions);
+  // The Host starts the runtime healthy BEFORE credentials exist: without a token
+  // the runtime stays idle (no connect, no polling) until QR login adopts one.
+  let outbound: Adapter | undefined = initialToken.length > 0
+    ? createAdapter(initialToken, options.logger, options.state, runtimeOptions)
+    : undefined;
   let state: 'idle' | 'starting' | 'running' | 'stopped' = 'idle';
   let startPromise: Promise<void> | undefined;
   let stopPromise: Promise<void> | undefined;
@@ -89,30 +102,69 @@ export function createWeixinConnectorRuntime<Adapter extends WeixinRuntimeAdapte
     if (state !== 'running') return;
     await options.host.deliver(hostMessage(message));
   };
+  const requireOutbound = (): Adapter => {
+    if (outbound === undefined) {
+      throw new Error('WeChat connector is not connected — complete QR code login (weixin_qr_login) first');
+    }
+    return outbound;
+  };
+  const beginPolling = (): Promise<void> => {
+    const adapter = requireOutbound();
+    state = 'starting';
+    startPromise = Promise.resolve()
+      .then(() => adapter.restoreSessionState())
+      .then(() => adapter.startPolling(deliverIfRunning))
+      .then(() => {
+        if (state !== 'stopped') {
+          state = 'running';
+          options.logger.info('[WeixinRuntime] Provider polling started');
+        }
+      })
+      .catch((error: unknown) => {
+        if (state !== 'stopped') {
+          state = 'idle';
+          startPromise = undefined;
+        }
+        throw error;
+      });
+    return startPromise;
+  };
 
   return {
-    outbound,
+    get outbound() {
+      return requireOutbound();
+    },
     start() {
       if (state === 'stopped') return Promise.reject(new Error('Weixin connector runtime has been stopped'));
       if (startPromise !== undefined) return startPromise;
-      state = 'starting';
-      startPromise = Promise.resolve()
-        .then(() => outbound.restoreSessionState())
-        .then(() => outbound.startPolling(deliverIfRunning))
-        .then(() => {
-          if (state !== 'stopped') {
-            state = 'running';
-            options.logger.info('[WeixinRuntime] Provider polling started');
-          }
-        })
-        .catch((error: unknown) => {
-          if (state !== 'stopped') {
-            state = 'idle';
-            startPromise = undefined;
-          }
-          throw error;
-        });
-      return startPromise;
+      if (outbound === undefined) {
+        // Armed but idle: no provider I/O until connect() adopts a token.
+        startPromise = Promise.resolve();
+        return startPromise;
+      }
+      return beginPolling();
+    },
+    connect(botToken: string) {
+      const token = botToken.trim();
+      if (token.length === 0) return Promise.reject(new TypeError('botToken must be a non-empty value'));
+      if (state === 'stopped') return Promise.reject(new Error('Weixin connector runtime has been stopped'));
+      if (outbound === undefined) {
+        outbound = createAdapter(token, options.logger, options.state, runtimeOptions);
+      } else {
+        outbound.setBotToken(token);
+      }
+      if (startPromise === undefined || state === 'running') return Promise.resolve();
+      return beginPolling();
+    },
+    async disconnect() {
+      const adapter = outbound;
+      outbound = undefined;
+      state = 'idle';
+      startPromise = undefined;
+      if (adapter !== undefined) await adapter.disconnect();
+    },
+    isConnected() {
+      return outbound !== undefined && outbound.hasBotToken() && outbound.isPolling();
     },
     stop() {
       if (stopPromise !== undefined) return stopPromise;
@@ -123,7 +175,7 @@ export function createWeixinConnectorRuntime<Adapter extends WeixinRuntimeAdapte
       state = 'stopped';
       stopPromise = (async () => {
         await startPromise?.catch(() => undefined);
-        await outbound.stopPolling();
+        await outbound?.stopPolling();
       })();
       return stopPromise;
     },

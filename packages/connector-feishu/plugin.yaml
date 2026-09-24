@@ -13,11 +13,11 @@ configuration:
   - key: appId
     label: App ID
     kind: string
-    required: true
+    required: false
   - key: appSecret
     label: App Secret
     kind: secret
-    required: true
+    required: false
   - key: connectionMode
     label: Connection Mode
     kind: select
@@ -32,10 +32,44 @@ configuration:
     label: Verification Token
     kind: secret
     required: false
+    requiredWhen:
+      key: connectionMode
+      value: webhook
   - key: groupBotMentionsJson
     label: Group Bot Mentions JSON
     kind: string
     required: false
+    hidden: true
+  - key: feishu_qr_login
+    label: 飞书扫码授权
+    kind: operation
+    required: false
+    target: [appId, appSecret, connectionMode]
+    actions:
+      - id: qr-generate
+        label: 生成二维码
+        render: button
+        resultRender: img
+        action:
+          method: feishu.qr-generate
+        next: qr-status
+      - id: qr-status
+        label: 等待扫码
+        render: polling
+        action:
+          method: feishu.qr-status
+        timeout: 600
+        rollback: qr-generate
+        next: disconnect
+      - id: disconnect
+        label: 断开连接
+        render: button
+        action:
+          method: feishu.disconnect
+        next: qr-generate
+test:
+  action:
+    method: feishu.test
 contributions:
   - type: identity
     id: feishu-bot

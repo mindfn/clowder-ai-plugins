@@ -52,7 +52,9 @@ test('module exposes both manifest-declared connector and webhook actions', asyn
   const config: Record<string, unknown> = { appId: 'app', connectionMode: 'webhook' };
   const secrets: Record<string, string> = { appSecret: 'secret', verificationToken: '' };
   const active = await entrypoint.create(manifest).start(host(config, secrets));
-  assert.deepEqual(Object.keys(active.actions).sort(), ['feishu.outbound', 'feishu.webhook']);
+  assert.deepEqual(Object.keys(active.actions).sort(), [
+    'feishu.disconnect', 'feishu.outbound', 'feishu.qr-generate', 'feishu.qr-status', 'feishu.test', 'feishu.webhook',
+  ]);
   const request = {
     method: 'POST', path: 'feishu/events', query: {},
     body: { type: 'event_callback' }, rawBody: Buffer.from('{}'), headers: { 'content-type': 'application/json' },

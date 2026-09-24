@@ -5,8 +5,10 @@ typing, and reply delivery for a Clowder AI Host.
 
 ## Configuration
 
-The Host projects the Bot Token and optional media behavior explicitly from the manifest. Relative Host media
-URLs require an explicit `apiBaseUrl`; the package never discovers ports or reads ambient environment values.
+The Host projects the Bot Token and optional media behavior explicitly from the manifest. The Bot Token is
+written only by the `weixin_qr_login` operation target — it is hidden and optional so the plugin can start
+healthy (idle) before credentials exist. Relative Host media URLs have no package-side base URL override
+anymore: outbound media with a relative URL fails closed with a clear error instead of being silently sent.
 
 ## Security and authority
 
@@ -23,5 +25,13 @@ binding, configuration/secret, state, and messaging surfaces.
 
 ## Exposed capability
 
-The package contributes one WeChat identity and message subscription and requests `plugin.config.read`, `plugin.state.get`, `plugin.state.set`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`. QR login
+The package contributes one WeChat identity and message subscription and requests `plugin.config.read`, `plugin.state.get`, `plugin.state.set`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`. It also declares the `weixin_qr_login` operation (`qr-generate` / `qr-status` / `disconnect`) and a `weixin.test` connection check. QR login
 obtains a Bot Token but leaves credential persistence and activation under Host control.
+
+## 迁移已知差异
+
+- **必须先启用插件再扫码**：旧 Hub 没有 enable 步骤，可以直接生成二维码；新 Host 只有在插件 enabled + healthy 时才能调用 operation/test，所以先在插件面板启用（无凭据时空闲启动，显示未连接），再执行「微信扫码登录」。
+- **语音三项 lost runtime env override**：`voiceItemMode`（保持无默认值——未设置本身有独立语义）、`enableUnsafeVoiceModes`、`captureInboundVoiceMedia` 现在全部 hidden，只能通过包配置 A/B 调整，不再有运行时环境变量覆盖入口。
+- **`apiBaseUrl` 已删除**：出站媒体遇到相对 URL 时 fail-closed 报错；由 Host 投影的出站媒体地址需要是绝对 URL，相对 URL 媒体发送被推迟（不再可配置 base URL）。
+- **凭据只经由 operation target 写入**：Bot Token 仅通过 `weixin_qr_login` 的 `targetValues` 由 Host 持久化，包内不写 `context.storage`、不打印凭据。
+- **「已连接」展示依赖 Host W2-2c**：判断依据是 operation target 是否有值，而不是旧 Hub 的实时连接状态；实时状态请使用 `weixin.test`（有 token 且轮询活跃才返回 ok）。

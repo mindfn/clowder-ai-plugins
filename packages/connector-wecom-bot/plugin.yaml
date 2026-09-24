@@ -13,11 +13,36 @@ configuration:
   - key: botId
     label: Bot ID
     kind: string
-    required: true
+    required: false
   - key: botSecret
     label: Bot Secret
     kind: secret
-    required: true
+    required: false
+  - key: wecom_validate
+    label: 验证并连接
+    kind: operation
+    required: false
+    target: [botId, botSecret]
+    actions:
+      - id: validate
+        label: 测试并连接
+        render: button
+        action:
+          method: wecom-bot.validate
+        next: disconnect
+      - id: disconnect
+        label: 断开连接
+        render: button
+        action:
+          method: wecom-bot.disconnect
+        next: validate
+test:
+  action:
+    method: wecom-bot.test
+steps:
+  - text: 进入企微管理端创建智能机器人 → 选「API 模式」→ 连接方式选「使用长连接」
+  - text: 填写名称和可见范围，保存后获取 Bot ID 和 Secret
+  - text: 在配置中填写 Bot ID 和 Secret 并保存，点击「测试并连接」，验证成功后自动生效
 contributions:
   - type: identity
     id: wecom-bot

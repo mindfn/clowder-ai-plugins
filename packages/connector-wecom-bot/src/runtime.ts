@@ -31,6 +31,7 @@ export interface WeComBotRuntimeAdapter {
   readonly connectorId: string;
   startStream(handler: (message: WeComBotInboundMessage) => Promise<void>): Promise<void>;
   stopStream(): Promise<void>;
+  getConnectionState(): 'connected' | 'disconnected' | 'reconnecting';
   sendFormattedReply: WeComBotAdapter['sendFormattedReply'];
   sendMedia: WeComBotAdapter['sendMedia'];
   sendReply: WeComBotAdapter['sendReply'];
@@ -40,6 +41,12 @@ export interface WeComBotConnectorRuntime<Adapter extends WeComBotRuntimeAdapter
   readonly outbound: Adapter;
   start(): Promise<void>;
   stop(): Promise<void>;
+  /** Adopt credentials in-process and (re)start the provider stream with them. */
+  connect(config: Readonly<WeComBotRuntimeConfig>): Promise<void>;
+  /** Stop the provider stream and drop the in-process connection (configuration values untouched). */
+  disconnect(): Promise<void>;
+  /** True when the provider WebSocket is connected. */
+  isConnected(): boolean;
 }
 
 export interface WeComBotConnectorRuntimeOptions<Adapter extends WeComBotRuntimeAdapter = WeComBotAdapter> {
@@ -49,10 +56,8 @@ export interface WeComBotConnectorRuntimeOptions<Adapter extends WeComBotRuntime
   readonly createAdapter?: (logger: ConnectorLogger, config: WeComBotAdapterOptions) => Adapter;
 }
 
-function required(value: string, key: keyof WeComBotRuntimeConfig): string {
-  const normalized = value.trim();
-  if (normalized.length === 0) throw new TypeError(`${key} must be a non-empty declared value`);
-  return normalized;
+function trimValue(value: string): string {
+  return value.trim();
 }
 
 function hostMessage(message: WeComBotInboundMessage): WeComBotHostInboundMessage {
@@ -76,14 +81,18 @@ function hostMessage(message: WeComBotInboundMessage): WeComBotHostInboundMessag
 export function createWeComBotConnectorRuntime<Adapter extends WeComBotRuntimeAdapter = WeComBotAdapter>(
   options: WeComBotConnectorRuntimeOptions<Adapter>,
 ): WeComBotConnectorRuntime<Adapter> {
-  const config = {
-    botId: required(options.config.botId, 'botId'),
-    secret: required(options.config.botSecret, 'botSecret'),
-  };
   const createAdapter = options.createAdapter ?? ((logger: ConnectorLogger, value: WeComBotAdapterOptions) => (
     new WeComBotAdapter(logger, value) as unknown as Adapter
   ));
-  const outbound = createAdapter(options.logger, config);
+  // Credentials may be filled only after the plugin is enabled — without them the
+  // runtime stays healthy and idle (no provider stream) until connect() adopts them.
+  let outbound: Adapter | undefined = (() => {
+    const botId = trimValue(options.config.botId);
+    const secret = trimValue(options.config.botSecret);
+    return botId.length > 0 && secret.length > 0
+      ? createAdapter(options.logger, { botId, secret })
+      : undefined;
+  })();
   let state: 'idle' | 'starting' | 'running' | 'stopped' = 'idle';
   let startPromise: Promise<void> | undefined;
   let stopPromise: Promise<void> | undefined;
@@ -91,28 +100,69 @@ export function createWeComBotConnectorRuntime<Adapter extends WeComBotRuntimeAd
     if (state !== 'running') return;
     await options.host.deliver(hostMessage(message));
   };
+  const requireOutbound = (): Adapter => {
+    if (outbound === undefined) {
+      throw new Error('WeCom Bot connector is not connected — complete 验证并连接 (wecom_validate) first');
+    }
+    return outbound;
+  };
+  const beginStream = (): Promise<void> => {
+    const adapter = requireOutbound();
+    state = 'starting';
+    startPromise = adapter.startStream(deliverIfRunning)
+      .then(() => {
+        if (state !== 'stopped') {
+          state = 'running';
+          options.logger.info('[WeComBotRuntime] Provider stream started');
+        }
+      })
+      .catch((error: unknown) => {
+        if (state !== 'stopped') {
+          state = 'idle';
+          startPromise = undefined;
+        }
+        throw error;
+      });
+    return startPromise;
+  };
 
   return {
-    outbound,
+    get outbound() {
+      return requireOutbound();
+    },
     start() {
       if (state === 'stopped') return Promise.reject(new Error('WeCom Bot connector runtime has been stopped'));
       if (startPromise !== undefined) return startPromise;
-      state = 'starting';
-      startPromise = outbound.startStream(deliverIfRunning)
-        .then(() => {
-          if (state !== 'stopped') {
-            state = 'running';
-            options.logger.info('[WeComBotRuntime] Provider stream started');
-          }
-        })
-        .catch((error: unknown) => {
-          if (state !== 'stopped') {
-            state = 'idle';
-            startPromise = undefined;
-          }
-          throw error;
-        });
-      return startPromise;
+      if (outbound === undefined) {
+        // Armed but idle: no provider I/O until connect() adopts credentials.
+        startPromise = Promise.resolve();
+        return startPromise;
+      }
+      return beginStream();
+    },
+    async connect(config) {
+      const botId = trimValue(config.botId);
+      const secret = trimValue(config.botSecret);
+      if (botId.length === 0 || secret.length === 0) {
+        throw new TypeError('botId and botSecret must be non-empty values');
+      }
+      if (state === 'stopped') throw new Error('WeCom Bot connector runtime has been stopped');
+      await startPromise?.catch(() => undefined);
+      await outbound?.stopStream().catch(() => undefined);
+      outbound = createAdapter(options.logger, { botId, secret });
+      state = 'idle';
+      startPromise = undefined;
+      await beginStream();
+    },
+    async disconnect() {
+      const adapter = outbound;
+      outbound = undefined;
+      state = 'idle';
+      startPromise = undefined;
+      if (adapter !== undefined) await adapter.stopStream();
+    },
+    isConnected() {
+      return outbound !== undefined && outbound.getConnectionState() === 'connected';
     },
     stop() {
       if (stopPromise !== undefined) return stopPromise;
@@ -123,7 +173,7 @@ export function createWeComBotConnectorRuntime<Adapter extends WeComBotRuntimeAd
       state = 'stopped';
       stopPromise = (async () => {
         await startPromise?.catch(() => undefined);
-        await outbound.stopStream();
+        await outbound?.stopStream();
       })();
       return stopPromise;
     },
