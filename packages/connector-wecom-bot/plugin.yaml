@@ -52,6 +52,9 @@ contributions:
     binding: wecom-bot
     action:
       method: wecom-bot.outbound
+    lifecycleAction:
+      method: host.messaging.lifecycle
+    presentation: v1
   - type: media-source
     id: wecom-bot-media
     binding: wecom-bot

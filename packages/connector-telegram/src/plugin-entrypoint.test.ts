@@ -10,9 +10,29 @@ import type { TelegramConnectorRuntime, TelegramHostInboundMessage } from './run
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
 
+function lifecycleHost(): ModulePluginHostShape {
+  const state = new Map<string, { revision: number; value: unknown }>();
+  return {
+    config: { get: async () => undefined }, secrets: { get: async () => 'bot-token' },
+    storage: {
+      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
+      compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
+    }, tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
+    threads: {
+      listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
+      ensureByKey: async () => ({ id: 'thread-1' }),
+    } as never,
+    messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async input => ({ messageId: 'message-1', threadId: input.threadId }) },
+    log() {},
+  };
+}
+
 function delivery() {
   return {
     deliveryId: 'delivery-1', threadId: 'thread-1',
+    presentation: { actor: { displayName: 'Cat', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
     envelope: {
       messageId: 'message-1', revision: 1, threadId: 'thread-1',
       actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
@@ -138,9 +158,41 @@ test('telegram.test reports not-polling separately from a missing token', async 
   await active.stop();
 });
 
+test('lifecycle registers the Telegram placeholder before final delivery and clears it on settlement', async () => {
+  const calls: unknown[][] = [];
+  const outbound = {
+    async sendPlaceholder(...args: unknown[]) { calls.push(['placeholder', ...args]); return '42'; },
+    registerInlinePlaceholder(...args: unknown[]) { calls.push(['register', ...args]); },
+    async editMessage(...args: unknown[]) { calls.push(['edit', ...args]); },
+    async sendReply(...args: unknown[]) { calls.push(['final', ...args]); },
+    async clearInlinePlaceholder(...args: unknown[]) { calls.push(['clear', ...args]); },
+  } as unknown as TelegramAdapter;
+  const entrypoint = createTelegramPluginModule(() => ({
+    outbound, async start() {}, async stop() {}, isPolling: () => true,
+  }) as TelegramConnectorRuntime<TelegramAdapter>);
+  const active = await entrypoint.create(manifest).start(lifecycleHost());
+  const action = active.actions['host.messaging.lifecycle']!;
+  await action({
+    lifecycleId: 'life-1', deliveryId: 'delivery-1', threadId: 'thread-1', state: 'started',
+    presentation: { actor: { displayName: '砚砚', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
+  });
+  await active.actions['telegram.outbound']?.({ ...delivery(), lifecycleId: 'life-1' });
+  await action({
+    lifecycleId: 'life-1', deliveryId: 'delivery-2', threadId: 'thread-1', state: 'settled', chainDone: true, outcome: 'completed',
+  });
+  assert.deepEqual(calls, [
+    ['placeholder', 'chat-1', '🤔 思考中...'],
+    ['register', 'chat-1', '42', 'life-1'],
+    ['final', 'chat-1', 'hello', undefined, 'life-1'],
+    ['clear', 'chat-1', '42', 'life-1'],
+  ]);
+  await active.stop();
+});
+
 function richDelivery() {
   return {
     deliveryId: 'delivery-1', threadId: 'thread-1',
+    presentation: { actor: { displayName: 'Cat', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
     envelope: {
       messageId: 'message-1', revision: 1, threadId: 'thread-1',
       actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',

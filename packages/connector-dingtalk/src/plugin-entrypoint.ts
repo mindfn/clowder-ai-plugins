@@ -16,6 +16,7 @@ import {
 import { DingTalkAdapter } from './DingTalkAdapter.js';
 import { renderTypedMediaNotice } from './media-notice.js';
 import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia, type InboundMediaLocator } from './inbound-media-source.js';
+import { createConnectorLifecycleAction } from './lifecycle-action.js';
 
 type DingTalkRuntimeFactory = (
   options: DingTalkConnectorRuntimeOptions<DingTalkAdapter>,
@@ -31,7 +32,7 @@ function object(value: unknown): value is Record<string, unknown> {
 function requireDelivery(candidate: unknown): PluginMessagingDelivery {
   if (!object(candidate)) throw new TypeError('dingtalk delivery must be an object');
   const keys = Object.keys(candidate);
-  if (keys.some(key => !['deliveryId', 'threadId', 'envelope'].includes(key))) {
+  if (keys.some(key => !['deliveryId', 'lifecycleId', 'threadId', 'envelope', 'presentation'].includes(key))) {
     throw new TypeError('dingtalk delivery contains an unsupported field');
   }
   if (typeof candidate.deliveryId !== 'string' || candidate.deliveryId.length === 0) {
@@ -173,8 +174,17 @@ export function createDingTalkPluginModule(
         });
         await runtime.start();
         const mediaSource = createInboundMediaSourceActions(context, locator => runtime.outbound.downloadInboundMedia(locator as InboundMediaLocator));
+        const lifecycle = createConnectorLifecycleAction(context, {
+          sendPlaceholder: (externalConversationId, text) => runtime.outbound.sendPlaceholder(externalConversationId, text),
+          editPlaceholder: (externalConversationId, platformMessageId, text) => runtime.outbound.editMessage(externalConversationId, platformMessageId, text),
+          sendRecovery: (externalConversationId, text) => runtime.outbound.sendReply(externalConversationId, text),
+          settle: async ({ platformMessageId }) => {
+            if (platformMessageId !== undefined) await runtime.outbound.deleteMessage(platformMessageId);
+          },
+        });
         return {
           actions: {
+            'host.messaging.lifecycle': lifecycle,
             'dingtalk.media-source.read': mediaSource.read,
             'dingtalk.media-source.settle': mediaSource.settle,
             'dingtalk.outbound': async (candidate) => {

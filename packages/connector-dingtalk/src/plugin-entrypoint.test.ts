@@ -13,6 +13,7 @@ const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url)
 function delivery() {
   return {
     deliveryId: 'delivery-1', threadId: 'thread-1',
+    presentation: { actor: { displayName: 'Cat', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
     envelope: {
       messageId: 'message-1', revision: 1, threadId: 'thread-1',
       actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
@@ -53,6 +54,7 @@ test('module bridges provider ingress and Host subscription egress without conne
   };
 
   const active = await entrypoint.create(manifest).start(host);
+  assert.equal(typeof active.actions['host.messaging.lifecycle'], 'function');
   await inbound({
     externalConversationId: 'chat-1',
     providerConversationId: 'provider-chat-1',
@@ -70,6 +72,51 @@ test('module bridges provider ingress and Host subscription egress without conne
   assert.equal('address' in sent, false);
   assert.equal((calls.find(call => call.operation === 'provider.send')?.value as unknown[])[0], 'chat-1');
   await assert.rejects(async () => active.actions['dingtalk.outbound']?.({ ...delivery(), externalConversationId: 'forbidden' }), /unsupported field/);
+  await active.stop();
+});
+
+test('lifecycle action drives DingTalk placeholder updates and cleanup through the adapter', async () => {
+  const calls: unknown[][] = [];
+  const state = new Map<string, { revision: number; value: unknown }>();
+  const outbound = {
+    async sendPlaceholder(...args: unknown[]) { calls.push(['placeholder', ...args]); return 'card-1'; },
+    async editMessage(...args: unknown[]) { calls.push(['edit', ...args]); },
+    async sendReply(...args: unknown[]) { calls.push(['reply', ...args]); },
+    async deleteMessage(...args: unknown[]) { calls.push(['delete', ...args]); },
+  } as unknown as DingTalkAdapter;
+  const entrypoint = createDingTalkPluginModule(() => ({
+    outbound, async start() {}, async stop() {},
+  }) as DingTalkConnectorRuntime<DingTalkAdapter>);
+  const host: ModulePluginHostShape = {
+    config: { get: async () => 'app-key' }, secrets: { get: async () => 'app-secret' },
+    storage: {
+      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
+      compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
+    }, tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
+    threads: {
+      listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
+      ensureByKey: async () => ({ id: 'thread-1' }),
+    } as never,
+    messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async input => ({ messageId: 'message-1', threadId: input.threadId }) },
+    log() {},
+  };
+  const active = await entrypoint.create(manifest).start(host);
+  const action = active.actions['host.messaging.lifecycle']!;
+  await action({
+    lifecycleId: 'life-1', deliveryId: 'delivery-1', threadId: 'thread-1', state: 'started',
+    presentation: { actor: { displayName: '砚砚', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
+  });
+  await action({ lifecycleId: 'life-1', deliveryId: 'delivery-2', threadId: 'thread-1', state: 'catching_up' });
+  await action({
+    lifecycleId: 'life-1', deliveryId: 'delivery-3', threadId: 'thread-1', state: 'settled', chainDone: true, outcome: 'completed',
+  });
+  assert.deepEqual(calls, [
+    ['placeholder', 'chat-1', '🤔 思考中...'],
+    ['edit', 'chat-1', 'card-1', '🔄 收到新消息，正在重新整理回复…'],
+    ['delete', 'card-1'],
+  ]);
   await active.stop();
 });
 
@@ -173,6 +220,7 @@ test('inbound media is retained as a private locator and exposed through bounded
 function richDelivery() {
   return {
     deliveryId: 'delivery-1', threadId: 'thread-1',
+    presentation: { actor: { displayName: 'Cat', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
     envelope: {
       messageId: 'message-1', revision: 1, threadId: 'thread-1',
       actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',

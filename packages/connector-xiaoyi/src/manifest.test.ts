@@ -22,6 +22,8 @@ test('manifest keeps credentials and connector authority in their intended domai
   assert.ok(manifest.contributions.some(item => item.type === 'message-subscription' && item.id === 'xiaoyi'));
   assert.deepEqual(manifest.features[0]?.capabilities, [
     'plugin.config.read',
+    'plugin.state.get',
+    'plugin.state.set',
     'message.event.subscribe',
     'messaging.send',
     'secret.read',

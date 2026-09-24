@@ -26,6 +26,9 @@ contributions:
     binding: telegram-bot
     action:
       method: telegram.outbound
+    lifecycleAction:
+      method: host.messaging.lifecycle
+    presentation: v1
   - type: media-source
     id: telegram-media
     binding: telegram-bot

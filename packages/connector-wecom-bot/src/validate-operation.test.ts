@@ -84,7 +84,7 @@ test('module starts healthy and idle without credentials', async () => {
   );
   const active = await entrypoint.create(manifest).start(hostWith({}));
   assert.deepEqual(Object.keys(active.actions).sort(), [
-    'wecom-bot.disconnect', 'wecom-bot.media-source.read', 'wecom-bot.media-source.settle', 'wecom-bot.outbound', 'wecom-bot.test', 'wecom-bot.validate',
+    'host.messaging.lifecycle', 'wecom-bot.disconnect', 'wecom-bot.media-source.read', 'wecom-bot.media-source.settle', 'wecom-bot.outbound', 'wecom-bot.test', 'wecom-bot.validate',
   ]);
   await active.stop();
   assert.equal(calls.start?.length, 1);

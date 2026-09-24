@@ -11,9 +11,14 @@ import type { XiaoyiAdapter } from './XiaoyiAdapter.js';
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
 
 function host(values: Record<string, unknown>): ModulePluginHostShape {
+  const state = new Map<string, { revision: number; value: unknown }>();
   return {
     config: { get: async key => values[key] }, secrets: { get: async () => 'sk' },
-    storage: {} as never, tasks: {} as never,
+    storage: {
+      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
+      compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
+    }, tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: { listBindings: async () => [{ key: 'agent:session', threadId: 'thread-1', createdAt: 1 }] } as never,
     messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async input => ({ messageId: 'message-1', threadId: input.threadId }) },
@@ -24,6 +29,7 @@ function host(values: Record<string, unknown>): ModulePluginHostShape {
 function delivery() {
   return {
     deliveryId: 'delivery-1', threadId: 'thread-1',
+    presentation: { actor: { displayName: 'Cat', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
     envelope: {
       messageId: 'message-1', revision: 1, threadId: 'thread-1',
       actor: { kind: 'cat', id: '砚砚' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
@@ -37,7 +43,7 @@ test('default export is the deterministic package module entrypoint', () => {
   assert.equal(typeof moduleEntrypoint.create(manifest).start, 'function');
 });
 
-test('module settles the provider task after the declared outbound action completes', async () => {
+test('module leaves provider task settlement to the lifecycle action', async () => {
   const events: unknown[] = [];
   const outbound = {
     async sendReply(...args: unknown[]) { events.push(['reply', ...args]); },
@@ -52,24 +58,53 @@ test('module settles the provider task after the declared outbound action comple
   await active.actions['xiaoyi.outbound']?.(delivery());
   assert.deepEqual(events, [
     ['reply', 'agent:session', '砚砚\n\nhello'],
-    ['done', 'agent:session', true],
   ]);
-  events.length = 0;
-  const typedOnly = richDelivery();
-  typedOnly.deliveryId = 'delivery-typed-only';
-  typedOnly.envelope.payload.elements = typedOnly.envelope.payload.elements.filter(element => (
-    element.kind === 'text' || element.kind === 'media_unavailable'
-  ));
-  await active.actions['xiaoyi.outbound']?.(typedOnly);
+});
+
+test('lifecycle sends one standalone blocked recovery and preserves chainDone false and true', async () => {
+  const events: unknown[] = [];
+  const outbound = {
+    async sendPlaceholder(...args: unknown[]) { events.push(['placeholder', ...args]); return ''; },
+    async editMessage(...args: unknown[]) { events.push(['edit', ...args]); },
+    async sendReply(...args: unknown[]) { events.push(['reply', ...args]); },
+    async onDeliveryBatchDone(...args: unknown[]) { events.push(['done', ...args]); },
+  } as unknown as XiaoyiAdapter;
+  const entrypoint = createXiaoyiPluginModule(() => ({
+    outbound, async start() {}, async stop() {},
+  }) as XiaoyiConnectorRuntime<XiaoyiAdapter>);
+  const active = await entrypoint.create(manifest).start(host({ accessKey: 'ak', agentId: 'agent' }));
+  const action = active.actions['host.messaging.lifecycle']!;
+  const started = (lifecycleId: string, deliveryId: string) => ({
+    lifecycleId, deliveryId, threadId: 'thread-1', state: 'started',
+    presentation: { actor: { displayName: '砚砚', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
+  });
+  await action(started('life-1', 'delivery-1'));
+  const blocked = {
+    lifecycleId: 'life-1', deliveryId: 'delivery-2', threadId: 'thread-1', state: 'blocked', reason: 'needs_user',
+  };
+  await action(blocked);
+  await action(blocked);
+  await action({
+    lifecycleId: 'life-1', deliveryId: 'delivery-3', threadId: 'thread-1', state: 'settled', chainDone: false, outcome: 'failed',
+  });
+  await action(started('life-2', 'delivery-4'));
+  await action({
+    lifecycleId: 'life-2', deliveryId: 'delivery-5', threadId: 'thread-1', state: 'settled', chainDone: true, outcome: 'completed',
+  });
   assert.deepEqual(events, [
-    ['reply', 'agent:session', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）'],
+    ['placeholder', 'agent:session', '🤔 思考中...'],
+    ['reply', 'agent:session', '⚠️ 未能完成最新消息重读（needs_user）。请打开 Clowder AI 重试。'],
+    ['done', 'agent:session', false],
+    ['placeholder', 'agent:session', '🤔 思考中...'],
     ['done', 'agent:session', true],
   ]);
+  await active.stop();
 });
 
 function richDelivery() {
   return {
     deliveryId: 'delivery-1', threadId: 'thread-1',
+    presentation: { actor: { displayName: 'Cat', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
     envelope: {
       messageId: 'message-1', revision: 1, threadId: 'thread-1',
       actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
@@ -85,7 +120,7 @@ function richDelivery() {
   };
 }
 
-test('rich blocks and typed media notices append rendered plaintext blocks before batch done', async () => {
+test('rich blocks and typed media notices append rendered plaintext blocks before lifecycle settlement', async () => {
   const events: unknown[] = [];
   const outbound = {
     async sendReply(...args: unknown[]) { events.push(['reply', ...args]); },
@@ -98,6 +133,16 @@ test('rich blocks and typed media notices append rendered plaintext blocks befor
   assert.deepEqual(events, [
     ['reply', 'agent:session', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：音频（转写处理失败）\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'],
     ['reply', 'agent:session', '⚠️ 这条语音无法在小艺里发送'],
-    ['done', 'agent:session', true],
   ]);
+  events.length = 0;
+  const typedOnly = richDelivery();
+  typedOnly.deliveryId = 'delivery-typed-only';
+  typedOnly.envelope.payload.elements = typedOnly.envelope.payload.elements.filter(element => (
+    element.kind === 'text' || element.kind === 'media_unavailable'
+  ));
+  await active.actions['xiaoyi.outbound']?.(typedOnly);
+  assert.deepEqual(events, [
+    ['reply', 'agent:session', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）'],
+  ]);
+  await active.stop();
 });

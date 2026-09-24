@@ -13,6 +13,7 @@ const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url)
 const delivery = {
   deliveryId: 'delivery-1',
   threadId: 'thread-1',
+  presentation: { actor: { displayName: 'Cat', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
   envelope: {
     messageId: 'message-1', revision: 1, threadId: 'thread-1',
     actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
@@ -109,6 +110,7 @@ test('module exposes the declared outbound action and disposes the runtime once'
     } as WeComBotConnectorRuntime<WeComBotAdapter>;
   });
   const active = await entrypoint.create(manifest).start(host());
+  assert.equal(typeof active.actions['host.messaging.lifecycle'], 'function');
   await active.actions['wecom-bot.outbound']?.(delivery);
   await Promise.all([active.stop(), active.stop()]);
   assert.equal(starts, 1);
@@ -117,9 +119,45 @@ test('module exposes the declared outbound action and disposes the runtime once'
   assert.equal((sent[0] as unknown[])[0], 'chat-1');
 });
 
+test('lifecycle action edits the WeCom stream once for blocked and finalizes it on settled', async () => {
+  const calls: unknown[][] = [];
+  const outbound = {
+    async sendPlaceholder(...args: unknown[]) { calls.push(['placeholder', ...args]); return 'stream-1'; },
+    async editMessage(...args: unknown[]) { calls.push(['edit', ...args]); },
+    async sendReply(...args: unknown[]) { calls.push(['reply', ...args]); },
+    async deleteMessage(...args: unknown[]) { calls.push(['delete', ...args]); },
+  } as unknown as WeComBotAdapter;
+  const entrypoint = createWeComBotPluginModule(() => ({
+    outbound, async start() {}, async stop() {},
+  }) as WeComBotConnectorRuntime<WeComBotAdapter>);
+  const active = await entrypoint.create(manifest).start(host());
+  const action = active.actions['host.messaging.lifecycle']!;
+  await action({
+    lifecycleId: 'life-1', deliveryId: 'delivery-1', threadId: 'thread-1', state: 'started',
+    presentation: { actor: { displayName: '砚砚', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
+  });
+  await action({
+    lifecycleId: 'life-1', deliveryId: 'delivery-2', threadId: 'thread-1', state: 'blocked', reason: 'needs_user',
+  });
+  await assert.rejects(
+    Promise.resolve(action({ lifecycleId: 'life-1', deliveryId: 'delivery-3', threadId: 'thread-1', state: 'blocked', reason: 'again' })),
+    (error: unknown) => (error as { code?: string }).code === 'LIFECYCLE_OUT_OF_ORDER',
+  );
+  await action({
+    lifecycleId: 'life-1', deliveryId: 'delivery-4', threadId: 'thread-1', state: 'settled', chainDone: false, outcome: 'failed',
+  });
+  assert.deepEqual(calls, [
+    ['placeholder', 'chat-1', '🤔 思考中...'],
+    ['edit', 'chat-1', 'stream-1', '⚠️ 未能完成最新消息重读（needs_user）。请打开 Clowder AI 重试。'],
+    ['delete', 'stream-1'],
+  ]);
+  await active.stop();
+});
+
 function richDelivery() {
   return {
     deliveryId: 'delivery-1', threadId: 'thread-1',
+    presentation: { actor: { displayName: 'Cat', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
     envelope: {
       messageId: 'message-1', revision: 1, threadId: 'thread-1',
       actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',

@@ -124,7 +124,12 @@ export class TelegramAdapter {
   private sendMessageFn: ((chatId: string, text: string, opts?: Record<string, unknown>) => Promise<unknown>) | null =
     null;
   private readonly placeholderChats = new Map<string, string>();
+  /** Legacy deliveries without lifecycleId remain FIFO; lifecycle deliveries use the exact map below. */
   private readonly pendingInlineFinal = new Map<string, string[]>();
+  private readonly pendingInlineFinalByLifecycle = new Map<
+    string,
+    { readonly externalChatId: string; readonly platformMessageId: string }
+  >();
   private botApiSendMessageFn: ((chatId: number, text: string) => Promise<{ message_id: number }>) | null = null;
   private botApiDeleteMessageFn: ((chatId: number, messageId: number) => Promise<void>) | null = null;
   private sendMediaFns: {
@@ -240,16 +245,18 @@ export class TelegramAdapter {
 
   /**
    * Send a reply to a Telegram chat.
-   * K2: If a pending inline placeholder exists, edits it in-place (consumed on first use).
+   * K2: If a lifecycleId is supplied, edits only that lifecycle's placeholder. Legacy
+   *     deliveries without lifecycleId retain the per-chat FIFO behavior.
    *     If editMessage fails (message deleted etc.), falls back to sending a new message.
    * K3: Splits content exceeding 4096 chars into multiple messages.
    */
-  async sendReply(externalChatId: string, content: string): Promise<void> {
-    const queue = this.pendingInlineFinal.get(externalChatId);
-    // Consume (shift) before the async editMessage call so two concurrent deliveries
-    // for the same chatId cannot both select the same placeholder ID.
-    const inlineMsgId = queue?.shift();
-    if (queue !== undefined && queue.length === 0) this.pendingInlineFinal.delete(externalChatId);
+  async sendReply(
+    externalChatId: string,
+    content: string,
+    _metadata?: Record<string, unknown>,
+    lifecycleId?: string,
+  ): Promise<void> {
+    const inlineMsgId = this.takeInlinePlaceholder(externalChatId, lifecycleId);
     if (inlineMsgId !== undefined) {
       const [firstPart, ...restParts] = splitText(content);
       let editSucceeded = false;
@@ -392,7 +399,8 @@ export class TelegramAdapter {
 
   /**
    * Send a rich message as Telegram HTML-formatted text.
-   * K2: If a pending inline placeholder exists, edits it in-place.
+   * K2: If a lifecycleId is supplied, edits only that lifecycle's placeholder. Legacy
+   *     deliveries without lifecycleId retain the per-chat FIFO behavior.
    *     Falls back to plain text edit if HTML parse fails.
    *     Falls back to sending a new message if editMessage fails entirely.
    * K3: HTML parse error falls back to plain text; long plain text is split.
@@ -402,14 +410,11 @@ export class TelegramAdapter {
     textContent: string,
     blocks: RichBlock[],
     catDisplayName: string,
+    lifecycleId?: string,
   ): Promise<void> {
     const html = formatTelegramHtml(blocks, catDisplayName, textContent);
 
-    const richQueue = this.pendingInlineFinal.get(externalChatId);
-    // Consume (shift) before the async editMessage call to prevent concurrent deliveries
-    // from selecting the same placeholder ID.
-    const inlineMsgId = richQueue?.shift();
-    if (richQueue !== undefined && richQueue.length === 0) this.pendingInlineFinal.delete(externalChatId);
+    const inlineMsgId = this.takeInlinePlaceholder(externalChatId, lifecycleId);
     if (inlineMsgId !== undefined) {
       const [firstHtmlPart, ...restHtmlParts] = splitHtml(html);
       let richEditSucceeded = false;
@@ -657,13 +662,35 @@ export class TelegramAdapter {
 
   /**
    * K2: Register a pending inline-final placeholder.
-   * The next sendReply or sendRichMessage to this chatId will edit this placeholder
-   * instead of sending a new message. Consumed on first use.
+   * Lifecycle-aware deliveries use lifecycleId as the exact correlation key; callers
+   * without one retain the legacy per-chat FIFO behavior. Consumed on first use.
    */
-  registerInlinePlaceholder(externalChatId: string, platformMessageId: string): void {
+  registerInlinePlaceholder(
+    externalChatId: string,
+    platformMessageId: string,
+    lifecycleId?: string,
+  ): void {
+    if (lifecycleId !== undefined) {
+      this.pendingInlineFinalByLifecycle.set(lifecycleId, { externalChatId, platformMessageId });
+      return;
+    }
     const queue = this.pendingInlineFinal.get(externalChatId) ?? [];
     queue.push(platformMessageId);
     this.pendingInlineFinal.set(externalChatId, queue);
+  }
+
+  private takeInlinePlaceholder(externalChatId: string, lifecycleId?: string): string | undefined {
+    if (lifecycleId !== undefined) {
+      const pending = this.pendingInlineFinalByLifecycle.get(lifecycleId);
+      if (pending?.externalChatId !== externalChatId) return undefined;
+      this.pendingInlineFinalByLifecycle.delete(lifecycleId);
+      return pending.platformMessageId;
+    }
+    const queue = this.pendingInlineFinal.get(externalChatId);
+    // Consume before the async edit so concurrent legacy deliveries cannot select the same ID.
+    const platformMessageId = queue?.shift();
+    if (queue !== undefined && queue.length === 0) this.pendingInlineFinal.delete(externalChatId);
+    return platformMessageId;
   }
 
   /**
@@ -673,8 +700,23 @@ export class TelegramAdapter {
    * If the placeholder was already consumed by sendReply/sendRichMessage, this is a no-op.
    * Deletes the streaming card from Telegram when entry was still pending (delivery skipped).
    */
-  async clearInlinePlaceholder(chatId: string, platformMessageId?: string): Promise<void> {
+  async clearInlinePlaceholder(
+    chatId: string,
+    platformMessageId?: string,
+    lifecycleId?: string,
+  ): Promise<void> {
     if (platformMessageId) {
+      if (lifecycleId !== undefined) {
+        const pending = this.pendingInlineFinalByLifecycle.get(lifecycleId);
+        if (pending?.externalChatId === chatId && pending.platformMessageId === platformMessageId) {
+          this.pendingInlineFinalByLifecycle.delete(lifecycleId);
+          await this.deleteMessage(platformMessageId, chatId).catch(() => {});
+        } else {
+          // The matching final delivery already consumed this lifecycle placeholder.
+          this.placeholderChats.delete(platformMessageId);
+        }
+        return;
+      }
       const queue = this.pendingInlineFinal.get(chatId);
       if (queue) {
         const idx = queue.indexOf(platformMessageId);
@@ -692,7 +734,11 @@ export class TelegramAdapter {
         this.placeholderChats.delete(platformMessageId);
       }
     } else {
-      this.pendingInlineFinal.delete(chatId);
+      if (lifecycleId !== undefined) {
+        this.pendingInlineFinalByLifecycle.delete(lifecycleId);
+      } else {
+        this.pendingInlineFinal.delete(chatId);
+      }
     }
   }
 

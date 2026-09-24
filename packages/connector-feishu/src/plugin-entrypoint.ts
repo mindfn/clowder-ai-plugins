@@ -12,6 +12,7 @@ import { FeishuAdapter } from './FeishuAdapter.js';
 import { DefaultFeishuQrBindClient, type FeishuQrBindClient } from './FeishuQrBindClient.js';
 import { renderTypedMediaNotice } from './media-notice.js';
 import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia } from './inbound-media-source.js';
+import { createConnectorLifecycleAction } from './lifecycle-action.js';
 import {
   createFeishuConnectorRuntime,
   requireFeishuWebhookInput,
@@ -34,7 +35,7 @@ function object(value: unknown): value is Record<string, unknown> {
 
 function requireDelivery(candidate: unknown): PluginMessagingDelivery {
   if (!object(candidate)) throw new TypeError('feishu delivery must be an object');
-  if (Object.keys(candidate).some(key => !['deliveryId', 'threadId', 'envelope'].includes(key))) {
+  if (Object.keys(candidate).some(key => !['deliveryId', 'lifecycleId', 'threadId', 'envelope', 'presentation'].includes(key))) {
     throw new TypeError('feishu delivery contains an unsupported field');
   }
   if (typeof candidate.deliveryId !== 'string' || candidate.deliveryId.length === 0) {
@@ -206,11 +207,22 @@ export function createFeishuPluginModule(
         });
         await runtime.start();
         const mediaSource = createInboundMediaSourceActions(context, locator => runtime.outbound.downloadInboundMedia(locator));
+        const lifecycle = createConnectorLifecycleAction(context, {
+          sendPlaceholder: (externalConversationId, text) => runtime.outbound.sendPlaceholder(externalConversationId, text),
+          editPlaceholder: (externalConversationId, platformMessageId, text) => runtime.outbound.editMessage(externalConversationId, platformMessageId, text),
+          sendRecovery: (externalConversationId, text) => runtime.outbound.sendReply(externalConversationId, text),
+          settle: async ({ externalConversationId, platformMessageId, actorDisplayName }) => {
+            if (platformMessageId !== undefined) {
+              await runtime.outbound.finalizeStreamCard(externalConversationId, platformMessageId, actorDisplayName);
+            }
+          },
+        });
         // Operation state (the in-flight device_code) lives in runtime memory only.
         let qrPayload: string | undefined;
         const qrClient = createQrClient();
         return {
           actions: {
+            'host.messaging.lifecycle': lifecycle,
             'feishu.media-source.read': mediaSource.read,
             'feishu.media-source.settle': mediaSource.settle,
             'feishu.qr-generate': async () => {

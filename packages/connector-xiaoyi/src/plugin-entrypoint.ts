@@ -17,6 +17,7 @@ import {
 import { XiaoyiAdapter } from './XiaoyiAdapter.js';
 import { renderTypedMediaNotice } from './media-notice.js';
 import { renderAllRichBlocksPlaintext } from './rich-block-plaintext.js';
+import { createConnectorLifecycleAction } from './lifecycle-action.js';
 
 type RuntimeFactory = (
   options: XiaoyiConnectorRuntimeOptions<XiaoyiAdapter>,
@@ -31,7 +32,7 @@ function object(value: unknown): value is Record<string, unknown> {
 
 function requireDelivery(candidate: unknown): PluginMessagingDelivery {
   if (!object(candidate)) throw new TypeError('xiaoyi delivery must be an object');
-  if (Object.keys(candidate).some(key => !['deliveryId', 'threadId', 'envelope'].includes(key))) throw new TypeError('xiaoyi delivery contains an unsupported field');
+  if (Object.keys(candidate).some(key => !['deliveryId', 'lifecycleId', 'threadId', 'envelope', 'presentation'].includes(key))) throw new TypeError('xiaoyi delivery contains an unsupported field');
   if (typeof candidate.deliveryId !== 'string' || candidate.deliveryId.length === 0) throw new TypeError('xiaoyi deliveryId must be non-empty');
   if (typeof candidate.threadId !== 'string' || candidate.threadId.length === 0) throw new TypeError('xiaoyi threadId must be non-empty');
   if (!object(candidate.envelope) || candidate.envelope.threadId !== candidate.threadId) throw new TypeError('xiaoyi delivery envelope must match threadId');
@@ -125,8 +126,18 @@ export function createXiaoyiPluginModule(createRuntime: RuntimeFactory = createX
           logger: context.logger,
         });
         await runtime.start();
+        const lifecycle = createConnectorLifecycleAction(context, {
+          sendPlaceholder: (externalConversationId, text) => runtime.outbound.sendPlaceholder(externalConversationId, text),
+          editPlaceholder: () => runtime.outbound.editMessage(),
+          sendRecovery: (externalConversationId, text) => runtime.outbound.sendReply(externalConversationId, text),
+          settle: ({ externalConversationId, event }) => runtime.outbound.onDeliveryBatchDone(
+            externalConversationId,
+            event.chainDone,
+          ),
+        });
         return {
           actions: {
+            'host.messaging.lifecycle': lifecycle,
             'xiaoyi.outbound': async (candidate) => {
               const input = await bridge.outbound(candidate);
               const text = [input.presentation.header, input.presentation.subtitle, input.presentation.body, input.presentation.footer]
@@ -144,7 +155,6 @@ export function createXiaoyiPluginModule(createRuntime: RuntimeFactory = createX
                       : '文件';
                 await runtime.outbound.sendReply(input.externalConversationId, `⚠️ 这条${label}无法在小艺里发送`);
               }
-              await runtime.outbound.onDeliveryBatchDone(input.externalConversationId, true);
             },
           },
           dispose: () => runtime.stop(),

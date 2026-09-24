@@ -69,6 +69,35 @@ test('outbound text is split without truncation or surrogate-pair corruption', a
   assert.ok(sent.every(segment => !segment.includes('\ufffd')));
 });
 
+test('concurrent lifecycle finals edit their exact Telegram placeholders even when they finish out of order', async () => {
+  const { logger } = recordingLogger();
+  const subject = new TelegramAdapter('123456:abcdefghij_ABC-123', logger);
+  const edits: unknown[][] = [];
+  const sends: unknown[][] = [];
+  const deletes: unknown[][] = [];
+  let nextMessageId = 42;
+  subject._injectBotApiSendMessage(async () => ({ message_id: nextMessageId++ }));
+  subject._injectSendMessage(async (...args) => { sends.push(args); });
+  subject.editMessage = async (...args) => { edits.push(args); };
+  subject.deleteMessage = async (...args) => { deletes.push(args); };
+
+  const firstPlaceholderId = await subject.sendPlaceholder('123', '🤔 思考中...');
+  const secondPlaceholderId = await subject.sendPlaceholder('123', '🤔 思考中...');
+  subject.registerInlinePlaceholder('123', firstPlaceholderId, 'life-1');
+  subject.registerInlinePlaceholder('123', secondPlaceholderId, 'life-2');
+  await subject.sendReply('123', '第二条最终回复', undefined, 'life-2');
+  await subject.sendReply('123', '第一条最终回复', undefined, 'life-1');
+  await subject.clearInlinePlaceholder('123', secondPlaceholderId, 'life-2');
+  await subject.clearInlinePlaceholder('123', firstPlaceholderId, 'life-1');
+
+  assert.deepEqual(edits, [
+    ['123', '43', '第二条最终回复'],
+    ['123', '42', '第一条最终回复'],
+  ]);
+  assert.deepEqual(sends, []);
+  assert.deepEqual(deletes, []);
+});
+
 test('media upload failure removes the package-owned temporary file', async () => {
   const { logger } = recordingLogger();
   const subject = new TelegramAdapter('123456:abcdefghij_ABC-123', logger);

@@ -17,10 +17,15 @@ import {
 import { TelegramAdapter } from './TelegramAdapter.js';
 import { renderTypedMediaNotice } from './media-notice.js';
 import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia } from './inbound-media-source.js';
+import { createConnectorLifecycleAction } from './lifecycle-action.js';
 
 type TelegramRuntimeFactory = (
   options: TelegramConnectorRuntimeOptions<TelegramAdapter>,
 ) => TelegramConnectorRuntime<TelegramAdapter>;
+
+type TelegramOutboundDelivery = ConnectorOutboundDelivery & {
+  readonly lifecycleId?: string;
+};
 
 const CONNECTOR_ID = 'telegram';
 const IDENTITY_ID = 'telegram-bot';
@@ -31,7 +36,7 @@ function object(value: unknown): value is Record<string, unknown> {
 
 function requireDelivery(candidate: unknown): PluginMessagingDelivery {
   if (!object(candidate)) throw new TypeError('telegram delivery must be an object');
-  if (Object.keys(candidate).some(key => !['deliveryId', 'threadId', 'envelope'].includes(key))) {
+  if (Object.keys(candidate).some(key => !['deliveryId', 'lifecycleId', 'threadId', 'envelope', 'presentation'].includes(key))) {
     throw new TypeError('telegram delivery contains an unsupported field');
   }
   if (typeof candidate.deliveryId !== 'string' || candidate.deliveryId.length === 0) {
@@ -116,7 +121,7 @@ async function createMessageBridge(context: FeatureContext) {
         throw error;
       }
     },
-    async outbound(candidate: unknown): Promise<ConnectorOutboundDelivery> {
+    async outbound(candidate: unknown): Promise<TelegramOutboundDelivery> {
       const input = requireDelivery(candidate);
       const binding = (await context.threads.listBindings()).find(item => item.threadId === input.threadId);
       if (binding === undefined) throw new TypeError(`telegram thread ${input.threadId} has no provider binding`);
@@ -138,7 +143,7 @@ async function createMessageBridge(context: FeatureContext) {
         if (!['image', 'file', 'audio', 'video'].includes(String(type)) || typeof reference !== 'string') return [];
         return [{ type, reference, ...(typeof element.payload.fileName === 'string' ? { fileName: element.payload.fileName } : {}) }];
       });
-      return requireConnectorOutboundDelivery({
+      const delivery = requireConnectorOutboundDelivery({
         deliveryId: input.deliveryId,
         externalConversationId: binding.key,
         presentation: {
@@ -149,28 +154,47 @@ async function createMessageBridge(context: FeatureContext) {
         ...(richBlocks.length === 0 ? {} : { richBlocks }),
         ...(media.length === 0 ? {} : { media }),
       });
+      return {
+        ...delivery,
+        ...(input.lifecycleId === undefined ? {} : { lifecycleId: input.lifecycleId }),
+      };
     },
   };
 }
 
 async function deliver(
   adapter: TelegramAdapter,
-  input: ConnectorOutboundDelivery,
+  input: TelegramOutboundDelivery,
   context: FeatureContext,
 ): Promise<void> {
   const blocks = [...(input.richBlocks ?? [])];
   if (blocks.length > 0) {
-    await adapter.sendRichMessage(
-      input.externalConversationId,
-      input.presentation.body,
-      blocks as unknown as Parameters<TelegramAdapter['sendRichMessage']>[2],
-      input.presentation.header,
-    );
+    const richBlocks = blocks as unknown as Parameters<TelegramAdapter['sendRichMessage']>[2];
+    if (input.lifecycleId === undefined) {
+      await adapter.sendRichMessage(
+        input.externalConversationId,
+        input.presentation.body,
+        richBlocks,
+        input.presentation.header,
+      );
+    } else {
+      await adapter.sendRichMessage(
+        input.externalConversationId,
+        input.presentation.body,
+        richBlocks,
+        input.presentation.header,
+        input.lifecycleId,
+      );
+    }
   } else {
     const text = [input.presentation.subtitle, input.presentation.body, input.presentation.footer]
       .filter((value): value is string => value !== undefined && value.length > 0)
       .join('\n\n');
-    await adapter.sendReply(input.externalConversationId, text);
+    if (input.lifecycleId === undefined) {
+      await adapter.sendReply(input.externalConversationId, text);
+    } else {
+      await adapter.sendReply(input.externalConversationId, text, undefined, input.lifecycleId);
+    }
   }
   for (const media of input.media ?? []) {
     if (media.type === 'video') {
@@ -223,8 +247,36 @@ export function createTelegramPluginModule(
           if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
           return runtime.outbound.downloadInboundMedia(locator);
         });
+        const lifecycle = createConnectorLifecycleAction(context, {
+          sendPlaceholder: async (externalConversationId, text) => {
+            if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
+            return runtime.outbound.sendPlaceholder(externalConversationId, text);
+          },
+          editPlaceholder: async (externalConversationId, platformMessageId, text) => {
+            if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
+            await runtime.outbound.editMessage(externalConversationId, platformMessageId, text);
+          },
+          sendRecovery: async (externalConversationId, text) => {
+            if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
+            await runtime.outbound.sendReply(externalConversationId, text);
+          },
+          onPlaceholder: (externalConversationId, platformMessageId, lifecycleId) => {
+            if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
+            runtime.outbound.registerInlinePlaceholder(externalConversationId, platformMessageId, lifecycleId);
+          },
+          settle: async ({ externalConversationId, platformMessageId, event }) => {
+            if (runtime !== undefined && platformMessageId !== undefined) {
+              await runtime.outbound.clearInlinePlaceholder(
+                externalConversationId,
+                platformMessageId,
+                event.lifecycleId,
+              );
+            }
+          },
+        });
         return {
           actions: {
+            'host.messaging.lifecycle': lifecycle,
             'telegram.media-source.read': mediaSource.read,
             'telegram.media-source.settle': mediaSource.settle,
             'telegram.test': async () => {

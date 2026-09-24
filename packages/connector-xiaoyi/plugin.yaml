@@ -31,6 +31,9 @@ contributions:
     binding: xiaoyi-agent
     action:
       method: xiaoyi.outbound
+    lifecycleAction:
+      method: host.messaging.lifecycle
+    presentation: v1
 features:
   - id: xiaoyi-messaging
     name: XiaoYi messaging
@@ -42,6 +45,8 @@ features:
         id: xiaoyi
     capabilities:
       - plugin.config.read
+      - plugin.state.get
+      - plugin.state.set
       - message.event.subscribe
       - messaging.send
       - secret.read

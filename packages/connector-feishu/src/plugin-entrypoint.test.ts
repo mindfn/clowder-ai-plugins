@@ -31,7 +31,10 @@ function host(
     },
     tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
-    threads: { listBindings: async () => [], ensureByKey: async () => ({ id: 'thread-1' }) } as never,
+    threads: {
+      listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
+      ensureByKey: async () => ({ id: 'thread-1' }),
+    } as never,
     messaging: {
       subscribe: async () => undefined, unsubscribe: async () => undefined,
       send: async input => {
@@ -65,7 +68,7 @@ test('module exposes both manifest-declared connector and webhook actions', asyn
   const secrets: Record<string, string> = { appSecret: 'secret', verificationToken: '' };
   const active = await entrypoint.create(manifest).start(host(config, secrets));
   assert.deepEqual(Object.keys(active.actions).sort(), [
-    'feishu.disconnect', 'feishu.media-source.read', 'feishu.media-source.settle', 'feishu.outbound', 'feishu.qr-generate', 'feishu.qr-status', 'feishu.test', 'feishu.webhook',
+    'feishu.disconnect', 'feishu.media-source.read', 'feishu.media-source.settle', 'feishu.outbound', 'feishu.qr-generate', 'feishu.qr-status', 'feishu.test', 'feishu.webhook', 'host.messaging.lifecycle',
   ]);
   const request = {
     method: 'POST', path: 'feishu/events', query: {},
@@ -78,6 +81,38 @@ test('module exposes both manifest-declared connector and webhook actions', asyn
   await assert.rejects(async () => active.actions['feishu.webhook']?.({
     request: { ...request, body: { invalid: true } },
   }), /invalid result/u);
+  await active.stop();
+});
+
+test('lifecycle action drives Feishu placeholder edit and completion card through the adapter', async () => {
+  const calls: unknown[][] = [];
+  const outbound = {
+    async sendPlaceholder(...args: unknown[]) { calls.push(['placeholder', ...args]); return 'message-1'; },
+    async editMessage(...args: unknown[]) { calls.push(['edit', ...args]); },
+    async sendReply(...args: unknown[]) { calls.push(['reply', ...args]); },
+    async finalizeStreamCard(...args: unknown[]) { calls.push(['finalize', ...args]); },
+  } as unknown as FeishuAdapter;
+  const entrypoint = createFeishuPluginModule(() => ({
+    outbound, async start() {}, async stop() {},
+  }) as FeishuConnectorRuntime<FeishuAdapter>);
+  const active = await entrypoint.create(manifest).start(host(
+    { appId: 'app', connectionMode: 'webhook' },
+    { appSecret: 'secret', verificationToken: 'token' },
+  ));
+  const action = active.actions['host.messaging.lifecycle']!;
+  await action({
+    lifecycleId: 'life-1', deliveryId: 'delivery-1', threadId: 'thread-1', state: 'started',
+    presentation: { actor: { displayName: '砚砚', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
+  });
+  await action({ lifecycleId: 'life-1', deliveryId: 'delivery-2', threadId: 'thread-1', state: 'catching_up' });
+  await action({
+    lifecycleId: 'life-1', deliveryId: 'delivery-3', threadId: 'thread-1', state: 'settled', chainDone: true, outcome: 'completed',
+  });
+  assert.deepEqual(calls, [
+    ['placeholder', 'chat-1', '🤔 思考中...'],
+    ['edit', 'chat-1', 'message-1', '🔄 收到新消息，正在重新整理回复…'],
+    ['finalize', 'chat-1', 'message-1', '砚砚'],
+  ]);
   await active.stop();
 });
 
@@ -154,6 +189,7 @@ test('replayed Feishu webhook derives the same Host idempotency and source event
 function richDelivery() {
   return {
     deliveryId: 'delivery-1', threadId: 'thread-1',
+    presentation: { actor: { displayName: 'Cat', emoji: '🐱' }, thread: { shortId: 'thread-1' } },
     envelope: {
       messageId: 'message-1', revision: 1, threadId: 'thread-1',
       actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',

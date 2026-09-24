@@ -27,6 +27,9 @@ contributions:
     binding: dingtalk-bot
     action:
       method: dingtalk.outbound
+    lifecycleAction:
+      method: host.messaging.lifecycle
+    presentation: v1
   - type: media-source
     id: dingtalk-media
     binding: dingtalk-bot
