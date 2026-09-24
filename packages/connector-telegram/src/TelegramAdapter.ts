@@ -14,6 +14,14 @@ import type { ConnectorLogger, RichBlock } from './types.js';
 import { formatTelegramHtml } from './telegram-html-formatter.js';
 import { materializeMedia } from './materialize-media.js';
 
+// Telegram Bot API multipart limits: photos 10 MB; other uploaded files 50 MB.
+// Source: https://core.telegram.org/bots/api#sending-files
+export const TELEGRAM_MEDIA_MAX_BYTES = {
+  image: 10_000_000,
+  file: 50_000_000,
+  audio: 50_000_000,
+} as const;
+
 const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
 const TELEGRAM_POLLING_BACKOFF_MS = [5_000, 15_000, 30_000, 60_000] as const;
 const TELEGRAM_MAX_CONFLICT_RETRIES = 10;
@@ -684,7 +692,11 @@ export class TelegramAdapter {
     },
   ): Promise<void> {
     const chatId = Number(externalChatId);
-    const materialized = await materializeMedia(payload.content, payload.fileName);
+    const materialized = await materializeMedia(
+      payload.content,
+      payload.fileName,
+      TELEGRAM_MEDIA_MAX_BYTES[payload.type],
+    );
     const source = new InputFile(materialized.path);
     const fns = this.sendMediaFns ?? {
       sendPhoto: (cid: number, input: string | InputFile) => this.bot.api.sendPhoto(cid, input),

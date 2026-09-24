@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 
 import { FeishuAdapter, inferFeishuFileType } from './FeishuAdapter.js';
@@ -96,6 +98,20 @@ test('non-Opus audio is delivered as a file without spawning a transcoder', asyn
   subject._injectSendMessage(async ({ chatId, msgType }) => { sent.push({ chatId, msgType }); });
   await subject.sendMedia('chat-1', { type: 'audio', content: mediaBytes('audio-bytes'), fileName: 'voice.mp3' });
   assert.deepEqual(sent, [{ chatId: 'chat-1', msgType: 'file' }]);
+});
+
+test('media upload failure removes the package-owned temporary file', async () => {
+  const before = new Set((await readdir(tmpdir())).filter(name => name.startsWith('clowder-feishu-outbound-')));
+  const subject = new FeishuAdapter('app-id', 'app-secret', logger);
+  subject._injectTokenManager({ async getTenantAccessToken() { return 'token'; } } as never);
+  subject._injectUploadFetch(async () => { throw new Error('provider upload failed'); });
+
+  await assert.rejects(
+    subject.sendMedia('chat-1', { type: 'file', content: mediaBytes('bytes'), fileName: 'report.txt' }),
+    /provider upload failed/,
+  );
+  const after = (await readdir(tmpdir())).filter(name => name.startsWith('clowder-feishu-outbound-'));
+  assert.deepEqual(after.filter(name => !before.has(name)), []);
 });
 
 test('FeishuAdapter holds no process-spawning capability', () => {

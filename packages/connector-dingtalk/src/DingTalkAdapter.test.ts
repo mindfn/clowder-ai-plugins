@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { access } from 'node:fs/promises';
 import test from 'node:test';
 
 import { DingTalkAdapter, type DingTalkStreamModule } from './DingTalkAdapter.js';
@@ -109,6 +110,24 @@ test('AI Card failure falls back to one markdown send', async () => {
     origin: 'direct',
   });
   assert.deepEqual(sends, ['markdown']);
+});
+
+test('media upload failure removes the package-owned temporary file', async () => {
+  const subject = adapter();
+  let uploadPath = '';
+  subject._injectUploadMedia(async ({ filePath }) => {
+    uploadPath = filePath;
+    await access(filePath);
+    throw new Error('provider upload failed');
+  });
+  async function* content(): AsyncGenerator<Uint8Array> { yield Buffer.from('bytes'); }
+
+  await assert.rejects(
+    subject.sendMedia('chat-1', { type: 'file', content: content(), fileName: 'report.txt' }),
+    /provider upload failed/,
+  );
+  assert.notEqual(uploadPath, '');
+  await assert.rejects(access(uploadPath));
 });
 
 test('group routing is learned only from authenticated provider metadata in the live session', async () => {

@@ -302,7 +302,10 @@ export function createFeishuPluginModule(
                     mediaType: media.type,
                     errorName: error instanceof Error ? error.name : 'unknown',
                   });
-                  await runtime.outbound.sendReply(input.externalConversationId, '⚠️ 媒体不可用（读取或上传失败）');
+                  await runtime.outbound.sendReply(
+                    input.externalConversationId,
+                    error instanceof RangeError ? '⚠️ 媒体过大，超过飞书发送上限' : '⚠️ 媒体不可用（读取或上传失败）',
+                  );
                 }
               }
             },

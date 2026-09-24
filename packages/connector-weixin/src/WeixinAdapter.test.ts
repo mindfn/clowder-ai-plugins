@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 
 import { WeixinAdapter } from './WeixinAdapter.js';
@@ -49,6 +50,21 @@ test('adapter source contains no ambient environment fallback', async () => {
   const source = await readFile(new URL('./WeixinAdapter.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /process\.env|CLOWDER_|CAT_CAFE_API_URL|API_SERVER_PORT/);
   assert.doesNotMatch(source, /apiBaseUrl|relative media URL|downloadToTemp|resolveDownloadUrl/);
+});
+
+test('media upload failure removes the package-owned temporary file', async () => {
+  const before = new Set((await readdir(tmpdir())).filter(name => name.startsWith('clowder-weixin-outbound-')));
+  const subject = new WeixinAdapter('test-token', logger);
+  subject._injectContextToken('chat', 'context-token');
+  subject._injectFetch(async () => { throw new Error('provider upload failed'); });
+  async function* content(): AsyncGenerator<Uint8Array> { yield Buffer.from('bytes'); }
+
+  await assert.rejects(
+    subject.sendMedia('chat', { type: 'file', content: content(), fileName: 'report.txt' }),
+    /provider upload failed/,
+  );
+  const after = (await readdir(tmpdir())).filter(name => name.startsWith('clowder-weixin-outbound-'));
+  assert.deepEqual(after.filter(name => !before.has(name)), []);
 });
 
 test('stopping polling rejects queued replies before they can flush after disposal', async () => {

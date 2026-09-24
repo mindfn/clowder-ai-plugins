@@ -17,6 +17,15 @@ import type { FeishuTokenManager } from './FeishuTokenManager.js';
 import { formatFeishuCard } from './feishu-card-formatter.js';
 import { materializeMedia } from './materialize-media.js';
 
+// Feishu IM upload limits: message images 10 MB; files (including audio) 30 MB.
+// Sources: https://open.feishu.cn/document/server-docs/im-v1/image/create
+//          https://open.feishu.cn/document/server-docs/im-v1/file/create
+export const FEISHU_MEDIA_MAX_BYTES = {
+  image: 10_000_000,
+  file: 30_000_000,
+  audio: 30_000_000,
+} as const;
+
 export interface FeishuAttachment {
   type: 'image' | 'file' | 'audio';
   feishuKey: string;
@@ -365,7 +374,11 @@ export class FeishuAdapter {
       return;
     }
     if (payload.content === undefined) throw new TypeError('Feishu media content is required');
-    const materialized = await materializeMedia(payload.content, payload.fileName);
+    const materialized = await materializeMedia(
+      payload.content,
+      payload.fileName,
+      FEISHU_MEDIA_MAX_BYTES[payload.type],
+    );
     try {
       const deliveryType = this.deliveryTypeFor(materialized.path, payload.type);
       if (deliveryType !== payload.type) {

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { access } from 'node:fs/promises';
 import test from 'node:test';
 
 import { TelegramAdapter } from './TelegramAdapter.js';
@@ -66,6 +67,29 @@ test('outbound text is split without truncation or surrogate-pair corruption', a
   assert.ok(sent.every(segment => segment.length <= 4096));
   assert.equal(sent.join(''), value);
   assert.ok(sent.every(segment => !segment.includes('\ufffd')));
+});
+
+test('media upload failure removes the package-owned temporary file', async () => {
+  const { logger } = recordingLogger();
+  const subject = new TelegramAdapter('123456:abcdefghij_ABC-123', logger);
+  let uploadPath = '';
+  subject._injectSendMedia({
+    sendPhoto: async () => undefined,
+    sendDocument: async (_chatId, input) => {
+      uploadPath = String((input as unknown as { fileData: string }).fileData);
+      await access(uploadPath);
+      throw new Error('provider upload failed');
+    },
+    sendVoice: async () => undefined,
+  });
+  async function* content(): AsyncGenerator<Uint8Array> { yield Buffer.from('bytes'); }
+
+  await assert.rejects(
+    subject.sendMedia('123', { type: 'file', content: content(), fileName: 'report.txt' }),
+    /provider upload failed/,
+  );
+  assert.notEqual(uploadPath, '');
+  await assert.rejects(access(uploadPath));
 });
 
 test('rich formatter escapes untrusted HTML and keeps structured content', () => {

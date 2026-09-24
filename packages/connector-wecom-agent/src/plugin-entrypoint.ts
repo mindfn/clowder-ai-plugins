@@ -203,7 +203,12 @@ export function createWeComAgentPluginModule(createRuntime: RuntimeFactory = cre
                     mediaType: media.type,
                     errorName: error instanceof Error ? error.name : 'unknown',
                   });
-                  await runtime.outbound.sendReply(input.externalConversationId, '⚠️ 媒体不可用（读取或上传失败）');
+                  await runtime.outbound.sendReply(
+                    input.externalConversationId,
+                    error instanceof RangeError || (error instanceof Error && error.name === 'ProviderMediaLimitError')
+                      ? '⚠️ 媒体过大，超过企业微信发送上限'
+                      : '⚠️ 媒体不可用（读取或上传失败）',
+                  );
                 }
               }
             },

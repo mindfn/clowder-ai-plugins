@@ -15,6 +15,10 @@ import crypto from 'node:crypto';
 import type { ConnectorLogger } from './types.js';
 import { materializeMedia } from './materialize-media.js';
 
+// Tencent's reference connector bounds one media file to 25 MiB.
+// Source: https://github.com/Tencent/openclaw-weixin (maxSingleMediaBytes).
+export const WEIXIN_MEDIA_MAX_BYTES = 25 * 1024 * 1024;
+
 const ILINK_BASE_URL = 'https://ilinkai.weixin.qq.com';
 const GETUPDATES_TIMEOUT_MS = 35_000;
 const POLL_ERROR_BACKOFF_MS = 3_000;
@@ -840,7 +844,7 @@ export class WeixinAdapter {
       throw new Error('Weixin media delivery requires an active context token');
     }
 
-    const materialized = await materializeMedia(payload.content, payload.fileName);
+    const materialized = await materializeMedia(payload.content, payload.fileName, WEIXIN_MEDIA_MAX_BYTES);
     let actualFilePath = materialized.path;
 
     // Native WeChat voice messages require SILK codec. Keep that path opt-in; default audio is a file attachment.

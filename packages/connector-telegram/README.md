@@ -29,4 +29,4 @@ isolated fixtures.
 ## Exposed capability
 
 This package requests these Host capabilities, verbatim from its manifest
-(`plugin.yaml` — kept in sync by `pnpm test:train-c1-inventory`): `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`.
+(`plugin.yaml` — kept in sync by `pnpm test:train-c1-inventory`): `media.read`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`.

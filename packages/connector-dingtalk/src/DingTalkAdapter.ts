@@ -12,6 +12,14 @@
 import { openAsBlob } from 'node:fs';
 import { basename } from 'node:path';
 import { materializeMedia } from './materialize-media.js';
+
+// DingTalk robot media upload limits: image/file 20 MB, voice 2 MB.
+// Source: https://open.dingtalk.com/document/orgapp/upload-media-files
+export const DINGTALK_MEDIA_MAX_BYTES = {
+  image: 20_000_000,
+  file: 20_000_000,
+  audio: 2_000_000,
+} as const;
 import type { ConnectorLogger, MessageEnvelope, RichBlock } from './types.js';
 
 // ── Types ──
@@ -448,7 +456,11 @@ export class DingTalkAdapter {
       duration?: number;
     },
   ): Promise<void> {
-    const materialized = await materializeMedia(payload.content, payload.fileName);
+    const materialized = await materializeMedia(
+      payload.content,
+      payload.fileName,
+      DINGTALK_MEDIA_MAX_BYTES[payload.type],
+    );
     try {
       const mediaId = await this.uploadToDingTalk(materialized.path, payload.type);
       if (!mediaId) throw new Error('DingTalk media upload returned no media id');

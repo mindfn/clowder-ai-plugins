@@ -86,6 +86,7 @@ function richDelivery() {
         { elementId: 'm2', kind: 'media_ref', payload: { type: 'image', reference: 'hmr_denied' } },
         { elementId: 'm3', kind: 'media_ref', payload: { type: 'file', reference: 'legacy-provider-key' } },
         { elementId: 'm4', kind: 'media_ref', payload: { type: 'video', reference: 'hmr_video-1' } },
+        { elementId: 'm5', kind: 'media_ref', payload: { type: 'file', reference: 'hmr_large', fileName: 'large.bin' } },
         { elementId: 'w1', kind: 'media_warning', payload: { mediaElementId: 'm1', stage: 'transcription', reason: 'processing_failed' } },
         { elementId: 'r1', kind: 'rich_block', payload: { id: 'b1', kind: 'card', v: 1, title: 'T', bodyMarkdown: 'B' } },
         { elementId: 'r2', kind: 'rich_block', payload: { id: 'b2', kind: 'checklist', v: 1, title: 'L', items: [{ id: 'i1', text: 'a', checked: true }, { id: 'i2', text: 'b' }] } },
@@ -100,6 +101,7 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
     async sendRichMessage(...args: unknown[]) { calls.push({ operation: 'provider.rich', value: args }); },
     async sendFormattedReply(...args: unknown[]) { calls.push({ operation: 'provider.formatted', value: args }); },
     async sendMedia(chatId: string, payload: Record<string, unknown>) {
+      if (payload.fileName === 'large.bin') throw new RangeError('provider limit');
       assert.equal('url' in payload, false);
       assert.equal('absPath' in payload, false);
       assert.ok(payload.content !== undefined);
@@ -141,6 +143,7 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
     { operation: 'provider.notice', value: ['chat-1', '⚠️ 媒体不可用（读取或上传失败）'] },
     { operation: 'provider.notice', value: ['chat-1', '⚠️ 媒体不可用（旧引用无法读取）'] },
     { operation: 'provider.notice', value: ['chat-1', '⚠️ 视频附件暂不支持发送'] },
+    { operation: 'provider.notice', value: ['chat-1', '⚠️ 媒体过大，超过钉钉发送上限'] },
   ]);
   await active.stop();
 });

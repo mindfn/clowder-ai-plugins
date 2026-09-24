@@ -31,4 +31,4 @@ provided.
 
 ## Exposed capability
 
-The connector contributes one authenticated webhook and one WeCom message subscription and requests `plugin.config.read`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`. It does not expose C2 audio/AI services, mention parsing, UI slots, or generic public hooks.
+The connector contributes one authenticated webhook and one WeCom message subscription and requests `plugin.config.read`, `media.read`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`. It does not expose C2 audio/AI services, mention parsing, UI slots, or generic public hooks.

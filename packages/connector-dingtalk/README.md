@@ -35,4 +35,4 @@ conformance tests without claiming that synthetic handles constitute production 
 
 This package requests these Host capabilities, verbatim from its manifest
 (`plugin.yaml` — kept in sync by `pnpm test:train-c1-inventory`): `plugin.config.read`,
-`message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`.
+`media.read`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`.
