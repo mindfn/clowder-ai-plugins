@@ -41,7 +41,7 @@ function hostShape(config: Record<string, unknown>, secrets: Record<string, stri
   };
 }
 
-function runtimeFake() {
+function runtimeFake(config: { appId: string; appSecret: string }) {
   const calls: { connect?: unknown[]; disconnect?: unknown[] } = {};
   let connected = false;
   const runtime = {
@@ -49,7 +49,10 @@ function runtimeFake() {
       if (!connected) throw new Error('Feishu connector is not configured');
       return {};
     },
-    async start() {},
+    // Mirrors the real runtime: start() reports connected once credentials
+    // exist (webhook mode counts as connected once started); without them the
+    // runtime stays healthy and idle until connect() adopts credentials.
+    async start() { connected = config.appId.trim() !== '' && config.appSecret.trim() !== ''; },
     async stop() { connected = false; },
     async connect(config: unknown) { calls.connect = [config]; connected = true; },
     async disconnect() { calls.disconnect = []; connected = false; },
@@ -82,9 +85,12 @@ async function activate(
   secrets: Record<string, string>,
   pollResults: FeishuQrPollResult[],
 ) {
-  const fake = runtimeFake();
+  let fake!: ReturnType<typeof runtimeFake>;
   const qr = qrClientFake(pollResults);
-  const entrypoint = createFeishuPluginModule(() => fake.runtime, () => qr.client);
+  const entrypoint = createFeishuPluginModule((options) => {
+    fake = runtimeFake(options.config as { appId: string; appSecret: string });
+    return fake.runtime;
+  }, () => qr.client);
   const active = await entrypoint.create(manifest).start(hostShape(config, secrets));
   return { active, fake, qr };
 }
@@ -218,6 +224,6 @@ test('runtime starts idle without credentials, connects in-process via connect()
   assert.equal(runtime.outbound, fakeAdapter);
   await runtime.disconnect();
   assert.equal(runtime.isConnected(), false);
-  assert.equal(runtime.outbound, fakeAdapter, 'disconnect keeps the configured adapter (only ingress stops)');
+  assert.throws(() => runtime.outbound, /not configured|QR/i, 'disconnect must drop the configured adapter (outbound and token manager)');
   await runtime.stop();
 });

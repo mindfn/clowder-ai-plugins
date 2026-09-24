@@ -201,6 +201,7 @@ test('test action reports connected only when a token is adopted and polling is 
 
 test('runtime starts idle without credentials and connects polling in-process once a token arrives', async () => {
   let polls = 0;
+  let starts = 0;
   let stops = 0;
   let token = '';
   const adapter = {
@@ -210,7 +211,7 @@ test('runtime starts idle without credentials and connects polling in-process on
     setBotToken(value: string) { token = value; },
     async disconnect() { token = ''; polls = 0; stops += 1; },
     async restoreSessionState() {},
-    startPolling() { polls += 1; },
+    startPolling() { starts += 1; polls += 1; },
     async stopPolling() { stops += 1; },
     async sendReply() {},
     async sendMedia() {},
@@ -231,6 +232,10 @@ test('runtime starts idle without credentials and connects polling in-process on
   assert.equal(stops, 1, 'disconnect must stop polling');
   assert.equal(runtime.isConnected(), false);
   assert.throws(() => runtime.outbound, /not connected/i);
+  await runtime.connect('bot-token-3');
+  assert.equal(starts, 2, 'a reconnect after disconnect must begin polling again (Host write-back does not restart the plugin)');
+  assert.equal(runtime.isConnected(), true);
+  await runtime.disconnect();
   await runtime.stop();
 });
 

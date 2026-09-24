@@ -96,6 +96,10 @@ export function createWeixinConnectorRuntime<Adapter extends WeixinRuntimeAdapte
     ? createAdapter(initialToken, options.logger, options.state, runtimeOptions)
     : undefined;
   let state: 'idle' | 'starting' | 'running' | 'stopped' = 'idle';
+  // Armed = start() ran and stop() has not. Unlike startPromise, disconnect()
+  // never clears it: a reconnect after an owner disconnect must still begin
+  // polling (Host write-back does not restart the plugin).
+  let armed = false;
   let startPromise: Promise<void> | undefined;
   let stopPromise: Promise<void> | undefined;
   const deliverIfRunning = async (message: WeixinInboundMessage) => {
@@ -137,6 +141,7 @@ export function createWeixinConnectorRuntime<Adapter extends WeixinRuntimeAdapte
     start() {
       if (state === 'stopped') return Promise.reject(new Error('Weixin connector runtime has been stopped'));
       if (startPromise !== undefined) return startPromise;
+      armed = true;
       if (outbound === undefined) {
         // Armed but idle: no provider I/O until connect() adopts a token.
         startPromise = Promise.resolve();
@@ -153,7 +158,7 @@ export function createWeixinConnectorRuntime<Adapter extends WeixinRuntimeAdapte
       } else {
         outbound.setBotToken(token);
       }
-      if (startPromise === undefined || state === 'running') return Promise.resolve();
+      if (!armed || state === 'running') return Promise.resolve();
       return beginPolling();
     },
     async disconnect() {
@@ -168,6 +173,7 @@ export function createWeixinConnectorRuntime<Adapter extends WeixinRuntimeAdapte
     },
     stop() {
       if (stopPromise !== undefined) return stopPromise;
+      armed = false;
       if (state === 'idle') {
         state = 'stopped';
         return Promise.resolve();

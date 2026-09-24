@@ -598,9 +598,13 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
       return startPromise;
     },
     async disconnect() {
-      // Close the in-process ingress only; credential/config values are left
-      // untouched (the operation targetValues clear appId/appSecret instead).
+      // Close the in-process ingress AND drop the configured adapter/token
+      // manager: the operation targetValues clear appId/appSecret, so any
+      // retained outbound would keep sending with credentials the owner just
+      // disconnected (the Host write-back does not restart the plugin).
       stopIngress();
+      outbound = undefined;
+      tokenManager = undefined;
       state = 'idle';
       startPromise = undefined;
     },

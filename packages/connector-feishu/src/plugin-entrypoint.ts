@@ -247,16 +247,16 @@ export function createFeishuPluginModule(
               };
             },
             'feishu.test': async () => {
-              const [currentAppId, currentAppSecret, currentMode, currentVerificationToken] = await Promise.all([
-                context.config.get('appId'),
-                context.secrets.get('appSecret'),
+              const [currentMode, currentVerificationToken] = await Promise.all([
                 context.config.get('connectionMode'),
                 context.secrets.get('verificationToken'),
               ]);
+              // Webhook mode: derive readiness from the live runtime (a disconnect
+              // drops the in-process adapter even though the activation-time
+              // config/secrets snapshot below still holds the old values).
               const ok = currentMode === 'websocket'
                 ? runtime.isConnected()
-                : typeof currentAppId === 'string' && currentAppId.trim() !== ''
-                  && typeof currentAppSecret === 'string' && currentAppSecret.trim() !== ''
+                : runtime.isConnected()
                   && typeof currentVerificationToken === 'string' && currentVerificationToken.trim() !== '';
               return { ok, ...(ok ? {} : { message: '飞书未配置或凭据无效' }) };
             },

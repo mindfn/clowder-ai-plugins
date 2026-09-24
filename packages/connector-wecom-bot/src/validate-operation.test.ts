@@ -201,7 +201,7 @@ test('validate prefers unsaved card input over stored values and returns them as
   await active.stop();
 });
 
-test('validate falls back to the stored secret when input only carries botId', async () => {
+test('validate falls back to the adopted secret when input only carries botId', async () => {
   const entrypoint = createWeComBotPluginModule(
     () => fakeRuntime({}),
     async (botId: string, secret: string) => {
@@ -243,5 +243,43 @@ test('disconnect clears adopted credentials so an empty-input validate cannot si
   });
   assert.equal(providerCalls, 1, 'provider validation must not run after disconnect');
   assert.equal(calls.connect.length, 1, 'runtime.connect must not run after disconnect');
+  await active.stop();
+});
+
+test('empty-input validate after disconnect must not fall back to the activation-time snapshot', async () => {
+  const calls: Record<string, unknown[][]> = { connect: [], disconnect: [] };
+  let providerCalls = 0;
+  const entrypoint = createWeComBotPluginModule(
+    () => fakeRuntime(calls),
+    async () => { providerCalls += 1; return { valid: true }; },
+  );
+  // Real steady state: last validate persisted credentials, so the Host
+  // hands them to activate() — the snapshot still holds them after the
+  // owner disconnects and Host writes '' back without restarting the plugin.
+  const active = await entrypoint.create(manifest).start(hostWith({ botId: 'stored-bot', botSecret: 'stored-secret' }));
+  await active.actions['wecom-bot.validate']?.({});
+  assert.equal(providerCalls, 1);
+  await active.actions['wecom-bot.disconnect']?.({});
+  const empty = await active.actions['wecom-bot.validate']?.({});
+  assertOperationResultShape(empty);
+  assert.deepEqual(empty, {
+    render: 'status',
+    data: { status: 'error', message: '未填写 Bot ID / Bot Secret — 在面板里填好，直接点测试并连接' },
+    advance: false,
+  });
+  assert.equal(providerCalls, 1, 'snapshot credentials must not reach the provider after disconnect');
+  assert.equal(calls.connect.length, 1, 'runtime.connect must not run with snapshot credentials after disconnect');
+  // Fresh card input still wins and is written back as the target values.
+  const fresh = await active.actions['wecom-bot.validate']?.({ input: { botId: 'new-bot', botSecret: 'new-secret' } });
+  assertOperationResultShape(fresh);
+  assert.deepEqual(fresh, {
+    render: 'status',
+    data: { status: 'confirmed' },
+    label: '已连接',
+    targetValues: { botId: 'new-bot', botSecret: 'new-secret' },
+  });
+  assert.equal(providerCalls, 2);
+  assert.equal(calls.connect.length, 2, 'first validate adopts the stored snapshot, fresh input validates again');
+  assert.deepEqual(calls.connect[1], [{ botId: 'new-bot', botSecret: 'new-secret' }]);
   await active.stop();
 });

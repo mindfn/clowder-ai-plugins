@@ -128,8 +128,10 @@ export function createWeComBotPluginModule(
         ]);
         const initialBotId = typeof botId === 'string' ? botId : '';
         const initialBotSecret = typeof botSecret === 'string' ? botSecret : '';
-        // In-process adopted credentials: what runtime.connect last took (or the
-        // activate-time values), trimmed, used as fallback before stored config.
+        // In-process adopted credentials: the activate-time snapshot trimmed at
+        // load, replaced by every successful validate, cleared on disconnect.
+        // Never read context.config.get / secrets.get here: they are the
+        // activation-time snapshot and stay stale after a disconnect write-back.
         let adoptedBotId = initialBotId.trim();
         let adoptedBotSecret = initialBotSecret.trim();
         const bridge = await createMessageBridge(context);
@@ -152,17 +154,13 @@ export function createWeComBotPluginModule(
                 const value = provided[key];
                 return typeof value === 'string' ? value.trim() : '';
               };
-              const [storedBotId, storedSecret] = await Promise.all([
-                context.config.get('botId'),
-                context.secrets.get('botSecret'),
-              ]);
-              // Priority: unsaved card input → in-process adopted values → stored config.
-              const id = fromInput('botId')
-                || adoptedBotId
-                || (typeof storedBotId === 'string' ? storedBotId.trim() : '');
-              const secret = fromInput('botSecret')
-                || adoptedBotSecret
-                || (typeof storedSecret === 'string' ? storedSecret.trim() : '');
+              // Priority: unsaved card input → in-process adopted values. The
+              // activate-time config/secrets snapshot is intentionally NOT a
+              // fallback: after an owner disconnect the Host writes '' back
+              // without restarting the plugin, so the snapshot still holds the
+              // old credentials and would silently reconnect with them.
+              const id = fromInput('botId') || adoptedBotId;
+              const secret = fromInput('botSecret') || adoptedBotSecret;
               if (id.length === 0 || secret.length === 0) {
                 return {
                   render: 'status',
