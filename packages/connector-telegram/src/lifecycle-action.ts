@@ -35,6 +35,18 @@ export interface ConnectorLifecycleCallbacks {
   }): Promise<void>;
 }
 
+/**
+ * A platform side effect that was accepted into state but not yet confirmed
+ * complete. Written with the pre-write, cleared by the post-write once the
+ * effect ran; a redelivery that finds the marker re-executes the effect once
+ * more (at-least-once is preferred over losing a recovery hint).
+ */
+interface PendingEffect {
+  readonly v: 1;
+  readonly state: 'blocked' | 'settled';
+  readonly recoveryText: string;
+}
+
 interface StoredLifecycle {
   readonly version: 1 | 2;
   readonly history: readonly LifecycleEvent[];
@@ -50,6 +62,8 @@ interface StoredLifecycle {
   readonly deliveryIds?: readonly string[];
   /** v2 tombstone only: when the lifecycle settled, drives tombstone sweep TTL. */
   readonly settledAt?: number;
+  /** v2 only: recovery side effect accepted but not yet confirmed; a redelivery re-executes it. */
+  readonly pendingEffect?: PendingEffect;
 }
 
 const STARTED_TEXT = '🤔 思考中...';
@@ -71,6 +85,13 @@ function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function isPendingEffect(value: unknown): value is PendingEffect {
+  return object(value)
+    && value.v === 1
+    && (value.state === 'blocked' || value.state === 'settled')
+    && typeof value.recoveryText === 'string';
+}
+
 function lifecycleError(code: string, message: string): Error & { readonly code: string } {
   return Object.assign(new Error(message), { code });
 }
@@ -86,7 +107,8 @@ function storedLifecycle(value: unknown): StoredLifecycle {
     || (value.updatedAt !== undefined && typeof value.updatedAt !== 'number')
     || (value.tombstone !== undefined && typeof value.tombstone !== 'boolean')
     || (value.deliveryIds !== undefined && (!Array.isArray(value.deliveryIds) || value.deliveryIds.some(id => typeof id !== 'string')))
-    || (value.settledAt !== undefined && typeof value.settledAt !== 'number')) {
+    || (value.settledAt !== undefined && typeof value.settledAt !== 'number')
+    || (value.pendingEffect !== undefined && !isPendingEffect(value.pendingEffect))) {
     throw lifecycleError('PLUGIN_INTERNAL', 'stored lifecycle state is invalid');
   }
   return structuredClone(value) as unknown as StoredLifecycle;
@@ -163,8 +185,104 @@ export function createConnectorLifecycleAction(
     sweepInBackground();
   };
 
+  // Platform effects must not fail the action; the write-ahead record already
+  // accepted the event, so a throwing callback is logged and skipped.
+  const runEffectSafely = async (
+    lifecycleId: string,
+    state: string,
+    label: string,
+    effect: () => unknown | Promise<unknown>,
+  ): Promise<boolean> => {
+    try {
+      await effect();
+      return true;
+    } catch (error) {
+      context.log('warn', `Connector lifecycle ${label} failed`, {
+        lifecycleId,
+        state,
+        errorName: error instanceof Error ? error.name : 'unknown',
+      });
+      return false;
+    }
+  };
+
+  // A redelivery (or a later transition arriving first) can find a record
+  // whose accepted side effect never ran because the process died between the
+  // pre-write and the platform call. Re-run exactly that effect through the
+  // same callbacks and per-binding fallbacks as the original path. Callers
+  // clear the marker afterwards, so one re-execution per detected-pending
+  // redelivery cannot storm.
+  const reexecutePendingEffect = async (stored: StoredLifecycle): Promise<void> => {
+    const pending = stored.pendingEffect;
+    if (pending === undefined) return;
+    const sourceEvent = [...stored.history].reverse().find(
+      (candidate): candidate is Extract<LifecycleEvent, { readonly state: 'blocked' | 'settled' }> => (
+        candidate.state === pending.state
+      ),
+    );
+    if (sourceEvent === undefined) return;
+    const bindings = (await context.threads.listBindings()).filter(candidate => candidate.threadId === sourceEvent.threadId);
+    // Legacy records carry a single platformMessageId; with exactly one
+    // matching binding it can only have belonged to that binding.
+    let messageIds: Record<string, string> = { ...(stored.platformMessageByKey ?? {}) };
+    if (Object.keys(messageIds).length === 0 && bindings.length === 1 && stored.platformMessageId !== undefined) {
+      messageIds = { [bindings[0].key]: stored.platformMessageId };
+    }
+    for (const binding of bindings) {
+      const platformMessageId = messageIds[binding.key];
+      if (pending.state === 'blocked') {
+        const edited = platformMessageId !== undefined && await runEffectSafely(
+          sourceEvent.lifecycleId,
+          'blocked',
+          'blocked edit',
+          async () => {
+            const applied = await callbacks.editPlaceholder(
+              binding.key,
+              platformMessageId!,
+              pending.recoveryText,
+              'blocked',
+              sourceEvent.lifecycleId,
+            );
+            if (!applied) throw new Error('placeholder is no longer editable');
+          },
+        );
+        if (!edited) {
+          await runEffectSafely(
+            sourceEvent.lifecycleId,
+            'blocked',
+            'blocked recovery send',
+            () => callbacks.sendRecovery(binding.key, pending.recoveryText),
+          );
+        }
+      } else {
+        await runEffectSafely(sourceEvent.lifecycleId, 'settled', 'settlement', () => callbacks.settle({
+          externalConversationId: binding.key,
+          ...(platformMessageId === undefined ? {} : { platformMessageId }),
+          actorDisplayName: stored.actorDisplayName,
+          recoveryText: pending.recoveryText,
+          event: sourceEvent as SettledEvent,
+        }));
+      }
+    }
+  };
+
+  const clearPendingEffect = async (stateKey: string, stored: StoredLifecycle): Promise<void> => {
+    try {
+      await context.storage.set(stateKey, { ...stored, pendingEffect: undefined });
+      countWrite();
+    } catch (error) {
+      // The marker survives, so a further redelivery re-executes the effect
+      // once more; losing the clear is duplicate-tolerant by design.
+      context.log('warn', 'Connector lifecycle pending-effect clear failed', {
+        errorName: error instanceof Error ? error.name : 'unknown',
+      });
+    }
+  };
+
   const handle = async (event: LifecycleEvent) => {
     const stateKey = `lifecycle/${event.lifecycleId}`;
+    const safely = (label: string, effect: () => unknown | Promise<unknown>): Promise<boolean> =>
+      runEffectSafely(event.lifecycleId, event.state, label, effect);
     const entry = await context.storage.get(stateKey);
     const stored = entry === undefined ? undefined : storedLifecycle(entry.value);
     if (stored?.tombstone === true) {
@@ -173,7 +291,15 @@ export function createConnectorLifecycleAction(
       // Host already acked answers replay, the same deliveryId with different
       // content is a delivery conflict, and anything else is out of order.
       const tombstoneDecision = decideLifecycleTransition(stored.history, event);
-      if (tombstoneDecision.kind === 'replay') return { deliveryId: event.deliveryId };
+      if (tombstoneDecision.kind === 'replay') {
+        // Crash residue: the accepted side effect may never have run. Re-run
+        // it once for this redelivery, then clear the marker.
+        if (stored.pendingEffect !== undefined && stored.pendingEffect.state === event.state) {
+          await reexecutePendingEffect(stored);
+          await clearPendingEffect(stateKey, stored);
+        }
+        return { deliveryId: event.deliveryId };
+      }
       if (tombstoneDecision.kind === 'reject' && tombstoneDecision.reason === 'DELIVERY_CONFLICT') {
         throw lifecycleError(lifecycleRejectReason(tombstoneDecision), `lifecycle ${tombstoneDecision.reason.toLowerCase()}`);
       }
@@ -187,9 +313,25 @@ export function createConnectorLifecycleAction(
     }
     const history = stored?.history ?? [];
     const decision = decideLifecycleTransition(history, event);
-    if (decision.kind === 'replay') return { deliveryId: event.deliveryId };
+    if (decision.kind === 'replay') {
+      // Crash residue, pre-settle flavor: the blocked recovery effect was
+      // accepted but may never have run. Re-run it once, then clear the marker.
+      if (stored?.pendingEffect !== undefined && stored.pendingEffect.state === event.state) {
+        await reexecutePendingEffect(stored);
+        await clearPendingEffect(stateKey, stored);
+      }
+      return { deliveryId: event.deliveryId };
+    }
     if (decision.kind === 'reject') {
       throw lifecycleError(lifecycleRejectReason(decision), `lifecycle ${decision.reason.toLowerCase()}`);
+    }
+
+    // A new transition arrives while an older one still has an unconfirmed
+    // side effect (the crash window, or a lost post-write): this write would
+    // overwrite the marker, so flush the pending effect first. An occasional
+    // duplicate beats a lost recovery hint.
+    if (stored?.pendingEffect !== undefined) {
+      await reexecutePendingEffect(stored);
     }
 
     // One thread can carry several provider bindings (the Host allows
@@ -212,10 +354,26 @@ export function createConnectorLifecycleAction(
       messageIds = { [bindings[0].key]: stored.platformMessageId };
     }
 
+    // Recovery text is decided up front: the blocked transition's hint, or
+    // the retained blocked event's hint for a settled transition.
+    const blocked = [...history].reverse().find((candidate): candidate is Extract<LifecycleEvent, { readonly state: 'blocked' }> => (
+      candidate.state === 'blocked'
+    ));
+    // Transitions carrying a user-facing recovery side effect are marked
+    // pending-effect in the pre-write; the post-write clears the marker once
+    // the effect completed. Started placeholders stay at-most-once on
+    // purpose — the final reply arrives separately — and catching_up edits
+    // self-heal through the later blocked/settle effects.
+    const pendingEffect: PendingEffect | undefined = event.state === 'blocked'
+      ? { v: 1, state: 'blocked', recoveryText: recoveryText(event) }
+      : event.state === 'settled' && blocked !== undefined
+        ? { v: 1, state: 'settled', recoveryText: recoveryText(blocked) }
+        : undefined;
+
     // Settled records compress into a tombstone: platform effects stop, but
     // the full event history is retained so redelivery judgment can still
     // distinguish an exact replay from a same-deliveryId content conflict.
-    const nextRecord = (ids: Record<string, string>): StoredLifecycle => ({
+    const nextRecord = (ids: Record<string, string>, pending?: PendingEffect): StoredLifecycle => ({
       version: 2,
       history: [...history, event],
       // Keep the legacy single-id field only when it is unambiguous.
@@ -223,6 +381,7 @@ export function createConnectorLifecycleAction(
       ...(Object.keys(ids).length === 0 ? {} : { platformMessageByKey: ids }),
       actorDisplayName,
       updatedAt: Date.now(),
+      ...(pending !== undefined ? { pendingEffect: pending } : {}),
       ...(event.state === 'settled'
         ? { tombstone: true, deliveryIds: [...history.map(candidate => candidate.deliveryId), event.deliveryId], settledAt: Date.now() }
         : {}),
@@ -230,9 +389,11 @@ export function createConnectorLifecycleAction(
 
     // Write-ahead: persist the accepted event before any platform side
     // effect, so a crash between effect and store cannot leave later events
-    // orphaned as OUT_OF_ORDER. If even the identical retry fails we throw
-    // before any side effect: no half-persisted record, no duplicate sends.
-    const preWrite = nextRecord(messageIds);
+    // orphaned as OUT_OF_ORDER. The pre-write carries the pending-effect
+    // marker, so a redelivery that finds it re-runs the unconfirmed effect.
+    // If even the identical retry fails we throw before any side effect: no
+    // half-persisted record, no duplicate sends.
+    const preWrite = nextRecord(messageIds, pendingEffect);
     try {
       await context.storage.set(stateKey, preWrite);
       countWrite();
@@ -247,20 +408,6 @@ export function createConnectorLifecycleAction(
         );
       }
     }
-
-    const safely = async (label: string, effect: () => unknown | Promise<unknown>): Promise<boolean> => {
-      try {
-        await effect();
-        return true;
-      } catch (error) {
-        context.log('warn', `Connector lifecycle ${label} failed`, {
-          lifecycleId: event.lifecycleId,
-          state: event.state,
-          errorName: error instanceof Error ? error.name : 'unknown',
-        });
-        return false;
-      }
-    };
 
     for (const binding of bindings) {
       let platformMessageId: string | undefined = messageIds[binding.key];
@@ -326,9 +473,6 @@ export function createConnectorLifecycleAction(
         }
         break;
       case 'settled': {
-        const blocked = [...history].reverse().find((candidate): candidate is Extract<LifecycleEvent, { readonly state: 'blocked' }> => (
-          candidate.state === 'blocked'
-        ));
         await safely('settlement', () => callbacks.settle({
           externalConversationId: binding.key,
           ...(platformMessageId === undefined ? {} : { platformMessageId }),
@@ -349,8 +493,11 @@ export function createConnectorLifecycleAction(
     } catch (error) {
       // Post-write failure is warn-only: the event already sits in history
       // via the write-ahead, so a Host replay of this delivery is answered
-      // as replay and never re-runs the platform side effects. The only
-      // loss is the fresh platformMessageId, covered by the existing
+      // as replay and never re-runs the platform side effects. The recovery
+      // effect is the exception: its marker survives until a redelivery
+      // re-executes it, so a lost post-write there is duplicate-tolerant
+      // rather than losing the hint. The only other loss is the fresh
+      // platformMessageId, covered by the existing
       // undefined-platformMessageId fallback for later edits.
       context.log('warn', 'Connector lifecycle state post-write failed', {
         lifecycleId: event.lifecycleId,
