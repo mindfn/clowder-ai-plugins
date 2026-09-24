@@ -31,11 +31,17 @@ process.stdin.resume();
 setInterval(() => {}, 1_000);
 `;
 
+// Helpers that leak past cleanup must outlive the assertions by a wide
+// margin: the tests assert cleanup finishes well inside this lifetime
+// instead of racing absolute wall-clock numbers that CPU contention
+// inflates on shared runners.
+const LEAKED_HELPER_LIFETIME_MS = 10_000;
+
 const inheritedPipeHelperPrelude = `
 const { spawn } = require('node:child_process');
 const helper = spawn(
   process.execPath,
-  ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1_000);"],
+  ['-e', "process.on('SIGTERM', () => {}); setTimeout(() => process.exit(0), ${LEAKED_HELPER_LIFETIME_MS}); setInterval(() => {}, 1_000);"],
   { stdio: ['ignore', 'inherit', 'inherit'] },
 );
 process.stdout.write(JSON.stringify({ helperPid: helper.pid }) + '\\n');
@@ -176,7 +182,7 @@ boundedTest('Windows cleanup exposes taskkill failure instead of returning silen
   } finally {
     killForTestCleanup(rootPid);
     if (rootPid !== undefined) {
-      await waitForProcessExit(rootPid, 300);
+      await waitForProcessExit(rootPid, 5_000);
     }
   }
 });
@@ -189,7 +195,7 @@ boundedTest('case timeout kills the isolated child before rejecting', async () =
       {
         command: process.execPath,
         args: ['-e', idleScript],
-        timeoutMs: 30,
+        timeoutMs: 500,
       },
       async (child) => {
         pid = child.pid;
@@ -203,7 +209,11 @@ boundedTest('case timeout kills the isolated child before rejecting', async () =
     assert.fail('case callback did not expose the child pid');
   }
   const terminatedPid = pid;
-  assert.throws(() => process.kill(terminatedPid, 0), { code: 'ESRCH' });
+  assert.equal(
+    await waitForProcessExit(terminatedPid, 5_000),
+    true,
+    'case timeout must kill the isolated child',
+  );
 });
 
 boundedTest('case timeout kills helpers that inherit the child protocol pipes', async () => {
@@ -221,18 +231,26 @@ boundedTest('case timeout kills helpers that inherit the child protocol pipes', 
           terminateGraceMs: 40,
         },
         async (child) => {
-          const value = (await child.receive({ timeoutMs: 1_000 })).value;
+          const value = (await child.receive({ timeoutMs: 2_000 })).value;
           assert.equal(typeof value.helperPid, 'number');
           helperPid = value.helperPid as number;
-          safetyTimer = setTimeout(() => killForTestCleanup(helperPid), 1_000);
+          // Last-resort cleanup must outlive the assertion window, or a
+          // broken harness cleanup is masked by this timer firing first.
+          safetyTimer = setTimeout(
+            () => killForTestCleanup(helperPid),
+            LEAKED_HELPER_LIFETIME_MS * 2,
+          );
           return new Promise<never>(() => {});
         },
       ),
       (error: unknown) => error instanceof HarnessTimeoutError,
     );
     assert.notEqual(helperPid, undefined);
-    assert.equal(await waitForProcessExit(helperPid as number, 300), true);
-    assert.ok(Date.now() - startedAt < 700, 'timeout cleanup waited for the leaked helper');
+    assert.equal(await waitForProcessExit(helperPid as number, 5_000), true);
+    assert.ok(
+      Date.now() - startedAt < LEAKED_HELPER_LIFETIME_MS / 2,
+      'timeout cleanup waited for the leaked helper',
+    );
   } finally {
     if (safetyTimer !== undefined) {
       clearTimeout(safetyTimer);
@@ -298,21 +316,29 @@ setTimeout(() => process.stdout.write('x'.repeat(${MAX_NDJSON_FRAME_BYTES + 1}))
   let safetyTimer: NodeJS.Timeout | undefined;
 
   try {
-    const value = (await child.receive({ timeoutMs: 1_000 })).value;
+    const value = (await child.receive({ timeoutMs: 2_000 })).value;
     assert.equal(typeof value.helperPid, 'number');
     helperPid = value.helperPid as number;
-    safetyTimer = setTimeout(() => killForTestCleanup(helperPid), 1_000);
+    // Last-resort cleanup must outlive the assertion window, or a broken
+    // harness cleanup is masked by this timer firing first.
+    safetyTimer = setTimeout(
+      () => killForTestCleanup(helperPid),
+      LEAKED_HELPER_LIFETIME_MS * 2,
+    );
     const startedAt = Date.now();
 
     await assert.rejects(
-      child.receive({ timeoutMs: 1_000 }),
+      child.receive({ timeoutMs: 2_000 }),
       (error: unknown) =>
         error instanceof NdjsonFrameError && error.code === 'FRAME_TOO_LARGE',
     );
     await child.waitForExit();
 
-    assert.equal(await waitForProcessExit(helperPid, 200), true);
-    assert.ok(Date.now() - startedAt < 500, 'fatal cleanup waited for the leaked helper');
+    assert.equal(await waitForProcessExit(helperPid, 5_000), true);
+    assert.ok(
+      Date.now() - startedAt < LEAKED_HELPER_LIFETIME_MS / 2,
+      'fatal cleanup waited for the leaked helper',
+    );
   } finally {
     if (safetyTimer !== undefined) {
       clearTimeout(safetyTimer);

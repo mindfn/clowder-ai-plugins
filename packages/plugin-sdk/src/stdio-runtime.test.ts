@@ -89,41 +89,82 @@ async function runRuntimeChild(input: readonly Buffer[]): Promise<ChildResult> {
   };
 }
 
-async function runFatalRuntimeChildWithoutClosingInput(): Promise<ChildResult | undefined> {
+// Milliseconds to wait for the fixture runtime to announce readiness before
+// treating the child as wedged. Injectable so a test can force that path.
+const FATAL_CHILD_READY_TIMEOUT_MS = 2_000;
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function waitForProcessExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (processIsAlive(pid) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  return !processIsAlive(pid);
+}
+
+async function runFatalRuntimeChildWithoutClosingInput(
+  options: { readyTimeoutMs?: number; onSpawn?: (pid: number) => void } = {},
+): Promise<ChildResult | undefined> {
   const child = spawn(process.execPath, ['--import', 'tsx', childFixture.pathname], {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, STDIO_RUNTIME_TEST_READY: '1' },
   });
+  // Registered once at spawn: every teardown path reaps the same close
+  // event, so a child that already exited never makes teardown wait out
+  // the close deadline.
+  const childClosed = once(child, 'close');
+  if (child.pid !== undefined) {
+    options.onSpawn?.(child.pid);
+  }
   const stdout: Buffer[] = [];
   const stderr: Buffer[] = [];
   child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
   child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
   child.stdin.on('error', () => {});
 
-  let readyTimer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await Promise.race([
-      once(child.stderr, 'data').then(([chunk]) => {
-        assert.equal(Buffer.from(chunk as Uint8Array).toString('utf8'), 'ready\n');
-      }),
-      once(child, 'close').then(([code]) => {
+    let readyTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const closedBeforeReady = childClosed.then(([code]) => {
         throw new Error(`child closed before its runtime became ready (exit ${code})`);
-      }),
-      new Promise<never>((_resolve, reject) => {
-        readyTimer = setTimeout(() => reject(new Error('child runtime did not become ready')), 2_000);
-      }),
-    ]);
-  } finally {
-    if (readyTimer !== undefined) {
-      clearTimeout(readyTimer);
+      });
+      // If readiness wins the race this branch settles later with a
+      // rejection the race no longer observes; keep it from surfacing as
+      // an unhandled rejection.
+      void closedBeforeReady.catch(() => {});
+      await Promise.race([
+        once(child.stderr, 'data').then(([chunk]) => {
+          assert.equal(Buffer.from(chunk as Uint8Array).toString('utf8'), 'ready\n');
+        }),
+        closedBeforeReady,
+        new Promise<never>((_resolve, reject) => {
+          readyTimer = setTimeout(
+            () => reject(new Error('child runtime did not become ready')),
+            options.readyTimeoutMs ?? FATAL_CHILD_READY_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } finally {
+      if (readyTimer !== undefined) {
+        clearTimeout(readyTimer);
+      }
     }
-  }
 
-  child.stdin.write(Buffer.from('this is not JSON\n', 'utf8'));
+    child.stdin.write(Buffer.from('this is not JSON\n', 'utf8'));
 
-  try {
     return await Promise.race([
-      once(child, 'close').then(([code]) => ({
+      childClosed.then(([code]) => ({
         code: code as number | null,
         stdout: Buffer.concat(stdout),
         stderr: Buffer.concat(stderr).toString('utf8'),
@@ -131,11 +172,15 @@ async function runFatalRuntimeChildWithoutClosingInput(): Promise<ChildResult | 
       new Promise<undefined>(resolve => setTimeout(resolve, 250)),
     ]);
   } finally {
-    // Always tear the child down and reap it: a fatal-framing child that is
-    // left waiting on stdin keeps the test runner's event loop alive forever.
+    // Every exit path — readiness timeout, fatal framing, assertion
+    // failure — must tear the child down and reap it. A stdin-waiting
+    // child that survives here keeps the test runner's event loop alive
+    // forever, which is the runner wedge this suite exists to prevent.
     child.stdin.end();
-    child.kill('SIGKILL');
-    await awaitChildClose(child).catch(() => {});
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+      await awaitChildClose(child).catch(() => {});
+    }
   }
 }
 
@@ -169,6 +214,28 @@ boundedTest('terminates the standalone child immediately after fatal framing ins
   }
   assert.notEqual(result.code, 0);
   assert.equal(result.stdout.byteLength, 0);
+});
+
+boundedTest('reaps the child when its runtime never becomes ready', async () => {
+  let childPid: number | undefined;
+  await assert.rejects(
+    runFatalRuntimeChildWithoutClosingInput({
+      // Far below the fixture's tsx import + runtime startup time, so the
+      // readiness deadline always expires first even on a fast machine.
+      readyTimeoutMs: 1,
+      onSpawn: (pid) => {
+        childPid = pid;
+      },
+    }),
+    /did not become ready/,
+  );
+
+  assert.notEqual(childPid, undefined);
+  assert.equal(
+    await waitForProcessExit(childPid as number, 5_000),
+    true,
+    'a child that never became ready must still be reaped',
+  );
 });
 
 boundedTest('keeps protocol stdout free of diagnostics and non-frame bytes', async () => {
