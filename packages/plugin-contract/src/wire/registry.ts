@@ -1,5 +1,5 @@
 /**
- * Complete 15-row beta.21 standalone production method registry.
+ * Complete 15-row beta.22 standalone production method registry.
  * Mechanized verbatim from the #1165 frozen shape (rev11).
  *
  * Every row carries machine-readable metadata:

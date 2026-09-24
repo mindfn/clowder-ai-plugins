@@ -376,6 +376,12 @@
         { "$ref": "#/$defs/SystemAudience" }
       ]
     },
+    "MessageId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "description": "Host message id."
+    },
     "MessageDraft": {
       "type": "object",
       "properties": {
@@ -383,7 +389,7 @@
         "draftAudience": { "$ref": "#/$defs/DraftAudience" },
         "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 200 },
         "sourceEventId": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "replyTo": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "replyTo": { "$ref": "#/$defs/MessageId" },
         "payload": { "$ref": "#/$defs/DraftPayload" }
       },
       "required": ["address", "idempotencyKey", "payload"],
@@ -452,10 +458,10 @@
     "MessageEnvelope": {
       "type": "object",
       "properties": {
-        "messageId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "messageId": { "$ref": "#/$defs/MessageId" },
         "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "threadId": { "$ref": "#/$defs/ThreadId" },
-        "replyTo": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "replyTo": { "$ref": "#/$defs/MessageId" },
         "actor": { "$ref": "#/$defs/ActorRef" },
         "audience": { "$ref": "#/$defs/CanonicalAudience" },
         "occurredAt": { "$ref": "#/$defs/OccurredAt" },
@@ -481,7 +487,7 @@
         "eventId": { "type": "string", "minLength": 1, "maxLength": 720 },
         "sequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
         "type": { "const": "message.elements.append" },
-        "messageId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "messageId": { "$ref": "#/$defs/MessageId" },
         "threadId": { "$ref": "#/$defs/ThreadId" },
         "operationId": { "type": "string", "minLength": 1, "maxLength": 200 },
         "baseRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
@@ -505,7 +511,7 @@
     "SendReceipt": {
       "type": "object",
       "properties": {
-        "messageId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "messageId": { "$ref": "#/$defs/MessageId" },
         "threadId": { "$ref": "#/$defs/ThreadId" },
         "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "messageHandle": { "$ref": "#/$defs/MessageHandle" },
@@ -522,7 +528,7 @@
     "AppendReceipt": {
       "type": "object",
       "properties": {
-        "messageId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "messageId": { "$ref": "#/$defs/MessageId" },
         "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "appendSequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
         "appliedElementIds": {
@@ -711,7 +717,9 @@
         "deliveryId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "threadId": { "$ref": "#/$defs/ThreadId" },
         "state": { "const": "started" },
-        "presentation": { "$ref": "#/$defs/DeliveryPresentationContext" }
+        "presentation": { "$ref": "#/$defs/DeliveryPresentationContext" },
+        "placeholderLine": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "replyTo": { "$ref": "#/$defs/MessageId" }
       },
       "required": ["lifecycleId", "deliveryId", "threadId", "state", "presentation"],
       "additionalProperties": false

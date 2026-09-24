@@ -674,7 +674,7 @@ test('validateEffectiveGrants rejects unknown capabilities (FC-52-4: fail-closed
 // §8 Registry regression locks
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('beta.21 preserves media and lifecycle rows without renumbering the original 13', () => {
+test('beta.22 preserves media and lifecycle rows without renumbering the original 13', () => {
   assert.equal(WIRE_METHOD_NAMES.length, 15);
   assert.equal(WIRE_METHOD_COUNT, 15);
 });
@@ -700,7 +700,7 @@ test('method names are frozen in order', () => {
   assert.deepEqual([...WIRE_METHOD_NAMES], expected);
 });
 
-test('beta.21 preserves the complete 15-row standalone contract', () => {
+test('beta.22 preserves the complete 15-row standalone contract', () => {
   const expectedReady = new Set(WIRE_METHOD_NAMES);
   for (const method of WIRE_METHOD_NAMES) {
     const row = WIRE_METHOD_REGISTRY[method];

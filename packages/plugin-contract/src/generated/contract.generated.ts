@@ -264,7 +264,7 @@ export type MessageSubscriptionContribution = {
   readonly filter?: Readonly<Record<string, unknown>>;
   readonly action: CallbackAction;
   readonly lifecycleAction?: CallbackAction;
-  readonly presentation?: 'v1';
+  readonly presentation?: 'v1' | 'v2';
 };
 export type MediaSourceContribution = {
   readonly type: 'media-source';
@@ -637,21 +637,22 @@ export type SystemAudience = {
 };
 export type DraftAudience = PublicAudience | WhisperAudience;
 export type CanonicalAudience = PublicAudience | WhisperAudience | SystemAudience;
+export type MessageId = string;
 export type MessageDraft = {
   readonly address: MessageAddress;
   readonly draftAudience?: DraftAudience;
   readonly idempotencyKey: string;
   readonly sourceEventId?: string;
-  readonly replyTo?: string;
+  readonly replyTo?: MessageId;
   readonly payload: DraftPayload;
 };
 export type OccurredAt = string | string;
 export type ThreadId = string;
 export type MessageEnvelope = {
-  readonly messageId: string;
+  readonly messageId: MessageId;
   readonly revision: number;
   readonly threadId: ThreadId;
-  readonly replyTo?: string;
+  readonly replyTo?: MessageId;
   readonly actor: ActorRef;
   readonly audience: CanonicalAudience;
   readonly occurredAt: OccurredAt;
@@ -667,7 +668,7 @@ export type MessageElementsAppendEvent = {
   readonly eventId: string;
   readonly sequence: number;
   readonly type: 'message.elements.append';
-  readonly messageId: string;
+  readonly messageId: MessageId;
   readonly threadId: ThreadId;
   readonly operationId: string;
   readonly baseRevision?: number;
@@ -676,7 +677,7 @@ export type MessageElementsAppendEvent = {
 };
 export type MessageOutputEvent = MessagePublishEvent | MessageElementsAppendEvent;
 export type SendReceipt = {
-  readonly messageId: string;
+  readonly messageId: MessageId;
   readonly threadId: ThreadId;
   readonly revision: number;
   readonly messageHandle: MessageHandle;
@@ -684,7 +685,7 @@ export type SendReceipt = {
   readonly pendingPublication?: true;
 };
 export type AppendReceipt = {
-  readonly messageId: string;
+  readonly messageId: MessageId;
   readonly revision: number;
   readonly appendSequence?: number;
   readonly appliedElementIds: readonly string[];
@@ -753,6 +754,8 @@ export type LifecycleStartedEvent = {
   readonly threadId: ThreadId;
   readonly state: 'started';
   readonly presentation: DeliveryPresentationContext;
+  readonly placeholderLine?: string;
+  readonly replyTo?: MessageId;
 };
 export type LifecycleCatchingUpEvent = {
   readonly lifecycleId: string;
@@ -882,7 +885,7 @@ export const DELIVERY_PRESENTATION_THREAD_KEYS = ['shortId', 'title', 'featId'] 
 export const DELIVERY_PRESENTATION_CONTEXT_KEYS = ['actor', 'thread', 'deepLinkUrl'] as const;
 export const MEDIA_READ_INPUT_KEYS = ['reference', 'offset', 'limit'] as const;
 export const MEDIA_READ_RESULT_KEYS = ['offset', 'dataBase64', 'nextOffset', 'done'] as const;
-export const LIFECYCLE_STARTED_EVENT_KEYS = ['lifecycleId', 'deliveryId', 'threadId', 'state', 'presentation'] as const;
+export const LIFECYCLE_STARTED_EVENT_KEYS = ['lifecycleId', 'deliveryId', 'threadId', 'state', 'presentation', 'placeholderLine', 'replyTo'] as const;
 export const LIFECYCLE_CATCHING_UP_EVENT_KEYS = ['lifecycleId', 'deliveryId', 'threadId', 'state'] as const;
 export const LIFECYCLE_BLOCKED_EVENT_KEYS = ['lifecycleId', 'deliveryId', 'threadId', 'state', 'reason', 'recoveryUrl'] as const;
 export const LIFECYCLE_SETTLED_EVENT_KEYS = ['lifecycleId', 'deliveryId', 'threadId', 'state', 'chainDone', 'outcome'] as const;
