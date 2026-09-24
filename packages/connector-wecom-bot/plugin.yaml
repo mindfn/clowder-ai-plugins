@@ -42,7 +42,7 @@ test:
 steps:
   - text: 进入企微管理端创建智能机器人 → 选「API 模式」→ 连接方式选「使用长连接」
   - text: 填写名称和可见范围，保存后获取 Bot ID 和 Secret
-  - text: 在配置中填写 Bot ID 和 Secret 并保存，点击「测试并连接」，验证成功后自动生效
+  - text: 在「测试并连接」面板里填写 Bot ID 和 Secret，点击后直接验证并生效（凭据随验证成功保存）
 contributions:
   - type: identity
     id: wecom-bot

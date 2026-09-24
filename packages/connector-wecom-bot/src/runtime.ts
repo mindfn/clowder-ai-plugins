@@ -47,6 +47,8 @@ export interface WeComBotConnectorRuntime<Adapter extends WeComBotRuntimeAdapter
   disconnect(): Promise<void>;
   /** True when the provider WebSocket is connected. */
   isConnected(): boolean;
+  /** Current provider stream state (connected / disconnected / reconnecting). */
+  getConnectionState(): 'connected' | 'disconnected' | 'reconnecting';
 }
 
 export interface WeComBotConnectorRuntimeOptions<Adapter extends WeComBotRuntimeAdapter = WeComBotAdapter> {
@@ -163,6 +165,9 @@ export function createWeComBotConnectorRuntime<Adapter extends WeComBotRuntimeAd
     },
     isConnected() {
       return outbound !== undefined && outbound.getConnectionState() === 'connected';
+    },
+    getConnectionState() {
+      return outbound?.getConnectionState() ?? 'disconnected';
     },
     stop() {
       if (stopPromise !== undefined) return stopPromise;

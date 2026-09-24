@@ -14,6 +14,9 @@ configuration:
     label: Bot Token
     kind: secret
     required: true
+test:
+  action:
+    method: telegram.test
 contributions:
   - type: identity
     id: telegram-bot

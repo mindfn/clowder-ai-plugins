@@ -55,6 +55,8 @@ export interface TelegramConnectorRuntime<Adapter extends TelegramRuntimeAdapter
   readonly outbound: Adapter;
   start(): Promise<void>;
   stop(): Promise<void>;
+  /** True while the provider polling loop is running. */
+  isPolling(): boolean;
 }
 
 export interface TelegramConnectorRuntimeOptions<Adapter extends TelegramRuntimeAdapter = TelegramAdapter> {
@@ -126,6 +128,9 @@ export function createTelegramConnectorRuntime<Adapter extends TelegramRuntimeAd
           throw error;
         });
       return startPromise;
+    },
+    isPolling() {
+      return state === 'running';
     },
     stop() {
       if (stopPromise !== undefined) return stopPromise;

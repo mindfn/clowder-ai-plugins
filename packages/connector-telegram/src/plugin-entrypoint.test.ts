@@ -66,6 +66,41 @@ test('module bridges provider ingress and Host subscription egress without conne
   await active.stop();
 });
 
+test('telegram.test reports ok while polling with a configured token', async () => {
+  const entrypoint = createTelegramPluginModule(() => ({
+    outbound: {} as TelegramAdapter,
+    async start() {},
+    async stop() {},
+    isPolling: () => true,
+  }) as TelegramConnectorRuntime<TelegramAdapter>);
+  const host: ModulePluginHostShape = {
+    config: { get: async () => undefined }, secrets: { get: async () => '123456:ABCdefGHIJKL' },
+    storage: {} as never, tasks: {} as never,
+    threads: { listBindings: async () => [], ensureByKey: async () => { throw new Error('unused'); } } as never,
+    messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async () => { throw new Error('unused'); } },
+    log() {},
+  };
+  const active = await entrypoint.create(manifest).start(host);
+  assert.deepEqual(await active.actions['telegram.test']?.(undefined), { ok: true });
+  await active.stop();
+});
+
+test('telegram.test reports not configured when the token is missing', async () => {
+  const entrypoint = createTelegramPluginModule(() => {
+    throw new Error('runtime must not be created without a token');
+  });
+  const host: ModulePluginHostShape = {
+    config: { get: async () => undefined }, secrets: { get: async () => undefined },
+    storage: {} as never, tasks: {} as never,
+    threads: { listBindings: async () => [], ensureByKey: async () => { throw new Error('unused'); } } as never,
+    messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async () => { throw new Error('unused'); } },
+    log() {},
+  };
+  const active = await entrypoint.create(manifest).start(host);
+  assert.deepEqual(await active.actions['telegram.test']?.(undefined), { ok: false, message: 'Telegram Bot Token 未配置' });
+  await active.stop();
+});
+
 function richDelivery() {
   return {
     deliveryId: 'delivery-1', threadId: 'thread-1',

@@ -177,17 +177,29 @@ export function createTelegramPluginModule(
     activate: {
       'telegram-messaging': async (context) => {
         const botToken = await context.secrets.get('botToken');
-        if (typeof botToken !== 'string') throw new TypeError('botToken must be a declared secret');
         const bridge = await createMessageBridge(context);
-        const runtime = createRuntime({
-          config: { botToken },
-          host: { deliver: bridge.deliver },
-          logger: context.logger,
-        });
-        await runtime.start();
+        // The feature stays activatable without a token so telegram.test can
+        // report the not-configured state; polling starts once a token exists.
+        const runtime = typeof botToken === 'string' && botToken.trim().length > 0
+          ? createRuntime({
+            config: { botToken },
+            host: { deliver: bridge.deliver },
+            logger: context.logger,
+          })
+          : undefined;
+        await runtime?.start();
         return {
-          actions: { 'telegram.outbound': async (input) => deliver(runtime.outbound, await bridge.outbound(input)) },
-          dispose: () => runtime.stop(),
+          actions: {
+            'telegram.test': async () => {
+              const ok = runtime?.isPolling() === true;
+              return { ok, ...(ok ? {} : { message: 'Telegram Bot Token 未配置' }) };
+            },
+            'telegram.outbound': async (input) => {
+              if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
+              return deliver(runtime.outbound, await bridge.outbound(input));
+            },
+          },
+          dispose: () => runtime?.stop() ?? Promise.resolve(),
         };
       },
     },

@@ -121,11 +121,17 @@ export function createWeComBotPluginModule(
           context.config.get('botId'),
           context.secrets.get('botSecret'),
         ]);
+        const initialBotId = typeof botId === 'string' ? botId : '';
+        const initialBotSecret = typeof botSecret === 'string' ? botSecret : '';
+        // In-process adopted credentials: what runtime.connect last took (or the
+        // activate-time values), trimmed, used as fallback before stored config.
+        let adoptedBotId = initialBotId.trim();
+        let adoptedBotSecret = initialBotSecret.trim();
         const bridge = await createMessageBridge(context);
         const runtime = createRuntime({
           config: {
-            botId: typeof botId === 'string' ? botId : '',
-            botSecret: typeof botSecret === 'string' ? botSecret : '',
+            botId: initialBotId,
+            botSecret: initialBotSecret,
           },
           host: { deliver: bridge.deliver },
           logger: context.logger,
@@ -133,17 +139,29 @@ export function createWeComBotPluginModule(
         await runtime.start();
         return {
           actions: {
-            'wecom-bot.validate': async () => {
-              const [currentBotId, currentSecret] = await Promise.all([
+            'wecom-bot.validate': async (params: unknown) => {
+              // Host merges stored non-secret values with the card's unsaved input
+              // ({ ...stored, ...body }) and delivers it as the action's `input`.
+              const provided = object(params) && object(params.input) ? params.input : {};
+              const fromInput = (key: 'botId' | 'botSecret') => {
+                const value = provided[key];
+                return typeof value === 'string' ? value.trim() : '';
+              };
+              const [storedBotId, storedSecret] = await Promise.all([
                 context.config.get('botId'),
                 context.secrets.get('botSecret'),
               ]);
-              const id = typeof currentBotId === 'string' ? currentBotId.trim() : '';
-              const secret = typeof currentSecret === 'string' ? currentSecret.trim() : '';
+              // Priority: unsaved card input → in-process adopted values → stored config.
+              const id = fromInput('botId')
+                || adoptedBotId
+                || (typeof storedBotId === 'string' ? storedBotId.trim() : '');
+              const secret = fromInput('botSecret')
+                || adoptedBotSecret
+                || (typeof storedSecret === 'string' ? storedSecret.trim() : '');
               if (id.length === 0 || secret.length === 0) {
                 return {
                   render: 'status',
-                  data: { status: 'error', message: '未填写 Bot ID / Bot Secret — 先在配置中填写并保存' },
+                  data: { status: 'error', message: '未填写 Bot ID / Bot Secret — 在面板里填好，直接点测试并连接' },
                   advance: false,
                 };
               }
@@ -155,6 +173,8 @@ export function createWeComBotPluginModule(
                   advance: false,
                 };
               }
+              adoptedBotId = id;
+              adoptedBotSecret = secret;
               await runtime.connect({ botId: id, botSecret: secret });
               return {
                 render: 'status',
@@ -174,7 +194,7 @@ export function createWeComBotPluginModule(
             },
             'wecom-bot.test': async () => {
               const ok = runtime.isConnected();
-              return { ok, ...(ok ? {} : { message: '企微未连接（需要测试并连接）' }) };
+              return { ok, ...(ok ? {} : { message: `当前状态: ${runtime.getConnectionState()}` }) };
             },
             'wecom-bot.outbound': async (candidate) => {
               const input = await bridge.outbound(candidate);

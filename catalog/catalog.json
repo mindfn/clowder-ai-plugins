@@ -315,8 +315,8 @@
             "packageName": "@clowder-ai/connector-feishu",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-feishu/-/connector-feishu-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-AZZ9QPN4wa2C+JWRM/PTnQtHsXFlMawu6spyoDLtSRGaX5UaEaHp3dIqV010Eg+ZTLI+OQ5KhAftFTApEtqKMQ==",
-            "shasum": "9b79171fe1cc2df821ae6a4d7e8f57913859c68c",
+            "integrity": "sha512-5+MjZiP7SfkPhyKv47P7l3XKzIbh5T18ragDuKa5WTXAo/8pVNXZQr0BRCMsCeRTQK4z1ACKhC7CXKmcpUxxyA==",
+            "shasum": "0bc6ae3d437970f2a5cf3d57d932e41e7853521d",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-feishu"
@@ -357,8 +357,8 @@
             "packageName": "@clowder-ai/connector-telegram",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-telegram/-/connector-telegram-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-vabEBQFVkBVpWiMu7jqExuuN8ky6OYF+h1ogJ0YCmFl3RfiTDUmK4ibV3gbM1T0ilbrIJMsrOoD1S6DhXuQVYw==",
-            "shasum": "7aa15bdb49683c2ee656605afa19cbceec350b35",
+            "integrity": "sha512-Cfioxz9xyJ1bC3tfKdKb5NKo+LWDsPzqfBEiKWAdV2gjmoAf60jBigRcsAEN8Kv2Tnqmlb3sFX6sSL96eFHVOQ==",
+            "shasum": "0e93e68f3bbc557b2358d5c0eae2cd8cf167b4c2",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-telegram"
@@ -442,8 +442,8 @@
             "packageName": "@clowder-ai/connector-wecom-bot",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-wecom-bot/-/connector-wecom-bot-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-UdiMZ/rLBXso3lKo4GGQpI7nXkYCeiWAStvSFCgo0P6RRg4lDgR6QijPvjY0N+/pJghNPLUh0Is4I5Necs17BA==",
-            "shasum": "b8f062cf85915c414ab98936f1523775a72d9e11",
+            "integrity": "sha512-d4xM0ZN7TOdK5BcBj6ArlNVHdharqErFfYD5ywugaxYmvVNB8iFxB6dL2oB6KEMgCk/WEc8BqGzsMCompIskAw==",
+            "shasum": "7cb905c18527e3fa622f9cc9e0d7b6211adb40b1",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-wecom-bot"

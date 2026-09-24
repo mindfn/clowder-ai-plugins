@@ -45,6 +45,7 @@ function fakeRuntime(calls: Record<string, unknown[]>) {
     async connect(config: unknown) { calls.connect?.push([config]); },
     async disconnect() { calls.disconnect?.push([]); },
     isConnected() { return calls.connected === true; },
+    getConnectionState() { return calls.connected === true ? 'connected' : 'disconnected'; },
     get outbound() { throw new Error('not used in these tests'); },
   } as unknown as WeComBotConnectorRuntime<WeComBotAdapter>;
   return runtime;
@@ -99,7 +100,7 @@ test('validate without credentials is a terminal error and never touches the pro
   assertOperationResultShape(result);
   assert.deepEqual(result, {
     render: 'status',
-    data: { status: 'error', message: '未填写 Bot ID / Bot Secret — 先在配置中填写并保存' },
+    data: { status: 'error', message: '未填写 Bot ID / Bot Secret — 在面板里填好，直接点测试并连接' },
     advance: false,
   });
   assert.equal(providerCalls, 0);
@@ -167,9 +168,48 @@ test('test action reports connected only when the provider WebSocket is live', a
   const active = await entrypoint.create(manifest).start(hostWith({ botId: 'bot', botSecret: 'secret' }));
   assert.deepEqual(await active.actions['wecom-bot.test']?.({}), {
     ok: false,
-    message: '企微未连接（需要测试并连接）',
+    message: '当前状态: disconnected',
   });
   calls.connected = true;
   assert.deepEqual(await active.actions['wecom-bot.test']?.({}), { ok: true });
+  await active.stop();
+});
+
+test('validate prefers unsaved card input over stored values and returns them as targetValues', async () => {
+  const calls: Record<string, unknown[][]> = { connect: [] };
+  const entrypoint = createWeComBotPluginModule(
+    () => fakeRuntime(calls),
+    async (botId: string, secret: string) => {
+      assert.equal(botId, 'input-bot');
+      assert.equal(secret, 'input-secret');
+      return { valid: true };
+    },
+  );
+  const active = await entrypoint.create(manifest).start(hostWith({ botId: 'stored-bot', botSecret: 'stored-secret' }));
+  const result = await active.actions['wecom-bot.validate']?.({
+    input: { botId: ' input-bot ', botSecret: ' input-secret ' },
+  });
+  assertOperationResultShape(result);
+  assert.deepEqual(result, {
+    render: 'status',
+    data: { status: 'confirmed' },
+    label: '已连接',
+    targetValues: { botId: 'input-bot', botSecret: 'input-secret' },
+  });
+  assert.deepEqual(calls.connect, [[{ botId: 'input-bot', botSecret: 'input-secret' }]]);
+  await active.stop();
+});
+
+test('validate falls back to the stored secret when input only carries botId', async () => {
+  const entrypoint = createWeComBotPluginModule(
+    () => fakeRuntime({}),
+    async (botId: string, secret: string) => {
+      assert.equal(botId, 'input-bot');
+      assert.equal(secret, 'stored-secret');
+      return { valid: true };
+    },
+  );
+  const active = await entrypoint.create(manifest).start(hostWith({ botId: 'stored-bot', botSecret: 'stored-secret' }));
+  await active.actions['wecom-bot.validate']?.({ input: { botId: 'input-bot' } });
   await active.stop();
 });
