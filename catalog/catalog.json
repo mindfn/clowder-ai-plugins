@@ -272,8 +272,8 @@
             "packageName": "@clowder-ai/connector-dingtalk",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-dingtalk/-/connector-dingtalk-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-r69B/O/V17LExaM8JxAWvJUiQ7ODqz/4v00KfchVbuV1TO0XyXT1FLZyPSL4GeUz27TMnt+sZIWegCboqFGAlg==",
-            "shasum": "0349c45ae5bb781fa08beb9e0795b0fece36f776",
+            "integrity": "sha512-sBXmF+3iK/vjfKF408lRmY/VTyOJgOuKF73402ZmQTWjw/HrlAqyOA/Gknij3ORKitYD5Dz/6n3mGYntM9klUA==",
+            "shasum": "0aedd9e2f516e71fd59ab03643ecafafa08ffbe1",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-dingtalk"
@@ -315,8 +315,8 @@
             "packageName": "@clowder-ai/connector-feishu",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-feishu/-/connector-feishu-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-NRBx+eA/6aNuV2TRwAQ+FRUCxOdwwU6hM6VEuCrlP3vsXMmk7jO8WxzmUD8l711DPNCwuXj3933CkwfqYvD8VA==",
-            "shasum": "90f026c64989ad3ac52cef71fa916807d1b0c7c7",
+            "integrity": "sha512-cxrNg4+V8KPQ/Dh2YVb7cGko5cpvliZT3euYGIz85TFSvwP1wMVKPNFi2q5p6COup2YGm7h7dWx5hjHtki+68w==",
+            "shasum": "80a4154ee1d33e7aec903e30296036c91f734c49",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-feishu"
@@ -357,8 +357,8 @@
             "packageName": "@clowder-ai/connector-telegram",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-telegram/-/connector-telegram-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-sptjq3S5JUl3+Fbsy9r3zA9GBpGCV0ipy/6nJJZLkfW/QeQGjT6hyekWp1PX0YytnRI/f3+F5LQqEaM5T9qvkQ==",
-            "shasum": "c706122a158bf84354c72aef7625dc90e7ffe9b5",
+            "integrity": "sha512-0lEf4jova3hxv3GxVDYSN44cDuVWRpKhLjgTBIBDitpC5G1r87QOt1lSHFps1hkPo3iM0V7SUM0NumXmedElTw==",
+            "shasum": "38406c28c0fdc8f164b4d6972dd4694baeee3446",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-telegram"
@@ -442,8 +442,8 @@
             "packageName": "@clowder-ai/connector-wecom-bot",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-wecom-bot/-/connector-wecom-bot-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-gwYZoPqm3CVBXUfEFO/zKP+GwqJduySd29Ud6S4/XQEf8o5GL/bcQW+j/DTrJUdD3gyiXPpKTh3Bn6YPNKqtrg==",
-            "shasum": "b378b6ceadcbd00858fb71ac93b59eaec2c8646b",
+            "integrity": "sha512-23bIMXv6NytpqLlZLoFm3feTwWLcMQuqGjBaVPj6ZYhB0ujZBIlk4+Ep/QOZumkEgZBCOxvRIEc7eyzg45LkLg==",
+            "shasum": "def41a1f9ab7d0f99a20269f25fbbb3b0632cdb8",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-wecom-bot"
@@ -527,8 +527,8 @@
             "packageName": "@clowder-ai/connector-xiaoyi",
             "version": "0.1.0-alpha.0",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-xiaoyi/-/connector-xiaoyi-0.1.0-alpha.0.tgz",
-            "integrity": "sha512-pQVDz0nRsLQqkyYTnr3wvJ+j83YvlcX0Dmbik4THkzz+zQIAbFB7AnJtzyWevSRll6CXJbqxnQrLXMdCDrtcxQ==",
-            "shasum": "7957f506bada8168fd195a4b49e51fcfc7d4d4e7",
+            "integrity": "sha512-xXnOUMmUSrYIBuk31xNEwnrfYAfJMeY0JbOf+GeJ6t4qw5m+DKYJqXbGwB1rBhJxFGJVB+isFnKuO40456fLnw==",
+            "shasum": "3f903ba41fa4f3f9441cec923c56dd63752e1ea4",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-xiaoyi"
