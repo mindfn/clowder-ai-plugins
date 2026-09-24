@@ -47,6 +47,7 @@ function parseEntry(value: unknown): ReplySenderEntry | undefined {
 
 export function createReplySenderMap(context: FeatureContext) {
   let recordedSinceSweep = 0;
+  let sweepInFlight = false;
 
   const sweep = async (): Promise<void> => {
     let listed: Readonly<Record<string, { readonly value: unknown }>>;
@@ -74,6 +75,22 @@ export function createReplySenderMap(context: FeatureContext) {
     }
   };
 
+  // Sweep single-flight in the background: recording stays on the inbound
+  // hot path and overlapping bursts never stack sweeps. sweep() already
+  // swallows and logs its own storage failures; the catch below is the
+  // last-resort guard so a sweep defect can never propagate into record.
+  const sweepInBackground = (): void => {
+    if (sweepInFlight) return;
+    sweepInFlight = true;
+    void sweep()
+      .catch((error: unknown) => {
+        console.warn('Connector reply-sender mapping sweep failed', { errorName: errorName(error) });
+      })
+      .finally(() => {
+        sweepInFlight = false;
+      });
+  };
+
   return {
     async record(hostMessageId: string, replySender: ReplySender): Promise<void> {
       const now = Date.now();
@@ -89,7 +106,7 @@ export function createReplySenderMap(context: FeatureContext) {
       recordedSinceSweep += 1;
       if (recordedSinceSweep < SWEEP_EVERY_RECORDS) return;
       recordedSinceSweep = 0;
-      await sweep();
+      sweepInBackground();
     },
     async resolve(hostMessageId: string | undefined): Promise<ReplySender | undefined> {
       if (hostMessageId === undefined) return undefined;

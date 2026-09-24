@@ -29,6 +29,14 @@ function harness(options?: { setError?: Error; getError?: Error }) {
 
 const TTL = 24 * 60 * 60 * 1000;
 
+async function waitFor(condition: () => boolean, attempts = 500): Promise<void> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (condition()) return;
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  throw new Error('condition was not met in time');
+}
+
 test('recorded inbound senders resolve independently by Host messageId', async () => {
   const { map } = harness();
   await map.record('host-message-1', { id: 'sender-1', name: 'Sender' });
@@ -92,8 +100,8 @@ test('sweep evicts the oldest entries once the cap is reached', async () => {
     for (let index = 0; index < 50; index += 1) {
       await map.record(`host-message-${index}`, { id: `sender-${index}` });
     }
+    await waitFor(() => !values.has('reply-sender:old-50'));
     assert.equal(values.has('reply-sender:old-0'), false);
-    assert.equal(values.has('reply-sender:old-50'), false);
     assert.equal(values.has('reply-sender:old-51'), true);
     assert.deepEqual(await map.resolve('host-message-49'), { id: 'sender-49' });
     assert.equal(values.has('reply-sender:host-message-0'), true);
@@ -114,8 +122,8 @@ test('sweep deletes expired entries alongside cap eviction', async () => {
     for (let index = 0; index < 50; index += 1) {
       await map.record(`host-message-${index}`, { id: `sender-${index}` });
     }
+    await waitFor(() => !values.has('reply-sender:old-0'));
     assert.equal(values.has('reply-sender:expired'), false);
-    assert.equal(values.has('reply-sender:old-0'), false);
   } finally {
     Date.now = realNow;
   }
@@ -142,4 +150,28 @@ test('corrupt stored entry resolves to undefined', async () => {
   assert.equal(await map.resolve('corrupt-json'), undefined);
   assert.equal(await map.resolve('legacy-shape'), undefined);
   assert.equal(await map.resolve('wrong-version'), undefined);
+});
+
+test('background sweep failure only logs a warning and never rejects record', async () => {
+  const values = new Map<string, unknown>();
+  const logs: Array<{ level: string; message: string }> = [];
+  const context = {
+    storage: {
+      get: async (key: string) => {
+        const value = values.get(key);
+        return value === undefined ? undefined : { value, revision: 1 };
+      },
+      set: async (key: string, value: unknown) => { values.set(key, value); return { revision: 1 }; },
+      list: async () => { throw new Error('list down'); },
+      delete: async (key: string) => ({ deleted: values.delete(key) }),
+    },
+    log: (level: string, message: string) => { logs.push({ level, message }); },
+  } as unknown as FeatureContext;
+  const map = createReplySenderMap(context);
+  for (let index = 0; index < 50; index += 1) {
+    await map.record(`host-message-${index}`, { id: `sender-${index}` });
+  }
+  await waitFor(() => logs.some(log => log.message.includes('sweep failed')));
+  assert.equal(values.size, 50);
+  assert.deepEqual(await map.resolve('host-message-49'), { id: 'sender-49' });
 });
