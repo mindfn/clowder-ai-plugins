@@ -31,6 +31,7 @@ function hostShape(config: Record<string, unknown>, secrets: Record<string, stri
     secrets: { get: async (key: string) => secrets[key] },
     storage: {} as never,
     tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: { listBindings: async () => [], ensureByKey: async (key: string) => ({ id: 'thread-1', title: key }) } as never,
     messaging: {
       subscribe: async () => undefined, unsubscribe: async () => undefined,
@@ -64,7 +65,7 @@ function qrClientFake(pollResults: FeishuQrPollResult[]): { client: FeishuQrBind
     polls,
     client: {
       async create() {
-        return { qrUrl: 'data:image/png;base64,aGVsbG8=', qrPayload: 'device-1' };
+        return { qrUrl: 'data:image/png;base64,aGVsbG8=', qrPayload: 'device-1', intervalMs: 1_000, expireMs: 60_000 };
       },
       async poll(qrPayload: string) {
         polls.push(qrPayload);

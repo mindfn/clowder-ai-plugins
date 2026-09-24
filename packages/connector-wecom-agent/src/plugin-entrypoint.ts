@@ -9,6 +9,7 @@ import {
 } from '@clowder-ai/plugin-sdk';
 
 import { WeComAgentAdapter } from './WeComAgentAdapter.js';
+import { renderTypedMediaNotice } from './media-notice.js';
 import { renderAllRichBlocksPlaintext } from './rich-block-plaintext.js';
 import {
   createWeComAgentConnectorRuntime,
@@ -88,7 +89,11 @@ async function createMessageBridge(context: FeatureContext) {
       const input = requireDelivery(candidate);
       const binding = (await context.threads.listBindings()).find(item => item.threadId === input.threadId);
       if (binding === undefined) throw new TypeError(`wecom-agent thread ${input.threadId} has no provider binding`);
-      const text = input.envelope.payload.elements.filter(element => element.kind === 'text').map(element => element.payload.text).join('\n\n');
+      const text = input.envelope.payload.elements.flatMap((element) => {
+        if (element.kind === 'text') return [element.payload.text];
+        const notice = renderTypedMediaNotice(element);
+        return notice === undefined ? [] : [notice];
+      }).join('\n\n');
       const richBlocks = input.envelope.payload.elements.filter(element => element.kind === 'rich_block').map(element => element.payload);
       const media = input.envelope.payload.elements.flatMap((element) => {
         if (element.kind !== 'media_ref' || !object(element.payload)) return [];

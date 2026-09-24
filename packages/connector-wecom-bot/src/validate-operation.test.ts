@@ -28,6 +28,7 @@ function hostWith(values: Record<string, string>): ModulePluginHostShape {
     secrets: { get: async (key: string) => values[key] },
     storage: {} as never,
     tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: { listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }] } as never,
     messaging: {
       subscribe: async () => undefined,
@@ -38,12 +39,12 @@ function hostWith(values: Record<string, string>): ModulePluginHostShape {
   };
 }
 
-function fakeRuntime(calls: Record<string, unknown[]>) {
+function fakeRuntime(calls: Record<string, unknown>) {
   const runtime = {
-    async start() { calls.start?.push([]); },
-    async stop() { calls.stop?.push([]); },
-    async connect(config: unknown) { calls.connect?.push([config]); },
-    async disconnect() { calls.disconnect?.push([]); },
+    async start() { (calls.start as unknown[] | undefined)?.push([]); },
+    async stop() { (calls.stop as unknown[] | undefined)?.push([]); },
+    async connect(config: unknown) { (calls.connect as unknown[] | undefined)?.push([config]); },
+    async disconnect() { (calls.disconnect as unknown[] | undefined)?.push([]); },
     isConnected() { return calls.connected === true; },
     getConnectionState() { return calls.connected === true ? 'connected' : 'disconnected'; },
     get outbound() { throw new Error('not used in these tests'); },
@@ -158,7 +159,7 @@ test('disconnect stops the stream in-process and clears the persisted target val
     label: '已断开',
     targetValues: { botId: '', botSecret: '' },
   });
-  assert.equal(calls.disconnect?.length, 1);
+  assert.equal((calls.disconnect as unknown[] | undefined)?.length, 1);
   await active.stop();
 });
 

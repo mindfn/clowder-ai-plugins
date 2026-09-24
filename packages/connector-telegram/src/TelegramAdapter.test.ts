@@ -93,7 +93,7 @@ test('a 409 polling conflict closes the old provider session before bounded retr
     start: async options => {
       starts += 1;
       if (starts === 1) throw { error_code: 409, description: 'Conflict' };
-      options?.onStart?.();
+      options?.onStart?.({} as never);
     },
     close: async () => {
       closes += 1;

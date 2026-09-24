@@ -174,7 +174,7 @@ test('OPUS audio fetched from an external URL keeps msg_type audio', async () =>
   subject._injectUploadFetch(async (input, init) => {
     const target = String(input);
     if (target === 'https://cdn.example.com/media/voice.opus') {
-      return new Response(opusOggBytes(), {
+      return new Response(opusOggBytes() as unknown as BodyInit, {
         status: 200,
         headers: { 'content-type': 'audio/opus; charset=binary' },
       });
@@ -284,7 +284,7 @@ for (const ladder of ladderCases) {
     subject._injectUploadFetch(async (input, init) => {
       const target = String(input);
       if (target === ladder.url) {
-        return new Response(ladder.body ?? Buffer.from('bytes'), { status: 200, headers: { 'content-type': ladder.contentType } });
+        return new Response((ladder.body ?? Buffer.from('bytes')) as unknown as BodyInit, { status: 200, headers: { 'content-type': ladder.contentType } });
       }
       const form = init?.body as FormData;
       if (ladder.expectedMsgType === 'image') {

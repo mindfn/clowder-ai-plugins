@@ -64,7 +64,7 @@ function runtimeFake() {
   return { runtime, calls };
 }
 
-function hostShape(values: Record<string, unknown>, secrets: Record<string, unknown>): ModulePluginHostShape {
+function hostShape(values: Record<string, unknown>, secrets: Record<string, string | undefined>): ModulePluginHostShape {
   return {
     config: { get: async (key: string) => values[key] },
     secrets: { get: async (key: string) => secrets[key] },
@@ -74,6 +74,7 @@ function hostShape(values: Record<string, unknown>, secrets: Record<string, unkn
       compareAndSet: async () => ({ applied: false }), delete: async () => ({ deleted: false }),
     } as never,
     tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: {
       listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
       ensureByKey: async (key: string) => ({ id: 'thread-1', title: key, createdAt: 1, lastActiveAt: 1 }),
@@ -86,7 +87,7 @@ function hostShape(values: Record<string, unknown>, secrets: Record<string, unkn
   };
 }
 
-async function activate(routes: Record<string, unknown>, secrets: Record<string, unknown> = {}) {
+async function activate(routes: Record<string, unknown>, secrets: Record<string, string | undefined> = {}) {
   WeixinAdapter._injectStaticFetch(fakeFetch(routes));
   const fake = runtimeFake();
   const entrypoint = createWeixinPluginModule(() => fake.runtime);

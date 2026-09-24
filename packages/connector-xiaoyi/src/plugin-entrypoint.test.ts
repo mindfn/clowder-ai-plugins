@@ -14,6 +14,7 @@ function host(values: Record<string, unknown>): ModulePluginHostShape {
   return {
     config: { get: async key => values[key] }, secrets: { get: async () => 'sk' },
     storage: {} as never, tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: { listBindings: async () => [{ key: 'agent:session', threadId: 'thread-1', createdAt: 1 }] } as never,
     messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async input => ({ messageId: 'message-1', threadId: input.threadId }) },
     log() {},
@@ -63,6 +64,9 @@ function richDelivery() {
       actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
       payload: { provenance: { origin: { kind: 'host' }, epistemicStatus: 'observation' }, elements: [
         { elementId: 't1', kind: 'text', payload: { text: '正文' } },
+        { elementId: 'u1', kind: 'media_unavailable', payload: { type: 'image', fileName: 'diagram.png', reason: 'source_expired' } },
+        { elementId: 'm1', kind: 'media_ref', payload: { type: 'audio', reference: 'hmr_audio-1' } },
+        { elementId: 'w1', kind: 'media_warning', payload: { mediaElementId: 'm1', stage: 'transcription', reason: 'processing_failed' } },
         { elementId: 'r1', kind: 'rich_block', payload: { id: 'b1', kind: 'card', v: 1, title: 'T', bodyMarkdown: 'B' } },
         { elementId: 'r2', kind: 'rich_block', payload: { id: 'b2', kind: 'checklist', v: 1, title: 'L', items: [{ id: 'i1', text: 'a', checked: true }, { id: 'i2', text: 'b' }] } },
       ] },
@@ -70,7 +74,7 @@ function richDelivery() {
   };
 }
 
-test('rich blocks append rendered plaintext blocks to the joined reply before batch done', async () => {
+test('rich blocks and typed media notices append rendered plaintext blocks before batch done', async () => {
   const events: unknown[] = [];
   const outbound = {
     async sendReply(...args: unknown[]) { events.push(['reply', ...args]); },
@@ -81,7 +85,8 @@ test('rich blocks append rendered plaintext blocks to the joined reply before ba
   const active = await entrypoint.create(manifest).start(host(values));
   await active.actions['xiaoyi.outbound']?.(richDelivery());
   assert.deepEqual(events, [
-    ['reply', 'agent:session', 'cat-1\n\n正文\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'],
+    ['reply', 'agent:session', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：转写处理失败\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'],
+    ['reply', 'agent:session', '📎 hmr_audio-1'],
     ['done', 'agent:session', true],
   ]);
 });

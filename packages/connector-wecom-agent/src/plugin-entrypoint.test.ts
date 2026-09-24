@@ -20,6 +20,7 @@ function host(
     secrets: { get: async key => secrets[key] },
     storage: {} as never,
     tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: { listBindings: async () => [], ensureByKey: async () => ({ id: 'thread-1' }) } as never,
     messaging: {
       subscribe: async () => undefined, unsubscribe: async () => undefined,
@@ -129,6 +130,9 @@ function richDelivery() {
       actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
       payload: { provenance: { origin: { kind: 'host' }, epistemicStatus: 'observation' }, elements: [
         { elementId: 't1', kind: 'text', payload: { text: '正文' } },
+        { elementId: 'u1', kind: 'media_unavailable', payload: { type: 'image', fileName: 'diagram.png', reason: 'source_expired' } },
+        { elementId: 'm1', kind: 'media_ref', payload: { type: 'audio', reference: 'hmr_audio-1' } },
+        { elementId: 'w1', kind: 'media_warning', payload: { mediaElementId: 'm1', stage: 'transcription', reason: 'processing_failed' } },
         { elementId: 'r1', kind: 'rich_block', payload: { id: 'b1', kind: 'card', v: 1, title: 'T', bodyMarkdown: 'B' } },
         { elementId: 'r2', kind: 'rich_block', payload: { id: 'b2', kind: 'checklist', v: 1, title: 'L', items: [{ id: 'i1', text: 'a', checked: true }, { id: 'i2', text: 'b' }] } },
       ] },
@@ -136,7 +140,7 @@ function richDelivery() {
   };
 }
 
-test('rich blocks fall back to sendReply with rendered plaintext blocks', async () => {
+test('rich blocks and typed media notices fall back to sendReply with rendered plaintext blocks', async () => {
   const calls: Array<{ operation: string; value: unknown }> = [];
   const outbound = {
     async sendReply(...args: unknown[]) { calls.push({ operation: 'provider.send', value: args }); },
@@ -147,6 +151,7 @@ test('rich blocks fall back to sendReply with rendered plaintext blocks', async 
   const host: ModulePluginHostShape = {
     config: { get: async () => 'agent' }, secrets: { get: async () => 'secret' },
     storage: {} as never, tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: {
       listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
       ensureByKey: async (key: string) => ({ id: 'thread-1', title: key, createdAt: 1, lastActiveAt: 1 }),
@@ -162,7 +167,7 @@ test('rich blocks fall back to sendReply with rendered plaintext blocks', async 
   const active = await entrypoint.create(manifest).start(host);
   await active.actions['wecom-agent.outbound']?.(richDelivery());
   assert.deepEqual(calls, [
-    { operation: 'provider.send', value: ['chat-1', 'cat-1\n\n正文\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'] },
+    { operation: 'provider.send', value: ['chat-1', 'cat-1\n\n正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：转写处理失败\n\n📋 T\nB\n\n☑️ L\n✅ a\n☐ b'] },
   ]);
   await active.stop();
 });

@@ -9,7 +9,7 @@ test('backup WebSocket keeps certificate verification and pins SNI to the primar
   const options = xiaoyiWebSocketOptions(WS_BACKUP, headers);
 
   assert.equal(options.rejectUnauthorized, true);
-  assert.equal(options.servername, new URL(WS_PRIMARY).hostname);
+  assert.equal((options as typeof options & { servername?: string }).servername, new URL(WS_PRIMARY).hostname);
   assert.deepEqual(options.headers, {
     ...headers,
     Host: new URL(WS_PRIMARY).hostname,
@@ -19,5 +19,5 @@ test('backup WebSocket keeps certificate verification and pins SNI to the primar
 test('custom WebSocket endpoints remain fail-closed under ordinary TLS validation', () => {
   const options = xiaoyiWebSocketOptions('wss://192.0.2.1/custom', {});
   assert.equal(options.rejectUnauthorized, true);
-  assert.equal(options.servername, undefined);
+  assert.equal((options as typeof options & { servername?: string }).servername, undefined);
 });

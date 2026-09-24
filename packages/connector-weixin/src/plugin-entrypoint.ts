@@ -15,6 +15,7 @@ import {
   type WeixinHostInboundMessage,
 } from './runtime.js';
 import { WeixinAdapter, type WeixinSessionState, type WeixinSessionStateStore } from './WeixinAdapter.js';
+import { renderTypedMediaNotice } from './media-notice.js';
 import { renderAllRichBlocksPlaintext } from './rich-block-plaintext.js';
 
 type RuntimeFactory = (
@@ -83,7 +84,11 @@ async function createMessageBridge(context: FeatureContext) {
       const input = requireDelivery(candidate);
       const binding = (await context.threads.listBindings()).find(item => item.threadId === input.threadId);
       if (binding === undefined) throw new TypeError(`weixin thread ${input.threadId} has no provider binding`);
-      const text = input.envelope.payload.elements.filter(element => element.kind === 'text').map(element => element.payload.text).join('\n\n');
+      const text = input.envelope.payload.elements.flatMap((element) => {
+        if (element.kind === 'text') return [element.payload.text];
+        const notice = renderTypedMediaNotice(element);
+        return notice === undefined ? [] : [notice];
+      }).join('\n\n');
       const richBlocks = input.envelope.payload.elements.filter(element => element.kind === 'rich_block').map(element => element.payload);
       const media = input.envelope.payload.elements.flatMap((element) => {
         if (element.kind !== 'media_ref' || !object(element.payload)) return [];

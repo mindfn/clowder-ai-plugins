@@ -69,7 +69,7 @@ test('runtime emits provider facts and leaves binding resolution to the Host', a
   const delivered: unknown[] = [];
   const runtime = createDingTalkConnectorRuntime({
     config: { appKey: ' app-key ', appSecret: ' app-secret ' },
-    host: { deliver: async message => delivered.push(message) },
+    host: { deliver: async message => { delivered.push(message); } },
     logger: silentLogger(),
     createAdapter: config => {
       assert.deepEqual(config, { appKey: 'app-key', appSecret: 'app-secret' });

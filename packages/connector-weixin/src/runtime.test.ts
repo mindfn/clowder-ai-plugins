@@ -27,7 +27,7 @@ function provider() {
     async stopPolling() { stops += 1; },
     async sendReply() {},
     async sendMedia() {},
-  } as WeixinRuntimeAdapter;
+  } as unknown as WeixinRuntimeAdapter;
   return {
     adapter,
     releaseRestore: () => releaseRestore?.(),

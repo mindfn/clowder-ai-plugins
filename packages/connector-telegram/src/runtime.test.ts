@@ -63,7 +63,7 @@ test('runtime maps provider ingress to Host-owned delivery without inventing a t
   const delivered: unknown[] = [];
   const runtime = createTelegramConnectorRuntime({
     config: { botToken: ' 123456:abcdefghij_ABC-123 ' },
-    host: { deliver: async message => delivered.push(message) },
+    host: { deliver: async message => { delivered.push(message); } },
     logger: silentLogger(),
     createAdapter: token => {
       assert.equal(token, '123456:abcdefghij_ABC-123');

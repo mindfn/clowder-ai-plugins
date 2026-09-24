@@ -433,7 +433,7 @@ test('WebSocket runtime reconnects after an unexpected close and stop converges'
     config: { appId: 'app', appSecret: 'secret', connectionMode: 'websocket' },
     host: { deliver: async () => undefined },
     logger: {
-      info(msg: string) { starts.push(String(msg)); },
+      info(msg: unknown) { starts.push(String(msg)); },
       warn() {}, debug() {},
       error(msg: unknown) { errors.push(String(msg)); },
     },

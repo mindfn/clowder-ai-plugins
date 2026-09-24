@@ -11,6 +11,7 @@ test('manifest keeps Bot Secret private and wake authority out of the package', 
     contributions: Array<Record<string, unknown>>;
     features: Array<{ capabilities: string[] }>;
     runtime: Record<string, unknown>;
+    test: { action: { method: string } };
   };
   assert.equal(manifest.pluginId, 'official.connector.wecom-bot');
   assert.equal(manifest.contractVersion, '0.1.0');

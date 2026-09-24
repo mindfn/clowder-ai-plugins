@@ -25,7 +25,7 @@ function provider() {
     async sendFormattedReply() {},
     async sendMedia() {},
     async sendReply() {},
-  } as WeComBotRuntimeAdapter;
+  } as unknown as WeComBotRuntimeAdapter;
   return {
     adapter,
     releaseStart: () => releaseStart?.(),

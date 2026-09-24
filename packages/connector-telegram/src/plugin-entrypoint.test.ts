@@ -39,6 +39,7 @@ test('module bridges provider ingress and Host subscription egress without conne
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => 'bot-token' },
     storage: {} as never, tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: {
       listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
       ensureByKey: async (key: string) => ({ id: 'thread-1', title: key, createdAt: 1, lastActiveAt: 1 }),
@@ -62,7 +63,7 @@ test('module bridges provider ingress and Host subscription egress without conne
   assert.equal(sent.idempotencyKey, 'provider-1');
   assert.equal('address' in sent, false);
   assert.equal((calls.find(call => call.operation === 'provider.send')?.value as unknown[])[0], 'chat-1');
-  await assert.rejects(() => active.actions['telegram.outbound']?.({ ...delivery(), externalConversationId: 'forbidden' }), /unsupported field/);
+  await assert.rejects(async () => active.actions['telegram.outbound']?.({ ...delivery(), externalConversationId: 'forbidden' }), /unsupported field/);
   await active.stop();
 });
 
@@ -76,6 +77,7 @@ test('telegram.test reports ok while polling with a configured token', async () 
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => '123456:ABCdefGHIJKL' },
     storage: {} as never, tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: { listBindings: async () => [], ensureByKey: async () => { throw new Error('unused'); } } as never,
     messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async () => { throw new Error('unused'); } },
     log() {},
@@ -92,6 +94,7 @@ test('telegram.test reports not configured when the token is missing', async () 
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => undefined },
     storage: {} as never, tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: { listBindings: async () => [], ensureByKey: async () => { throw new Error('unused'); } } as never,
     messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async () => { throw new Error('unused'); } },
     log() {},
@@ -111,6 +114,7 @@ test('telegram.test reports not-polling separately from a missing token', async 
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => '123456:ABCdefGHIJKL' },
     storage: {} as never, tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: { listBindings: async () => [], ensureByKey: async () => { throw new Error('unused'); } } as never,
     messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async () => { throw new Error('unused'); } },
     log() {},
@@ -128,6 +132,9 @@ function richDelivery() {
       actor: { kind: 'cat', id: 'cat-1' }, audience: { kind: 'public' }, occurredAt: '2026-09-22T00:00:00.000Z',
       payload: { provenance: { origin: { kind: 'host' }, epistemicStatus: 'observation' }, elements: [
         { elementId: 't1', kind: 'text', payload: { text: '正文' } },
+        { elementId: 'u1', kind: 'media_unavailable', payload: { type: 'image', fileName: 'diagram.png', reason: 'source_expired' } },
+        { elementId: 'm1', kind: 'media_ref', payload: { type: 'audio', reference: 'hmr_audio-1' } },
+        { elementId: 'w1', kind: 'media_warning', payload: { mediaElementId: 'm1', stage: 'transcription', reason: 'processing_failed' } },
         { elementId: 'r1', kind: 'rich_block', payload: { id: 'b1', kind: 'card', v: 1, title: 'T', bodyMarkdown: 'B' } },
         { elementId: 'r2', kind: 'rich_block', payload: { id: 'b2', kind: 'checklist', v: 1, title: 'L', items: [{ id: 'i1', text: 'a', checked: true }, { id: 'i2', text: 'b' }] } },
       ] },
@@ -135,7 +142,7 @@ function richDelivery() {
   };
 }
 
-test('rich blocks route to sendRichMessage instead of sendReply', async () => {
+test('rich blocks and typed media notices route to sendRichMessage instead of sendReply', async () => {
   const calls: Array<{ operation: string; value: unknown }> = [];
   const outbound = {
     async sendRichMessage(...args: unknown[]) { calls.push({ operation: 'provider.rich', value: args }); },
@@ -146,6 +153,7 @@ test('rich blocks route to sendRichMessage instead of sendReply', async () => {
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => 'bot-token' },
     storage: {} as never, tasks: {} as never,
+    media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: {
       listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
       ensureByKey: async (key: string) => ({ id: 'thread-1', title: key, createdAt: 1, lastActiveAt: 1 }),
@@ -161,7 +169,7 @@ test('rich blocks route to sendRichMessage instead of sendReply', async () => {
   const active = await entrypoint.create(manifest).start(host);
   await active.actions['telegram.outbound']?.(richDelivery());
   assert.deepEqual(calls, [
-    { operation: 'provider.rich', value: ['chat-1', '正文', [
+    { operation: 'provider.rich', value: ['chat-1', '正文\n\n⚠️ 媒体不可用：diagram.png（来源已过期）\n\n⚠️ 媒体处理警告：转写处理失败', [
       { id: 'b1', kind: 'card', v: 1, title: 'T', bodyMarkdown: 'B' },
       { id: 'b2', kind: 'checklist', v: 1, title: 'L', items: [{ id: 'i1', text: 'a', checked: true }, { id: 'i2', text: 'b' }] },
     ], 'cat-1'] },

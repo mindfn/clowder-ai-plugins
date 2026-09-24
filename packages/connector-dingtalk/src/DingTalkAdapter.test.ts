@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { DingTalkAdapter } from './DingTalkAdapter.js';
+import { DingTalkAdapter, type DingTalkStreamModule } from './DingTalkAdapter.js';
 import type { ConnectorLogger } from './types.js';
 
 const noop = () => undefined;
@@ -142,7 +142,7 @@ test('start and stop use the injected DingTalk stream SDK only through explicit 
 function fakeStreamModule(options: {
   connect?: (client: { connected: boolean; registered: boolean }) => void;
 }): {
-  module: ConstructorParameters<typeof DingTalkAdapter.prototype._injectStreamModule>[0];
+  module: DingTalkStreamModule;
   configs: Array<Record<string, unknown>>;
   instances: Array<{ connected: boolean; registered: boolean }>;
 } {
