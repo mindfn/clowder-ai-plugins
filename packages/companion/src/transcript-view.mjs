@@ -32,6 +32,16 @@ export class TranscriptView {
   nearBottom() {
     return this.container.scrollHeight - this.container.scrollTop - this.container.clientHeight < 32;
   }
+  visibleHistoryAnchor() {
+    const viewport = this.container.getBoundingClientRect?.();
+    if (!viewport) return null;
+    for (const [id, row] of this.historyRows) {
+      const rect = row.getBoundingClientRect?.();
+      if (rect && rect.bottom > viewport.top && rect.top < viewport.bottom)
+        return { id, offset: rect.top - viewport.top };
+    }
+    return null;
+  }
   reset() {
     for (const row of this.activeRows.values()) row.remove();
     this.activeRows.clear();
@@ -39,6 +49,8 @@ export class TranscriptView {
   }
   load(messages) {
     const pinned = this.nearBottom();
+    const readingPosition = this.container.scrollTop;
+    const anchor = pinned ? null : this.visibleHistoryAnchor();
     const previous = this.historyRows;
     this.historyRows = new Map();
     const rows = messages.map(message => {
@@ -51,5 +63,13 @@ export class TranscriptView {
     });
     this.container.replaceChildren(...rows, ...this.activeRows.values());
     if (pinned) this.container.scrollTop = this.container.scrollHeight;
+    else if (anchor) {
+      const row = this.historyRows.get(anchor.id) ?? rows[0];
+      const rect = row?.getBoundingClientRect?.();
+      const viewport = this.container.getBoundingClientRect?.();
+      this.container.scrollTop = rect && viewport
+        ? this.container.scrollTop + rect.top - viewport.top - anchor.offset
+        : readingPosition;
+    } else this.container.scrollTop = readingPosition;
   }
 }

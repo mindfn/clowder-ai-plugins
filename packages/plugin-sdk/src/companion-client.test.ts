@@ -17,6 +17,37 @@ test('audio controls expose no generic provider event or SDP operation', async (
   assert.equal('offer' in client, false);
 });
 
+test('passive bubble layout stays a bounded presentation request', async () => {
+  const calls: CompanionCommand[] = [];
+  const client = createCompanionClient({ request: async command => {
+    calls.push(command);
+    return { kind: 'layout', pet: { x: 0, y: 0 }, panel: { x: 120, y: 0, width: 240, height: 80 }, width: 360, height: 130 };
+  }, subscribe: () => () => {} });
+  await client.layout('bubble', 240, 80);
+  assert.deepEqual(calls, [{ kind: 'view.layout', panel: 'bubble', width: 240, height: 80 }]);
+});
+
+test('decision reading requests a page without a writer or owner selector', async () => {
+  const calls: CompanionCommand[] = [];
+  const client = createCompanionClient({ request: async command => {
+    calls.push(command);
+    return { kind: 'decisions', status: 'available', approvalCount: 0, needsMeCount: 0,
+      otherNeedsMeCount: 0, approvals: [], otherNeedsMe: [],
+      page: { offset: 0, limit: 10, hasMoreApprovals: false, hasMoreNeedsMe: false } };
+  }, subscribe: () => () => {} });
+  await client.readDecisions(0, 10);
+  assert.deepEqual(calls, [{ kind: 'decisions.read', offset: 0, limit: 10 }]);
+});
+
+test('F221 inspection requests a Host dialog trial without an approval payload', async () => {
+  const calls: CompanionCommand[] = [];
+  const client = createCompanionClient({ request: async command => {
+    calls.push(command); return { kind: 'decision-trial', status: 'dismissed' };
+  }, subscribe: () => () => {} });
+  await client.inspectF221('11111111-1111-4111-8111-111111111111');
+  assert.deepEqual(calls, [{ kind: 'f221.inspect', proposalId: '11111111-1111-4111-8111-111111111111' }]);
+});
+
 test('unconfirmed text is retained for an explicit retry with the same caller id', async () => {
   const calls: CompanionCommand[] = [];
   let response: CompanionReply = { kind: 'delivery', delivery: 'unconfirmed' };
