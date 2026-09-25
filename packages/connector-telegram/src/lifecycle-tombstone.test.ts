@@ -193,3 +193,66 @@ test('version 1 records without updatedAt are still readable and never swept', a
   await action.sweepNow();
   assert.equal(state.has('lifecycle/life-1'), true, 'v1 records have no updatedAt and must not be swept');
 });
+
+const RECOVERY_TEXT = '⚠️ 未能完成最新消息重读（needs_user）。请打开 Clowder AI 重试。';
+
+test('pre-history tombstone (deliveryIds only) still answers a known deliveryId as replay without effects', async () => {
+  const state = new Map<string, { revision: number; value: unknown }>();
+  const { action, calls } = harness(state);
+  // The oldest tombstones predate full-history retention: history is empty and
+  // the accepted deliveryId set is the only replay identity.
+  state.set('lifecycle/legacy', {
+    revision: 1,
+    value: {
+      version: 2, tombstone: true, history: [], deliveryIds: ['delivery-1'],
+      actorDisplayName: '砚砚', settledAt: Date.now(),
+    },
+  });
+  const effectCalls = calls.length;
+  const replayed = await action(started({ lifecycleId: 'legacy' }));
+  assert.deepEqual(replayed, { deliveryId: 'delivery-1' });
+  assert.equal(calls.length, effectCalls, 'the fallback replay answer must not re-run platform effects');
+
+  await assert.rejects(
+    action({ lifecycleId: 'legacy', deliveryId: 'delivery-9', threadId: 'thread-1', state: 'catching_up' }),
+    (error: unknown) => {
+      assert.equal((error as Error & { code?: string }).code, 'LIFECYCLE_OUT_OF_ORDER');
+      return true;
+    },
+  );
+});
+
+test('tombstone redelivery re-executes only when the pending-effect state matches the replayed event', async () => {
+  const state = new Map<string, { revision: number; value: unknown }>();
+  const { action, calls } = harness(state);
+  const settledEvent = {
+    lifecycleId: 'life-1', deliveryId: 'delivery-3', threadId: 'thread-1', state: 'settled',
+    chainDone: false, outcome: 'failed',
+  };
+  const blockedEvent = { lifecycleId: 'life-1', deliveryId: 'delivery-2', threadId: 'thread-1', state: 'blocked', reason: 'needs_user' };
+  // Crash residue on a settled tombstone: the settle effect was accepted but
+  // may never have run, so the record still carries a settled pending marker.
+  state.set('lifecycle/life-1', {
+    revision: 1,
+    value: {
+      version: 2, tombstone: true, history: [started(), blockedEvent, settledEvent],
+      deliveryIds: ['delivery-1', 'delivery-2', 'delivery-3'],
+      actorDisplayName: '砚砚', platformMessageId: 'placeholder-1', settledAt: Date.now(),
+      pendingEffect: { v: 1, state: 'settled', recoveryText: RECOVERY_TEXT },
+    },
+  });
+
+  await action(settledEvent);
+  const settlements = calls.filter(call => call[0] === 'settle');
+  assert.equal(settlements.length, 1, 'the matching settled replay re-runs the settlement once');
+  assert.equal((settlements[0][1] as Record<string, unknown>).recoveryText, RECOVERY_TEXT);
+  const record = state.get('lifecycle/life-1')?.value as Record<string, unknown>;
+  assert.equal(record.pendingEffect, undefined, 'the marker is cleared after the re-execution attempt');
+
+  // A replayed blocked event on the same tombstone has a different state than
+  // the (now cleared) marker and must not trigger any effect.
+  await action(blockedEvent);
+  assert.equal(calls.filter(call => call[0] === 'settle').length, 1);
+  assert.equal(calls.filter(call => call[0] === 'editPlaceholder').length, 0);
+  assert.equal(calls.filter(call => call[0] === 'sendRecovery').length, 0);
+});

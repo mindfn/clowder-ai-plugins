@@ -12,6 +12,7 @@ function harness(options?: { withPlaceholder?: boolean }) {
   const state = new Map<string, { revision: number; value: unknown }>();
   const writes: Array<{ key: string; value: unknown }> = [];
   const calls: unknown[][] = [];
+  const logs: unknown[][] = [];
   const context = {
     storage: {
       get: async (key: string) => state.get(key),
@@ -25,7 +26,7 @@ function harness(options?: { withPlaceholder?: boolean }) {
     threads: {
       listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
     },
-    log() { /* tests assert on calls/state, not warnings */ },
+    log(...args: unknown[]) { logs.push(args); },
   } as unknown as FeatureContext;
   const callbacks: ConnectorLifecycleCallbacks = {
     async sendPlaceholder(...args) {
@@ -40,6 +41,7 @@ function harness(options?: { withPlaceholder?: boolean }) {
     state,
     writes,
     calls,
+    logs,
     context,
     callbacks,
     action: createConnectorLifecycleAction(context, callbacks),
@@ -286,4 +288,110 @@ test('sender name resolves once per started even with several bindings', async (
   assert.equal(resolveCalls, 1, 'one lookup per started, not one per binding');
   assert.equal(sent.length, 2);
   assert.ok(sent.every(args => (args[1] as string).includes('→布偶猫')));
+});
+
+test('a throwing blocked edit during re-execution is logged and falls back to the recovery send without failing the action', async () => {
+  const h = harness();
+  await h.action(started());
+  await h.action(blocked());
+  const blockedPre = h.writes.find(write => (
+    ((write.value as Record<string, unknown>).pendingEffect as Record<string, unknown> | undefined)?.state === 'blocked'
+  ));
+  assert.ok(blockedPre);
+  h.callbacks.editPlaceholder = async (...args) => { h.calls.push(['editPlaceholder', ...args]); throw new Error('telegram timeout'); };
+  const redelivered = h.rewindTo(blockedPre);
+
+  const first = await redelivered(blocked());
+  assert.deepEqual(first, { deliveryId: 'delivery-2' }, 'a failed platform effect must not fail the redelivery');
+  const warnings = h.logs.filter(log => log[0] === 'warn' && String(log[1]).includes('blocked edit'));
+  assert.equal(warnings.length, 1, 'the swallowed edit failure is logged as a warning');
+  assert.equal((warnings[0][2] as { lifecycleId?: string }).lifecycleId, 'life-1');
+  const recoverySends = h.calls.filter(call => call[0] === 'sendRecovery');
+  assert.equal(recoverySends.length, 1, 'the unapplied edit falls back to the recovery send');
+  assert.deepEqual(recoverySends[0], ['sendRecovery', 'chat-1', RECOVERY_TEXT]);
+  assert.equal(recordOf(h).pendingEffect, undefined, 'the marker is still cleared after the attempt');
+
+  await redelivered(blocked());
+  assert.equal(h.calls.filter(call => call[0] === 'sendRecovery').length, 1, 'the cleared marker turns a further redelivery into a plain replay');
+});
+
+test('a lost marker-clear write is tolerated: the marker survives and the next redelivery re-executes once more', async () => {
+  const h = harness();
+  await h.action(started());
+  await h.action(blocked());
+  const blockedPre = h.writes.find(write => (
+    ((write.value as Record<string, unknown>).pendingEffect as Record<string, unknown> | undefined)?.state === 'blocked'
+  ));
+  assert.ok(blockedPre);
+  // Simulate the clear write being lost (e.g. storage hiccup): any write that
+  // drops the marker fails, everything else succeeds.
+  const originalSet = h.context.storage.set;
+  h.context.storage.set = async (key: string, value: unknown) => {
+    if ((value as Record<string, unknown>).pendingEffect === undefined) throw new Error('clear write lost');
+    return originalSet(key, value);
+  };
+  const redelivered = h.rewindTo(blockedPre);
+
+  await redelivered(blocked());
+  assert.equal(h.calls.filter(call => call[0] === 'editPlaceholder').length, 1);
+  assert.ok(recordOf(h).pendingEffect, 'the lost clear leaves the marker in place');
+  const clearWarnings = () => h.logs.filter(log => log[0] === 'warn' && String(log[1]).includes('pending-effect clear failed'));
+  assert.equal(clearWarnings().length, 1, 'the lost clear is logged, not thrown');
+
+  await redelivered(blocked());
+  assert.equal(h.calls.filter(call => call[0] === 'editPlaceholder').length, 2, 'a further redelivery re-executes exactly once more');
+  assert.equal(clearWarnings().length, 2, 'each lost clear is logged');
+});
+
+test('re-execution covers every binding of the thread, not just the first', async () => {
+  const state = new Map<string, { revision: number; value: unknown }>();
+  const writes: Array<{ key: string; value: unknown }> = [];
+  const calls: unknown[][] = [];
+  const context = {
+    storage: {
+      get: async (key: string) => state.get(key),
+      set: async (key: string, value: unknown) => {
+        writes.push({ key, value: structuredClone(value) });
+        const revision = (state.get(key)?.revision ?? 0) + 1;
+        state.set(key, { revision, value });
+        return { revision };
+      },
+    },
+    threads: {
+      listBindings: async () => [
+        { key: 'chat-1', threadId: 'thread-1', createdAt: 1 },
+        { key: 'chat-2', threadId: 'thread-1', createdAt: 2 },
+      ],
+    },
+    log() {},
+  } as unknown as FeatureContext;
+  const callbacks: ConnectorLifecycleCallbacks = {
+    async sendPlaceholder(...args) { calls.push(['sendPlaceholder', ...args]); return `placeholder-${calls.length}`; },
+    async editPlaceholder(...args) { calls.push(['editPlaceholder', ...args]); return true; },
+    async sendRecovery(...args) { calls.push(['sendRecovery', ...args]); },
+    async settle(input) { calls.push(['settle', input]); },
+  };
+  const action = createConnectorLifecycleAction(context, callbacks);
+  await action(started());
+  await action(blocked());
+  const blockedPre = writes.find(write => (
+    ((write.value as Record<string, unknown>).pendingEffect as Record<string, unknown> | undefined)?.state === 'blocked'
+  ));
+  assert.ok(blockedPre);
+  assert.deepEqual(Object.keys((blockedPre.value as Record<string, unknown>).platformMessageByKey as object).sort(), ['chat-1', 'chat-2']);
+  // Rewind to the blocked pre-write and redeliver with a fresh action, as the
+  // Host does after a crash.
+  const revision = (state.get(blockedPre.key)?.revision ?? 0) + 1;
+  state.set(blockedPre.key, { revision, value: structuredClone(blockedPre.value) });
+  calls.length = 0;
+  const redelivered = createConnectorLifecycleAction(context, callbacks);
+
+  await redelivered(blocked());
+  const edits = calls.filter(call => call[0] === 'editPlaceholder');
+  assert.deepEqual(edits.map(call => call[1]).sort(), ['chat-1', 'chat-2'], 'both bindings receive the re-executed edit');
+  assert.ok(edits.every(call => call[3] === RECOVERY_TEXT));
+  assert.equal(calls.filter(call => call[0] === 'sendRecovery').length, 0, 'applied edits do not fall back to a recovery send');
+
+  await redelivered(blocked());
+  assert.equal(calls.filter(call => call[0] === 'editPlaceholder').length, 2, 'a further redelivery does not duplicate the edits');
 });
