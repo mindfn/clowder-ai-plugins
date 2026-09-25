@@ -87,6 +87,16 @@ function isTelegramHtmlParseError(err: unknown): boolean {
   return desc.includes('parse entities') || desc.includes('button_data_invalid');
 }
 
+// A crash redelivery can replay an edit whose content the first attempt
+// already applied; Telegram rejects identical text with 400
+// "message is not modified". That state IS the applied edit, not a failure.
+function isTelegramNotModifiedError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { error_code?: unknown; description?: string; message?: string };
+  if (e.error_code !== 400) return false;
+  return (e.description ?? e.message ?? '').toLowerCase().includes('not modified');
+}
+
 type TelegramStartOptions = Parameters<Bot['start']>[0];
 
 interface TelegramPollingControls {
@@ -717,17 +727,22 @@ export class TelegramAdapter {
   ): Promise<boolean> {
     const truncated =
       text.length > TELEGRAM_MAX_MESSAGE_LENGTH ? `${text.slice(0, TELEGRAM_MAX_MESSAGE_LENGTH - 1)}…` : text;
-    if (this.botApiEditMessageFn) {
-      await this.botApiEditMessageFn(Number(externalChatId), Number(platformMessageId), truncated, opts);
-    } else if (opts?.parse_mode) {
-      await this.bot.api.editMessageText(
-        Number(externalChatId),
-        Number(platformMessageId),
-        truncated,
-        opts as Record<string, unknown>,
-      );
-    } else {
-      await this.bot.api.editMessageText(Number(externalChatId), Number(platformMessageId), truncated);
+    try {
+      if (this.botApiEditMessageFn) {
+        await this.botApiEditMessageFn(Number(externalChatId), Number(platformMessageId), truncated, opts);
+      } else if (opts?.parse_mode) {
+        await this.bot.api.editMessageText(
+          Number(externalChatId),
+          Number(platformMessageId),
+          truncated,
+          opts as Record<string, unknown>,
+        );
+      } else {
+        await this.bot.api.editMessageText(Number(externalChatId), Number(platformMessageId), truncated);
+      }
+    } catch (error) {
+      if (isTelegramNotModifiedError(error)) return true;
+      throw error;
     }
     return true;
   }

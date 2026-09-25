@@ -166,6 +166,19 @@ test('settle clears the consumed marker from memory and durable storage', async 
   await active.stop();
 });
 
+test('editMessage treats Telegram "message is not modified" as success', async () => {
+  const edits: unknown[][] = [];
+  const outbound = adapterWithEdits(edits);
+  outbound._injectBotApiEditMessage(async () => {
+    throw Object.assign(new Error('Bad Request: message is not modified'), {
+      error_code: 400,
+      description: 'Bad Request: message is not modified',
+    });
+  });
+  const applied = await outbound.editMessage('42', '42', 'same body');
+  assert.equal(applied, true, 'a crash-redelivery redo hitting identical content must count as applied, not fall back to a duplicate send');
+});
+
 test('pruning an expired consumed marker also removes it from durable storage', async () => {
   const consumedRemoved: unknown[][] = [];
   const persistence: InlineFinalPersistence = {
