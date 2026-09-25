@@ -12,7 +12,9 @@ test('cat-first controls stay bounded to this window and its existing conversati
   }
   for (const width of [0, -1, 100000, 200.5]) assert.equal(validateCompanionCommand({ kind: 'view.layout', panel: 'menu', width, height: 250 }), false);
   assert.equal(validateCompanionCommand({ kind: 'view.drag', phase: 'unlimited' }), false);
-  assert.equal(validateCompanionReply({ kind: 'conversation', messages: [{ id: 'real-message', role: 'user', text: '你好', name: '你' }], hasMore: false }), true);
+  assert.equal(validateCompanionCommand({ kind: 'view.layout', panel: 'bubble', width: 240, height: 80 }), true);
+  assert.equal(validateCompanionReply({ kind: 'conversation', threadTitle: '猫猫球 · 伴随对话', messages: [{ id: 'real-message', role: 'user', text: '你好', name: '你' }], hasMore: false }), true);
+  assert.equal(validateCompanionReply({ kind: 'conversation', messages: [], hasMore: false }), false);
   assert.equal(validateCompanionEvent({ kind: 'view-dismiss' }), true);
 });
 
@@ -42,11 +44,35 @@ test('wire budgets and media syntax reject malformed or oversized renderer input
 
 test('surface state preserves real actors but never leaks internal handles or raw errors', () => {
   const state = { kind: 'state', phase: 'idle', displayName: 'Companion', skin: 'cat', duty: { catId: 'deep', displayName: 'Deep' },
-    carrier: { catId: 'voice', displayName: 'Voice' }, documentsAllowed: true, toolsReady: false };
+    carrier: { catId: 'voice', displayName: 'Voice' }, documentsAllowed: true, toolsReady: false, nativeActivity: 'none' };
   assert.equal(validateCompanionReply(state), true);
+  assert.equal(validateCompanionReply({ ...state, nativeActivity: 'tool_running' }), true);
+  assert.equal(validateCompanionReply({ ...state, nativeActivity: 'busy_because_it_feels_like_it' }), false);
+  const { nativeActivity: _activity, ...withoutActivity } = state;
+  assert.equal(validateCompanionReply(withoutActivity), false);
   assert.equal(validateCompanionReply({ ...state, callId: 'private-handle' }), false);
   assert.equal(validateCompanionReply({ kind: 'error', code: 'unavailable' }), true);
   assert.equal(validateCompanionReply({ kind: 'error', code: 'unavailable', message: '/private/secret' }), false);
   assert.equal(validateCompanionEvent({ kind: 'media-stopped', reason: 'locked' }), true);
   assert.equal(validateCompanionEvent({ kind: 'media-stopped', reason: 'resume-capture' }), false);
+});
+
+test('passive decision reading has bounded pages and no renderer approval command', () => {
+  assert.equal(validateCompanionCommand({ kind: 'decisions.read', offset: 0, limit: 20 }), true);
+  assert.equal(validateCompanionCommand({ kind: 'decisions.read', offset: 0, limit: 21 }), false);
+  assert.equal(validateCompanionCommand({ kind: 'decisions.read', offset: 0, limit: 20, proposalId: 'other' }), false);
+  assert.equal(validateCompanionCommand({ kind: 'decision.approve', proposalId: 'taste-1' }), false);
+  assert.equal(validateCompanionCommand({ kind: 'f221.inspect', proposalId: '11111111-1111-4111-8111-111111111111' }), true);
+  assert.equal(validateCompanionCommand({ kind: 'f221.inspect', proposalId: '11111111-1111-4111-8111-111111111111', digest: 'forged' }), false);
+  assert.equal(validateCompanionReply({ kind: 'decision-trial', status: 'trial_confirmed' }), true);
+  assert.equal(validateCompanionReply({ kind: 'decision-trial', status: 'approved' }), false);
+  const reply = { kind: 'decisions', status: 'available', approvalCount: 1, needsMeCount: 2,
+    otherNeedsMeCount: 1, approvals: [{ proposalId: 'taste-1', sourceFeatureId: 'F221',
+      summary: '品味提案', resolution: 'open', materializationState: 'not_started', linkedNeedsMe: true }],
+    otherNeedsMe: [{ subjectRef: 'task:one', summary: '看看任务' }],
+    page: { offset: 0, limit: 20, hasMoreApprovals: false, hasMoreNeedsMe: false } };
+  assert.equal(validateCompanionReply(reply), true);
+  assert.equal(validateCompanionReply({ ...reply, approvalCount: 0, approvals: reply.approvals, token: 'secret' }), false);
+  assert.equal(validateCompanionReply({ ...reply, status: 'unavailable', approvalCount: null,
+    needsMeCount: null, otherNeedsMeCount: null, approvals: [], otherNeedsMe: [] }), true);
 });

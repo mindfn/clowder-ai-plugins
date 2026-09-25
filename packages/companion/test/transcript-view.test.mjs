@@ -46,3 +46,40 @@ test('refresh reuses unchanged history rows and preserves repeated text with dis
   assert.equal(container.children[0], original);
   assert.equal(container.children.length, 2);
 });
+
+test('history refresh restores an older reading position when DOM replacement resets scroll', () => {
+  const { view, container } = fixture();
+  const replaceChildren = container.replaceChildren.bind(container);
+  container.replaceChildren = (...rows) => { replaceChildren(...rows); container.scrollTop = 0; };
+  container.scrollHeight = 1000;
+  container.clientHeight = 100;
+  container.scrollTop = 240;
+  view.load([message('old'), message('new')]);
+  assert.equal(container.scrollTop, 240);
+});
+
+test('a full 32-message window keeps the same visible message when its oldest row rotates out', () => {
+  const { view, container } = fixture();
+  container.clientHeight = 100;
+  container.getBoundingClientRect = () => ({ top: 0, bottom: 100 });
+  container.ownerDocument.createElement = () => ({
+    dataset: {}, textContent: '',
+    getBoundingClientRect() {
+      const top = container.children.indexOf(this) * 40 - container.scrollTop;
+      return { top, bottom: top + 40 };
+    },
+  });
+  container.replaceChildren = (...rows) => {
+    container.children = rows;
+    container.scrollHeight = rows.length * 40;
+    container.scrollTop = 0;
+  };
+  const ids = Array.from({ length: 32 }, (_, index) => `m${index + 1}`);
+  view.load(ids.map(id => message(id)));
+  container.scrollTop = 200;
+  const firstVisible = () => container.children.find(row => row.getBoundingClientRect().bottom > 0);
+  assert.equal(firstVisible().dataset.messageId, 'm6');
+  view.load([...ids.slice(1), 'm33'].map(id => message(id)));
+  assert.equal(firstVisible().dataset.messageId, 'm6');
+  assert.equal(firstVisible().getBoundingClientRect().top, 0);
+});

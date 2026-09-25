@@ -15,11 +15,11 @@ importers:
   packages/companion:
     devDependencies:
       '@clowder-ai/plugin-contract':
-        specifier: 0.1.0-beta.17
-        version: 0.1.0-beta.17
+        specifier: 0.1.0-beta.22
+        version: link:../plugin-contract
       '@clowder-ai/plugin-sdk':
-        specifier: 0.1.0-beta.13
-        version: 0.1.0-beta.13
+        specifier: 0.2.0-beta.5
+        version: link:../plugin-sdk
 
   packages/connector-dingtalk:
     dependencies:
@@ -494,16 +494,8 @@ packages:
     resolution: {integrity: sha512-i6M6d6bEhL97gVsop2V5hG0lGMrmOVc2/0+7PAHxLhFCg2zIZ0LCd8HDJRYrD3E7QpcezgRzUiWbzRTMnTGdYA==}
     engines: {node: '>=20.0.0'}
 
-  '@clowder-ai/plugin-contract@0.1.0-beta.17':
-    resolution: {integrity: sha512-aujUPSkIAfs3HYc/ubbQVXwxPMG4i3KUTXLi4Y3mokqpOvwgwNz5zz1mJgiiImh3RyojIf+p156b+KSoQ12ZXw==}
-    engines: {node: '>=20.0.0'}
-
   '@clowder-ai/plugin-contract@0.1.0-beta.9':
     resolution: {integrity: sha512-YPpJguiVd0qdoOX8HdU26k36b+58zj0V9w02z/GpRnF8WBubfwuoZ5RBQPE2gf5qwSQwCl/+WVRhsMG/i65Epg==}
-    engines: {node: '>=20.0.0'}
-
-  '@clowder-ai/plugin-sdk@0.1.0-beta.13':
-    resolution: {integrity: sha512-MwgSp3/pselTMCaOpeIW1wb2Gi8pAiB4SZlAZQdHToCQCZg1qgZ1fPd89V0boo6nc9B8Et5rCLGqDiJMFo0Nrw==}
     engines: {node: '>=20.0.0'}
 
   '@clowder-ai/plugin-sdk@0.1.0-beta.5':
@@ -1414,19 +1406,10 @@ snapshots:
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
 
-  '@clowder-ai/plugin-contract@0.1.0-beta.17':
-    dependencies:
-      ajv: 8.20.0
-      ajv-formats: 3.0.1(ajv@8.20.0)
-
   '@clowder-ai/plugin-contract@0.1.0-beta.9':
     dependencies:
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
-
-  '@clowder-ai/plugin-sdk@0.1.0-beta.13':
-    dependencies:
-      '@clowder-ai/plugin-contract': 0.1.0-beta.17
 
   '@clowder-ai/plugin-sdk@0.1.0-beta.5':
     dependencies:

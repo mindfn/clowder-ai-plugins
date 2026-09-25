@@ -265,6 +265,25 @@
         {
           "type": "object",
           "properties": {
+            "kind": { "const": "decisions.read" },
+            "offset": { "type": "integer", "minimum": 0 },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 20 }
+          },
+          "required": ["kind", "offset", "limit"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "f221.inspect" },
+            "proposalId": { "type": "string", "format": "uuid" }
+          },
+          "required": ["kind", "proposalId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
             "kind": {
               "const": "view.resize"
             },
@@ -287,9 +306,11 @@
             "panel": {
               "enum": [
                 "none",
+                "bubble",
                 "actions",
                 "menu",
-                "chat"
+                "chat",
+                "decisions"
               ]
             },
             "width": {
@@ -414,6 +435,9 @@
         },
         "toolsReady": {
           "type": "boolean"
+        },
+        "nativeActivity": {
+          "enum": ["none", "reasoning", "tool_running"]
         }
       },
       "required": [
@@ -424,8 +448,71 @@
         "duty",
         "carrier",
         "documentsAllowed",
-        "toolsReady"
+        "toolsReady",
+        "nativeActivity"
       ],
+      "additionalProperties": false
+    },
+    "CompanionDecisions": {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "decisions" },
+        "status": { "enum": ["available", "unavailable"] },
+        "approvalCount": { "type": ["integer", "null"], "minimum": 0 },
+        "needsMeCount": { "type": ["integer", "null"], "minimum": 0 },
+        "otherNeedsMeCount": { "type": ["integer", "null"], "minimum": 0 },
+        "approvals": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "properties": {
+              "proposalId": { "type": "string", "minLength": 1, "maxLength": 200 },
+              "sourceFeatureId": { "type": "string", "minLength": 1, "maxLength": 40 },
+              "summary": { "type": "string", "maxLength": 500 },
+              "resolution": { "enum": ["open", "accepted", "rejected", "closed_without_decision"] },
+              "materializationState": { "enum": ["not_started", "outcome_unknown", "in_progress", "succeeded", "failed"] },
+              "linkedNeedsMe": { "type": "boolean" }
+            },
+            "required": ["proposalId", "sourceFeatureId", "summary", "resolution", "materializationState", "linkedNeedsMe"],
+            "additionalProperties": false
+          }
+        },
+        "otherNeedsMe": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "properties": {
+              "subjectRef": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "summary": { "type": "string", "maxLength": 500 }
+            },
+            "required": ["subjectRef", "summary"],
+            "additionalProperties": false
+          }
+        },
+        "page": {
+          "type": "object",
+          "properties": {
+            "offset": { "type": "integer", "minimum": 0 },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 20 },
+            "hasMoreApprovals": { "type": "boolean" },
+            "hasMoreNeedsMe": { "type": "boolean" }
+          },
+          "required": ["offset", "limit", "hasMoreApprovals", "hasMoreNeedsMe"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["kind", "status", "approvalCount", "needsMeCount", "otherNeedsMeCount", "approvals", "otherNeedsMe", "page"],
+      "additionalProperties": false
+    },
+    "CompanionDecisionTrial": {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "decision-trial" },
+        "status": { "enum": ["dismissed", "trial_confirmed", "stale", "unavailable"] }
+      },
+      "required": ["kind", "status"],
       "additionalProperties": false
     },
     "CompanionErrorCode": {
@@ -457,6 +544,12 @@
         },
         {
           "$ref": "#/$defs/CompanionState"
+        },
+        {
+          "$ref": "#/$defs/CompanionDecisions"
+        },
+        {
+          "$ref": "#/$defs/CompanionDecisionTrial"
         },
         {
           "type": "object",
@@ -604,6 +697,11 @@
             "kind": {
               "const": "conversation"
             },
+            "threadTitle": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
             "messages": {
               "type": "array",
               "maxItems": 32,
@@ -644,6 +742,7 @@
           },
           "required": [
             "kind",
+            "threadTitle",
             "messages",
             "hasMore"
           ],

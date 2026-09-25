@@ -38,8 +38,10 @@ export function createCompanionClient(bridge: CompanionSurfaceBridge) {
       invoke({ kind: 'screen.frame', selectionId, frame }, 'ok'),
     screenClose: () => invoke({ kind: 'screen.close' }, 'ok'),
     openConversation: () => invoke({ kind: 'conversation.open' }, 'navigation'),
+    readDecisions: (offset = 0, limit = 20) => invoke({ kind: 'decisions.read', offset, limit }, 'decisions'),
+    inspectF221: (proposalId: string) => invoke({ kind: 'f221.inspect', proposalId }, 'decision-trial'),
     resize: (expanded: boolean) => invoke({ kind: 'view.resize', expanded }, 'ok'),
-    layout: (panel: 'none' | 'actions' | 'menu' | 'chat', width: number, height: number) =>
+    layout: (panel: Extract<CompanionCommand, { kind: 'view.layout' }>['panel'], width: number, height: number) =>
       invoke({ kind: 'view.layout', panel, width, height }, 'layout'),
     drag: (phase: 'start' | 'end') => invoke({ kind: 'view.drag', phase }, 'ok'),
     hide: () => invoke({ kind: 'view.hide' }, 'ok'),
