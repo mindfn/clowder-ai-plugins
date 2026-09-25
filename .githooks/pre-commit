@@ -1,27 +1,32 @@
 #!/bin/bash
-# .githooks/pre-commit — mirror-main write guard (clowder-ai-plugins)
+# .githooks/pre-commit — mirror-main guard (clowder-ai-plugins).
 #
-# main 是上游镜像（origin = zts212653/clowder-ai-plugins），特性工作一律
-# 走 feature 分支 + worktree。在本机 main 上提交的风险不是"污染上游"
-# （main 有分支保护，push 会被拒），而是本地 commit 在下一次
-# `git fetch && git reset --hard origin/main` 同步时被无声抹掉。
+# In a contributor clone, main mirrors the upstream (origin is the upstream
+# repository) and is re-synced with `git fetch && git reset --hard origin/main`;
+# a commit made on it is silently lost at the next sync. Feature work belongs
+# on a feature branch + worktree.
 #
-# 2026-09-21 一夜三次现场（LL-105 复发 ×3），全是人恰好撞见、无机器拦。
-#
-# 规则：当前分支为 main 且 origin 指向上游镜像 → 拒绝提交。
-# 其它克隆（如 origin = 个人 fork）不受影响。
-# 可被 --no-verify 绕过；防的是肌肉记忆，不是恶意。
+# Rule: refuse a commit when the current branch is main and origin is exactly
+# the upstream repository (compared as a host/owner/repo identity). Any other
+# origin — a fork, a lookalike, a local path, none at all — is left alone.
+# `git commit --no-verify` bypasses it: this guards against muscle memory, not
+# malice.
+
+HOOK_DIR=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=guard-lib.sh
+if ! . "$HOOK_DIR/guard-lib.sh" 2>/dev/null; then
+  echo "pre-commit: guard-lib.sh is missing next to this hook; re-run pnpm guards:install." >&2
+  exit 1
+fi
 
 BRANCH=$(git branch --show-current 2>/dev/null)
 [ "$BRANCH" = "main" ] || exit 0
 
 ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
-case "$ORIGIN_URL" in
-  *zts212653/clowder-ai-plugins*) ;;
-  *) exit 0 ;;
-esac
+ORIGIN=$(guard_repo_identity "$ORIGIN_URL" || true)
+[ "$ORIGIN" = "$GUARD_UPSTREAM_IDENTITY" ] || exit 0
 
-echo "pre-commit: refusing to commit on mirror main (origin is the upstream mirror)." >&2
+echo "pre-commit: refusing to commit on main: origin is the upstream (${GUARD_UPSTREAM_IDENTITY}) and main mirrors it." >&2
 echo "  Feature work belongs on a feature branch + worktree." >&2
 echo "  If you really mean it: git commit --no-verify" >&2
 exit 1

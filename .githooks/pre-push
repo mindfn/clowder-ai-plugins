@@ -1,28 +1,45 @@
 #!/bin/bash
-# .githooks/pre-push — fork-only push guard (clowder-ai-plugins)
+# .githooks/pre-push — push-destination guard (clowder-ai-plugins).
 #
-# origin 是上游镜像（origin = zts212653/clowder-ai-plugins），fork 是个人
-# fork（fork = mindfn/clowder-ai-plugins）。特性分支只允许推到 fork；
-# 2026-09 已连续三次误推到上游 origin——缺的是机器闸门，不是注意力。
+# A contributor clone keeps the upstream as `origin` and pushes feature
+# branches to the contributor's own fork. This hook refuses any push whose
+# destination is not the one repository configured for this clone:
 #
-# 规则：push 的 remote URL 必须包含 mindfn/clowder-ai-plugins（覆盖
-# https/ssh 各种写法），否则拒绝。参数缺失一律 fail closed。
-# 可被 --no-verify 绕过；防的是肌肉记忆，不是恶意。
+#   git config clowder.guard.pushRepo host/owner/repo   (set by pnpm guards:install)
+#
+# The destination is compared as an exact host/owner/repo identity, so
+# lookalike names and hosts do not pass. An unset or unreadable setting refuses
+# every push (fail closed), as do missing hook arguments.
+# `git push --no-verify` bypasses it: this guards against muscle memory, not
+# malice.
 
-REMOTE="$1"
-URL="$2"
-
-if [ -z "${REMOTE}" ] || [ -z "${URL}" ]; then
-  echo "pre-push: missing remote name/url args; refusing to guess." >&2
-  echo "  Feature branches must be pushed to the fork: mindfn/clowder-ai-plugins." >&2
+HOOK_DIR=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=guard-lib.sh
+if ! . "$HOOK_DIR/guard-lib.sh" 2>/dev/null; then
+  echo "pre-push: guard-lib.sh is missing next to this hook; re-run pnpm guards:install." >&2
   exit 1
 fi
 
-case "$URL" in
-  *mindfn/clowder-ai-plugins*) exit 0 ;;
-esac
+REMOTE="${1:-}"
+URL="${2:-}"
+if [ -z "$REMOTE" ] || [ -z "$URL" ]; then
+  echo "pre-push: missing remote name or url; refusing to guess." >&2
+  exit 1
+fi
+
+CONFIGURED=$(git config --get clowder.guard.pushRepo 2>/dev/null || true)
+if [ -z "$CONFIGURED" ] || ! ALLOWED=$(guard_normalize_identity "$CONFIGURED"); then
+  echo "pre-push: this clone has no readable push destination (git config clowder.guard.pushRepo='${CONFIGURED}'); refusing." >&2
+  echo "  Set it with: pnpm guards:install <your fork URL or host/owner/repo>" >&2
+  exit 1
+fi
+
+TARGET=$(guard_repo_identity "$URL" || true)
+if [ -n "$TARGET" ] && [ "$TARGET" = "$ALLOWED" ]; then
+  exit 0
+fi
 
 echo "pre-push: refusing to push to '${REMOTE}' (${URL})." >&2
-echo "  Feature branches must be pushed to the fork: mindfn/clowder-ai-plugins." >&2
+echo "  This clone only pushes to ${ALLOWED} (git config clowder.guard.pushRepo)." >&2
 echo "  If you really mean it: git push --no-verify" >&2
 exit 1
