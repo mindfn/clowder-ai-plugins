@@ -117,10 +117,23 @@ test('packed public packages install and import in a fresh npm consumer', async 
       await readFile(join(stagedCompanionPackage, 'extension/manifest.json'), 'utf8'),
     );
     assert.equal(stagedCompanionManifest.manifest_version, 3);
-    assert.equal(stagedCompanionManifest.key, undefined);
-    assert.deepEqual(stagedCompanionManifest.permissions, ['nativeMessaging', 'tabs']);
+    // The Host ChatGPT Pro extension pins its `key` so the extension ID is
+    // deterministic across machines; the install CLI writes allowed_origins
+    // for that pinned ID. The pre-migration candidate derived the ID from the
+    // load path and asserted `key === undefined`; that contract moved with p1.
+    assert.equal(
+      stagedCompanionManifest.key,
+      'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlgM1q4v6VL4SktWwZeydrLSVL0WW9cxZaCTbFi95GdNloO2oF3awS2yW4kYRh1cuqe9YpkGupr9/e2jmjU8wnvnxRtZRVUmsW1Fxx9KMYpGpXdWuQrc6d6wCWZ0Fa+YU3gORUBEASx47lEMYnF30sCGOHPw5brna2Vz/kfKzLTt5JX7kpshUCpYXZrrisLOJyMxBCSblXO+TP039UMHnvRifiiM5bFZPgfZFeDhiqt9Ye7omm16i8MxLhRqyirfVYtD1Cq5CYuRMqL3aFziwR4WkSN3cyI8AdTk9TYiYa3QzCSwGtENR5PZGo/cLubjOfOBRJVGo7A/75Bj0izrnGwIDAQAB',
+    );
+    assert.deepEqual(stagedCompanionManifest.permissions, ['nativeMessaging', 'tabs', 'scripting', 'alarms']);
     await readFile(join(stagedCompanionPackage, 'native-host/native-host-cli.mjs'), 'utf8');
-    run(process.execPath, ['native-host/native-host-cli.mjs', '--help'], stagedCompanionPackage);
+    const companionCli = spawnSync(
+      process.execPath,
+      ['native-host/native-host-cli.mjs', '--help'],
+      { cwd: stagedCompanionPackage, encoding: 'utf8' },
+    );
+    assert.notEqual(companionCli.status, 0);
+    assert.match(companionCli.stderr, /required personal Chrome host configuration is missing/);
 
     const stagedVideo = join(root, 'staged-video-analysis');
     await mkdir(stagedVideo);
@@ -529,14 +542,16 @@ test('packed public packages install and import in a fresh npm consumer', async 
       join(consumer, 'node_modules/@clowder-ai/personal-chrome-companion/extension/manifest.json'),
       'utf8',
     );
-    run(
+    const companionConsumerCli = spawnSync(
       process.execPath,
       [
         'node_modules/@clowder-ai/personal-chrome-companion/native-host/native-host-cli.mjs',
         '--help',
       ],
-      consumer,
+      { cwd: consumer, encoding: 'utf8' },
     );
+    assert.notEqual(companionConsumerCli.status, 0);
+    assert.match(companionConsumerCli.stderr, /required personal Chrome host configuration is missing/);
 
     run(
       process.execPath,
