@@ -169,6 +169,7 @@ test('lifecycle registers the Telegram placeholder before final delivery and cle
     async editMessage(...args: unknown[]) { calls.push(['edit', ...args]); return true; },
     async sendReply(...args: unknown[]) { calls.push(['final', ...args]); },
     async clearInlinePlaceholder(...args: unknown[]) { calls.push(['clear', ...args]); },
+    async clearInlineFinalConsumed() {},
   } as unknown as TelegramAdapter;
   const entrypoint = createTelegramPluginModule(() => ({
     outbound, async start() {}, async stop() {}, isPolling: () => true,

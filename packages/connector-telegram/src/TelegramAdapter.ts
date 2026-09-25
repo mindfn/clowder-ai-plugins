@@ -777,6 +777,17 @@ export class TelegramAdapter {
     return this.consumedInlineFinal.has(inlineFinalKey(lifecycleId, externalChatId));
   }
 
+  /**
+   * Settle ends the lifecycle, closing the delivered-but-not-yet-settled window
+   * the consumed marker protects; the SDK allows only one started per
+   * lifecycle, so without this the marker would linger until the 24h TTL.
+   * Best-effort persisted removal, mirroring registerInlinePlaceholder.
+   */
+  clearInlineFinalConsumed(lifecycleId: string, externalChatId: string): void {
+    const key = inlineFinalKey(lifecycleId, externalChatId);
+    if (this.consumedInlineFinal.delete(key)) this.persistRemoveConsumed(lifecycleId, externalChatId);
+  }
+
   /** Seed a pending inline-final recovered from durable storage after a plugin restart. */
   restoreInlinePlaceholder(lifecycleId: string, externalChatId: string, platformMessageId: string, registeredAt: number): void {
     this.pendingInlineFinalByLifecycle.set(inlineFinalKey(lifecycleId, externalChatId), { externalChatId, platformMessageId, registeredAt });
@@ -831,7 +842,12 @@ export class TelegramAdapter {
   private pruneConsumedInlineFinals(): void {
     const cutoff = Date.now() - CONSUMED_INLINE_FINAL_TTL_MS;
     for (const [key, consumedAt] of this.consumedInlineFinal) {
-      if (consumedAt < cutoff) this.consumedInlineFinal.delete(key);
+      if (consumedAt >= cutoff) continue;
+      this.consumedInlineFinal.delete(key);
+      // Keep durable storage in step with the in-memory TTL eviction; the
+      // hydration sweep would only catch it at the next restart.
+      const sep = key.lastIndexOf(':');
+      if (sep > 0) this.persistRemoveConsumed(key.slice(0, sep), key.slice(sep + 1));
     }
   }
 

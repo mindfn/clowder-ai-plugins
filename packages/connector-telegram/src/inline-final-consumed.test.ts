@@ -119,8 +119,7 @@ test('register persists and consume removes the (lifecycle, chat)-keyed inline-f
   assert.deepEqual(consumedRemoved, [['life-1', '42']], 'a fresh started clears the persisted consumed marker');
 });
 
-test('restart hydrates the persisted inline-final so the final still edits the original placeholder', async () => {
-  const state = new Map<string, { revision: number; value: unknown }>();
+test('restart hydrates the persisted inline-final so the final still edits the original placeholder', async () => {  const state = new Map<string, { revision: number; value: unknown }>();
   const registeredAt = Date.now();
   // Legacy single-segment key (pre-multi-binding): hydration still works
   // because the record value carries its externalChatId.
@@ -142,4 +141,44 @@ test('restart hydrates the persisted inline-final so the final still edits the o
   assert.deepEqual(edits, [[42, 77, '【Cat🐱】\nfinal body', undefined]]);
   assert.equal(state.has('tg-inline-final:life-expired'), false, 'expired entry must be swept during hydration');
   await active.stop();
+});
+
+test('settle clears the consumed marker from memory and durable storage', async () => {
+  const consumedRemoved: unknown[][] = [];
+  const persistence: InlineFinalPersistence = {
+    async save() {}, async remove() {}, async saveConsumed() {},
+    async removeConsumed(lifecycleId, externalChatId) { consumedRemoved.push([lifecycleId, externalChatId]); },
+  };
+  const edits: unknown[][] = [];
+  const outbound = adapterWithEdits(edits, persistence);
+  const entrypoint = createTelegramPluginModule(() => ({
+    outbound, async start() {}, async stop() {}, isPolling: () => true,
+  }) as TelegramConnectorRuntime<TelegramAdapter>);
+  const active = await entrypoint.create(manifest).start(hostWithState(new Map(), '42'));
+  const action = active.actions['host.messaging.lifecycle']!;
+  await action({ lifecycleId: 'life-1', deliveryId: 'delivery-1', threadId: 'thread-1', state: 'started', presentation: presentation() });
+  await active.actions['telegram.outbound']?.({ ...delivery(), lifecycleId: 'life-1' });
+  assert.equal(outbound.isInlineFinalConsumed('life-1', '42'), true);
+  await action({ lifecycleId: 'life-1', deliveryId: 'delivery-2', threadId: 'thread-1', state: 'settled', chainDone: true, outcome: 'completed' });
+  assert.equal(outbound.isInlineFinalConsumed('life-1', '42'), false, 'settle must clear the consumed marker');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(consumedRemoved, [['life-1', '42']], 'settle must remove the persisted consumed marker');
+  await active.stop();
+});
+
+test('pruning an expired consumed marker also removes it from durable storage', async () => {
+  const consumedRemoved: unknown[][] = [];
+  const persistence: InlineFinalPersistence = {
+    async save() {}, async remove() {}, async saveConsumed() {},
+    async removeConsumed(lifecycleId, externalChatId) { consumedRemoved.push([lifecycleId, externalChatId]); },
+  };
+  const outbound = adapterWithEdits([], persistence);
+  outbound.restoreInlineFinalConsumed('life-old', '42', Date.now() - 25 * 60 * 60 * 1000);
+  assert.equal(outbound.isInlineFinalConsumed('life-old', '42'), true);
+  // Registration triggers the prune sweep; the expired marker must leave
+  // both the in-memory map and durable storage.
+  outbound.registerInlinePlaceholder('42', '99', 'life-2');
+  assert.equal(outbound.isInlineFinalConsumed('life-old', '42'), false, 'expired marker must be pruned from memory');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(consumedRemoved, [['life-old', '42']], 'expired marker must be pruned from storage');
 });

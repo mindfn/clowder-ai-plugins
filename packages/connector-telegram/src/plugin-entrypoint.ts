@@ -410,13 +410,20 @@ export function createTelegramPluginModule(
             runtime.outbound.registerInlinePlaceholder(externalConversationId, platformMessageId, lifecycleId);
           },
           settle: async ({ externalConversationId, platformMessageId, recoveryText, event }) => {
-            if (runtime !== undefined && platformMessageId !== undefined) {
-              if (recoveryText !== undefined) return;
-              await runtime.outbound.clearInlinePlaceholder(
-                externalConversationId,
-                platformMessageId,
-                event.lifecycleId,
-              );
+            if (runtime !== undefined) {
+              // The lifecycle is over; the consumed marker only protected the
+              // delivered-but-not-yet-settled window. The SDK allows one
+              // started per lifecycle, so without this the marker would wait
+              // for the 24h TTL sweep.
+              runtime.outbound.clearInlineFinalConsumed(event.lifecycleId, externalConversationId);
+              if (platformMessageId !== undefined) {
+                if (recoveryText !== undefined) return;
+                await runtime.outbound.clearInlinePlaceholder(
+                  externalConversationId,
+                  platformMessageId,
+                  event.lifecycleId,
+                );
+              }
             }
           },
         });
