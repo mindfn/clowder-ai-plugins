@@ -126,6 +126,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlgM1q4v6VL4SktWwZeydrLSVL0WW9cxZaCTbFi95GdNloO2oF3awS2yW4kYRh1cuqe9YpkGupr9/e2jmjU8wnvnxRtZRVUmsW1Fxx9KMYpGpXdWuQrc6d6wCWZ0Fa+YU3gORUBEASx47lEMYnF30sCGOHPw5brna2Vz/kfKzLTt5JX7kpshUCpYXZrrisLOJyMxBCSblXO+TP039UMHnvRifiiM5bFZPgfZFeDhiqt9Ye7omm16i8MxLhRqyirfVYtD1Cq5CYuRMqL3aFziwR4WkSN3cyI8AdTk9TYiYa3QzCSwGtENR5PZGo/cLubjOfOBRJVGo7A/75Bj0izrnGwIDAQAB',
     );
     assert.deepEqual(stagedCompanionManifest.permissions, ['nativeMessaging', 'tabs', 'scripting', 'alarms']);
+    assert.deepEqual(stagedCompanionManifest.host_permissions, ['https://chatgpt.com/c/*']);
     await readFile(join(stagedCompanionPackage, 'native-host/native-host-cli.mjs'), 'utf8');
     const companionCli = spawnSync(
       process.execPath,
