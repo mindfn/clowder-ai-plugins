@@ -208,3 +208,82 @@ test('v2 records without the marker (written before this change) still load and 
   assert.deepEqual(replay, { deliveryId: 'delivery-2' });
   assert.equal(h.calls.filter(call => call[0] === 'sendRecovery').length, 0, 'no marker, no re-execution');
 });
+
+test('flush on a new transition clears the marker before the new pre-write', async () => {
+  const h = harness();
+  await h.action(started());
+  await h.action(blocked());
+  const blockedPre = h.writes.find(write => (
+    ((write.value as Record<string, unknown>).pendingEffect as Record<string, unknown> | undefined)?.state === 'blocked'
+  ));
+  assert.ok(blockedPre);
+  const resumed = h.rewindTo(blockedPre);
+  await resumed(settled());
+  // Between the flushed effect and the settled pre-write there must be a
+  // write that clears the marker; otherwise a failed settled pre-write would
+  // leave it in place and every Host retry would re-run the flush.
+  const flushClear = h.writes.find(write => {
+    const value = write.value as Record<string, unknown>;
+    return value.pendingEffect === undefined
+      && Array.isArray(value.history)
+      && (value.history as unknown[]).length === 2;
+  });
+  assert.ok(flushClear, 'the flush must clear the pending-effect marker');
+  assert.equal(recordOf(h).pendingEffect, undefined);
+});
+
+test('a throwing listBindings surfaces as a coded PLUGIN_INTERNAL error, on the normal and the re-execute path', async () => {
+  const h = harness();
+  await h.action(started());
+  await h.action(blocked());
+  const blockedPre = h.writes.find(write => (
+    ((write.value as Record<string, unknown>).pendingEffect as Record<string, unknown> | undefined)?.state === 'blocked'
+  ));
+  assert.ok(blockedPre);
+  h.context.threads.listBindings = async () => { throw new Error('redis down'); };
+  // New-transition path.
+  await assert.rejects(h.action(settled()), (error: unknown) => (
+    (error as { code?: string }).code === 'PLUGIN_INTERNAL'
+    && (error as Error).message.includes('binding listing failed')
+  ));
+  // Crash-redelivery re-execute path.
+  const redelivered = h.rewindTo(blockedPre);
+  await assert.rejects(redelivered(blocked()), (error: unknown) => (
+    (error as { code?: string }).code === 'PLUGIN_INTERNAL'
+    && (error as Error).message.includes('binding listing failed')
+  ));
+});
+
+test('sender name resolves once per started even with several bindings', async () => {
+  const state = new Map<string, { revision: number; value: unknown }>();
+  let resolveCalls = 0;
+  const context = {
+    storage: {
+      get: async (key: string) => state.get(key),
+      set: async (key: string, value: unknown) => {
+        const revision = (state.get(key)?.revision ?? 0) + 1;
+        state.set(key, { revision, value });
+        return { revision };
+      },
+    },
+    threads: {
+      listBindings: async () => [
+        { key: 'chat-1', threadId: 'thread-1', createdAt: 1 },
+        { key: 'chat-2', threadId: 'thread-1', createdAt: 2 },
+      ],
+    },
+    log() {},
+  } as unknown as FeatureContext;
+  const sent: unknown[][] = [];
+  const action = createConnectorLifecycleAction(context, {
+    async sendPlaceholder(...args) { sent.push(args); return `placeholder-${sent.length}`; },
+    async editPlaceholder() { return true; },
+    async sendRecovery() {},
+    async settle() {},
+    async resolveReplySenderName() { resolveCalls += 1; return '布偶猫'; },
+  });
+  await action({ ...started(), replyTo: 'host-message-1' });
+  assert.equal(resolveCalls, 1, 'one lookup per started, not one per binding');
+  assert.equal(sent.length, 2);
+  assert.ok(sent.every(args => (args[1] as string).includes('→布偶猫')));
+});

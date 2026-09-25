@@ -206,12 +206,32 @@ export function createConnectorLifecycleAction(
     }
   };
 
+  // Binding listing feeds every side-effect path; a failure here must
+  // surface as a coded lifecycle error, not a bare storage/transport
+  // exception escaping the action boundary.
+  const listThreadBindings = async (threadId: string) => {
+    let listed: Awaited<ReturnType<typeof context.threads.listBindings>>;
+    try {
+      listed = await context.threads.listBindings();
+    } catch (error) {
+      throw lifecycleError(
+        'PLUGIN_INTERNAL',
+        `lifecycle thread ${threadId} binding listing failed: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+    }
+    return listed.filter(candidate => candidate.threadId === threadId);
+  };
+
   // A redelivery (or a later transition arriving first) can find a record
   // whose accepted side effect never ran because the process died between the
   // pre-write and the platform call. Re-run exactly that effect through the
-  // same callbacks and per-binding fallbacks as the original path. Callers
-  // clear the marker afterwards, so one re-execution per detected-pending
-  // redelivery cannot storm.
+  // same callbacks and per-binding fallbacks as the original path.
+  //
+  // The marker is cleared after the ATTEMPT, not after confirmed success:
+  // runEffectSafely swallows per-binding failures (they are logged), and an
+  // unbounded "retry until applied" loop would duplicate-send on every
+  // redelivery. One bounded re-execution per redelivery beats both a lost
+  // recovery hint and an effect storm.
   const reexecutePendingEffect = async (stored: StoredLifecycle): Promise<void> => {
     const pending = stored.pendingEffect;
     if (pending === undefined) return;
@@ -221,7 +241,7 @@ export function createConnectorLifecycleAction(
       ),
     );
     if (sourceEvent === undefined) return;
-    const bindings = (await context.threads.listBindings()).filter(candidate => candidate.threadId === sourceEvent.threadId);
+    const bindings = await listThreadBindings(sourceEvent.threadId);
     // Legacy records carry a single platformMessageId; with exactly one
     // matching binding it can only have belonged to that binding.
     let messageIds: Record<string, string> = { ...(stored.platformMessageByKey ?? {}) };
@@ -293,7 +313,8 @@ export function createConnectorLifecycleAction(
       const tombstoneDecision = decideLifecycleTransition(stored.history, event);
       if (tombstoneDecision.kind === 'replay') {
         // Crash residue: the accepted side effect may never have run. Re-run
-        // it once for this redelivery, then clear the marker.
+        // it once for this redelivery, then clear the marker after the
+        // attempt (see reexecutePendingEffect for why not after success).
         if (stored.pendingEffect !== undefined && stored.pendingEffect.state === event.state) {
           await reexecutePendingEffect(stored);
           await clearPendingEffect(stateKey, stored);
@@ -315,7 +336,8 @@ export function createConnectorLifecycleAction(
     const decision = decideLifecycleTransition(history, event);
     if (decision.kind === 'replay') {
       // Crash residue, pre-settle flavor: the blocked recovery effect was
-      // accepted but may never have run. Re-run it once, then clear the marker.
+      // accepted but may never have run. Re-run it once, then clear the
+      // marker after the attempt.
       if (stored?.pendingEffect !== undefined && stored.pendingEffect.state === event.state) {
         await reexecutePendingEffect(stored);
         await clearPendingEffect(stateKey, stored);
@@ -328,16 +350,20 @@ export function createConnectorLifecycleAction(
 
     // A new transition arrives while an older one still has an unconfirmed
     // side effect (the crash window, or a lost post-write): this write would
-    // overwrite the marker, so flush the pending effect first. An occasional
-    // duplicate beats a lost recovery hint.
+    // overwrite the marker, so flush the pending effect first and clear the
+    // marker. Without the clear, a failed new pre-write would leave the old
+    // marker in place and every Host retry of this delivery would re-run the
+    // already-flushed effect again. An occasional duplicate beats a lost
+    // recovery hint.
     if (stored?.pendingEffect !== undefined) {
       await reexecutePendingEffect(stored);
+      await clearPendingEffect(stateKey, stored);
     }
 
     // One thread can carry several provider bindings (the Host allows
     // rebinding different external chats onto the same thread), so every
     // matching binding receives the outbound effects.
-    const bindings = (await context.threads.listBindings()).filter(candidate => candidate.threadId === event.threadId);
+    const bindings = await listThreadBindings(event.threadId);
     if (bindings.length === 0) {
       throw lifecycleError('PLUGIN_INTERNAL', `lifecycle thread ${event.threadId} has no provider binding`);
     }
@@ -409,27 +435,30 @@ export function createConnectorLifecycleAction(
       }
     }
 
+    // Resolve the sender name once, outside the per-binding loop: it only
+    // depends on event.replyTo, never on the binding, so N bindings must not
+    // trigger N lookups. Resolve before the safely() wrapper: a throwing
+    // callback must not take down the whole placeholder send. resolve() in
+    // reply-sender-map already swallows storage errors; this catch covers
+    // every other failure reason.
+    let senderName: string | undefined;
+    if (event.state === 'started' && event.replyTo !== undefined && callbacks.resolveReplySenderName !== undefined) {
+      try {
+        senderName = await callbacks.resolveReplySenderName(event.replyTo);
+      } catch (error) {
+        context.log('warn', 'Connector lifecycle sender name resolution failed', {
+          lifecycleId: event.lifecycleId,
+          errorName: error instanceof Error ? error.name : 'unknown',
+        });
+        senderName = undefined;
+      }
+    }
+    const senderSuffix = senderName ? `→${senderName}` : '';
+
     for (const binding of bindings) {
       let platformMessageId: string | undefined = messageIds[binding.key];
       switch (event.state) {
       case 'started':
-        // Resolve the sender name before the safely() wrapper: a throwing
-        // callback must not take down the whole placeholder send. resolve()
-        // in reply-sender-map already swallows storage errors; this catch
-        // covers every other failure reason.
-        let senderName: string | undefined;
-        if (event.replyTo !== undefined && callbacks.resolveReplySenderName !== undefined) {
-          try {
-            senderName = await callbacks.resolveReplySenderName(event.replyTo);
-          } catch (error) {
-            context.log('warn', 'Connector lifecycle sender name resolution failed', {
-              lifecycleId: event.lifecycleId,
-              errorName: error instanceof Error ? error.name : 'unknown',
-            });
-            senderName = undefined;
-          }
-        }
-        const senderSuffix = senderName ? `→${senderName}` : '';
         await safely('placeholder send', async () => {
           const displayName = actorDisplayName || '猫猫';
           const placeholderLine = event.placeholderLine ?? STARTED_TEXT;
