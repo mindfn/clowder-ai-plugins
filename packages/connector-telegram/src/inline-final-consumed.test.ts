@@ -166,6 +166,33 @@ test('settle clears the consumed marker from memory and durable storage', async 
   await active.stop();
 });
 
+test('settle carrying a recovery text still clears the consumed marker', async () => {
+  const consumedRemoved: unknown[][] = [];
+  const persistence: InlineFinalPersistence = {
+    async save() {}, async remove() {}, async saveConsumed() {},
+    async removeConsumed(lifecycleId, externalChatId) { consumedRemoved.push([lifecycleId, externalChatId]); },
+  };
+  const edits: unknown[][] = [];
+  const outbound = adapterWithEdits(edits, persistence);
+  const entrypoint = createTelegramPluginModule(() => ({
+    outbound, async start() {}, async stop() {}, isPolling: () => true,
+  }) as TelegramConnectorRuntime<TelegramAdapter>);
+  const active = await entrypoint.create(manifest).start(hostWithState(new Map(), '42'));
+  const action = active.actions['host.messaging.lifecycle']!;
+  await action({ lifecycleId: 'life-1', deliveryId: 'delivery-1', threadId: 'thread-1', state: 'started', presentation: presentation() });
+  await active.actions['telegram.outbound']?.({ ...delivery(), lifecycleId: 'life-1' });
+  assert.equal(outbound.isInlineFinalConsumed('life-1', '42'), true);
+  // A blocked transition makes the settlement carry the recovery text; the
+  // early return that skips the placeholder clear must not skip the consumed
+  // marker clear — the lifecycle is over either way.
+  await action({ lifecycleId: 'life-1', deliveryId: 'delivery-2', threadId: 'thread-1', state: 'blocked', reason: 'needs_user' });
+  await action({ lifecycleId: 'life-1', deliveryId: 'delivery-3', threadId: 'thread-1', state: 'settled', chainDone: true, outcome: 'failed' });
+  assert.equal(outbound.isInlineFinalConsumed('life-1', '42'), false, 'settle with a recovery text must still clear the consumed marker');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(consumedRemoved, [['life-1', '42']], 'settle with a recovery text must remove the persisted consumed marker');
+  await active.stop();
+});
+
 test('editMessage treats Telegram "message is not modified" as success', async () => {
   const edits: unknown[][] = [];
   const outbound = adapterWithEdits(edits);

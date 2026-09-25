@@ -305,6 +305,56 @@ test('zero bindings on the flush path keeps the marker so a later redelivery sti
   assert.equal(recordOf(h).pendingEffect, undefined);
 });
 
+test('zero bindings on the pre-settle replay path keeps the marker so a later redelivery still recovers the hint', async () => {
+  const h = harness();
+  await h.action(started());
+  await h.action(blocked());
+  const blockedPre = h.writes.find(write => (
+    ((write.value as Record<string, unknown>).pendingEffect as Record<string, unknown> | undefined)?.state === 'blocked'
+  ));
+  assert.ok(blockedPre);
+  const redelivered = h.rewindTo(blockedPre);
+
+  // The thread temporarily has no provider binding during the crash
+  // redelivery: the replay is a no-op and must not clear the marker,
+  // otherwise the recovery hint would be lost for good once the binding
+  // returns.
+  h.context.threads.listBindings = async () => [];
+  assert.deepEqual(await redelivered(blocked()), { deliveryId: 'delivery-2' });
+  assert.deepEqual(recordOf(h).pendingEffect, { v: 1, state: 'blocked', recoveryText: RECOVERY_TEXT });
+  assert.equal(h.calls.length, 0, 'the replay attempted nothing without a binding');
+
+  // Binding returns; the Host redelivers the same blocked event. The
+  // recovery effect runs exactly once and the marker clears.
+  h.context.threads.listBindings = async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }];
+  assert.deepEqual(await redelivered(blocked()), { deliveryId: 'delivery-2' });
+  assert.equal(h.calls.filter(call => call[0] === 'editPlaceholder').length, 1);
+  assert.equal(h.calls.filter(call => call[0] === 'sendRecovery').length, 0);
+  assert.equal(recordOf(h).pendingEffect, undefined);
+});
+
+test('zero bindings on the tombstone replay path keeps the marker so a later redelivery still re-runs settle', async () => {
+  const h = harness();
+  await h.action(started());
+  await h.action(blocked());
+  await h.action(settled());
+  const settledPre = h.writes.find(write => (
+    ((write.value as Record<string, unknown>).pendingEffect as Record<string, unknown> | undefined)?.state === 'settled'
+  ));
+  assert.ok(settledPre);
+  const redelivered = h.rewindTo(settledPre);
+
+  h.context.threads.listBindings = async () => [];
+  assert.deepEqual(await redelivered(settled()), { deliveryId: 'delivery-3' });
+  assert.deepEqual(recordOf(h).pendingEffect, { v: 1, state: 'settled', recoveryText: RECOVERY_TEXT });
+  assert.equal(h.calls.length, 0, 'the replay attempted nothing without a binding');
+
+  h.context.threads.listBindings = async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }];
+  assert.deepEqual(await redelivered(settled()), { deliveryId: 'delivery-3' });
+  assert.equal(h.calls.filter(call => call[0] === 'settle').length, 1);
+  assert.equal(recordOf(h).pendingEffect, undefined);
+});
+
 test('a throwing listBindings surfaces as a coded PLUGIN_INTERNAL error, on the normal and the re-execute path', async () => {
   const h = harness();
   await h.action(started());
