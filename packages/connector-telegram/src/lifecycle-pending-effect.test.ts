@@ -211,7 +211,7 @@ test('v2 records without the marker (written before this change) still load and 
   assert.equal(h.calls.filter(call => call[0] === 'sendRecovery').length, 0, 'no marker, no re-execution');
 });
 
-test('flush on a new transition clears the marker before the new pre-write', async () => {
+test('flush on a new transition clears the marker so a failed pre-write does not re-run the flushed effect', async () => {
   const h = harness();
   await h.action(started());
   await h.action(blocked());
@@ -220,17 +220,88 @@ test('flush on a new transition clears the marker before the new pre-write', asy
   ));
   assert.ok(blockedPre);
   const resumed = h.rewindTo(blockedPre);
+
+  // The settled pre-write keeps failing (the write-ahead write for the new
+  // marker is rejected twice per delivery: the pre-write retries once
+  // internally), so the Host retries the same settled delivery. The flush
+  // clear is what bounds the re-run: without it every retry would flush the
+  // blocked effect again.
+  let settledPreFailures = 0;
+  const originalSet = h.context.storage.set;
+  h.context.storage.set = async (key: string, value: unknown) => {
+    const record = value as Record<string, unknown>;
+    if ((record.pendingEffect as Record<string, unknown> | undefined)?.state === 'settled') {
+      settledPreFailures += 1;
+      if (settledPreFailures <= 4) throw new Error('settled pre-write failed');
+    }
+    return originalSet(key, value);
+  };
+
+  await assert.rejects(resumed(settled()), /settled pre-write failed/);
+  await assert.rejects(resumed(settled()), /settled pre-write failed/);
   await resumed(settled());
-  // Between the flushed effect and the settled pre-write there must be a
-  // write that clears the marker; otherwise a failed settled pre-write would
-  // leave it in place and every Host retry would re-run the flush.
-  const flushClear = h.writes.find(write => {
-    const value = write.value as Record<string, unknown>;
-    return value.pendingEffect === undefined
-      && Array.isArray(value.history)
-      && (value.history as unknown[]).length === 2;
-  });
-  assert.ok(flushClear, 'the flush must clear the pending-effect marker');
+  assert.equal(
+    h.calls.filter(call => call[0] === 'editPlaceholder').length,
+    1,
+    'the flushed blocked recovery runs exactly once across the Host retries',
+  );
+  assert.equal(h.calls.filter(call => call[0] === 'sendRecovery').length, 0);
+  const record = recordOf(h);
+  assert.equal(record.tombstone, true);
+  assert.equal(record.pendingEffect, undefined);
+});
+
+test('pre-settle replay with a mismatched state neither re-runs the effect nor clears the marker', async () => {
+  const h = harness();
+  await h.action(started());
+  await h.action(blocked());
+  const blockedPre = h.writes.find(write => (
+    ((write.value as Record<string, unknown>).pendingEffect as Record<string, unknown> | undefined)?.state === 'blocked'
+  ));
+  assert.ok(blockedPre);
+  const resumed = h.rewindTo(blockedPre);
+
+  // The marker is blocked; a replayed started event has a different state, so
+  // it must neither re-run an effect nor clear the marker.
+  await resumed(started());
+  assert.equal(h.calls.length, 0, 'a state-mismatched replay re-runs nothing');
+  assert.deepEqual(recordOf(h).pendingEffect, { v: 1, state: 'blocked', recoveryText: RECOVERY_TEXT });
+
+  // The matching blocked replay re-runs the recovery exactly once and clears.
+  await resumed(blocked());
+  assert.equal(h.calls.filter(call => call[0] === 'editPlaceholder').length, 1);
+  assert.equal(recordOf(h).pendingEffect, undefined);
+});
+
+test('zero bindings on the flush path keeps the marker so a later redelivery still recovers the hint', async () => {
+  const h = harness();
+  await h.action(started());
+  await h.action(blocked());
+  const blockedPre = h.writes.find(write => (
+    ((write.value as Record<string, unknown>).pendingEffect as Record<string, unknown> | undefined)?.state === 'blocked'
+  ));
+  assert.ok(blockedPre);
+  const resumed = h.rewindTo(blockedPre);
+
+  // The thread temporarily has no provider binding: the flush is a no-op and
+  // the delivery is rejected. The marker must survive, otherwise the recovery
+  // hint would be lost for good once the binding returns.
+  h.context.threads.listBindings = async () => [];
+  await assert.rejects(resumed(settled()), (error: unknown) => (
+    (error as { code?: string }).code === 'PLUGIN_INTERNAL'
+    && (error as Error).message.includes('has no provider binding')
+  ));
+  assert.deepEqual(recordOf(h).pendingEffect, { v: 1, state: 'blocked', recoveryText: RECOVERY_TEXT });
+  assert.equal(h.calls.length, 0, 'the flush attempted nothing without a binding');
+
+  // Binding returns; the Host redelivers the same settled event. The blocked
+  // recovery runs exactly once and the settle completes.
+  h.context.threads.listBindings = async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }];
+  await resumed(settled());
+  assert.equal(h.calls.filter(call => call[0] === 'editPlaceholder').length, 1);
+  assert.equal(h.calls.filter(call => call[0] === 'sendRecovery').length, 0);
+  assert.equal(h.calls.filter(call => call[0] === 'settle').length, 1);
+  assert.equal(recordOf(h).tombstone, true);
   assert.equal(recordOf(h).pendingEffect, undefined);
 });
 
@@ -254,6 +325,7 @@ test('a throwing listBindings surfaces as a coded PLUGIN_INTERNAL error, on the 
     (error as { code?: string }).code === 'PLUGIN_INTERNAL'
     && (error as Error).message.includes('binding listing failed')
   ));
+  assert.deepEqual(recordOf(h).pendingEffect, { v: 1, state: 'blocked', recoveryText: RECOVERY_TEXT }, 'a failed re-execute keeps the marker');
 });
 
 test('sender name resolves once per started even with several bindings', async () => {
@@ -341,6 +413,44 @@ test('a lost marker-clear write is tolerated: the marker survives and the next r
   await redelivered(blocked());
   assert.equal(h.calls.filter(call => call[0] === 'editPlaceholder').length, 2, 'a further redelivery re-executes exactly once more');
   assert.equal(clearWarnings().length, 2, 'each lost clear is logged');
+});
+
+test('a lost settle marker-clear write is tolerated: the marker survives and a further redelivery re-runs settle once more', async () => {
+  const h = harness();
+  await h.action(started());
+  await h.action(blocked());
+  await h.action(settled());
+  const settledPre = h.writes.find(write => (
+    ((write.value as Record<string, unknown>).pendingEffect as Record<string, unknown> | undefined)?.state === 'settled'
+  ));
+  assert.ok(settledPre);
+  // Simulate the post-settle clear write being lost (e.g. storage hiccup):
+  // any write that drops the marker fails, everything else succeeds.
+  const originalSet = h.context.storage.set;
+  h.context.storage.set = async (key: string, value: unknown) => {
+    if ((value as Record<string, unknown>).pendingEffect === undefined) throw new Error('clear write lost');
+    return originalSet(key, value);
+  };
+  const redelivered = h.rewindTo(settledPre);
+
+  await redelivered(settled());
+  assert.equal(h.calls.filter(call => call[0] === 'settle').length, 1);
+  assert.ok(recordOf(h).pendingEffect, 'the lost clear leaves the settled marker in place');
+  const clearWarnings = () => h.logs.filter(log => log[0] === 'warn' && String(log[1]).includes('pending-effect clear failed'));
+  assert.equal(clearWarnings().length, 1, 'the lost clear is logged, not thrown');
+
+  await redelivered(settled());
+  assert.equal(h.calls.filter(call => call[0] === 'settle').length, 2, 'a further redelivery re-runs settle exactly once more');
+  assert.equal(clearWarnings().length, 2, 'each lost clear is logged');
+
+  // Once the clear can land again, one more redelivery re-runs settle a final
+  // time and clears the marker; after that, redeliveries answer plain replay.
+  h.context.storage.set = originalSet;
+  await redelivered(settled());
+  assert.equal(h.calls.filter(call => call[0] === 'settle').length, 3, 'the redelivery whose clear lands re-runs settle once more');
+  assert.equal(recordOf(h).pendingEffect, undefined);
+  await redelivered(settled());
+  assert.equal(h.calls.filter(call => call[0] === 'settle').length, 3, 'no effect once the marker is cleared');
 });
 
 test('re-execution covers every binding of the thread, not just the first', async () => {

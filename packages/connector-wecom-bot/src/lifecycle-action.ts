@@ -39,7 +39,9 @@ export interface ConnectorLifecycleCallbacks {
  * A platform side effect that was accepted into state but not yet confirmed
  * complete. Written with the pre-write, cleared by the post-write once the
  * effect ran; a redelivery that finds the marker re-executes the effect once
- * more (at-least-once is preferred over losing a recovery hint).
+ * more. The recovery hint is best-effort at-least-once: per-binding failures
+ * are swallowed, so if an edit and its fallback recovery send both fail, the
+ * hint is lost for good.
  */
 interface PendingEffect {
   readonly v: 1;
@@ -232,15 +234,20 @@ export function createConnectorLifecycleAction(
   // unbounded "retry until applied" loop would duplicate-send on every
   // redelivery. One bounded re-execution per redelivery beats both a lost
   // recovery hint and an effect storm.
-  const reexecutePendingEffect = async (stored: StoredLifecycle): Promise<void> => {
+  //
+  // Returns whether the effect was actually attempted on at least one
+  // binding. A thread with no matching binding is not an attempt: the caller
+  // must keep the marker so a redelivery after the binding returns can still
+  // recover the hint.
+  const reexecutePendingEffect = async (stored: StoredLifecycle): Promise<boolean> => {
     const pending = stored.pendingEffect;
-    if (pending === undefined) return;
+    if (pending === undefined) return false;
     const sourceEvent = [...stored.history].reverse().find(
       (candidate): candidate is Extract<LifecycleEvent, { readonly state: 'blocked' | 'settled' }> => (
         candidate.state === pending.state
       ),
     );
-    if (sourceEvent === undefined) return;
+    if (sourceEvent === undefined) return false;
     const bindings = await listThreadBindings(sourceEvent.threadId);
     // Legacy records carry a single platformMessageId; with exactly one
     // matching binding it can only have belonged to that binding.
@@ -284,6 +291,7 @@ export function createConnectorLifecycleAction(
         }));
       }
     }
+    return bindings.length > 0;
   };
 
   const clearPendingEffect = async (stateKey: string, stored: StoredLifecycle): Promise<void> => {
@@ -313,11 +321,14 @@ export function createConnectorLifecycleAction(
       const tombstoneDecision = decideLifecycleTransition(stored.history, event);
       if (tombstoneDecision.kind === 'replay') {
         // Crash residue: the accepted side effect may never have run. Re-run
-        // it once for this redelivery, then clear the marker after the
-        // attempt (see reexecutePendingEffect for why not after success).
+        // it once for this redelivery. The marker is cleared only when the
+        // effect was actually attempted: with no binding there is nothing to
+        // retry, and a later redelivery must still be able to recover the
+        // hint (see reexecutePendingEffect for why not after success).
         if (stored.pendingEffect !== undefined && stored.pendingEffect.state === event.state) {
-          await reexecutePendingEffect(stored);
-          await clearPendingEffect(stateKey, stored);
+          if (await reexecutePendingEffect(stored)) {
+            await clearPendingEffect(stateKey, stored);
+          }
         }
         return { deliveryId: event.deliveryId };
       }
@@ -336,11 +347,13 @@ export function createConnectorLifecycleAction(
     const decision = decideLifecycleTransition(history, event);
     if (decision.kind === 'replay') {
       // Crash residue, pre-settle flavor: the blocked recovery effect was
-      // accepted but may never have run. Re-run it once, then clear the
-      // marker after the attempt.
+      // accepted but may never have run. Re-run it once. The marker is
+      // cleared only when the effect was actually attempted: with no binding
+      // a later redelivery must still be able to recover the hint.
       if (stored?.pendingEffect !== undefined && stored.pendingEffect.state === event.state) {
-        await reexecutePendingEffect(stored);
-        await clearPendingEffect(stateKey, stored);
+        if (await reexecutePendingEffect(stored)) {
+          await clearPendingEffect(stateKey, stored);
+        }
       }
       return { deliveryId: event.deliveryId };
     }
@@ -351,13 +364,17 @@ export function createConnectorLifecycleAction(
     // A new transition arrives while an older one still has an unconfirmed
     // side effect (the crash window, or a lost post-write): this write would
     // overwrite the marker, so flush the pending effect first and clear the
-    // marker. Without the clear, a failed new pre-write would leave the old
-    // marker in place and every Host retry of this delivery would re-run the
-    // already-flushed effect again. An occasional duplicate beats a lost
-    // recovery hint.
+    // marker. The marker is cleared only when the flush was actually
+    // attempted on at least one binding: with no binding the flush is a
+    // no-op and clearing here would lose the recovery hint for good once
+    // the zero-binding throw below rejects this delivery. Without the clear,
+    // a failed new pre-write would leave the old marker in place and every
+    // Host retry of this delivery would re-run the already-flushed effect
+    // again. An occasional duplicate beats a lost recovery hint.
     if (stored?.pendingEffect !== undefined) {
-      await reexecutePendingEffect(stored);
-      await clearPendingEffect(stateKey, stored);
+      if (await reexecutePendingEffect(stored)) {
+        await clearPendingEffect(stateKey, stored);
+      }
     }
 
     // One thread can carry several provider bindings (the Host allows

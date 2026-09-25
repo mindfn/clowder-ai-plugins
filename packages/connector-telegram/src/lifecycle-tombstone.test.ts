@@ -199,12 +199,15 @@ const RECOVERY_TEXT = '⚠️ 未能完成最新消息重读（needs_user）。�
 test('pre-history tombstone (deliveryIds only) still answers a known deliveryId as replay without effects', async () => {
   const state = new Map<string, { revision: number; value: unknown }>();
   const { action, calls } = harness(state);
-  // The oldest tombstones predate full-history retention: history is empty and
-  // the accepted deliveryId set is the only replay identity.
+  // The oldest tombstones predate full-history retention, but real v2
+  // tombstones always kept the settled event in history; the accepted
+  // deliveryId set remains the replay identity for deliveries predating it.
   state.set('lifecycle/legacy', {
     revision: 1,
     value: {
-      version: 2, tombstone: true, history: [], deliveryIds: ['delivery-1'],
+      version: 2, tombstone: true,
+      history: [{ lifecycleId: 'legacy', deliveryId: 'delivery-3', threadId: 'thread-1', state: 'settled', chainDone: false, outcome: 'failed' }],
+      deliveryIds: ['delivery-1', 'delivery-2', 'delivery-3'],
       actorDisplayName: '砚砚', settledAt: Date.now(),
     },
   });
@@ -242,15 +245,23 @@ test('tombstone redelivery re-executes only when the pending-effect state matche
     },
   });
 
+  // While the settled marker is still pending, a replayed blocked event has a
+  // different state: it must neither re-run an effect nor clear the marker.
+  await action(blockedEvent);
+  assert.equal(calls.filter(call => call[0] === 'settle').length, 0);
+  assert.equal(calls.filter(call => call[0] === 'editPlaceholder').length, 0);
+  assert.equal(calls.filter(call => call[0] === 'sendRecovery').length, 0);
+  let record = state.get('lifecycle/life-1')?.value as Record<string, unknown>;
+  assert.deepEqual(record.pendingEffect, { v: 1, state: 'settled', recoveryText: RECOVERY_TEXT });
+
   await action(settledEvent);
   const settlements = calls.filter(call => call[0] === 'settle');
   assert.equal(settlements.length, 1, 'the matching settled replay re-runs the settlement once');
   assert.equal((settlements[0][1] as Record<string, unknown>).recoveryText, RECOVERY_TEXT);
-  const record = state.get('lifecycle/life-1')?.value as Record<string, unknown>;
+  record = state.get('lifecycle/life-1')?.value as Record<string, unknown>;
   assert.equal(record.pendingEffect, undefined, 'the marker is cleared after the re-execution attempt');
 
-  // A replayed blocked event on the same tombstone has a different state than
-  // the (now cleared) marker and must not trigger any effect.
+  // The blocked replay arrives again after the marker cleared: still nothing.
   await action(blockedEvent);
   assert.equal(calls.filter(call => call[0] === 'settle').length, 1);
   assert.equal(calls.filter(call => call[0] === 'editPlaceholder').length, 0);

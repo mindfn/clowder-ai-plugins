@@ -202,3 +202,18 @@ test('a 409 polling conflict closes the old provider session before bounded retr
   assert.ok(entries.warn.some(entry => String(entry.at(-1)).includes('409 conflict')));
   await subject.stopPolling();
 });
+
+test('editMessage swallows only the not-modified 400; any other 400 propagates to the caller fallback', async () => {
+  const { logger } = recordingLogger();
+  const subject = new TelegramAdapter('123456:abcdefghij_ABC-123', logger);
+  const notModified = Object.assign(new Error('message is not modified'), { error_code: 400, description: 'Bad Request: message is not modified' });
+  const notFound = Object.assign(new Error('message to edit not found'), { error_code: 400, description: 'Bad Request: message to edit not found' });
+  let next: Error = notModified;
+  subject._injectBotApiEditMessage(async () => { throw next; });
+
+  assert.equal(await subject.editMessage('123', '456', 'same text'), true, 'not-modified means the edit already applied');
+  next = notFound;
+  await assert.rejects(subject.editMessage('123', '456', 'new text'), (error: unknown) => (
+    (error as Error).message.includes('message to edit not found')
+  ));
+});
