@@ -13,7 +13,7 @@ function run(command, args, cwd) {
   return result.stdout;
 }
 
-test('packs only the public companion closure and exposes a non-installing helper CLI', async () => {
+test('packs only the public companion closure and ships the install-host CLI in the artifact', async () => {
   const temporary = await mkdtemp(join(tmpdir(), 'f247-companion-pack-'));
   try {
     const output = run(
