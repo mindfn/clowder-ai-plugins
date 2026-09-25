@@ -204,7 +204,12 @@ export function createXiaoyiPluginModule(createRuntime: RuntimeFactory = createX
                   });
                 }
               }
-              if (delivered === 0 && firstFailure !== undefined) throw firstFailure;
+              if (delivered === 0) {
+                if (firstFailure !== undefined) throw firstFailure;
+                throw new Error(
+                  'XiaoYi outbound delivery failed for all bindings (provider did not report an error)',
+                );
+              }
             },
           },
           dispose: () => runtime.stop(),

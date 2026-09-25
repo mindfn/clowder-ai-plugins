@@ -392,7 +392,12 @@ export function createFeishuPluginModule(
                   });
                 }
               }
-              if (delivered === 0 && firstFailure !== undefined) throw firstFailure;
+              if (delivered === 0) {
+                if (firstFailure !== undefined) throw firstFailure;
+                throw new Error(
+                  'Feishu outbound delivery failed for all bindings (provider did not report an error)',
+                );
+              }
             },
             'feishu.webhook': async candidate => webhookHttpResponse(
               await runtime.handleWebhook({ body: forwardedWebhookBody(candidate) }),

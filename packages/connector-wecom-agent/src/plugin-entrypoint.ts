@@ -278,7 +278,12 @@ export function createWeComAgentPluginModule(createRuntime: RuntimeFactory = cre
                   });
                 }
               }
-              if (delivered === 0 && firstFailure !== undefined) throw firstFailure;
+              if (delivered === 0) {
+                if (firstFailure !== undefined) throw firstFailure;
+                throw new Error(
+                  'WeCom agent outbound delivery failed for all bindings (provider did not report an error)',
+                );
+              }
             },
             'wecom-agent.webhook': async candidate => webhookHttpResponse(
               await runtime.handleWebhook(forwardedWebhookInput(candidate)),

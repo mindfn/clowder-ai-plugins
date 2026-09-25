@@ -4,9 +4,9 @@ import test from 'node:test';
 import type { ModulePluginHostShape } from '@clowder-ai/plugin-sdk';
 import { parse } from 'yaml';
 
-import { createTelegramPluginModule } from './plugin-entrypoint.js';
-import type { TelegramAdapter } from './TelegramAdapter.js';
-import type { TelegramConnectorRuntime } from './runtime.js';
+import { createXiaoyiPluginModule } from './plugin-entrypoint.js';
+import type { XiaoyiAdapter } from './XiaoyiAdapter.js';
+import type { XiaoyiConnectorRuntime } from './runtime.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
 
@@ -24,7 +24,7 @@ function delivery() {
 
 function multiBindingHost(bindings: Array<{ key: string; threadId: string }>, warnings: unknown[][]) {
   return {
-    config: { get: async () => undefined }, secrets: { get: async () => 'bot-token' },
+    config: { get: async () => 'ak' }, secrets: { get: async () => 'sk' },
     storage: {} as never, tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: {
@@ -43,24 +43,27 @@ function failingOutbound(sends: unknown[][], failingChats: Set<string>) {
       const chatId = args[0];
       if (typeof chatId === 'string' && failingChats.has(chatId)) throw new Error(`chat ${chatId} is down`);
     },
-    async sendRichMessage() {}, async sendMedia() {},
-  } as unknown as TelegramAdapter;
+    async onDeliveryBatchDone() {},
+  } as unknown as XiaoyiAdapter;
+}
+
+function startModule(outbound: XiaoyiAdapter, bindings: Array<{ key: string; threadId: string }>, warnings: unknown[][]) {
+  const entrypoint = createXiaoyiPluginModule(() => ({ outbound, async start() {}, async stop() {} }) as XiaoyiConnectorRuntime<XiaoyiAdapter>);
+  return entrypoint.create(manifest).start(multiBindingHost(bindings, warnings));
 }
 
 test('multi-binding outbound delivers to the healthy chat when one binding send fails', async () => {
   const sends: unknown[][] = [];
   const warnings: unknown[][] = [];
   const outbound = failingOutbound(sends, new Set(['chat-bad']));
-  const entrypoint = createTelegramPluginModule(() => ({ outbound, async start() {}, async stop() {} }) as TelegramConnectorRuntime<TelegramAdapter>);
-  const host = multiBindingHost(
-    [{ key: 'chat-good', threadId: 'thread-1' }, { key: 'chat-bad', threadId: 'thread-1' }],
-    warnings,
-  );
-  const active = await entrypoint.create(manifest).start(host);
-  await active.actions['telegram.outbound']?.(delivery());
+  const active = await startModule(outbound, [
+    { key: 'chat-good', threadId: 'thread-1' },
+    { key: 'chat-bad', threadId: 'thread-1' },
+  ], warnings);
+  await active.actions['xiaoyi.outbound']?.(delivery());
   const goodSends = sends.filter(args => args[0] === 'chat-good');
   assert.equal(goodSends.length, 1, 'the healthy chat must receive exactly one delivery');
-  assert.deepEqual(goodSends[0], ['chat-good', '【Cat🐱】\nhello']);
+  assert.deepEqual(goodSends[0], ['chat-good', '【Cat🐱】\nhello', undefined]);
   assert.equal(sends.filter(args => args[0] === 'chat-bad').length, 1, 'the failing chat is attempted once');
   const bindingFailures = warnings.filter(args => args[0] === 'warn' && String(args[1]).includes('one binding failed'));
   assert.equal(bindingFailures.length, 1);
@@ -72,14 +75,12 @@ test('multi-binding outbound rejects only when every binding send fails', async 
   const sends: unknown[][] = [];
   const warnings: unknown[][] = [];
   const outbound = failingOutbound(sends, new Set(['chat-bad', 'chat-worse']));
-  const entrypoint = createTelegramPluginModule(() => ({ outbound, async start() {}, async stop() {} }) as TelegramConnectorRuntime<TelegramAdapter>);
-  const host = multiBindingHost(
-    [{ key: 'chat-bad', threadId: 'thread-1' }, { key: 'chat-worse', threadId: 'thread-1' }],
-    warnings,
-  );
-  const active = await entrypoint.create(manifest).start(host);
+  const active = await startModule(outbound, [
+    { key: 'chat-bad', threadId: 'thread-1' },
+    { key: 'chat-worse', threadId: 'thread-1' },
+  ], warnings);
   await assert.rejects(
-    async () => active.actions['telegram.outbound']?.(delivery()),
+    async () => active.actions['xiaoyi.outbound']?.(delivery()),
     /chat chat-bad is down/,
   );
   assert.equal(sends.length, 2, 'every binding is still attempted');
@@ -91,11 +92,9 @@ test('single-binding outbound send failure still rejects the action', async () =
   const sends: unknown[][] = [];
   const warnings: unknown[][] = [];
   const outbound = failingOutbound(sends, new Set(['chat-bad']));
-  const entrypoint = createTelegramPluginModule(() => ({ outbound, async start() {}, async stop() {} }) as TelegramConnectorRuntime<TelegramAdapter>);
-  const host = multiBindingHost([{ key: 'chat-bad', threadId: 'thread-1' }], warnings);
-  const active = await entrypoint.create(manifest).start(host);
+  const active = await startModule(outbound, [{ key: 'chat-bad', threadId: 'thread-1' }], warnings);
   await assert.rejects(
-    async () => active.actions['telegram.outbound']?.(delivery()),
+    async () => active.actions['xiaoyi.outbound']?.(delivery()),
     /chat chat-bad is down/,
   );
   assert.equal(sends.length, 1);
@@ -110,14 +109,12 @@ test('outbound rejects with a synthesized error when the provider throws undefin
       sends.push(args);
       throw undefined;
     },
-    async sendRichMessage() {}, async sendMedia() {},
-  } as unknown as TelegramAdapter;
-  const entrypoint = createTelegramPluginModule(() => ({ outbound, async start() {}, async stop() {} }) as TelegramConnectorRuntime<TelegramAdapter>);
-  const host = multiBindingHost([{ key: 'chat-bad', threadId: 'thread-1' }], warnings);
-  const active = await entrypoint.create(manifest).start(host);
+    async onDeliveryBatchDone() {},
+  } as unknown as XiaoyiAdapter;
+  const active = await startModule(outbound, [{ key: 'chat-bad', threadId: 'thread-1' }], warnings);
   await assert.rejects(
-    async () => active.actions['telegram.outbound']?.(delivery()),
-    /Telegram outbound delivery failed for all bindings \(provider did not report an error\)/,
+    async () => active.actions['xiaoyi.outbound']?.(delivery()),
+    /XiaoYi outbound delivery failed for all bindings \(provider did not report an error\)/,
   );
   assert.equal(sends.length, 1);
   await active.stop();
