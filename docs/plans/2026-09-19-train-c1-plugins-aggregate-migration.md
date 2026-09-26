@@ -269,11 +269,13 @@ Publishing is automated: on a push to `main` that touches a public package, Cont
 `next`, and fails if an already-published version packs to different bytes. A version is therefore taken as soon
 as it lands on `main` (#58 put companion `0.1.0-alpha.4` on `main` at 08:31Z on 2026-09-23; CI published it at
 08:38Z), and a published version never gets new bytes — which is why this PR bumps companion to
-`0.1.0-alpha.6` and genoffice-docx to `0.1.0-alpha.2` — #59 took
-`0.1.0-alpha.5` on 2026-09-25 (merged 09:56Z, published to npm from main), so this PR's companion content ships
-as `0.1.0-alpha.6`.
+`0.1.0-alpha.9` and genoffice-docx to `0.1.0-alpha.2` — #59 took
+`0.1.0-alpha.5` on 2026-09-25 (merged 09:56Z, published to npm from main) and #60–#62 then took
+`0.1.0-alpha.6`–`0.1.0-alpha.8` (the 2026-09-26 sync of `origin/main` verified this against
+`https://registry.npmjs.org/@clowder-ai%2fcompanion`), so this PR's companion content ships
+as `0.1.0-alpha.9`.
 
-Every version this PR claims is provisional: companion `0.1.0-alpha.6`, genoffice-docx `0.1.0-alpha.2`,
+Every version this PR claims is provisional: companion `0.1.0-alpha.9`, genoffice-docx `0.1.0-alpha.2`,
 video-analysis `0.1.0-alpha.2`, plugin-contract `0.1.0-beta.23`, plugin-sdk `0.2.0-beta.6`, and the first version
 of each package this PR adds. Right before merging, a version is free only if it is absent from
 `https://registry.npmjs.org` **and** not claimed by `main`'s `package.json` or catalog; if either check fails,
