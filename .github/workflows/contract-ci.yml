@@ -21,6 +21,7 @@ on:
       - 'packages/connector-weixin/**'
       - 'packages/connector-xiaoyi/**'
       - 'packages/enterprise-workflow/**'
+      - 'packages/personal-chrome-companion/**'
       - 'packages/feishu-meeting-intake/**'
       - 'packages/video-analysis/**'
       - 'packages/video-generation/**'
@@ -238,6 +239,9 @@ jobs:
       - name: Build enterprise workflow package
         run: pnpm --filter @clowder-ai/enterprise-workflow build
 
+      - name: Build personal Chrome companion package
+        run: pnpm --filter @clowder-ai/personal-chrome-companion build
+
       - name: Build companion package
         run: pnpm --filter @clowder-ai/companion build
 
@@ -277,6 +281,12 @@ jobs:
         uses: ./.github/actions/publish-prerelease
         with:
           package-directory: packages/enterprise-workflow
+          npm-token: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish personal Chrome companion prerelease
+        uses: ./.github/actions/publish-prerelease
+        with:
+          package-directory: packages/personal-chrome-companion
           npm-token: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish Telegram connector prerelease
