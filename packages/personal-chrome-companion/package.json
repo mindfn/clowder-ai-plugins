@@ -12,7 +12,9 @@
     "./protocol": {
       "types": "./dist/protocol.d.ts",
       "import": "./dist/protocol.js"
-    }
+    },
+    "./manifest": "./plugin.yaml",
+    "./native-host/install-host": "./native-host/install-host.mjs"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -23,6 +25,8 @@
     "dist",
     "extension",
     "native-host",
+    "plugin.yaml",
+    "npm-shrinkwrap.json",
     "README.md"
   ],
   "engines": {
@@ -37,10 +41,15 @@
     "prepack": "pnpm build"
   },
   "devDependencies": {
+    "@clowder-ai/plugin-contract": "0.1.0-beta.25",
     "@types/node": "^20.17.0",
     "jsdom": "^28.0.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "yaml": "2.9.0"
+  },
+  "dependencies": {
+    "@clowder-ai/plugin-sdk": "0.2.0-beta.8"
   },
   "keywords": [
     "clowder-ai",
