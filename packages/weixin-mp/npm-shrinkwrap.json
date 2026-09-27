@@ -24,7 +24,7 @@
     "node_modules/@clowder-ai/plugin-contract": {
       "version": "0.1.0-beta.24",
       "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.1.0-beta.24.tgz",
-      "integrity": "sha512-KnX29x/wrgl3dtgIhKKcJYiKu7vxBNTEIjWFq60IB6Vi8d7G2fl4qCJbtwOdn1f2ZuDlq/aEfWwDeQm7eT+VRQ==",
+      "integrity": "sha512-kX8qR6Rq0hVws2FAKtJRcuYhp9+70x2JFOf3kPUWNh3iKryPkFjuzXBUwW+S70hFfWvWBwy+LRpcBjuGVQAMQg==",
       "license": "MIT",
       "dependencies": {
         "ajv": "^8.17.0",
