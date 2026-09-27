@@ -355,7 +355,8 @@ test('packed public packages install and import in a fresh npm consumer', async 
     );
     assert.equal(companionPackage.version, '0.1.0-alpha.0');
     assert.equal(companionPackage.private, undefined);
-    assert.deepEqual(companionPackage.dependencies, undefined);
+    assert.equal(companionPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.8');
+    assert.doesNotMatch(JSON.stringify(companionPackage), /"workspace:/u);
     assert.deepEqual(companionPackage.bin, {
       'clowder-personal-chrome-host': 'native-host/native-host-cli.mjs',
     });
