@@ -1,6 +1,6 @@
 {
   "name": "@clowder-ai/weixin-mp",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "Official WeChat Official Account publishing plugin for Clowder AI hosts",
   "license": "MIT",
   "type": "module",
@@ -34,7 +34,7 @@
     "prepack": "pnpm build"
   },
   "dependencies": {
-    "@clowder-ai/plugin-sdk": "0.2.0-beta.8"
+    "@clowder-ai/plugin-sdk": "0.2.0-beta.9"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",

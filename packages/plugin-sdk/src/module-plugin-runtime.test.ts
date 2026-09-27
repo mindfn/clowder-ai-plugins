@@ -3,9 +3,12 @@ import test from 'node:test';
 
 import {
   definePlugin,
+  FeaturePermissionError,
   type FeatureContext,
 } from './feature-context.js';
 import { definePluginModule } from './module-plugin.js';
+import type { ModulePluginHostShape } from './module-host.js';
+import { operationRowAction, rowsResult } from './operation-results.js';
 
 function manifest() {
   return {
@@ -55,7 +58,11 @@ function manifest() {
   };
 }
 
-function host(calls: Array<{ operation: string; value?: unknown }>, sendError?: Error) {
+function host(
+  calls: Array<{ operation: string; value?: unknown }>,
+  sendError?: Error,
+  dataDirectory?: string,
+) {
   const task = {
     id: 'task-1', kind: 'work', threadId: 'thread-1', subjectKey: 'fixture:1', title: 'Fixture task',
     ownerCatId: null, status: 'todo', why: '', createdBy: 'system', createdAt: 1, updatedAt: 1,
@@ -113,11 +120,172 @@ function host(calls: Array<{ operation: string; value?: unknown }>, sendError?: 
         done: true,
       }),
     },
+    ...(dataDirectory === undefined ? {} : { dataDirectory }),
     log: (level: string, message: string, fields?: Readonly<Record<string, unknown>>) => {
       calls.push({ operation: 'log', value: { level, message, fields } });
     },
   };
 }
+
+test('module carrier exposes the Host dataDirectory only to a feature granted data.directory', async () => {
+  const calls: Array<{ operation: string; value?: unknown }> = [];
+  const candidate = manifest();
+  candidate.runtime = {
+    ...candidate.runtime,
+    dataDirectory: 'module-fixture',
+  } as never;
+  candidate.features[0]!.capabilities.push('data.directory' as never);
+  candidate.features.push({
+    id: 'feature-without-data',
+    name: 'Feature without data',
+    resources: [],
+    contributions: [],
+    capabilities: [],
+  } as never);
+
+  const observed: string[] = [];
+  const entrypoint = definePluginModule((input) => definePlugin({
+    manifest: input,
+    activate: {
+      'feature-1': (context) => {
+        observed.push(context.dataDirectory);
+        return {
+          actions: {
+            'fixture.outbound': () => undefined,
+            'fixture.echo': () => undefined,
+          },
+        };
+      },
+      'feature-without-data': (context) => {
+        assert.throws(
+          () => context.dataDirectory,
+          (error: unknown) =>
+            error instanceof FeaturePermissionError && error.code === 'PERMISSION',
+        );
+        return { actions: {} };
+      },
+    },
+  }));
+  const runtimeHost: ModulePluginHostShape = host(
+    calls,
+    undefined,
+    '/tmp/clowder-module-fixture',
+  );
+  assert.equal(runtimeHost.dataDirectory, '/tmp/clowder-module-fixture');
+
+  const activation = await entrypoint.create(candidate).start(runtimeHost);
+  assert.deepEqual(observed, ['/tmp/clowder-module-fixture']);
+  await activation.stop();
+});
+
+test('module carrier rejects dataDirectory access when the Host provides no path', async () => {
+  const candidate = manifest();
+  candidate.runtime = {
+    ...candidate.runtime,
+    dataDirectory: 'module-fixture',
+  } as never;
+  candidate.features[0]!.capabilities.push('data.directory' as never);
+  const entrypoint = definePluginModule((input) => definePlugin({
+    manifest: input,
+    activate: {
+      'feature-1': (context) => {
+        void context.dataDirectory;
+        return {
+          actions: {
+            'fixture.outbound': () => undefined,
+            'fixture.echo': () => undefined,
+          },
+        };
+      },
+    },
+  }));
+
+  await assert.rejects(
+    entrypoint.create(candidate).start(host([])),
+    (error: unknown) => error instanceof FeaturePermissionError && error.code === 'PERMISSION',
+  );
+});
+
+test('beta.24 rows, confirm, and cloud-conversation-host cross the real module carrier', async () => {
+  const candidate = manifest() as ReturnType<typeof manifest> & { configuration: unknown[] };
+  candidate.configuration = [{
+    key: 'authorizations',
+    label: 'Authorizations',
+    kind: 'operation',
+    required: false,
+    actions: [
+      { id: 'list', label: 'List', render: 'status', action: { method: 'fixture.rows.list' } },
+      {
+        id: 'revoke',
+        label: 'Revoke',
+        render: 'row',
+        confirm: 'Revoke this authorization?',
+        action: { method: 'fixture.rows.revoke' },
+      },
+    ],
+  }];
+  const cloudHost = {
+    type: 'cloud-conversation-host' as const,
+    id: 'fixture-cloud-host',
+    provider: 'chatgpt' as const,
+    appendMessage: { method: 'fixture.cloud.append' },
+    assistantReturns: {
+      list: { method: 'fixture.cloud.list' },
+      ack: { method: 'fixture.cloud.ack' },
+    },
+  };
+  candidate.contributions.push(cloudHost as never);
+  candidate.features[0]!.contributions.push(
+    { type: 'cloud-conversation-host', id: cloudHost.id } as never,
+  );
+  candidate.features[0]!.capabilities.push('cloud.conversation.host' as never);
+
+  const entrypoint = definePluginModule((input) => definePlugin({
+    manifest: input,
+    activate: {
+      'feature-1': async (context) => {
+        await context.conversationHosts.register({
+          id: cloudHost.id,
+          provider: cloudHost.provider,
+          appendMessage: cloudHost.appendMessage,
+          assistantReturns: cloudHost.assistantReturns,
+        });
+        return {
+          actions: {
+            'fixture.outbound': () => undefined,
+            'fixture.echo': () => undefined,
+            'fixture.rows.list': () => rowsResult([{
+              key: 'conversation-1',
+              label: 'Conversation one',
+              actions: [operationRowAction('revoke', { conversationId: 'conversation-1' })],
+            }]),
+            'fixture.rows.revoke': () => rowsResult([]),
+            'fixture.cloud.append': () => ({ status: 'accepted' }),
+            'fixture.cloud.list': () => ({ returns: [] }),
+            'fixture.cloud.ack': () => ({ status: 'accepted' }),
+          },
+        };
+      },
+    },
+  }));
+
+  const activation = await entrypoint.create(candidate).start(host([]));
+  assert.deepEqual(await activation.actions['fixture.rows.list']?.({}), {
+    render: 'rows',
+    data: {
+      rows: [{
+        key: 'conversation-1',
+        label: 'Conversation one',
+        actions: [{ action: 'revoke', input: { conversationId: 'conversation-1' } }],
+      }],
+    },
+  });
+  assert.equal(
+    (candidate.configuration[0] as { actions: Array<{ confirm?: string }> }).actions[1]?.confirm,
+    'Revoke this authorization?',
+  );
+  await activation.stop();
+});
 
 function moduleWithJourney(received: unknown[]) {
   return definePluginModule((candidate) => definePlugin({

@@ -429,7 +429,10 @@ export function createFeatureContextSession(
     conversationHosts: registrar<CloudConversationHostContribution>('cloud-conversation-host'),
     get dataDirectory(): string {
       assertActive();
-      if (binding.dataDirectory === undefined) {
+      if (
+        !binding.grantedCapabilities.includes('data.directory')
+        || binding.dataDirectory === undefined
+      ) {
         throw new FeaturePermissionError(
           'feature has no data directory: grant the data.directory capability and declare runtime.dataDirectory',
         );

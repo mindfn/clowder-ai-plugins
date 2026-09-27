@@ -120,9 +120,14 @@ function declaredContributionAdapter(
   };
 }
 
-function featureBinding(plugin: DefinedPlugin, featureId: string): FeatureBinding {
+function featureBinding(
+  plugin: DefinedPlugin,
+  featureId: string,
+  host: ModulePluginHostShape,
+): FeatureBinding {
   const feature = plugin.manifest.features.find((candidate) => candidate.id === featureId);
   if (feature === undefined) throw new TypeError(`feature ${featureId} is not declared by the plugin manifest`);
+  const canReadDataDirectory = feature.capabilities.includes('data.directory');
   return {
     pluginInstanceId: plugin.manifest.pluginId,
     featureId,
@@ -131,6 +136,9 @@ function featureBinding(plugin: DefinedPlugin, featureId: string): FeatureBindin
     activationRevision: 0,
     grantRevision: 0,
     grantedCapabilities: feature.capabilities,
+    ...(canReadDataDirectory && host.dataDirectory !== undefined
+      ? { dataDirectory: host.dataDirectory }
+      : {}),
     executionLease: 'module-host-bound',
   };
 }
@@ -166,7 +174,7 @@ async function startDefinedPluginModule(
       if (plugin.activate[feature.id] === undefined) continue;
       const contributions = featureContributions(plugin.manifest, feature.id);
       const session = createFeatureContextSession(
-        featureBinding(plugin, feature.id),
+        featureBinding(plugin, feature.id, host),
         declaredContributionAdapter(plugin, feature.id, host),
         {
           messageSubscriptions: contributions.filter(

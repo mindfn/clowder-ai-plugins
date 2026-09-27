@@ -174,6 +174,8 @@ export interface ModulePluginHostShape {
   readonly threads: PluginThreadHost;
   readonly messaging: PluginMessagingHost;
   readonly media: PluginMediaHost;
+  /** Host-provisioned absolute path, present only when data.directory is granted. */
+  readonly dataDirectory?: string;
   readonly log: (
     level: ModulePluginLogLevel,
     message: string,

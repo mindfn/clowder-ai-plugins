@@ -6,6 +6,7 @@ import type { StaticContribution } from '@clowder-ai/plugin-contract';
 import {
   ContributionConflictError,
   FeatureContextRevokedError,
+  FeaturePermissionError,
   activateDefinedFeature,
   createFeatureContextSession,
   definePlugin,
@@ -26,6 +27,19 @@ const BINDING: FeatureBinding = {
   grantedCapabilities: [],
   executionLease: 'opaque-host-signed-lease',
 };
+
+test('dataDirectory rejects a path when data.directory was not granted', () => {
+  const adapter = new RecordingAdapter();
+  const { context } = createFeatureContextSession(
+    { ...BINDING, dataDirectory: '/tmp/ungranted' },
+    adapter,
+  );
+
+  assert.throws(
+    () => context.dataDirectory,
+    (error: unknown) => error instanceof FeaturePermissionError && error.code === 'PERMISSION',
+  );
+});
 
 function manifest() {
   return {
