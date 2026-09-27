@@ -2,6 +2,9 @@ pluginId: official.companion.personal-chrome
 version: 0.1.0-alpha.0
 contractVersion: 0.1.0
 name: Personal Chrome Companion
+icon:
+  type: svg
+  src: assets/icon.svg
 description:
   default: Host authorized ChatGPT conversations through the F247 personal Chrome extension and native messaging helper.
   translations:

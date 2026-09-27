@@ -27,7 +27,8 @@
     "native-host",
     "plugin.yaml",
     "npm-shrinkwrap.json",
-    "README.md"
+    "README.md",
+    "assets"
   ],
   "engines": {
     "node": ">=20.0.0"
