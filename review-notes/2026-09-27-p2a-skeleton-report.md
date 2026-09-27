@@ -121,6 +121,43 @@ feishu-meeting-intake 模式）；先红后绿验证过。
 
 （Publish to npm job = skipping，仅 main push 触发，属预期。）
 
+## 复审锚点更新（2026-09-28，SDK beta.9 切片 + 真实入口测试提升，以本节为准）
+
+**背景**：sol 在 exact-HEAD 复审中指出 SDK module host 参考载体不透传
+`dataDirectory`（上方"观察项"），插件在真实载体上 `start()` 直接抛
+`FeaturePermissionError(PERMISSION)`——R1。codex 在 SDK 0.2.0-beta.9
+修复该载体缺口（`6c022987cba19e646f8523f422c38d16826f9c50`，PR #54）。
+
+**beta.9 切片收口坐标**：
+- sol 独立复审 approved（thread 消息 `…000934`）；astra canonical 终验通过
+  （`…000937`）；任务 `…000892` done，#54 写锁回归 kimi。
+- SDK 0.2.0-beta.9 canonical sha256
+  `8579f442d0a68c37d12a0e887685012d7d386939b621c0a3a7bad42e082a98b7`；
+  beta.8→beta.9 成员集不变，仅 8 个冻结允许文件变化；contract 保持
+  beta.25 字节不变。
+
+**R1/R2 复现证据（beta.8 上实测红，本地 probe，2026-09-27）**：
+- R1：真实 `create(plugin.yaml).start(host)` 在 beta.8 抛
+  `FeaturePermissionError: feature has no data directory`（exit=1 复现）。
+- R2（负例，codex SDK 测试覆盖，包内不重复）：无 grant 的 binding 不得
+  泄露 Host 路径。
+
+**本切片改动（父 commit = `6c022987`）**：
+- 新增 `test/personal-chrome-real-entry.test.ts`（node:test，随
+  `pnpm test` 自动拾取）：占位三方法的 own-function + contract 官方
+  validator 检查（Host h3 启用预检对齐）；真实模块入口
+  `create(manifest).start(host)` 全链路——授权 list/status/test 可调用、
+  三个 h3 方法在 actions 表内为 own function 且结果过 validator、
+  `stop()` 干净退出。
+- 包内 137/137 绿（含 2 条新增）；typecheck（build + test 双 tsconfig）干净。
+- 本地 probe（`p2a-real-entry-check.mts`）已删除，使命由正式测试接管。
+
+**Review 范围建议（本切片增量）**：
+1. 新测试的 host stub 是否与 SDK `ModulePluginHostShape` 真型对齐
+   （typed，非 `as never`）。
+2. 断言覆盖面是否够钉住 h3 预检（own-function + validator 双检查，
+   placeholder 与真实载体两侧）。
+
 ## Review 范围建议
 
 1. plugin.yaml 声明与 SDK module host 契约是否对齐（capability /
