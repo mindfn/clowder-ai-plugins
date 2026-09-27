@@ -220,6 +220,18 @@
       "freshConsumerClosure": "covered by repository fresh-consumer install/import journey"
     },
     {
+      "directory": "xiangqi",
+      "packageName": "@clowder-ai/xiangqi",
+      "classification": "manager-installable-official-public",
+      "managerInstallable": true,
+      "contractClosure": "plugin.yaml contractVersion 0.1.0 and package contract beta.19",
+      "sdkClosure": "no direct @clowder-ai/plugin-sdk dependency; the hosted board module is imported directly",
+      "yamlClosure": "plugin.yaml is the sole manifest truth",
+      "runtimeClosure": "packed tarball carries the hosted board/game runtime, web assets, and MCP entrypoint, verified by the staged npm ci and import journey",
+      "catalogClosure": "not yet listed in catalog/catalog.json (landed upstream via PR #65)",
+      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey"
+    },
+    {
       "directory": "feishu-meeting-intake",
       "packageName": "@clowder-ai/feishu-meeting-intake",
       "classification": "retained-external-baseline-specialized-host-wiring",

@@ -27,6 +27,7 @@ on:
       - 'packages/video-generation/**'
       - 'packages/wechat-visible-reader/**'
       - 'packages/weixin-mp/**'
+      - 'packages/xiangqi/**'
       - 'packages/genoffice-docx/**'
       - 'packages/github-operations/**'
       - 'packages/stackchan/**'
@@ -89,6 +90,14 @@ jobs:
       # local pre-push runs and CI cannot drift apart; edit steps there.
       - name: Local gate (toolchain to pack:gate)
         run: pnpm gate:ci
+
+      # gate:ci does not cover xiangqi (playwright browser journey is kept
+      # as an explicit step, mirroring main).
+      - name: Xiangqi package tests and build
+        run: pnpm --filter @clowder-ai/xiangqi test && pnpm --filter @clowder-ai/xiangqi lint && pnpm --filter @clowder-ai/xiangqi build
+
+      - name: Xiangqi browser journey
+        run: pnpm --filter @clowder-ai/xiangqi exec playwright install --with-deps chromium && pnpm --filter @clowder-ai/xiangqi test:browser
 
       - name: Loopback fixture typecheck
         run: pnpm --filter @clowder-ai/loopback-fixture-plugin typecheck
