@@ -159,6 +159,20 @@ test('generated object fields preserve required and optional schema fields', asy
   assert.match(source, /export type CatalogPluginEntry = [\s\S]*readonly icon: PluginIcon;/);
 });
 
+test('generated cloud conversation ids reuse the shared MessageId type', async () => {
+  const schemas = await loadContractSchemas();
+  const source = generateContractSource(schemas);
+
+  assert.match(
+    source,
+    /export type CloudConversationAppendMessageInput = \{[\s\S]*readonly idempotencyKey: MessageId;/,
+  );
+  assert.match(
+    source,
+    /export type CloudConversationReturnCursor = \{[\s\S]*readonly sourceMessageId: MessageId;/,
+  );
+});
+
 test('generated package icons preserve type-dependent filename suffixes', async () => {
   const schemas = await loadContractSchemas();
   const source = generateContractSource(schemas);

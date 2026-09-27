@@ -44,6 +44,11 @@ test('appendMessage input admits the frozen shape and enforces bounds both ways'
   assert.equal(isCloudConversationAppendMessageInput({ ...appendInput, idempotencyKey: 'x'.repeat(512) }), true);
   assert.equal(isCloudConversationAppendMessageInput({ ...appendInput, text: 'x'.repeat(131073) }), false);
   assert.equal(isCloudConversationAppendMessageInput({ ...appendInput, text: '' }), false);
+  assert.equal(isCloudConversationAppendMessageInput({ ...appendInput, text: '   ' }), false);
+  assert.equal(
+    isCloudConversationAppendMessageInput({ ...appendInput, text: 'é'.repeat(65537) }),
+    false,
+  );
 });
 
 test('appendMessage result admits appended and failed shapes with providerMessageId naming', () => {
@@ -67,12 +72,30 @@ test('appendMessage result admits appended and failed shapes with providerMessag
     isCloudConversationAppendMessageResult({ status: 'failed', errorCode: 'AB' }),
     false,
   );
+  assert.equal(
+    isCloudConversationAppendMessageResult({
+      status: 'failed',
+      errorCode: 'STALE_HELPER',
+      diagnostic: { anything: ['schema must reject opaque diagnostics'] },
+    }),
+    false,
+  );
 });
 
 test('list input enforces the all-or-nothing cursor triple and list result caps at one return', () => {
   const cursor = { conversationId: 'c', sourceMessageId: 's', assistantMessageId: 'a' };
   assert.equal(isCloudConversationListInput({}), true);
   assert.equal(isCloudConversationListInput({ after: cursor }), true);
+  const colonCursor = {
+    conversationId: 'g-p-abc:123',
+    sourceMessageId: 'source-1',
+    assistantMessageId: 'assistant-1',
+  };
+  assert.equal(
+    isCloudConversationListResult({ returns: [{ ...colonCursor, content: 'answer' }] }),
+    true,
+  );
+  assert.equal(isCloudConversationListInput({ after: colonCursor }), true);
   assert.equal(isCloudConversationListInput({ after: { conversationId: 'c', sourceMessageId: 's' } }), false);
   assert.equal(isCloudConversationListInput({ after: { ...cursor, limit: 10 } }), false);
   assert.equal(isCloudConversationListInput({ limit: 10 }), false);
@@ -85,6 +108,14 @@ test('list input enforces the all-or-nothing cursor triple and list result caps 
     isCloudConversationListResult({ returns: [{ ...oneReturn, content: 'x'.repeat(131073) }] }),
     false,
   );
+  assert.equal(
+    isCloudConversationListResult({ returns: [{ ...oneReturn, content: '   ' }] }),
+    false,
+  );
+  assert.equal(
+    isCloudConversationListResult({ returns: [{ ...oneReturn, content: 'é'.repeat(65537) }] }),
+    false,
+  );
 });
 
 test('ack input requires the triple and ack result has acknowledged and failed shapes', () => {
@@ -95,6 +126,14 @@ test('ack input requires the triple and ack result has acknowledged and failed s
   assert.equal(isCloudConversationAckResult({ status: 'failed', errorCode: 'ASSISTANT_RETURN_NOT_FOUND' }), true);
   assert.equal(isCloudConversationAckResult({ status: 'failed', errorCode: 'assistant_return_not_found' }), false);
   assert.equal(isCloudConversationAckResult({ status: 'failed' }), false);
+  assert.equal(
+    isCloudConversationAckResult({
+      status: 'failed',
+      errorCode: 'STALE_HELPER',
+      diagnostic: 'schema must reject opaque diagnostics',
+    }),
+    false,
+  );
 });
 
 test('text budget checks UTF-8 bytes, trim, and non-string fail closed', () => {
@@ -157,5 +196,16 @@ test('failure diagnostic validator matches the CloudBridgeFailureDiagnosticV1 pr
       fingerprint: { ...validFingerprint, nodes: [{ path: 'composer', kind: 'text', childCount: 0x1_0000_0000 }] },
     }),
     false,
+  );
+  assert.equal(
+    isCloudBridgeFailureDiagnosticV1({
+      ...validDiagnostic,
+      fingerprint: {
+        ...validFingerprint,
+        firstUnsupportedPath: 'composer/div[4294967296]',
+      },
+    }),
+    false,
+    'JSON Schema owns the path grammar; code retains only the uint32 child-index bound',
   );
 });

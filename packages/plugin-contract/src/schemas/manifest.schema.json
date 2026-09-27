@@ -381,7 +381,18 @@
         "activate": { "type": "boolean" }
       },
       "required": ["render", "data"],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "render": { "const": "rows" } },
+            "required": ["render"]
+          },
+          "then": {
+            "properties": { "data": { "$ref": "#/$defs/OperationRows" } }
+          }
+        }
+      ]
     },
 
     "PluginTestDeclaration": {
@@ -689,13 +700,73 @@
       "additionalProperties": false
     },
 
+    "CloudBridgeDomFingerprintNodeV1": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^composer(?:/(?:[a-z][a-z0-9-]{0,31}|#text|#node-(?:0|[1-9]\\d{0,3}))\\[(?:0|[1-9]\\d{0,9})\\])*$"
+        },
+        "kind": { "enum": ["text", "element", "other"] },
+        "empty": { "type": "boolean" },
+        "tag": { "type": "string", "pattern": "^[A-Z][A-Z0-9-]{0,31}$" },
+        "nodeType": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "childCount": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "contentEditable": { "type": "boolean" },
+        "proseMirror": { "type": "boolean" },
+        "placeholder": { "type": "boolean" },
+        "virtualKeyboard": { "type": "boolean" },
+        "trailingBreak": { "type": "boolean" }
+      },
+      "required": ["path", "kind"],
+      "additionalProperties": false
+    },
+
+    "CloudBridgeDomFingerprintV1": {
+      "type": "object",
+      "properties": {
+        "v": { "const": 1 },
+        "phase": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[A-Za-z0-9._:-]+$" },
+        "adapterRevision": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[A-Za-z0-9._:-]+$" },
+        "artifactRevision": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^[A-Za-z0-9._:-]+$" },
+        "firstUnsupportedPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^composer(?:/(?:[a-z][a-z0-9-]{0,31}|#text|#node-(?:0|[1-9]\\d{0,3}))\\[(?:0|[1-9]\\d{0,9})\\])*$"
+        },
+        "nodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CloudBridgeDomFingerprintNodeV1" },
+          "maxItems": 12
+        },
+        "truncated": { "type": "boolean" }
+      },
+      "required": ["v", "phase", "adapterRevision", "artifactRevision", "nodes", "truncated"],
+      "additionalProperties": false
+    },
+
+    "CloudBridgeFailureDiagnosticV1": {
+      "type": "object",
+      "properties": {
+        "v": { "const": 1 },
+        "errorCode": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" },
+        "nextAction": { "const": "inspect_bound_tab" },
+        "fingerprint": { "$ref": "#/$defs/CloudBridgeDomFingerprintV1" }
+      },
+      "required": ["v", "errorCode", "nextAction", "fingerprint"],
+      "additionalProperties": false
+    },
+
     "CloudConversationAppendMessageInput": {
       "type": "object",
       "description": "Host -> package input of the appendMessage method. idempotencyKey references the shared MessageId (1..512) and is the Clowder source message id; the package answers failed + INVALID_REQUEST when the key does not match its own token format. text is additionally checked in code: UTF-8 <= 128 KiB and non-empty after trim (isCloudConversationTextBudget).",
       "properties": {
         "conversationId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9._:-]+$" },
         "text": { "type": "string", "minLength": 1, "maxLength": 131072 },
-        "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 512 }
+        "idempotencyKey": { "$ref": "https://clowder-ai.dev/schemas/messaging/v0.1#/$defs/MessageId" }
       },
       "required": ["conversationId", "text", "idempotencyKey"],
       "additionalProperties": false
@@ -715,11 +786,11 @@
 
     "CloudConversationAppendMessageFailedResult": {
       "type": "object",
-      "description": "Failed append. errorCode is a safe string; diagnostic is the contract copy of CloudBridgeFailureDiagnosticV1 and is re-validated by the contract-exported isCloudBridgeFailureDiagnosticV1 — invalid diagnostics are dropped, errorCode is kept.",
+      "description": "Failed append. errorCode is a safe string; diagnostic is the contract copy of CloudBridgeFailureDiagnosticV1 and is re-validated by the contract-exported isCloudBridgeFailureDiagnosticV1. A Host that preserves errorCode while dropping an invalid diagnostic validates in two stages: validate the envelope without diagnostic, then validate diagnostic separately.",
       "properties": {
         "status": { "const": "failed" },
         "errorCode": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" },
-        "diagnostic": {},
+        "diagnostic": { "$ref": "#/$defs/CloudBridgeFailureDiagnosticV1" },
         "idempotentReplay": { "type": "boolean" }
       },
       "required": ["status", "errorCode"],
@@ -737,8 +808,8 @@
       "type": "object",
       "description": "Assistant-return cursor: the after? triplet is either fully present or fully absent.",
       "properties": {
-        "conversationId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9._-]+$" },
-        "sourceMessageId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "conversationId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9._:-]+$" },
+        "sourceMessageId": { "$ref": "https://clowder-ai.dev/schemas/messaging/v0.1#/$defs/MessageId" },
         "assistantMessageId": { "type": "string", "minLength": 1, "maxLength": 512 }
       },
       "required": ["conversationId", "sourceMessageId", "assistantMessageId"],
@@ -750,7 +821,7 @@
       "description": "One candidate assistant return. sourceMessageId echoes the appendMessage idempotencyKey (the Clowder source message id). content is additionally checked in code: UTF-8 <= 128 KiB and non-empty after trim.",
       "properties": {
         "conversationId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9._:-]+$" },
-        "sourceMessageId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "sourceMessageId": { "$ref": "https://clowder-ai.dev/schemas/messaging/v0.1#/$defs/MessageId" },
         "assistantMessageId": { "type": "string", "minLength": 1, "maxLength": 512 },
         "content": { "type": "string", "minLength": 1, "maxLength": 131072 }
       },
@@ -786,7 +857,7 @@
       "description": "Host -> package input of the assistantReturns.ack method.",
       "properties": {
         "conversationId": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9._:-]+$" },
-        "sourceMessageId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "sourceMessageId": { "$ref": "https://clowder-ai.dev/schemas/messaging/v0.1#/$defs/MessageId" },
         "assistantMessageId": { "type": "string", "minLength": 1, "maxLength": 512 }
       },
       "required": ["conversationId", "sourceMessageId", "assistantMessageId"],
@@ -804,11 +875,11 @@
 
     "CloudConversationAckFailedResult": {
       "type": "object",
-      "description": "Failed ack. ASSISTANT_RETURN_NOT_FOUND means the return is already settled and must not be retried.",
+      "description": "Failed ack. ASSISTANT_RETURN_NOT_FOUND means the return is already settled and must not be retried. A Host that preserves errorCode while dropping an invalid diagnostic validates in two stages: validate the envelope without diagnostic, then validate diagnostic separately.",
       "properties": {
         "status": { "const": "failed" },
         "errorCode": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" },
-        "diagnostic": {}
+        "diagnostic": { "$ref": "#/$defs/CloudBridgeFailureDiagnosticV1" }
       },
       "required": ["status", "errorCode"],
       "additionalProperties": false

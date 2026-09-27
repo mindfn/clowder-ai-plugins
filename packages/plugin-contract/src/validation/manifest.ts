@@ -15,6 +15,10 @@ const manifestSchema = require('@clowder-ai/plugin-contract/schemas/manifest') a
   string,
   unknown
 >;
+const messagingSchema = require('@clowder-ai/plugin-contract/schemas/messaging') as Record<
+  string,
+  unknown
+>;
 const signalSchema = require('@clowder-ai/plugin-contract/schemas/signals') as Record<
   string,
   unknown
@@ -59,6 +63,7 @@ const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
 ajv.addSchema(pluginMetadataSchema, pluginMetadataSchema['$id'] as string);
 ajv.addSchema(signalSchema, signalSchema['$id'] as string);
+ajv.addSchema(messagingSchema, messagingSchema['$id'] as string);
 const validateSchema = ajv.compile(manifestSchema);
 
 function semanticError(

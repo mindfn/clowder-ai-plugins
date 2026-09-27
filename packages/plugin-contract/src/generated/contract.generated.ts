@@ -342,10 +342,38 @@ export type CloudConversationHostContribution = {
     readonly ack: CloudConversationHostMethod;
   };
 };
+export type CloudBridgeDomFingerprintNodeV1 = {
+  readonly path: string;
+  readonly kind: 'text' | 'element' | 'other';
+  readonly empty?: boolean;
+  readonly tag?: string;
+  readonly nodeType?: number;
+  readonly childCount?: number;
+  readonly contentEditable?: boolean;
+  readonly proseMirror?: boolean;
+  readonly placeholder?: boolean;
+  readonly virtualKeyboard?: boolean;
+  readonly trailingBreak?: boolean;
+};
+export type CloudBridgeDomFingerprintV1 = {
+  readonly v: 1;
+  readonly phase: string;
+  readonly adapterRevision: string;
+  readonly artifactRevision: string;
+  readonly firstUnsupportedPath?: string;
+  readonly nodes: readonly CloudBridgeDomFingerprintNodeV1[];
+  readonly truncated: boolean;
+};
+export type CloudBridgeFailureDiagnosticV1 = {
+  readonly v: 1;
+  readonly errorCode: string;
+  readonly nextAction: 'inspect_bound_tab';
+  readonly fingerprint: CloudBridgeDomFingerprintV1;
+};
 export type CloudConversationAppendMessageInput = {
   readonly conversationId: string;
   readonly text: string;
-  readonly idempotencyKey: string;
+  readonly idempotencyKey: MessageId;
 };
 export type CloudConversationAppendMessageAppendedResult = {
   readonly status: 'appended';
@@ -355,18 +383,18 @@ export type CloudConversationAppendMessageAppendedResult = {
 export type CloudConversationAppendMessageFailedResult = {
   readonly status: 'failed';
   readonly errorCode: string;
-  readonly diagnostic?: unknown;
+  readonly diagnostic?: CloudBridgeFailureDiagnosticV1;
   readonly idempotentReplay?: boolean;
 };
 export type CloudConversationAppendMessageResult = CloudConversationAppendMessageAppendedResult | CloudConversationAppendMessageFailedResult;
 export type CloudConversationReturnCursor = {
   readonly conversationId: string;
-  readonly sourceMessageId: string;
+  readonly sourceMessageId: MessageId;
   readonly assistantMessageId: string;
 };
 export type CloudConversationAssistantReturn = {
   readonly conversationId: string;
-  readonly sourceMessageId: string;
+  readonly sourceMessageId: MessageId;
   readonly assistantMessageId: string;
   readonly content: string;
 };
@@ -378,7 +406,7 @@ export type CloudConversationListResult = {
 };
 export type CloudConversationAckInput = {
   readonly conversationId: string;
-  readonly sourceMessageId: string;
+  readonly sourceMessageId: MessageId;
   readonly assistantMessageId: string;
 };
 export type CloudConversationAcknowledgedResult = {
@@ -387,7 +415,7 @@ export type CloudConversationAcknowledgedResult = {
 export type CloudConversationAckFailedResult = {
   readonly status: 'failed';
   readonly errorCode: string;
-  readonly diagnostic?: unknown;
+  readonly diagnostic?: CloudBridgeFailureDiagnosticV1;
 };
 export type CloudConversationAckResult = CloudConversationAcknowledgedResult | CloudConversationAckFailedResult;
 export type UiWhenClause = {

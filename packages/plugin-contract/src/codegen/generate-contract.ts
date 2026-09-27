@@ -41,6 +41,7 @@ const MANIFEST_CAPABILITY_REF =
 const PLUGIN_METADATA_SCHEMA_PREFIX =
   'https://clowder-ai.dev/schemas/plugin-metadata/v1#/$defs/';
 const SIGNAL_SCHEMA_PREFIX = 'https://clowder-ai.dev/schemas/signals/v0.2#/$defs/';
+const MESSAGING_SCHEMA_PREFIX = 'https://clowder-ai.dev/schemas/messaging/v0.1#/$defs/';
 
 async function readSchema(url: URL): Promise<JsonSchema> {
   return JSON.parse(await readFile(url, 'utf8')) as JsonSchema;
@@ -86,6 +87,9 @@ function refName(ref: string): string {
   }
   if (ref.startsWith(SIGNAL_SCHEMA_PREFIX)) {
     return decodeURIComponent(ref.slice(SIGNAL_SCHEMA_PREFIX.length));
+  }
+  if (ref.startsWith(MESSAGING_SCHEMA_PREFIX)) {
+    return decodeURIComponent(ref.slice(MESSAGING_SCHEMA_PREFIX.length));
   }
 
   const marker = '#/$defs/';
@@ -355,6 +359,7 @@ function renderDefinition(schema: JsonSchema, name: string, definition: JsonSche
     || name === 'MediaSourceReadChunkResult'
     || name === 'MessageDraft'
     || name === 'MessageSubscriptionContribution'
+    || name === 'OperationActionResult'
   ) {
     // JSON Schema owns conditional cross-field relations. The TypeScript
     // projection remains structural because these rules depend on nested
