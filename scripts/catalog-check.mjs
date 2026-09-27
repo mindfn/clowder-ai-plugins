@@ -35,6 +35,7 @@ assert.deepEqual(
     'dev.clowder.video-analysis',
     'dev.clowder.video-generation',
     'official.companion',
+    'official.companion.personal-chrome',
     'official.connector.dingtalk',
     'official.connector.feishu',
     'official.connector.telegram',

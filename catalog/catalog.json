@@ -241,6 +241,50 @@
       ]
     },
     {
+      "pluginId": "official.companion.personal-chrome",
+      "name": "Personal Chrome Companion",
+      "description": {
+        "default": "Host authorized ChatGPT conversations through the F247 personal Chrome extension and native messaging helper.",
+        "translations": {
+          "zh-CN": "通过 F247 个人 Chrome 扩展与原生消息助手托管已授权的 ChatGPT 会话。"
+        }
+      },
+      "icon": {
+        "type": "svg",
+        "src": "assets/icon.svg"
+      },
+      "publisher": {
+        "id": "clowder-ai",
+        "name": "Clowder AI"
+      },
+      "keywords": [
+        "chrome",
+        "clowder-ai",
+        "f247",
+        "native-messaging",
+        "personal-chrome"
+      ],
+      "versions": [
+        {
+          "version": "0.1.0-alpha.0",
+          "contractVersion": "0.1.0",
+          "manifestPath": "plugin.yaml",
+          "artifact": {
+            "kind": "npm",
+            "packageName": "@clowder-ai/personal-chrome-companion",
+            "version": "0.1.0-alpha.0",
+            "tarballUrl": "https://registry.npmjs.org/@clowder-ai/personal-chrome-companion/-/personal-chrome-companion-0.1.0-alpha.0.tgz",
+            "integrity": "sha512-tG7JvxGe+fGEX00Rnerdxv1y0hGUaaRswEz/IcBk/WLUtKIDo2VWh8uUvhoPvShmRcxFefUISVSnJk53KyIQNg==",
+            "shasum": "42fde3e111a32c9f64659b9ce9db535aea01d9eb",
+            "provenance": {
+              "repository": "https://github.com/zts212653/clowder-ai-plugins",
+              "sourceDirectory": "packages/personal-chrome-companion"
+            }
+          }
+        }
+      ]
+    },
+    {
       "pluginId": "official.connector.dingtalk",
       "name": "DingTalk Connector",
       "description": {
