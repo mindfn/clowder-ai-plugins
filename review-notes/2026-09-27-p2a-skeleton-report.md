@@ -85,6 +85,42 @@ PR: zts212653/clowder-ai-plugins#54
 catalog 条目、manifest、catalog-check 名单均已按此落地；若复审要改，
 三个面一起动。
 
+## 复审锚点更新（2026-09-27 16:50 UTC，以本节为准）
+
+PR #54 曾与 origin/main 冲突（CONFLICTING），已解并产生两个新 commit：
+
+| SHA | 内容 |
+|---|---|
+| `262f721` | Merge remote-tracking branch 'origin/main'（解四文件冲突，见下） |
+| `303f0ec` | ci(companion): typecheck 前先 build contract / SDK 依赖（修 CI 红） |
+
+**冲突解决（262f721，四文件）**：
+- `.github/workflows/contract-ci.yml`：push paths union 加 `packages/xiangqi/**`；保留 Local gate 单步 + 追加 origin 的 Xiangqi 两步。
+- `scripts/fresh-consumer-install.test.mjs`：ours + 7 处锚点插入；关键修复 = consumer install 参数数组补 `xiangqiTarball`。
+- `pnpm-lock.yaml`：ours + pnpm install 重生成。
+- `migration/f202-train-c1-inventory.json`：补 xiangqi 分类条目。
+
+**CI 红根因与修复（303f0ec）**：head 262f721 上 Personal Chrome Companion
+CI 的 "Companion typecheck" 红（job 108660291714）——workflow 在 fresh
+checkout 直接 typecheck companion，但 workspace 链接的 plugin-contract /
+plugin-sdk 无 `dist/`（exports.types 指向 `dist/*.d.ts`）→ TS2307 连锁。
+本地 gate:ci 绿系本地 dist 已构建 + gate:ci 不覆盖 companion。修复 =
+workflow 加 "Build contract and SDK dependencies" 步（镜像
+feishu-meeting-intake 模式）；先红后绿验证过。
+
+**本地证据（303f0ec 树上）**：`pnpm gate:ci` 全量绿（1-22 包级 +
+23 fresh-consumer + 24 inventory 9/9 + 25 catalog:check + 26 registry:check
++ 27 pack:gate）。
+
+**Exact-head 双 CI 绿（head `303f0ec`）**：
+
+| Workflow | Run | Job | 结果 |
+|---|---|---|---|
+| Personal Chrome Companion CI | 36334021263 | 108661299509 | pass, 2m42s |
+| Contract CI（含 exact-HEAD 断言步） | 36334021308 | 108661345476 | pass, 10m33s |
+
+（Publish to npm job = skipping，仅 main push 触发，属预期。）
+
 ## Review 范围建议
 
 1. plugin.yaml 声明与 SDK module host 契约是否对齐（capability /
