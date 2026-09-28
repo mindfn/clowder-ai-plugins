@@ -1,7 +1,10 @@
-// Real-carrier entry test for the p2a module skeleton: promoted from the p2a
-// real-entry probe after the SDK 0.2.0-beta.9 carrier fix (PR #54 @ 6c022987).
-// Red history: on beta.8, start() threw FeaturePermissionError at
-// plugin-entrypoint.ts `context.dataDirectory` (sol's R1, reproduced locally).
+// Real-carrier entry test for the p2b module: the three cloud-conversation-host
+// methods are real socket operations now. With no pairing record in the granted
+// data directory they must honestly report the frozen (e) HOST_UNAVAILABLE /
+// empty-list shapes through the real carrier, still passing the contract
+// validators. Red history: on beta.8, start() threw FeaturePermissionError at
+// plugin-entrypoint.ts `context.dataDirectory` (sol's R1, reproduced locally);
+// before p2b the methods were placeholders returning the same shapes.
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,7 +21,6 @@ import {
 import type { ModulePluginHostShape } from '@clowder-ai/plugin-sdk';
 
 import entrypoint, {
-  createConversationHostPlaceholders,
   PERSONAL_CHROME_APPEND_MESSAGE_METHOD,
   PERSONAL_CHROME_ASSISTANT_ACK_METHOD,
   PERSONAL_CHROME_ASSISTANT_LIST_METHOD,
@@ -98,23 +100,7 @@ function makeHost(dataDirectory: string): ModulePluginHostShape {
   };
 }
 
-test('p2a placeholder h3 methods satisfy the Host enable preflight (own functions, contract-valid results)', async () => {
-  const placeholders = createConversationHostPlaceholders();
-  for (const method of H3_METHODS) {
-    assert.equal(Object.hasOwn(placeholders, method), true, `placeholder owns ${method}`);
-    assert.equal(typeof placeholders[method], 'function', `placeholder ${method} is a function`);
-  }
-  for (let index = 0; index < H3_METHODS.length; index += 1) {
-    const result = await placeholders[H3_METHODS[index]!]({});
-    assert.equal(
-      H3_VALIDATORS[index]!(result),
-      true,
-      `${H3_METHODS[index]} result passes the contract validator`,
-    );
-  }
-});
-
-test('real module entry starts across the SDK carrier and serves every p2a action', async (t) => {
+test('real module entry starts across the SDK carrier and serves every p2b action', async (t) => {
   const dataDirectory = await mkdtemp(join(tmpdir(), 'p2a-real-entry-'));
   t.after(() => rm(dataDirectory, { recursive: true, force: true }));
 
@@ -132,27 +118,57 @@ test('real module entry starts across the SDK carrier and serves every p2a actio
 
   // Host h3 enable preflight: the three cloud-conversation-host methods must be
   // own functions of the actions table and pass the contract validators through
-  // the real carrier — extra fields or a bad errorCode become AMBIGUOUS_EFFECT.
+  // the real carrier. Valid wire input with no pairing record in the granted
+  // data directory must report the frozen (e) HOST_UNAVAILABLE / empty-list
+  // shapes honestly (p2b makes them real socket operations).
+  const h3Calls = [
+    () => ({
+      conversationId: 'conversation-1',
+      text: 'hello from the test',
+      idempotencyKey: 'delivery-1',
+    }),
+    () => ({}),
+    () => ({
+      conversationId: 'conversation-1',
+      sourceMessageId: 'source-1',
+      assistantMessageId: 'assistant-1',
+    }),
+  ];
+  const expectedFrozenShapes = [
+    { status: 'failed', errorCode: 'HOST_UNAVAILABLE' },
+    { returns: [] },
+    { status: 'failed', errorCode: 'HOST_UNAVAILABLE' },
+  ] as const;
   for (let index = 0; index < H3_METHODS.length; index += 1) {
     const method = H3_METHODS[index]!;
     assert.equal(Object.hasOwn(activation.actions, method), true, `actions owns ${method}`);
     assert.equal(typeof activation.actions[method], 'function', `actions ${method} is a function`);
-    const result = await activation.actions[method]!({});
+    const result = await activation.actions[method]!(h3Calls[index]!());
     assert.equal(
       H3_VALIDATORS[index]!(result),
       true,
       `${method} result passes the contract validator via real carrier`,
     );
+    assert.deepEqual(result, expectedFrozenShapes[index], `${method} reports the frozen no-helper shape`);
   }
 
   const listed = await activation.actions[PERSONAL_CHROME_LIST_METHOD]!({});
   assert.ok(listed && typeof listed === 'object', 'list returns a result');
   const status = await activation.actions[PERSONAL_CHROME_STATUS_METHOD]!({});
   assert.ok(status && typeof status === 'object', 'status returns a result');
+  // p2b makes `test` honest: the probe must actually attempt reachability and
+  // report not-ok when no helper/pairing exists, never claiming reachability
+  // without probing.
   const testResult = (await activation.actions[PERSONAL_CHROME_TEST_METHOD]!({})) as {
     ok?: boolean;
+    message?: unknown;
   };
-  assert.equal(testResult.ok, true, 'test action reports ok');
+  assert.equal(testResult.ok, false, 'test action honestly reports unreachable');
+  assert.equal(typeof testResult.message, 'string');
+  assert.ok(
+    typeof testResult.message === 'string' && testResult.message.length > 0,
+    'test action explains the reason',
+  );
 
   await activation.stop();
 });

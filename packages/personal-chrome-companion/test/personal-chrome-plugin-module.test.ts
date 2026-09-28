@@ -18,11 +18,7 @@ import {
 
 import {
   createAuthorizationOperations,
-  createConversationHostPlaceholders,
   buildAuthorizationRows,
-  PERSONAL_CHROME_APPEND_MESSAGE_METHOD,
-  PERSONAL_CHROME_ASSISTANT_ACK_METHOD,
-  PERSONAL_CHROME_ASSISTANT_LIST_METHOD,
 } from '../src/plugin-entrypoint.js';
 import {
   PERSONAL_CHROME_AUTHORIZATION_LIMIT,
@@ -241,22 +237,4 @@ test('buildAuthorizationRows truncates long titles to the 200-character row labe
     ],
   );
   assert.equal(rows[0]!.label.length, 200);
-});
-
-test('p2a placeholder conversation methods return the frozen failure/empty shapes', async () => {
-  const placeholders = createConversationHostPlaceholders();
-  const append = (await placeholders[PERSONAL_CHROME_APPEND_MESSAGE_METHOD]({})) as {
-    status: string;
-    errorCode: string;
-  };
-  assert.deepEqual(append, { status: 'failed', errorCode: 'HOST_UNAVAILABLE' });
-  const list = (await placeholders[PERSONAL_CHROME_ASSISTANT_LIST_METHOD]({})) as {
-    returns: unknown[];
-  };
-  assert.deepEqual(list, { returns: [] });
-  const ack = (await placeholders[PERSONAL_CHROME_ASSISTANT_ACK_METHOD]({})) as {
-    status: string;
-    errorCode: string;
-  };
-  assert.deepEqual(ack, { status: 'failed', errorCode: 'HOST_UNAVAILABLE' });
 });
