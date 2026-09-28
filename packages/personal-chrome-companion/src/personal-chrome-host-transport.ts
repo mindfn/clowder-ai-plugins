@@ -42,6 +42,35 @@ export interface PersonalChromeHostAdapterOptions {
   readonly helperArtifactRevision: string;
   readonly timeoutMs?: number;
   readonly requestId?: () => string;
+  /**
+   * When present, every in-flight frame exchange registers a cancel handle here
+   * so a stop (Host module dispose) can destroy the socket and settle the
+   * pending promise instead of leaking it until the timeout.
+   */
+  readonly requestTracker?: PersonalChromeHostRequestTracker;
+}
+
+/**
+ * Tracks in-flight local-frame exchanges so a stop can cancel them: each
+ * registered socket is destroyed and its pending promise settled. A request
+ * already written settles as AMBIGUOUS_EFFECT (it may have been applied);
+ * a not-yet-written one settles as HOST_UNAVAILABLE (ledger h3 (e)).
+ */
+export class PersonalChromeHostRequestTracker {
+  private readonly pending = new Set<() => void>();
+
+  /** Registers a cancel callback; returns the untrack function. */
+  track(cancel: () => void): () => void {
+    this.pending.add(cancel);
+    return () => {
+      this.pending.delete(cancel);
+    };
+  }
+
+  /** Cancels every in-flight exchange. Idempotent; safe to call more than once. */
+  cancelAll(): void {
+    for (const cancel of [...this.pending]) cancel();
+  }
 }
 
 export interface PersonalChromeAppendReceipt {
@@ -111,9 +140,27 @@ function exchangeLocalFrame<
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      untrack();
       socket.destroy();
       callback();
     };
+    // A stop (Host module dispose) cancels the exchange: a written request may
+    // have been applied, so the only truthful code is AMBIGUOUS_EFFECT; before
+    // the write nothing reached the host, so HOST_UNAVAILABLE stays truthful
+    // (ledger h3 (e)). Never claim the message was unsent after a write.
+    const cancel = (): void => {
+      const error = requestSent
+        ? new PersonalChromeHostError(
+            'AMBIGUOUS_EFFECT',
+            'personal Chrome host request was cancelled by stop after the request was sent',
+          )
+        : new PersonalChromeHostError(
+            'HOST_UNAVAILABLE',
+            'personal Chrome host request was cancelled by stop before the request was sent',
+          );
+      finish(() => reject(error));
+    };
+    const untrack = options.requestTracker?.track(cancel) ?? (() => {});
     const timer = setTimeout(() => {
       const error = requestSent
         ? new PersonalChromeHostError(
@@ -156,9 +203,21 @@ function exchangeLocalFrame<
       }
     });
     socket.once('end', () => {
-      if (!settled) {
-        finish(() => reject(new PersonalChromeHostError('INVALID_HOST_RECEIPT', 'host closed without a receipt')));
-      }
+      if (settled) return;
+      // A graceful close after the write means the host went away without a
+      // complete receipt (the response may be truncated mid-frame): the request
+      // may have been applied, so this is AMBIGUOUS_EFFECT, never
+      // INVALID_HOST_RECEIPT and never a bare "unavailable" claim (h3 (e)).
+      const error = requestSent
+        ? new PersonalChromeHostError(
+            'AMBIGUOUS_EFFECT',
+            'personal Chrome host closed without a receipt after the request was sent',
+          )
+        : new PersonalChromeHostError(
+            'HOST_UNAVAILABLE',
+            'personal Chrome host closed the connection before the request was sent',
+          );
+      finish(() => reject(error));
     });
   });
 }

@@ -241,6 +241,120 @@ test('a socket error after the write maps to AMBIGUOUS_EFFECT, never HOST_UNAVAI
   assert.equal(isCloudConversationAppendMessageResult(result), true, 'closed-after-write result passes the contract validator');
 });
 
+test('a graceful EOF after the write maps to AMBIGUOUS_EFFECT, never INVALID_HOST_RECEIPT', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'f247-p2b-eof-after-write-'));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const socketPath = join(root, 'host.sock');
+  // The fake helper accepts the frame and closes the write side without ever
+  // sending a receipt: the request was already written, so the effect is
+  // unknown and must surface as AMBIGUOUS_EFFECT (ledger h3 (e)).
+  const server = createServer((socket) => {
+    socket.on('error', () => {});
+    socket.on('data', () => {
+      socket.end();
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(socketPath, resolve);
+  });
+  t.after(async () => {
+    server.close();
+  });
+  const dataDirectory = join(root, 'data');
+  await writePairingRecord(dataDirectory, { socketPath });
+  const operations = createConversationHostOperations({ dataDirectory, timeoutMs: 2_000 });
+
+  const result = await operations.appendMessage(appendInput());
+  assert.deepEqual(result, { status: 'failed', errorCode: 'AMBIGUOUS_EFFECT' });
+  assert.equal(isCloudConversationAppendMessageResult(result), true, 'eof-after-write result passes the contract validator');
+});
+
+test('a truncated receipt followed by EOF maps to AMBIGUOUS_EFFECT, never INVALID_HOST_RECEIPT', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'f247-p2b-truncated-receipt-'));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const socketPath = join(root, 'host.sock');
+  // The fake helper answers with a partial JSON line and then closes: no
+  // complete receipt ever arrived, so the post-write failure is AMBIGUOUS_EFFECT.
+  const server = createServer((socket) => {
+    socket.on('error', () => {});
+    socket.on('data', () => {
+      socket.write('{"partialReceipt":');
+      socket.end();
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(socketPath, resolve);
+  });
+  t.after(async () => {
+    server.close();
+  });
+  const dataDirectory = join(root, 'data');
+  await writePairingRecord(dataDirectory, { socketPath });
+  const operations = createConversationHostOperations({ dataDirectory, timeoutMs: 2_000 });
+
+  const result = await operations.appendMessage(appendInput());
+  assert.deepEqual(result, { status: 'failed', errorCode: 'AMBIGUOUS_EFFECT' });
+  assert.equal(isCloudConversationAppendMessageResult(result), true, 'truncated-receipt result passes the contract validator');
+});
+
+test('dispose cancels an in-flight append: the peer socket is destroyed and the result is AMBIGUOUS_EFFECT', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'f247-p2b-dispose-inflight-'));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const socketPath = join(root, 'host.sock');
+  // The fake helper accepts the frame and then stays silent, holding the
+  // request in flight. dispose() must destroy the client socket (the peer
+  // sees 'close') and settle the pending append immediately — the frame was
+  // already written, so the only truthful code is AMBIGUOUS_EFFECT.
+  let serverSocket = null;
+  let frameReceived;
+  const frameReceivedPromise = new Promise((resolve) => {
+    frameReceived = resolve;
+  });
+  let peerClosedResolve;
+  const peerClosed = new Promise((resolve) => {
+    peerClosedResolve = resolve;
+  });
+  const server = createServer((socket) => {
+    serverSocket = socket;
+    socket.on('error', () => {});
+    socket.once('close', () => peerClosedResolve());
+    socket.on('data', () => frameReceived());
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(socketPath, resolve);
+  });
+  t.after(async () => {
+    server.close();
+  });
+  const dataDirectory = join(root, 'data');
+  await writePairingRecord(dataDirectory, { socketPath });
+  const operations = createConversationHostOperations({ dataDirectory, timeoutMs: 5_000 });
+
+  const started = Date.now();
+  const pending = operations.appendMessage(appendInput());
+  await frameReceivedPromise;
+  assert.ok(serverSocket, 'the helper accepted the connection');
+
+  await operations.dispose();
+  const result = await pending;
+  assert.deepEqual(result, { status: 'failed', errorCode: 'AMBIGUOUS_EFFECT' });
+  assert.equal(isCloudConversationAppendMessageResult(result), true, 'cancelled append passes the contract validator');
+  assert.ok(Date.now() - started < 1_000, 'the in-flight append settled promptly instead of waiting for the 5s timeout');
+  await Promise.race([
+    peerClosed,
+    new Promise((resolve, reject) => setTimeout(() => reject(new Error('peer socket was not destroyed by dispose')), 1_000)),
+  ]);
+});
+
 test('a helper timeout after the write maps to AMBIGUOUS_EFFECT and HOST_TIMEOUT never appears', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'f247-p2b-timeout-after-write-'));
   t.after(async () => {
