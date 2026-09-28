@@ -40,7 +40,7 @@ test('manifest and package metadata remain one exact package truth', async () =>
     transport: 'builtin',
     entrypoint: 'dist/plugin-entrypoint.js',
   });
-  assert.equal(packageJson.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.9');
+  assert.equal(packageJson.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.10');
   for (const member of ['README.md', 'plugin.yaml', 'assets', 'limbs', 'skills']) {
     assert.ok(packageJson.files.includes(member), `package omits ${member}`);
   }
