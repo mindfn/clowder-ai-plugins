@@ -35,6 +35,14 @@ test('gate starts with the artifact toolchain check and ends at pack:gate', () =
   assert.equal(steps.at(-1).command, 'pnpm pack:gate');
 });
 
+test('gate checks attested bytes after building contract and SDK', () => {
+  const steps = buildGateSteps();
+  const sdkBuild = steps.findIndex(entry => entry.name === 'SDK build');
+  const attested = steps.findIndex(entry => entry.name === 'Attested artifact identities');
+  assert.equal(attested, sdkBuild + 1);
+  assert.equal(steps[attested].command, 'pnpm attested:check');
+});
+
 test('connector gate covers all seven connectors in the workflow order', () => {
   const step = buildGateSteps().find((entry) => entry.name === 'Connector package gates');
   const expected = [

@@ -62,6 +62,7 @@ export function buildGateSteps() {
     { name: 'SDK typecheck', command: 'pnpm --filter @clowder-ai/plugin-sdk typecheck' },
     { name: 'SDK unit tests', command: 'pnpm --filter @clowder-ai/plugin-sdk test' },
     { name: 'SDK build', command: 'pnpm --filter @clowder-ai/plugin-sdk build' },
+    { name: 'Attested artifact identities', command: 'pnpm attested:check' },
     {
       name: 'Connector package gates',
       command:
