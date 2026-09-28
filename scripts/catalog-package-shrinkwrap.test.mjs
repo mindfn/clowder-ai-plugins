@@ -18,7 +18,7 @@ const workspaceContract = JSON.parse(
 const workspaceSdk = JSON.parse(
   await readFile(new URL('../packages/plugin-sdk/package.json', import.meta.url), 'utf8'),
 );
-const releasedTrainC1Consumers = [
+const productionTrainC1Consumers = [
   'connector-dingtalk',
   'connector-feishu',
   'connector-telegram',
@@ -27,6 +27,7 @@ const releasedTrainC1Consumers = [
   'connector-weixin',
   'connector-xiaoyi',
   'enterprise-workflow',
+  'personal-chrome-companion',
   'wechat-visible-reader',
   'weixin-mp',
 ];
@@ -58,8 +59,8 @@ async function packWorkspacePackage(packageDirectory) {
   }
 }
 
-test('every released Train C1 SDK consumer closes over the current workspace contract', async () => {
-  for (const directory of releasedTrainC1Consumers) {
+test('every production Train C1 SDK consumer closes over the current workspace contract', async () => {
+  for (const directory of productionTrainC1Consumers) {
     const shrinkwrap = JSON.parse(
       await readFile(new URL(`../packages/${directory}/npm-shrinkwrap.json`, import.meta.url), 'utf8'),
     );
@@ -76,7 +77,7 @@ test('current workspace contract and SDK shrinkwrap entries pin exact-head packe
   };
   const mismatches = [];
 
-  for (const directory of releasedTrainC1Consumers) {
+  for (const directory of productionTrainC1Consumers) {
     const shrinkwrap = JSON.parse(
       await readFile(new URL(`../packages/${directory}/npm-shrinkwrap.json`, import.meta.url), 'utf8'),
     );
