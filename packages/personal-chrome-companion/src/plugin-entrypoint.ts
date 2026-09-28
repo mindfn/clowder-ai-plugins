@@ -13,6 +13,7 @@ import {
   type FeatureContext,
 } from '@clowder-ai/plugin-sdk';
 
+import { createConversationHostOperations } from './conversation-host.js';
 import {
   PERSONAL_CHROME_AUTHORIZATION_LIMIT,
   PersonalChromeConversationAuthorizationError,
@@ -167,29 +168,13 @@ export function createAuthorizationOperations(options: {
 }
 
 /**
- * p2a placeholders for the three cloud-conversation-host methods. p2b replaces
- * them with the native-host socket client:
- * - appendMessage: read the pairing record, open the native socket, send the
- *   append frame, and surface NEEDS_BINDING / BOUND_CONVERSATION_MISMATCH /
- *   STALE_* / AMBIGUOUS_EFFECT per contract beta.24 (d).
- * - assistantReturns.list: drain one return from the native assistant-return
- *   inbox per poll cycle.
- * - assistantReturns.ack: acknowledge one return so the inbox can retire it.
- * HOST_UNAVAILABLE here is truthful: with no socket client the request never
- * left the package, so no effect could have happened.
+ * p2b wires the three cloud-conversation-host methods to the package's own
+ * native-host socket client (src/conversation-host.ts): append / list / ack go
+ * over the paired Unix socket per contract beta.24 (d)/(e), and the `test`
+ * action probes real helper reachability instead of reporting skeleton state.
  */
-export function createConversationHostPlaceholders(): Record<string, (input: unknown) => Promise<unknown>> {
-  return {
-    [PERSONAL_CHROME_APPEND_MESSAGE_METHOD]: async (_input: unknown) => ({
-      status: 'failed',
-      errorCode: 'HOST_UNAVAILABLE',
-    }),
-    [PERSONAL_CHROME_ASSISTANT_LIST_METHOD]: async (_input: unknown) => ({ returns: [] }),
-    [PERSONAL_CHROME_ASSISTANT_ACK_METHOD]: async (_input: unknown) => ({
-      status: 'failed',
-      errorCode: 'HOST_UNAVAILABLE',
-    }),
-  };
+export function createConversationHostOperationsForDataDirectory(dataDirectory: string) {
+  return createConversationHostOperations({ dataDirectory });
 }
 
 export function createPersonalChromePluginModule() {
@@ -204,23 +189,22 @@ export function createPersonalChromePluginModule() {
           const operations = createAuthorizationOperations({
             authorizationPath: join(dataDirectory, 'conversation-binding.json'),
           });
+          const conversationHost = createConversationHostOperationsForDataDirectory(dataDirectory);
           const registration = await context.conversationHosts.register(
             personalChromeHostContribution,
           );
-          const placeholders = createConversationHostPlaceholders();
           return {
             actions: {
               [PERSONAL_CHROME_LIST_METHOD]: operations.list,
               [PERSONAL_CHROME_REVOKE_METHOD]: operations.revoke,
               [PERSONAL_CHROME_STATUS_METHOD]: operations.status,
-              [PERSONAL_CHROME_TEST_METHOD]: async () => ({
-                ok: true,
-                message:
-                  'personal-chrome-host module skeleton active; the native socket client lands in p2b',
-              }),
-              ...placeholders,
+              [PERSONAL_CHROME_TEST_METHOD]: conversationHost.probe,
+              [PERSONAL_CHROME_APPEND_MESSAGE_METHOD]: conversationHost.appendMessage,
+              [PERSONAL_CHROME_ASSISTANT_LIST_METHOD]: conversationHost.list,
+              [PERSONAL_CHROME_ASSISTANT_ACK_METHOD]: conversationHost.ack,
             },
             dispose: async () => {
+              await conversationHost.dispose();
               await registration.dispose();
             },
           };

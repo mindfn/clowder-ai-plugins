@@ -9,10 +9,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./protocol": {
-      "types": "./dist/protocol.d.ts",
-      "import": "./dist/protocol.js"
-    },
     "./manifest": "./plugin.yaml",
     "./native-host/install-host": "./native-host/install-host.mjs"
   },
