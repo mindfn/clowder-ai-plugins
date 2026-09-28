@@ -8,6 +8,9 @@ const workflowText = readFileSync(
   new URL('../.github/workflows/contract-ci.yml', import.meta.url),
   'utf8',
 );
+const workspacePackage = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+);
 
 test('artifact toolchain env is read from the workflow, not duplicated', () => {
   const env = loadArtifactToolchainEnv(workflowText);
@@ -41,6 +44,18 @@ test('gate checks attested bytes after building contract and SDK', () => {
   const attested = steps.findIndex(entry => entry.name === 'Attested artifact identities');
   assert.equal(attested, sdkBuild + 1);
   assert.equal(steps[attested].command, 'pnpm attested:check');
+});
+
+test('catalog check builds packages whose publish surface is generated', () => {
+  const command = workspacePackage.scripts['catalog:check'];
+  assert.ok(
+    command.includes('pnpm --filter @clowder-ai/genoffice-docx build:renderer'),
+    'catalog check must build the frozen GenOffice renderer',
+  );
+  assert.ok(
+    command.includes('pnpm --filter @clowder-ai/personal-chrome-companion build'),
+    'catalog check must build personal-chrome-companion',
+  );
 });
 
 test('connector gate covers all seven connectors in the workflow order', () => {
