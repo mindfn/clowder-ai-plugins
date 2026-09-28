@@ -486,3 +486,196 @@ test('dispose stops the operations and leaves no usable handles', async (t) => {
   const probe = await operations.probe();
   assert.equal(probe.ok, false);
 });
+
+// --- R1 (stop race): dispose during pairing resolution must send nothing ---
+async function startCountingServer(t, label) {
+  const root = await mkdtemp(join(tmpdir(), `f247-p2b-${label}-`));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const socketPath = join(root, 'host.sock');
+  const counts = { connections: 0, frames: 0 };
+  const server = createServer((socket) => {
+    counts.connections += 1;
+    socket.on('error', () => {});
+    socket.on('data', () => {
+      counts.frames += 1;
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(socketPath, resolve);
+  });
+  t.after(async () => {
+    server.close();
+  });
+  return { root, socketPath, counts };
+}
+
+async function envForCountingServer(t, label, server) {
+  const dataDirectory = join(server.root, 'data');
+  await writePairingRecord(dataDirectory, { socketPath: server.socketPath });
+  return createConversationHostOperations({ dataDirectory, timeoutMs: 2_000 });
+}
+
+test('dispose while the pairing record is resolving sends nothing and reports HOST_UNAVAILABLE', async (t) => {
+  const server = await startCountingServer(t, 'stop-race-append');
+  const operations = await envForCountingServer(t, 'stop-race-append', server);
+
+  // The fs read of the pairing record is still in flight when stop runs:
+  // after stop returns no new socket may be created and no frame sent.
+  const pending = operations.appendMessage(appendInput());
+  await operations.dispose();
+  const result = await pending;
+  assert.deepEqual(result, { status: 'failed', errorCode: 'HOST_UNAVAILABLE' });
+  assert.equal(isCloudConversationAppendMessageResult(result), true, 'stop-race append passes the contract validator');
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(server.counts.connections, 0, 'stop during resolution created no socket');
+  assert.equal(server.counts.frames, 0, 'stop during resolution sent no frame');
+});
+
+test('list and ack racing stop during resolution also send nothing', async (t) => {
+  const listServer = await startCountingServer(t, 'stop-race-list');
+  const listOps = await envForCountingServer(t, 'stop-race-list', listServer);
+  const pendingList = listOps.list({});
+  await listOps.dispose();
+  assert.deepEqual(await pendingList, { returns: [] });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(listServer.counts.frames, 0, 'list sent no frame after stop');
+
+  const ackServer = await startCountingServer(t, 'stop-race-ack');
+  const ackOps = await envForCountingServer(t, 'stop-race-ack', ackServer);
+  const pendingAck = ackOps.ack({
+    conversationId: CONVERSATION_ID,
+    sourceMessageId: SOURCE_MESSAGE_ID,
+    assistantMessageId: ASSISTANT_MESSAGE_ID,
+  });
+  await ackOps.dispose();
+  assert.deepEqual(await pendingAck, { status: 'failed', errorCode: 'HOST_UNAVAILABLE' });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(ackServer.counts.frames, 0, 'ack sent no frame after stop');
+});
+
+test('probe racing stop during resolution reports stopped without connecting', async (t) => {
+  const server = await startCountingServer(t, 'stop-race-probe');
+  const operations = await envForCountingServer(t, 'stop-race-probe', server);
+
+  const pending = operations.probe();
+  await operations.dispose();
+  const probe = await pending;
+  assert.equal(probe.ok, false);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(server.counts.connections, 0, 'probe created no socket after stop');
+});
+
+// --- R2 (post-write invalid receipts): the request was written, so the effect
+// is unknown and the only truthful code is AMBIGUOUS_EFFECT (ledger h3 (e)) ---
+const OVERSIZE_PADDING = 'x'.repeat(256 * 1024);
+const INVALID_APPEND_RECEIPTS = [
+  { name: 'a complete but empty receipt object', receipt: () => '{}\n' },
+  {
+    name: 'a receipt with a forged requestId',
+    receipt: (request) =>
+      `${JSON.stringify({
+        v: 2,
+        kind: 'append_result',
+        requestId: 'forged-request-id',
+        idempotencyKey: request.idempotencyKey,
+        status: 'host_observed',
+        hostMessageId: HOST_MESSAGE_ID,
+        observedRevisions: REVISIONS,
+      })}\n`,
+  },
+  {
+    name: 'a receipt with a forged idempotencyKey',
+    receipt: (request) =>
+      `${JSON.stringify({
+        v: 2,
+        kind: 'append_result',
+        requestId: request.requestId,
+        idempotencyKey: 'forged-idempotency-key',
+        status: 'host_observed',
+        hostMessageId: HOST_MESSAGE_ID,
+        observedRevisions: REVISIONS,
+      })}\n`,
+  },
+  { name: 'an unparseable receipt line', receipt: () => '{"v":2, broken\n' },
+  { name: 'a receipt exceeding the frame limit', receipt: () => `{"v":2,"pad":"${OVERSIZE_PADDING}"}\n` },
+];
+
+for (const { name, receipt } of INVALID_APPEND_RECEIPTS) {
+  test(`appendMessage maps ${name} after the write to AMBIGUOUS_EFFECT, never INVALID_HOST_RECEIPT`, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'f247-p2b-invalid-receipt-'));
+    t.after(async () => {
+      await rm(root, { recursive: true, force: true });
+    });
+    const socketPath = join(root, 'host.sock');
+    const server = createServer((socket) => {
+      socket.on('error', () => {});
+      socket.on('data', (chunk) => {
+        const line = chunk.toString('utf8').trim();
+        let request = {};
+        try {
+          request = JSON.parse(line).request ?? {};
+        } catch {}
+        socket.write(receipt(request));
+      });
+    });
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(socketPath, resolve);
+    });
+    t.after(async () => {
+      server.close();
+    });
+    const dataDirectory = join(root, 'data');
+    await writePairingRecord(dataDirectory, { socketPath });
+    const operations = createConversationHostOperations({ dataDirectory, timeoutMs: 2_000 });
+
+    const result = await operations.appendMessage(appendInput());
+    assert.deepEqual(result, { status: 'failed', errorCode: 'AMBIGUOUS_EFFECT' });
+    assert.equal(
+      isCloudConversationAppendMessageResult(result),
+      true,
+      'invalid-receipt result passes the contract validator',
+    );
+  });
+}
+
+test('a typed failed receipt after the write keeps its own error code', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'f247-p2b-typed-failed-receipt-'));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const socketPath = join(root, 'host.sock');
+  const server = createServer((socket) => {
+    socket.on('error', () => {});
+    socket.on('data', (chunk) => {
+      const request = JSON.parse(chunk.toString('utf8').trim()).request;
+      socket.write(
+        `${JSON.stringify({
+          v: 2,
+          kind: 'append_result',
+          requestId: request.requestId,
+          idempotencyKey: request.idempotencyKey,
+          status: 'failed',
+          errorCode: 'NEEDS_BINDING',
+        })}\n`,
+      );
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(socketPath, resolve);
+  });
+  t.after(async () => {
+    server.close();
+  });
+  const dataDirectory = join(root, 'data');
+  await writePairingRecord(dataDirectory, { socketPath });
+  const operations = createConversationHostOperations({ dataDirectory, timeoutMs: 2_000 });
+
+  const result = await operations.appendMessage(appendInput());
+  assert.deepEqual(result, { status: 'failed', errorCode: 'NEEDS_BINDING' });
+  assert.equal(isCloudConversationAppendMessageResult(result), true, 'typed failed receipt keeps its code');
+});

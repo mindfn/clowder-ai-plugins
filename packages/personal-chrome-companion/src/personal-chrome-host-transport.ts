@@ -189,7 +189,11 @@ function exchangeLocalFrame<
     socket.on('data', (chunk) => {
       input += chunk;
       if (Buffer.byteLength(input, 'utf8') > PERSONAL_CHROME_MAX_LOCAL_FRAME_BYTES) {
-        finish(() => reject(new PersonalChromeHostError('INVALID_HOST_RECEIPT', 'host receipt exceeds limit')));
+        // Post-write failure: the request may have been applied, so the effect
+        // is unknown (ledger h3 (e)) — never a receipt-level verdict.
+        finish(() =>
+          reject(new PersonalChromeHostError('AMBIGUOUS_EFFECT', 'host receipt exceeds limit after the request was sent')),
+        );
         return;
       }
       const newline = input.indexOf('\n');
@@ -199,7 +203,11 @@ function exchangeLocalFrame<
         finish(() => resolve(result));
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
-        finish(() => reject(new PersonalChromeHostError('INVALID_HOST_RECEIPT', detail)));
+        // A complete-but-invalid receipt still means the request was written:
+        // AMBIGUOUS_EFFECT, never INVALID_HOST_RECEIPT (ledger h3 (e)).
+        finish(() =>
+          reject(new PersonalChromeHostError('AMBIGUOUS_EFFECT', `host sent an invalid receipt after the request was sent: ${detail}`)),
+        );
       }
     });
     socket.once('end', () => {
@@ -263,7 +271,9 @@ export class PersonalChromeHostAdapter implements IPersonalChromeAssistantReturn
       parsePersonalChromeAppendResult,
     );
     if (result.requestId !== request.requestId || result.idempotencyKey !== request.idempotencyKey) {
-      throw new PersonalChromeHostError('INVALID_HOST_RECEIPT', 'host receipt does not match the append request');
+      // The receipt does not correlate but the request was written: the effect
+      // is unknown (ledger h3 (e)).
+      throw new PersonalChromeHostError('AMBIGUOUS_EFFECT', 'host receipt does not match the append request');
     }
     if (result.status === 'failed') {
       const staleRevision =
@@ -283,7 +293,7 @@ export class PersonalChromeHostAdapter implements IPersonalChromeAssistantReturn
       throw new PersonalChromeHostError('STALE_ADAPTER', 'personal Chrome adapter revision does not match runtime');
     }
     if (!result.hostMessageId.trim()) {
-      throw new PersonalChromeHostError('INVALID_HOST_RECEIPT', 'hostMessageId must be non-empty');
+      throw new PersonalChromeHostError('AMBIGUOUS_EFFECT', 'hostMessageId must be non-empty');
     }
     return {
       hostMessageId: result.hostMessageId,
@@ -306,7 +316,9 @@ export class PersonalChromeHostAdapter implements IPersonalChromeAssistantReturn
       parsePersonalChromeAssistantReturnResult,
     );
     if (result.requestId !== request.requestId) {
-      throw new PersonalChromeHostError('INVALID_HOST_RECEIPT', 'assistant return receipt does not match the request');
+      // Post-write receipt anomaly: the request may have been applied, so the
+      // effect is unknown (ledger h3 (e)).
+      throw new PersonalChromeHostError('AMBIGUOUS_EFFECT', 'assistant return receipt does not match the request');
     }
     if (result.kind === 'assistant_return_error') {
       throw new PersonalChromeHostError(result.errorCode, `personal Chrome host failed: ${result.errorCode}`);
@@ -324,7 +336,7 @@ export class PersonalChromeHostAdapter implements IPersonalChromeAssistantReturn
       ...assistantReturnCursorFields(after),
     });
     if (result.kind !== 'assistant_returns') {
-      throw new PersonalChromeHostError('INVALID_HOST_RECEIPT', 'host returned an unexpected assistant return result');
+      throw new PersonalChromeHostError('AMBIGUOUS_EFFECT', 'host returned an unexpected assistant return result');
     }
     return result.returns;
   }
@@ -343,7 +355,7 @@ export class PersonalChromeHostAdapter implements IPersonalChromeAssistantReturn
       assistantMessageId,
     });
     if (result.kind !== 'assistant_return_ack') {
-      throw new PersonalChromeHostError('INVALID_HOST_RECEIPT', 'host returned an unexpected assistant return result');
+      throw new PersonalChromeHostError('AMBIGUOUS_EFFECT', 'host returned an unexpected assistant return result');
     }
   }
 

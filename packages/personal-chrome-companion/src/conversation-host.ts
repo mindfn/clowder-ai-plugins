@@ -109,6 +109,10 @@ export function createConversationHostOperations(options: {
       if (error instanceof PersonalChromeHostError) return appendFailure(error.code);
       return appendFailure('AMBIGUOUS_EFFECT');
     }
+    // Stop may have run while the pairing record was being read: no socket has
+    // been created yet, so nothing was sent and HOST_UNAVAILABLE stays truthful
+    // (cancelAll alone cannot cover requests that register after it returns).
+    if (disposed) return appendFailure('HOST_UNAVAILABLE');
     try {
       const receipt = await createPersonalChromeHostAdapter(adapterOptions).append_message(
         input.conversationId,
@@ -147,6 +151,8 @@ export function createConversationHostOperations(options: {
       // off on its own cadence); failed lists never log here.
       return { returns: [] };
     }
+    // Stop during pairing resolution: nothing sent yet, report an empty round.
+    if (disposed) return { returns: [] };
     try {
       const after = toCursor(isObjectRecord(input) ? input.after : undefined);
       const returns = await createPersonalChromeHostAdapter(adapterOptions).list_assistant_returns(after);
@@ -172,6 +178,8 @@ export function createConversationHostOperations(options: {
       if (error instanceof PersonalChromeHostError) return ackFailure(error.code);
       return ackFailure('AMBIGUOUS_EFFECT');
     }
+    // Stop during pairing resolution: no socket created, nothing was sent.
+    if (disposed) return ackFailure('HOST_UNAVAILABLE');
     try {
       await createPersonalChromeHostAdapter(adapterOptions).ack_assistant_return(
         input.conversationId,
@@ -207,6 +215,8 @@ export function createConversationHostOperations(options: {
       }
       return { ok: false, message: 'personal Chrome pairing record is unreadable' };
     }
+    // Stop during pairing resolution: never probe after stop returned.
+    if (disposed) return { ok: false, message: 'personal Chrome host module is stopped' };
     try {
       const health = await createPersonalChromeHostAdapter(adapterOptions).check_health();
       if (health.status === 'ready') {
