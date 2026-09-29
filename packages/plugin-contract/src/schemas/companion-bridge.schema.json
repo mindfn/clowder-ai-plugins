@@ -82,6 +82,9 @@
           "properties": {
             "kind": {
               "const": "audio.connect"
+            },
+            "mode": {
+              "const": "receive_only"
             }
           },
           "required": [
@@ -397,6 +400,51 @@
       ],
       "additionalProperties": false
     },
+    "CompanionIdentitySnapshotV1": {
+      "type": "object",
+      "description": "Immutable display identity saved with one historical message. The real author and source remain on the message itself.",
+      "properties": {
+        "v": { "const": 1 },
+        "name": { "const": "猫猫球" },
+        "partner": {
+          "type": "object",
+          "properties": {
+            "catId": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S" },
+            "displayName": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S" },
+            "skin": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S" }
+          },
+          "required": ["catId", "displayName", "skin"],
+          "additionalProperties": false
+        },
+        "live": {
+          "type": "object",
+          "properties": {
+            "catId": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S" },
+            "displayName": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S" },
+            "transport": { "const": "gpt_live_v3" },
+            "verifiedModel": {
+              "type": ["string", "null"], "minLength": 1, "maxLength": 160, "pattern": "\\S"
+            }
+          },
+          "required": ["catId", "displayName", "transport", "verifiedModel"],
+          "additionalProperties": false
+        },
+        "deep": {
+          "type": "object",
+          "properties": {
+            "catId": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S" },
+            "displayName": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S" },
+            "verifiedModel": {
+              "type": ["string", "null"], "minLength": 1, "maxLength": 160, "pattern": "\\S"
+            }
+          },
+          "required": ["catId", "displayName", "verifiedModel"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["v", "name", "partner", "live", "deep"],
+      "additionalProperties": false
+    },
     "CompanionLiveTransport": {
       "type": "object",
       "properties": {
@@ -404,6 +452,26 @@
         "verifiedModel": { "type": "null" }
       },
       "required": ["kind", "verifiedModel"],
+      "additionalProperties": false
+    },
+    "CompanionAudioState": {
+      "type": "object",
+      "properties": {
+        "supportedModes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": ["duplex", "receive_only"] }
+        },
+        "activeMode": {
+          "oneOf": [
+            { "enum": ["duplex", "receive_only"] },
+            { "type": "null" }
+          ]
+        }
+      },
+      "required": ["supportedModes", "activeMode"],
       "additionalProperties": false
     },
     "CompanionNativeWorkEntry": {
@@ -488,6 +556,9 @@
         },
         "liveTransport": {
           "$ref": "#/$defs/CompanionLiveTransport"
+        },
+        "audio": {
+          "$ref": "#/$defs/CompanionAudioState"
         },
         "nativeWork": {
           "$ref": "#/$defs/CompanionNativeWork"
@@ -780,6 +851,9 @@
                   "name": {
                     "type": "string",
                     "maxLength": 256
+                  },
+                  "companionIdentity": {
+                    "$ref": "#/$defs/CompanionIdentitySnapshotV1"
                   }
                 },
                 "required": [
