@@ -19,9 +19,11 @@ test('attested artifact registry closes known contract and SDK identities', () =
     [
       '@clowder-ai/plugin-contract@0.1.0-beta.24',
       '@clowder-ai/plugin-contract@0.1.0-beta.25',
+      '@clowder-ai/plugin-contract@0.1.0-beta.26',
       '@clowder-ai/plugin-sdk@0.2.0-beta.7',
       '@clowder-ai/plugin-sdk@0.2.0-beta.8',
       '@clowder-ai/plugin-sdk@0.2.0-beta.9',
+      '@clowder-ai/plugin-sdk@0.2.0-beta.10',
     ],
   );
 });
@@ -47,13 +49,13 @@ test('the guard packs every governed package even when its current version is ne
       return packageDirectory === 'packages/plugin-contract'
         ? {
             name: '@clowder-ai/plugin-contract',
-            version: '0.1.0-beta.26',
+            version: '0.1.0-beta.27',
             sha256: 'a'.repeat(64),
             size: 1,
           }
         : {
             name: '@clowder-ai/plugin-sdk',
-            version: '0.2.0-beta.10',
+            version: '0.2.0-beta.11',
             sha256: 'b'.repeat(64),
             size: 1,
           };
