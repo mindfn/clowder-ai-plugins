@@ -15,6 +15,7 @@ import {
   type PersonalChromeHealthCheckRequest,
   type PersonalChromeHealthResult,
   type PersonalChromeLocalEnvelope,
+  type PersonalChromeRevisions,
   parsePersonalChromeAppendRequest,
   parsePersonalChromeAppendResult,
   parsePersonalChromeAssistantReturnRequest,
@@ -51,6 +52,8 @@ export interface PersonalChromeHostAdapterOptions {
   /** Socket facts, independent of the helper's business result/error code. */
   readonly onConnected?: () => void;
   readonly onUnavailable?: () => void;
+  /** Only correlated, validated replies carry revision evidence; a socket connection does not. */
+  readonly onRevisionContact?: (revisions: PersonalChromeRevisions | undefined, errorCode?: string) => Promise<void>;
 }
 
 /**
@@ -290,6 +293,7 @@ export class PersonalChromeHostAdapter implements IPersonalChromeAssistantReturn
         result.errorCode.startsWith('STALE_') ||
         (result.observedRevisions !== undefined &&
           !revisionsMatch(request.expectedRevisions, result.observedRevisions));
+      await this.options.onRevisionContact?.(result.observedRevisions, staleRevision ? 'STALE_ADAPTER' : result.errorCode);
       throw new PersonalChromeHostError(
         staleRevision ? 'STALE_ADAPTER' : result.errorCode,
         staleRevision
@@ -300,11 +304,13 @@ export class PersonalChromeHostAdapter implements IPersonalChromeAssistantReturn
       );
     }
     if (!revisionsMatch(request.expectedRevisions, result.observedRevisions)) {
+      await this.options.onRevisionContact?.(result.observedRevisions, 'STALE_ADAPTER');
       throw new PersonalChromeHostError('STALE_ADAPTER', 'personal Chrome adapter revision does not match runtime');
     }
     if (!result.hostMessageId.trim()) {
       throw new PersonalChromeHostError('AMBIGUOUS_EFFECT', 'hostMessageId must be non-empty');
     }
+    await this.options.onRevisionContact?.(result.observedRevisions);
     return {
       hostMessageId: result.hostMessageId,
       ...(result.idempotentReplay === undefined ? {} : { idempotentReplay: result.idempotentReplay }),
@@ -389,6 +395,10 @@ export class PersonalChromeHostAdapter implements IPersonalChromeAssistantReturn
     if (result.requestId !== request.requestId) {
       throw new PersonalChromeHostError('INVALID_HOST_RECEIPT', 'health receipt does not match the probe request');
     }
+    const stale = result.status === 'stale_adapter' || result.errorCode?.startsWith('STALE_') ||
+      (result.observedRevisions !== undefined && !revisionsMatch(request.expectedRevisions, result.observedRevisions));
+    await this.options.onRevisionContact?.(result.observedRevisions, stale ? 'STALE_ADAPTER' : result.errorCode);
+    if (stale) return { ...result, status: 'stale_adapter', errorCode: 'STALE_ADAPTER' };
     return result;
   }
 }

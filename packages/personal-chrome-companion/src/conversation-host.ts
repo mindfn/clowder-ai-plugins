@@ -96,6 +96,7 @@ export function createConversationHostOperations(options: {
   readonly timeoutMs?: number;
   readonly now?: () => number;
   readonly log?: HelperConnectionLog;
+  readonly onRevisionContact?: PersonalChromeHostAdapterOptions['onRevisionContact'];
 }): PersonalChromeConversationHostOperations {
   const { dataDirectory } = options;
   let disposed = false;
@@ -117,6 +118,9 @@ export function createConversationHostOperations(options: {
     requestTracker,
     onConnected: () => { if (!disposed) reachability.connected(); },
     onUnavailable: () => unavailable('unreachable'),
+    onRevisionContact: async (revisions, errorCode) => {
+      if (!disposed) await options.onRevisionContact?.(revisions, errorCode);
+    },
   });
 
   const appendMessage = async (input: unknown): Promise<CloudConversationAppendMessageResult> => {

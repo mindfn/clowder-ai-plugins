@@ -53,15 +53,51 @@ cancels pending requests; it does not delete authorizations or pending replies.
 
 ## Owner-run native host installation
 
-The Native Messaging manifest and launcher installation is an **owner-run
-CLI**, shipped in the package at `native-host/install-host.mjs`; the plugin
-does not install anything by itself and no extra capability is requested for
-it.
+### One-time Chrome path switch
+
+Enable the plugin first. At `start()` it places the package's unchanged extension
+at this stable location, even before the helper is installed:
+
+```text
+<projectRoot>/.cat-cafe/plugin-host/personal-chrome-host/extension/
+```
+
+In `chrome://extensions`, turn on Developer mode and point **Load unpacked** at
+that directory once (replace any old Host-repository load path). The manifest's
+key preserves the extension ID. Use that ID for the explicit installation below.
+
+On subsequent package updates **and rollbacks**, startup switches the extension
+copy by content digest. If a helper is already installed, startup also republishes
+its artifact and launcher inside the same data directory and updates its digest
+in `pairing.json`. The pairing secret, socket ID, extension ID and Chrome's
+Native Messaging registration stay unchanged. Startup never installs the helper
+or writes Chrome's external manifest. These writes share the installer's lease;
+a simultaneous install/repair is reported as `INSTALLATION_BUSY` rather than
+interleaving generations. Retry activation after that installer finishes.
+
+After each update, click **Reload** once in Chrome's extension page, then run
+**Test** in the plugin. Copying bytes does not update the already-loaded browser
+extension. Status and Test keep the reload reminder until a correlated reply
+reports the current helper, extension and page-adapter revisions. This reminder
+survives plugin restart; `STALE_*` results bring it back. Placement/republish
+failures do not block activation: Status reports a safe failure class and repair
+instructions. Status itself does not connect; Test probes the real helper.
+
+Host uninstall keeps the data directory and extension copy. **Remove the
+extension in Chrome** when uninstalling; retaining the directory does not remove
+the browser registration. Use the explicit helper uninstall below to remove its
+external Native Messaging manifest.
+
+Initial Native Messaging registration is an **owner-run CLI**, shipped in the
+package at `native-host/install-host.mjs`. The plugin never creates this
+registration or a pairing identity itself. Later startups refresh an already
+installed helper only inside the granted data directory, as described above;
+no extra capability is requested.
 
 Prerequisites: Node.js >= 20 on macOS or Linux (Windows is unsupported), the
 project root that runs the Host (`<projectRoot>/.cat-cafe` must be the
 directory the Host provisions), and the unpacked extension id of the Chrome
-MV3 extension loaded from `extension/` (a 32-character Chrome id).
+MV3 extension loaded from the stable directory above (a 32-character Chrome id).
 
 Run everything from the project root. First inspect the plan (no writes):
 
@@ -93,7 +129,7 @@ After installation, verify:
 ls .cat-cafe/plugin-host/personal-chrome-host
 
 # The browser-side manifest exists (macOS example).
-ls "$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/dev.clowder.personal_chrome.json"
+ls "$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/ai.catcafe.personal_cloud_cat_host.json"
 
 # The helper answers the CLI.
 clowder-personal-chrome-host --help

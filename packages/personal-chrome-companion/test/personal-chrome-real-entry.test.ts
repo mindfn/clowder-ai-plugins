@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
+import { acquireProcessLease } from '../native-host/native-socket-lease.mjs';
 
 import {
   isCloudConversationAckResult,
@@ -113,6 +114,11 @@ test('real module entry starts across the SDK carrier and serves every p2b actio
   const initialStatus = await activation.actions[PERSONAL_CHROME_STATUS_METHOD]!({}) as {
     label: string; data: { helper: { state: string } };
   };
+  assert.equal(
+    readFileSync(join(dataDirectory, 'extension', 'manifest.json'), 'utf8'),
+    readFileSync(new URL('../extension/manifest.json', import.meta.url), 'utf8'),
+    'start places unchanged extension bytes even before helper installation',
+  );
   assert.equal(initialStatus.data.helper.state, 'unknown');
   assert.match(initialStatus.label, /Helper: unknown/);
 
@@ -178,10 +184,28 @@ test('real module entry starts across the SDK carrier and serves every p2b actio
   };
   assert.equal(testResult.ok, false, 'test action honestly reports unreachable');
   assert.equal(typeof testResult.message, 'string');
+  assert.match(String(testResult.message), /Reload the extension/);
   assert.ok(
     typeof testResult.message === 'string' && testResult.message.length > 0,
     'test action explains the reason',
   );
 
   await activation.stop();
+});
+
+test('real start stays available when installer owns the lease and Status/Test explain the delivery failure', async (t) => {
+  const dataDirectory = await mkdtemp(join(tmpdir(), 'p2d-real-entry-'));
+  t.after(() => rm(dataDirectory, { recursive: true, force: true }));
+  const lease = await acquireProcessLease(join(dataDirectory, 'install'), { label: 'native host installation' });
+  try {
+    const activation = await entrypoint.create(loadManifest()).start(makeHost(dataDirectory));
+    try {
+      const status = await activation.actions[PERSONAL_CHROME_STATUS_METHOD]!({}) as { label: string; data: { delivery: { failure: string } } };
+      assert.equal(status.data.delivery.failure, 'INSTALLATION_BUSY');
+      assert.match(status.label, /INSTALLATION_BUSY/);
+      const probe = await activation.actions[PERSONAL_CHROME_TEST_METHOD]!({}) as { ok: boolean; message: string };
+      assert.equal(probe.ok, false);
+      assert.match(probe.message, /INSTALLATION_BUSY/);
+    } finally { await activation.stop(); }
+  } finally { await lease.release(); }
 });

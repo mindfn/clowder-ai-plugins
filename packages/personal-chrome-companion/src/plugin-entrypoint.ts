@@ -15,6 +15,7 @@ import {
 
 import { createConversationHostOperations } from './conversation-host.js';
 import { describeHelperConnection, type HelperConnectionStatus } from './helper-reachability.js';
+import { prepareRuntimeDelivery, type RuntimeDelivery } from './runtime-delivery.js';
 import {
   PERSONAL_CHROME_AUTHORIZATION_LIMIT,
   PersonalChromeConversationAuthorizationError,
@@ -115,6 +116,7 @@ export function createAuthorizationOperations(options: {
   readonly authorizationPath: string;
   readonly now?: () => Date;
   readonly helperStatus?: () => HelperConnectionStatus;
+  readonly delivery?: RuntimeDelivery;
 }): PersonalChromeAuthorizationOperations {
   const { authorizationPath } = options;
   const now = options.now ?? (() => new Date());
@@ -122,8 +124,8 @@ export function createAuthorizationOperations(options: {
     const helper = options.helperStatus?.() ?? { state: 'unknown' };
     return {
       render: 'status',
-      data: { ...data, helper },
-      label: `${label} ${describeHelperConnection(helper)}`,
+      data: { ...data, helper, ...(options.delivery ? { delivery: options.delivery.status() } : {}) },
+      label: `${label} ${describeHelperConnection(helper)} ${options.delivery?.label() ?? ''}`.trim(),
     };
   };
 
@@ -196,10 +198,14 @@ export function createPersonalChromePluginModule() {
           // Throws FeaturePermissionError (code 'PERMISSION') when the owning
           // feature is not granted the data.directory capability.
           const dataDirectory = context.dataDirectory;
-          const conversationHost = createConversationHostOperations({ dataDirectory, log: context.log });
+          const delivery = await prepareRuntimeDelivery(dataDirectory);
+          const conversationHost = createConversationHostOperations({
+            dataDirectory, log: context.log, onRevisionContact: delivery.observe,
+          });
           const operations = createAuthorizationOperations({
             authorizationPath: join(dataDirectory, 'conversation-binding.json'),
             helperStatus: conversationHost.status,
+            delivery,
           });
           const registration = await context.conversationHosts.register(
             personalChromeHostContribution,
@@ -209,13 +215,18 @@ export function createPersonalChromePluginModule() {
               [PERSONAL_CHROME_LIST_METHOD]: operations.list,
               [PERSONAL_CHROME_REVOKE_METHOD]: operations.revoke,
               [PERSONAL_CHROME_STATUS_METHOD]: operations.status,
-              [PERSONAL_CHROME_TEST_METHOD]: conversationHost.probe,
+              [PERSONAL_CHROME_TEST_METHOD]: async () => {
+                const result = await conversationHost.probe();
+                const state = delivery.status();
+                return { ok: result.ok && !state.reloadRequired && !state.failure,
+                  message: `${result.message} ${delivery.label()}`.trim() };
+              },
               [PERSONAL_CHROME_APPEND_MESSAGE_METHOD]: conversationHost.appendMessage,
               [PERSONAL_CHROME_ASSISTANT_LIST_METHOD]: conversationHost.list,
               [PERSONAL_CHROME_ASSISTANT_ACK_METHOD]: conversationHost.ack,
             },
             dispose: async () => {
-              await conversationHost.dispose();
+              await Promise.all([delivery.dispose(), conversationHost.dispose()]);
               await registration.dispose();
             },
           };

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { randomBytes } from 'node:crypto';
-import { chmod, mkdir, readFile, stat, unlink } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, stat, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { removePersonalChromeConversationAuthorizations } from './conversation-binding.mjs';
 import {
@@ -244,6 +244,65 @@ export async function installNativeHost(options = {}) {
   assertInstallMutationSupported(platform);
   const paths = resolvePersonalChromeHostPaths(options.projectRoot);
   return runInstallationMutation(paths, platform, () => installNativeHostLocked({ ...options, platform, paths }));
+}
+
+/** Refresh an existing generation only. No home/Chrome registration path is accepted. */
+export async function republishNativeHost({
+  dataDirectory,
+  sourceDirectory = sourceDirectoryDefault,
+  nodeExecutable = process.execPath,
+  now = () => new Date(),
+  writePairingRecord = writePersonalChromePairingRecordAtomic,
+} = {}) {
+  requireExact(dataDirectory, 'dataDirectory');
+  if (!isAbsolute(dataDirectory)) throw new Error('dataDirectory must be absolute');
+  const root = await lstat(dataDirectory).catch((error) => {
+    if (error.code === 'ENOENT') return undefined;
+    throw error;
+  });
+  if (!root) return { operation: 'not_installed' };
+  if (!root.isDirectory() || root.isSymbolicLink()) throw new Error('data directory must be a regular directory');
+  const paths = {
+    rootDirectory: dataDirectory,
+    artifactsDirectory: join(dataDirectory, 'artifacts'),
+    pairingRecordPath: join(dataDirectory, 'pairing.json'),
+    launcherPath: join(dataDirectory, 'native-host-launcher.mjs'),
+  };
+  return runInstallationMutation(paths, process.platform, async () => {
+    const previous = await readOptionalPairingRecord(paths.pairingRecordPath);
+    if (!previous) return { operation: 'not_installed' };
+    assertInstallMutationSupported(process.platform);
+    // Refuse linked destinations before publish/chmod can follow them outside the grant.
+    const artifacts = await lstat(paths.artifactsDirectory);
+    const launcher = await lstat(paths.launcherPath);
+    if (!artifacts.isDirectory() || artifacts.isSymbolicLink()) throw new Error('artifacts must be a regular directory');
+    if (!launcher.isFile() || launcher.isSymbolicLink()) throw new Error('launcher must be a regular file');
+    const digest = await digestNativeHostArtifactDirectory(sourceDirectory);
+    if (previous.artifactDigest === digest) return { operation: 'unchanged', artifactDigest: digest };
+    await assertNodeRuntimeExecutable(nodeExecutable);
+    const launcherSnapshot = await readOptionalFileSnapshot(paths.launcherPath);
+    const pairingSnapshot = await readOptionalFileSnapshot(paths.pairingRecordPath);
+    const artifact = await publishNativeHostArtifact(sourceDirectory, paths.artifactsDirectory);
+    const launcherSource = renderNativeHostLauncher({
+      nodeExecutable, artifactEntrypoint: artifact.artifactEntrypoint, pairingRecordPath: paths.pairingRecordPath,
+    });
+    try {
+      await writeAtomicFile(paths.launcherPath, launcherSource, 0o700);
+      await writePairingRecord(paths.pairingRecordPath, {
+        ...previous, artifactDigest: artifact.artifactDigest, updatedAt: now().toISOString(),
+      });
+    } catch (error) {
+      // Immutable artifacts may remain cached; only this activation pair selects a generation.
+      const restored = await Promise.allSettled([
+        restoreFileSnapshot(paths.launcherPath, launcherSnapshot),
+        restoreFileSnapshot(paths.pairingRecordPath, pairingSnapshot),
+      ]);
+      const failed = restored.filter((item) => item.status === 'rejected').map((item) => item.reason);
+      if (failed.length) throw new AggregateError([error, ...failed], 'native host republish rollback incomplete');
+      throw error;
+    }
+    return { operation: 'republished', artifactDigest: artifact.artifactDigest };
+  });
 }
 async function uninstallNativeHostLocked({
   platform = process.platform,
