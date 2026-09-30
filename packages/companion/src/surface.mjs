@@ -11,6 +11,7 @@ import { detectDockedEdge } from './living-edge.mjs';
 import { bindPetControls } from './pet-controls.mjs';
 import { decisionBadge, decisionRows } from './decision-view.mjs';
 import { normalizeNativeWork } from './native-work-motion.mjs';
+import { NativeWindowTravel } from './native-window-travel.mjs';
 import { currentCompanionIdentity } from './companion-identity.mjs';
 
 const $ = id => document.getElementById(id);
@@ -20,6 +21,10 @@ const transcript = new TranscriptView($('transcript'));
 const bubble = new RecentBubble([$('bubble-first'), $('bubble-second')]);
 const motion = new PetMotion($('pet'), { livingBody: new LivingBody({ root: $('pet'), sit: $('living-sit'),
   video: $('living-video'), transitionVideo: $('living-video-transition') }) });
+const nativeTravel = new NativeWindowTravel({
+  readPosition: () => ({ x: window.screenX, y: window.screenY }),
+  changed: value => motion.syncTravel(value),
+});
 let sharing = false, pendingScreen = false, loading = false, latestHistory, previousPhase = 'idle';
 let observedHistory = false, lastAssistantId;
 let resultPreviewUntil = 0;
@@ -33,11 +38,13 @@ if (!window.clowderCompanion) {
   status('请从 Clowder 的聊聊入口打开猫猫球');
   document.querySelectorAll('button').forEach(button => { button.disabled = true; });
 } else {
+  nativeTravel.start();
   const client = createCompanionClient(window.clowderCompanion);
   const controls = bindPetControls(client, {
     error: error => status(explainError(error)),
     moved: (dx, dy) => {
-      if (dx !== 'stop') { didMove = true; motion.move(dx, dy); return; }
+      if (dx !== 'stop') { didMove = true; nativeTravel.setManual(true); motion.move(dx, dy); return; }
+      nativeTravel.setManual(false);
       motion.stopMove();
       if (!didMove) return;
       didMove = false;
@@ -47,6 +54,7 @@ if (!window.clowderCompanion) {
     changed: panel => { if (panel === 'chat') void readHistory(); if (panel === 'decisions') void readDecisions(); },
     action(kind) {
       if (kind === 'begin') { transcript.reset(); bubble.reset(); void conversation.begin(); void controls.show('none'); }
+      if (kind === 'listen') { transcript.reset(); bubble.reset(); void conversation.begin('receive_only'); void controls.show('none'); }
       if (kind === 'stop') void conversation.end();
       if (kind === 'mute') conversation.muteMic();
       if (kind === 'speaker') conversation.muteSpeaker();
@@ -93,25 +101,36 @@ if (!window.clowderCompanion) {
       if (previousPhase !== 'idle' && value.phase === 'idle') { transcript.reset(); bubble.reset(); void readHistory(); }
       previousPhase = value.phase;
       const active = value.phase !== 'idle';
+      const receiveOnly = value.audioMode === 'receive_only';
+      const canReceiveOnly = value.identity?.audio?.supportedModes?.includes('receive_only') === true;
+      const retryReceiveOnly = value.failed && value.retryMode === 'receive_only' && canReceiveOnly;
       void controls.setAmbient(showAmbient(active));
       $('begin').hidden = active; $('begin').disabled = !value.identity;
-      label('begin', value.failed ? '重试语音' : '语音聊');
-      $('mic').hidden = value.phase !== 'talking'; $('speaker').hidden = !active;
+      $('listen').hidden = active || !canReceiveOnly; $('listen').disabled = !value.identity;
+      label('begin', value.failed && !retryReceiveOnly ? '重试语音' : '语音聊');
+      label('listen', retryReceiveOnly ? '重试只听' : '只听');
+      $('begin').className = retryReceiveOnly ? '' : 'primary';
+      $('listen').className = retryReceiveOnly ? 'primary' : '';
+      $('mic').hidden = value.phase !== 'talking' || receiveOnly; $('speaker').hidden = !active;
       $('active-actions').hidden = !active;
       $('share').disabled = value.phase !== 'talking';
       $('compose').querySelector('button').disabled = !value.identity || value.phase === 'connecting';
       status(value.message ?? '');
-      $('status').hidden = !value.message || /^(点|正在听|语音已结束|已发送)/.test(value.message);
+      $('status').hidden = !value.message || /^(点|正在听|只听模式|只听已结束|语音已结束|已发送)/.test(value.message);
       $('call-badge').hidden = !active;
-      $('call-badge').dataset.state = value.muted ? 'muted' : value.phase;
-      const callLabel = value.phase === 'connecting' ? '正在连接，点此取消' : value.muted ? '麦克风已静音，点此结束' : '语音进行中，点此结束';
+      $('call-badge').dataset.state = receiveOnly ? 'receive-only' : value.muted ? 'muted' : value.phase;
+      $('call-badge-icon').setAttribute('href', receiveOnly ? '#i-listen' : '#i-mic');
+      const callLabel = value.phase === 'connecting' ? (receiveOnly ? '正在连接只听，麦克风未启用，点此取消' : '正在连接，点此取消')
+        : receiveOnly ? '只听进行中，麦克风未启用，点此结束'
+          : value.muted ? '麦克风已静音，点此结束' : '语音进行中，点此结束';
       $('call-badge').title = callLabel; $('call-badge').setAttribute('aria-label', callLabel);
       label('mic', value.muted ? '取消静音' : '静音'); $('mic').setAttribute('aria-pressed', String(value.muted));
       label('speaker', value.silent ? '开启播音' : '关闭播音');
       const identity = value.identity;
       const companionIdentity = currentCompanionIdentity(identity);
-      motion.setContext({ skin: identity?.skin, phase: value.phase, nativeActivity: identity?.nativeActivity ?? 'none', muted: value.muted });
-      motion.syncSnapshot(normalizeNativeWork(identity?.nativeWork));
+      motion.setContext({ skin: identity?.skin, phase: value.phase,
+        nativeActivity: identity?.nativeActivity ?? 'none', muted: value.muted || receiveOnly });
+      motion.syncNativeSnapshot(normalizeNativeWork(identity?.nativeWork));
       if (justConnected) motion.signal('connected');
       if (showFailure) motion.signal('failed');
       if (identity) {
@@ -235,6 +254,6 @@ if (!window.clowderCompanion) {
   void conversation.refresh(); void readHistory(); void readDecisions(); void controls.show('none');
   window.addEventListener('beforeunload', () => {
     clearInterval(statusMonitor); clearInterval(historyMonitor); clearInterval(decisionMonitor);
-    unsubscribe(); motion.close(); void conversation.end();
+    unsubscribe(); nativeTravel.close(); motion.close(); void conversation.end();
   });
 }

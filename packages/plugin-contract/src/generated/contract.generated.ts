@@ -1217,6 +1217,7 @@ export type CompanionCommand = {
   readonly kind: 'prepare';
 } | {
   readonly kind: 'audio.connect';
+  readonly mode?: 'receive_only';
 } | {
   readonly kind: 'audio.close';
 } | {
@@ -1275,9 +1276,33 @@ export type CompanionActor = {
   readonly catId: string;
   readonly displayName: string;
 };
+export type CompanionIdentitySnapshotV1 = {
+  readonly v: 1;
+  readonly name: '猫猫球';
+  readonly partner: {
+    readonly catId: string;
+    readonly displayName: string;
+    readonly skin: string;
+  };
+  readonly live: {
+    readonly catId: string;
+    readonly displayName: string;
+    readonly transport: 'gpt_live_v3';
+    readonly verifiedModel: string | null;
+  };
+  readonly deep: {
+    readonly catId: string;
+    readonly displayName: string;
+    readonly verifiedModel: string | null;
+  };
+};
 export type CompanionLiveTransport = {
   readonly kind: 'gpt_live_v3';
   readonly verifiedModel: null;
+};
+export type CompanionAudioState = {
+  readonly supportedModes: readonly ('duplex' | 'receive_only')[];
+  readonly activeMode: 'duplex' | 'receive_only' | null;
 };
 export type CompanionNativeWorkEntry = {
   readonly taskId: string;
@@ -1313,6 +1338,7 @@ export type CompanionState = {
   readonly toolsReady: boolean;
   readonly nativeActivity: 'none' | 'reasoning' | 'tool_running';
   readonly liveTransport: CompanionLiveTransport;
+  readonly audio?: CompanionAudioState;
   readonly nativeWork: CompanionNativeWork;
 };
 export type CompanionDecisions = {
@@ -1381,6 +1407,7 @@ export type CompanionReply = {
     readonly role: 'user' | 'assistant';
     readonly text: string;
     readonly name: string;
+    readonly companionIdentity?: CompanionIdentitySnapshotV1;
   })[];
   readonly hasMore: boolean;
 };

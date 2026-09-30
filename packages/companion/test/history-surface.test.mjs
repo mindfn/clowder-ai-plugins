@@ -16,9 +16,10 @@ function fixture() {
   const document = { getElementById: id => nodes.get(id) ?? node(id), querySelectorAll: () => [],
     createElement: () => node(), addEventListener() {} };
   function node(id) {
-    const value = { dataset: {}, textContent: '', hidden: false, children: [], style: {}, value: '',
+    const value = { dataset: {}, attributes: {}, textContent: '', hidden: false, children: [], style: {}, value: '',
       ownerDocument: document, scrollTop: 0, scrollHeight: 100, clientHeight: 100,
-      setAttribute() {}, querySelector(selector) { return selector === '.empty' ? null : document.getElementById(`${id}${selector}`); },
+      setAttribute(name, attributeValue) { this.attributes[name] = String(attributeValue); },
+      querySelector(selector) { return selector === '.empty' ? null : document.getElementById(`${id}${selector}`); },
       append(...rows) { this.children.push(...rows); }, replaceChildren(...rows) { this.children = rows; },
       remove() { const parent = nodes.get('transcript'); parent.children = parent.children.filter(row => row !== this); } };
     if (id) nodes.set(id, value); return value;
@@ -27,7 +28,7 @@ function fixture() {
     nativeActivity: 'none', liveTransport: { kind: 'gpt_live_v3', verifiedModel: null },
     nativeWork: { scopeId: '0123456789abcdef', revision: 0, active: [], recent: [] },
     duty: { catId: 'cat', displayName: '宪宪' }, carrier: { catId: 'cat', displayName: '宪宪' } };
-  let onControls, onVoice, receive, history = async () => ({ threadTitle: '猫猫球 · 伴随对话', messages: [{ id: 'old', role: 'user', text: '之前的对话', name: '你' }] });
+  let onControls, onVoice, receive, travelObserver, history = async () => ({ threadTitle: '猫猫球 · 伴随对话', messages: [{ id: 'old', role: 'user', text: '之前的对话', name: '你' }] });
   let decisions = async (offset, limit) => ({ kind: 'decisions', status: 'available', approvalCount: 0,
     needsMeCount: 0, otherNeedsMeCount: 0, approvals: [], otherNeedsMe: [],
     page: { offset, limit, hasMoreApprovals: false, hasMoreNeedsMe: false } });
@@ -39,24 +40,36 @@ function fixture() {
     inspectF221: async proposalId => { calls.push(`inspect:${proposalId}`); return { kind: 'decision-trial', status: 'trial_confirmed' }; },
     readDecisions: (offset, limit) => decisions(offset, limit),
     readConversation: () => { calls.push('read'); return history(); } };
-  class VoicePeer { constructor(callback) { onVoice = callback; } async connect() { onVoice({ type: 'connected' }); } muteMic() {} muteSpeaker() {} async close() { calls.push('close'); } }
+  class VoicePeer { constructor(callback) { onVoice = callback; }
+    async connect(mode) { calls.push(['connect', mode]); onVoice({ type: 'connected' }); }
+    muteMic(value) { calls.push(['microphone', value]); } muteSpeaker() {} async close() { calls.push('close'); } }
   class ScreenShare { async stop() {} async start() { calls.push('screen-pick'); } }
   class PetMotion { setContext(value) { motionCalls.push(value); } syncSnapshot(value) { motionCalls.push({ snapshot: value }); }
+    syncNativeSnapshot(value) { motionCalls.push({ snapshot: value }); }
+    syncTravel(value) { motionCalls.push({ travel: value }); }
     setPendingDecision(value) { motionCalls.push({ pendingDecision: value }); } signal(value) { motionCalls.push(value); }
     move() {} stopMove() {} close() {} }
+  class NativeWindowTravel { constructor(options) { travelObserver = options; } start() {} setManual() {} close() {} }
   class LivingBody {}
   node('message');
   node('decisions');
   runInNewContext(source.replace(/^import .*;\n/gm, ''), { document, window: { clowderCompanion: {}, addEventListener() {} },
     createCompanionClient: () => client, bindPetControls: (_client, callbacks) => { onControls = callbacks; return controls; },
-    CompanionConversation, TranscriptView, RecentBubble, PetMotion, LivingBody, VoicePeer, ScreenShare,
+    CompanionConversation, TranscriptView, RecentBubble, PetMotion, LivingBody, NativeWindowTravel, VoicePeer, ScreenShare,
     decisionBadge, decisionRows, normalizeNativeWork, currentCompanionIdentity, explainError: () => '未更新',
     setInterval: callback => { monitors.push(callback); }, clearInterval() {}, crypto: { randomUUID: () => 'fixture' } });
   return { calls, motionCalls, nodes, controls, action: kind => onControls.action(kind), start: () => onControls.action('begin'), voice: event => onVoice(event),
-    tick: () => monitors.forEach(callback => callback()), receive: event => receive(event),
+    tick: () => monitors.forEach(callback => callback()), receive: event => receive(event), travel: value => travelObserver.changed(value),
     history: callback => { history = callback; }, decisions: callback => { decisions = callback; },
     identity: value => { identity = value; } };
 }
+
+test('actual native travel is delivered separately from the Host work snapshot', async () => {
+  const f = fixture();
+  await flush();
+  f.travel({ eventId: 'native-1', status: 'active', dx: -12, dy: 0, expiresAt: Date.now() + 500 });
+  assert.ok(f.motionCalls.some(value => value.travel?.eventId === 'native-1'));
+});
 
 test('opening history during voice and refreshing it preserves speech without closing audio', async () => {
   const f = fixture(); await flush(); f.start(); await flush();
@@ -67,6 +80,25 @@ test('opening history during voice and refreshing it preserves speech without cl
   f.tick(); await flush();
   assert.equal(f.nodes.get('transcript').children.at(-1).textContent, '正在说');
   assert.ok(!f.calls.includes('stop')); assert.ok(!f.calls.includes('close'));
+});
+
+test('native history renders the saved companion separately from the real message author', async () => {
+  const f = fixture();
+  f.history(async () => ({ threadTitle: '猫猫球 · 伴随对话', messages: [{
+    id: 'identity-history', role: 'assistant', text: '查到了', name: '砚砚',
+    companionIdentity: {
+      v: 1, name: '猫猫球',
+      partner: { catId: 'fable-5', displayName: '宪宪', skin: 'xianxian-codex' },
+      live: { catId: 'codex-sol', displayName: '砚砚', transport: 'gpt_live_v3', verifiedModel: null },
+      deep: { catId: 'fable-5', displayName: '宪宪', verifiedModel: null },
+    },
+  }], hasMore: false }));
+  await flush(); f.tick(); await flush();
+  const row = f.nodes.get('transcript').children[0];
+  assert.equal(row.dataset.author, '砚砚');
+  assert.equal(row.dataset.companion, '当时由宪宪陪伴');
+  assert.match(row.dataset.companionLive, /Live 快端：砚砚/u);
+  assert.match(row.dataset.companionDeep, /深思端：宪宪/u);
 });
 
 test('voice keeps the latest two Host messages beside the cat while history stays closed', async () => {
@@ -86,6 +118,44 @@ test('screen entry explains its scope before voice and opens the picker only aft
   f.start(); await flush();
   f.action('share'); await flush();
   assert.ok(f.calls.includes('screen-pick'));
+});
+
+test('receive-only is capability-gated and keeps microphone controls out of the episode', async () => {
+  const f = fixture(); await flush();
+  assert.equal(f.nodes.get('listen').hidden, true, 'an old Host has no receive-only control');
+  f.identity({ phase: 'idle', displayName: '宪宪', skin: 'xianxian-codex',
+    nativeActivity: 'none', liveTransport: { kind: 'gpt_live_v3', verifiedModel: null },
+    nativeWork: { scopeId: null, revision: 0, active: [], recent: [] },
+    duty: { catId: 'cat', displayName: '宪宪' }, carrier: { catId: 'cat', displayName: '宪宪' },
+    audio: { supportedModes: ['duplex', 'receive_only'], activeMode: null } });
+  f.tick(); await flush();
+  assert.equal(f.nodes.get('listen').hidden, false);
+  f.action('listen'); await flush();
+  assert.ok(f.calls.some(call => Array.isArray(call) && call[0] === 'connect' && call[1] === 'receive_only'));
+  assert.equal(f.calls.some(call => Array.isArray(call) && call[0] === 'microphone'), false);
+  assert.equal(f.nodes.get('mic').hidden, true);
+  assert.equal(f.nodes.get('call-badge-icon').attributes.href, '#i-listen');
+  assert.match(f.nodes.get('status').textContent, /麦克风未启用/u);
+});
+
+test('an interrupted receive-only episode keeps no-mic retry visible and primary', async () => {
+  const f = fixture();
+  f.identity({ phase: 'idle', displayName: '宪宪', skin: 'xianxian-codex',
+    nativeActivity: 'none', liveTransport: { kind: 'gpt_live_v3', verifiedModel: null },
+    nativeWork: { scopeId: null, revision: 0, active: [], recent: [] },
+    duty: { catId: 'cat', displayName: '宪宪' }, carrier: { catId: 'cat', displayName: '宪宪' },
+    audio: { supportedModes: ['duplex', 'receive_only'], activeMode: null } });
+  await flush(); f.tick(); await flush();
+  f.action('listen'); await flush();
+  f.receive({ kind: 'media-stopped', reason: 'closed' }); await flush();
+
+  assert.equal(f.nodes.get('status').hidden, false);
+  assert.match(f.nodes.get('status').textContent, /麦克风未启用.*点击只听重试/u);
+  assert.equal(f.nodes.get('listen.label').textContent, '重试只听');
+  assert.equal(f.nodes.get('listen').className, 'primary');
+  assert.equal(f.nodes.get('begin.label').textContent, '语音聊');
+  assert.equal(f.nodes.get('begin').className, '');
+  assert.equal(f.controls.panel, 'actions');
 });
 
 test('history requested before a call is still displayed when it arrives during voice', async () => {
