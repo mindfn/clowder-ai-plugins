@@ -18,6 +18,77 @@ test('cat-first controls stay bounded to this window and its existing conversati
   assert.equal(validateCompanionEvent({ kind: 'view-dismiss' }), true);
 });
 
+test('call transcript is a Host-bound read with stable source identity', () => {
+  assert.equal(validateCompanionCommand({ kind: 'transcript.read' }), true);
+  assert.equal(validateCompanionCommand({ kind: 'transcript.read', callId: 'renderer-chosen' }), false,
+    'the renderer cannot select a call');
+  assert.equal(validateCompanionCommand({ kind: 'view.layout', panel: 'transcript', width: 420, height: 500 }), true);
+
+  const callId = '863adf11-9fa3-4156-93af-94f7d6022d85';
+  const reply = {
+    kind: 'transcript',
+    scope: { callId, realtimeSessionId: 'rtc-session-1' },
+    rows: [
+      {
+        messageId: 'voice-message-1', role: 'assistant', text: '翻译结果',
+        source: {
+          kind: 'voice', nativeThreadId: 'native-thread-1', realtimeSessionId: 'rtc-session-1',
+          nativeItemId: 'item-1', nativeTurnId: 'turn-1',
+        },
+      },
+      {
+        messageId: 'typed-message-1', role: 'user', text: '请解释这一句',
+        source: { kind: 'typed', clientMessageId: '6d01d254-1e3b-4588-a352-756449e95025', callId },
+      },
+    ],
+    hasMore: false,
+  };
+  assert.equal(validateCompanionReply(reply), true);
+  assert.equal(validateCompanionReply({ ...reply, rows: [
+    { ...reply.rows[1], role: 'assistant' },
+  ] }), false, 'typed rows are always the owner input');
+  assert.equal(validateCompanionReply({ ...reply, rows: [
+    { ...reply.rows[0], source: { ...reply.rows[0].source, realtimeSessionId: 'another-session' } },
+  ] }), false, 'voice rows must belong to the returned scope');
+  assert.equal(validateCompanionReply({ ...reply, rows: [
+    { ...reply.rows[1], source: { ...reply.rows[1].source, callId: 'cc734568-0695-42e6-a783-ec4708f31979' } },
+  ] }), false, 'typed rows must belong to the returned call');
+  assert.equal(validateCompanionReply({ ...reply, rows: [reply.rows[0], reply.rows[0]] }), false,
+    'one durable message cannot occupy two transcript positions');
+  assert.equal(validateCompanionReply({ ...reply, rows: [
+    { ...reply.rows[0], text: 'a'.repeat(16000) },
+    { ...reply.rows[1], text: 'b'.repeat(8001) },
+  ] }), false, 'the whole transcript reply stays inside the 24000-character budget');
+});
+
+test('typed delivery receipts preserve retry and durable message identities', () => {
+  const callId = '863adf11-9fa3-4156-93af-94f7d6022d85';
+  const clientMessageId = '6d01d254-1e3b-4588-a352-756449e95025';
+  assert.equal(validateCompanionReply({
+    kind: 'delivery', delivery: 'accepted', clientMessageId, messageId: 'message-1', callId,
+  }), true);
+  assert.equal(validateCompanionReply({
+    kind: 'delivery', delivery: 'unconfirmed', clientMessageId, messageId: null, callId,
+  }), true);
+  assert.equal(validateCompanionReply({ kind: 'delivery', delivery: 'accepted' }), false,
+    'legacy receipts cannot support deterministic transcript reconciliation');
+  assert.equal(validateCompanionReply({
+    kind: 'delivery', delivery: 'accepted', clientMessageId, messageId: null, callId,
+  }), false, 'accepted means the durable message identity is known');
+});
+
+test('real-time audio events are scoped to the current call', () => {
+  const callId = '863adf11-9fa3-4156-93af-94f7d6022d85';
+  assert.equal(validateCompanionEvent({
+    kind: 'audio', type: 'transcript', callId, role: 'assistant', text: '实时字幕', itemId: 'item-1',
+  }), true);
+  assert.equal(validateCompanionEvent({
+    kind: 'audio', type: 'transcript', role: 'assistant', text: '旧通话字幕', itemId: 'item-1',
+  }), false);
+  assert.equal(validateCompanionEvent({ kind: 'audio', type: 'connected', callId }), true);
+  assert.equal(validateCompanionEvent({ kind: 'audio', type: 'connected' }), false);
+});
+
 test('conversation history accepts only an immutable D0 companion identity snapshot', () => {
   const companionIdentity = {
     v: 1,
@@ -95,9 +166,13 @@ test('surface state preserves real actors but never leaks internal handles or ra
       occurredAt: 200, expiresAt: 120200, resultId: 'result-1', nativeCarrierCatId: 'codex-sol' }],
   };
   const state = { kind: 'state', phase: 'idle', displayName: 'Companion', skin: 'cat', duty: { catId: 'deep', displayName: 'Deep' },
-    carrier: { catId: 'voice', displayName: 'Voice' }, documentsAllowed: true, toolsReady: false, nativeActivity: 'none',
+    carrier: { catId: 'voice', displayName: 'Voice' }, documentsAllowed: true, behaviorEnabled: true,
+    toolsReady: false, nativeActivity: 'none',
     liveTransport: { kind: 'gpt_live_v3', verifiedModel: null }, nativeWork };
   assert.equal(validateCompanionReply(state), true);
+  const { behaviorEnabled: _behavior, ...withoutBehavior } = state;
+  assert.equal(validateCompanionReply(withoutBehavior), false,
+    'native movement and plugin settings cannot guess the persisted autonomous-behavior preference');
   const receiveOnly = { supportedModes: ['duplex', 'receive_only'], activeMode: 'receive_only' };
   assert.equal(validateCompanionReply({ ...state, phase: 'talking', audio: receiveOnly }), true);
   assert.equal(validateCompanionReply({ ...state, audio: { ...receiveOnly, activeMode: null } }), true);
