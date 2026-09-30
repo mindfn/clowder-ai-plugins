@@ -104,7 +104,17 @@ test('real module entry starts across the SDK carrier and serves every p2b actio
   const dataDirectory = await mkdtemp(join(tmpdir(), 'p2a-real-entry-'));
   t.after(() => rm(dataDirectory, { recursive: true, force: true }));
 
-  const activation = await entrypoint.create(loadManifest()).start(makeHost(dataDirectory));
+  const logs: { level: string; message: string }[] = [];
+  const host = makeHost(dataDirectory);
+  const activation = await entrypoint.create(loadManifest()).start({
+    ...host,
+    log: (level, message) => { logs.push({ level, message }); },
+  });
+  const initialStatus = await activation.actions[PERSONAL_CHROME_STATUS_METHOD]!({}) as {
+    label: string; data: { helper: { state: string } };
+  };
+  assert.equal(initialStatus.data.helper.state, 'unknown');
+  assert.match(initialStatus.label, /Helper: unknown/);
 
   for (const method of [
     PERSONAL_CHROME_LIST_METHOD,
@@ -156,6 +166,9 @@ test('real module entry starts across the SDK carrier and serves every p2b actio
   assert.ok(listed && typeof listed === 'object', 'list returns a result');
   const status = await activation.actions[PERSONAL_CHROME_STATUS_METHOD]!({});
   assert.ok(status && typeof status === 'object', 'status returns a result');
+  assert.equal((status as { data: { helper: { state: string } } }).data.helper.state, 'not_installed');
+  assert.match((status as { label: string }).label, /README: Owner-run native host installation/);
+  assert.equal(logs.filter((log) => log.level === 'warn').length, 1, 'carrier forwards one state-change warning');
   // p2b makes `test` honest: the probe must actually attempt reachability and
   // report not-ok when no helper/pairing exists, never claiming reachability
   // without probing.

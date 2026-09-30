@@ -2,7 +2,7 @@
 
 `@clowder-ai/personal-chrome-companion` is the public, packable source closure
 for F247's narrow Chrome MV3 and Native Messaging companion. It exports the
-versioned v1 machine grammar, a static extension, the POSIX helper CLI, and a
+static extension, the POSIX helper CLI, and a
 declarative Clowder module plugin (`plugin.yaml`, plugin id
 `official.companion.personal-chrome`) that hosts authorized ChatGPT
 conversations for the cloud cat.
@@ -16,21 +16,39 @@ and grants it to the feature through the `data.directory` capability.
 ## Module plugin surface
 
 The `personal-chrome-host` feature owns one `cloud-conversation-host`
-contribution (`provider: chatgpt`). Its three conversation methods are **p2a
-placeholders**; p2b replaces them with the native-host socket client:
+contribution (`provider: chatgpt`). Its three conversation methods use the
+package's native-host socket client and the helper's v2 protocol:
 
-- `personal-chrome-host.append-message` — currently always
-  `{ status: 'failed', errorCode: 'HOST_UNAVAILABLE' }` (the request never
-  leaves the package, so no effect could have happened).
-- `personal-chrome-host.assistant-returns.list` — currently `{ returns: [] }`.
-- `personal-chrome-host.assistant-returns.ack` — currently
-  `{ status: 'failed', errorCode: 'HOST_UNAVAILABLE' }`.
+- `personal-chrome-host.append-message` sends to an authorized conversation.
+- `personal-chrome-host.assistant-returns.list` fetches at most one pending reply.
+- `personal-chrome-host.assistant-returns.ack` acknowledges that reply; listing
+  alone never removes it.
 
 The `personalChromeAuthorizations` operation lists the authorized
 conversations as Host-rendered rows (one `revoke` row action each), revokes one
 authorization by `conversationId`, and reports authorization status. The
 underlying store holds at most 32 authorizations; the operation surfaces that
 ceiling through the status action.
+
+Status also shows the **last observed** helper connection state. It never opens
+a socket: use **Test** for a live health probe. Authorization and helper
+reachability are reported separately; a connected helper does not by itself
+mean the extension is ready or a conversation is authorized.
+
+| Helper state | Meaning and next action |
+| --- | --- |
+| `unknown` | No connection observation since this start; run Test. Invalid pairing configuration also leaves the previous observation unchanged; Test reports the configuration error. |
+| `not_installed` | No pairing record; follow **Owner-run native host installation** below, then run Test. |
+| `unreachable` | Socket missing or connection refused; check Chrome and the extension, then run Test to retry now. Status includes the outage start, failure count and earliest next list attempt. |
+| `connected` | A socket connection was accepted; status includes the last contact time. Run Test to check current helper/extension health. |
+
+When the helper is unavailable, list returns `{ returns: [] }` and retries only
+on a later Host poll after 2, 4, 8, 16, 32, then at most every 60 seconds. There
+is no background retry timer. Append, acknowledge and Test bypass this delay;
+any accepted connection resets it, even when the helper returns a business
+failure. Errors after a write are never treated as pre-send unavailability.
+Only connection-state changes produce logs. Stop clears these observations and
+cancels pending requests; it does not delete authorizations or pending replies.
 
 ## Owner-run native host installation
 

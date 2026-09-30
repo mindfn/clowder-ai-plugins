@@ -15,6 +15,7 @@ import {
 } from './pairing-record.js';
 import { PersonalChromeHostError, PersonalChromeHostRequestTracker, type PersonalChromeHostAdapterOptions } from './personal-chrome-host-transport.js';
 import type { PersonalChromeAssistantReturnCursor } from './assistant-return-cursor.js';
+import { HelperReachability, type HelperConnectionLog, type HelperConnectionStatus } from './helper-reachability.js';
 
 export interface PersonalChromeConversationHostOperations {
   readonly appendMessage: (input: unknown) => Promise<CloudConversationAppendMessageResult>;
@@ -22,6 +23,8 @@ export interface PersonalChromeConversationHostOperations {
   readonly ack: (input: unknown) => Promise<CloudConversationAckResult>;
   /** Honest reachability probe for the `test` action: never claims ok without a real probe. */
   readonly probe: () => Promise<{ readonly ok: boolean; readonly message: string }>;
+  /** Last-known connection state; never opens a socket or reads the pairing record. */
+  readonly status: () => HelperConnectionStatus;
   readonly dispose: () => Promise<void>;
 }
 
@@ -51,11 +54,13 @@ function ackFailure(errorCode: string, extras: Readonly<Record<string, unknown>>
  */
 async function resolveAdapterOptions(
   dataDirectory: string,
+  onNotInstalled: () => void,
 ): Promise<PersonalChromeHostAdapterOptions> {
   try {
     return await readPersonalChromeAdapterOptions(dataDirectory);
   } catch (error) {
     if (isPersonalChromeNotInstalled(error)) {
+      onNotInstalled();
       throw new PersonalChromeHostError('HOST_UNAVAILABLE', 'personal Chrome host is not installed');
     }
     throw error;
@@ -85,6 +90,8 @@ function toCursor(value: unknown): PersonalChromeAssistantReturnCursor | undefin
 export function createConversationHostOperations(options: {
   readonly dataDirectory: string;
   readonly timeoutMs?: number;
+  readonly now?: () => number;
+  readonly log?: HelperConnectionLog;
 }): PersonalChromeConversationHostOperations {
   const { dataDirectory } = options;
   let disposed = false;
@@ -92,6 +99,17 @@ export function createConversationHostOperations(options: {
   // sockets and settles the pending promises (written ones as AMBIGUOUS_EFFECT)
   // instead of leaking them until their timeouts (ledger h3 (e)).
   const requestTracker = new PersonalChromeHostRequestTracker();
+  const reachability = new HelperReachability(options.now ?? Date.now, options.log);
+  const unavailable = (state: 'unreachable' | 'not_installed'): void => {
+    if (!disposed) reachability.unavailable(state);
+  };
+  const adapterOptionsForRequest = async (): Promise<PersonalChromeHostAdapterOptions> => ({
+    ...(await resolveAdapterOptions(dataDirectory, () => unavailable('not_installed'))),
+    timeoutMs: options.timeoutMs,
+    requestTracker,
+    onConnected: () => { if (!disposed) reachability.connected(); },
+    onUnavailable: () => unavailable('unreachable'),
+  });
 
   const appendMessage = async (input: unknown): Promise<CloudConversationAppendMessageResult> => {
     if (disposed) return appendFailure('HOST_UNAVAILABLE');
@@ -100,11 +118,7 @@ export function createConversationHostOperations(options: {
     }
     let adapterOptions: PersonalChromeHostAdapterOptions;
     try {
-      adapterOptions = {
-        ...(await resolveAdapterOptions(dataDirectory)),
-        timeoutMs: options.timeoutMs,
-        requestTracker,
-      };
+      adapterOptions = await adapterOptionsForRequest();
     } catch (error) {
       if (error instanceof PersonalChromeHostError) return appendFailure(error.code);
       return appendFailure('AMBIGUOUS_EFFECT');
@@ -138,17 +152,13 @@ export function createConversationHostOperations(options: {
   };
 
   const list = async (input: unknown): Promise<CloudConversationListResult> => {
-    if (disposed) return { returns: [] };
+    if (disposed || !reachability.canList()) return { returns: [] };
     let adapterOptions: PersonalChromeHostAdapterOptions;
     try {
-      adapterOptions = {
-        ...(await resolveAdapterOptions(dataDirectory)),
-        timeoutMs: options.timeoutMs,
-        requestTracker,
-      };
+      adapterOptions = await adapterOptionsForRequest();
     } catch {
-      // Unreachable helper is an empty poll round, not an error (Host h3b backs
-      // off on its own cadence); failed lists never log here.
+      // Empty poll round; only a missing pairing record or a pre-send socket
+      // failure changes reachability. Other errors do not start list backoff.
       return { returns: [] };
     }
     // Stop during pairing resolution: nothing sent yet, report an empty round.
@@ -169,11 +179,7 @@ export function createConversationHostOperations(options: {
     }
     let adapterOptions: PersonalChromeHostAdapterOptions;
     try {
-      adapterOptions = {
-        ...(await resolveAdapterOptions(dataDirectory)),
-        timeoutMs: options.timeoutMs,
-        requestTracker,
-      };
+      adapterOptions = await adapterOptionsForRequest();
     } catch (error) {
       if (error instanceof PersonalChromeHostError) return ackFailure(error.code);
       return ackFailure('AMBIGUOUS_EFFECT');
@@ -201,11 +207,7 @@ export function createConversationHostOperations(options: {
     if (disposed) return { ok: false, message: 'personal Chrome host module is stopped' };
     let adapterOptions: PersonalChromeHostAdapterOptions;
     try {
-      adapterOptions = {
-        ...(await resolveAdapterOptions(dataDirectory)),
-        timeoutMs: options.timeoutMs,
-        requestTracker,
-      };
+      adapterOptions = await adapterOptionsForRequest();
     } catch (error) {
       if (error instanceof PersonalChromeHostError && error.code === 'HOST_UNAVAILABLE') {
         return { ok: false, message: 'personal Chrome host is not installed (no pairing record)' };
@@ -237,8 +239,10 @@ export function createConversationHostOperations(options: {
     list,
     ack,
     probe,
+    status: () => reachability.snapshot(),
     dispose: async () => {
       disposed = true;
+      reachability.reset();
       requestTracker.cancelAll();
     },
   };

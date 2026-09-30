@@ -48,6 +48,9 @@ export interface PersonalChromeHostAdapterOptions {
    * pending promise instead of leaking it until the timeout.
    */
   readonly requestTracker?: PersonalChromeHostRequestTracker;
+  /** Socket facts, independent of the helper's business result/error code. */
+  readonly onConnected?: () => void;
+  readonly onUnavailable?: () => void;
 }
 
 /**
@@ -174,10 +177,17 @@ function exchangeLocalFrame<
 
     socket.setEncoding('utf8');
     socket.once('connect', () => {
+      if (settled) return;
       requestSent = true;
+      options.onConnected?.();
       socket.write(serialized);
     });
     socket.once('error', (error) => {
+      if (settled) return;
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!requestSent && (code === 'ENOENT' || code === 'ECONNREFUSED')) {
+        options.onUnavailable?.();
+      }
       const failure = requestSent
         ? new PersonalChromeHostError(
             'AMBIGUOUS_EFFECT',

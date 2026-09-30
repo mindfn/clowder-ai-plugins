@@ -14,6 +14,7 @@ import {
 } from '@clowder-ai/plugin-sdk';
 
 import { createConversationHostOperations } from './conversation-host.js';
+import { describeHelperConnection, type HelperConnectionStatus } from './helper-reachability.js';
 import {
   PERSONAL_CHROME_AUTHORIZATION_LIMIT,
   PersonalChromeConversationAuthorizationError,
@@ -113,9 +114,18 @@ function isNeedsAuthorization(error: unknown): boolean {
 export function createAuthorizationOperations(options: {
   readonly authorizationPath: string;
   readonly now?: () => Date;
+  readonly helperStatus?: () => HelperConnectionStatus;
 }): PersonalChromeAuthorizationOperations {
   const { authorizationPath } = options;
   const now = options.now ?? (() => new Date());
+  const statusResult = (data: Readonly<Record<string, unknown>>, label: string): OperationActionResult => {
+    const helper = options.helperStatus?.() ?? { state: 'unknown' };
+    return {
+      render: 'status',
+      data: { ...data, helper },
+      label: `${label} ${describeHelperConnection(helper)}`,
+    };
+  };
 
   const readRows = async (): Promise<OperationActionResult> => {
     let collection: PersonalChromeConversationAuthorizationCollection;
@@ -143,23 +153,23 @@ export function createAuthorizationOperations(options: {
     status: async () => {
       try {
         const collection = await readPersonalChromeConversationAuthorizations(authorizationPath);
-        return {
-          render: 'status',
-          data: {
+        return statusResult(
+          {
             status: 'ready',
             authorizedCount: collection.conversations.length,
             authorizationLimit: PERSONAL_CHROME_AUTHORIZATION_LIMIT,
             updatedAt: collection.updatedAt,
           },
-          label: `${collection.conversations.length}/${PERSONAL_CHROME_AUTHORIZATION_LIMIT} conversations authorized`,
-        };
+          `${collection.conversations.length}/${PERSONAL_CHROME_AUTHORIZATION_LIMIT} conversations authorized`,
+        );
       } catch (error) {
         if (isNeedsAuthorization(error)) {
-          return {
-            render: 'status',
-            data: { status: 'needs-authorization', authorizedCount: 0, authorizationLimit: PERSONAL_CHROME_AUTHORIZATION_LIMIT },
-            label: NO_AUTHORIZATION_EMPTY_TEXT,
-          };
+          return statusResult(
+            {
+              status: 'needs-authorization', authorizedCount: 0, authorizationLimit: PERSONAL_CHROME_AUTHORIZATION_LIMIT,
+            },
+            NO_AUTHORIZATION_EMPTY_TEXT,
+          );
         }
         throw error;
       }
@@ -186,10 +196,11 @@ export function createPersonalChromePluginModule() {
           // Throws FeaturePermissionError (code 'PERMISSION') when the owning
           // feature is not granted the data.directory capability.
           const dataDirectory = context.dataDirectory;
+          const conversationHost = createConversationHostOperations({ dataDirectory, log: context.log });
           const operations = createAuthorizationOperations({
             authorizationPath: join(dataDirectory, 'conversation-binding.json'),
+            helperStatus: conversationHost.status,
           });
-          const conversationHost = createConversationHostOperationsForDataDirectory(dataDirectory);
           const registration = await context.conversationHosts.register(
             personalChromeHostContribution,
           );
