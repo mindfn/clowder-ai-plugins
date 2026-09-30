@@ -157,7 +157,7 @@ the ordinary-text negative path.
 PR #54 is a **draft** served from the fork (`mindfn/clowder-ai-plugins`, branch
 `feat/f202-train-c1-plugins-migration`). **Do not merge or publish it yet**: it leaves draft only when it and the
 Host PR zts212653/clowder-ai#1487 can merge together (owner decision, 2026-09-23). The contract is at
-`0.1.0-beta.26` and the SDK at `0.2.0-beta.10`; neither is published to npm, and neither needs to be for the dev
+`0.1.0-beta.27` and the SDK at `0.2.0-beta.11`; neither is published to npm, and neither needs to be for the dev
 wave, because the Host installs owner-supplied self-contained artifacts (Host S10).
 
 | Wave | Scope | State |
@@ -181,6 +181,7 @@ Each version's shape was frozen in the Host ledger before it was implemented her
 | contract `0.1.0-beta.24` / SDK `0.2.0-beta.7` | W2-3 shapes — `ActionDef.render 'row'` with `confirm` (1..200), `OperationRows` v1 bounds; `runtime.dataDirectory` single-segment name with the `data.directory` capability (SDK `context.dataDirectory` throws PERMISSION when ungranted); cloud-conversation-host contribution (provider chatgpt) with `cloud.conversation.host` capability, appendMessage/list/ack shapes and `CloudBridgeFailureDiagnosticV1`; `MAX_GRANT_ITEMS` 21→23 |
 | contract `0.1.0-beta.25` / SDK `0.2.0-beta.8` | synchronized main #63's companion-bridge work-truth declarations onto the reviewed beta.24 line; SDK behavior is unchanged and its version advances only to pin beta.25 |
 | contract `0.1.0-beta.26` / SDK `0.2.0-beta.10` | synchronized main #64's real F221 proposal-id grammar and #67's companion identity/geometry work; SDK behavior is unchanged and its version advances only to pin beta.26 |
+| contract `0.1.0-beta.27` / SDK `0.2.0-beta.11` | synchronized main #68/#69's F317 receive-only audio and preserved companion-history identities; SDK behavior follows #68/#69 and its version advances to pin beta.27 |
 
 ### W2 on the package side
 
@@ -272,15 +273,16 @@ Publishing is automated: on a push to `main` that touches a public package, Cont
 `next`, and fails if an already-published version packs to different bytes. A version is therefore taken as soon
 as it lands on `main` (#58 put companion `0.1.0-alpha.4` on `main` at 08:31Z on 2026-09-23; CI published it at
 08:38Z), and a published version never gets new bytes — which is why this PR bumps companion to
-`0.1.0-alpha.16` and genoffice-docx to `0.1.0-alpha.2` — #59 took
+`0.1.0-alpha.18` and genoffice-docx to `0.1.0-alpha.2` — #59 took
 `0.1.0-alpha.5` on 2026-09-25 (merged 09:56Z, published to npm from main) and #60–#62 then took
 `0.1.0-alpha.6`–`0.1.0-alpha.8` (the 2026-09-26 sync of `origin/main` verified this against
 `https://registry.npmjs.org/@clowder-ai%2fcompanion`), #63 published `0.1.0-alpha.9`, and main later published
-the #64/#67 line through `0.1.0-alpha.11`. The C1 closure intentionally leaves five numbers for main's active
-F317 line, so its distinct companion bytes ship as `0.1.0-alpha.16`.
+the #64/#67 line through `0.1.0-alpha.11`, then #68/#69 published the F317 line through
+`0.1.0-alpha.13`. The C1 closure again leaves five numbers for main's active F317 line, so its distinct
+companion bytes ship as `0.1.0-alpha.18`.
 
-Every version this PR claims is provisional: companion `0.1.0-alpha.16`, genoffice-docx `0.1.0-alpha.2`,
-video-analysis `0.1.0-alpha.2`, plugin-contract `0.1.0-beta.26`, plugin-sdk `0.2.0-beta.10`, and the first version
+Every version this PR claims is provisional: companion `0.1.0-alpha.18`, genoffice-docx `0.1.0-alpha.2`,
+video-analysis `0.1.0-alpha.2`, plugin-contract `0.1.0-beta.27`, plugin-sdk `0.2.0-beta.11`, and the first version
 of each package this PR adds. Right before merging, a version is free only if it is absent from
 `https://registry.npmjs.org` **and** not claimed by `main`'s `package.json` or catalog; if either check fails,
 re-bump to the next free version and re-pack with the fixed toolchain. Query `registry.npmjs.org` directly:
