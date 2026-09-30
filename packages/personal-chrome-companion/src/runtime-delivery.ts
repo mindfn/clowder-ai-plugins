@@ -73,8 +73,7 @@ export async function prepareRuntimeDelivery(dataDirectory: string, sources: {
   try {
     await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
     if (!(await lstat(dataDirectory)).isDirectory()) throw new Error('data directory must not be a symlink');
-    const lease = await acquireProcessLease(join(dataDirectory, 'install'), { label: 'native host installation' });
-    try {
+    await republishNativeHost({ dataDirectory, sourceDirectory: sources.nativeHostDirectory, activate: async (publish) => {
       const files = await extensionFiles(sources.extensionDirectory ?? fileURLToPath(new URL('../extension/', import.meta.url)));
       const digest = extensionDigest(files);
       let previousDigest: string | undefined;
@@ -94,14 +93,12 @@ export async function prepareRuntimeDelivery(dataDirectory: string, sources: {
         // Persist before changing bytes: a restart must not forget a pending owner action.
         await writeRecord(recordPath, record);
       }
-      if (previousDigest !== digest) await replaceExtension(dataDirectory, files);
-    } finally { await lease.release(); }
-    await republishNativeHost({ dataDirectory, sourceDirectory: sources.nativeHostDirectory });
+      return previousDigest !== digest ? replaceExtension(dataDirectory, files, publish) : publish();
+    } });
   } catch (error) { failure ??= failureClass(error); }
 
   let reloadRequired = record?.reloadRequired ?? false;
   const recordContact = async (revisions: PersonalChromeRevisions | undefined, errorCode?: string): Promise<void> => {
-    if (disposed) return;
     const stale = errorCode?.startsWith('STALE_') === true;
     if (stale) reloadRequired = true;
     if (!record) return;
@@ -113,14 +110,14 @@ export async function prepareRuntimeDelivery(dataDirectory: string, sources: {
       const lease = await acquireProcessLease(join(dataDirectory, 'install'), { label: 'native host installation' });
       try {
         const current = await readRecord(recordPath);
-        if (disposed || current?.generation !== record.generation) return;
+        if (current?.generation !== record.generation) return;
         const next = { ...record, reloadRequired: stale };
         await writeRecord(recordPath, next);
-        if (!disposed) { record = next; reloadRequired = next.reloadRequired; }
+        record = next; reloadRequired = next.reloadRequired;
       } finally { await lease.release(); }
     } catch (error) {
       // Bookkeeping cannot change the result of an already-sent append.
-      if (!disposed) { reloadRequired = true; failure = failureClass(error); }
+      reloadRequired = true; failure = failureClass(error);
     }
   };
   const status = (): RuntimeDeliveryStatus => ({ extensionPath, reloadRequired,
@@ -132,6 +129,7 @@ export async function prepareRuntimeDelivery(dataDirectory: string, sources: {
       reloadRequired ? 'Reload the extension once in chrome://extensions, then run Test.' : '',
     ].filter(Boolean).join(' '),
     observe: (revisions, errorCode) => {
+      if (disposed) return Promise.resolve();
       // Preserve reply order across async disk writes; a later STALE reply must not be lost.
       observationWork = observationWork.then(() => recordContact(revisions, errorCode));
       return observationWork;

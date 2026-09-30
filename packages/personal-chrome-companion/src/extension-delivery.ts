@@ -26,7 +26,8 @@ export function extensionDigest(files: ReadonlyMap<string, Buffer>): string {
 }
 
 /** Caller holds the install lease. The previous complete directory is recoverable until activation. */
-export async function replaceExtension(dataDirectory: string, files: ReadonlyMap<string, Buffer>): Promise<void> {
+export async function replaceExtension<T>(dataDirectory: string, files: ReadonlyMap<string, Buffer>,
+  activate: () => Promise<T>): Promise<T> {
   const destination = join(dataDirectory, 'extension');
   const staging = join(dataDirectory, `.extension-${randomUUID()}`);
   const backup = join(dataDirectory, `.extension-previous-${randomUUID()}`);
@@ -46,8 +47,11 @@ export async function replaceExtension(dataDirectory: string, files: ReadonlyMap
     }
     try {
       await rename(staging, destination);
+      const result = await activate();
       activated = true;
+      return result;
     } catch (error) {
+      await rm(destination, { recursive: true, force: true });
       if (backedUp) await rename(backup, destination);
       throw error;
     }

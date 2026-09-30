@@ -253,6 +253,7 @@ export async function republishNativeHost({
   nodeExecutable = process.execPath,
   now = () => new Date(),
   writePairingRecord = writePersonalChromePairingRecordAtomic,
+  activate = (publish) => publish(),
 } = {}) {
   requireExact(dataDirectory, 'dataDirectory');
   if (!isAbsolute(dataDirectory)) throw new Error('dataDirectory must be absolute');
@@ -268,7 +269,9 @@ export async function republishNativeHost({
     pairingRecordPath: join(dataDirectory, 'pairing.json'),
     launcherPath: join(dataDirectory, 'native-host-launcher.mjs'),
   };
-  return runInstallationMutation(paths, process.platform, async () => {
+  // The activation callback composes extension publication with this helper mutation
+  // under one installer lease. It must await publication before committing its backup.
+  return runInstallationMutation(paths, process.platform, () => activate(async () => {
     const previous = await readOptionalPairingRecord(paths.pairingRecordPath);
     if (!previous) return { operation: 'not_installed' };
     assertInstallMutationSupported(process.platform);
@@ -302,7 +305,7 @@ export async function republishNativeHost({
       throw error;
     }
     return { operation: 'republished', artifactDigest: artifact.artifactDigest };
-  });
+  }));
 }
 async function uninstallNativeHostLocked({
   platform = process.platform,

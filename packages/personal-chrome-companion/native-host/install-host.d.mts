@@ -51,4 +51,9 @@ export function republishNativeHost(options: {
   nodeExecutable?: string;
   now?: () => Date;
   writePairingRecord?: (path: string, record: NativeHostPairingRecord) => Promise<unknown>;
+  activate?: (publish: () => Promise<NativeHostRepublishResult>) => Promise<NativeHostRepublishResult>;
 }): Promise<{ operation: 'not_installed' | 'unchanged' | 'republished'; artifactDigest?: string }>;
+export interface NativeHostRepublishResult {
+  operation: 'not_installed' | 'unchanged' | 'republished';
+  artifactDigest?: string;
+}

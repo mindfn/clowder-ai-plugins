@@ -59,6 +59,71 @@ async function revisions(f) {
     extension: PERSONAL_CHROME_EXTENSION_REVISION, pageAdapter: PERSONAL_CHROME_PAGE_ADAPTER_REVISION };
 }
 
+for (const target of ['launcherPath', 'pairingRecordPath']) {
+  test(`helper ${target} activation failure restores the whole generation under one lease`, async (t) => {
+    const f = await fixture(t);
+    await (await f.prepare()).dispose();
+    const extensionFile = join(f.paths.rootDirectory, 'extension/service-worker.js');
+    const before = { extension: await readFile(extensionFile), launcher: await readFile(f.paths.launcherPath),
+      pairing: await readFile(f.paths.pairingRecordPath) };
+    await writeFile(join(f.sources.extensionDirectory, 'service-worker.js'), '// next extension generation');
+    await writeFile(join(f.sources.nativeHostDirectory, 'native-host-cli.mjs'), '// next helper generation');
+    const originalRename = fsPromises.rename;
+    let injected = false;
+    let checkedLease = false;
+    t.mock.method(fsPromises, 'rename', async (from, to) => {
+      if (to === extensionFile.replace('/service-worker.js', '') && !checkedLease) {
+        checkedLease = true;
+        await assert.rejects(installNativeHost(f.install), /already has a live owner/);
+      }
+      if (to === f.paths[target] && !injected) {
+        injected = true;
+        await assert.rejects(installNativeHost(f.install), /already has a live owner/);
+        throw Object.assign(new Error('injected helper commit failure'), { code: 'EACCES' });
+      }
+      return originalRename(from, to);
+    });
+    syncBuiltinESMExports();
+    t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+    const delivery = await f.prepare();
+    await delivery.dispose();
+    assert.equal(injected && checkedLease, true);
+    assert.equal(delivery.status().failure, 'PERMISSION_DENIED');
+    assert.deepEqual(await readFile(extensionFile), before.extension);
+    assert.deepEqual(await readFile(f.paths.launcherPath), before.launcher);
+    assert.deepEqual(await readFile(f.paths.pairingRecordPath), before.pairing);
+  });
+}
+
+test('stop persists accepted STALE after an in-flight match and rejects new observations', async (t) => {
+  const f = await fixture(t);
+  const delivery = await f.prepare();
+  const currentRevisions = await revisions(f);
+  const recordPath = join(f.paths.rootDirectory, 'delivery-reload.json');
+  let entered, release;
+  const entering = new Promise((resolve) => { entered = resolve; });
+  const gate = new Promise((resolve) => { release = resolve; });
+  const originalRename = fsPromises.rename;
+  t.mock.method(fsPromises, 'rename', async (from, to) => {
+    if (to === recordPath) { entered(); await gate; }
+    return originalRename(from, to);
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  const matching = delivery.observe(currentRevisions);
+  await entering;
+  const stale = delivery.observe(undefined, 'STALE_EXTENSION');
+  const stopping = delivery.dispose();
+  const afterStop = delivery.observe(currentRevisions);
+  release();
+  await Promise.all([matching, stale, stopping, afterStop]);
+  t.mock.restoreAll(); syncBuiltinESMExports();
+  assert.equal(JSON.parse(await readFile(recordPath, 'utf8')).reloadRequired, true);
+  const restarted = await f.prepare();
+  assert.equal(restarted.status().reloadRequired, true);
+  await restarted.dispose();
+});
+
 test('places all extension bytes before helper install, once, without writes to fake home/Chrome', async (t) => {
   const f = await fixture(t, false);
   const delivery = await f.prepare();
