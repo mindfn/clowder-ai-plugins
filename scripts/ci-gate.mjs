@@ -70,9 +70,9 @@ export function buildGateSteps() {
       command:
         'set -e; for package in ' +
         CONNECTORS.join(' ') +
-        '; do pnpm --filter "$package" typecheck; pnpm --filter "$package" exec node --import tsx --import ' +
+        '; do pnpm --filter "$package" typecheck; NODE_OPTIONS="${NODE_OPTIONS:-} --import="' +
         deadlinePreload +
-        ' --test "src/**/*.test.ts"; pnpm --filter "$package" build; done',
+        ' pnpm --filter "$package" test; pnpm --filter "$package" build; done',
     },
     {
       name: 'Enterprise workflow package gates',

@@ -16,8 +16,9 @@ for (const kind of ['failed-with-interval', 'pending', 'clean']) {
       await writeFile(file, `import test from 'node:test'; test('fixture', () => { ${body} });`);
       const env = { ...process.env, CLOWDER_TEST_FILE_TIMEOUT_MS: '200' };
       delete env.NODE_TEST_CONTEXT;
+      env.NODE_OPTIONS = `${env.NODE_OPTIONS ?? ''} --import=${new URL('./test-file-deadline.mjs', import.meta.url).href}`;
       const result = spawnSync(process.execPath, [
-        '--import', new URL('./test-file-deadline.mjs', import.meta.url).href, '--test', file,
+        '--test', file,
       ], { encoding: 'utf8', env, timeout: 5000 });
       assert.equal(result.error, undefined, 'file must end before the external process watchdog');
       assert.equal(result.status, kind === 'clean' ? 0 : 1);

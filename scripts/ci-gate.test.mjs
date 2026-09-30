@@ -75,9 +75,9 @@ test('connector gate covers all seven connectors in the workflow order', () => {
     const manifest = JSON.parse(readFileSync(new URL(`../packages/${name}/package.json`, import.meta.url), 'utf8'));
     assert.equal(manifest.scripts.test, 'node --import tsx --test src/**/*.test.ts', 'bounded gate must preserve each package test command');
   }
-  assert.match(step.command, /typecheck; pnpm --filter "\$package" exec node --import tsx --import/);
+  assert.match(step.command, /typecheck; NODE_OPTIONS=/);
   assert.ok(step.command.includes(new URL('./test-file-deadline.mjs', import.meta.url).href));
-  assert.match(step.command, /--test "src\/\*\*\/\*\.test\.ts"; pnpm --filter "\$package" build/);
+  assert.match(step.command, /pnpm --filter "\$package" test; pnpm --filter "\$package" build/);
 });
 
 test('every package gate runs typecheck, test, lint, and build like the workflow', () => {
