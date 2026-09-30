@@ -37,7 +37,8 @@ mean the extension is ready or a conversation is authorized.
 
 | Helper state | Meaning and next action |
 | --- | --- |
-| `unknown` | No connection observation since this start; run Test. Invalid pairing configuration also leaves the previous observation unchanged; Test reports the configuration error. |
+| `unknown` | No connection observation since this start; run Test. |
+| `invalid_installation` | Pairing record validation failed; re-run the installer under **Owner-run native host installation** below to repair it, then run Test. Record contents are never shown. This state does not delay list attempts; the next successful connection restores `connected`. |
 | `not_installed` | No pairing record; follow **Owner-run native host installation** below, then run Test. |
 | `unreachable` | Socket missing or connection refused; check Chrome and the extension, then run Test to retry now. Status includes the outage start, failure count and earliest next list attempt. |
 | `connected` | A socket connection was accepted; status includes the last contact time. Run Test to check current helper/extension health. |

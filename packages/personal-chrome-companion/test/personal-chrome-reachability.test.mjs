@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer, Socket } from 'node:net';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -108,7 +108,7 @@ async function fixture(t, { paired = true, timeoutMs = 5_000 } = {}) {
     assert.equal(connect.mock.callCount(), before, 'status must never connect');
     return result.data.helper;
   }
-  return { root, operations, logs, connect, pair, startHelper, startWire, status,
+  return { root, operations, authorization, logs, connect, pair, startHelper, startWire, status,
     now: () => time, advance: (ms) => { time += ms; } };
 }
 
@@ -211,15 +211,59 @@ test('status preserves authorization fields, reports unknown/not_installed, and 
   assert.deepEqual(f.logs.map(([level]) => level), ['warn', 'info']);
 });
 
-test('invalid pairing does not masquerade as missing installation or start backoff', async (t) => {
-  const f = await fixture(t);
-  await writeFile(join(f.root, 'pairing.json'), '{}', { mode: 0o600 });
-  await f.operations.list({});
-  await f.status('unknown');
-  await f.pair(); await f.startHelper();
-  await f.operations.list({});
-  await f.status('connected');
-});
+for (const action of ['list', 'appendMessage', 'ack', 'probe']) {
+  test(`${action} exposes invalid installation, logs once and recovers without backoff`, async (t) => {
+    const f = await fixture(t);
+    // Exercise both an initial unknown status and a previously successful contact.
+    if (action === 'appendMessage') {
+      await f.startHelper();
+      await f.operations.list({});
+      await f.status('connected');
+      f.logs.length = 0;
+    }
+    await writeFile(join(f.root, 'pairing.json'), JSON.stringify({ privateValue: secret }));
+    const input = action === 'appendMessage' ? appendInput : ackInput;
+    const result = await f.operations[action](input);
+    if (action === 'appendMessage' || action === 'ack') assert.equal(result.errorCode, 'INVALID_CONFIGURATION');
+    const state = await f.status('invalid_installation');
+    assert.equal(state.since, f.now());
+    assert.equal('nextListAttemptAt' in state, false);
+    assert.match(state.guidance, /pairing record validation failed/i);
+    assert.match(state.guidance, /re-run.*installer.*README/i);
+    const label = (await f.authorization.status()).label;
+    assert.match(label, /installation is broken/i);
+    assert.match(label, /pairing record validation failed/i);
+    const before = f.connect.mock.callCount();
+    f.advance(1);
+    await f.operations[action](input);
+    await f.operations.list({});
+    assert.equal((await f.status('invalid_installation')).since, state.since);
+    assert.equal(f.connect.mock.callCount(), before, 'invalid records never open a socket');
+    assert.deepEqual(f.logs.map(([level]) => level), ['warn']);
+    assert.ok(!JSON.stringify({ state, label, logs: f.logs }).includes(secret));
+    assert.ok(!JSON.stringify({ state, label, logs: f.logs }).includes('privateValue'));
+    await f.pair();
+    if (action !== 'appendMessage') await f.startHelper();
+    await f.operations.list({});
+    await f.status('connected');
+    assert.equal(f.connect.mock.callCount(), before + 1, 'repair is attempted immediately without backoff');
+    assert.deepEqual(f.logs.map(([level]) => level), ['warn', 'info']);
+  });
+}
+
+for (const corruption of ['permissions', 'oversized', 'malformed-json']) {
+  test(`pairing ${corruption} failure reports invalid installation without contents`, async (t) => {
+    const f = await fixture(t);
+    const path = join(f.root, 'pairing.json');
+    if (corruption === 'permissions') await chmod(path, 0o644);
+    if (corruption === 'oversized') await writeFile(path, secret.repeat(300));
+    if (corruption === 'malformed-json') await writeFile(path, '{' + secret);
+    await f.operations.list({});
+    const state = await f.status('invalid_installation');
+    assert.equal(f.connect.mock.callCount(), 0);
+    assert.ok(!JSON.stringify(state).includes(secret));
+  });
+}
 
 test('dispose cancels live requests, clears status, and leaves no client sockets or retry timers', async (t) => {
   const f = await fixture(t);

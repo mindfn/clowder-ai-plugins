@@ -2,6 +2,7 @@
 export type HelperConnectionStatus =
   | { readonly state: 'unknown' }
   | { readonly state: 'connected'; readonly lastContactAt: number }
+  | { readonly state: 'invalid_installation'; readonly since: number; readonly guidance: string }
   | {
       readonly state: 'unreachable' | 'not_installed';
       readonly since: number;
@@ -19,6 +20,8 @@ export function describeHelperConnection(status: HelperConnectionStatus): string
       return 'Helper: unknown (not checked since start). Run Test for a live check.';
     case 'connected':
       return `Helper: connected (last contact ${new Date(status.lastContactAt).toISOString()}). Run Test for a live check.`;
+    case 'invalid_installation':
+      return `Helper: invalid_installation since ${new Date(status.since).toISOString()}. ${status.guidance}`;
     case 'not_installed':
     case 'unreachable':
       return `Helper: ${status.state} since ${new Date(status.since).toISOString()}; ` +
@@ -46,6 +49,15 @@ export class HelperReachability {
 
   connected(): void {
     this.transition({ state: 'connected', lastContactAt: this.now() });
+  }
+
+  invalidInstallation(): void {
+    this.transition({
+      state: 'invalid_installation',
+      since: this.current.state === 'invalid_installation' ? this.current.since : this.now(),
+      guidance: 'The helper installation is broken: pairing record validation failed. ' +
+        'Re-run the installer to repair it; see README: Owner-run native host installation. Then run Test.',
+    });
   }
 
   unavailable(state: 'unreachable' | 'not_installed'): void {

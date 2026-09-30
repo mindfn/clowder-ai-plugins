@@ -55,6 +55,7 @@ function ackFailure(errorCode: string, extras: Readonly<Record<string, unknown>>
 async function resolveAdapterOptions(
   dataDirectory: string,
   onNotInstalled: () => void,
+  onInvalidConfiguration: () => void,
 ): Promise<PersonalChromeHostAdapterOptions> {
   try {
     return await readPersonalChromeAdapterOptions(dataDirectory);
@@ -62,6 +63,9 @@ async function resolveAdapterOptions(
     if (isPersonalChromeNotInstalled(error)) {
       onNotInstalled();
       throw new PersonalChromeHostError('HOST_UNAVAILABLE', 'personal Chrome host is not installed');
+    }
+    if (error instanceof PersonalChromeHostError && error.code === 'INVALID_CONFIGURATION') {
+      onInvalidConfiguration();
     }
     throw error;
   }
@@ -104,7 +108,11 @@ export function createConversationHostOperations(options: {
     if (!disposed) reachability.unavailable(state);
   };
   const adapterOptionsForRequest = async (): Promise<PersonalChromeHostAdapterOptions> => ({
-    ...(await resolveAdapterOptions(dataDirectory, () => unavailable('not_installed'))),
+    ...(await resolveAdapterOptions(
+      dataDirectory,
+      () => unavailable('not_installed'),
+      () => { if (!disposed) reachability.invalidInstallation(); },
+    )),
     timeoutMs: options.timeoutMs,
     requestTracker,
     onConnected: () => { if (!disposed) reachability.connected(); },
@@ -157,8 +165,8 @@ export function createConversationHostOperations(options: {
     try {
       adapterOptions = await adapterOptionsForRequest();
     } catch {
-      // Empty poll round; only a missing pairing record or a pre-send socket
-      // failure changes reachability. Other errors do not start list backoff.
+      // Invalid installation is visible in status but does not start backoff.
+      // Only missing installation or a pre-send socket failure gates list.
       return { returns: [] };
     }
     // Stop during pairing resolution: nothing sent yet, report an empty round.
