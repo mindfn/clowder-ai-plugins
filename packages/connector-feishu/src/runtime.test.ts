@@ -17,6 +17,60 @@ const fetchFn: typeof fetch = async (input) => new Response(
   { status: 200, headers: { 'content-type': 'application/json' } },
 );
 
+// Hold provider I/O across a lifecycle boundary instead of relying on a slow
+// real network request to finish after the SDK has revoked the Host logger.
+for (const boundary of ['stop', 'disconnect', 'connect'] as const) {
+  for (const phase of ['token', 'bot-error', 'bot-success'] as const) {
+    test(`bot identity ${phase} is cancelled and drained across ${boundary}`, async (t) => {
+      let release!: () => void;
+      const pending = new Promise<void>(resolve => { release = resolve; });
+      let entered!: () => void;
+      const started = new Promise<void>(resolve => { entered = resolve; });
+      let signal: AbortSignal | null | undefined;
+      let first = true;
+      let oldWrites = 0;
+      const warnings: unknown[] = [];
+      const old = adapter();
+      old.setBotOpenId = () => { oldWrites += 1; };
+      const runtime = createFeishuConnectorRuntime({
+        config: { appId: 'old', appSecret: 'secret', connectionMode: 'webhook' },
+        host: { deliver: async () => {} },
+        logger: { ...logger, warn: (...args) => { warnings.push(args); } },
+        createAdapter: id => id === 'old' ? old : adapter(),
+        fetchFn: async (input, init) => {
+          const bot = String(input).includes('/bot/v3/info');
+          if (first && (phase === 'token' ? !bot : bot)) {
+            first = false;
+            signal = init?.signal;
+            entered();
+            // Deliberately ignores abort until released: stop must join it,
+            // and a late success must still not update the retired adapter.
+            await pending;
+            if (phase !== 'bot-success') throw new Error('delayed provider failure');
+          }
+          return fetchFn(input, init);
+        },
+      });
+      t.after(async () => { release(); await runtime.stop(); });
+      await runtime.start();
+      await started;
+      let settled = false;
+      const ending = (boundary === 'connect'
+        ? runtime.connect({ appId: 'new', appSecret: 'secret', connectionMode: 'webhook' })
+        : runtime[boundary]()).then(() => { settled = true; });
+      await new Promise(resolve => setImmediate(resolve));
+      const drainedTooSoon = settled;
+      release();
+      await ending;
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(signal?.aborted, true, 'retired lookup must be aborted at the lifecycle boundary');
+      assert.equal(drainedTooSoon, false, 'lifecycle completion must join accepted identity work');
+      assert.equal(oldWrites, 0, 'late result must not mutate the retired adapter');
+      assert.deepEqual(warnings, [], 'cancelled lookup must not access the retired Host logger');
+    });
+  }
+}
+
 function adapter(): FeishuRuntimeAdapter {
   return {
     connectorId: 'feishu',
@@ -35,6 +89,32 @@ function adapter(): FeishuRuntimeAdapter {
     setBotOpenId() {},
     async sendFormattedReply() {}, async sendMedia() {}, async sendReply() {},
   };
+}
+
+for (const pendingAction of ['connect', 'disconnect'] as const) {
+  test(`stop fences a ${pendingAction} waiting for identity drain`, async (t) => {
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const constructed: string[] = [];
+    const runtime = createFeishuConnectorRuntime({
+      config: { appId: 'old', appSecret: 'secret', connectionMode: 'webhook' },
+      host: { deliver: async () => {} }, logger,
+      createAdapter: id => { constructed.push(id); return adapter(); },
+      fetchFn: async (input, init) => { await pending; return fetchFn(input, init); },
+    });
+    t.after(async () => { release(); await runtime.stop(); });
+    await runtime.start();
+    const changing = pendingAction === 'connect'
+      ? runtime.connect({ appId: 'new', appSecret: 'secret', connectionMode: 'webhook' })
+      : runtime.disconnect();
+    const stopping = runtime.stop();
+    release();
+    await Promise.all([changing, stopping]);
+    await runtime.disconnect();
+    assert.deepEqual(constructed, ['old']);
+    assert.equal(runtime.isConnected(), false);
+    await assert.rejects(runtime.start(), /stopped/);
+  });
 }
 
 test('webhook runtime verifies provider input and delivers resolved provider facts', async () => {

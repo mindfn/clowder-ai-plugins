@@ -392,10 +392,14 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
     return outbound;
   };
   let state: 'idle' | 'starting' | 'running' | 'stopped' = 'idle';
+  let ingressEpoch = 0;
+  const isCurrent = (epoch: number): boolean => epoch === ingressEpoch && state !== 'stopped';
   let armed = false;
   let startPromise: Promise<void> | undefined;
   let stopPromise: Promise<void> | undefined;
   let wsClient: FeishuWsClient | undefined;
+  let identityAbort: AbortController | undefined;
+  const identityTasks = new Set<Promise<void>>();
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   const reconnectBaseDelayMs = options.reconnectDelayMs ?? 5_000;
   const reconnectMaxDelayMs = options.reconnectMaxDelayMs ?? 60_000;
@@ -440,14 +444,30 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
     const adapter = requireOutbound();
     const manager = tokenManager ?? buildTokenManager();
     tokenManager = manager;
-    manager.getTenantAccessToken().then(async token => {
+    // Identity discovery is optional, but its I/O still belongs to this
+    // ingress generation. Retiring it must not access a revoked Host logger
+    // or publish an old identity into an adapter after disconnect/reconfigure.
+    identityAbort?.abort();
+    const cancellation = new AbortController();
+    identityAbort = cancellation;
+    const signal = AbortSignal.any([cancellation.signal, AbortSignal.timeout(30_000)]);
+    const identityTask = manager.getTenantAccessToken(signal).then(async token => {
+      signal.throwIfAborted();
       const response = await (options.fetchFn ?? globalThis.fetch)('https://open.feishu.cn/open-apis/bot/v3/info', {
         headers: { Authorization: `Bearer ${token}` },
+        signal,
       });
+      signal.throwIfAborted();
       if (!response.ok) return;
       const data = await response.json() as { bot?: { open_id?: string } };
+      signal.throwIfAborted();
       if (data.bot?.open_id) adapter.setBotOpenId(data.bot.open_id);
-    }).catch(error => options.logger.warn({ error }, '[FeishuRuntime] Bot identity resolution failed'));
+    }).catch(error => {
+      if (!cancellation.signal.aborted) {
+        options.logger.warn({ error }, '[FeishuRuntime] Bot identity resolution failed');
+      }
+    }).finally(() => { identityTasks.delete(identityTask); });
+    identityTasks.add(identityTask);
     if (current.connectionMode !== 'websocket') return;
     const dispatcher = new lark.EventDispatcher({}).register({
       'im.message.receive_v1': async (data: Record<string, unknown>) => {
@@ -492,6 +512,7 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
     // PausableLarkWsClient suppresses the callback for stop-initiated closes
     // via its stopped guard, so reaching here means an unexpected drop.
     if (state !== 'running') return;
+    identityAbort?.abort();
     const dead = wsClient;
     wsClient = undefined;
     state = 'idle'; // no live inbound during reconnect; webhooks derive skipped
@@ -508,9 +529,10 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
       reconnectTimer = undefined;
       if (state !== 'idle') return; // stop() or a fresh start() superseded it
       state = 'starting';
+      const epoch = ingressEpoch;
       startPromise = startIngress()
         .then(() => {
-          if (state !== 'stopped') {
+          if (isCurrent(epoch)) {
             reconnectAttempts = 0;
             state = 'running';
             options.logger.info('[FeishuRuntime] Provider ingress started');
@@ -519,7 +541,7 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
         .catch((error: unknown) => {
           // Timer-context rejection: never rethrow (unhandled rejection);
           // log and reschedule the backoff instead.
-          if (state === 'stopped') return;
+          if (!isCurrent(epoch)) return;
           state = 'idle';
           startPromise = undefined;
           options.logger.error({ error }, '[FeishuRuntime] Reconnect attempt failed');
@@ -528,13 +550,18 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
     }, delayMs);
   };
 
-  const stopIngress = (): void => {
+  const stopIngress = (): Promise<void> => {
+    ingressEpoch += 1;
+    identityAbort?.abort();
     if (reconnectTimer !== undefined) {
       clearTimeout(reconnectTimer);
       reconnectTimer = undefined;
     }
     wsClient?.close({ force: true });
     wsClient = undefined;
+    // Join even providers that settle cancellation asynchronously. The Host
+    // may revoke the context as soon as stop() resolves.
+    return Promise.all([...identityTasks]).then(() => undefined);
   };
 
   return {
@@ -551,9 +578,10 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
         return startPromise;
       }
       state = 'starting';
+      const epoch = ingressEpoch;
       startPromise = startIngress()
         .then(() => {
-          if (state !== 'stopped') {
+          if (isCurrent(epoch)) {
             reconnectAttempts = 0;
             state = 'running';
             options.logger.info('[FeishuRuntime] Provider ingress started');
@@ -562,7 +590,7 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
         .catch((error: unknown) => {
           // stop() aborts the in-flight start on purpose — that is not a start
           // failure and must not surface as an unhandled rejection.
-          if (state === 'stopped') return;
+          if (!isCurrent(epoch)) return;
           state = 'idle';
           startPromise = undefined;
           throw error;
@@ -578,7 +606,11 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
       if (state === 'stopped') throw new Error('Feishu connector runtime has been stopped');
       // Tear down the previous ingress before rebuilding: a live socket or a
       // pending reconnect timer from the old credentials must not survive.
-      stopIngress();
+      state = 'idle';
+      const draining = stopIngress();
+      const epoch = ingressEpoch;
+      await draining;
+      if (!isCurrent(epoch)) return;
       current = { ...current, appId, appSecret, connectionMode: next.connectionMode };
       outbound = createAdapter(appId, appSecret, options.logger, buildAdapterOptions());
       tokenManager = buildTokenManager();
@@ -589,14 +621,14 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
       state = 'starting';
       startPromise = startIngress()
         .then(() => {
-          if (state !== 'stopped') {
+          if (isCurrent(epoch)) {
             reconnectAttempts = 0;
             state = 'running';
             options.logger.info('[FeishuRuntime] Provider ingress started');
           }
         })
         .catch((error: unknown) => {
-          if (state === 'stopped') return;
+          if (!isCurrent(epoch)) return;
           state = 'idle';
           startPromise = undefined;
           throw error;
@@ -604,11 +636,16 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
       return startPromise;
     },
     async disconnect() {
+      if (state === 'stopped') return;
       // Close the in-process ingress AND drop the configured adapter/token
       // manager: the operation targetValues clear appId/appSecret, so any
       // retained outbound would keep sending with credentials the owner just
       // disconnected (the Host write-back does not restart the plugin).
-      stopIngress();
+      state = 'idle';
+      const draining = stopIngress();
+      const epoch = ingressEpoch;
+      await draining;
+      if (!isCurrent(epoch)) return;
       outbound = undefined;
       tokenManager = undefined;
       state = 'idle';
@@ -628,10 +665,8 @@ export function createFeishuConnectorRuntime<Adapter extends FeishuRuntimeAdapte
     stop() {
       if (stopPromise !== undefined) return stopPromise;
       armed = false;
-      stopIngress();
-      if (state === 'idle') { state = 'stopped'; return Promise.resolve(); }
       state = 'stopped';
-      stopPromise = Promise.resolve();
+      stopPromise = stopIngress();
       return stopPromise;
     },
     async handleWebhook(candidate) {

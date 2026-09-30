@@ -44,6 +44,8 @@ function chain(pkg, scripts) {
   return scripts.map((script) => `pnpm --filter ${pkg} ${script}`).join(' && ');
 }
 
+const deadlinePreload = "'" + new URL('./test-file-deadline.mjs', import.meta.url).href.replaceAll("'", "'\\''") + "'";
+
 export function buildGateSteps() {
   return [
     {
@@ -68,7 +70,9 @@ export function buildGateSteps() {
       command:
         'set -e; for package in ' +
         CONNECTORS.join(' ') +
-        '; do pnpm --filter "$package" typecheck; pnpm --filter "$package" test; pnpm --filter "$package" build; done',
+        '; do pnpm --filter "$package" typecheck; pnpm --filter "$package" exec node --import tsx --import ' +
+        deadlinePreload +
+        ' --test "src/**/*.test.ts"; pnpm --filter "$package" build; done',
     },
     {
       name: 'Enterprise workflow package gates',

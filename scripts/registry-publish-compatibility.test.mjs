@@ -89,6 +89,78 @@ test('registry lookup fails closed on HTTP and network errors', async () => {
   );
 });
 
+for (const code of ['ECONNRESET', 'ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT']) {
+  test(`registry retries ${code} with bounded backoff then reads authoritative metadata`, async () => {
+    let calls = 0;
+    const delays = [];
+    const result = await readRegistryIntegrity('@clowder-ai/example', '1.0.0', {
+      sleep: async ms => { delays.push(ms); },
+      fetchFn: async () => {
+        calls += 1;
+        if (calls < 3) throw new TypeError('fetch failed', { cause: Object.assign(new Error('transient'), { code }) });
+        return { ok: true, status: 200, json: async () => ({ dist: { integrity: 'sha512-real' } }) };
+      },
+    });
+    assert.equal(result, 'sha512-real');
+    assert.equal(calls, 3);
+    assert.deepEqual(delays, [250, 500]);
+  });
+}
+
+test('registry exhausts transient retries without treating failure as unpublished', async () => {
+  let calls = 0;
+  const delays = [];
+  await assert.rejects(readRegistryIntegrity('example', '1.0.0', {
+    sleep: async ms => { delays.push(ms); },
+    fetchFn: async () => { calls += 1; throw Object.assign(new Error('reset'), { code: 'ECONNRESET' }); },
+  }), /npm registry lookup failed/);
+  assert.equal(calls, 3);
+  assert.deepEqual(delays, [250, 500]);
+});
+
+for (const status of [401, 403, 429, 500, 503]) {
+  test(`registry HTTP ${status} fails immediately, even after a transient network failure`, async () => {
+    let calls = 0;
+    await assert.rejects(readRegistryIntegrity('example', '1.0.0', {
+      sleep: async () => {},
+      fetchFn: async () => {
+        calls += 1;
+        if (calls === 1) throw Object.assign(new Error('reset'), { code: 'ECONNRESET' });
+        return { ok: false, status };
+      },
+    }), new RegExp(`HTTP ${status}`));
+    assert.equal(calls, 2);
+  });
+}
+
+test('registry body transport failures retry, malformed metadata does not', async () => {
+  let calls = 0;
+  await assert.rejects(readRegistryIntegrity('example', '1.0.0', {
+    sleep: async () => {},
+    fetchFn: async () => {
+      calls += 1;
+      return { ok: true, status: 200, json: async () => {
+        if (calls === 1) throw Object.assign(new Error('reset'), { code: 'ECONNRESET' });
+        return {};
+      } };
+    },
+  }), /no dist.integrity/);
+  assert.equal(calls, 2);
+});
+
+test('registry deadlines abort stuck transport attempts and exhaust a finite budget', async () => {
+  let calls = 0;
+  await assert.rejects(readRegistryIntegrity('example', '1.0.0', {
+    timeoutMs: 5,
+    sleep: async () => {},
+    fetchFn: async (_url, { signal }) => {
+      calls += 1;
+      return new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason), { once: true }));
+    },
+  }), /npm registry lookup failed/);
+  assert.equal(calls, 3);
+});
+
 test('bundled publish gzip identity is stable across macOS and Ubuntu', () => {
   const macos = Buffer.from([0x1f, 0x8b, 0x08, 0, 0, 0, 0, 0, 0, 19, 1, 2, 3]);
   const ubuntu = Buffer.from([0x1f, 0x8b, 0x08, 0, 0, 0, 0, 0, 0, 3, 1, 2, 3]);

@@ -227,12 +227,24 @@ test('test action: QR-confirm against a default-mode snapshot still reports ok (
   await active.stop();
 });
 
-test('feishu.webhook returns 503 once disconnect drops the adapter', async () => {
-  const entrypoint = createFeishuPluginModule();
+test('feishu.webhook returns 503 once disconnect drops the adapter', async (t) => {
+  // Exercise real runtime teardown without leaking a request to Feishu from
+  // a unit test. Abort rejects at the provider boundary just as fetch does.
+  let identitySignal: AbortSignal | null | undefined;
+  const entrypoint = createFeishuPluginModule(options => createFeishuConnectorRuntime({
+    ...options,
+    fetchFn: async (_input, init) => {
+      identitySignal = init?.signal;
+      return new Promise<Response>((_resolve, reject) => {
+        identitySignal?.addEventListener('abort', () => reject(identitySignal?.reason), { once: true });
+      });
+    },
+  }));
   const active = await entrypoint.create(manifest).start(hostShape(
     { appId: 'app', connectionMode: 'webhook' },
     { appSecret: 'secret', verificationToken: 'verify' },
   ));
+  t.after(() => active.stop());
   const request = (body: unknown) => ({ request: {
     method: 'POST', path: 'feishu/events', query: {},
     body, rawBody: Buffer.from('{}'), headers: {},
@@ -242,10 +254,28 @@ test('feishu.webhook returns 503 once disconnect drops the adapter', async () =>
     status: 403, headers: {}, body: { error: 'Invalid verification token' },
   });
   await active.actions['feishu.disconnect']?.({});
+  assert.equal(identitySignal?.aborted, true);
   assert.deepEqual(await active.actions['feishu.webhook']?.(request({ event: 'x' })), {
     status: 503, headers: {}, body: { error: 'feishu connector is not configured' },
   });
   await active.stop();
+});
+
+test('module stop owns a late provider rejection before the Host context is revoked', async () => {
+  const entrypoint = createFeishuPluginModule(options => createFeishuConnectorRuntime({
+    ...options,
+    fetchFn: async () => new Promise<Response>((_resolve, reject) => {
+      setImmediate(() => reject(new Error('delayed token endpoint failure')));
+    }),
+  }));
+  const active = await entrypoint.create(manifest).start(hostShape(
+    { appId: 'app', connectionMode: 'webhook' },
+    { appSecret: 'secret', verificationToken: 'verify' },
+  ));
+  await active.stop();
+  // The old fire-and-forget catch ran against the revoked SDK logger here,
+  // producing a real FeatureContextRevokedError/unhandledRejection.
+  await new Promise(resolve => setImmediate(resolve));
 });
 
 test('runtime starts idle without credentials, connects in-process via connect(), outbound getter guards sends', async () => {

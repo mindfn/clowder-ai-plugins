@@ -64,7 +64,7 @@ test('runtime requires explicit declared credentials before provider constructio
   assert.equal(constructed, false);
 });
 
-test('runtime emits provider facts and leaves binding resolution to the Host', async () => {
+test('runtime emits provider facts and leaves binding resolution to the Host', async (t) => {
   const provider = fakeAdapter();
   const delivered: unknown[] = [];
   const runtime = createDingTalkConnectorRuntime({
@@ -77,6 +77,7 @@ test('runtime emits provider facts and leaves binding resolution to the Host', a
     },
   });
 
+  t.after(() => runtime.stop());
   await runtime.start();
   await provider.inbound({
     chatId: 'group-1',
@@ -112,7 +113,7 @@ test('runtime emits provider facts and leaves binding resolution to the Host', a
   assert.equal(delivered.length, 1, 'provider callbacks after stop must not reach the Host');
 });
 
-test('runtime drains the provider stream exactly once', async () => {
+test('runtime drains the provider stream exactly once', async (t) => {
   const provider = fakeAdapter();
   const runtime = createDingTalkConnectorRuntime({
     config: { appKey: 'app-key', appSecret: 'app-secret' },
@@ -121,6 +122,7 @@ test('runtime drains the provider stream exactly once', async () => {
     createAdapter: () => provider.adapter,
   });
 
+  t.after(() => runtime.stop());
   await runtime.start();
   await runtime.stop();
   await runtime.stop();
@@ -128,7 +130,7 @@ test('runtime drains the provider stream exactly once', async () => {
   await assert.rejects(runtime.start(), /stopped/u);
 });
 
-test('stop during an in-flight provider start cancels without waiting for start settlement', async () => {
+test('stop during an in-flight provider start cancels without waiting for start settlement', async (t) => {
   let releaseStart!: () => void;
   const startGate = new Promise<void>(resolve => {
     releaseStart = resolve;
@@ -156,6 +158,7 @@ test('stop during an in-flight provider start cancels without waiting for start 
     createAdapter: () => adapter,
   });
 
+  t.after(async () => { releaseStart(); await runtime.stop(); });
   const starting = runtime.start();
   assert.equal(runtime.start(), starting, 'repeated start must join the same lifecycle transition');
   const stopping = runtime.stop();
@@ -169,7 +172,8 @@ test('stop during an in-flight provider start cancels without waiting for start 
 
 // G1/N1: the SDK retries a dead stream silently, so the runtime watchdog must
 // notice isStreamLive() === false, drain, and reconnect until stop() converges.
-test('watchdog reconnects a dead provider stream and stop converges the cycle', async () => {
+test('watchdog reconnects a dead provider stream and stop converges the cycle', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
   let handler: ((message: DingTalkInboundMessage) => Promise<void>) | undefined;
   let live = true;
   let startCalls = 0;
@@ -204,18 +208,21 @@ test('watchdog reconnects a dead provider stream and stop converges the cycle', 
     reconnectDelayMs: 20,
     createAdapter: () => adapter,
   });
+  t.after(() => runtime.stop());
   await runtime.start();
   assert.equal(startCalls, 1);
   live = false; // e.g. credentials revoked: SDK retries silently, stream dead
-  await new Promise(resolve => setTimeout(resolve, 150));
+  // Deterministically reproduce an event loop which services the watchdog
+  // only at the old assertion deadline; reconnect still needs another turn.
+  t.mock.timers.tick(150);
+  // Backoff is scheduled by the delayed watchdog, not by wall-clock elapsed
+  // time. Advance its maximum jittered delay, then join the real transition.
+  live = true;
+  t.mock.timers.tick(24);
+  await runtime.start();
   assert.ok(startCalls >= 2, 'the watchdog must restart a dead stream');
   assert.ok(stopCalls >= 1, 'the dead stream must be drained before reconnect');
   assert.ok(errors.some(entry => entry.includes('not live')), 'the dead stream must be logged as an error');
-  live = true;
-  // The dead-stream cycle spins every watchdog+backoff tick; give the in-flight
-  // cycle a beat to settle into a live 'running' stream before driving ingress
-  // through it, or the handler can land in an 'idle' reconnect window.
-  await new Promise(resolve => setTimeout(resolve, 100));
   await handler?.({
     chatId: 'group-1',
     conversationId: 'conversation-1',
@@ -228,6 +235,7 @@ test('watchdog reconnects a dead provider stream and stop converges the cycle', 
   const callsAtStop = startCalls;
   await runtime.stop();
   live = false;
-  await new Promise(resolve => setTimeout(resolve, 100));
+  t.mock.timers.tick(10_000);
+  await Promise.resolve();
   assert.equal(startCalls, callsAtStop, 'stop() must clear the watchdog and prevent further reconnects');
 });

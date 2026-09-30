@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setTimeout as sleepDefault } from 'node:timers/promises';
 
 import { parse } from 'yaml';
 
@@ -89,28 +90,55 @@ export function addImmutableClaim(claims, claim) {
   }
 }
 
-export async function readRegistryIntegrity(name, version, { fetchFn = globalThis.fetch } = {}) {
+const TRANSIENT_NETWORK_CODES = new Set([
+  'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ECONNREFUSED',
+  'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET',
+]);
+
+function transientNetworkError(error) {
+  const seen = new Set();
+  while (error !== null && typeof error === 'object' && !seen.has(error)) {
+    if (TRANSIENT_NETWORK_CODES.has(error.code) || error.name === 'TimeoutError') return true;
+    seen.add(error);
+    error = error.cause;
+  }
+  return false;
+}
+
+export async function readRegistryIntegrity(name, version, {
+  fetchFn = globalThis.fetch, sleep = sleepDefault, timeoutMs = 15_000,
+} = {}) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new RangeError('registry timeout must be positive');
   const url = new URL(
     `${OFFICIAL_NPM_REGISTRY}/${encodeURIComponent(name)}/${encodeURIComponent(version)}`,
   );
-  let response;
-  try {
-    response = await fetchFn(url, { headers: { accept: 'application/json' } });
-  } catch (error) {
-    throw new Error(`npm registry lookup failed for ${name}@${version}`, { cause: error });
+  // Only transport failures can be transient. A server response, malformed
+  // metadata, or exhausted retry budget must never masquerade as npm 404.
+  for (let attempt = 0; ; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new DOMException('registry request timed out', 'TimeoutError')), timeoutMs);
+    try {
+      const response = await fetchFn(url, { headers: { accept: 'application/json' }, signal: controller.signal });
+      if (response.status === 404) return undefined;
+      if (!response.ok) {
+        throw new Error(`npm registry lookup failed for ${name}@${version}: HTTP ${response.status}`);
+      }
+      const metadata = await response.json();
+      const integrity = metadata?.dist?.integrity;
+      if (typeof integrity !== 'string' || integrity.length === 0) {
+        throw new Error(`registry returned no dist.integrity for ${name}@${version}`);
+      }
+      return integrity;
+    } catch (error) {
+      if (attempt === 2 || !transientNetworkError(error)) {
+        throw new Error(`npm registry lookup failed for ${name}@${version}: ${error.message}`, { cause: error });
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+    // The timer is released before backoff; total budget is 3 * 15s + 750ms.
+    await sleep(250 * 2 ** attempt);
   }
-  if (response.status === 404) return undefined;
-  if (!response.ok) {
-    throw new Error(
-      `npm registry lookup failed for ${name}@${version}: HTTP ${response.status}`,
-    );
-  }
-  const metadata = await response.json();
-  const integrity = metadata?.dist?.integrity;
-  if (typeof integrity !== 'string' || integrity.length === 0) {
-    throw new Error(`registry returned no dist.integrity for ${name}@${version}`);
-  }
-  return integrity;
 }
 
 export async function assertRegistryCompatibility({
