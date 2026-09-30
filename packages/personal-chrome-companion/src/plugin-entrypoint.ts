@@ -34,6 +34,7 @@ export const PERSONAL_CHROME_FEATURE_ID = 'personal-chrome-host';
 export const PERSONAL_CHROME_HOST_CONTRIBUTION_ID = 'personal-chrome-chatgpt-host';
 export const PERSONAL_CHROME_LIST_METHOD = 'personal-chrome-host.authorizations.list';
 export const PERSONAL_CHROME_REVOKE_METHOD = 'personal-chrome-host.authorizations.revoke';
+export const PERSONAL_CHROME_REFRESH_TITLES_METHOD = 'personal-chrome-host.authorizations.refresh-titles';
 export const PERSONAL_CHROME_STATUS_METHOD = 'personal-chrome-host.authorizations.status';
 export const PERSONAL_CHROME_TEST_METHOD = 'personal-chrome-host.test';
 export const PERSONAL_CHROME_APPEND_MESSAGE_METHOD = 'personal-chrome-host.append-message';
@@ -215,6 +216,15 @@ export function createPersonalChromePluginModule() {
               [PERSONAL_CHROME_LIST_METHOD]: operations.list,
               [PERSONAL_CHROME_REVOKE_METHOD]: operations.revoke,
               [PERSONAL_CHROME_STATUS_METHOD]: operations.status,
+              [PERSONAL_CHROME_REFRESH_TITLES_METHOD]: async (): Promise<OperationActionResult> => {
+                const titleSync = await conversationHost.refreshTitles();
+                return {
+                  render: 'status', data: { titleSync },
+                  label: titleSync.status === 'synced'
+                    ? `Updated ${titleSync.updatedCount} of ${titleSync.requestedCount} conversation title(s).`
+                    : `Title refresh unavailable: ${titleSync.errorCode}`,
+                };
+              },
               [PERSONAL_CHROME_TEST_METHOD]: async () => {
                 const result = await conversationHost.probe();
                 const state = delivery.status();

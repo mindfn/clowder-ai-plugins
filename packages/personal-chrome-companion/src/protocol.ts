@@ -125,7 +125,8 @@ export interface PersonalChromeLocalEnvelope<
   TRequest extends
     | PersonalChromeAppendRequest
     | PersonalChromeAssistantReturnRequest
-    | PersonalChromeHealthCheckRequest = PersonalChromeAppendRequest,
+    | PersonalChromeHealthCheckRequest
+    | import('./title-refresh-protocol.js').PersonalChromeTitleRefreshRequest = PersonalChromeAppendRequest,
 > {
   readonly pairingSecret: string;
   readonly request: TRequest;

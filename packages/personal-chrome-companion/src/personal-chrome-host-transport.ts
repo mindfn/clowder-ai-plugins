@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createConnection } from 'node:net';
+import { parseTitleRefreshResult, type PersonalChromeTitleRefreshRequest, type PersonalChromeTitleSync } from './title-refresh-protocol.js';
 
 import { assistantReturnCursorFields, type PersonalChromeAssistantReturnCursor } from './assistant-return-cursor.js';
 import {
@@ -122,7 +123,7 @@ function revisionsMatch(
 }
 
 function exchangeLocalFrame<
-  TRequest extends PersonalChromeAppendRequest | PersonalChromeAssistantReturnRequest | PersonalChromeHealthCheckRequest,
+  TRequest extends PersonalChromeAppendRequest | PersonalChromeAssistantReturnRequest | PersonalChromeHealthCheckRequest | PersonalChromeTitleRefreshRequest,
   TResult,
 >(
   options: PersonalChromeHostAdapterOptions,
@@ -257,6 +258,21 @@ export class PersonalChromeHostAdapter implements IPersonalChromeAssistantReturn
       extension: PERSONAL_CHROME_EXTENSION_REVISION,
       pageAdapter: PERSONAL_CHROME_PAGE_ADAPTER_REVISION,
     };
+  }
+
+  async refresh_conversation_titles(): Promise<PersonalChromeTitleSync> {
+    const request: PersonalChromeTitleRefreshRequest = {
+      v: 1, kind: 'refresh_conversation_titles', requestId: this.requestId(),
+      expectedHelperRevision: this.options.helperArtifactRevision,
+    };
+    const result = await exchangeLocalFrame(this.options, { pairingSecret: this.options.pairingSecret, request },
+      (value) => parseTitleRefreshResult(value, request.requestId));
+    // This v1 receipt carries no extension revision: it may set a stale hint,
+    // but a successful title refresh cannot prove a reload happened.
+    if (result.status === 'unavailable' && result.errorCode.startsWith('STALE_')) {
+      await this.options.onRevisionContact?.(undefined, result.errorCode);
+    }
+    return result;
   }
 
   async append_message(

@@ -16,8 +16,10 @@ import {
 import { PersonalChromeHostError, PersonalChromeHostRequestTracker, type PersonalChromeHostAdapterOptions } from './personal-chrome-host-transport.js';
 import type { PersonalChromeAssistantReturnCursor } from './assistant-return-cursor.js';
 import { HelperReachability, type HelperConnectionLog, type HelperConnectionStatus } from './helper-reachability.js';
+import type { PersonalChromeTitleSync } from './title-refresh-protocol.js';
 
 export interface PersonalChromeConversationHostOperations {
+  readonly refreshTitles: () => Promise<PersonalChromeTitleSync>;
   readonly appendMessage: (input: unknown) => Promise<CloudConversationAppendMessageResult>;
   readonly list: (input: unknown) => Promise<CloudConversationListResult>;
   readonly ack: (input: unknown) => Promise<CloudConversationAckResult>;
@@ -246,7 +248,20 @@ export function createConversationHostOperations(options: {
     }
   };
 
+  // Owner-triggered, like probe: deliberately bypasses the background list gate.
+  const refreshTitles = async (): Promise<PersonalChromeTitleSync> => {
+    if (disposed) return { status: 'unavailable', errorCode: 'HOST_UNAVAILABLE' };
+    try {
+      const adapterOptions = await adapterOptionsForRequest();
+      if (disposed) return { status: 'unavailable', errorCode: 'HOST_UNAVAILABLE' };
+      return await createPersonalChromeHostAdapter(adapterOptions).refresh_conversation_titles();
+    } catch (error) {
+      return { status: 'unavailable', errorCode: error instanceof PersonalChromeHostError ? error.code : 'AMBIGUOUS_EFFECT' };
+    }
+  };
+
   return {
+    refreshTitles,
     appendMessage,
     list,
     ack,

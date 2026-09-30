@@ -30,6 +30,12 @@ authorization by `conversationId`, and reports authorization status. The
 underlying store holds at most 32 authorizations; the operation surfaces that
 ceiling through the status action.
 
+Use **Refresh titles** to ask the connected extension for readable titles of
+the currently authorized conversations. The result reports how many titles
+were updated, or why refreshing was unavailable; the conversation list then
+reloads. Refreshing never grants authorization or clears the extension reload
+reminder. Keep Chrome and the paired extension running for this action.
+
 Status also shows the **last observed** helper connection state. It never opens
 a socket: use **Test** for a live health probe. Authorization and helper
 reachability are reported separately; a connected helper does not by itself
@@ -45,7 +51,7 @@ mean the extension is ready or a conversation is authorized.
 
 When the helper is unavailable, list returns `{ returns: [] }` and retries only
 on a later Host poll after 2, 4, 8, 16, 32, then at most every 60 seconds. There
-is no background retry timer. Append, acknowledge and Test bypass this delay;
+is no background retry timer. Append, acknowledge, Test and Refresh titles bypass this delay;
 any accepted connection resets it, even when the helper returns a business
 failure. Errors after a write are never treated as pre-send unavailability.
 Only connection-state changes produce logs. Stop clears these observations and

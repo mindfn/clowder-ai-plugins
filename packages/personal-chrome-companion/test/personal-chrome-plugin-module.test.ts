@@ -54,7 +54,7 @@ function makeBinding(overrides: Partial<FeatureBinding> = {}): FeatureBinding {
   return {
     pluginInstanceId: 'official.companion.personal-chrome',
     featureId: 'personal-chrome-host',
-    packageRevision: '0.1.0-alpha.0',
+    packageRevision: '0.1.0-alpha.1',
     integrityEpoch: 0,
     activationRevision: 0,
     grantRevision: 0,

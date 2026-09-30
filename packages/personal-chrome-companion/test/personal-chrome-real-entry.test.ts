@@ -6,13 +6,17 @@
 // plugin-entrypoint.ts `context.dataDirectory` (sol's R1, reproduced locally);
 // before p2b the methods were placeholders returning the same shapes.
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 import { acquireProcessLease } from '../native-host/native-socket-lease.mjs';
+// @ts-expect-error The production native-host executable has no TypeScript declaration.
+import { createNativeHostBridge } from '../native-host/native-host.mjs';
+import { authorizePersonalChromeConversation } from '../native-host/conversation-binding.mjs';
 
 import {
   isCloudConversationAckResult,
@@ -27,6 +31,7 @@ import entrypoint, {
   PERSONAL_CHROME_ASSISTANT_LIST_METHOD,
   PERSONAL_CHROME_LIST_METHOD,
   PERSONAL_CHROME_REVOKE_METHOD,
+  PERSONAL_CHROME_REFRESH_TITLES_METHOD,
   PERSONAL_CHROME_STATUS_METHOD,
   PERSONAL_CHROME_TEST_METHOD,
 } from '../src/plugin-entrypoint.js';
@@ -125,6 +130,7 @@ test('real module entry starts across the SDK carrier and serves every p2b actio
   for (const method of [
     PERSONAL_CHROME_LIST_METHOD,
     PERSONAL_CHROME_REVOKE_METHOD,
+    PERSONAL_CHROME_REFRESH_TITLES_METHOD,
     PERSONAL_CHROME_STATUS_METHOD,
     PERSONAL_CHROME_TEST_METHOD,
   ]) {
@@ -191,6 +197,63 @@ test('real module entry starts across the SDK carrier and serves every p2b actio
   );
 
   await activation.stop();
+});
+
+test('refresh action is an own function with validated titleSync and next-list sees refreshed rows', async (t) => {
+  const dataDirectory = await mkdtemp(join(tmpdir(), 'p2e-carrier-'));
+  t.after(() => rm(dataDirectory, { recursive: true, force: true }));
+  const require = createRequire(import.meta.url);
+  const contractRequire = createRequire(import.meta.resolve('@clowder-ai/plugin-contract'));
+  const Ajv = contractRequire('ajv/dist/2020');
+  const ajv = new Ajv({ allErrors: true, strict: false });
+  contractRequire('ajv-formats')(ajv);
+  for (const name of ['plugin-metadata', 'signals', 'messaging', 'manifest']) {
+    ajv.addSchema(JSON.parse(readFileSync(require.resolve(`@clowder-ai/plugin-contract/schemas/${name}`), 'utf8')));
+  }
+  const schema = JSON.parse(readFileSync(require.resolve('@clowder-ai/plugin-contract/schemas/manifest'), 'utf8'));
+  const validate = ajv.getSchema(`${schema.$id}#/$defs/OperationActionResult`);
+  const activation = await entrypoint.create(loadManifest()).start(makeHost(dataDirectory));
+  try {
+    assert.equal(Object.hasOwn(activation.actions, PERSONAL_CHROME_REFRESH_TITLES_METHOD), true);
+    const refresh = activation.actions[PERSONAL_CHROME_REFRESH_TITLES_METHOD]!;
+    assert.equal(typeof refresh, 'function');
+    const absent = await refresh({});
+    assert.equal(validate(absent), true, JSON.stringify(validate.errors));
+    assert.deepEqual((absent as { data: unknown }).data, { titleSync: { status: 'unavailable', errorCode: 'HOST_UNAVAILABLE' } });
+    const revision = `sha512:${'0'.repeat(128)}`;
+    const socketPath = join(dataDirectory, 'host.sock');
+    const ledgerPath = join(dataDirectory, 'ledger.json');
+    const conversationBindingPath = join(dataDirectory, 'conversation-binding.json');
+    const pairingSecret = 'a'.repeat(64);
+    await writeFile(join(dataDirectory, 'pairing.json'), JSON.stringify({
+      schemaVersion: 1, extensionId: 'a'.repeat(32), socketPath, ledgerPath, pairingSecret,
+      artifactDigest: revision, installedAt: '2026-09-30T00:00:00.000Z', updatedAt: '2026-09-30T00:00:00.000Z',
+    }), { mode: 0o600 });
+    await authorizePersonalChromeConversation(conversationBindingPath, {
+      conversationId: 'one', chatUrl: 'https://chatgpt.com/c/one',
+      authorizedAt: '2026-09-30T00:00:00.000Z', updatedAt: '2026-09-30T00:00:00.000Z',
+    });
+    const bridge = await createNativeHostBridge({
+      socketPath, ledgerPath, conversationBindingPath, pairingSecret, helperArtifactRevision: revision,
+      sendNative: async (message: unknown) => {
+        const request = message as { kind: string; requestId: string };
+        if (request.kind === 'conversation_title_request') await bridge.acceptNativeMessage({
+          v: 1, kind: 'conversation_title_result', requestId: request.requestId,
+          titles: [{ conversationId: 'one', displayTitle: 'Readable recovery title' }],
+        });
+      },
+    });
+    try {
+      const result = await refresh({});
+      assert.equal(validate(result), true, JSON.stringify(validate.errors));
+      assert.deepEqual((result as { data: unknown }).data, { titleSync: { status: 'synced', updatedCount: 1, requestedCount: 1 } });
+      assert.match((result as { label: string }).label, /Updated 1 of 1/);
+      const rows = await activation.actions[PERSONAL_CHROME_LIST_METHOD]!({}) as { data: { rows: { label: string }[] } };
+      assert.equal(rows.data.rows[0]!.label, 'Readable recovery title');
+      const status = await activation.actions[PERSONAL_CHROME_STATUS_METHOD]!({}) as { data: { delivery: { reloadRequired: boolean } } };
+      assert.equal(status.data.delivery.reloadRequired, true, 'v1 refresh cannot certify extension revision');
+    } finally { await bridge.stop(); }
+  } finally { await activation.stop(); }
 });
 
 test('real start stays available when installer owns the lease and Status/Test explain the delivery failure', async (t) => {

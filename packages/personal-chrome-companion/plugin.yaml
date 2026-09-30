@@ -1,5 +1,5 @@
 pluginId: official.companion.personal-chrome
-version: 0.1.0-alpha.0
+version: 0.1.0-alpha.1
 contractVersion: 0.1.0
 name: Personal Chrome Companion
 icon:
@@ -27,6 +27,12 @@ configuration:
         confirm: Revoke this ChatGPT conversation authorization? The cloud cat will no longer be able to send messages to it.
         action:
           method: personal-chrome-host.authorizations.revoke
+        next: list
+      - id: refresh-titles
+        label: Refresh titles
+        render: button
+        action:
+          method: personal-chrome-host.authorizations.refresh-titles
         next: list
       - id: status
         label: Authorization status
