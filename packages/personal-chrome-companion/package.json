@@ -30,7 +30,9 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "pnpm clean && tsc -p tsconfig.build.json",
+    "build": "pnpm build:extension && pnpm clean && tsc -p tsconfig.build.json",
+    "build:extension": "node scripts/build-content-script.mjs",
+    "build:extension:write": "node scripts/build-content-script.mjs --write",
     "typecheck": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.test.json",
     "test": "pnpm build && node --import tsx --test test/**/*.test.ts test/**/*.test.mjs",
     "lint": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.test.json",
@@ -40,6 +42,7 @@
   "devDependencies": {
     "@clowder-ai/plugin-contract": "0.1.0-beta.27",
     "@types/node": "^20.17.0",
+    "esbuild": "0.28.1",
     "jsdom": "^28.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
