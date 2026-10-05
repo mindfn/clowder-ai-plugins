@@ -77,6 +77,47 @@ async function visibleClipping(page, panelId) {
   }, panelId);
 }
 
+async function textRangeVisibility(page, rowSelector, needle) {
+  return page.evaluate(({ rowSelector, needle }) => {
+    const row = document.querySelector(rowSelector);
+    const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const index = node.data.indexOf(needle);
+      if (index === -1) continue;
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + needle.length);
+      const bounds = row.getBoundingClientRect();
+      const text = range.getBoundingClientRect();
+      const hit = document.elementFromPoint((text.left + text.right) / 2, (text.top + text.bottom) / 2);
+      return {
+        rowText: row.textContent,
+        visible: text.left >= bounds.left - 0.5 && text.right <= bounds.right + 0.5
+          && text.top >= bounds.top - 0.5 && text.bottom <= bounds.bottom + 0.5
+          && hit !== null && row.contains(hit),
+        bounds: { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom },
+        text: { left: text.left, right: text.right, top: text.top, bottom: text.bottom },
+      };
+    }
+    return { rowText: row.textContent, visible: false, missing: true };
+  }, { rowSelector, needle });
+}
+
+async function recentRowPresentation(page, rowSelector) {
+  return page.evaluate(rowSelector => {
+    const row = document.querySelector(rowSelector);
+    const speaker = row.querySelector('.recent-speaker').getBoundingClientRect();
+    const message = row.querySelector('.recent-message');
+    const text = row.querySelector('.recent-message-text').getBoundingClientRect();
+    return {
+      gap: text.left - speaker.right,
+      textOverflow: getComputedStyle(message).textOverflow,
+      textDirection: message.dataset.direction,
+    };
+  }, rowSelector);
+}
+
 test('dynamic call content and expanded transcript keep every action visible', async () => {
   const page = await openPreview();
   try {
@@ -138,6 +179,131 @@ test('subtitle return is visible and restores the same shared call at compact an
       assert.equal(await page.locator('#call-share-target').textContent(), '共享中：Blender · 窄屏验收窗口');
       assert.equal(await page.inputValue('#call-message'), '未发送的草稿');
     }
+  } finally {
+    await page.close();
+  }
+});
+
+test('the narrow call bar keeps both speaker labels and the newest streamed tail visibly on screen', async () => {
+  const page = await openPreview({ width: 390, height: 620 });
+  try {
+    await page.click('#pet');
+    await page.click('#begin');
+    await page.waitForFunction(() => document.getElementById('call-state')?.textContent === '通话中');
+    await page.evaluate(() => {
+      const callId = '11111111-1111-4111-8111-111111111111';
+      window.__emitAudio({ kind: 'audio', type: 'transcript', callId, role: 'user', itemId: 'long-user',
+        text: `${'这是一段很长的用户实时输入'.repeat(18)}用户最新尾部。` });
+      window.__emitAudio({ kind: 'audio', type: 'transcript', callId, role: 'assistant', itemId: 'long-assistant',
+        text: `${'这是猫猫正在持续回答的长句'.repeat(18)}assistant tail!` });
+    });
+
+    const userLabel = await textRangeVisibility(page, '.call-recent p[data-role="user"]', '语音：');
+    const userTail = await textRangeVisibility(page, '.call-recent p[data-role="user"]', '用户最新尾部。');
+    const assistantLabel = await textRangeVisibility(page, '.call-recent p[data-role="assistant"]', '宪宪：');
+    const assistantTail = await textRangeVisibility(page, '.call-recent p[data-role="assistant"]', 'assistant tail!');
+    assert.equal(userLabel.visible, true, JSON.stringify(userLabel));
+    assert.equal(userTail.visible, true, JSON.stringify(userTail));
+    assert.equal(assistantLabel.visible, true, JSON.stringify(assistantLabel));
+    assert.equal(assistantTail.visible, true, JSON.stringify(assistantTail));
+
+    await page.evaluate(async () => {
+      const { RecentBubble } = await import('/recent-bubble.mjs');
+      const bubble = new RecentBubble([
+        document.getElementById('call-bubble-first'), document.getElementById('call-bubble-second'),
+      ]);
+      bubble.append('user', 'hi', '语音');
+      bubble.append('assistant', '好的。', '宪宪');
+    });
+    for (const role of ['user', 'assistant']) {
+      const presentation = await recentRowPresentation(page, `.call-recent p[data-role="${role}"]`);
+      assert(Math.abs(presentation.gap) <= 0.5, JSON.stringify(presentation));
+      assert.equal(presentation.textOverflow, 'ellipsis');
+      assert.equal(presentation.textDirection, 'ltr');
+    }
+
+    const callbar = await visibleClipping(page, 'actions');
+    assert(callbar.height <= 500);
+    assert.deepEqual(callbar.clippedButtons, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('the narrow call bar keeps the logical tail visible for right-to-left messages', async () => {
+  const page = await openPreview({ width: 390, height: 620 });
+  try {
+    await page.click('#pet');
+    await page.click('#begin');
+    await page.waitForFunction(() => document.getElementById('call-state')?.textContent === '通话中');
+    await page.evaluate(async () => {
+      const { RecentBubble } = await import('/recent-bubble.mjs');
+      const bubble = new RecentBubble([
+        document.getElementById('call-bubble-first'), document.getElementById('call-bubble-second'),
+      ]);
+      bubble.append('user', `${'مرحبا '.repeat(40)}نهاية الجملة`, '语音');
+      bubble.append('assistant', `${'שלום '.repeat(40)}סוף המשפט`, '宪宪');
+    });
+
+    const arabic = await textRangeVisibility(page, '.call-recent p[data-role="user"]', 'نهاية الجملة');
+    const hebrew = await textRangeVisibility(page, '.call-recent p[data-role="assistant"]', 'סוף המשפט');
+    assert.equal(arabic.visible, true, JSON.stringify(arabic));
+    assert.equal(hebrew.visible, true, JSON.stringify(hebrew));
+    assert.equal((await recentRowPresentation(page, '.call-recent p[data-role="user"]')).textDirection, 'rtl');
+    assert.equal((await recentRowPresentation(page, '.call-recent p[data-role="assistant"]')).textDirection, 'rtl');
+
+    await page.evaluate(async () => {
+      const { RecentBubble } = await import('/recent-bubble.mjs');
+      const bubble = new RecentBubble([
+        document.getElementById('call-bubble-first'), document.getElementById('call-bubble-second'),
+      ]);
+      bubble.append('user', `${'ك'.repeat(50)}iPad  ${'مرحبا '.repeat(17)}نهاية الجملة`, '语音');
+      bubble.append('assistant', `${'word '.repeat(60)}مرحبا  ${'word '.repeat(20)}final words!`, '宪宪');
+    });
+    const mixedRtl = await textRangeVisibility(page, '.call-recent p[data-role="user"]', 'نهاية الجملة');
+    const mixedLtr = await textRangeVisibility(page, '.call-recent p[data-role="assistant"]', 'final words!');
+    assert.equal(mixedRtl.visible, true, JSON.stringify(mixedRtl));
+    assert.equal(mixedLtr.visible, true, JSON.stringify(mixedLtr));
+    assert.equal((await recentRowPresentation(page, '.call-recent p[data-role="user"]')).textDirection, 'rtl');
+    assert.equal((await recentRowPresentation(page, '.call-recent p[data-role="assistant"]')).textDirection, 'ltr');
+
+    const adlamTail = String.fromCodePoint(0x1e922, 0x1e923, 0x1e924, 0x1e925, 0x1e926);
+    await page.evaluate(async ({ adlamPrefix, adlamTail }) => {
+      const { RecentBubble } = await import('/recent-bubble.mjs');
+      const row = document.getElementById('call-bubble-first');
+      const bubble = new RecentBubble([row, document.getElementById('call-bubble-second')]);
+      bubble.append('user', `${`${adlamPrefix} `.repeat(30)}${adlamTail}`, '语音');
+    }, {
+      adlamPrefix: String.fromCodePoint(0x1e927, 0x1e928, 0x1e929, 0x1e92a, 0x1e92b),
+      adlamTail,
+    });
+    const adlam = await textRangeVisibility(page, '.call-recent p[data-role="user"]', adlamTail);
+    assert.equal(adlam.visible, true, JSON.stringify(adlam));
+    assert.equal((await recentRowPresentation(page, '.call-recent p[data-role="user"]')).textDirection, 'rtl');
+
+    const streaming = await page.evaluate(async () => {
+      const { RecentBubble } = await import('/recent-bubble.mjs');
+      const row = document.getElementById('call-bubble-first');
+      const bubble = new RecentBubble([row, document.getElementById('call-bubble-second')]);
+      bubble.append('assistant', 'hello world ', '宪宪');
+      const bad = [];
+      for (let index = 0; index < 60; index += 1) {
+        const delta = `كلمة${index} `;
+        bubble.append('assistant', delta, '宪宪');
+        const message = row.querySelector('.recent-message');
+        const text = row.querySelector('.recent-message-text').firstChild;
+        const offset = text.data.lastIndexOf(delta);
+        const range = document.createRange();
+        range.setStart(text, offset);
+        range.setEnd(text, offset + delta.length);
+        const tail = range.getBoundingClientRect();
+        const bounds = message.getBoundingClientRect();
+        const hit = document.elementFromPoint((tail.left + tail.right) / 2, (tail.top + tail.bottom) / 2);
+        if (tail.left < bounds.left - 0.5 || tail.right > bounds.right + 0.5 || !message.contains(hit)) bad.push(index);
+      }
+      return bad;
+    });
+    assert.deepEqual(streaming, []);
   } finally {
     await page.close();
   }

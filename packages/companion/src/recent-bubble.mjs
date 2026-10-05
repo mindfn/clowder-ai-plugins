@@ -44,7 +44,29 @@ export class RecentBubble {
     for (const [index, row] of this.rows.entries()) {
       const entry = entries[index];
       row.hidden = !entry;
-      row.textContent = entry ? `${String(entry.name).slice(0, 28)}：${String(entry.text).slice(-120)}` : '';
+      const speaker = entry ? `${String(entry.name).slice(0, 28)}：` : '';
+      const message = entry ? String(entry.text).slice(-120) : '';
+      row.textContent = `${speaker}${message}`;
+      if (entry && row.ownerDocument?.createElement && typeof row.replaceChildren === 'function') {
+        const speakerNode = row.ownerDocument.createElement('span');
+        const messageNode = row.ownerDocument.createElement('span');
+        const messageText = row.ownerDocument.createElement('bdi');
+        speakerNode.className = 'recent-speaker';
+        messageNode.className = 'recent-message';
+        messageText.className = 'recent-message-text';
+        messageText.dir = 'auto';
+        speakerNode.textContent = speaker;
+        // dir=auto resolves the first strong character. Reversing code points for
+        // this hidden-in-the-same-tick probe therefore resolves the latest strong
+        // character, which is the edge this compact tail projection must retain.
+        messageText.textContent = Array.from(message).reverse().join('');
+        messageNode.append(messageText);
+        row.replaceChildren(speakerNode, messageNode);
+        const direction = row.ownerDocument.defaultView?.getComputedStyle(messageText).direction;
+        messageText.dir = direction === 'rtl' ? 'rtl' : 'ltr';
+        messageText.textContent = message;
+        messageNode.dataset.direction = direction === 'rtl' ? 'rtl' : 'ltr';
+      }
       row.dataset ??= {};
       row.dataset.role = entry?.role ?? '';
     }
