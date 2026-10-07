@@ -17,7 +17,7 @@ import { verifySelfContainedArchive } from './verify-self-contained-artifact.mjs
 
 const execFileAsync = promisify(execFile);
 
-async function fixture(t, runtimeSource, transport = 'builtin', installedDependencies = {}, lockedVersions = {}) {
+async function fixture(t, runtimeSource, transport = 'builtin', installedDependencies = {}, lockedVersions = {}, entryDeclaration = {}) {
   const root = await mkdtemp(join(tmpdir(), 'clowder-self-contained-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const stage = join(root, 'stage');
@@ -39,6 +39,7 @@ async function fixture(t, runtimeSource, transport = 'builtin', installedDepende
     version: '1.0.0',
     type: 'module',
     main: './dist/index.js',
+    ...entryDeclaration,
   }));
   await writeFile(join(packageRoot, 'npm-shrinkwrap.json'), JSON.stringify({
     name: '@clowder-ai/relocation-fixture',
@@ -147,6 +148,19 @@ test('builtin runtime entrypoint without PluginModuleEntrypoint shape is rejecte
 test('stdio entrypoint cannot receive a misleading builtin relocation verdict', async (t) => {
   const archive = await fixture(t, 'export default { create() {} };\n', 'stdio');
   await assert.rejects(verifySelfContainedArchive(archive), /transport-specific relocation probe/u);
+});
+
+for (const exports of ['./dist/index.js', { '.': './dist/index.js' }, { '.': { import: './dist/index.js' } }]) {
+  test(`exports-only package loads its declared root: ${JSON.stringify(exports)}`, async (t) => {
+    const archive = await fixture(t, null, 'builtin', {}, {}, { main: undefined, exports });
+    const result = await verifySelfContainedArchive(archive);
+    assert.match(result.relocation.entry, /dist\/index\.js$/u);
+  });
+}
+
+test('missing exports-only root is rejected', async (t) => {
+  const archive = await fixture(t, null, 'builtin', {}, {}, { main: undefined, exports: { '.': './dist/missing.js' } });
+  await assert.rejects(verifySelfContainedArchive(archive), /missing\.js/u);
 });
 
 test('static package without runtime entrypoint still loads its main', async (t) => {

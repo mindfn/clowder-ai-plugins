@@ -131,7 +131,8 @@ export async function verifySelfContainedArchive(archivePath) {
     const { installedPackages, checkedDirectDependencies } = await assertInstalledVersions(packageRoot, shrinkwrap, manifest);
     run('npm', ['ls', '--omit=dev', '--all', '--depth=100'], packageRoot);
 
-    const mainEntrypoint = manifest.main ?? manifest.exports?.['.']?.import;
+    const rootExport = typeof manifest.exports === 'string' ? manifest.exports : manifest.exports?.['.'];
+    const mainEntrypoint = manifest.main ?? (typeof rootExport === 'string' ? rootExport : rootExport?.import);
     const runtimeEntrypoint = pluginManifest?.runtime?.entrypoint;
     if (runtimeEntrypoint !== undefined && pluginManifest.runtime.transport !== 'builtin') {
       throw new Error(`runtime transport ${pluginManifest.runtime.transport} needs a transport-specific relocation probe`);
