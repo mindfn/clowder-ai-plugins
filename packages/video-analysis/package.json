@@ -1,6 +1,6 @@
 {
   "name": "@clowder-ai/video-analysis",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Official standalone video-analysis plugin for Clowder AI hosts",
   "license": "MIT",
   "type": "module",
@@ -28,7 +28,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "pnpm clean && tsc -p tsconfig.build.json",
+    "build": "pnpm clean && tsc -p tsconfig.build.json && node ../../scripts/package-bins.mjs",
     "typecheck": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.test.json",
     "test": "node --import tsx --test src/**/*.test.ts",
     "lint": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.test.json",

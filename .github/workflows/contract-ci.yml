@@ -91,13 +91,16 @@ jobs:
       - name: Local gate (toolchain to pack:gate)
         run: pnpm gate:ci
 
+      - name: Companion browser layout contract
+        run: pnpm --filter @clowder-ai/companion exec playwright install --with-deps chromium && pnpm --filter @clowder-ai/companion test:browser
+
       # gate:ci does not cover xiangqi (playwright browser journey is kept
       # as an explicit step, mirroring main).
       - name: Xiangqi package tests and build
         run: pnpm --filter @clowder-ai/xiangqi test && pnpm --filter @clowder-ai/xiangqi lint && pnpm --filter @clowder-ai/xiangqi build
 
       - name: Xiangqi browser journey
-        run: pnpm --filter @clowder-ai/xiangqi exec playwright install --with-deps chromium && pnpm --filter @clowder-ai/xiangqi test:browser
+        run: pnpm --filter @clowder-ai/xiangqi test:browser
 
       - name: Loopback fixture typecheck
         run: pnpm --filter @clowder-ai/loopback-fixture-plugin typecheck

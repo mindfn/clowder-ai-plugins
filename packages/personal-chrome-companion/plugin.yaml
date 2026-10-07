@@ -1,5 +1,5 @@
 pluginId: official.companion.personal-chrome
-version: 0.1.0-alpha.1
+version: 0.1.0-alpha.2
 contractVersion: 0.1.0
 name: Personal Chrome Companion
 icon:
@@ -19,6 +19,7 @@ configuration:
       - id: list
         label: Authorized conversations
         render: status
+        resultRender: rows
         action:
           method: personal-chrome-host.authorizations.list
       - id: revoke

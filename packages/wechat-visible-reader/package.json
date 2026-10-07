@@ -1,6 +1,6 @@
 {
   "name": "@clowder-ai/wechat-visible-reader",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Mac WeChat visible-message reader for Clowder AI hosts",
   "license": "MIT",
   "type": "module",
@@ -25,7 +25,9 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "os": ["darwin"],
+  "os": [
+    "darwin"
+  ],
   "scripts": {
     "build": "pnpm clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.test.json",
@@ -35,7 +37,7 @@
     "prepack": "pnpm build"
   },
   "dependencies": {
-    "@clowder-ai/plugin-sdk": "0.2.0-beta.11",
+    "@clowder-ai/plugin-sdk": "0.2.0-beta.12",
     "zod": "3.25.76"
   },
   "devDependencies": {
@@ -44,7 +46,14 @@
     "typescript": "^5.7.0",
     "yaml": "2.9.0"
   },
-  "keywords": ["clowder-ai", "plugin", "wechat", "macos", "ocr", "limb"],
+  "keywords": [
+    "clowder-ai",
+    "plugin",
+    "wechat",
+    "macos",
+    "ocr",
+    "limb"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/zts212653/clowder-ai-plugins.git",

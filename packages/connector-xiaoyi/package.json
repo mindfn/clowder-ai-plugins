@@ -1,6 +1,6 @@
 {
   "name": "@clowder-ai/connector-xiaoyi",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "XiaoYi OpenClaw messaging connector for Clowder AI hosts",
   "license": "MIT",
   "type": "module",
@@ -13,8 +13,16 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist", "plugin.yaml", "README.md", "assets", "npm-shrinkwrap.json"],
-  "engines": { "node": ">=20.0.0" },
+  "files": [
+    "dist",
+    "plugin.yaml",
+    "README.md",
+    "assets",
+    "npm-shrinkwrap.json"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "build": "pnpm clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.test.json",
@@ -23,7 +31,10 @@
     "clean": "rm -rf dist",
     "prepack": "pnpm build"
   },
-  "dependencies": { "@clowder-ai/plugin-sdk": "0.2.0-beta.11", "ws": "8.21.3" },
+  "dependencies": {
+    "@clowder-ai/plugin-sdk": "0.2.0-beta.12",
+    "ws": "8.21.3"
+  },
   "devDependencies": {
     "@types/node": "^20.17.0",
     "@types/ws": "8.18.1",
@@ -31,7 +42,12 @@
     "typescript": "^5.7.0",
     "yaml": "2.9.0"
   },
-  "keywords": ["clowder-ai", "connector", "xiaoyi", "messaging"],
+  "keywords": [
+    "clowder-ai",
+    "connector",
+    "xiaoyi",
+    "messaging"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/zts212653/clowder-ai-plugins.git",

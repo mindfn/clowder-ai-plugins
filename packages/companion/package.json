@@ -1,6 +1,6 @@
 {
   "name": "@clowder-ai/companion",
-  "version": "0.1.0-alpha.18",
+  "version": "0.1.0-alpha.25",
   "description": "The desktop voice body for your Clowder companion",
   "license": "MIT",
   "type": "module",
@@ -21,13 +21,15 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --test test/*.test.mjs",
+    "test:browser": "pnpm build && node --test test/panel-layout.browser.mjs",
     "typecheck": "node scripts/check.mjs",
     "lint": "node scripts/check.mjs",
     "prepack": "pnpm build"
   },
   "devDependencies": {
-    "@clowder-ai/plugin-contract": "0.1.0-beta.27",
-    "@clowder-ai/plugin-sdk": "0.2.0-beta.11"
+    "@clowder-ai/plugin-contract": "0.1.0-beta.29",
+    "@clowder-ai/plugin-sdk": "0.2.0-beta.12",
+    "playwright": "1.61.1"
   },
   "repository": {
     "type": "git",

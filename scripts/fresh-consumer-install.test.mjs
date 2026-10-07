@@ -352,9 +352,9 @@ test('packed public packages install and import in a fresh npm consumer', async 
         'utf8',
       ),
     );
-    assert.equal(contractPackage.version, '0.1.0-beta.27');
-    assert.equal(sdkPackage.version, '0.2.0-beta.11');
-    assert.equal(sdkPackage.dependencies['@clowder-ai/plugin-contract'], '0.1.0-beta.27');
+    assert.equal(contractPackage.version, '0.1.0-beta.29');
+    assert.equal(sdkPackage.version, '0.2.0-beta.12');
+    assert.equal(sdkPackage.dependencies['@clowder-ai/plugin-contract'], '0.1.0-beta.29');
     assert.equal(
       feishuPackage.dependencies['@clowder-ai/plugin-contract'],
       '0.1.0-beta.9',
@@ -374,31 +374,31 @@ test('packed public packages install and import in a fresh npm consumer', async 
       join(consumer, 'node_modules/@clowder-ai/feishu-meeting-intake/dist/entrypoint.js'),
       'utf8',
     );
-    assert.equal(companionPackage.version, '0.1.0-alpha.1');
+    assert.equal(companionPackage.version, '0.1.0-alpha.2');
     assert.equal(companionPackage.private, undefined);
-    assert.equal(companionPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.11');
+    assert.equal(companionPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12');
     assert.doesNotMatch(JSON.stringify(companionPackage), /"workspace:/u);
     assert.deepEqual(companionPackage.bin, {
       'clowder-personal-chrome-host': 'native-host/native-host-cli.mjs',
     });
-    assert.equal(videoPackage.version, '0.1.0-alpha.2');
-    assert.equal(xiangqiPackage.version, '0.1.0-alpha.0');
+    assert.equal(videoPackage.version, '0.1.0-alpha.3');
+    assert.equal(xiangqiPackage.version, '0.1.0-alpha.1');
     assert.deepEqual(videoPackage.bin, {
       'clowder-video-analysis-mcp': './dist/mcp-entrypoint.js',
     });
-    assert.equal(videoGenerationPackage.version, '0.1.0-alpha.0');
+    assert.equal(videoGenerationPackage.version, '0.1.0-alpha.1');
     assert.deepEqual(videoGenerationPackage.bin, {
       'clowder-video-generation-mcp': './dist/mcp-entrypoint.js',
     });
-    assert.equal(weixinMpPackage.version, '0.1.0-alpha.2');
-    assert.equal(weixinMpPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.11');
+    assert.equal(weixinMpPackage.version, '0.1.0-alpha.3');
+    assert.equal(weixinMpPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12');
     assert.doesNotMatch(JSON.stringify(weixinMpPackage), /"workspace:/u);
-    assert.equal(wechatReaderPackage.version, '0.1.0-alpha.2');
-    assert.equal(wechatReaderPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.11');
+    assert.equal(wechatReaderPackage.version, '0.1.0-alpha.3');
+    assert.equal(wechatReaderPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12');
     assert.doesNotMatch(JSON.stringify(wechatReaderPackage), /"workspace:/u);
     assert.deepEqual(wechatReaderPackage.os, ['darwin']);
-    assert.equal(enterprisePackage.version, '0.1.0-alpha.1');
-    assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.11');
+    assert.equal(enterprisePackage.version, '0.1.0-alpha.2');
+    assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12');
     assert.doesNotMatch(JSON.stringify(enterprisePackage), /"workspace:/u);
     const installedContract = await import(
       pathToFileURL(
@@ -409,6 +409,18 @@ test('packed public packages install and import in a fresh npm consumer', async 
       pathToFileURL(
         join(consumer, 'node_modules/@clowder-ai/plugin-sdk/dist/index.js'),
       ).href
+    );
+    const personalChromeManifest = installedContract.validateManifest(parseYaml(
+      await readFile(join(consumer, 'node_modules/@clowder-ai/personal-chrome-companion/plugin.yaml'), 'utf8'),
+    ));
+    assert.equal(personalChromeManifest.valid, true);
+    const authorizations = personalChromeManifest.manifest.configuration.find(
+      (field) => field.key === 'personalChromeAuthorizations',
+    );
+    assert.equal(
+      authorizations.actions.find((action) => action.resultRender === 'rows')?.id,
+      'list',
+      'the installed artifact must select the generic Host Settings rows renderer',
     );
     for (const { name } of connectorPackages) {
       const installedRoot = join(consumer, 'node_modules', name);

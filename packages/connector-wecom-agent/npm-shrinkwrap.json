@@ -1,15 +1,15 @@
 {
   "name": "@clowder-ai/connector-wecom-agent",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "@clowder-ai/connector-wecom-agent",
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "license": "MIT",
       "dependencies": {
-        "@clowder-ai/plugin-sdk": "0.2.0-beta.11",
+        "@clowder-ai/plugin-sdk": "0.2.0-beta.12",
         "fast-xml-parser": "5.5.9"
       },
       "engines": {
@@ -17,9 +17,9 @@
       }
     },
     "node_modules/@clowder-ai/plugin-contract": {
-      "version": "0.1.0-beta.27",
-      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.1.0-beta.27.tgz",
-      "integrity": "sha512-MxL4yit/YtZeRw3TjIsPV9KJScnm7RDBrhQWvdz01X4GgzQNrnUY77LiWhbux0YLsJJ9KcAgOUtsBboTng2xKw==",
+      "version": "0.1.0-beta.29",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.1.0-beta.29.tgz",
+      "integrity": "sha512-77p2pQyLZvbC+kv7yOOzIdsXNYeUblxy50H6VQVQYx2CB6vwySSux2LvUXzPLvdVZCNuJkFHpY04mZ3vHmnXgQ==",
       "license": "MIT",
       "dependencies": {
         "ajv": "^8.17.0",
@@ -30,12 +30,12 @@
       }
     },
     "node_modules/@clowder-ai/plugin-sdk": {
-      "version": "0.2.0-beta.11",
-      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.11.tgz",
-      "integrity": "sha512-j0Bg6+8TohaEGkM9mkjzoAgj6mtQGheNSN+0KjtQnPBqepKeJk7GFKkQPUSaWb4gD/BZstBjAjxf7Ax7OQf4qA==",
+      "version": "0.2.0-beta.12",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.12.tgz",
+      "integrity": "sha512-OWaRO97kFIs5X3RDo+PlIN0C80oLvH7CPp/+55fXOi1NqJxUIB6cuhReQnXU0mvCX0/gDgQjsFLNOPpJHWur1w==",
       "license": "MIT",
       "dependencies": {
-        "@clowder-ai/plugin-contract": "0.1.0-beta.27"
+        "@clowder-ai/plugin-contract": "0.1.0-beta.29"
       },
       "engines": {
         "node": ">=20.0.0"

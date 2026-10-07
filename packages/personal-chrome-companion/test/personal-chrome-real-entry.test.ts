@@ -22,6 +22,8 @@ import {
   isCloudConversationAckResult,
   isCloudConversationAppendMessageResult,
   isCloudConversationListResult,
+  validateManifest,
+  validateOperationRowsResult,
 } from '@clowder-ai/plugin-contract';
 import type { ModulePluginHostShape } from '@clowder-ai/plugin-sdk';
 
@@ -105,6 +107,52 @@ function makeHost(dataDirectory: string): ModulePluginHostShape {
     log: (_level: string, _message: string, _fields?: Readonly<Record<string, unknown>>) => undefined,
   };
 }
+
+test('Settings selects rows from the real manifest and lists and revokes through its declared methods', async (t) => {
+  const validated = validateManifest(loadManifest());
+  assert.equal(validated.valid, true);
+  if (!validated.valid) return;
+  const operation = validated.manifest.configuration?.find((field) => field.key === 'personalChromeAuthorizations');
+  assert.ok(operation?.kind === 'operation');
+  // ActionRenderer selects the rows surface using this declaration, before any
+  // method runs. A valid rows result alone cannot make the Settings UI reachable.
+  const list = operation.actions.find((action) => action.resultRender === 'rows');
+  assert.equal(list?.id, 'list', 'the manifest must select the generic Host rows renderer');
+  assert.ok(list);
+  const revoke = operation.actions.find((action) => action.id === 'revoke');
+  const refresh = operation.actions.find((action) => action.id === 'refresh-titles');
+  assert.equal(revoke?.render, 'row');
+  assert.ok(revoke?.confirm);
+  assert.equal(revoke.next, list.id);
+  assert.equal(refresh?.render, 'button');
+  assert.equal(refresh.next, list.id);
+  const dataDirectory = await mkdtemp(join(tmpdir(), 'settings-rows-carrier-'));
+  t.after(() => rm(dataDirectory, { recursive: true, force: true }));
+  await authorizePersonalChromeConversation(join(dataDirectory, 'conversation-binding.json'), {
+    conversationId: 'settings-conversation', chatUrl: 'https://chatgpt.com/c/settings-conversation',
+    authorizedAt: '2026-10-07T00:00:00.000Z', updatedAt: '2026-10-07T00:00:00.000Z',
+  });
+  const activation = await entrypoint.create(loadManifest()).start(makeHost(dataDirectory));
+  try {
+    const invoke = async (method: string, input: unknown) => {
+      assert.equal(Object.hasOwn(activation.actions, method), true);
+      return await activation.actions[method]!(input) as { render: string; data: unknown };
+    };
+    const listed = await invoke(list.action.method, {});
+    assert.equal(listed.render, 'rows');
+    const rows = validateOperationRowsResult(operation, listed.data);
+    assert.equal(rows.valid, true, JSON.stringify(rows.errors));
+    if (!rows.valid) return;
+    assert.equal(rows.value.rows.length, 1);
+    const row = rows.value.rows[0]!;
+    assert.equal(row.key, 'settings-conversation');
+    assert.deepEqual(row.actions, [{ action: revoke.id, input: { conversationId: row.key } }]);
+    await invoke(revoke.action.method, row.actions![0]!.input);
+    const after = validateOperationRowsResult(operation, (await invoke(list.action.method, {})).data);
+    assert.equal(after.valid, true, JSON.stringify(after.errors));
+    if (after.valid) assert.deepEqual(after.value.rows, []);
+  } finally { await activation.stop(); }
+});
 
 test('real module entry starts across the SDK carrier and serves every p2b action', async (t) => {
   const dataDirectory = await mkdtemp(join(tmpdir(), 'p2a-real-entry-'));

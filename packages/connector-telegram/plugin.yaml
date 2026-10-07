@@ -1,5 +1,5 @@
 pluginId: official.connector.telegram
-version: 0.1.0-alpha.1
+version: 0.1.0-alpha.2
 contractVersion: 0.1.0
 name: Telegram Connector
 description:

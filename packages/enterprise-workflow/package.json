@@ -1,6 +1,6 @@
 {
   "name": "@clowder-ai/enterprise-workflow",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "WeCom and Lark enterprise workflow tools for Clowder AI hosts",
   "license": "MIT",
   "type": "module",
@@ -33,11 +33,11 @@
     "prepack": "pnpm build"
   },
   "dependencies": {
-    "@clowder-ai/plugin-sdk": "0.2.0-beta.11",
+    "@clowder-ai/plugin-sdk": "0.2.0-beta.12",
     "ajv": "8.20.0"
   },
   "devDependencies": {
-    "@clowder-ai/plugin-contract": "0.1.0-beta.27",
+    "@clowder-ai/plugin-contract": "0.1.0-beta.29",
     "@types/node": "^20.17.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",

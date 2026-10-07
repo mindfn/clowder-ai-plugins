@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { assertProductionDependencyClosure } from './catalog-package-shrinkwrap.mjs';
 import { normalizeBundledPublishGzip } from './canonical-publish-gzip.mjs';
+import { assertArchiveBins } from './package-bins.mjs';
 
 const repoRoot = fileURLToPath(new URL('../', import.meta.url));
 
@@ -126,12 +127,13 @@ async function main() {
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error;
     }
-    process.stdout.write(
-      runNpm(
+    const output = runNpm(
         ['pack', '--json', '--ignore-scripts', '--pack-destination', destinationRoot, packageRoot],
         repoRoot,
-      ),
     );
+    const [artifact] = JSON.parse(output);
+    assertArchiveBins(packageJson, join(destinationRoot, artifact.filename));
+    process.stdout.write(output);
     return;
   }
   if (!Array.isArray(bundled) || !bundled.every(name => typeof name === 'string')) {
@@ -170,6 +172,7 @@ async function main() {
     const stagedPackageRoot = join(sourceRoot, 'package');
     await assertPhysicalTree(stagedPackageRoot);
     const packedBytes = await readFile(archivePath);
+    assertArchiveBins(packageJson, archivePath);
     const bytes = normalizeBundledPublishGzip(packedBytes);
     if (!bytes.equals(packedBytes)) await writeFile(archivePath, bytes);
     process.stdout.write(`${JSON.stringify([{

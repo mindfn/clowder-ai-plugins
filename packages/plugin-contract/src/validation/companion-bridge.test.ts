@@ -18,6 +18,162 @@ test('cat-first controls stay bounded to this window and its existing conversati
   assert.equal(validateCompanionEvent({ kind: 'view-dismiss' }), true);
 });
 
+test('call transcript is a Host-bound read with stable source identity', () => {
+  assert.equal(validateCompanionCommand({ kind: 'transcript.read' }), true);
+  assert.equal(validateCompanionCommand({ kind: 'transcript.read', callId: 'renderer-chosen' }), false,
+    'the renderer cannot select a call');
+  assert.equal(validateCompanionCommand({ kind: 'view.layout', panel: 'transcript', width: 420, height: 500 }), true);
+
+  const callId = '863adf11-9fa3-4156-93af-94f7d6022d85';
+  const reply = {
+    kind: 'transcript',
+    scope: { callId, realtimeSessionId: 'rtc-session-1' },
+    rows: [
+      {
+        messageId: 'voice-message-1', role: 'assistant', text: '翻译结果',
+        source: {
+          kind: 'voice', nativeThreadId: 'native-thread-1', realtimeSessionId: 'rtc-session-1',
+          nativeItemId: 'item-1', nativeTurnId: 'turn-1',
+        },
+      },
+      {
+        messageId: 'typed-message-1', role: 'user', text: '请解释这一句',
+        source: { kind: 'typed', clientMessageId: '6d01d254-1e3b-4588-a352-756449e95025', callId },
+      },
+    ],
+    hasMore: false,
+  };
+  assert.equal(validateCompanionReply(reply), true);
+  assert.equal(validateCompanionReply({ ...reply, rows: [
+    { ...reply.rows[1], role: 'assistant' },
+  ] }), false, 'typed rows are always the owner input');
+  assert.equal(validateCompanionReply({ ...reply, rows: [
+    { ...reply.rows[0], source: { ...reply.rows[0].source, realtimeSessionId: 'another-session' } },
+  ] }), false, 'voice rows must belong to the returned scope');
+  assert.equal(validateCompanionReply({ ...reply, rows: [
+    { ...reply.rows[1], source: { ...reply.rows[1].source, callId: 'cc734568-0695-42e6-a783-ec4708f31979' } },
+  ] }), false, 'typed rows must belong to the returned call');
+  assert.equal(validateCompanionReply({ ...reply, rows: [reply.rows[0], reply.rows[0]] }), false,
+    'one durable message cannot occupy two transcript positions');
+  assert.equal(validateCompanionReply({ ...reply, rows: [
+    { ...reply.rows[0], text: 'a'.repeat(16000) },
+    { ...reply.rows[1], text: 'b'.repeat(8001) },
+  ] }), false, 'the whole transcript reply stays inside the 24000-character budget');
+});
+
+test('typed delivery receipts preserve retry and durable message identities', () => {
+  const callId = '863adf11-9fa3-4156-93af-94f7d6022d85';
+  const clientMessageId = '6d01d254-1e3b-4588-a352-756449e95025';
+  assert.equal(validateCompanionReply({
+    kind: 'delivery', delivery: 'accepted', clientMessageId, messageId: 'message-1', callId,
+  }), true);
+  assert.equal(validateCompanionReply({
+    kind: 'delivery', delivery: 'unconfirmed', clientMessageId, messageId: null, callId,
+  }), true);
+  assert.equal(validateCompanionReply({ kind: 'delivery', delivery: 'accepted' }), false,
+    'legacy receipts cannot support deterministic transcript reconciliation');
+  assert.equal(validateCompanionReply({
+    kind: 'delivery', delivery: 'accepted', clientMessageId, messageId: null, callId,
+  }), false, 'accepted means the durable message identity is known');
+});
+
+test('real-time audio events are scoped to the current call', () => {
+  const callId = '863adf11-9fa3-4156-93af-94f7d6022d85';
+  assert.equal(validateCompanionEvent({
+    kind: 'audio', type: 'transcript', callId, role: 'assistant', text: '实时字幕', itemId: 'item-1',
+  }), true);
+  assert.equal(validateCompanionEvent({
+    kind: 'audio', type: 'transcript', role: 'assistant', text: '旧通话字幕', itemId: 'item-1',
+  }), false);
+  assert.equal(validateCompanionEvent({ kind: 'audio', type: 'connected', callId }), true);
+  assert.equal(validateCompanionEvent({ kind: 'audio', type: 'connected' }), false);
+});
+
+test('companion settings are Host-bound single-field updates with explicit settlement truth', () => {
+  assert.equal(validateCompanionCommand({ kind: 'settings.read' }), true);
+  assert.equal(validateCompanionCommand({ kind: 'settings.read', ownerId: 'renderer-choice' }), false);
+  assert.equal(validateCompanionCommand({ kind: 'view.layout', panel: 'settings', width: 360, height: 478 }), true);
+
+  const updates = [
+    { kind: 'settings.update', field: 'dutyCatProfileId', value: 'fable-5' },
+    { kind: 'settings.update', field: 'skin', value: 'xianxian-codex' },
+    { kind: 'settings.update', field: 'ballSize', value: 96 },
+    { kind: 'settings.update', field: 'behaviorEnabled', value: false },
+    { kind: 'settings.update', field: 'proactivePolicy', value: 'ambient' },
+    { kind: 'settings.update', field: 'personaTone', value: '温暖、简短、不啰嗦' },
+    { kind: 'settings.update', field: 'householdReadsAllowed', value: false },
+  ];
+  for (const update of updates) {
+    assert.equal(validateCompanionCommand(update), true, update.field);
+    for (const selector of ['ownerId', 'instanceId', 'url', 'callId']) {
+      assert.equal(validateCompanionCommand({ ...update, [selector]: 'renderer-choice' }), false, selector);
+    }
+  }
+  assert.equal(validateCompanionCommand({ kind: 'settings.update', field: 'ballSize', value: 47 }), false);
+  assert.equal(validateCompanionCommand({ kind: 'settings.update', field: 'ballSize', value: 193 }), false);
+  assert.equal(validateCompanionCommand({ kind: 'settings.update', field: 'personaTone', value: 'warm\ninjected' }), false);
+  assert.equal(validateCompanionCommand({ kind: 'settings.update', field: 'personaTone', value: '   ' }), false);
+  assert.equal(validateCompanionCommand({ kind: 'settings.update', field: 'personaTone', value: 'warm\u2028injected' }), false);
+  assert.equal(validateCompanionCommand({ kind: 'settings.update', field: 'enabled', value: false }), false,
+    'legacy web visibility is not plugin lifecycle');
+  assert.equal(validateCompanionCommand({ ...updates[1], behaviorEnabled: true }), false,
+    'one command cannot smuggle a second setting');
+
+  const settings = {
+    kind: 'settings', status: 'available',
+    values: {
+      dutyCatProfileId: 'fable-5', skin: 'xianxian-codex', ballSize: 72,
+      behaviorEnabled: true, proactivePolicy: 'quiet-badge',
+      personaTone: '温暖、简短、不啰嗦', householdReadsAllowed: true,
+    },
+    companions: [
+      { catProfileId: 'fable-5', displayName: '宪宪', available: true },
+      { catProfileId: 'codex-sol', displayName: '砚砚', available: false },
+    ],
+    selectedCompanionStatus: 'available',
+  };
+  assert.equal(validateCompanionReply(settings), true);
+  assert.equal(validateCompanionReply({ ...settings, selectedCompanionStatus: 'unavailable',
+    values: { ...settings.values, dutyCatProfileId: 'retired-cat' } }), true,
+  'a stale saved selection remains visible instead of silently becoming the first roster entry');
+  assert.equal(validateCompanionReply({ kind: 'settings', status: 'unavailable', reason: 'host_upgrade_required' }), true);
+  assert.equal(validateCompanionReply({ ...settings, values: { ...settings.values, ballSize: 12 } }), false);
+  assert.equal(validateCompanionReply({ ...settings, values: { ...settings.values, personaTone: '   ' } }), true,
+    'reads preserve legacy saved values even though new updates reject blank input');
+
+  assert.equal(validateCompanionReply({
+    kind: 'settings-update', field: 'personaTone', outcome: 'saved', callStatus: 'unchanged', applies: 'next_call',
+  }), true);
+  assert.equal(validateCompanionReply({
+    kind: 'settings-update', field: 'behaviorEnabled', outcome: 'saved', callStatus: 'unchanged', applies: 'now',
+  }), true);
+  assert.equal(validateCompanionReply({
+    kind: 'settings-update', field: 'householdReadsAllowed', outcome: 'rejected', callStatus: 'stopped', reason: 'save_failed',
+  }), true, 'a stopped call and rejected save are separate facts');
+  assert.equal(validateCompanionReply({
+    kind: 'settings-update', field: 'dutyCatProfileId', outcome: 'rejected', callStatus: 'stop_failed', reason: 'call_stop_failed',
+  }), true);
+  assert.equal(validateCompanionReply({
+    kind: 'settings-update', field: 'householdReadsAllowed', outcome: 'unconfirmed', callStatus: 'stopped', reconcile: 'settings.read',
+  }), true);
+  assert.equal(validateCompanionReply({
+    kind: 'settings-update', field: 'personaTone', outcome: 'saved', callStatus: 'unchanged', applies: 'now',
+  }), false, 'tone starts with the next call');
+  assert.equal(validateCompanionReply({
+    kind: 'settings-update', field: 'skin', outcome: 'rejected', callStatus: 'stop_failed', reason: 'save_failed',
+  }), false, 'pure visual preferences cannot claim they tried to stop media');
+});
+
+test('reset and disable stay bound to this native window and installed companion', () => {
+  assert.equal(validateCompanionCommand({ kind: 'view.reset' }), true);
+  assert.equal(validateCompanionCommand({ kind: 'companion.disable' }), true);
+  for (const selector of ['ownerId', 'instanceId', 'pluginId', 'windowId', 'url']) {
+    assert.equal(validateCompanionCommand({ kind: 'view.reset', [selector]: 'renderer-choice' }), false);
+    assert.equal(validateCompanionCommand({ kind: 'companion.disable', [selector]: 'renderer-choice' }), false);
+  }
+  assert.equal(validateCompanionReply({ kind: 'companion-lifecycle', action: 'disable', outcome: 'disabled' }), true);
+});
+
 test('conversation history accepts only an immutable D0 companion identity snapshot', () => {
   const companionIdentity = {
     v: 1,
@@ -95,9 +251,13 @@ test('surface state preserves real actors but never leaks internal handles or ra
       occurredAt: 200, expiresAt: 120200, resultId: 'result-1', nativeCarrierCatId: 'codex-sol' }],
   };
   const state = { kind: 'state', phase: 'idle', displayName: 'Companion', skin: 'cat', duty: { catId: 'deep', displayName: 'Deep' },
-    carrier: { catId: 'voice', displayName: 'Voice' }, documentsAllowed: true, toolsReady: false, nativeActivity: 'none',
+    carrier: { catId: 'voice', displayName: 'Voice' }, documentsAllowed: true, behaviorEnabled: true,
+    toolsReady: false, nativeActivity: 'none',
     liveTransport: { kind: 'gpt_live_v3', verifiedModel: null }, nativeWork };
   assert.equal(validateCompanionReply(state), true);
+  const { behaviorEnabled: _behavior, ...withoutBehavior } = state;
+  assert.equal(validateCompanionReply(withoutBehavior), false,
+    'native movement and plugin settings cannot guess the persisted autonomous-behavior preference');
   const receiveOnly = { supportedModes: ['duplex', 'receive_only'], activeMode: 'receive_only' };
   assert.equal(validateCompanionReply({ ...state, phase: 'talking', audio: receiveOnly }), true);
   assert.equal(validateCompanionReply({ ...state, audio: { ...receiveOnly, activeMode: null } }), true);
@@ -156,4 +316,78 @@ test('passive decision reading has bounded pages and no renderer approval comman
   assert.equal(validateCompanionReply({ ...reply, approvalCount: 0, approvals: reply.approvals, token: 'secret' }), false);
   assert.equal(validateCompanionReply({ ...reply, status: 'unavailable', approvalCount: null,
     needsMeCount: null, otherNeedsMeCount: null, approvals: [], otherNeedsMe: [] }), true);
+});
+
+test('unified decision reads preserve partial truth, concrete variants, and Host-bound navigation', () => {
+  const source = (status: 'available' | 'unavailable', coverage: 'complete' | 'unknown') => ({ status, coverage });
+  const reply = {
+    kind: 'decisions', version: 1, status: 'partial', observedAt: 42,
+    sources: {
+      approvals: source('available', 'complete'),
+      needsMe: source('unavailable', 'unknown'),
+    },
+    items: [
+      {
+        variantRef: 'variant-a', kind: 'repair', summary: '修复第一处',
+        navigation: { targets: ['action', 'origin'] },
+      },
+      {
+        variantRef: 'variant-b', kind: 'repair', summary: '修复冲突版本',
+        navigation: { targets: ['origin'] },
+      },
+    ],
+    page: { offset: 0, limit: 20, scope: 'known_rows', hasMore: false },
+  } as const;
+
+  assert.equal(validateCompanionReply(reply), true,
+    'every retained source variant stays visible under its opaque concrete ref');
+  assert.equal(validateCompanionReply({ ...reply, totalCount: 2 }), false,
+    'a partial read cannot claim an exact total');
+  assert.equal(validateCompanionReply({ ...reply, page: { ...reply.page, limit: 1 } }), false,
+    'known_rows cannot exceed the requested public page size');
+  assert.equal(validateCompanionReply({ ...reply, items: [], page: { ...reply.page, hasMore: true } }), false,
+    'known_rows hasMore cannot skip an otherwise nonempty bounded page');
+  assert.equal(validateCompanionReply({ ...reply,
+    sources: { ...reply.sources, needsMe: { status: 'unavailable', coverage: 'partial' } } }), false,
+  'an unread source cannot claim partial enumeration coverage');
+  assert.equal(validateCompanionReply({ ...reply,
+    items: [reply.items[0], { ...reply.items[1], variantRef: 'variant-a' }] }), false,
+  'renderer keys must distinguish every concrete source variant');
+  assert.equal(validateCompanionReply({ ...reply,
+    items: [{ ...reply.items[0], navigation: { targets: ['action'], threadId: 'private-thread' } }] }), false,
+  'the renderer receives only Host-bound navigation choices, never raw private coordinates');
+  const approvalItem = {
+    variantRef: 'approval-a', kind: 'approval', summary: '审批事项',
+    navigation: { targets: ['approval_card', 'origin'] },
+    approval: { resolution: 'open', materializationState: 'not_started', linkedNeedsMe: true },
+  } as const;
+  assert.equal(validateCompanionReply({ ...reply, items: [approvalItem] }), true);
+  assert.equal(validateCompanionReply({ ...reply, items: [{ ...approvalItem,
+    approval: { ...approvalItem.approval, proposalId: 'private-proposal', sourceFeatureId: 'F221' } }] }), false,
+  'the unified renderer receives lifecycle and safe navigation, not private producer coordinates');
+  assert.equal(validateCompanionReply({ ...reply, items: [{ ...approvalItem, decisionRef: 'approval:F221:private' }] }), false,
+    'the concrete opaque ref replaces the internal logical producer coordinate at this boundary');
+
+  const complete = {
+    ...reply,
+    status: 'available',
+    sources: {
+      approvals: source('available', 'complete'),
+      needsMe: source('available', 'complete'),
+    },
+    totalCount: 2,
+  } as const;
+  assert.equal(validateCompanionReply(complete), true);
+  assert.equal(validateCompanionReply({ ...complete, totalCount: 3 }), false,
+    'an exact total also makes known_rows hasMore mechanically checkable');
+  assert.equal(validateCompanionReply({ ...complete, items: [], page: { ...complete.page, hasMore: true } }), false,
+    'an exact total cannot advertise a nonempty page while withholding its known rows');
+  assert.equal(validateCompanionReply({ ...complete,
+    sources: { ...complete.sources, needsMe: source('available', 'unknown') } }), false,
+  'an exact total requires complete public source coverage');
+
+  assert.equal(validateCompanionCommand({ kind: 'decision.open', variantRef: 'variant-a', target: 'action' }), true);
+  assert.equal(validateCompanionCommand({ kind: 'decision.open', variantRef: 'variant-a', target: 'origin', threadId: 'forged' }), false);
+  assert.equal(validateCompanionCommand({ kind: 'decision.open', variantRef: '../foreign-variant', target: 'origin' }), false,
+    'the Host-issued opaque ref uses a closed grammar and cannot become a path-like selector');
 });
