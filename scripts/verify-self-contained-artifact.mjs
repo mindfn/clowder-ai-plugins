@@ -64,11 +64,11 @@ async function assertPhysicalTree(root) {
   }
 }
 
-async function assertInstalledVersions(packageRoot, shrinkwrap) {
+async function assertInstalledVersions(packageRoot, shrinkwrap, manifest) {
   const packages = shrinkwrap.packages ?? {};
   const physicalRoot = await realpath(packageRoot);
   const pending = [join(packageRoot, 'node_modules')];
-  let count = 0;
+  const checkedPaths = new Set();
 
   while (pending.length > 0) {
     const modules = pending.pop();
@@ -91,7 +91,7 @@ async function assertInstalledVersions(packageRoot, shrinkwrap) {
           locked.version,
           `${path} version differs from shrinkwrap (installed: ${JSON.stringify(installed.version)}, shrinkwrap: ${JSON.stringify(locked.version)})`,
         );
-        count += 1;
+        checkedPaths.add(path);
         const nested = join(directory, 'node_modules');
         try {
           const stat = await lstat(nested);
@@ -102,7 +102,11 @@ async function assertInstalledVersions(packageRoot, shrinkwrap) {
       }
     }
   }
-  return count;
+  const directDependencies = Object.keys(manifest.dependencies ?? {});
+  for (const name of directDependencies) {
+    assert.ok(checkedPaths.has(`node_modules/${name}`), `required direct dependency is absent from physical closure: ${name}`);
+  }
+  return { installedPackages: checkedPaths.size, checkedDirectDependencies: directDependencies.length };
 }
 
 export async function verifySelfContainedArchive(archivePath) {
@@ -124,7 +128,7 @@ export async function verifySelfContainedArchive(archivePath) {
     const pluginManifest = parseYaml(await readFile(join(packageRoot, 'plugin.yaml'), 'utf8'));
     const shrinkwrap = JSON.parse(await readFile(join(packageRoot, 'npm-shrinkwrap.json'), 'utf8'));
     assertProductionDependencyClosure(manifest, shrinkwrap);
-    const installedPackages = await assertInstalledVersions(packageRoot, shrinkwrap);
+    const { installedPackages, checkedDirectDependencies } = await assertInstalledVersions(packageRoot, shrinkwrap, manifest);
     run('npm', ['ls', '--omit=dev', '--all', '--depth=100'], packageRoot);
 
     const mainEntrypoint = manifest.main ?? manifest.exports?.['.']?.import;
@@ -137,11 +141,10 @@ export async function verifySelfContainedArchive(archivePath) {
       assert.equal(typeof runtimeEntrypoint, 'string', 'builtin runtime must declare a string entrypoint');
     }
     const evaluation = `
-      import { readFileSync, realpathSync } from 'node:fs';
+      import { realpathSync } from 'node:fs';
       import { resolve, relative, sep, isAbsolute } from 'node:path';
-      import { fileURLToPath, pathToFileURL } from 'node:url';
+      import { pathToFileURL } from 'node:url';
       const root = realpathSync('.');
-      const manifest = JSON.parse(readFileSync('package.json', 'utf8'));
       const inside = path => { const r = relative(root, path); return r !== '..' && !r.startsWith('..' + sep) && !isAbsolute(r); };
       const load = async declared => {
         const entry = realpathSync(resolve(root, declared));
@@ -158,15 +161,13 @@ export async function verifySelfContainedArchive(archivePath) {
           throw new TypeError('builtin runtime entrypoint default export must satisfy PluginModuleEntrypoint');
         }
       }
-      for (const name of Object.keys(manifest.dependencies ?? {})) {
-        const resolved = realpathSync(fileURLToPath(import.meta.resolve(name)));
-        if (!inside(resolved)) throw new Error(name + ' resolved outside extracted package: ' + resolved);
-      }
+      // Imports above exercise the entrypoints' actual dependency subpaths.
+      // A physically checked dependency need not expose an unused root API.
       console.log(JSON.stringify({
         entry: main.entry,
         runtimeEntry: runtime?.entry ?? null,
         runtimeEntrypointLoaded: runtime !== null,
-        checkedDirectDependencies: Object.keys(manifest.dependencies ?? {}).length,
+        checkedDirectDependencies: ${JSON.stringify(checkedDirectDependencies)},
       }));
     `;
     const relocation = JSON.parse(run(

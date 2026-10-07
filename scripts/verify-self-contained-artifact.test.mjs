@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -59,6 +59,74 @@ async function fixture(t, runtimeSource, transport = 'builtin', installedDepende
   assert.equal(tar.status, 0, tar.stderr);
   return archive;
 }
+
+async function subpathArchive(t, fault) {
+  const original = await fixture(t, 'export default { create() {} };\n');
+  const root = await mkdtemp(join(tmpdir(), 'clowder-subpath-test-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  assert.equal(spawnSync('tar', ['-xzf', original, '-C', root]).status, 0);
+  const packageRoot = join(root, 'package');
+  const dependencyRoot = join(packageRoot, 'node_modules/subpath-only');
+  await mkdir(dependencyRoot);
+  await writeFile(join(dependencyRoot, 'package.json'), JSON.stringify({
+    name: 'subpath-only', version: fault === 'version' ? '1.0.1' : '1.0.0', type: 'module',
+    exports: { '.': './absent-root.js', './usable': './usable.js', './missing': './missing.js' },
+  }));
+  await writeFile(join(dependencyRoot, 'usable.js'), 'export const value = 42;\n');
+  const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json')));
+  manifest.dependencies = { 'subpath-only': '1.0.0' };
+  await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest));
+  const lock = JSON.parse(await readFile(join(packageRoot, 'npm-shrinkwrap.json')));
+  lock.packages[''].dependencies = manifest.dependencies;
+  lock.packages['node_modules/subpath-only'] = {
+    version: '1.0.0', resolved: 'https://registry.npmjs.org/subpath-only/-/subpath-only-1.0.0.tgz',
+  };
+  await writeFile(join(packageRoot, 'npm-shrinkwrap.json'), JSON.stringify(lock));
+  await writeFile(join(packageRoot, 'dist/index.js'),
+    `import { value } from 'subpath-only/${fault === 'main' ? 'missing' : 'usable'}'; export { value };\n`);
+  await writeFile(join(packageRoot, 'dist/plugin-entrypoint.js'),
+    `import { value } from 'subpath-only/${fault === 'runtime' ? 'missing' : 'usable'}'; export default { create() { return value; } };\n`);
+  if (fault === 'absent') {
+    await rm(dependencyRoot, { recursive: true });
+    // Even an unused required dependency must be physically installed.
+    await writeFile(join(packageRoot, 'dist/index.js'), 'export const ok = true;\n');
+    await writeFile(join(packageRoot, 'dist/plugin-entrypoint.js'), 'export default { create() {} };\n');
+  }
+  if (fault === 'escape') {
+    const outside = join(root, 'outside');
+    await mkdir(outside);
+    await rm(dependencyRoot, { recursive: true });
+    await symlink(outside, dependencyRoot);
+  }
+  const archive = join(root, 'subpath.tgz');
+  assert.equal(spawnSync('tar', ['-czf', archive, '-C', root, 'package']).status, 0);
+  return archive;
+}
+
+test('valid dependency subpaths load through real main and runtime without requiring a root API', async (t) => {
+  const result = await verifySelfContainedArchive(await subpathArchive(t));
+  assert.equal(result.installedPackages, 1);
+  assert.equal(result.relocation.checkedDirectDependencies, 1);
+  assert.equal(result.relocation.runtimeEntrypointLoaded, true);
+});
+
+for (const entry of ['main', 'runtime']) {
+  test(`missing dependency subpath actually used by ${entry} is rejected`, async (t) => {
+    await assert.rejects(verifySelfContainedArchive(await subpathArchive(t, entry)), /missing\.js/u);
+  });
+}
+
+test('unused direct dependency absent from physical closure is rejected', async (t) => {
+  await assert.rejects(verifySelfContainedArchive(await subpathArchive(t, 'absent')), /missing|UNMET|absent/u);
+});
+
+test('subpath dependency cannot use an installed version different from its lock', async (t) => {
+  await assert.rejects(verifySelfContainedArchive(await subpathArchive(t, 'version')), /version differs from shrinkwrap/u);
+});
+
+test('dependency linked outside the package is rejected before extraction', async (t) => {
+  await assert.rejects(verifySelfContainedArchive(await subpathArchive(t, 'escape')), /link or non-regular/u);
+});
 
 test('relocated builtin runtime entrypoint loads independently of package main', async (t) => {
   const archive = await fixture(t, 'export default { create() {} };\n');
