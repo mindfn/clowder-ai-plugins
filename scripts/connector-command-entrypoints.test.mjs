@@ -40,6 +40,9 @@ for (const [name, factoryName] of Object.entries(factories)) {
     const entrypoint = entry[factoryName](options => { inbound = options.host.deliver;
       return { outbound, async start() {}, async stop() {} }; });
     const summary = id => ({ id, title: 'Bound', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] });
+    const threads = new Map([['bound', { ...summary('bound'), featureRefs: ['F202'] }]]);
+    const bindings = new Map([['chat', 'bound']]);
+    const cat = { catId: 'cat-eqdvbcxw', displayName: '砚砚', aliases: ['@sol'] };
     const host = {
       config: { get: async key => ({ connectionMode: 'webhook', appKey: 'app', corpId: 'corp', agentId: 'agent',
         botId: 'bot', accessKey: 'access' })[key] }, secrets: { get: async () => 'secret' },
@@ -50,8 +53,22 @@ for (const [name, factoryName] of Object.entries(factories)) {
           const revision = (current?.revision ?? 0) + 1; state.set(key, { revision, value }); return { applied: true, revision };
         }, set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1;
           state.set(key, { revision, value }); return { revision }; }, delete: async key => ({ deleted: state.delete(key) }) },
-      threads: { listBindings: async () => [], findByKey: async () => summary('bound'),
-        ensureSystemThread: async () => summary('system'), ensureByKey: async () => summary('bound') },
+      threads: {
+        listBindings: async () => [...bindings].map(([key, threadId]) => ({ key, threadId, createdAt: 1 })),
+        findByKey: async key => threads.get(bindings.get(key)) ?? null,
+        get: async id => threads.get(id) ?? null,
+        list: async () => [...threads.values()].sort((a, b) => b.lastActiveAt - a.lastActiveAt),
+        create: async ({ title }) => { const thread = { ...summary(`new-${threads.size}`), title, lastActiveAt: 2 };
+          threads.set(thread.id, thread); return thread; },
+        bind: async (key, threadId) => { bindings.set(key, threadId); return { key, threadId, createdAt: 1 }; },
+        unbind: async key => bindings.delete(key),
+        update: async (id, patch) => { const thread = { ...threads.get(id), ...patch }; threads.set(id, thread); return thread; },
+        getCats: async () => ({ participants: [{ ...cat, lastMessageAt: 1, messageCount: 1 }],
+          routableNow: [cat], routableNotJoined: [], notRoutable: [] }),
+        readMessages: async () => [{ id: 'owner-message', timestamp: 1, sender: { kind: 'owner' }, content: '真实历史问题' },
+          { id: 'cat-message', timestamp: 2, sender: { kind: 'cat', catId: cat.catId }, content: '真实历史回答' }],
+        ensureSystemThread: async () => summary('system'), ensureByKey: async () => summary('bound'),
+      },
       messaging: { subscribe: async () => {}, unsubscribe: async () => {}, send: async input => {
         sent.push(input); return { messageId: `m-${sent.length}`, threadId: input.threadId }; } }, log() {},
     };
@@ -80,16 +97,43 @@ for (const [name, factoryName] of Object.entries(factories)) {
       assert.equal(sent.length, 1); assert.equal(sent[0].threadId, 'system'); assert.equal(sent[0].wake, undefined);
       await inbound(input('/where', 'repairable'));
       assert.equal(replies.length, 1, 'redelivery does not repeat command');
+      const commands = ['/commands', '/threads', '/use F202', '/thread bound explicit-thread-body', '/cats', '/status',
+        '/history 1', '/focus sol', '/focus clear', '/ask sol explicit-ask-body', '/new Owner-created', '/where',
+        '/unbind', '/allow-group explicit-group', '/deny-group explicit-group'];
+      const seenCommands = new Set(['/where']);
+      for (const [index, text] of commands.entries()) {
+        const previousReplies = replies.length;
+        await inbound(input(text, `command-${index}`));
+        seenCommands.add(text.split(' ')[0]);
+        assert.equal(replies.length, previousReplies + 1, `${text} must reply once through provider adapter`);
+        if (text === '/focus sol') assert.deepEqual(threads.get('bound').preferredCats, [cat.catId]);
+        if (text === '/focus clear') assert.deepEqual(threads.get('bound').preferredCats, []);
+        if (text === '/history 1') assert.match(replies.at(-1).body, /真实历史问题/);
+        if (text === '/where') assert.match(replies.at(-1).body, /Owner-created/);
+        if (text === '/unbind') assert.equal(bindings.has('chat'), false);
+        if (text === '/allow-group explicit-group') assert.equal(state.get('connector.permissions.v1').value.allowedGroups[0].externalChatId, 'explicit-group');
+        if (text === '/deny-group explicit-group') assert.deepEqual(state.get('connector.permissions.v1').value.allowedGroups, []);
+      }
+      assert.equal(seenCommands.size, 14);
+      const forwarded = sent.filter(send => send.payload.provenance.origin?.kind === 'external');
+      assert.equal(forwarded.length, 2, 'only the two explicit bodies invoke an agent');
+      assert.deepEqual(forwarded.map(send => send.payload.elements[0].payload.text), ['explicit-thread-body', 'explicit-ask-body']);
+      assert.deepEqual(forwarded.map(send => send.wake), ['auto', { catId: cat.catId }]);
+      assert.ok(sent.filter(send => !forwarded.includes(send)).every(send => send.threadId === 'system' && send.wake === undefined),
+        'all command audit stays quiet in the system thread');
+      await inbound(input('/use F202', 'restore-binding'));
       if (['feishu', 'dingtalk', 'wecom-bot'].includes(name)) {
+        const beforeDenied = sent.length;
         await inbound(input('blocked ordinary', 'blocked-group', true, 'outsider'));
-        assert.equal(sent.length, 1, 'unlisted group ordinary ingress is denied');
+        assert.equal(sent.length, beforeDenied, 'unlisted group ordinary ingress is denied');
         await inbound(input('/allow-group', 'allow-group', true));
         assert.equal(state.get('connector.permissions.v1').value.allowedGroups[0].externalChatId, 'chat');
         const auditCount = sent.length;
         await inbound(input('/where', 'denied', true, 'outsider'));
         assert.equal(sent.length, auditCount, 'admin-only group command never wakes or audits');
       }
-      if (name === 'xiaoyi') assert.deepEqual(closes, [{ chat: 'chat', done: true }]);
+      if (name === 'xiaoyi') assert.equal(closes.length, commands.length,
+        'two explicit bodies remain unsettled; initial where and restored binding are settled');
       assert.equal(JSON.stringify(state.get('connector.permissions.v1')).includes('never-store'), false);
     } finally { await active.stop(); }
   });

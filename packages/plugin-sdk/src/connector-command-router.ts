@@ -46,10 +46,13 @@ export async function routeConnectorCommand(input: ConnectorCommandIngress, port
   if (result.forward !== undefined && command.name !== 'ask' && command.name !== 'thread') {
     throw new TypeError('only ask/thread may forward an explicit body');
   }
+  // A success response describes accepted forwarding, not a plan. Host may
+  // reject the body after persistence/queue admission; never acknowledge or
+  // audit it as sent before its send promise confirms acceptance.
+  if (result.forward !== undefined) await ports.forward(input, result.forward);
   await ports.reply(input.chatId, result.response, result, input);
   await ports.audit(input, result.response);
-  if (result.forward !== undefined) await ports.forward(input, result.forward);
-  else await ports.settle(input);
+  if (result.forward === undefined) await ports.settle(input);
   return 'command';
 }
 

@@ -42,12 +42,14 @@ test('accepted thread projections and preferredCats patch cross the real Feature
   if (false) {
     // @ts-expect-error Numeric-only cursors lose messages sharing a timeline millisecond.
     await threads.readMessages('thread', { before: 20, limit: 1 });
+    // @ts-expect-error Thread activity cursors must carry the composite position.
+    await threads.list({ before: 20 });
   }
-  await threads.list({ limit: 50 });
+  await threads.list({ limit: 50, before: { lastActiveAt: 30, id: 'thread-30' } });
   await threads.readMessages('thread', { before: { timestamp: 20, id: 'message-20' }, limit: 500 });
   await threads.getCats('thread');
   await threads.update('thread', { preferredCats: [] });
-  assert.deepEqual(seen, [['list', { limit: 50 }], ['readMessages', 'thread', { before: { timestamp: 20, id: 'message-20' }, limit: 500 }],
+  assert.deepEqual(seen, [['list', { limit: 50, before: { lastActiveAt: 30, id: 'thread-30' } }], ['readMessages', 'thread', { before: { timestamp: 20, id: 'message-20' }, limit: 500 }],
     ['getCats', 'thread'], ['update', 'thread', { preferredCats: [] }]]);
   await session.revoke();
   for (const invoke of [() => threads.list(), () => threads.readMessages('thread', { limit: 1 }),

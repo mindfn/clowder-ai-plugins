@@ -144,3 +144,59 @@ test('permission commands use the shared plugin CAS store without a Host-specifi
   assert.match((await f.run('/deny-group group')).response, /不在白名单/);
   assert.deepEqual(f.effects, [['allow', 'group'], ['deny', 'group']]);
 });
+test('use resolves title, feature and prefix beyond the first50 owner threads', async () => {
+  for (const selector of ['Archived-Needle', 'F999', 'archived-']) {
+    const f = fixture(); const rows = Array.from({ length: 51 }, (_, i) => ({
+      id: i === 50 ? 'archived-id' : `recent-${i}`, title: i === 50 ? 'Archived-Needle' : 'Recent',
+      createdAt: 1, lastActiveAt: 100 - i, preferredCats: [], featureRefs: i === 50 ? ['F999'] : [] }));
+    const calls: unknown[] = [];
+    f.services.threads.list = async options => {
+      calls.push(options);
+      const before = (options as { before?: { lastActiveAt: number; id: string } } | undefined)?.before;
+      return rows.filter(row => !before || row.lastActiveAt < before.lastActiveAt ||
+        (row.lastActiveAt === before.lastActiveAt && row.id > before.id)).slice(0, options?.limit ?? 50);
+    };
+    await f.run(`/use ${selector}`);
+    assert.ok(f.effects.some(x => JSON.stringify(x) === JSON.stringify(['bind', 'chat', 'archived-id'])));
+    assert.deepEqual(calls, [{ limit: 50 }, { limit: 50, before: { lastActiveAt: 51, id: 'recent-49' } }]);
+  }
+});
+test('an exact full page requests its empty tail; equal-time ordering uses JS strings', async () => {
+  const f = fixture(); const rows = Array.from({ length: 50 }, (_, i) => ({ id: `T${String(i).padStart(2, '0')}`,
+    title: 'Recent', createdAt: 1, lastActiveAt: 10, preferredCats: [], featureRefs: [] }));
+  rows[0]!.id = 'A'; rows[1]!.id = 'a'; rows.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  let calls = 0;
+  f.services.threads.list = async options => { calls++;
+    const before = (options as { before?: { id: string } } | undefined)?.before;
+    return rows.filter(row => !before || row.id > before.id); };
+  await f.run('/use missing'); assert.equal(calls, 2);
+  const recent = await f.run('/threads'); assert.equal(recent.cardActions?.[0]?.value.args, '1');
+  assert.match(recent.response.split('\n')[2]!, /\[A\]/);
+  assert.equal(calls, 3, 'recent ten needs one bounded page, not the entire inventory');
+});
+test('live pages deduplicate moved thread IDs; non-progressing cursor cannot loop or bind', async () => {
+  const f = fixture(); const rows = Array.from({ length: 50 }, (_, i) => ({ id: `item-${i}`,
+    title: 'Recent', createdAt: 1, lastActiveAt: 100 - i, preferredCats: [], featureRefs: [] }));
+  let calls = 0;
+  f.services.threads.list = async () => ++calls === 1 ? rows : [{ ...rows[0]!, lastActiveAt: 40, title: 'Moved duplicate' }];
+  assert.match((await f.run('/use Moved duplicate')).response, /找不到/, 'first projection wins for each id in this live traversal');
+  assert.equal(f.effects.some(x => Array.isArray(x) && x[0] === 'bind'), false);
+  f.services.threads.list = async () => rows;
+  await assert.rejects(f.run('/use absent'), /cursor.*progress/i);
+  assert.equal(f.effects.some(x => Array.isArray(x) && x[0] === 'bind'), false);
+});
+test('thread exact-ID lookup does not require a full inventory traversal', async () => {
+  const f = fixture(); f.services.threads.list = async () => { throw new Error('inventory not needed'); };
+  assert.deepEqual((await f.run('/thread second body')).forward, { threadId: 'second', text: 'body' });
+});
+test('an unfinished inventory budget refuses rather than binds a partial match or reports not-found', async () => {
+  const f = fixture(); let calls = 0;
+  f.services.threads.list = async () => {
+    const page = calls++;
+    return Array.from({ length: 50 }, (_, i) => ({ id: `item-${page}-${i}`, title: 'partial-match',
+      createdAt: 1, lastActiveAt: 100000 - page * 50 - i, preferredCats: [], featureRefs: [] }));
+  };
+  await assert.rejects(f.run('/use partial-match'), /traversal limit/);
+  assert.equal(calls, 200);
+  assert.equal(f.effects.some(x => Array.isArray(x) && x[0] === 'bind'), false);
+});

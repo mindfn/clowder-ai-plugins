@@ -1,4 +1,5 @@
 import type { FeatureContext } from './feature-context.js';
+import { createHash } from 'node:crypto';
 import { createConnectorPermissionStore } from './connector-permissions.js';
 import { createConnectorCommandService, type ConnectorCommandServices } from './connector-command-service.js';
 import { createConnectorCommandRouter, type ConnectorCommandIngress, type ConnectorCommandResult } from './connector-command-router.js';
@@ -16,6 +17,13 @@ export function createConnectorCommandBridge(context: FeatureContext, options: {
   const execute = createConnectorCommandService({ connectorId: options.connectorId,
     threads: context.threads, permissions, bindingChanged: options.bindingChanged,
     threadUrl: () => undefined, now: Date.now });
+  // Host's durable ledger is scoped to plugin instance + key, not chat or
+  // target thread. Match the router's chat/event identity without exposing
+  // unbounded provider IDs or ambiguous delimiter concatenation.
+  const sourceKey = (input: ConnectorCommandIngress, purpose: 'audit' | 'body') =>
+    `connector-command:${createHash('sha256').update(JSON.stringify([
+      options.connectorId, input.chatId, input.providerMessageId,
+    ])).digest('hex')}:${purpose}`;
   return createConnectorCommandRouter({
     getPermissions: permissions.get,
     execute,
@@ -24,14 +32,14 @@ export function createConnectorCommandBridge(context: FeatureContext, options: {
     async audit(input, response) {
       const thread = await context.threads.ensureSystemThread();
       await context.messaging.send(thread.id, {
-        idempotencyKey: `${input.providerMessageId}:command-audit`,
+        idempotencyKey: sourceKey(input, 'audit'),
         payload: { provenance: { epistemicStatus: 'observation' },
           elements: [{ elementId: 'command', kind: 'text', payload: { text: `${input.text}\n${response}` } }] },
       });
     },
     async forward(input, body) {
       await context.messaging.send(body.threadId, {
-        identity: options.identityId, idempotencyKey: `${input.providerMessageId}:command-body`,
+        identity: options.identityId, idempotencyKey: sourceKey(input, 'body'),
         sourceEventId: input.providerMessageId,
         ...(input.senderId === undefined ? {} : { sender: { id: input.senderId } }),
         wake: body.catId === undefined ? 'auto' : { catId: body.catId },

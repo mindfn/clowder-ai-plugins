@@ -116,11 +116,43 @@ test('invalid provider facts and unexpected forwarding fail without reply, audit
   await assert.rejects(routeConnectorCommand(direct, ports), /only ask\/thread/);
   assert.deepEqual(calls, ['permissions']);
 });
-test('ask/thread explicit body is forwarded only after provider reply and quiet audit', async () => {
+test('ask/thread success reply and quiet audit follow accepted explicit forwarding', async () => {
   const { calls, ports } = fixture();
   ports.execute = async () => ({ response: 'reply', forward: { text: 'body', threadId: 'thread', catId: 'cat-eqdvbcxw' } });
   assert.equal(await routeConnectorCommand({ ...direct, text: '/ask sol body' }, ports), 'command');
-  assert.deepEqual(calls, ['permissions', 'reply:reply', 'audit', 'forward']);
+  assert.deepEqual(calls, ['permissions', 'forward', 'reply:reply', 'audit']);
+});
+test('explicit forward failure cannot emit or audit a false success response', async () => {
+  const { calls, ports } = fixture();
+  ports.execute = async () => ({ response: '已定向发送', forward: { text: 'body', threadId: 'thread' } });
+  ports.forward = async () => { calls.push('forward'); throw new Error('Host effect unconfirmed'); };
+  const route = createConnectorCommandRouter(ports);
+  await assert.rejects(route({ ...direct, text: '/ask sol body' }), /unconfirmed/);
+  assert.deepEqual(calls, ['permissions', 'forward']);
+  assert.equal(await route({ ...direct, text: '/ask sol body' }), 'duplicate', 'do not retry ambiguous external effects');
+});
+test('pending forwarding emits no success and does not settle the provider task', async () => {
+  const { calls, ports } = fixture(); let accepted!: () => void; let started!: () => void;
+  const pending = new Promise<void>(resolve => { accepted = resolve; });
+  const entered = new Promise<void>(resolve => { started = resolve; });
+  ports.execute = async () => ({ response: '已定向发送', forward: { text: 'body', threadId: 'thread' } });
+  ports.forward = async () => { calls.push('forward'); started(); await pending; };
+  const routed = routeConnectorCommand({ ...direct, text: '/ask sol body' }, ports);
+  await entered; assert.deepEqual(calls, ['permissions', 'forward']);
+  accepted(); await routed;
+  assert.deepEqual(calls, ['permissions', 'forward', 'reply:已定向发送', 'audit']);
+});
+test('a failed acknowledgement or audit cannot resend an already accepted body', async () => {
+  for (const stage of ['reply', 'audit'] as const) {
+    const { calls, ports } = fixture();
+    ports.execute = async () => ({ response: '已定向发送', forward: { text: 'body', threadId: 'thread' } });
+    ports[stage] = async () => { calls.push(`failed:${stage}`); throw new Error('side effect unconfirmed'); };
+    const route = createConnectorCommandRouter(ports);
+    await assert.rejects(route({ ...direct, text: '/ask sol body' }), /unconfirmed/);
+    assert.equal(await route({ ...direct, text: '/ask sol body' }), 'duplicate');
+    assert.equal(calls.filter(call => call === 'forward').length, 1);
+    assert.equal(calls.includes('settle'), false);
+  }
 });
 test('allow/deny-group enforce admin identity even in a direct conversation', async () => {
   let effects = 0;

@@ -19,6 +19,12 @@ export interface ConnectorCommandServices {
   now(): number;
 }
 
+// Must match Host's owner-visible keyset: activity descending, JS strings
+// ascending for ties. Locale-dependent sorting changes cursor boundaries.
+function comparePosition(a: Pick<ConnectorCommandThread, 'lastActiveAt' | 'id'>, b: Pick<ConnectorCommandThread, 'lastActiveAt' | 'id'>): number {
+  return b.lastActiveAt - a.lastActiveAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+
 function selectThread(input: string, threads: readonly ConnectorCommandThread[]): ConnectorCommandThread | undefined {
   // The list is already ordered by activity. Preserve feature -> list index -> ID prefix -> title precedence.
   const selectors = [
@@ -36,7 +42,22 @@ export function createConnectorCommandService(services: ConnectorCommandServices
     const url = services.threadUrl(id);
     return url === undefined ? '' : `\n🔗 ${url}`;
   };
-  const inventory = async () => [...await services.threads.list()].sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+  const inventory = async (recentOnly = false) => {
+    const found = new Map<string, ConnectorCommandThread>();
+    let before: { lastActiveAt: number; id: string } | undefined;
+    // Each call remains bounded to50. Refuse an incomplete/hostile traversal
+    // rather than silently turning a partial inventory into "not found".
+    for (let page = 0; page < 200; page++) {
+      const rows = await services.threads.list({ limit: 50, ...(before === undefined ? {} : { before }) });
+      if (rows.length > 50) throw new TypeError('thread inventory page exceeds Host limit');
+      for (const row of rows) if (!found.has(row.id)) found.set(row.id, row);
+      if (recentOnly || rows.length < 50) return [...found.values()].sort(comparePosition);
+      const last = rows[rows.length - 1]!;
+      if (before !== undefined && comparePosition(last, before) <= 0) throw new Error('thread inventory cursor did not progress');
+      before = { lastActiveAt: last.lastActiveAt, id: last.id };
+    }
+    throw new Error('thread inventory traversal limit reached; use /thread with a full thread ID');
+  };
   const bind = async (chatId: string, threadId: string) => {
     const previous = await services.threads.findByKey(chatId);
     await services.threads.bind(chatId, threadId);
@@ -57,7 +78,7 @@ export function createConnectorCommandService(services: ConnectorCommandServices
         return { response: `✨ 新 thread${args ? ` "${args}"` : ''} 已创建\nID: ${thread.id}${link(thread.id)}\n\n现在的消息会发到这个 thread。` };
       }
       case 'threads': {
-        const threads = (await inventory()).slice(0, 10);
+        const threads = (await inventory(true)).slice(0, 10);
         if (!threads.length) return { response: '📋 还没有 thread。发送消息或用 /new 创建一个吧！' };
         return { response: `📋 最近的 threads:\n\n${threads.map((t, i) => `${i + 1}. ${t.title ?? '(无标题)'}${t.featureRefs?.length ? ` [${t.featureRefs.join(',')}]` : ''} [${t.id}]`).join('\n')}\n\n用 /use F088 或 /use 关键词 或 /use 3 切换`,
           cardActions: threads.slice(0, 5).map((t, i) => ({ label: `${i + 1}. ${(t.title ?? '(无标题)').slice(0, 12)}`, value: { cmd: '/use', args: String(i + 1) } })),
@@ -73,8 +94,8 @@ export function createConnectorCommandService(services: ConnectorCommandServices
       case 'thread': {
         const [prefix, ...body] = args.split(/\s+/);
         if (!prefix || !body.length) return { response: '❌ 用法: /thread <thread_id> <message>\n切换到指定 thread 并发送消息。' };
-        const threads = await inventory();
-        const thread = threads.find(t => t.id === prefix) ?? threads.find(t => t.id.startsWith(prefix));
+        const exact = await services.threads.get(prefix);
+        const thread = exact ?? (await inventory()).find(t => t.id.startsWith(prefix));
         if (!thread) return { response: `❌ 找不到 thread "${prefix}"。用 /threads 查看可用列表。` };
         await bind(input.chatId, thread.id);
         return { response: `📨 → ${thread.title ?? '(无标题)'} [${thread.id}]`, forward: { threadId: thread.id, text: body.join(' ') } };
