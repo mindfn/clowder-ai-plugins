@@ -57,8 +57,8 @@ export async function routeConnectorCommand(input: ConnectorCommandIngress, port
  * This is not a durable workflow or a claim of deduplication across restart. */
 export function createConnectorCommandRouter(ports: ConnectorCommandRoutingPorts, maximum = 10_000) {
   if (!Number.isSafeInteger(maximum) || maximum < 1) throw new TypeError('invalid replay fence bound');
-  const seen = new Set<string>();
-  return async (input: ConnectorCommandIngress): Promise<'blocked' | 'command' | 'message' | 'duplicate'> => {
+  const seen = new Map<string, symbol>();
+  return async (input: ConnectorCommandIngress, deliverMessage?: () => Promise<void>): Promise<'blocked' | 'command' | 'message' | 'duplicate'> => {
     if (typeof input.providerMessageId !== 'string' || !input.providerMessageId.trim()) throw new TypeError('missing provider event identity');
     const key = JSON.stringify([input.chatId, input.providerMessageId]);
     if (seen.has(key)) return 'duplicate';
@@ -67,9 +67,21 @@ export function createConnectorCommandRouter(ports: ConnectorCommandRoutingPorts
     // two simultaneous preflights still admit just one mutation.
     const permissions = await ports.getPermissions();
     if (seen.has(key)) return 'duplicate';
-    if (seen.size >= maximum) seen.delete(seen.values().next().value!);
-    seen.add(key); // Claim before the first side-effecting await.
-    return routeConnectorCommand(input, { ...ports, getPermissions: async () => permissions });
+    const ordinary = evaluateConnectorPermission(permissions, input) === 'allowed' && parseConnectorCommand(input.text) === null;
+    if (seen.size >= maximum) seen.delete(seen.keys().next().value!);
+    const claim = Symbol();
+    seen.set(key, claim); // Claim before the first side-effecting await.
+    try {
+      const outcome = await routeConnectorCommand(input, { ...ports, getPermissions: async () => permissions });
+      if (outcome === 'message') await deliverMessage?.();
+      return outcome;
+    } catch (error) {
+      // Ordinary ingress retains its original Host idempotency key and media
+      // locator ownership. A transport failure must remain retryable; command
+      // mutations/denials may already have provider effects and remain fenced.
+      if (ordinary && seen.get(key) === claim) seen.delete(key);
+      throw error;
+    }
   };
 }
 

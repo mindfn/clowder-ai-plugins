@@ -1,4 +1,5 @@
 import {
+  createConnectorCommandBridge,
   createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
@@ -20,6 +21,7 @@ import { renderTypedMediaNotice } from './media-notice.js';
 import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia } from './inbound-media-source.js';
 import { createConnectorLifecycleAction } from './lifecycle-action.js';
 import { createReplySenderMap } from './reply-sender-map.js';
+import { connectorCommandFacts } from './command-ingress.js';
 
 type TelegramRuntimeFactory = (
   options: TelegramConnectorRuntimeOptions<TelegramAdapter>,
@@ -201,7 +203,7 @@ async function hydrateInlineFinals(context: FeatureContext, outbound: TelegramAd
   }
 }
 
-async function createMessageBridge(context: FeatureContext) {
+async function createMessageBridge(context: FeatureContext, reply: Parameters<typeof createConnectorCommandBridge>[1]['reply']) {
   const replySenders = createReplySenderMap(context);
   const subscriptions = new Map<string, Promise<void>>();
   const subscribe = (threadId: string): Promise<void> => {
@@ -217,28 +219,42 @@ async function createMessageBridge(context: FeatureContext) {
     return pending;
   };
   for (const binding of await context.threads.listBindings()) await subscribe(binding.threadId);
+  const routeCommand = createConnectorCommandBridge(context, {
+    connectorId: CONNECTOR_ID, identityId: IDENTITY_ID, reply,
+    settle: async () => {},
+    async bindingChanged(change) {
+      if (change.threadId !== undefined) await subscribe(change.threadId);
+      if (change.previousThreadId !== undefined && change.previousThreadId !== change.threadId &&
+          !(await context.threads.listBindings()).some(binding => binding.threadId === change.previousThreadId)) {
+        await context.messaging.unsubscribe(change.previousThreadId);
+        subscriptions.delete(change.previousThreadId);
+      }
+    },
+  });
   return {
     async deliver(message: TelegramHostInboundMessage): Promise<void> {
-      const thread = await context.threads.ensureByKey(message.externalConversationId, {
-        title: threadTitle(message.externalConversationId),
-      });
-      await subscribe(thread.id);
-      const prepared = await draft(context, message);
-      try {
-        const sent = await context.messaging.send(thread.id, prepared.messageDraft);
-        if (prepared.messageDraft.sender !== undefined) {
-          try {
-            await replySenders.record(sent.messageId, prepared.messageDraft.sender);
-          } catch (error) {
-            context.log('warn', 'Telegram reply-sender mapping record failed', {
-              errorName: error instanceof Error ? error.name : 'unknown',
-            });
+      await routeCommand(connectorCommandFacts(message), async () => {
+        const thread = await context.threads.ensureByKey(message.externalConversationId, {
+          title: threadTitle(message.externalConversationId),
+        });
+        await subscribe(thread.id);
+        const prepared = await draft(context, message);
+        try {
+          const sent = await context.messaging.send(thread.id, prepared.messageDraft);
+          if (prepared.messageDraft.sender !== undefined) {
+            try {
+              await replySenders.record(sent.messageId, prepared.messageDraft.sender);
+            } catch (error) {
+              context.log('warn', 'Telegram reply-sender mapping record failed', {
+                errorName: error instanceof Error ? error.name : 'unknown',
+              });
+            }
           }
+        } catch (error) {
+          await releaseInboundMedia(context, prepared.ownership, error);
+          throw error;
         }
-      } catch (error) {
-        await releaseInboundMedia(context, prepared.ownership, error);
-        throw error;
-      }
+      });
     },
     async outbound(candidate: unknown): Promise<{ inputs: TelegramOutboundDelivery[]; replyPrefix: string }> {
       const input = requireDelivery(candidate);
@@ -367,10 +383,14 @@ export function createTelegramPluginModule(
     activate: {
       'telegram-messaging': async (context) => {
         const botToken = await context.secrets.get('botToken');
-        const bridge = await createMessageBridge(context);
+        let runtime: ReturnType<TelegramRuntimeFactory> | undefined;
+        const bridge = await createMessageBridge(context, async (input, result) => {
+          if (runtime === undefined) throw new Error('Telegram Bot Token 未配置');
+          await runtime.outbound.sendReply(input.chatId, result.response);
+        });
         // The feature stays activatable without a token so telegram.test can
         // report the not-configured state; polling starts once a token exists.
-        const runtime = typeof botToken === 'string' && botToken.trim().length > 0
+        runtime = typeof botToken === 'string' && botToken.trim().length > 0
           ? createRuntime({
             config: { botToken },
             host: { deliver: bridge.deliver },

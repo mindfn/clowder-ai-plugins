@@ -37,7 +37,13 @@ export function allCommandCats(cats: ConnectorCommandCats): readonly ConnectorCo
 export function resolveCommandCat(input: string, cats: ConnectorCommandCats): { catId: string } | { response: string } {
   const key = input.trim().replace(/^@/, '').toLocaleLowerCase();
   const matches = allCommandCats(cats).filter(cat => [cat.catId, cat.displayName, ...cat.aliases].some(alias => alias.replace(/^@/, '').toLocaleLowerCase() === key));
-  if (matches.length === 1) return { catId: matches[0]!.catId };
+  if (matches.length === 1) {
+    const catId = matches[0]!.catId;
+    if (![...cats.routableNow, ...cats.routableNotJoined].some(cat => cat.catId === catId)) {
+      return { response: `💤 猫「${input}」当前不可调度。` };
+    }
+    return { catId };
+  }
   return { response: matches.length > 1
     ? `🤔 找到多只匹配的猫：${matches.map(c => c.catId).join(', ')}，请输入更精确的名字。`
     : `❌ 找不到猫「${input}」。` };

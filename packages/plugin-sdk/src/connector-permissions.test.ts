@@ -34,6 +34,19 @@ function envelope(snapshot: unknown = legacy) {
   return { protocolVersion: 1, sourceDigest: createHash('sha256').update(canonicalJson(snapshot)).digest('hex'), snapshot };
 }
 
+test('frozen raw snapshot UTF-8 digest vector matches owner cutover bytes', async () => {
+  const snapshot = { config: { whitelistEnabled: 'false', commandAdminOnly: 'true', adminOpenIds: '[]' },
+    groups: { '群': '{"label":"测试","addedAt":3}', 'chat-2': '{"label":"B","addedAt":2}', 'chat-10': '{"label":"A","addedAt":1}' } };
+  const bytes = canonicalJson(snapshot);
+  assert.equal(Buffer.byteLength(bytes, 'utf8'), 228);
+  assert.equal(createHash('sha256').update(bytes, 'utf8').digest('hex'), 'bc388bb1b9bbd528cb3cf12623e07e7929125cce0e24400edee3eb3e464a5339');
+  const store = createConnectorPermissionStore(storage());
+  assert.equal((await store.importLegacy({ protocolVersion: 1,
+    sourceDigest: 'bc388bb1b9bbd528cb3cf12623e07e7929125cce0e24400edee3eb3e464a5339', snapshot })).data.status, 'imported');
+  assert.deepEqual((await store.get()).adminOpenIds, []);
+  assert.equal((await store.get()).allowedGroups.find(g => g.externalChatId === '群')?.label, '测试');
+});
+
 test('legacy import action returns bounded receipts and never exposes provider identities', async () => {
   const store = createConnectorPermissionStore(storage());
   const input = envelope();

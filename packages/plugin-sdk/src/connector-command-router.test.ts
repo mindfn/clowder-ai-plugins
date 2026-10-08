@@ -71,6 +71,37 @@ test('runtime dedup is bounded, chat-specific and rejects absent provider event 
   await assert.rejects(route({ ...direct, providerMessageId: '' }), /event identity/);
   assert.equal(calls.length, before);
 });
+
+test('failed ordinary delivery remains retryable, while failed command mutation stays fenced', async () => {
+  const { ports } = fixture();
+  const route = createConnectorCommandRouter(ports); let deliveries = 0;
+  const ordinary = { ...direct, text: 'photo' };
+  await assert.rejects(route(ordinary, async () => { deliveries++; throw new Error('Host indeterminate'); }), /indeterminate/);
+  assert.equal(await route(ordinary, async () => { deliveries++; }), 'message');
+  assert.equal(await route(ordinary, async () => { deliveries++; }), 'duplicate');
+  assert.equal(deliveries, 2);
+  ports.execute = async () => { throw new Error('mutation indeterminate'); };
+  await assert.rejects(route({ ...direct, providerMessageId: 'command' }), /indeterminate/);
+  assert.equal(await route({ ...direct, providerMessageId: 'command' }), 'duplicate');
+});
+
+test('late failure of an evicted ordinary claim cannot release its newer retry claim', async () => {
+  const { ports } = fixture(); const route = createConnectorCommandRouter(ports, 1);
+  let rejectOld!: (error: Error) => void; let resolveNew!: () => void;
+  let signalOld!: () => void; let signalNew!: () => void;
+  const oldStarted = new Promise<void>(resolve => { signalOld = resolve; });
+  const newStarted = new Promise<void>(resolve => { signalNew = resolve; });
+  const ordinary = { ...direct, text: 'photo' };
+  const old = route(ordinary, () => { signalOld(); return new Promise<void>((_resolve, reject) => { rejectOld = reject; }); });
+  const failed = assert.rejects(old, /old failure/);
+  await oldStarted;
+  await route({ ...direct, providerMessageId: 'evicts-old' });
+  const newer = route(ordinary, () => { signalNew(); return new Promise<void>(resolve => { resolveNew = resolve; }); });
+  await newStarted;
+  rejectOld(new Error('old failure')); await failed;
+  assert.equal(await route(ordinary), 'duplicate');
+  resolveNew(); await newer;
+});
 test('a command handler failure never becomes ordinary ingress', async () => {
   const { calls, ports } = fixture();
   ports.execute = async () => { throw new Error('unavailable'); };

@@ -21,6 +21,9 @@ test('manifest keeps the Telegram token secret and binding authority Host-owned'
   assert.equal(manifest.version, packageJson.version);
   assert.equal(manifest.contractVersion, '0.1.0');
   assert.deepEqual(manifest.configuration, [
+    { key: 'legacy_permissions', label: '一次性导入旧权限', kind: 'operation', required: false,
+      actions: [{ id: 'import', label: '导入旧权限', render: 'button',
+        confirm: '确认从已授权的旧连接器权限快照导入？已有权限不会被覆盖。', action: { method: 'permissions.importLegacy' } }] },
     { key: 'botToken', label: 'Bot Token', kind: 'secret', required: true },
   ]);
   assert.deepEqual(manifest.contributions.map(entry => entry.type), ['identity', 'message-subscription', 'media-source']);
@@ -32,6 +35,7 @@ test('manifest keeps the Telegram token secret and binding authority Host-owned'
     'messaging.send',
     'secret.read',
     'thread.listMetadata',
+    'thread.readContent',
     'thread.write',
   ]);
 });

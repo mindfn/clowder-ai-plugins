@@ -1,4 +1,5 @@
 import {
+  createConnectorCommandBridge,
   createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
@@ -20,6 +21,7 @@ import { renderTypedMediaNotice } from './media-notice.js';
 import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia, type InboundMediaLocator } from './inbound-media-source.js';
 import { createConnectorLifecycleAction } from './lifecycle-action.js';
 import { createReplySenderMap } from './reply-sender-map.js';
+import { connectorCommandFacts } from './command-ingress.js';
 
 type DingTalkRuntimeFactory = (
   options: DingTalkConnectorRuntimeOptions<DingTalkAdapter>,
@@ -92,7 +94,7 @@ async function draft(context: FeatureContext, message: DingTalkHostInboundMessag
   return { messageDraft, ownership: retained.ownership };
 }
 
-async function createMessageBridge(context: FeatureContext) {
+async function createMessageBridge(context: FeatureContext, reply: Parameters<typeof createConnectorCommandBridge>[1]['reply']) {
   const replySenders = createReplySenderMap(context);
   const subscriptions = new Map<string, Promise<void>>();
   const subscribe = (threadId: string): Promise<void> => {
@@ -108,28 +110,42 @@ async function createMessageBridge(context: FeatureContext) {
     return pending;
   };
   for (const binding of await context.threads.listBindings()) await subscribe(binding.threadId);
+  const routeCommand = createConnectorCommandBridge(context, {
+    connectorId: CONNECTOR_ID, identityId: IDENTITY_ID, reply,
+    settle: async () => {},
+    async bindingChanged(change) {
+      if (change.threadId !== undefined) await subscribe(change.threadId);
+      if (change.previousThreadId !== undefined && change.previousThreadId !== change.threadId &&
+          !(await context.threads.listBindings()).some(binding => binding.threadId === change.previousThreadId)) {
+        await context.messaging.unsubscribe(change.previousThreadId);
+        subscriptions.delete(change.previousThreadId);
+      }
+    },
+  });
   return {
     async deliver(message: DingTalkHostInboundMessage): Promise<void> {
-      const thread = await context.threads.ensureByKey(message.externalConversationId, {
-        title: title(message.chatName ?? `DingTalk ${message.externalConversationId}`),
-      });
-      await subscribe(thread.id);
-      const prepared = await draft(context, message);
-      try {
-        const sent = await context.messaging.send(thread.id, prepared.messageDraft);
-        if (prepared.messageDraft.sender !== undefined) {
-          try {
-            await replySenders.record(sent.messageId, prepared.messageDraft.sender);
-          } catch (error) {
-            context.log('warn', 'DingTalk reply-sender mapping record failed', {
-              errorName: error instanceof Error ? error.name : 'unknown',
-            });
+      await routeCommand(connectorCommandFacts(message), async () => {
+        const thread = await context.threads.ensureByKey(message.externalConversationId, {
+          title: title(message.chatName ?? `DingTalk ${message.externalConversationId}`),
+        });
+        await subscribe(thread.id);
+        const prepared = await draft(context, message);
+        try {
+          const sent = await context.messaging.send(thread.id, prepared.messageDraft);
+          if (prepared.messageDraft.sender !== undefined) {
+            try {
+              await replySenders.record(sent.messageId, prepared.messageDraft.sender);
+            } catch (error) {
+              context.log('warn', 'DingTalk reply-sender mapping record failed', {
+                errorName: error instanceof Error ? error.name : 'unknown',
+              });
+            }
           }
+        } catch (error) {
+          await releaseInboundMedia(context, prepared.ownership, error);
+          throw error;
         }
-      } catch (error) {
-        await releaseInboundMedia(context, prepared.ownership, error);
-        throw error;
-      }
+      });
     },
     async outbound(candidate: unknown) {
       const input = requireDelivery(candidate);
@@ -243,8 +259,11 @@ export function createDingTalkPluginModule(
         const appSecret = await context.secrets.get('appSecret');
         if (typeof appKey !== 'string') throw new TypeError('appKey must be a declared string');
         if (typeof appSecret !== 'string') throw new TypeError('appSecret must be a declared secret');
-        const bridge = await createMessageBridge(context);
-        const runtime = createRuntime({
+        let runtime!: ReturnType<DingTalkRuntimeFactory>;
+        const bridge = await createMessageBridge(context, (input, result) => runtime.outbound.sendFormattedReply(input.chatId,
+          { header: 'Clowder AI', body: result.response, origin: 'callback' },
+          { chatType: input.group ? 'group' : 'p2p', ...(input.group && input.senderId !== undefined ? { replyToSender: { id: input.senderId } } : {}) }));
+        runtime = createRuntime({
           config: { appKey, appSecret },
           host: { deliver: bridge.deliver },
           logger: context.logger,

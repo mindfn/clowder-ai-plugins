@@ -111,6 +111,12 @@ test('focus uses public alias projection and refuses ambiguity rather than choos
 test('ask resolves aliases and forwards the explicit body to the current binding', async () => {
   const f = fixture(); assert.deepEqual((await f.run('/ask sol hello')).forward, { threadId: 'first', catId: 'cat-eqdvbcxw', text: 'hello' });
 });
+test('an exact unavailable cat never claims ask success or mutates preferredCats', async () => {
+  const f = fixture();
+  assert.equal((await f.run('/ask other hello')).forward, undefined);
+  assert.match((await f.run('/focus other')).response, /不可调度/);
+  assert.equal(f.effects.some(x => Array.isArray(x) && x[0] === 'update'), false);
+});
 test('history pick and invalid counts never read messages', async () => {
   const f = fixture(); const pick = await f.run('/history pick');
   assert.deepEqual(pick.cardActions?.map(x => x.value.args), ['1', '3', '5']);

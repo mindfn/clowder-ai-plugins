@@ -30,6 +30,7 @@ test('manifest keeps WeCom credentials secret and callback authority Host-owned'
     'messaging.send',
     'secret.read',
     'thread.listMetadata',
+    'thread.readContent',
     'thread.write',
   ]);
   assert.deepEqual(manifest.runtime, { transport: 'builtin', entrypoint: 'dist/plugin-entrypoint.js' });

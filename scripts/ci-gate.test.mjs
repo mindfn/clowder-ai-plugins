@@ -4,6 +4,13 @@ import test from 'node:test';
 
 import { buildGateSteps, loadArtifactToolchainEnv } from './ci-gate.mjs';
 
+test('real connector command module journey is reachable after SDK and connector builds', () => {
+  const steps = buildGateSteps();
+  const index = steps.findIndex(step => step.name === 'Connector command entrypoint parity');
+  assert.ok(index > steps.findIndex(step => step.name === 'Connector package gates'));
+  assert.equal(steps[index].command, 'node --import tsx --test scripts/connector-command-entrypoints.test.mjs');
+});
+
 const workflowText = readFileSync(
   new URL('../.github/workflows/contract-ci.yml', import.meta.url),
   'utf8',

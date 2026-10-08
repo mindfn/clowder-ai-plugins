@@ -9,6 +9,9 @@ import { DingTalkAdapter } from './DingTalkAdapter.js';
 import type { DingTalkConnectorRuntime, DingTalkHostInboundMessage } from './runtime.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
+// Existing owner-configured policy in the Host fixture, never an activation default.
+const configuredPermissions = { revision: 1, value: { v: 1, whitelistEnabled: false, commandAdminOnly: false,
+  adminConfigured: true, adminOpenIds: [], allowedGroups: [] } };
 
 function delivery() {
   return {
@@ -39,7 +42,7 @@ test('module bridges provider ingress and Host subscription egress without conne
   });
   const host: ModulePluginHostShape = {
     config: { get: async () => 'app-key' }, secrets: { get: async () => 'app-secret' },
-    storage: {} as never, tasks: {} as never,
+    storage: { get: async () => configuredPermissions } as never, tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: {
       listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
@@ -90,7 +93,7 @@ test('lifecycle action drives DingTalk placeholder updates and cleanup through t
   const host: ModulePluginHostShape = {
     config: { get: async () => 'app-key' }, secrets: { get: async () => 'app-secret' },
     storage: {
-      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      get: async key => key === 'connector.permissions.v1' ? configuredPermissions : state.get(key), list: async () => Object.fromEntries(state),
       set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
       compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
     }, tasks: {} as never,
@@ -139,7 +142,7 @@ test('blocked then settled keeps the DingTalk recovery card visible and finishes
   const active = await entrypoint.create(manifest).start({
     config: { get: async () => 'app-key' }, secrets: { get: async () => 'app-secret' },
     storage: {
-      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      get: async key => key === 'connector.permissions.v1' ? configuredPermissions : state.get(key), list: async () => Object.fromEntries(state),
       set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
       compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
     }, tasks: {} as never,
@@ -178,7 +181,7 @@ test('inbound media is retained as a private locator and exposed through bounded
   const host: ModulePluginHostShape = {
     config: { get: async () => 'app-key' }, secrets: { get: async () => 'app-secret' },
     storage: {
-      get: async key => state.get(key),
+      get: async key => key === 'connector.permissions.v1' ? configuredPermissions : state.get(key),
       list: async () => Object.fromEntries(state),
       set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
       compareAndSet: async (key, expectedRevision, value) => {
@@ -299,7 +302,7 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
   const entrypoint = createDingTalkPluginModule(() => ({ outbound, async start() {}, async stop() {} }) as DingTalkConnectorRuntime<DingTalkAdapter>);
   const host: ModulePluginHostShape = {
     config: { get: async () => 'app-key' }, secrets: { get: async () => 'app-secret' },
-    storage: {} as never, tasks: {} as never,
+    storage: { get: async () => configuredPermissions } as never, tasks: {} as never,
     media: { read: async input => input.reference === 'hmr_denied'
       ? Promise.reject(Object.assign(new Error('denied'), { name: 'MEDIA_ACCESS_DENIED' }))
       : input.offset === 0
@@ -347,7 +350,7 @@ test('outbound rejects a delivery without presentation at the subscription bound
   }) as DingTalkConnectorRuntime<DingTalkAdapter>);
   const active = await entrypoint.create(manifest).start({
     config: { get: async () => 'app-key' }, secrets: { get: async () => 'app-secret' },
-    storage: {} as never, tasks: {} as never,
+    storage: { get: async () => configuredPermissions } as never, tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: {
       listBindings: async () => [{ key: 'chat-1', threadId: 'thread-1', createdAt: 1 }],
@@ -380,7 +383,7 @@ test('outbound attaches replyToSender metadata from the recorded inbound mapping
   const host: ModulePluginHostShape = {
     config: { get: async () => 'app-key' }, secrets: { get: async () => 'app-secret' },
     storage: {
-      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      get: async key => key === 'connector.permissions.v1' ? configuredPermissions : state.get(key), list: async () => Object.fromEntries(state),
       set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
       compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
     },

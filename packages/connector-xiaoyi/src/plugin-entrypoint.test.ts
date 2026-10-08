@@ -9,13 +9,16 @@ import type { XiaoyiConnectorRuntime } from './runtime.js';
 import type { XiaoyiAdapter } from './XiaoyiAdapter.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
+// Existing owner-configured policy in the Host fixture, never an activation default.
+const configuredPermissions = { revision: 1, value: { v: 1, whitelistEnabled: false, commandAdminOnly: false,
+  adminConfigured: true, adminOpenIds: [], allowedGroups: [] } };
 
 function host(values: Record<string, unknown>): ModulePluginHostShape {
   const state = new Map<string, { revision: number; value: unknown }>();
   return {
     config: { get: async key => values[key] }, secrets: { get: async () => 'sk' },
     storage: {
-      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      get: async key => key === 'connector.permissions.v1' ? configuredPermissions : state.get(key), list: async () => Object.fromEntries(state),
       set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
       compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
     }, tasks: {} as never,

@@ -120,25 +120,26 @@ async function createMessageBridge(context: FeatureContext, reply: (input: { rea
   });
   return {
     async deliver(message: FeishuHostInboundMessage): Promise<void> {
-      if (await routeCommand(connectorCommandFacts(message)) !== 'message') return;
-      const thread = await context.threads.ensureByKey(message.externalConversationId, { title: threadTitle(message) });
-      await subscribe(thread.id);
-      const prepared = await draft(context, message);
-      try {
-        const sent = await context.messaging.send(thread.id, prepared.messageDraft);
-        if (prepared.messageDraft.sender !== undefined) {
-          try {
-            await replySenders.record(sent.messageId, prepared.messageDraft.sender);
-          } catch (error) {
-            context.log('warn', 'Feishu reply-sender mapping record failed', {
-              errorName: error instanceof Error ? error.name : 'unknown',
-            });
+      await routeCommand(connectorCommandFacts(message), async () => {
+        const thread = await context.threads.ensureByKey(message.externalConversationId, { title: threadTitle(message) });
+        await subscribe(thread.id);
+        const prepared = await draft(context, message);
+        try {
+          const sent = await context.messaging.send(thread.id, prepared.messageDraft);
+          if (prepared.messageDraft.sender !== undefined) {
+            try {
+              await replySenders.record(sent.messageId, prepared.messageDraft.sender);
+            } catch (error) {
+              context.log('warn', 'Feishu reply-sender mapping record failed', {
+                errorName: error instanceof Error ? error.name : 'unknown',
+              });
+            }
           }
+        } catch (error) {
+          await releaseInboundMedia(context, prepared.ownership, error);
+          throw error;
         }
-      } catch (error) {
-        await releaseInboundMedia(context, prepared.ownership, error);
-        throw error;
-      }
+      });
     },
     async outbound(candidate: unknown) {
       const input = requireDelivery(candidate);

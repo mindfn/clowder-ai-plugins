@@ -1,4 +1,5 @@
 import {
+  createConnectorCommandBridge,
   createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
@@ -13,6 +14,7 @@ import { WeComAgentAdapter } from './WeComAgentAdapter.js';
 import { renderTypedMediaNotice } from './media-notice.js';
 import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia } from './inbound-media-source.js';
 import { createReplySenderMap } from './reply-sender-map.js';
+import { connectorCommandFacts } from './command-ingress.js';
 import { renderAllRichBlocksPlaintext } from './rich-block-plaintext.js';
 import {
   createWeComAgentConnectorRuntime,
@@ -73,7 +75,7 @@ async function draft(context: FeatureContext, message: WeComAgentHostInboundMess
   return { messageDraft, ownership: retained.ownership };
 }
 
-async function createMessageBridge(context: FeatureContext) {
+async function createMessageBridge(context: FeatureContext, reply: Parameters<typeof createConnectorCommandBridge>[1]['reply']) {
   const replySenders = createReplySenderMap(context);
   const subscriptions = new Map<string, Promise<void>>();
   const subscribe = (threadId: string): Promise<void> => {
@@ -88,26 +90,40 @@ async function createMessageBridge(context: FeatureContext) {
     return pending;
   };
   for (const binding of await context.threads.listBindings()) await subscribe(binding.threadId);
+  const routeCommand = createConnectorCommandBridge(context, {
+    connectorId: CONNECTOR_ID, identityId: IDENTITY_ID, reply,
+    settle: async () => {},
+    async bindingChanged(change) {
+      if (change.threadId !== undefined) await subscribe(change.threadId);
+      if (change.previousThreadId !== undefined && change.previousThreadId !== change.threadId &&
+          !(await context.threads.listBindings()).some(binding => binding.threadId === change.previousThreadId)) {
+        await context.messaging.unsubscribe(change.previousThreadId);
+        subscriptions.delete(change.previousThreadId);
+      }
+    },
+  });
   return {
     async deliver(message: WeComAgentHostInboundMessage): Promise<void> {
-      const thread = await context.threads.ensureByKey(message.externalConversationId, { title: `WeCom ${message.externalConversationId}`.slice(0, 200) });
-      await subscribe(thread.id);
-      const prepared = await draft(context, message);
-      try {
-        const sent = await context.messaging.send(thread.id, prepared.messageDraft);
-        if (prepared.messageDraft.sender !== undefined) {
-          try {
-            await replySenders.record(sent.messageId, prepared.messageDraft.sender);
-          } catch (error) {
-            context.log('warn', 'WeCom agent reply-sender mapping record failed', {
-              errorName: error instanceof Error ? error.name : 'unknown',
-            });
+      await routeCommand(connectorCommandFacts(message), async () => {
+        const thread = await context.threads.ensureByKey(message.externalConversationId, { title: `WeCom ${message.externalConversationId}`.slice(0, 200) });
+        await subscribe(thread.id);
+        const prepared = await draft(context, message);
+        try {
+          const sent = await context.messaging.send(thread.id, prepared.messageDraft);
+          if (prepared.messageDraft.sender !== undefined) {
+            try {
+              await replySenders.record(sent.messageId, prepared.messageDraft.sender);
+            } catch (error) {
+              context.log('warn', 'WeCom agent reply-sender mapping record failed', {
+                errorName: error instanceof Error ? error.name : 'unknown',
+              });
+            }
           }
+        } catch (error) {
+          await releaseInboundMedia(context, prepared.ownership, error);
+          throw error;
         }
-      } catch (error) {
-        await releaseInboundMedia(context, prepared.ownership, error);
-        throw error;
-      }
+      });
     },
     async outbound(candidate: unknown) {
       const input = requireDelivery(candidate);
@@ -246,8 +262,10 @@ export function createWeComAgentPluginModule(createRuntime: RuntimeFactory = cre
         if (typeof agentSecret !== 'string') throw new TypeError('agentSecret must be a declared secret');
         if (typeof callbackToken !== 'string') throw new TypeError('callbackToken must be a declared secret');
         if (typeof encodingAesKey !== 'string') throw new TypeError('encodingAesKey must be a declared secret');
-        const bridge = await createMessageBridge(context);
-        const runtime = createRuntime({
+        let runtime!: ReturnType<RuntimeFactory>;
+        const bridge = await createMessageBridge(context, (input, result) => runtime.outbound.sendFormattedReply(input.chatId,
+          { header: 'Clowder AI', body: result.response, origin: 'callback' }));
+        runtime = createRuntime({
           config: { corpId, agentId, agentSecret, callbackToken, encodingAesKey },
           host: { deliver: bridge.deliver },
           logger: context.logger,
