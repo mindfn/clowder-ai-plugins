@@ -159,7 +159,7 @@
       "sourceSha256": "3581f26b1a3df183b77799894f2ea90b28935c70f7d7db1aae2aefc715371661",
       "lines": 303,
       "disposition": "provider-observation-adapted",
-      "reason": "Private events/projection/readiness retained; removed Host telemetry, typed verdict settlement and explicit-wait dependency. Real SDK builtin HEAD/CI observation and same-HEAD rerun projection verified; cloud composition remains pending."
+      "reason": "Private events/projection/readiness retained; removed Host telemetry, typed verdict settlement and explicit-wait dependency. Real SDK builtin HEAD/CI/cloud observations and repeated same-HEAD transitions verified; cloud transition identity includes prior observation, preventing a returning blocking status from being lost to dedup. Host deletion remains pending."
     },
     {
       "source": "packages/api/src/domains/community/external-review/ExternalReviewVerdictService.ts",
@@ -174,7 +174,8 @@
       "target": "packages/github-operations/src/business/domains/community/external-review/external-cloud-review-classifier.ts",
       "sourceSha256": "6989fe97ee4e1260c304cdbc0c40824d20ff285698af3273ed1d613834304b33",
       "lines": 176,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-observation-adapted",
+      "reason": "Replaced Host AwaitState/continuation with explicit provider request correlation only. Complete paginated comments, exact current HEAD, actual trigger timestamp and post-request known-reviewer evidence are required. Pure and real builtin tests cover incomplete/stale evidence, restart, repeated transitions and timeout notification through existing SDK outbox; no review request, verdict write or Host wait registration occurs."
     },
     {
       "source": "packages/api/src/domains/community/external-review/external-review-aggregate.ts",
@@ -288,9 +289,9 @@
       "sourceSha256": "d08014d5c39fbf9c52f9167b94e8b9c7a7b33ff110d63bad5b50641269d2a9fb",
       "lines": 237,
       "disposition": "provider-runtime-adapted",
-      "reason": "Package-owned bounded admission, per-read cancellation awaiting cleanup, durable fairness progress. Reconciliation establishes quiet baseline per successful subject, preserving failed/deferred subjects and findings.",
-      "packageBusinessMoved": "provider polling and pure reconciliation",
-      "realPackageReplacementVerified": "package repo-poll-lifecycle tests; Host installation/cutover pending",
+      "reason": "Package-owned bounded admission, per-read cancellation awaiting cleanup and durable fairness. Quiet baseline is per successful subject. A duplicate journal event rebuilds the ordered projection before resolving findings, recovering projection failure without losing later events.",
+      "packageBusinessMoved": "provider collection, ordered private projection and ordinary notification",
+      "realPackageReplacementVerified": "isolated real SDK builtin/provider fixtures and projection-failure retries; archive and Host installation/cutover pending",
       "hostLegacyRemoved": false
     },
     {
@@ -375,7 +376,11 @@
       "target": "packages/github-operations/src/business/infrastructure/connectors/github-repo-event/GitHubRepoWebhookHandler.ts",
       "sourceSha256": "b448ab6db287142606eed0b183c0ad44a651e16c95647e68af33aba29bae1a4d",
       "lines": 524,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-runtime-adapted",
+      "reason": "Package-owned signature/filter/dedup and event handling use configured SDK message destinations, without Host inbox or custody. Journal/projection precede notification confirmation; duplicate events rebuild in log order. Projection failure rolls back the delivery claim for retry.",
+      "packageBusinessMoved": "provider collection, ordered private projection and ordinary notification",
+      "realPackageReplacementVerified": "isolated real SDK builtin/provider fixtures and projection-failure retries; archive and Host installation/cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/connectors/github-repo-event/ReconciliationDedup.ts",
@@ -404,9 +409,9 @@
       "sourceSha256": "841fd58acd036fa02b2312ed72dc63a974537c9c6101e9e95fe7e782f401858c",
       "lines": 244,
       "disposition": "provider-runtime-adapted",
-      "reason": "Package-owned bounded admission, per-read cancellation awaiting cleanup, durable fairness progress. Reconciliation establishes quiet baseline per successful subject, preserving failed/deferred subjects and findings.",
-      "packageBusinessMoved": "provider polling and pure reconciliation",
-      "realPackageReplacementVerified": "package repo-poll-lifecycle tests; Host installation/cutover pending",
+      "reason": "Bounded package polling persists fairness and per-repository cursors. Duplicate journal events rebuild the ordered subject projection before cursor advancement; projection failure preserves the cursor for retry.",
+      "packageBusinessMoved": "provider collection, ordered private projection and ordinary notification",
+      "realPackageReplacementVerified": "isolated real SDK builtin/provider fixtures and projection-failure retries; archive and Host installation/cutover pending",
       "hostLegacyRemoved": false
     },
     {
@@ -422,9 +427,9 @@
       "sourceSha256": "cf7672cad4a39ead889a51890262ea118e0d60bba4b7cb54f22dceab1351b6f4",
       "lines": 387,
       "disposition": "provider-runtime-adapted",
-      "reason": "Package-owned bounded admission, per-read cancellation awaiting cleanup, durable fairness progress. Reconciliation establishes quiet baseline per successful subject, preserving failed/deferred subjects and findings.",
-      "packageBusinessMoved": "provider polling and pure reconciliation",
-      "realPackageReplacementVerified": "package repo-poll-lifecycle tests; Host installation/cutover pending",
+      "reason": "Bounded package scanning retains admission/baseline and fair progress. Journal and ordered projection precede SDK notification and scan dedup; projection failure remains retryable, and stable message identity prevents redelivery.",
+      "packageBusinessMoved": "provider collection, ordered private projection and ordinary notification",
+      "realPackageReplacementVerified": "isolated real SDK builtin/provider fixtures and projection-failure retries; archive and Host installation/cutover pending",
       "hostLegacyRemoved": false
     },
     {
@@ -573,7 +578,7 @@
         "packages/github-operations/src/community-runtime.ts",
         "packages/github-operations/src/plugin-entrypoint.ts"
       ],
-      "reason": "github-provider/tracking-runtime/community-runtime retain split cursors, all-review snapshot/dismissal, stale-head filtering, event-before-delivery, terminal final collection, durable retry and review-thread observation. Historical migration/legacy auto-rotation, cloud classifier and review-loop pacing require explicit parity audit; Host task repair is not copied.",
+      "reason": "github-provider/tracking-runtime/community-runtime retain split cursors, all-review snapshot/dismissal, stale-head filtering, event-before-delivery, terminal final collection, durable retry and review-thread observation. Cloud observation and four-review wake pacing now have runtime regressions. Historical migration/legacy auto-rotation and complete per-file parity still require audit; Host task repair is not copied.",
       "parity": "pending-complete-mechanical-audit"
     },
     {

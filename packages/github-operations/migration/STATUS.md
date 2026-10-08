@@ -32,7 +32,7 @@ part of the intended runtime.
   recovers interrupted materialization. No Host Redis migration is executed.
 - Twelve frozen source test files (181 tests) are copied with import-edge changes
   only; provenance is in test-source-map.json. Whole-package clean build and
-  227/227 tests pass at this checkpoint, including provider projection, CI
+  238/238 tests pass at this checkpoint, including provider projection, CI
   rerun/delivery, review pacing, bounded polling, cleanup and batched CI. The
   changed behaviors have individual RED/GREEN evidence; this is not full parity.
 - Whole-package source and test typechecks pass. Source hashes/declaration
@@ -47,8 +47,8 @@ part of the intended runtime.
   build, tests and lint explicitly. The frozen machine inventory remains in its
   pending checkpoint; implementationProgress records actual implementation
   evidence separately, preserving the existing single catalog exception.
-- The previous clean checkpoint `394fe96` passed all 29 repository gate steps
-  in 337.502 seconds with unchanged HEAD and clean worktree. New source changes
+- The previous clean checkpoint `2689213` passed all 29 repository gate steps
+  in 264.969 seconds with unchanged HEAD and clean worktree. New source changes
   have separate targeted/typecheck/build/package evidence; that old gate is not
   claimed for this new tree.
 - Ruling338 removes the copied assignment-writing TriageOrchestrator. Pure triage
@@ -56,6 +56,10 @@ part of the intended runtime.
   authenticate observations or mutate governance. Private issue metadata refuses
   governance fields. Repository polling uses bounded reads, awaited cleanup and
   persistent fairness; reconciliation baselines successful subjects independently.
+- Cloud classification now uses complete provider facts and explicit request
+  correlation, without Host wait state. Timeout messages use the existing outbox.
+  Three real carrier projection-failure cases and reconciler recovery are covered;
+  failed projection cannot be silently retired by delivery/scan dedup.
 
 ## Remaining implementation and verification
 

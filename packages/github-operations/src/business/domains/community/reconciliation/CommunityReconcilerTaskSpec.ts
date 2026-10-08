@@ -15,7 +15,7 @@ import type { CommunityReconciliationFindingStore } from './CommunityReconciliat
 export interface CommunityReconcilerTaskSpecOptions extends GitHubPollOptions {
   objectStore: Pick<ICommunityObjectStore, 'get' | 'listSubjectKeys'>;
   eventLog: ICommunityEventLog;
-  projector: { apply(event: Parameters<ICommunityEventLog['append']>[0]): Promise<void> };
+  projector: { apply(event: Parameters<ICommunityEventLog['append']>[0]): Promise<void>; rebuild(subjectKey: string): Promise<void> };
   findingStore: CommunityReconciliationFindingStore;
   fetchIssueState: (repo: string, number: number, signal?: AbortSignal) => Promise<GitHubSnapshot | null>;
   fetchPrState: (repo: string, number: number, signal?: AbortSignal) => Promise<GitHubSnapshot | null>;
@@ -82,6 +82,7 @@ async function applySubject(opts: CommunityReconcilerTaskSpecOptions, projection
     const { appended } = await opts.eventLog.append(event);
     // Never interrupt between durable append and its projection.
     if (appended) await opts.projector.apply(event);
+    else await opts.projector.rebuild(event.subjectKey);
   }
   for (const finding of result.findings) {
     signal.throwIfAborted();

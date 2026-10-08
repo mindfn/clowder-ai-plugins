@@ -14,9 +14,10 @@ import type { ReconciliationDedup } from './ReconciliationDedup.js';
 import type { RepoInboxSignal } from './types.js';
 import { verifyGitHubSignature } from './verify-signature.js';
 
-/** Minimal projector interface — only apply() needed here. */
+/** Ordered replay repairs a journaled event whose prior projection failed. */
 interface ICommunityProjectorApply {
   apply(event: CommunityEvent): Promise<void>;
+  rebuild(subjectKey: string): Promise<void>;
 }
 
 const CONNECTOR_ID = 'github-repo-event';
@@ -167,34 +168,8 @@ export class GitHubRepoWebhookHandler {
     }
 
     try {
-      // Routing and wake use the installation's authorized repository config.
-      // No Host-specific inbox creation, thread-kind stamp or custody authority.
-      delivered = await this.deps.deliver(signal, this.formatMessage(signal));
-    } catch (err) {
-      // Safe rollback: message not delivered — allow GitHub retry
-      await this.deps.dedup.rollback(deliveryId);
-      throw err;
-    }
-
-    // 13. Confirm dedup — outside try so failure does NOT trigger rollback.
-    // If confirm fails, 'pending' claim stays in Redis (blocks retries until 24h TTL — safe).
-    try {
-      await this.deps.dedup.confirm(deliveryId);
-    } catch {
-      // Best-effort: claimed key persists, preventing duplicate delivery
-    }
-
-    // 14. Mark business dedup (Phase B bridge — KD-15)
-    // Best-effort: failure here doesn't affect Phase A delivery.
-    try {
-      await this.deps.reconciliationDedup?.markNotified(signal.repoFullName, signal.subjectType, signal.number);
-    } catch {
-      // Phase B reconciliation will still work — it just won't skip this item
-    }
-
-    // 15. Emit community event (F168 Phase A/B — best-effort, never blocks notification path)
-    if (this.deps.eventLog) {
-      try {
+      // Durable event and projection must succeed before notification/claim confirmation.
+      if (this.deps.eventLog) {
         const kindMap: Record<string, CommunityEventKind> = {
           'pull_request.opened': 'pr.opened',
           'pull_request.ready_for_review': 'pr.ready_for_review',
@@ -254,7 +229,10 @@ export class GitHubRepoWebhookHandler {
           const { appended } = await this.deps.eventLog.append(communityEvent);
           if (appended && this.deps.projector) {
             await this.deps.projector.apply(communityEvent);
-          } else if (
+          } else if (this.deps.projector) {
+            await this.deps.projector.rebuild(communityEvent.subjectKey);
+          }
+          if (
             !appended &&
             this.deps.projector &&
             (eventKind === 'pr.merged' || eventKind === 'pr.closed') &&
@@ -271,14 +249,38 @@ export class GitHubRepoWebhookHandler {
             const { appended: enrichmentAppended } = await this.deps.eventLog.append(bodyEnrichmentEvent);
             if (enrichmentAppended) {
               await this.deps.projector.apply(bodyEnrichmentEvent);
+            } else {
+              await this.deps.projector.rebuild(bodyEnrichmentEvent.subjectKey);
             }
           }
         }
-      } catch {
-        // Best-effort — community event failure never blocks notification delivery
       }
+
+      // Routing and wake use the installation's authorized repository config.
+      // No Host-specific inbox creation, thread-kind stamp or custody authority.
+      delivered = await this.deps.deliver(signal, this.formatMessage(signal));
+    } catch (err) {
+      // Permit retry; SDK delivery uses a stable idempotency key even if the
+      // transport failed after persisting the message.
+      await this.deps.dedup.rollback(deliveryId);
+      throw err;
     }
 
+    // 13. Confirm dedup — outside try so failure does NOT trigger rollback.
+    // If confirm fails, 'pending' claim stays in Redis (blocks retries until 24h TTL — safe).
+    try {
+      await this.deps.dedup.confirm(deliveryId);
+    } catch {
+      // Best-effort: claimed key persists, preventing duplicate delivery
+    }
+
+    // 14. Mark business dedup (Phase B bridge — KD-15)
+    // Best-effort: failure here doesn't affect Phase A delivery.
+    try {
+      await this.deps.reconciliationDedup?.markNotified(signal.repoFullName, signal.subjectType, signal.number);
+    } catch {
+      // Phase B reconciliation will still work — it just won't skip this item
+    }
     return { kind: 'processed', messageId: delivered.messageId };
   }
 
@@ -430,15 +432,7 @@ export class GitHubRepoWebhookHandler {
     if (appended && this.deps.projector) {
       await this.deps.projector.apply(communityEvent);
     } else if (!appended && this.deps.projector) {
-      // Cloud R5 P1: repair path — event is already in log (prior attempt's append() succeeded
-      // but projector.apply() threw, causing dedup rollback + GitHub retry). Informational
-      // events are idempotent; apply best-effort to repair lastExternalActivityAt without
-      // triggering another rollback → retry → loop.
-      try {
-        await this.deps.projector.apply(communityEvent);
-      } catch {
-        // Best-effort: event log is source of truth; projector is eventual consistency.
-      }
+      await this.deps.projector.rebuild(communityEvent.subjectKey);
     }
   }
 

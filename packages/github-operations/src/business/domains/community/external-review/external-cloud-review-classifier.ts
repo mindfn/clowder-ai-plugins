@@ -1,10 +1,17 @@
-import type { AwaitStateV1 } from '../../../model/index.js';
-import type { PrFeedbackComment, PrReviewDecision } from '../../../infrastructure/email/ReviewFeedbackRouter.js';
+import type { GitHubComment as PrFeedbackComment, GitHubReview as PrReviewDecision } from '../../../../tracking-runtime.js';
 import type { ExternalCloudObservation } from './ExternalReviewCoordinator.js';
+
+/** Provider correlation only. This does not request a review or establish authority. */
+export interface CloudReviewRequest {
+  readonly headSha: string;
+  readonly triggerCommentId: number;
+  readonly requestedAt: number;
+}
 
 export interface ExternalCloudReviewClassifierInput {
   readonly currentHeadSha: string;
-  readonly awaitState?: AwaitStateV1;
+  readonly request?: CloudReviewRequest;
+  readonly commentsComplete: boolean;
   readonly comments: readonly PrFeedbackComment[];
   readonly reviews: readonly PrReviewDecision[];
   readonly knownCloudReviewerLogins: readonly string[];
@@ -16,10 +23,10 @@ export interface ExternalCloudReviewClassification {
   readonly observation: Omit<ExternalCloudObservation, 'repoFullName' | 'prNumber'> | null;
   readonly correlatedCommentIds: readonly number[];
   readonly correlatedReviewIds: readonly number[];
-  readonly waitResult?: ExternalCloudReviewWaitResult;
+  readonly evidence?: ExternalCloudReviewEvidence;
 }
 
-export interface ExternalCloudReviewWaitResult {
+export interface ExternalCloudReviewEvidence {
   readonly triggerCommentId: number;
   readonly sourceRef: `review:${number}` | `conversation:${number}`;
   readonly decisionCursor?: number;
@@ -70,10 +77,13 @@ function classifyCurrentHeadReview(input: {
   readonly reviews: readonly PrReviewDecision[];
   readonly currentHeadSha: string;
   readonly triggerCommentId: number;
+  readonly requestedAt: number;
   readonly isKnownCloudReviewer: (login: string) => boolean;
 }): ExternalCloudReviewClassification | null {
   const decision = [...input.reviews]
-    .filter((review) => review.commitId === input.currentHeadSha && input.isKnownCloudReviewer(review.author))
+    .filter((review) => review.commitId === input.currentHeadSha && input.isKnownCloudReviewer(review.author) &&
+      ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED', 'COMMENTED'].includes(review.state) &&
+      Date.parse(review.submittedAt ?? '') >= input.requestedAt)
     .sort((left, right) => right.id - left.id)[0];
   if (!decision) return null;
   const findings = input.comments.filter(
@@ -98,7 +108,7 @@ function classifyCurrentHeadReview(input: {
     },
     correlatedCommentIds: findings.map((comment) => comment.id),
     correlatedReviewIds: [decision.id],
-    waitResult: {
+    evidence: {
       triggerCommentId: input.triggerCommentId,
       sourceRef: `review:${decision.id}`,
       decisionCursor: decision.id,
@@ -111,17 +121,13 @@ function classifyCurrentHeadReview(input: {
 export function classifyExternalCloudReview(
   input: ExternalCloudReviewClassifierInput,
 ): ExternalCloudReviewClassification {
-  const { awaitState } = input;
-  if (!awaitState || !('headSha' in awaitState.baseline)) return emptyClassification();
-  const baseline = awaitState.baseline;
-  const reviewResultPredicate = awaitState?.continuation.when.find(
-    (predicate) => predicate.kind === 'pr_review_result_available',
-  );
-  const triggerCommentId =
-    reviewResultPredicate?.kind === 'pr_review_result_available'
-      ? (reviewResultPredicate.triggerCommentId ?? baseline.review?.resultTriggerCommentId)
-      : undefined;
-  if (!reviewResultPredicate || !triggerCommentId || baseline.review?.resultTriggerHeadSha !== input.currentHeadSha) {
+  const { request } = input;
+  if (!request || !input.commentsComplete || request.headSha !== input.currentHeadSha) return emptyClassification();
+  const { triggerCommentId } = request;
+  // Do not accept a supplied timestamp as proof that an older review answers this request.
+  // It must match a real provider conversation observation in the complete snapshot.
+  if (!input.comments.some(comment => comment.commentType === 'conversation' && comment.id === triggerCommentId &&
+    Date.parse(comment.createdAt ?? '') === request.requestedAt)) {
     return emptyClassification();
   }
 
@@ -132,11 +138,12 @@ export function classifyExternalCloudReview(
     reviews: input.reviews,
     currentHeadSha: input.currentHeadSha,
     triggerCommentId,
+    requestedAt: request.requestedAt,
     isKnownCloudReviewer,
   });
   if (reviewClassification) return reviewClassification;
 
-  const conversationBaseline = baseline.review?.conversationCommentCursor ?? triggerCommentId;
+  const conversationBaseline = triggerCommentId;
   const cleanConversation = findCanonicalCleanConversation({
     comments: input.comments,
     currentHeadSha: input.currentHeadSha,
@@ -153,7 +160,7 @@ export function classifyExternalCloudReview(
       },
       correlatedCommentIds: [cleanConversation.id],
       correlatedReviewIds: [],
-      waitResult: {
+      evidence: {
         triggerCommentId,
         sourceRef: `conversation:${cleanConversation.id}`,
         conversationCommentCursor: cleanConversation.id,
@@ -163,7 +170,7 @@ export function classifyExternalCloudReview(
     };
   }
 
-  const timedOut = input.now - awaitState.createdAt >= input.timeoutMs;
+  const timedOut = input.now - request.requestedAt >= input.timeoutMs;
   return {
     observation: {
       headSha: input.currentHeadSha,

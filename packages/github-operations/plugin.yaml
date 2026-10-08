@@ -26,6 +26,10 @@ configuration:
     label: Setup Noise Bot Logins
     kind: string
     required: false
+  - key: cloudReviewerLogins
+    label: Cloud Reviewer GitHub Logins
+    kind: string
+    required: false
 contributions:
   - type: skill
     id: github-operations
@@ -75,6 +79,14 @@ contributions:
         number: { type: integer, minimum: 1 }
         threadId: { type: string, minLength: 1 }
         catId: { type: string, minLength: 1 }
+        cloudReviewRequest:
+          type: object
+          additionalProperties: false
+          required: [headSha, triggerCommentId, requestedAt]
+          properties:
+            headSha: { type: string, pattern: '^[a-fA-F0-9]{40}$' }
+            triggerCommentId: { type: integer, minimum: 1 }
+            requestedAt: { type: integer, minimum: 0 }
         reviewThreadIds:
           type: array
           maxItems: 100

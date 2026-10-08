@@ -12,6 +12,7 @@ import type { RepoIssueComment } from './business/infrastructure/connectors/gith
 interface ApiComment {
   id: number; user: { login: string; type?: string }; body?: string;
   commit_id?: string; created_at?: string; author_association?: string;
+  pull_request_review_id?: number;
 }
 interface ApiReview {
   id: number; user: { login: string; type?: string }; state: string;
@@ -20,6 +21,7 @@ interface ApiReview {
 function commentOf(value: ApiComment, commentType: GitHubComment['commentType']): GitHubComment {
   return { id: value.id, author: value.user.login, body: value.body ?? '', commentType,
     ...(value.commit_id ? { commitId: value.commit_id } : {}),
+    ...(value.pull_request_review_id ? { reviewId: value.pull_request_review_id } : {}),
     ...(value.created_at ? { createdAt: value.created_at } : {}),
     ...(value.user.type ? { actorType: value.user.type } : {}),
     ...(value.author_association ? { authorAssociation: value.author_association } : {}),
@@ -113,13 +115,14 @@ export class GitHubProvider implements GitHubTrackingProvider, CommunityProvider
     const metadata = JSON.parse((await executeGitHubRequest(
       ['api', `${path}/${target.kind === 'pr' ? 'pulls' : 'issues'}/${target.number}`], options,
     )).stdout) as { state: string; user?: { login: string }; merged_at?: string | null; merged_by?: { login: string } | null; mergeable_state?: string; head?: { sha: string } };
-    const conversation = await fetchPaginated(`${path}/issues/${target.number}/comments`, { ...options, sinceId: cursor?.conversation }) as ApiComment[];
+    const complete = !!target.cloudReviewRequest || cursor === undefined;
+    const conversation = await fetchPaginated(`${path}/issues/${target.number}/comments`, { ...options, sinceId: complete ? undefined : cursor?.conversation }) as ApiComment[];
     const comments: GitHubComment[] = conversation.map(c => commentOf(c, 'conversation'));
     const reviews: GitHubReview[] = [];
     let ci: GitHubSnapshot['ci'];
     let reviewThreads: GitHubSnapshot['reviewThreads'];
     if (target.kind === 'pr') {
-      const inline = await fetchPaginated(`${path}/pulls/${target.number}/comments`, { ...options, sinceId: cursor?.inline }) as ApiComment[];
+      const inline = await fetchPaginated(`${path}/pulls/${target.number}/comments`, { ...options, sinceId: complete ? undefined : cursor?.inline }) as ApiComment[];
       comments.push(...inline.map(c => commentOf(c, 'inline')));
       const decisions = await fetchPaginated(`${path}/pulls/${target.number}/reviews`, options) as ApiReview[];
       reviews.push(...decisions.map(r => ({ id: r.id, author: r.user.login, state: r.state,
@@ -145,7 +148,7 @@ export class GitHubProvider implements GitHubTrackingProvider, CommunityProvider
       ...(metadata.head ? { headSha: metadata.head.sha } : {}),
       ...(ci ? { ci } : {}),
       ...(target.kind === 'pr' ? { mergeState: (metadata.mergeable_state ?? 'unknown').toUpperCase() } : {}),
-      comments, reviews, ...(reviewThreads ? { reviewThreads } : {}),
+      comments, reviews, commentsComplete: complete, ...(reviewThreads ? { reviewThreads } : {}),
     };
   }
 }

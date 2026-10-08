@@ -163,6 +163,9 @@ export class CommunityRuntime {
         repoFullName: target.repoFullName, prNumber: target.number, headSha: snapshot.headSha,
         aggregateBucket: snapshot.ci,
       }, target);
+      if (snapshot.cloudObservation) await this.observations.recordCloud({
+        repoFullName: target.repoFullName, prNumber: target.number, ...snapshot.cloudObservation,
+      }, target);
     });
   }
 

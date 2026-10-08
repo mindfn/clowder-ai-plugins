@@ -15,7 +15,7 @@ export interface GitHubPluginOptions {
 function target(value: unknown, register: boolean): GitHubTarget {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('tracking input must be an object');
   const input = value as Record<string, unknown>;
-  const fields = register ? ['kind', 'repoFullName', 'number', 'threadId', 'catId', 'reviewThreadIds'] : ['kind', 'repoFullName', 'number'];
+  const fields = register ? ['kind', 'repoFullName', 'number', 'threadId', 'catId', 'reviewThreadIds', 'cloudReviewRequest'] : ['kind', 'repoFullName', 'number'];
   if (Object.keys(input).some(key => !fields.includes(key))) throw new TypeError('unsupported tracking field');
   // Destinations are routing requests, not caller identity or governance credentials.
   // Host thread access and message grants remain authoritative.
@@ -34,6 +34,12 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
     provider, selfLogin: async () => provider.selfLogin(),
     collect: (target, snapshot) => community.collectTracking(target, snapshot),
     observe: (target, snapshot) => community.observeTracking(target, snapshot),
+    cloudReviewerLogins: async () => {
+      const value = await context.config.get('cloudReviewerLogins');
+      if (value === undefined) return ['chatgpt-codex-connector[bot]'];
+      if (typeof value !== 'string') throw new TypeError('cloudReviewerLogins must be a string');
+      return value.split(/[\s,]+/).filter(Boolean);
+    },
     noiseLogins: async () => {
       const value = await context.config.get('setupNoiseBotLogins');
       if (value === undefined || value === '') return [];

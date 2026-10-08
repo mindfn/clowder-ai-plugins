@@ -48,9 +48,10 @@ import {
 import { gitHubAdmissionCanContinue, gitHubPollBudget, readGitHubObject, type GitHubPollOptions } from '../../github/admission-budget.js';
 import { GitHubRateLimitError } from '../../github/request-budget.js';
 
-/** Minimal projector interface — only apply() is needed here. */
+/** Duplicate journal entries repair from ordered history, never out-of-order apply. */
 interface ICommunityProjectorApply {
   apply(event: CommunityEvent): Promise<void>;
+  rebuild(subjectKey: string): Promise<void>;
 }
 
 /**
@@ -164,6 +165,8 @@ async function pollSingleRepo(opts: RepoCommentPollTaskSpecOptions, repo: string
       // awaiting_external → in_progress.
       if (appended && opts.projector) {
         await opts.projector.apply(event);
+      } else if (opts.projector) {
+        await opts.projector.rebuild(event.subjectKey);
       }
     }
 

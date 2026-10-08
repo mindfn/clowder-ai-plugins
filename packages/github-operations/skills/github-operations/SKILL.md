@@ -17,6 +17,18 @@ List tracking to confirm the stored destination and active status. Unregister
 when requested; terminal PR/issue state also retires tracking automatically.
 Unregistering retains historical records.
 
+To observe the result of an already posted cloud review request, PR tracking may
+include `cloudReviewRequest` with the full `headSha`, provider conversation
+`triggerCommentId`, and that comment's `requestedAt` in Unix milliseconds. Obtain
+these from provider evidence; this option does not post a request. The plugin
+requires the trigger's actual timestamp and fully paginated comments before
+classifying a result. A new HEAD or request requires unregistering and registering
+the new correlation. Configured cloud reviewer logins default to
+`chatgpt-codex-connector[bot]`; an explicitly empty setting disables matching.
+Running, blocking, clean and timeout are provider observations, never a formal
+review verdict or permission to merge. Ordinary messages remain on the same
+durable notification path.
+
 Use the declared subject-inspection tool to read the private event history and
 derived PR/issue status. Follow its pagination cursor for older/later records.
 These observations do not register a typed review verdict or complete an action

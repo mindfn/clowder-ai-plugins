@@ -115,8 +115,13 @@ export class ExternalReviewCoordinator {
     if (!initialized) return { kind: 'not_tracked' };
 
     const current = await this.readAggregate(initialized.subjectKey);
+    const previous = current?.cloud?.headSha === observation.headSha && current.cloud.headGeneration === initialized.headGeneration
+      ? current.cloud : null;
+    if (previous?.status === observation.status && previous.triggerCommentId === observation.triggerCommentId &&
+      previous.reviewId === observation.reviewId) return this.maybeWake(initialized.subjectKey);
     if (
       observation.status === 'running' &&
+      current?.cloud?.triggerCommentId === observation.triggerCommentId &&
       current?.cloud?.headSha === observation.headSha &&
       current.cloud.headGeneration === initialized.headGeneration &&
       current.cloud.status !== 'running' &&
@@ -125,10 +130,10 @@ export class ExternalReviewCoordinator {
       return this.maybeWake(initialized.subjectKey);
     }
 
-    const correlation = observation.reviewId ?? observation.triggerCommentId ?? 'none';
+    const correlation = `${observation.triggerCommentId ?? 'none'}:${observation.reviewId ?? 'none'}`;
     await this.appendAndApply(
       makeEvent(
-        `f168:cloud:${initialized.subjectKey}:g${initialized.headGeneration}:${observation.headSha}:${observation.status}:${correlation}`,
+        `f168:cloud:${initialized.subjectKey}:g${initialized.headGeneration}:${observation.headSha}:${observation.status}:${correlation}:after:${previous?.observedAt ?? 0}`,
         initialized.subjectKey,
         'case.cloud_review_observed',
         {
@@ -138,7 +143,7 @@ export class ExternalReviewCoordinator {
           ...(observation.triggerCommentId ? { triggerCommentId: observation.triggerCommentId } : {}),
           ...(observation.reviewId ? { reviewId: observation.reviewId } : {}),
         },
-        this.now(),
+        Math.max(this.now(), (previous?.observedAt ?? 0) + 1),
       ),
     );
     return this.maybeWake(initialized.subjectKey);

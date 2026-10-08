@@ -5,6 +5,29 @@ import type { GitHubRequestOptions } from './business/infrastructure/github/requ
 
 const target = { kind: 'pr' as const, repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
 
+test('cloud observation fetches complete paginated comment history and retains review correlation after notification cursors advance', async () => {
+  const calls: string[] = [];
+  const head = 'a'.repeat(40);
+  const provider = new GitHubProvider({ token: async () => undefined, log: { warn() {} }, execFileAsync: async (_file, args) => {
+    const path = args[1]!; calls.push(path);
+    if (args[0] === 'pr' && path === 'view') return { stdout: JSON.stringify({ headRefOid: head, state: 'OPEN', statusCheckRollup: [] }) };
+    if (path === 'user') return { stdout: 'owner' };
+    if (path === '/repos/example/project/pulls/12') return { stdout: JSON.stringify({ state: 'open', head: { sha: head } }) };
+    if (path.includes('/pulls/12/comments?')) {
+      const row = (id: number) => JSON.stringify({ id, user: { login: 'bot' }, body: 'P2', pull_request_review_id: 77, commit_id: head });
+      return { stdout: path.includes('page=2') ? row(101) : Array.from({ length: 100 }, (_, i) => row(i + 1)).join('\n') };
+    }
+    if (path.includes('/issues/12/comments?') || path.includes('/reviews?')) return { stdout: '' };
+    throw new Error(`Unexpected request: ${args.join(' ')}`);
+  } });
+  const snapshot = await provider.read({ ...target, cloudReviewRequest: { headSha: head, triggerCommentId: 10, requestedAt: 1 } },
+    new AbortController().signal, { inline: 1000, conversation: 1000 });
+  assert.equal(snapshot.commentsComplete, true);
+  assert.equal(snapshot.comments.length, 101);
+  assert.ok(snapshot.comments.every(value => value.reviewId === 77));
+  assert.equal(calls.some(path => path.includes('since=')), false);
+});
+
 test('one scoped CI batch serves multiple real provider snapshots without a cross-tick cache', async () => {
   let batches = 0;
   const head = 'a'.repeat(40);

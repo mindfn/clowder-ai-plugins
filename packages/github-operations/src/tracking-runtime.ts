@@ -4,6 +4,8 @@ import { createGitHubFeedbackFilter } from './business/infrastructure/email/gith
 import { createSetupNoiseFilter } from './business/infrastructure/email/setup-noise-filter.js';
 import { classifyIssueComment } from './business/domains/community/issue-analysis/issue-comment-classifier.js';
 import { classifyGitHubReviewLoopBrake } from './business/domains/github-signals/github-wait-renderer.js';
+import { classifyExternalCloudReview, type CloudReviewRequest } from './business/domains/community/external-review/external-cloud-review-classifier.js';
+import type { ExternalCloudObservation } from './business/domains/community/external-review/ExternalReviewCoordinator.js';
 
 export interface GitHubTarget {
   readonly kind: 'pr' | 'issue';
@@ -12,6 +14,7 @@ export interface GitHubTarget {
   readonly threadId: string;
   readonly catId: string;
   readonly reviewThreadIds?: readonly string[];
+  readonly cloudReviewRequest?: CloudReviewRequest;
 }
 export interface GitHubComment {
   readonly id: number;
@@ -19,6 +22,7 @@ export interface GitHubComment {
   readonly body: string;
   readonly commentType: 'inline' | 'conversation';
   readonly commitId?: string;
+  readonly reviewId?: number;
   readonly createdAt?: string;
   readonly actorType?: string;
   readonly authorAssociation?: string;
@@ -41,6 +45,9 @@ export interface GitHubSnapshot {
   readonly mergeState?: string;
   readonly comments: readonly GitHubComment[];
   readonly reviews: readonly GitHubReview[];
+  /** Only the provider may attest an unfiltered, fully paginated comment read. */
+  readonly commentsComplete?: boolean;
+  readonly cloudObservation?: Omit<ExternalCloudObservation, 'repoFullName' | 'prNumber'>;
   readonly reviewThreads?: readonly { reviewThreadId: string; resolved: boolean; lastCommentId: string | null }[];
 }
 export interface GitHubTrackingProvider {
@@ -52,6 +59,7 @@ interface Marker {
   readonly headSha?: string;
   readonly ci?: string;
   readonly mergeState?: string;
+  readonly cloud?: string;
   readonly inline: number;
   readonly conversation: number;
   readonly reviews: Readonly<Record<string, string>>;
@@ -79,6 +87,7 @@ export interface GitHubTrackingDependencies {
   readonly provider: GitHubTrackingProvider;
   readonly selfLogin: () => Promise<string | undefined>;
   readonly noiseLogins: () => Promise<readonly string[]>;
+  readonly cloudReviewerLogins?: () => Promise<readonly string[]>;
   /** Real module wires its Community journal here; a failed collection must
    * leave tracking cursors and terminal retirement unchanged. */
   readonly collect?: (target: GitHubTarget, snapshot: GitHubSnapshot) => Promise<void>;
@@ -104,6 +113,7 @@ function marker(snapshot: GitHubSnapshot, previous?: Marker): Marker {
     ...(snapshot.headSha === undefined ? {} : { headSha: snapshot.headSha }),
     ...(snapshot.ci === undefined ? {} : { ci: snapshot.ci }),
     ...(snapshot.mergeState === undefined ? {} : { mergeState: snapshot.mergeState }),
+    ...(snapshot.cloudObservation ? { cloud: JSON.stringify(snapshot.cloudObservation) } : previous?.cloud ? { cloud: previous.cloud } : {}),
     inline: snapshot.comments.filter(c => c.commentType === 'inline').reduce((max, c) => Math.max(max, c.id), previous?.inline ?? 0),
     conversation: snapshot.comments.filter(c => c.commentType === 'conversation').reduce((max, c) => Math.max(max, c.id), previous?.conversation ?? 0),
     reviews: Object.fromEntries(snapshot.reviews.map(r => [String(r.id), `${r.state}:${r.commitId ?? ''}`])),
@@ -152,6 +162,14 @@ export class GitHubTrackingRuntime {
 
   async register(input: GitHubTarget): Promise<{ subjectKey: string; active: true }> {
     const key = keyOf(input);
+    if (input.cloudReviewRequest !== undefined) {
+      const request = input.cloudReviewRequest;
+      if (input.kind !== 'pr' || !request || typeof request !== 'object' || Array.isArray(request) ||
+        Object.keys(request).some(key => !['headSha', 'triggerCommentId', 'requestedAt'].includes(key)) ||
+        typeof request.headSha !== 'string' || !/^[a-f0-9]{40}$/i.test(request.headSha) ||
+        !Number.isSafeInteger(request.triggerCommentId) || request.triggerCommentId < 1 ||
+        !Number.isSafeInteger(request.requestedAt) || request.requestedAt < 0) throw new TypeError('invalid cloud review observation request');
+    }
     if (!input.threadId?.trim() || !input.catId?.trim()) throw new TypeError('threadId and catId are required');
     if (input.reviewThreadIds !== undefined && (input.kind !== 'pr' || !Array.isArray(input.reviewThreadIds) ||
         input.reviewThreadIds.length > 100 || input.reviewThreadIds.some(id => typeof id !== 'string' || !id.trim() || id.length > 256))) {
@@ -163,7 +181,10 @@ export class GitHubTrackingRuntime {
         const existing = recordOf(old.value);
         if (existing.active) {
           if (existing.target.threadId !== input.threadId || existing.target.catId !== input.catId ||
-              JSON.stringify(existing.target.reviewThreadIds ?? []) !== JSON.stringify(input.reviewThreadIds ?? [])) {
+              JSON.stringify(existing.target.reviewThreadIds ?? []) !== JSON.stringify(input.reviewThreadIds ?? []) ||
+              existing.target.cloudReviewRequest?.headSha !== input.cloudReviewRequest?.headSha ||
+              existing.target.cloudReviewRequest?.triggerCommentId !== input.cloudReviewRequest?.triggerCommentId ||
+              existing.target.cloudReviewRequest?.requestedAt !== input.cloudReviewRequest?.requestedAt) {
             throw new Error('REGISTRATION_CONFLICT: unregister the existing target before changing its destination');
           }
           return { subjectKey: subject(input), active: true };
@@ -274,9 +295,19 @@ export class GitHubTrackingRuntime {
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(Math.min(this.objectTimeoutMs, Math.max(1, deadline - this.now())))]);
       // Await the actual provider child cleanup on abort; never race away from
       // a still-running child and release this registration's serialized lease.
-      const snapshot = await provider.read(record.target, signal, feedback);
+      const read = await provider.read(record.target, signal, feedback);
       signal.throwIfAborted();
       controller.signal.throwIfAborted();
+      const classification = record.target.kind === 'pr' && read.headSha && record.target.cloudReviewRequest
+        ? classifyExternalCloudReview({
+          currentHeadSha: read.headSha, request: record.target.cloudReviewRequest,
+          commentsComplete: read.commentsComplete === true, comments: read.comments, reviews: read.reviews,
+          knownCloudReviewerLogins: await this.deps.cloudReviewerLogins?.() ?? ['chatgpt-codex-connector[bot]'],
+          now: this.now(), timeoutMs: 30 * 60_000,
+        }) : null;
+      // Never accept a provider/plugin payload's pre-computed cloud verdict.
+      const { cloudObservation: _untrusted, ...facts } = read;
+      const snapshot: GitHubSnapshot = { ...facts, ...(classification?.observation ? { cloudObservation: classification.observation } : {}) };
       await this.deps.observe?.(record.target, snapshot);
       controller.signal.throwIfAborted();
       if (channel === 'review-feedback' || channel === 'issue-tracking' || snapshot.state !== 'open') {
@@ -335,6 +366,9 @@ export class GitHubTrackingRuntime {
     }
     if (channel === 'review-feedback' || channel === 'issue-tracking' || snapshot.state !== 'open') {
       const feedbackBefore = record.baselines[record.target.kind === 'pr' ? 'review-feedback' : 'issue-tracking']!;
+      if (snapshot.cloudObservation && JSON.stringify(snapshot.cloudObservation) !== feedbackBefore.cloud) {
+        lines.push(`- Cloud review ${snapshot.cloudObservation.status} at ${snapshot.cloudObservation.headSha.slice(0, 12)} (provider observation; not a governance verdict)`);
+      }
       const echo = createGitHubFeedbackFilter({ selfGitHubLogin: await this.deps.selfLogin() });
       const noise = createSetupNoiseFilter(await this.deps.noiseLogins());
       for (const comment of snapshot.comments) {

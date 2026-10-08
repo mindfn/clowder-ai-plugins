@@ -42,6 +42,17 @@ function fixture() {
 
 const target = { kind: 'pr' as const, repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
 
+test('cloud correlation registration is idempotent across object key ordering but refuses a different request', async () => {
+  const f = fixture();
+  const runtime = new GitHubTrackingRuntime(f.deps);
+  const cloudReviewRequest = { headSha: 'a'.repeat(40), triggerCommentId: 1, requestedAt: 1000 };
+  await runtime.register({ ...target, cloudReviewRequest });
+  await runtime.register({ ...target, cloudReviewRequest: { requestedAt: 1000, triggerCommentId: 1, headSha: 'a'.repeat(40) } });
+  assert.equal(f.requests(), 1);
+  await assert.rejects(runtime.register({ ...target, cloudReviewRequest: { ...cloudReviewRequest, triggerCommentId: 2 } }), /REGISTRATION_CONFLICT/);
+  await runtime.stop();
+});
+
 test('CI polling batches registered PRs only and uses the scoped reader for that tick', async () => {
   const f = fixture(); const batchTargets: number[][] = []; let scopedReads = 0;
   const runtime = new GitHubTrackingRuntime({ ...f.deps, provider: { ...f.deps.provider,

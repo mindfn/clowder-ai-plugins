@@ -31,7 +31,7 @@ export interface RepoScannerOptions extends GitHubPollOptions {
   maxWorkItemsPerRun?: number;
   skipHistoricalOnFirstRun?: boolean;
   eventLog?: ICommunityEventLog;
-  projector?: { apply(event: CommunityEvent): Promise<void> };
+  projector?: { apply(event: CommunityEvent): Promise<void>; rebuild(subjectKey: string): Promise<void> };
 }
 
 function formatReconciliationMessage(signal: RepoInboxSignal): string {
@@ -184,41 +184,35 @@ export function createRepoScanner(opts: RepoScannerOptions): (signal: AbortSigna
     for (const item of admission.workItems ?? []) {
       abortSignal.throwIfAborted();
       const signal = item.signal;
-      await opts.deliver(signal, formatReconciliationMessage(signal));
-        // Delivery, its dedup marker, event projection, and wake are one bounded
-        // completion group. Cancellation is safe before delivery, never between
-        // the durable message and the marker that suppresses duplicate scans.
-        await opts.reconciliationDedup.markNotified(signal.repoFullName, signal.subjectType, signal.number);
-
-        // F168 Phase A: emit community event (best-effort — failure never blocks notification)
-        if (opts.eventLog) {
-          try {
-            const kindMap: Record<string, CommunityEvent['kind']> = {
-              pr: 'pr.opened',
-              issue: 'issue.opened',
-            };
-            const eventKind = kindMap[signal.subjectType];
-            if (eventKind) {
-              const subjectKey = `${signal.subjectType}:${signal.repoFullName}#${signal.number}`;
-              const sourceEventId = `scan:${signal.repoFullName}:${signal.number}:${eventKind}`;
-              const communityEvent: CommunityEvent = {
-                sourceEventId,
-                subjectKey,
-                kind: eventKind,
-                classification: 'state-changing',
-                payload: { title: signal.title, authorLogin: signal.authorLogin },
-                at: Date.now(),
-              };
-              const { appended } = await opts.eventLog.append(communityEvent);
-              if (appended && opts.projector) {
-                await opts.projector.apply(communityEvent);
-              }
-            }
-          } catch {
-            opts.log.warn(`[repo-scan] community event emit failed for ${signal.repoFullName}#${signal.number}`);
+      // Journal and projection precede delivery. The stable SDK message key
+      // makes retry safe if delivery succeeded but marking the scan failed.
+      if (opts.eventLog) {
+        const kindMap: Record<string, CommunityEvent['kind']> = {
+          pr: 'pr.opened',
+          issue: 'issue.opened',
+        };
+        const eventKind = kindMap[signal.subjectType];
+        if (eventKind) {
+          const subjectKey = `${signal.subjectType}:${signal.repoFullName}#${signal.number}`;
+          const sourceEventId = `scan:${signal.repoFullName}:${signal.number}:${eventKind}`;
+          const communityEvent: CommunityEvent = {
+            sourceEventId,
+            subjectKey,
+            kind: eventKind,
+            classification: 'state-changing',
+            payload: { title: signal.title, authorLogin: signal.authorLogin },
+            at: Date.now(),
+          };
+          const { appended } = await opts.eventLog.append(communityEvent);
+          if (appended && opts.projector) {
+            await opts.projector.apply(communityEvent);
+          } else if (opts.projector) {
+            await opts.projector.rebuild(communityEvent.subjectKey);
           }
         }
-
+      }
+      await opts.deliver(signal, formatReconciliationMessage(signal));
+      await opts.reconciliationDedup.markNotified(signal.repoFullName, signal.subjectType, signal.number);
     }
   };
 }

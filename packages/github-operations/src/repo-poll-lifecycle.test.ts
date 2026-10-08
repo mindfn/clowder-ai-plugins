@@ -155,3 +155,25 @@ test('bounded reconciliation baselines each visited subject quietly and resumes 
   assert.equal((await events.read(subjects[0])).at(-1)?.kind, 'issue.closed');
   assert.equal((await events.read(subjects[1])).length, 1, 'deferred subject is not changed by this slice');
 });
+
+test('reconciler repairs a journaled close after projection storage failure instead of losing it on dedup', async () => {
+  const storage = memoryStorage(), events = new SdkCommunityEventLog(storage), objects = new SdkCommunityObjectStore(storage);
+  const projector = new CommunityProjector(events, objects), findings = new CommunityReconciliationFindingStore(storage);
+  const subjectKey = 'issue:example/retry#1';
+  const opened = { sourceEventId: 'opened', subjectKey, kind: 'issue.opened' as const,
+    classification: 'state-changing' as const, payload: {}, at: 1 };
+  await events.append(opened); await projector.apply(opened);
+  const options = { objectStore: objects, eventLog: events, projector, findingStore: findings, log,
+    isBaselineEstablished: async () => true, markBaselineEstablished: async () => {},
+    fetchIssueState: async () => ({ state: 'closed' as const, closedAt: '2026-10-08T00:00:00Z', mergedAt: null }),
+    fetchPrState: async () => null,
+  };
+  const save = objects.save.bind(objects);
+  objects.save = async () => { throw new Error('projection unavailable'); };
+  await assert.rejects(runCommunityReconciliation(options, new AbortController().signal), /projection unavailable/);
+  assert.equal((await events.read(subjectKey)).length, 2);
+  objects.save = save;
+  await runCommunityReconciliation(options, new AbortController().signal);
+  assert.equal((await objects.get(subjectKey))?.appliedEventCount, 2);
+  assert.equal((await events.read(subjectKey)).length, 2);
+});

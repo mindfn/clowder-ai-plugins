@@ -59,6 +59,16 @@ fields, including corrupt historical records, rather than preserving them.
   mutable cache. Empty registration sets issue no provider requests.
 - Declared subject inspection exposes bounded event pages and private
   projections through generic plugin tools, not a new Host route.
+- Cloud request correlation uses package tracking and complete provider comment
+  evidence, not Host AwaitState/continuation. Actual trigger time and current HEAD
+  are checked; incremental snapshots cannot establish clean. Full inline review
+  IDs survive provider pagination. Timeout and status transitions use the same
+  persistent SDK notification outbox; no review-request write is performed.
+- Repo scan and webhook journal/project before notification confirmation.
+  Comment polling, webhook and reconciler retries repair duplicate appends via
+  ordered journal rebuild, rather than skipping or applying stale events out of
+  order. Real carrier storage-failure regressions cover these paths. This does
+  not yet establish the full legacy-state import/recovery matrix.
 - Repository scan's five-item budget, round-robin progress and failed-repo
   isolation, signed webhook admission and shared event dedup, comment collection.
 - Scan, repository comments and reconciler use actual admission deadlines,
@@ -76,14 +86,15 @@ fields, including corrupt historical records, rather than preserving them.
 | Repository polling/reconciliation | Bounded package runtime implemented | Cleanup/fairness/baseline regressions passed; Host consumption pending | No |
 | Triage recommendation | Pure consensus exposed via generic tool | Real YAML → builtin action passed; no governance mutation | No |
 | Guardian/signoff/route/await authority | Retained in Host; copied mutator removed | No replacement claimed | No |
-| Cloud, remaining Community and state import | Incomplete | Pending | No |
+| Cloud correlation | Provider-only runtime implemented | Pure/provider/builtin and retry tests passed; installation sources pending | No |
+| Remaining Community and state import | Incomplete | Pending | No |
 
 ## Explicitly unfinished
 
-- Complete source-to-runtime business comparison, including cloud correlation
-  and wider corrupted-state/event convergence audit.
+- Complete source-to-runtime business comparison and wider corrupted-state/event
+  convergence audit.
 - Legacy state copy/verify and historical cursor migration; no old state deleted.
-- Remaining Community read models/drafts and cloud observation composition.
+- Remaining Community read models/drafts and complete legacy state import.
 - Whole candidate build, fresh-consumer, pins/catalog, deterministic artifacts,
   full gate, independent review and Host no-double-run/cutover evidence.
 - Real Host npm, local-directory and pinned-Git install → enable → run, each a

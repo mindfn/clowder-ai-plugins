@@ -13,6 +13,99 @@ import { SdkCommunityObjectStore } from './business/domains/community/CommunityO
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
 const target = { kind: 'pr', repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
 
+for (const path of ['repo-scan', 'repo-comment-poll', 'webhook'] as const) test(`${path} retries durable append / failed projection without dropping events or duplicating notifications`, async () => {
+  const f = host();
+  let broken = false;
+  const set = f.runtimeHost.storage.set;
+  f.runtimeHost.storage.set = async (key, value) => {
+    if (broken && key.startsWith('community.object.')) throw new Error('projection unavailable');
+    return set(key, value);
+  };
+  const secret = 'isolated-test-webhook';
+  f.runtimeHost.secrets.get = async () => secret;
+  let items: RepoSubject[] = [];
+  const comment = { issueNumber: 7, commentId: 30, author: 'outside', authorAssociation: 'NONE', body: 'new issue evidence', updatedAt: '2026-10-08T10:00:00Z', isPullRequest: false };
+  const active = await createGitHubPluginModule({ createCommunityProvider: () => ({
+    listOpen: async () => items, repoComments: async () => [comment], state: async () => null, selfLogin: () => 'owner',
+  }) }).create(manifest).start(f.runtimeHost);
+  await active.actions['github.repository.register']!({ repo: target.repoFullName, guardThreadId: target.threadId, guardCatId: target.catId });
+  if (path === 'repo-scan') await active.actions['github.repo-scan']!({});
+  if (path === 'repo-comment-poll') await active.actions['github.repo-comment-poll']!({});
+  items = [{ kind: 'issue', number: 7, title: 'issue', author: 'outside', authorAssociation: 'NONE', draft: false, url: 'https://github.com/example/project/issues/7' }];
+  const rawBody = Buffer.from(JSON.stringify({ action: 'opened', repository: { full_name: target.repoFullName },
+    issue: { number: 7, title: 'issue', html_url: items[0]!.url, user: { login: 'outside' }, author_association: 'NONE' } }));
+  const input = path === 'webhook' ? { method: 'POST', rawBody, headers: { 'x-github-event': 'issues',
+    'x-github-delivery': 'projection-retry', 'x-hub-signature-256': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}` } } : {};
+  const invoke = () => active.actions[`github.${path}`]!(input);
+  broken = true;
+  // Repository loops isolate failures; webhook rejects for provider retry.
+  try { await invoke(); } catch (error) { assert.match(String(error), /projection unavailable/); }
+  const events = new SdkCommunityEventLog(f.runtimeHost.storage);
+  assert.equal((await events.read('issue:example/project#7')).length, 1);
+  broken = false;
+  await invoke();
+  const objects = new SdkCommunityObjectStore(f.runtimeHost.storage);
+  assert.ok(await objects.get('issue:example/project#7'), 'duplicate append must repair from the ordered journal');
+  await invoke();
+  assert.equal((await events.read('issue:example/project#7')).length, 1);
+  assert.equal(f.deliveries.length, path === 'repo-comment-poll' ? 0 : 1);
+  await active.stop();
+});
+
+test('real cloud tracking projects complete findings, survives restart and notifies timeout through the ordinary outbox', async () => {
+  const f = host();
+  const head = 'a'.repeat(40);
+  const requestedAt = Date.now();
+  const trigger = { id: 10, author: 'owner', body: '@codex review', commentType: 'conversation' as const, createdAt: new Date(requestedAt).toISOString() };
+  const request = { headSha: head, triggerCommentId: 10, requestedAt };
+  let snapshot: GitHubSnapshot = { state: 'open', headSha: head, ci: 'pass', comments: [trigger], reviews: [], commentsComplete: true };
+  const module = createGitHubPluginModule({ createProvider: () => ({ read: async () => structuredClone(snapshot), selfLogin: () => 'owner' }) });
+  let active = await module.create(manifest).start(f.runtimeHost);
+  await active.actions['github.repository.register']!({ repo: target.repoFullName, guardThreadId: target.threadId,
+    guardCatId: target.catId, reviewMode: 'maintainer_review', cloudReviewPolicy: 'required' });
+  await active.actions['github.tracking.register']!({ ...target, cloudReviewRequest: request });
+  await active.actions['github.review-feedback']!({});
+  const objects = new SdkCommunityObjectStore(f.runtimeHost.storage);
+  const cloud = async () => (await objects.get('pr:example/project#12'))?.externalReview?.cloud?.status;
+  assert.equal(await cloud(), 'running');
+  const review = { id: 20, author: 'chatgpt-codex-connector[bot]', state: 'COMMENTED', commitId: head, submittedAt: new Date(requestedAt + 1).toISOString() };
+  const finding = { id: 30, author: review.author, body: 'P2', commentType: 'inline' as const, commitId: head, reviewId: 20 };
+  snapshot = { ...snapshot, reviews: [review], comments: [trigger, finding] };
+  await active.actions['github.review-feedback']!({});
+  assert.equal(await cloud(), 'blocking');
+  const delivered = f.deliveries.length;
+  await active.stop();
+  active = await module.create(manifest).start(f.runtimeHost);
+  await active.actions['github.review-feedback']!({});
+  assert.equal(await cloud(), 'blocking');
+  assert.equal(f.deliveries.length, delivered);
+  snapshot = { ...snapshot, comments: [trigger], commentsComplete: false };
+  await active.actions['github.review-feedback']!({});
+  assert.equal(await cloud(), 'blocking', 'incomplete evidence cannot clear the previous finding');
+  snapshot = { ...snapshot, commentsComplete: true };
+  await active.actions['github.review-feedback']!({});
+  assert.equal(await cloud(), 'clean');
+  snapshot = { ...snapshot, comments: [trigger, finding] };
+  await active.actions['github.review-feedback']!({});
+  assert.equal(await cloud(), 'blocking', 'returning to a previously observed status must not dedup the real transition');
+  snapshot = { ...snapshot, headSha: 'b'.repeat(40), commentsComplete: true };
+  await active.actions['github.review-feedback']!({});
+  assert.notEqual(await cloud(), 'clean', 'an old request cannot settle a new HEAD');
+  await active.actions['github.tracking.unregister']!({ kind: target.kind, repoFullName: target.repoFullName, number: target.number });
+  const old = Date.now() - 31 * 60_000;
+  snapshot = { ...snapshot, comments: [{ ...trigger, id: 40, createdAt: new Date(old).toISOString() }], reviews: [] };
+  await active.actions['github.tracking.register']!({ ...target, cloudReviewRequest: { headSha: snapshot.headSha, triggerCommentId: 40, requestedAt: old } });
+  await active.actions['github.review-feedback']!({});
+  assert.equal(await cloud(), 'failed_or_timeout');
+  assert.ok(JSON.stringify(f.deliveries).includes('Cloud review failed_or_timeout'), 'timeout needs a durable ordinary notification even without a new provider comment');
+  const before = f.deliveries.length;
+  await active.actions['github.review-feedback']!({});
+  assert.equal(f.deliveries.length, before);
+  const events = await new SdkCommunityEventLog(f.runtimeHost.storage).read('pr:example/project#12');
+  assert.equal(events.some(event => event.kind === 'case.review_verdict_recorded'), false);
+  await active.stop();
+});
+
 test('real generic triage tool computes a recommendation without persisting acceptance or authenticating supplied observers', async () => {
   const f = host();
   const active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
