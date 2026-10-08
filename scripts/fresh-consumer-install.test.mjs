@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -71,6 +72,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       '@clowder-ai/wechat-visible-reader',
       '@clowder-ai/genoffice-docx',
       '@clowder-ai/enterprise-workflow',
+      '@clowder-ai/github-operations',
       ...connectorPackages.map(({ name }) => name),
       '@clowder-ai/xiangqi',
     ]) {
@@ -93,6 +95,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       pack('packages/genoffice-docx', packs),
       ...connectorPackages.map(({ directory }) => pack(directory, packs)),
       enterpriseTarball,
+      pack('packages/github-operations', packs),
     ];
 
     const staged = join(root, 'staged');
@@ -254,6 +257,28 @@ test('packed public packages install and import in a fresh npm consumer', async 
       stagedVideoPackage,
     );
 
+    // Retained packages still require beta.12, which was delivered in Batch9
+    // archives rather than npm. Supply those exact frozen bytes, never relabel
+    // the current SDK or change a production manifest to make the test pass.
+    const retainedSdk = fileURLToPath(new URL('./fixtures/retained-sdk/clowder-ai-plugin-sdk-0.2.0-beta.12.tgz', import.meta.url));
+    const retainedBytes = await readFile(retainedSdk);
+    assert.equal(retainedBytes.length, 55750);
+    assert.equal(createHash('sha256').update(retainedBytes).digest('hex'),
+      'af0cd615aa2b2f8f9de994499f541f83163d9637d56fb89406bc1f7aa023ad7b');
+    const retainedSri = `sha512-${createHash('sha512').update(retainedBytes).digest('base64')}`;
+    for (const directory of ['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow']) {
+      const lock = JSON.parse(await readFile(join(repoRoot, 'packages', directory, 'npm-shrinkwrap.json'), 'utf8'));
+      assert.equal(lock.packages['node_modules/@clowder-ai/plugin-sdk'].version, '0.2.0-beta.12');
+      assert.equal(lock.packages['node_modules/@clowder-ai/plugin-sdk'].integrity, retainedSri);
+    }
+    await writeFile(join(consumer, 'package.json'), JSON.stringify({
+      private: true,
+      overrides: Object.fromEntries(
+        ['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow'].map(name => [
+          `@clowder-ai/${name}`, { '@clowder-ai/plugin-sdk': pathToFileURL(retainedSdk).href },
+        ]),
+      ),
+    }));
     runNpm(
       [
         'install',
@@ -353,7 +378,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       ),
     );
     assert.equal(contractPackage.version, '0.1.0-beta.29');
-    assert.equal(sdkPackage.version, '0.2.0-beta.12');
+    assert.equal(sdkPackage.version, '0.2.0-beta.13');
     assert.equal(sdkPackage.dependencies['@clowder-ai/plugin-contract'], '0.1.0-beta.29');
     assert.equal(
       feishuPackage.dependencies['@clowder-ai/plugin-contract'],
@@ -400,6 +425,21 @@ test('packed public packages install and import in a fresh npm consumer', async 
     assert.equal(enterprisePackage.version, '0.1.0-alpha.2');
     assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12');
     assert.doesNotMatch(JSON.stringify(enterprisePackage), /"workspace:/u);
+    // Resolve from each installed consumer, not the top-level SDK: npm must
+    // really preserve the two dependency identities in one fresh installation.
+    for (const [directory, expected] of [
+      ...['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow'].map(name => [name, '0.2.0-beta.12']),
+      ...connectorPackages.map(({ name }) => [name.slice('@clowder-ai/'.length), '0.2.0-beta.13']),
+      ['github-operations', '0.2.0-beta.13'],
+    ]) {
+      const installedRoot = join(consumer, 'node_modules/@clowder-ai', directory);
+      const resolvedUrl = run(process.execPath, ['--input-type=module', '--eval',
+        "console.log(import.meta.resolve('@clowder-ai/plugin-sdk'));"], installedRoot).trim();
+      const resolvedSdkRoot = dirname(dirname(fileURLToPath(resolvedUrl)));
+      const resolvedSdk = JSON.parse(await readFile(join(resolvedSdkRoot, 'package.json'), 'utf8'));
+      assert.equal(resolvedSdk.version, expected, `${directory} must load its declared SDK identity`);
+    }
+    await import(pathToFileURL(join(consumer, 'node_modules/@clowder-ai/github-operations/dist/plugin-entrypoint.js')).href);
     const installedContract = await import(
       pathToFileURL(
         join(consumer, 'node_modules/@clowder-ai/plugin-contract/dist/index.js'),
