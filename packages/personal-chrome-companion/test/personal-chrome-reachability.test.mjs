@@ -201,7 +201,7 @@ test('status preserves authorization fields, reports unknown/not_installed, and 
   await f.status('unknown');
   await f.operations.list({});
   const absent = await f.status('not_installed');
-  assert.match(absent.guidance, /README.*Owner-run native host installation/);
+  assert.match(absent.guidance, /Settings.*Chrome connection/);
   assert.equal(f.connect.mock.callCount(), 0);
   await f.operations.list({});
   assert.deepEqual(f.logs.map(([level]) => level), ['warn']);
@@ -229,7 +229,7 @@ for (const action of ['list', 'appendMessage', 'ack', 'probe']) {
     assert.equal(state.since, f.now());
     assert.equal('nextListAttemptAt' in state, false);
     assert.match(state.guidance, /pairing record validation failed/i);
-    assert.match(state.guidance, /re-run.*installer.*README/i);
+    assert.match(state.guidance, /Settings.*Chrome connection/i);
     const label = (await f.authorization.status()).label;
     assert.match(label, /installation is broken/i);
     assert.match(label, /pairing record validation failed/i);

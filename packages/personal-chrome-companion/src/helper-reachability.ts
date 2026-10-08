@@ -56,7 +56,7 @@ export class HelperReachability {
       state: 'invalid_installation',
       since: this.current.state === 'invalid_installation' ? this.current.since : this.now(),
       guidance: 'The helper installation is broken: pairing record validation failed. ' +
-        'Re-run the installer to repair it; see README: Owner-run native host installation. Then run Test.',
+        'Open Settings > Personal Chrome > Chrome connection to repair the installation, then run Test.',
     });
   }
 
@@ -72,7 +72,7 @@ export class HelperReachability {
       consecutiveFailures: failures,
       nextListAttemptAt: now + delay,
       guidance: state === 'not_installed'
-        ? 'See README: Owner-run native host installation. After installing, run Test to check the helper.'
+        ? 'Open Settings > Personal Chrome > Chrome connection to install the helper and load the extension, then run Test.'
         : 'Check that Chrome and the personal Chrome extension are running, then run Test to retry now.',
     });
   }

@@ -45,6 +45,13 @@ const REVOKE_ROW_ACTION_ID = 'revoke';
 const NO_AUTHORIZATION_EMPTY_TEXT =
   'No ChatGPT conversation is authorized yet. Authorize an exact https://chatgpt.com/c/<id> conversation first.';
 
+function deliveryGuidance(helper: HelperConnectionStatus, delivery?: RuntimeDelivery): string {
+  // Loading/reloading an extension cannot repair a missing helper registration.
+  if ((helper.state === 'not_installed' || helper.state === 'invalid_installation') &&
+      !delivery?.status().failure) return '';
+  return delivery?.label() ?? '';
+}
+
 export const personalChromeHostContribution: Omit<CloudConversationHostContribution, 'type'> = {
   id: PERSONAL_CHROME_HOST_CONTRIBUTION_ID,
   provider: 'chatgpt',
@@ -126,7 +133,7 @@ export function createAuthorizationOperations(options: {
     return {
       render: 'status',
       data: { ...data, helper, ...(options.delivery ? { delivery: options.delivery.status() } : {}) },
-      label: `${label} ${describeHelperConnection(helper)} ${options.delivery?.label() ?? ''}`.trim(),
+      label: `${label} ${describeHelperConnection(helper)} ${deliveryGuidance(helper, options.delivery)}`.trim(),
     };
   };
 
@@ -228,8 +235,9 @@ export function createPersonalChromePluginModule() {
               [PERSONAL_CHROME_TEST_METHOD]: async () => {
                 const result = await conversationHost.probe();
                 const state = delivery.status();
+                const helper = conversationHost.status();
                 return { ok: result.ok && !state.reloadRequired && !state.failure,
-                  message: `${result.message} ${delivery.label()}`.trim() };
+                  message: `${result.message} ${describeHelperConnection(helper)} ${deliveryGuidance(helper, delivery)}`.trim() };
               },
               [PERSONAL_CHROME_APPEND_MESSAGE_METHOD]: conversationHost.appendMessage,
               [PERSONAL_CHROME_ASSISTANT_LIST_METHOD]: conversationHost.list,

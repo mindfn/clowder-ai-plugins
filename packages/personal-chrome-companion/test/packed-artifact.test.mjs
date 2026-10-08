@@ -33,6 +33,8 @@ test('packs only the public companion closure and ships the install-host CLI in 
       assert.ok(listing.includes(member), `${member} is missing from packed artifact`);
     }
     assert.ok(listing.includes('package/native-host/install-host.mjs'));
+    assert.ok(listing.includes('package/native-host/setup-host.mjs'));
+    assert.ok(listing.includes('package/native-host/setup-protocol.md'));
     const packageJson = JSON.parse(await readFile(new URL('package.json', packageDirectory), 'utf8'));
     assert.equal(packageJson.private, undefined);
     assert.equal(packageJson.bin['clowder-personal-chrome-host'], 'native-host/native-host-cli.mjs');

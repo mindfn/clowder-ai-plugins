@@ -312,6 +312,7 @@ async function uninstallNativeHostLocked({
   homeDirectory = homedir(),
   localAppData = process.env.LOCALAPPDATA,
   userDataDirectory,
+  retainAuthorizations = false,
   paths,
 }) {
   if ((await pathExists(paths.socketPath)) || (await pathExists(`${paths.socketPath}.owner`))) {
@@ -331,7 +332,7 @@ async function uninstallNativeHostLocked({
   await unlink(paths.launcherPath).catch((error) => {
     if (error?.code !== 'ENOENT') throw error;
   });
-  await removePersonalChromeConversationAuthorizations(paths.conversationBindingPath);
+  if (!retainAuthorizations) await removePersonalChromeConversationAuthorizations(paths.conversationBindingPath);
   return {
     status: 'absent',
     operation: 'uninstalled',

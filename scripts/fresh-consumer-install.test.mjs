@@ -374,7 +374,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       join(consumer, 'node_modules/@clowder-ai/feishu-meeting-intake/dist/entrypoint.js'),
       'utf8',
     );
-    assert.equal(companionPackage.version, '0.1.0-alpha.2');
+    assert.equal(companionPackage.version, '0.1.0-alpha.3');
     assert.equal(companionPackage.private, undefined);
     assert.equal(companionPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12');
     assert.doesNotMatch(JSON.stringify(companionPackage), /"workspace:/u);
@@ -588,6 +588,27 @@ test('packed public packages install and import in a fresh npm consumer', async 
     );
     assert.notEqual(companionConsumerCli.status, 0);
     assert.match(companionConsumerCli.stderr, /required personal Chrome host configuration is missing/);
+
+    // Exercise the published setup runner with real files in an empty isolated HOME.
+    const setupHome = join(consumer, 'setup-home');
+    const setupProject = join(consumer, 'setup-project');
+    await Promise.all([mkdir(setupHome), mkdir(setupProject)]);
+    for (const [action, installed] of [['inspect', false], ['install', true], ['inspect', true], ['uninstall', false]]) {
+      const setup = spawnSync(process.execPath, [
+        'node_modules/@clowder-ai/personal-chrome-companion/native-host/setup-host.mjs', action, '--json',
+        '--project-root', setupProject, '--home', setupHome, '--node', process.execPath,
+      ], { cwd: consumer, encoding: 'utf8', timeout: 10_000,
+        env: { PATH: process.env.PATH, HOME: setupHome } });
+      assert.equal(setup.status, 0, setup.stderr);
+      assert.equal(setup.stderr, '');
+      const result = JSON.parse(setup.stdout);
+      assert.equal(result.protocolVersion, 1);
+      assert.equal(result.ok, true, setup.stdout);
+      assert.equal(result.action, action);
+      assert.equal(result.installed, installed);
+      assert.equal(Object.hasOwn(result, 'pairingSecret'), false);
+      assert.equal(Object.hasOwn(result, 'connected'), false);
+    }
 
     run(
       process.execPath,

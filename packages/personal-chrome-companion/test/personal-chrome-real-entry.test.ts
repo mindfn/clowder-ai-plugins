@@ -227,7 +227,7 @@ test('real module entry starts across the SDK carrier and serves every p2b actio
   const status = await activation.actions[PERSONAL_CHROME_STATUS_METHOD]!({});
   assert.ok(status && typeof status === 'object', 'status returns a result');
   assert.equal((status as { data: { helper: { state: string } } }).data.helper.state, 'not_installed');
-  assert.match((status as { label: string }).label, /README: Owner-run native host installation/);
+  assert.match((status as { label: string }).label, /Settings.*Chrome connection/);
   assert.equal(logs.filter((log) => log.level === 'warn').length, 1, 'carrier forwards one state-change warning');
   // p2b makes `test` honest: the probe must actually attempt reachability and
   // report not-ok when no helper/pairing exists, never claiming reachability
@@ -238,7 +238,8 @@ test('real module entry starts across the SDK carrier and serves every p2b actio
   };
   assert.equal(testResult.ok, false, 'test action honestly reports unreachable');
   assert.equal(typeof testResult.message, 'string');
-  assert.match(String(testResult.message), /Reload the extension/);
+  assert.match(testResult.message as string, /Settings.*Chrome connection/);
+  assert.doesNotMatch(testResult.message as string, /Reload the extension once/);
   assert.ok(
     typeof testResult.message === 'string' && testResult.message.length > 0,
     'test action explains the reason',

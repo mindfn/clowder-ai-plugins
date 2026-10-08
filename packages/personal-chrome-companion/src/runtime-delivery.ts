@@ -125,7 +125,7 @@ export async function prepareRuntimeDelivery(dataDirectory: string, sources: {
   return {
     status,
     label: () => [
-      failure ? `Delivery failed (${failure}); repair as described in the README, then reactivate the plugin.` : '',
+      failure ? `Delivery failed (${failure}); use Settings > Personal Chrome > Chrome connection to repair, then reactivate the plugin.` : '',
       reloadRequired ? 'Reload the extension once in chrome://extensions, then run Test.' : '',
     ].filter(Boolean).join(' '),
     observe: (revisions, errorCode) => {
