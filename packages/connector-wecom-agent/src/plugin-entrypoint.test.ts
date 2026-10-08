@@ -105,7 +105,7 @@ test('Host-shaped WeCom GET echostr returns a strict text/plain HTTP challenge',
   await active.stop();
 });
 
-test('replayed WeCom webhook derives the same Host idempotency and source event keys', async () => {
+test('WeCom replay is fenced within a runtime and preserves Host keys across restart', async () => {
   const sent: Array<{ idempotencyKey: string; sourceEventId?: string }> = [];
   const drafts: unknown[] = [];
   const outbound = { async sendFormattedReply() {}, async sendMedia() {}, async sendReply() {} } as unknown as WeComAgentAdapter;
@@ -121,10 +121,11 @@ test('replayed WeCom webhook derives the same Host idempotency and source event 
       return { kind: 'processed', messageId: 'provider-message-1' };
     },
   } as WeComAgentConnectorRuntime<WeComAgentAdapter>));
-  const active = await entrypoint.create(manifest).start(host(
+  const hostPorts = host(
     { corpId: 'corp', agentId: 'agent' },
     { agentSecret: 'secret', callbackToken: 'token', encodingAesKey: 'aes' }, sent, drafts,
-  ));
+  );
+  const active = await entrypoint.create(manifest).start(hostPorts);
   const payload = { request: {
     method: 'POST', path: 'connectors/wecom-agent', query: {},
     body: '<encrypted/>', rawBody: Buffer.from('<encrypted/>'), headers: {},
@@ -136,12 +137,20 @@ test('replayed WeCom webhook derives the same Host idempotency and source event 
   }
   assert.deepEqual(sent, [
     { idempotencyKey: 'provider-message-1', sourceEventId: 'provider-message-1' },
+  ]);
+  await active.stop();
+  // The in-memory command fence is not durable Host idempotency. After a
+  // restart the original provider keys must still reach the Host unchanged.
+  const restarted = await entrypoint.create(manifest).start(hostPorts);
+  await restarted.actions['wecom-agent.webhook']?.(payload);
+  assert.deepEqual(sent, [
+    { idempotencyKey: 'provider-message-1', sourceEventId: 'provider-message-1' },
     { idempotencyKey: 'provider-message-1', sourceEventId: 'provider-message-1' },
   ]);
   const serialized = JSON.stringify(drafts);
   assert.equal(serialized.includes('private-media-id'), false);
   assert.equal(drafts.every((item) => /"reference":"pmr_wecom-agent_/u.test(JSON.stringify(item))), true);
-  await active.stop();
+  await restarted.stop();
 });
 
 function richDelivery() {
