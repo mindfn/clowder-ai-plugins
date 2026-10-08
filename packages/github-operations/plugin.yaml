@@ -10,6 +10,17 @@ icon:
   type: svg
   src: assets/icon.svg
 configuration:
+  - key: legacyIssueObservations
+    label: Copy legacy issue metadata once
+    description: Copy a verified legacy snapshot without replacing existing metadata. Host assignments, signoff, routes, drafts and tracking remain unchanged. Requires the Host migration adapter to supply the snapshot.
+    kind: operation
+    required: false
+    actions:
+      - id: import
+        label: Copy legacy metadata
+        render: button
+        confirm: Copy the supplied legacy issue metadata? Existing records and all Host governance data will be preserved. This does not start tracking.
+        action: { method: github.legacy-issues.import }
   - key: publishRepositories
     label: Repositories allowed for public issue drafts
     description: Comma-separated owner/repository names. Empty disables issue publishing.
@@ -59,6 +70,18 @@ configuration:
     kind: string
     required: false
 contributions:
+  - type: tool
+    id: issue-metadata
+    name: github_issue_metadata
+    description: Read installation-private issue metadata by repository and number. Imported legacy fields do not establish assignment, signoff, route acceptance or current provider state.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      required: [repo, number]
+      properties:
+        repo: { type: string, pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' }
+        number: { type: integer, minimum: 1 }
+    action: { method: github.issue.metadata }
   - type: tool
     id: get-issue-draft
     name: github_get_issue_draft
@@ -279,6 +302,7 @@ features:
     name: GitHub collaboration operations
     resources: []
     contributions:
+      - { type: tool, id: issue-metadata }
       - { type: tool, id: get-issue-draft }
       - { type: tool, id: create-issue-draft }
       - { type: tool, id: repository-observations }

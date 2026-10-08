@@ -123,3 +123,21 @@ created during these checks. Published/cancelled native history has no TTL.
 
 Passing typecheck after removal of superseded Host orchestration would prove
 compilation only. It must not be reported as business parity or full W3 success.
+
+## Mechanical comparison and legacy copy checkpoint
+
+`scripts/audit-github-migration.mjs` computes static runtime import reachability,
+lists direct/type-only importers and validates the explicit frozen-body claims
+against original copy commit `6636763` and source SHA256. Thirteen runtime-reachable
+files are byte-identical; nine change only type import module paths. These 22
+entries are updated individually in source-map.json. Static reachability is not
+parity or installation evidence, and unreferenced copies remain visible as gaps.
+The audit requires the original local copy commit; it is an author evidence tool,
+not a shallow-clone consumer prerequisite.
+
+Rulings338/463 remove unused package bootstrap/routed consumers and the automatic
+rebase/push executor from both source and clean build output. Host copies remain.
+New owner-confirmed raw issue metadata import has real builtin and insert-only
+CAS/recovery coverage. It intentionally does not migrate assignments, route
+acceptance, signoff, old drafts or pending wake authority. See
+`legacy-state-disposition.md` for each remaining state class and missing evidence.

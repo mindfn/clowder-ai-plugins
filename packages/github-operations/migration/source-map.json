@@ -37,7 +37,15 @@
       "target": "packages/github-operations/src/business/domains/community/RoleResolver.ts",
       "sourceSha256": "ccf8df701ba658c4a9660b1df5e876f8755fd4383b6f5eb9186e56152dc4db46",
       "lines": 159,
-      "disposition": "copied-unadapted"
+      "disposition": "host-retained-governance-consumer",
+      "removedPackageCopy": true,
+      "reason": "Ruling463: Host retains authenticated role/thread bindings, triage-complete and assignment transitions. Package presentation uses bounded provider facts and ordinary SDK messaging; no private callback or narrator wake.",
+      "replacement": [
+        "packages/github-operations/src/provider-briefing.ts"
+      ],
+      "packageBusinessMoved": "provider presentation only; no role authority",
+      "realPackageReplacementVerified": "builtin repository scan briefing and deduplication test; Host cutover not claimed",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/TriageOrchestrator.ts",
@@ -60,14 +68,27 @@
       "target": "packages/github-operations/src/business/domains/community/community-auto-tracking.ts",
       "sourceSha256": "1f96fb2e2362680d467dc6dc09ec50e25c681ddb11c24a94e3552a382e76cb33",
       "lines": 131,
-      "disposition": "copied-unadapted"
+      "disposition": "host-retained-governance-consumer",
+      "removedPackageCopy": true,
+      "reason": "Ruling338: canonical case.routed admission and its assignment-derived tracking transition stay with authenticated Host consumers. The package offers ordinary explicit registration, never derives authority from supplied event payloads.",
+      "replacement": [
+        "packages/github-operations/src/tracking-runtime.ts"
+      ],
+      "packageBusinessMoved": "explicit provider tracking only; authenticated routing bridge retained",
+      "realPackageReplacementVerified": "ordinary tracking builtin journey; Host routing replacement not claimed",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/community-bootstrap.ts",
       "target": "packages/github-operations/src/business/domains/community/community-bootstrap.ts",
       "sourceSha256": "2a3907bfbdd6cc49b1e856670cc90782a02487660eb60bcfd5e319e6423b14e1",
       "lines": 127,
-      "disposition": "copied-unadapted"
+      "disposition": "host-retained-governance-consumer",
+      "removedPackageCopy": true,
+      "reason": "Ruling338: old case.bootstrap copies originalRecord including assignedThreadId/assignedCatId and maps accepted to routed. This is an authenticated legacy governance migration, not provider-state copy. No original records or Host files are removed.",
+      "packageBusinessMoved": "not applicable to provider-private state",
+      "realPackageReplacementVerified": "not claimed; legacy assignment state retained in Host",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/community-closure-checklist.ts",
@@ -116,7 +137,12 @@
       "target": "packages/github-operations/src/business/domains/community/community-link-parser.ts",
       "sourceSha256": "501a4b3a73a62633a994e3e0de27c17450a276e198333184b9e3de42be23c318",
       "lines": 41,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "byte-identical-to-frozen-source",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/community-projector.ts",
@@ -137,14 +163,24 @@
       "target": "packages/github-operations/src/business/domains/community/community-sla-policy.ts",
       "sourceSha256": "e880ce0c2729a4b3e351f86fd777410de75d159969f81573e8c0253fda35c8b4",
       "lines": 114,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "type-import-path-only",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/community-state-machine.ts",
       "target": "packages/github-operations/src/business/domains/community/community-state-machine.ts",
       "sourceSha256": "d917e08145aa7b250d9d4ca3378193e405ee4db8c8a366bac2a06235c6cfdfb4",
       "lines": 214,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "type-import-path-only",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/derivePrGroup.ts",
@@ -182,14 +218,24 @@
       "target": "packages/github-operations/src/business/domains/community/external-review/external-review-aggregate.ts",
       "sourceSha256": "f36c03e49297a13bb88a4d1f9b972615701ff6b70a53db7b71090ac6314142d1",
       "lines": 597,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "type-import-path-only",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/external-review/external-review-projector.ts",
       "target": "packages/github-operations/src/business/domains/community/external-review/external-review-projector.ts",
       "sourceSha256": "06346eb514d97abc04f556d01613b4f5c6c37a010cc8a0585d1cd272c01a8811",
       "lines": 118,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "type-import-path-only",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/external-review/external-review-verdict-submission.ts",
@@ -234,7 +280,12 @@
       "target": "packages/github-operations/src/business/domains/community/issue-analysis/CommunityIssueSanitizer.ts",
       "sourceSha256": "c345672dd564cd3428c8f9ed9cc309befb9f1349fb9f45662f01aa14df298174",
       "lines": 128,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "byte-identical-to-frozen-source",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/issue-analysis/FrustrationIssueSourceAdapter.ts",
@@ -273,28 +324,54 @@
       "target": "packages/github-operations/src/business/domains/community/issue-analysis/issue-comment-classifier.ts",
       "sourceSha256": "003b822f62bcd816bfb36cac3f09226d4f7c5d9420c214b13097a47f6136d9d5",
       "lines": 35,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "type-import-path-only",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/issue-analysis/issue-fix-evidence.ts",
       "target": "packages/github-operations/src/business/domains/community/issue-analysis/issue-fix-evidence.ts",
       "sourceSha256": "6a5248e10151281a61d909a372b9f16ce12106d4d70cbc756ed11489100dcc3e",
       "lines": 202,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "type-import-path-only",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/narrator/NarratorDriver.ts",
       "target": "packages/github-operations/src/business/domains/community/narrator/NarratorDriver.ts",
       "sourceSha256": "c19be5a2004388e7f336bbc6ad8e6a1f63cf6ac35bdc49179e413cb10fb2702c",
       "lines": 227,
-      "disposition": "copied-unadapted"
+      "disposition": "presentation-migrated-governance-wiring-retained",
+      "removedPackageCopy": true,
+      "reason": "Ruling463: Host retains authenticated role/thread bindings, triage-complete and assignment transitions. Package presentation uses bounded provider facts and ordinary SDK messaging; no private callback or narrator wake.",
+      "replacement": [
+        "packages/github-operations/src/provider-briefing.ts"
+      ],
+      "packageBusinessMoved": "provider presentation only; no role authority",
+      "realPackageReplacementVerified": "builtin repository scan briefing and deduplication test; Host cutover not claimed",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/narrator/RedisNarratorDedupStore.ts",
       "target": "packages/github-operations/src/business/domains/community/narrator/RedisNarratorDedupStore.ts",
       "sourceSha256": "283c16b383dc506f5c681439ba265a03a1504c64a3a85ce6ddea97afaff150ee",
       "lines": 50,
-      "disposition": "copied-unadapted"
+      "disposition": "presentation-migrated-governance-wiring-retained",
+      "removedPackageCopy": true,
+      "reason": "Ruling463: Host retains authenticated role/thread bindings, triage-complete and assignment transitions. Package presentation uses bounded provider facts and ordinary SDK messaging; no private callback or narrator wake.",
+      "replacement": [
+        "packages/github-operations/src/provider-briefing.ts"
+      ],
+      "packageBusinessMoved": "provider presentation only; no role authority",
+      "realPackageReplacementVerified": "builtin repository scan briefing and deduplication test; Host cutover not claimed",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/narrator/community-narrator-eligibility.ts",
@@ -308,7 +385,12 @@
       "target": "packages/github-operations/src/business/domains/community/reconciliation/CommunityReconciler.ts",
       "sourceSha256": "d765fa430c3958a209b6525c25c2e0a0c1e16ccf24457bb2538fdd8caf5932c7",
       "lines": 213,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "type-import-path-only",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/reconciliation/CommunityReconcilerTaskSpec.ts",
@@ -333,7 +415,12 @@
       "target": "packages/github-operations/src/business/domains/community/reconciliation/resolveConsensus.ts",
       "sourceSha256": "4262fdf3bc953f8066484a2a6f3054d06f619bbd3cd077355eaab48c7310443e",
       "lines": 37,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "type-import-path-only",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/github-signals/GitHubIssueWaitBaselineReader.ts",
@@ -485,7 +572,12 @@
       "target": "packages/github-operations/src/business/infrastructure/connectors/github-repo-event/verify-signature.ts",
       "sourceSha256": "69fb9bd6b408eafaa7e41376cdb70582b222278b7e5517f98e3f3db906f1e24f",
       "lines": 17,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "byte-identical-to-frozen-source",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/email/CiCdCheckTaskSpec.ts",
@@ -514,7 +606,12 @@
       "target": "packages/github-operations/src/business/infrastructure/email/ConflictAutoExecutor.ts",
       "sourceSha256": "e5bfe55d959558934d5b9735654fcda241bc55d27a4296b1cbd114b6024d013a",
       "lines": 191,
-      "disposition": "copied-unadapted"
+      "disposition": "retirement-candidate-excluded-from-default-plugin",
+      "removedPackageCopy": true,
+      "reason": "Ruling463: local worktree rebase and force-with-lease push are legacy high-privilege writes, not default provider observation/notification. Host retains the existing caller until retirement/no-double-run proof. Future explicit owner-authorized write operations are not a W3 prerequisite.",
+      "packageBusinessMoved": "conflict observation and ordinary SDK notification only",
+      "realPackageReplacementVerified": "tracking conflict tests; legacy executor retirement not yet verified",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/email/ConflictCheckTaskSpec.ts",
@@ -648,7 +745,12 @@
       "target": "packages/github-operations/src/business/infrastructure/email/ci-execution-failure.ts",
       "sourceSha256": "1a6425214bb82dcca399ca6c4ff451904971c0ccb3eb7f7eea40bdd57ce0d090",
       "lines": 124,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "byte-identical-to-frozen-source",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/email/ci-message-content.ts",
@@ -662,14 +764,24 @@
       "target": "packages/github-operations/src/business/infrastructure/email/ci-status-batch-fetcher.ts",
       "sourceSha256": "ee9369bfdd2f3cd7972055ea53e24f127c7dba62e06ec4c82496197a57fc02b9",
       "lines": 262,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "byte-identical-to-frozen-source",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/email/ci-status-fetcher.ts",
       "target": "packages/github-operations/src/business/infrastructure/email/ci-status-fetcher.ts",
       "sourceSha256": "b5dc7d4568467d3f6085ebcdd705a608ad7a29a5ef08938eda7b4cf2e0f465b7",
       "lines": 234,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "byte-identical-to-frozen-source",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/email/deliver-connector-message.ts",
@@ -681,7 +793,12 @@
       "target": "packages/github-operations/src/business/infrastructure/email/github-feedback-filter.ts",
       "sourceSha256": "d908fb5f262176912b245b4ea13f05cbdeb25309189efb49fd5c59205280fa6e",
       "lines": 56,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "byte-identical-to-frozen-source",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/email/index.ts",
@@ -700,7 +817,12 @@
       "target": "packages/github-operations/src/business/infrastructure/email/setup-noise-filter.ts",
       "sourceSha256": "0ec33a664c3f37e1a01fbd551dec338b6b2e9b07ef3665fcd19bffa124e098e0",
       "lines": 70,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "byte-identical-to-frozen-source",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/email/severity-parser.ts",
@@ -714,7 +836,12 @@
       "target": "packages/github-operations/src/business/infrastructure/github/abortable-wait.ts",
       "sourceSha256": "e56a6cd792979f0cebdc351ff5cafd6f59d37a23574a1cb58670c3403dbe7100",
       "lines": 23,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "byte-identical-to-frozen-source",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/github/admission-budget.ts",
@@ -739,35 +866,60 @@
       "target": "packages/github-operations/src/business/infrastructure/github/comment-since.ts",
       "sourceSha256": "95b604dd6b6f89b9749b88145aaaa2188837eee90925a5b3fdc98e99c2527a8d",
       "lines": 49,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "byte-identical-to-frozen-source",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/github/fetch-paginated.ts",
       "target": "packages/github-operations/src/business/infrastructure/github/fetch-paginated.ts",
       "sourceSha256": "2468f396cc20491797e70bd65e434c01eff91d2a418f7af60b5e50c1b5103f71",
       "lines": 60,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "byte-identical-to-frozen-source",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/github/fetch-review-threads.ts",
       "target": "packages/github-operations/src/business/infrastructure/github/fetch-review-threads.ts",
       "sourceSha256": "5534ddba367bf0e840cb6fadf9dd71d0395c8109c16e181a84ca293039289d0f",
       "lines": 47,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "type-import-path-only",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/github/gh-cli-env.ts",
       "target": "packages/github-operations/src/business/infrastructure/github/gh-cli-env.ts",
       "sourceSha256": "08f02d0b6db7430ca16b02bba166691d94411512e7b194a430df2f1a4e57d57b",
       "lines": 56,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "byte-identical-to-frozen-source",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/github/gh-process.ts",
       "target": "packages/github-operations/src/business/infrastructure/github/gh-process.ts",
       "sourceSha256": "dc302e1ab221d2e7d88cdf9b200bf5af256c37dabecabc328ba38ed494ca664a",
       "lines": 51,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-logic-mechanically-retained",
+      "mechanicalComparison": "byte-identical-to-frozen-source",
+      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
+      "packageBusinessMoved": "retained provider/pure logic",
+      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/github/github-object-validator.ts",

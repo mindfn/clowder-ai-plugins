@@ -19,6 +19,8 @@ import { createGitHubFeedbackFilter } from './business/infrastructure/email/gith
 import { createSetupNoiseFilter } from './business/infrastructure/email/setup-noise-filter.js';
 import { ExternalReviewCoordinator } from './business/domains/community/external-review/ExternalReviewCoordinator.js';
 import { providerObservation } from './community-read-model.js';
+import { SdkCommunityIssueStore } from './business/domains/community/CommunityIssueStore.js';
+import { copyLegacyIssueObservations, legacyIssueOperationInput } from './legacy-issue-observations.js';
 
 export interface RepoSubject {
   kind: 'pr' | 'issue'; number: number; title: string; url: string;
@@ -137,6 +139,24 @@ export class CommunityRuntime {
     });
   }
   unregister(repo: string): Promise<boolean> { return this.serialize(() => this.configs.deleteByRepo(repo)); }
+
+  importLegacyIssues(value: unknown) {
+    return this.serialize(() => copyLegacyIssueObservations(legacyIssueOperationInput(value),
+      new SdkCommunityIssueStore(this.context.storage), this.lifetime.signal));
+  }
+
+  inspectIssueMetadata(value: unknown) {
+    return this.serialize(async () => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('issue metadata input required');
+      const input = value as Record<string, unknown>;
+      if (Object.keys(input).some(key => !['repo', 'number'].includes(key)) || typeof input.repo !== 'string' ||
+        !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(input.repo) || !Number.isSafeInteger(input.number) || (input.number as number) < 1) {
+        throw new TypeError('invalid issue metadata subject');
+      }
+      return { data: { observation: await new SdkCommunityIssueStore(this.context.storage).getByRepoAndNumber(input.repo, input.number as number),
+        provenance: 'installation-private-metadata' } };
+    });
+  }
 
   inspectRepository(value: unknown) {
     return this.serialize(async () => {

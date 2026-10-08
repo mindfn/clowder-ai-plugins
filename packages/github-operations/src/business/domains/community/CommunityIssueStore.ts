@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { PluginStorageHost } from '@clowder-ai/plugin-sdk';
 import type { CommunityIssueItem, CreateCommunityIssueInput } from '../../model/index.js';
 
@@ -42,6 +43,15 @@ function observation(value: unknown): CommunityIssueObservation {
  * A subject-derived ID makes create/dedup a single durable operation. */
 export class SdkCommunityIssueStore implements ICommunityIssueStore {
   constructor(private readonly storage: PluginStorageHost) {}
+  /** Insert a fully validated provider-only copy. Never replace existing data,
+   * including owner edits and another concurrent import. No legacy ID is trusted. */
+  async copyObservation(value: CommunityIssueObservation): Promise<'imported' | 'identical' | 'preserved'> {
+    const item = observation(value);
+    if ((await this.storage.compareAndSet(prefix + item.id, null, item)).applied) return 'imported';
+    const current = await this.get(item.id);
+    if (!current) throw new Error('issue observation removed concurrently; retry copy');
+    return isDeepStrictEqual(current, item) ? 'identical' : 'preserved';
+  }
   async create(input: CreateCommunityIssueInput): Promise<CommunityIssueObservation | null> {
     if (Object.keys(input).some(key => !['repo', 'issueNumber', 'issueType', 'title'].includes(key))) throw new TypeError('unsupported issue observation field');
     const now = Date.now(), id = idOf(input.repo, input.issueNumber);
@@ -86,4 +96,25 @@ export class SdkCommunityIssueStore implements ICommunityIssueStore {
     throw new Error('community issue update contention');
   }
   async delete(id: string): Promise<boolean> { return (await this.storage.delete(prefix + id)).deleted; }
+}
+
+/** Decode the frozen RedisCommunityIssueStore hash into non-governance metadata.
+ * Deliberately do not hydrate its assignment, state, tokens, direction card or
+ * activity prose. Old records remain owned by the Host and are not modified. */
+export function decodeLegacyIssueObservation(raw: Record<string, string>): CommunityIssueObservation {
+  const number = (field: string) => {
+    if (!/^(0|[1-9][0-9]*)$/.test(raw[field] ?? '')) throw new TypeError(`invalid legacy ${field}`);
+    const value = Number(raw[field]);
+    if (!Number.isSafeInteger(value)) throw new TypeError(`invalid legacy ${field}`);
+    return value;
+  };
+  if (typeof raw.repo !== 'string') throw new TypeError('invalid legacy repo');
+  const repo = raw.repo.toLowerCase(), issueNumber = number('issueNumber'), updatedAt = number('updatedAt');
+  return observation({
+    id: idOf(repo, issueNumber), repo, issueNumber, issueType: raw.issueType, title: raw.title,
+    linkedPrNumbers: raw.linkedPrNumbers ? JSON.parse(raw.linkedPrNumbers) : [],
+    createdAt: number('createdAt'), updatedAt,
+    // Old lastActivityEvent may contain governance or private actor details.
+    lastActivity: { at: updatedAt, event: 'legacy-metadata-copy' },
+  });
 }

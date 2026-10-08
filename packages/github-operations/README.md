@@ -50,6 +50,13 @@ is retained for retry. Historical Host state is not deleted or imported
 implicitly. Host cutover must separately prove replacement and no double-run
 before retiring old consumers.
 
+The owner-confirmed legacy metadata copy operation accepts an isolated, bounded
+raw snapshot from the Host migration adapter. It only inserts missing issue
+metadata; existing records, Host assignments/signoff/routes/drafts and tracking
+remain unchanged. The adapter and real-data cutover are still pending. The
+`github_issue_metadata` tool reads copies as private metadata, never governance
+truth. Exact input and recovery semantics: `migration/legacy-state-disposition.md`.
+
 ## Acceptance
 
 npm, local-directory and fixed-Git-revision installation must each demonstrate

@@ -74,6 +74,8 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.subject.inspect': (value: unknown) => community.inspectSubject(value),
       'github.repository.observations': (value: unknown) => community.inspectRepository(value),
       'github.issue.preview': previewPublicIssue,
+      'github.issue.metadata': (value: unknown) => community.inspectIssueMetadata(value),
+      'github.legacy-issues.import': (value: unknown) => community.importLegacyIssues(value),
       'github.draft.create': (value: unknown) => drafts.create(value),
       'github.draft.get': (value: unknown) => drafts.get(value),
       'github.draft.list': () => drafts.list(),

@@ -32,7 +32,7 @@ part of the intended runtime.
   recovers interrupted materialization. No Host Redis migration is executed.
 - Twelve frozen source test files (181 tests) are copied with import-edge changes
   only; provenance is in test-source-map.json. Whole-package clean build and
-  245/245 tests pass at this checkpoint, including provider projection, CI
+  259/259 tests pass at this checkpoint, including provider projection, CI
   rerun/delivery, review pacing, bounded polling, cleanup and batched CI. The
   changed behaviors have individual RED/GREEN evidence; this is not full parity.
 - Whole-package source and test typechecks pass. Source hashes/declaration
@@ -47,8 +47,8 @@ part of the intended runtime.
   build, tests and lint explicitly. The frozen machine inventory remains in its
   pending checkpoint; implementationProgress records actual implementation
   evidence separately, preserving the existing single catalog exception.
-- The previous clean checkpoint `6dba6b3` passed all 29 repository gate steps
-  in 259.1 seconds with unchanged HEAD and clean worktree. New source changes
+- The previous clean checkpoint `b3906de` passed all 29 repository gate steps
+  in 257.461 seconds with unchanged HEAD and clean worktree. New source changes
   have separate targeted/typecheck/build/package evidence; that old gate is not
   claimed for this new tree.
 - Ruling338 removes the copied assignment-writing TriageOrchestrator. Pure triage
@@ -74,6 +74,21 @@ part of the intended runtime.
   including webhook-only subjects. They do not replace Host governance boards.
 
 ## Remaining implementation and verification
+
+Current additional evidence: the owner-confirmed legacy issue metadata operation
+validates bounded raw snapshots before insert-only CAS. Concurrent imports,
+partial failure, restart and preservation of owner edits are verified. Governance
+fields are excluded; the Host export adapter remains pending.
+
+Ruling463 separates bounded provider briefings through ordinary SDK messaging
+from Host role bindings and authenticated callbacks. Those copied consumers and
+automatic rebase/push are absent from the package; Host consumers remain intact.
+Static comparison verifies 13 byte-identical runtime files and nine with only
+type-import path changes. This is not full parity for all 96 source entries.
+
+Integration order478 reserves SDK beta.13 and seven connector alpha.3 candidates
+to Sol/task296. W3 consumes that exact candidate before GitHub alpha.1 package,
+shrinkwrap and fresh-consumer closure; no second SDK identity is generated here.
 
 1. Complete the Community business comparison and legacy-state disposition;
    native draft/read-model carrier tests do not prove full old-route replacement.

@@ -11,6 +11,7 @@ import {
   type IssueCommentClassification,
 } from '../../../domains/community/issue-analysis/issue-comment-classifier.js';
 import type { ReconciliationDedup } from './ReconciliationDedup.js';
+import { formatProviderBriefing } from '../../../../provider-briefing.js';
 import type { RepoInboxSignal } from './types.js';
 import { verifyGitHubSignature } from './verify-signature.js';
 
@@ -307,21 +308,7 @@ export class GitHubRepoWebhookHandler {
   }
 
   private formatMessage(signal: RepoInboxSignal): string {
-    const typeEmoji = signal.subjectType === 'pr' ? '\u{1F500}' : '\u{1F195}';
-    const ACTION_LABELS: Record<string, string> = {
-      opened: 'opened',
-      ready_for_review: 'ready for review',
-      closed: 'closed',
-      reopened: 'reopened',
-      merged: 'merged',
-    };
-    const actionLabel = ACTION_LABELS[signal.action] ?? signal.action;
-    return [
-      `${typeEmoji} **${signal.subjectType === 'pr' ? 'PR' : 'Issue'} #${signal.number}** ${actionLabel}`,
-      `**${signal.title}**`,
-      `by \`${signal.authorLogin}\` (${signal.authorAssociation}) in \`${signal.repoFullName}\``,
-      signal.url,
-    ].join('\n');
+    return formatProviderBriefing(signal);
   }
 
   /**

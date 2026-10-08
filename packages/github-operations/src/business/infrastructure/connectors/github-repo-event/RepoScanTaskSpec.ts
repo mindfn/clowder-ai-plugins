@@ -4,6 +4,7 @@
  * budget remain package-owned. Host thread-kind stamping and task/wake plumbing
  * are replaced by the SDK notification callback supplied by this installation.
  */
+import { formatProviderBriefing } from '../../../../provider-briefing.js';
 import type { CommunityEvent } from '../../../model/index.js';
 import type { ICommunityEventLog } from '../../../domains/community/CommunityEventLog.js';
 import { gitHubAdmissionCanContinue, gitHubPollBudget, readGitHubObject, type GitHubPollOptions } from '../../github/admission-budget.js';
@@ -34,15 +35,6 @@ export interface RepoScannerOptions extends GitHubPollOptions {
   projector?: { apply(event: CommunityEvent): Promise<void>; rebuild(subjectKey: string): Promise<void> };
 }
 
-function formatReconciliationMessage(signal: RepoInboxSignal): string {
-  const typeEmoji = signal.subjectType === 'pr' ? '\u{1F500}' : '\u{1F195}';
-  return [
-    `${typeEmoji} **${signal.subjectType === 'pr' ? 'PR' : 'Issue'} #${signal.number}** (reconciliation)`,
-    `**${signal.title}**`,
-    `by \`${signal.authorLogin}\` (${signal.authorAssociation}) in \`${signal.repoFullName}\``,
-    signal.url,
-  ].join('\n');
-}
 
 export function createRepoScanner(opts: RepoScannerOptions): (signal: AbortSignal) => Promise<void> {
   const maxWorkItemsPerRun = Math.max(1, opts.maxWorkItemsPerRun ?? DEFAULT_MAX_WORK_ITEMS_PER_RUN);
@@ -211,7 +203,7 @@ export function createRepoScanner(opts: RepoScannerOptions): (signal: AbortSigna
           }
         }
       }
-      await opts.deliver(signal, formatReconciliationMessage(signal));
+      await opts.deliver(signal, formatProviderBriefing(signal, true));
       await opts.reconciliationDedup.markNotified(signal.repoFullName, signal.subjectType, signal.number);
     }
   };
