@@ -9,6 +9,9 @@ import type { WeComAgentConnectorRuntime, WeComAgentHostInboundMessage } from '.
 import type { WeComAgentAdapter } from './WeComAgentAdapter.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
+// Existing owner-configured policy in the Host fixture, never an activation default.
+const configuredPermissions = { revision: 1, value: { v: 1, whitelistEnabled: false, commandAdminOnly: false,
+  adminConfigured: true, adminOpenIds: [], allowedGroups: [] } };
 
 function host(
   config: Record<string, unknown>,
@@ -21,7 +24,7 @@ function host(
     config: { get: async key => config[key] },
     secrets: { get: async key => secrets[key] },
     storage: {
-      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      get: async key => key === 'connector.permissions.v1' ? configuredPermissions : state.get(key), list: async () => Object.fromEntries(state),
       set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
       compareAndSet: async (key, expectedRevision, value) => {
         if (expectedRevision !== null || state.has(key)) return { applied: false };
@@ -65,6 +68,7 @@ test('module exposes both manifest-declared connector and webhook actions', asyn
   const secrets: Record<string, string> = { agentSecret: 'secret', callbackToken: 'token', encodingAesKey: 'aes' };
   const active = await entrypoint.create(manifest).start(host(config, secrets));
   assert.deepEqual(Object.keys(active.actions).sort(), [
+    'permissions.configure', 'permissions.importLegacy', 'permissions.read',
     'wecom-agent.media-source.read', 'wecom-agent.media-source.settle', 'wecom-agent.outbound', 'wecom-agent.webhook',
   ]);
   const request = {
@@ -101,7 +105,7 @@ test('Host-shaped WeCom GET echostr returns a strict text/plain HTTP challenge',
   await active.stop();
 });
 
-test('replayed WeCom webhook derives the same Host idempotency and source event keys', async () => {
+test('WeCom replay is fenced within a runtime and preserves Host keys across restart', async () => {
   const sent: Array<{ idempotencyKey: string; sourceEventId?: string }> = [];
   const drafts: unknown[] = [];
   const outbound = { async sendFormattedReply() {}, async sendMedia() {}, async sendReply() {} } as unknown as WeComAgentAdapter;
@@ -117,10 +121,11 @@ test('replayed WeCom webhook derives the same Host idempotency and source event 
       return { kind: 'processed', messageId: 'provider-message-1' };
     },
   } as WeComAgentConnectorRuntime<WeComAgentAdapter>));
-  const active = await entrypoint.create(manifest).start(host(
+  const hostPorts = host(
     { corpId: 'corp', agentId: 'agent' },
     { agentSecret: 'secret', callbackToken: 'token', encodingAesKey: 'aes' }, sent, drafts,
-  ));
+  );
+  const active = await entrypoint.create(manifest).start(hostPorts);
   const payload = { request: {
     method: 'POST', path: 'connectors/wecom-agent', query: {},
     body: '<encrypted/>', rawBody: Buffer.from('<encrypted/>'), headers: {},
@@ -132,12 +137,20 @@ test('replayed WeCom webhook derives the same Host idempotency and source event 
   }
   assert.deepEqual(sent, [
     { idempotencyKey: 'provider-message-1', sourceEventId: 'provider-message-1' },
+  ]);
+  await active.stop();
+  // The in-memory command fence is not durable Host idempotency. After a
+  // restart the original provider keys must still reach the Host unchanged.
+  const restarted = await entrypoint.create(manifest).start(hostPorts);
+  await restarted.actions['wecom-agent.webhook']?.(payload);
+  assert.deepEqual(sent, [
+    { idempotencyKey: 'provider-message-1', sourceEventId: 'provider-message-1' },
     { idempotencyKey: 'provider-message-1', sourceEventId: 'provider-message-1' },
   ]);
   const serialized = JSON.stringify(drafts);
   assert.equal(serialized.includes('private-media-id'), false);
   assert.equal(drafts.every((item) => /"reference":"pmr_wecom-agent_/u.test(JSON.stringify(item))), true);
-  await active.stop();
+  await restarted.stop();
 });
 
 function richDelivery() {
@@ -181,7 +194,7 @@ test('rich blocks and typed media notices fall back to sendReply with rendered p
   const entrypoint = createWeComAgentPluginModule(() => ({ outbound, async start() {}, async stop() {} }) as WeComAgentConnectorRuntime<WeComAgentAdapter>);
   const host: ModulePluginHostShape = {
     config: { get: async () => 'agent' }, secrets: { get: async () => 'secret' },
-    storage: {} as never, tasks: {} as never,
+    storage: { get: async () => configuredPermissions } as never, tasks: {} as never,
     media: { read: async input => input.reference === 'hmr_denied'
       ? Promise.reject(Object.assign(new Error('denied'), { name: 'MEDIA_ACCESS_DENIED' }))
       : input.offset === 0
@@ -251,7 +264,7 @@ test('outbound attaches replyToSender metadata from the recorded inbound mapping
   const host: ModulePluginHostShape = {
     config: { get: async () => 'corp' }, secrets: { get: async () => 'secret' },
     storage: {
-      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      get: async key => key === 'connector.permissions.v1' ? configuredPermissions : state.get(key), list: async () => Object.fromEntries(state),
       set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
       compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
     },

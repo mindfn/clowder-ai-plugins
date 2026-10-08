@@ -9,13 +9,16 @@ import { TelegramAdapter } from './TelegramAdapter.js';
 import type { TelegramConnectorRuntime, TelegramHostInboundMessage } from './runtime.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
+// Existing owner-configured policy in the Host fixture, never an activation default.
+const configuredPermissions = { revision: 1, value: { v: 1, whitelistEnabled: false, commandAdminOnly: false,
+  adminConfigured: true, adminOpenIds: [], allowedGroups: [] } };
 
 function lifecycleHost(externalChatId = 'chat-1'): ModulePluginHostShape {
   const state = new Map<string, { revision: number; value: unknown }>();
   return {
     config: { get: async () => undefined }, secrets: { get: async () => 'bot-token' },
     storage: {
-      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      get: async key => key === 'connector.permissions.v1' ? configuredPermissions : state.get(key), list: async () => Object.fromEntries(state),
       set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
       compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
     }, tasks: {} as never,
@@ -60,7 +63,7 @@ test('module bridges provider ingress and Host subscription egress without conne
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => 'bot-token' },
     storage: {
-      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      get: async key => key === 'connector.permissions.v1' ? configuredPermissions : state.get(key), list: async () => Object.fromEntries(state),
       set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
       compareAndSet: async (key, expectedRevision, value) => {
         if (expectedRevision !== null || state.has(key)) return { applied: false };
@@ -113,7 +116,7 @@ test('telegram.test reports ok while polling with a configured token', async () 
   }) as TelegramConnectorRuntime<TelegramAdapter>);
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => '123456:ABCdefGHIJKL' },
-    storage: {} as never, tasks: {} as never,
+    storage: { get: async () => configuredPermissions } as never, tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: { listBindings: async () => [], ensureByKey: async () => { throw new Error('unused'); } } as never,
     messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async () => { throw new Error('unused'); } },
@@ -130,7 +133,7 @@ test('telegram.test reports not configured when the token is missing', async () 
   });
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => undefined },
-    storage: {} as never, tasks: {} as never,
+    storage: { get: async () => configuredPermissions } as never, tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: { listBindings: async () => [], ensureByKey: async () => { throw new Error('unused'); } } as never,
     messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async () => { throw new Error('unused'); } },
@@ -150,7 +153,7 @@ test('telegram.test reports not-polling separately from a missing token', async 
   }) as TelegramConnectorRuntime<TelegramAdapter>);
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => '123456:ABCdefGHIJKL' },
-    storage: {} as never, tasks: {} as never,
+    storage: { get: async () => configuredPermissions } as never, tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: { listBindings: async () => [], ensureByKey: async () => { throw new Error('unused'); } } as never,
     messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async () => { throw new Error('unused'); } },
@@ -258,7 +261,7 @@ test('rich blocks and typed media notices route to sendRichMessage instead of se
   const entrypoint = createTelegramPluginModule(() => ({ outbound, async start() {}, async stop() {} }) as TelegramConnectorRuntime<TelegramAdapter>);
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => 'bot-token' },
-    storage: {} as never, tasks: {} as never,
+    storage: { get: async () => configuredPermissions } as never, tasks: {} as never,
     media: { read: async input => input.reference === 'hmr_denied'
       ? Promise.reject(Object.assign(new Error('denied'), { name: 'MEDIA_ACCESS_DENIED' }))
       : input.offset === 0
@@ -319,7 +322,7 @@ test('outbound attaches replyToSender metadata from the recorded inbound mapping
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => 'bot-token' },
     storage: {
-      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      get: async key => key === 'connector.permissions.v1' ? configuredPermissions : state.get(key), list: async () => Object.fromEntries(state),
       set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
       compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
     },
@@ -375,7 +378,7 @@ test('telegram.outbound rejects a delivery without presentation (subscription pr
   }) as TelegramConnectorRuntime<TelegramAdapter>);
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => 'bot-token' },
-    storage: {} as never, tasks: {} as never,
+    storage: { get: async () => configuredPermissions } as never, tasks: {} as never,
     media: { read: async input => ({ offset: input.offset, dataBase64: '', done: true }) },
     threads: { listBindings: async () => [], ensureByKey: async () => { throw new Error('unused'); } } as never,
     messaging: { subscribe: async () => undefined, unsubscribe: async () => undefined, send: async () => { throw new Error('unused'); } },

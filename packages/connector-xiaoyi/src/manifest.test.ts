@@ -14,7 +14,11 @@ test('manifest keeps credentials and connector authority in their intended domai
   };
   assert.equal(manifest.pluginId, 'official.connector.xiaoyi');
   assert.equal(manifest.contractVersion, '0.1.0');
-  assert.deepEqual(manifest.configuration, [
+  assert.deepEqual(manifest.configuration.filter(field => !['permissionWhitelistEnabled', 'permissionCommandAdminOnly',
+    'permissionAdminIdsJson', 'permissionGroupsJson', 'permissionRevision', 'connector_permissions', 'connector_permissions_apply'].includes(field.key)), [
+    { key: 'legacy_permissions', label: '一次性导入旧权限', kind: 'operation', required: false,
+      actions: [{ id: 'import', label: '导入旧权限', render: 'button',
+        confirm: '确认从已授权的旧连接器权限快照导入？已有权限不会被覆盖。', action: { method: 'permissions.importLegacy' } }] },
     { key: 'accessKey', label: 'Access Key', kind: 'string', required: true },
     { key: 'secretKey', label: 'Secret Key', kind: 'secret', required: true },
     { key: 'agentId', label: 'Agent ID', kind: 'string', required: true },
@@ -28,6 +32,7 @@ test('manifest keeps credentials and connector authority in their intended domai
     'messaging.send',
     'secret.read',
     'thread.listMetadata',
+    'thread.readContent',
     'thread.write',
   ]);
   assert.deepEqual(manifest.runtime, { transport: 'builtin', entrypoint: 'dist/plugin-entrypoint.js' });

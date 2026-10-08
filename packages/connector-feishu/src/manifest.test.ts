@@ -32,6 +32,7 @@ test('manifest keeps credentials secret and binding authority Host-owned', async
     'message.event.subscribe',
     'messaging.send',
     'secret.read',
+    'thread.readContent',
     'thread.listMetadata',
     'thread.write',
   ]);

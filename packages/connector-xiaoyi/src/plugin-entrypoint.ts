@@ -1,4 +1,6 @@
 import {
+  createConnectorCommandBridge,
+  createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
@@ -19,6 +21,7 @@ import { renderTypedMediaNotice } from './media-notice.js';
 import { renderAllRichBlocksPlaintext } from './rich-block-plaintext.js';
 import { createConnectorLifecycleAction } from './lifecycle-action.js';
 import { createReplySenderMap } from './reply-sender-map.js';
+import { connectorCommandFacts } from './command-ingress.js';
 
 type RuntimeFactory = (
   options: XiaoyiConnectorRuntimeOptions<XiaoyiAdapter>,
@@ -56,7 +59,7 @@ function draft(message: XiaoyiHostInboundMessage): PluginMessagingDraft {
   };
 }
 
-async function createMessageBridge(context: FeatureContext) {
+async function createMessageBridge(context: FeatureContext, reply: Parameters<typeof createConnectorCommandBridge>[1]['reply'], settle: Parameters<typeof createConnectorCommandBridge>[1]['settle']) {
   const replySenders = createReplySenderMap(context);
   const subscriptions = new Map<string, Promise<void>>();
   const subscribe = (threadId: string): Promise<void> => {
@@ -71,21 +74,35 @@ async function createMessageBridge(context: FeatureContext) {
     return pending;
   };
   for (const binding of await context.threads.listBindings()) await subscribe(binding.threadId);
+  const routeCommand = createConnectorCommandBridge(context, {
+    connectorId: CONNECTOR_ID, identityId: IDENTITY_ID, reply,
+    settle: settle,
+    async bindingChanged(change) {
+      if (change.threadId !== undefined) await subscribe(change.threadId);
+      if (change.previousThreadId !== undefined && change.previousThreadId !== change.threadId &&
+          !(await context.threads.listBindings()).some(binding => binding.threadId === change.previousThreadId)) {
+        await context.messaging.unsubscribe(change.previousThreadId);
+        subscriptions.delete(change.previousThreadId);
+      }
+    },
+  });
   return {
     async deliver(message: XiaoyiHostInboundMessage): Promise<void> {
-      const thread = await context.threads.ensureByKey(message.externalConversationId, { title: `XiaoYi ${message.externalConversationId}`.slice(0, 200) });
-      await subscribe(thread.id);
-      const messageDraft = draft(message);
-      const sent = await context.messaging.send(thread.id, messageDraft);
-      if (messageDraft.sender !== undefined) {
-        try {
-          await replySenders.record(sent.messageId, messageDraft.sender);
-        } catch (error) {
-          context.log('warn', 'XiaoYi reply-sender mapping record failed', {
-            errorName: error instanceof Error ? error.name : 'unknown',
-          });
+      await routeCommand(connectorCommandFacts(message), async () => {
+        const thread = await context.threads.ensureByKey(message.externalConversationId, { title: `XiaoYi ${message.externalConversationId}`.slice(0, 200) });
+        await subscribe(thread.id);
+        const messageDraft = draft(message);
+        const sent = await context.messaging.send(thread.id, messageDraft);
+        if (messageDraft.sender !== undefined) {
+          try {
+            await replySenders.record(sent.messageId, messageDraft.sender);
+          } catch (error) {
+            context.log('warn', 'XiaoYi reply-sender mapping record failed', {
+              errorName: error instanceof Error ? error.name : 'unknown',
+            });
+          }
         }
-      }
+      });
     },
     async outbound(candidate: unknown): Promise<{ inputs: ConnectorOutboundDelivery[]; replyPrefix: string }> {
       const input = requireDelivery(candidate);
@@ -164,8 +181,9 @@ export function createXiaoyiPluginModule(createRuntime: RuntimeFactory = createX
         if (typeof accessKey !== 'string') throw new TypeError('accessKey must be a declared string');
         if (typeof agentId !== 'string') throw new TypeError('agentId must be a declared string');
         if (typeof secretKey !== 'string') throw new TypeError('secretKey must be a declared secret');
-        const bridge = await createMessageBridge(context);
-        const runtime = createRuntime({
+        let runtime!: ReturnType<RuntimeFactory>;
+        const bridge = await createMessageBridge(context, (input, result) => runtime.outbound.sendReply(input.chatId, result.response), input => runtime.outbound.onDeliveryBatchDone(input.chatId, true));
+        runtime = createRuntime({
           config: { accessKey, secretKey, agentId },
           host: { deliver: bridge.deliver },
           logger: context.logger,
@@ -182,6 +200,7 @@ export function createXiaoyiPluginModule(createRuntime: RuntimeFactory = createX
         });
         return {
           actions: {
+            ...createConnectorPermissionActions(context.storage),
             'host.messaging.lifecycle': lifecycle,
             'xiaoyi.outbound': async (candidate) => {
               const { inputs, replyPrefix } = await bridge.outbound(candidate);

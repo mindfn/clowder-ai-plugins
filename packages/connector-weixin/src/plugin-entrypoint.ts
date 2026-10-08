@@ -1,4 +1,6 @@
 import {
+  createConnectorCommandBridge,
+  createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
@@ -19,6 +21,7 @@ import { renderTypedMediaNotice } from './media-notice.js';
 import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia } from './inbound-media-source.js';
 import { renderAllRichBlocksPlaintext } from './rich-block-plaintext.js';
 import { createReplySenderMap } from './reply-sender-map.js';
+import { connectorCommandFacts } from './command-ingress.js';
 
 type RuntimeFactory = (
   options: WeixinConnectorRuntimeOptions<WeixinAdapter>,
@@ -67,7 +70,7 @@ async function draft(context: FeatureContext, message: WeixinHostInboundMessage)
   return { messageDraft, ownership: retained.ownership };
 }
 
-async function createMessageBridge(context: FeatureContext) {
+async function createMessageBridge(context: FeatureContext, reply: Parameters<typeof createConnectorCommandBridge>[1]['reply']) {
   const replySenders = createReplySenderMap(context);
   const subscriptions = new Map<string, Promise<void>>();
   const subscribe = (threadId: string): Promise<void> => {
@@ -82,26 +85,40 @@ async function createMessageBridge(context: FeatureContext) {
     return pending;
   };
   for (const binding of await context.threads.listBindings()) await subscribe(binding.threadId);
+  const routeCommand = createConnectorCommandBridge(context, {
+    connectorId: CONNECTOR_ID, identityId: IDENTITY_ID, reply,
+    settle: async () => {},
+    async bindingChanged(change) {
+      if (change.threadId !== undefined) await subscribe(change.threadId);
+      if (change.previousThreadId !== undefined && change.previousThreadId !== change.threadId &&
+          !(await context.threads.listBindings()).some(binding => binding.threadId === change.previousThreadId)) {
+        await context.messaging.unsubscribe(change.previousThreadId);
+        subscriptions.delete(change.previousThreadId);
+      }
+    },
+  });
   return {
     async deliver(message: WeixinHostInboundMessage): Promise<void> {
-      const thread = await context.threads.ensureByKey(message.externalConversationId, { title: `WeChat ${message.externalConversationId}`.slice(0, 200) });
-      await subscribe(thread.id);
-      const prepared = await draft(context, message);
-      try {
-        const sent = await context.messaging.send(thread.id, prepared.messageDraft);
-        if (prepared.messageDraft.sender !== undefined) {
-          try {
-            await replySenders.record(sent.messageId, prepared.messageDraft.sender);
-          } catch (error) {
-            context.log('warn', 'Weixin reply-sender mapping record failed', {
-              errorName: error instanceof Error ? error.name : 'unknown',
-            });
+      await routeCommand(connectorCommandFacts(message), async () => {
+        const thread = await context.threads.ensureByKey(message.externalConversationId, { title: `WeChat ${message.externalConversationId}`.slice(0, 200) });
+        await subscribe(thread.id);
+        const prepared = await draft(context, message);
+        try {
+          const sent = await context.messaging.send(thread.id, prepared.messageDraft);
+          if (prepared.messageDraft.sender !== undefined) {
+            try {
+              await replySenders.record(sent.messageId, prepared.messageDraft.sender);
+            } catch (error) {
+              context.log('warn', 'Weixin reply-sender mapping record failed', {
+                errorName: error instanceof Error ? error.name : 'unknown',
+              });
+            }
           }
+        } catch (error) {
+          await releaseInboundMedia(context, prepared.ownership, error);
+          throw error;
         }
-      } catch (error) {
-        await releaseInboundMedia(context, prepared.ownership, error);
-        throw error;
-      }
+      });
     },
     async outbound(candidate: unknown) {
       const input = requireDelivery(candidate);
@@ -231,8 +248,9 @@ export function createWeixinPluginModule(createRuntime: RuntimeFactory = createW
         // Credentials may arrive only later via the weixin_qr_login operation —
         // the runtime starts healthy and idle (no connect, no polling) without them.
         const token = typeof botToken === 'string' ? botToken : '';
-        const bridge = await createMessageBridge(context);
-        const runtime = createRuntime({
+        let runtime!: ReturnType<RuntimeFactory>;
+        const bridge = await createMessageBridge(context, (input, result) => runtime.outbound.sendReply(input.chatId, result.response));
+        runtime = createRuntime({
           config: {
             botToken: token,
             ...(mode === undefined ? {} : { voiceItemMode: mode as 'minimal' | 'playtime' | 'playtime-sec' | 'playtime-encode' | 'metadata' }),
@@ -250,6 +268,7 @@ export function createWeixinPluginModule(createRuntime: RuntimeFactory = createW
         let qrPayload: string | undefined;
         return {
           actions: {
+            ...createConnectorPermissionActions(context.storage),
             'weixin.media-source.read': mediaSource.read,
             'weixin.media-source.settle': mediaSource.settle,
             'weixin.qr-generate': async () => {

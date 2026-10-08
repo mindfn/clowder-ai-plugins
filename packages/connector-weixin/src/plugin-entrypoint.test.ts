@@ -9,6 +9,9 @@ import type { WeixinConnectorRuntime, WeixinHostInboundMessage } from './runtime
 import type { WeixinAdapter } from './WeixinAdapter.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
+// Existing owner-configured policy in the Host fixture, never an activation default.
+const configuredPermissions = { revision: 1, value: { v: 1, whitelistEnabled: false, commandAdminOnly: false,
+  adminConfigured: true, adminOpenIds: [], allowedGroups: [] } };
 
 function delivery() {
   return {
@@ -93,7 +96,7 @@ test('provider media locator stays in private state while ingress emits only pmr
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => 'token' },
     storage: {
-      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      get: async key => key === 'connector.permissions.v1' ? configuredPermissions : state.get(key), list: async () => Object.fromEntries(state),
       set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
       compareAndSet: async (key, expectedRevision, value) => {
         if (expectedRevision !== null || state.has(key)) return { applied: false };
@@ -230,7 +233,7 @@ test('outbound attaches replyToSender metadata from the recorded inbound mapping
   const host: ModulePluginHostShape = {
     config: { get: async () => undefined }, secrets: { get: async () => 'token' },
     storage: {
-      get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      get: async key => key === 'connector.permissions.v1' ? configuredPermissions : state.get(key), list: async () => Object.fromEntries(state),
       set: async (key, value) => { const revision = (state.get(key)?.revision ?? 0) + 1; state.set(key, { revision, value }); return { revision }; },
       compareAndSet: async () => ({ applied: false }), delete: async key => ({ deleted: state.delete(key) }),
     },

@@ -50,6 +50,25 @@ function fakeAdapter() {
   };
 }
 
+test('private provider identity survives projection without group reply attribution', async (t) => {
+  const provider = fakeAdapter();
+  const delivered: Array<Record<string, unknown>> = [];
+  const runtime = createDingTalkConnectorRuntime({
+    config: { appKey: 'app', appSecret: 'secret' },
+    host: { deliver: async message => { delivered.push({ ...message }); } },
+    logger: silentLogger(), createAdapter: () => provider.adapter,
+  });
+  t.after(() => runtime.stop());
+  await runtime.start();
+  await provider.inbound({ chatId: 'direct-1', conversationId: 'conversation-1', senderId: 'admin-1',
+    messageId: 'direct-message', text: '/deny-group group-1', chatType: 'p2p' });
+  assert.equal(delivered[0]?.externalSenderId, 'admin-1');
+  assert.equal(delivered[0]?.sender, undefined);
+  await provider.inbound({ chatId: 'direct-1', conversationId: 'conversation-1', senderId: 'unknown',
+    messageId: 'unknown-message', text: '/deny-group group-1', chatType: 'p2p' });
+  assert.equal(delivered[1]?.externalSenderId, undefined);
+});
+
 test('runtime requires explicit declared credentials before provider construction', () => {
   let constructed = false;
   assert.throws(() => createDingTalkConnectorRuntime({
@@ -93,6 +112,7 @@ test('runtime emits provider facts and leaves binding resolution to the Host', a
     externalConversationId: 'group-1',
     providerConversationId: 'conversation-1',
     providerMessageId: 'message-1',
+    externalSenderId: 'user-1',
     text: '@cat is provider content, not wake authority',
     sender: { id: 'user-1', name: 'Resolved user' },
     chatType: 'group',

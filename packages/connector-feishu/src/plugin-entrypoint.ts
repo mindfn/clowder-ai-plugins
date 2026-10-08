@@ -1,4 +1,6 @@
 import {
+  createConnectorCommandBridge,
+  createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
@@ -14,6 +16,7 @@ import { renderTypedMediaNotice } from './media-notice.js';
 import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia } from './inbound-media-source.js';
 import { createConnectorLifecycleAction } from './lifecycle-action.js';
 import { createReplySenderMap } from './reply-sender-map.js';
+import { connectorCommandFacts } from './command-ingress.js';
 import {
   createFeishuConnectorRuntime,
   requireFeishuWebhookInput,
@@ -87,7 +90,7 @@ async function draft(context: FeatureContext, message: FeishuHostInboundMessage)
   return { messageDraft, ownership: retained.ownership };
 }
 
-async function createMessageBridge(context: FeatureContext) {
+async function createMessageBridge(context: FeatureContext, reply: (input: { readonly chatId: string; readonly group: boolean; readonly senderId?: string | undefined }, response: string, cardActions?: readonly { label: string; value: { cmd: string; args?: string } }[]) => Promise<void>) {
   const replySenders = createReplySenderMap(context);
   const subscriptions = new Map<string, Promise<void>>();
   const subscribe = (threadId: string): Promise<void> => {
@@ -102,26 +105,41 @@ async function createMessageBridge(context: FeatureContext) {
     return pending;
   };
   for (const binding of await context.threads.listBindings()) await subscribe(binding.threadId);
+  const routeCommand = createConnectorCommandBridge(context, {
+    connectorId: CONNECTOR_ID, identityId: IDENTITY_ID,
+    reply: (input, result) => reply(input, result.response, result.cardActions),
+    settle: async () => {},
+    async bindingChanged(change) {
+      if (change.threadId !== undefined) await subscribe(change.threadId);
+      if (change.previousThreadId !== undefined && change.previousThreadId !== change.threadId &&
+          !(await context.threads.listBindings()).some(binding => binding.threadId === change.previousThreadId)) {
+        await context.messaging.unsubscribe(change.previousThreadId);
+        subscriptions.delete(change.previousThreadId);
+      }
+    },
+  });
   return {
     async deliver(message: FeishuHostInboundMessage): Promise<void> {
-      const thread = await context.threads.ensureByKey(message.externalConversationId, { title: threadTitle(message) });
-      await subscribe(thread.id);
-      const prepared = await draft(context, message);
-      try {
-        const sent = await context.messaging.send(thread.id, prepared.messageDraft);
-        if (prepared.messageDraft.sender !== undefined) {
-          try {
-            await replySenders.record(sent.messageId, prepared.messageDraft.sender);
-          } catch (error) {
-            context.log('warn', 'Feishu reply-sender mapping record failed', {
-              errorName: error instanceof Error ? error.name : 'unknown',
-            });
+      await routeCommand(connectorCommandFacts(message), async () => {
+        const thread = await context.threads.ensureByKey(message.externalConversationId, { title: threadTitle(message) });
+        await subscribe(thread.id);
+        const prepared = await draft(context, message);
+        try {
+          const sent = await context.messaging.send(thread.id, prepared.messageDraft);
+          if (prepared.messageDraft.sender !== undefined) {
+            try {
+              await replySenders.record(sent.messageId, prepared.messageDraft.sender);
+            } catch (error) {
+              context.log('warn', 'Feishu reply-sender mapping record failed', {
+                errorName: error instanceof Error ? error.name : 'unknown',
+              });
+            }
           }
+        } catch (error) {
+          await releaseInboundMedia(context, prepared.ownership, error);
+          throw error;
         }
-      } catch (error) {
-        await releaseInboundMedia(context, prepared.ownership, error);
-        throw error;
-      }
+      });
     },
     async outbound(candidate: unknown) {
       const input = requireDelivery(candidate);
@@ -268,8 +286,12 @@ export function createFeishuPluginModule(
         // the runtime starts healthy and idle (no ingress) without them.
         const mode = modeValue === undefined ? 'webhook' : modeValue;
         if (mode !== 'webhook' && mode !== 'websocket') throw new TypeError('connectionMode must be webhook or websocket');
-        const bridge = await createMessageBridge(context);
-        const runtime = createRuntime({
+        let runtime!: FeishuConnectorRuntime<FeishuAdapter>;
+        const bridge = await createMessageBridge(context, (input, body, cardActions) => runtime.outbound.sendFormattedReply(input.chatId, {
+          header: 'Clowder AI', subtitle: '', body, footer: '', origin: 'callback',
+          ...(cardActions === undefined ? {} : { cardActions: cardActions.map(action => ({ label: action.label, value: { ...action.value } })) }),
+        }, input.group && input.senderId !== undefined ? { replyToSender: { id: input.senderId } } : undefined));
+        runtime = createRuntime({
           config: {
             appId: typeof appId === 'string' ? appId : '',
             appSecret: typeof appSecret === 'string' ? appSecret : '',
@@ -308,6 +330,7 @@ export function createFeishuPluginModule(
         const qrClient = createQrClient();
         return {
           actions: {
+            ...createConnectorPermissionActions(context.storage),
             'host.messaging.lifecycle': lifecycle,
             'feishu.media-source.read': mediaSource.read,
             'feishu.media-source.settle': mediaSource.settle,

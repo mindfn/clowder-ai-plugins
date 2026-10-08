@@ -23,6 +23,8 @@ export interface DingTalkHostInboundMessage {
   readonly externalConversationId: string;
   readonly providerConversationId: string;
   readonly providerMessageId: string;
+  /** Provider sender identity for admission; independent of group reply attribution. */
+  readonly externalSenderId?: string;
   readonly text: string;
   readonly attachments?: readonly DingTalkInboundAttachment[];
   readonly sender?: { readonly id: string; readonly name?: string };
@@ -98,6 +100,7 @@ function hostMessage(
     externalConversationId: message.chatId,
     providerConversationId: message.conversationId,
     providerMessageId: message.messageId,
+    ...(message.senderId === 'unknown' || message.senderId.trim() === '' ? {} : { externalSenderId: message.senderId }),
     text: message.text,
     chatType: message.chatType,
     ...(attachments === undefined ? {} : { attachments }),

@@ -1,4 +1,6 @@
 import {
+  createConnectorCommandBridge,
+  createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
@@ -13,6 +15,7 @@ import { renderTypedMediaNotice } from './media-notice.js';
 import { createInboundMediaSourceActions, releaseInboundMedia, retainInboundMedia } from './inbound-media-source.js';
 import { createConnectorLifecycleAction } from './lifecycle-action.js';
 import { createReplySenderMap } from './reply-sender-map.js';
+import { connectorCommandFacts } from './command-ingress.js';
 import {
   createWeComBotConnectorRuntime,
   type WeComBotConnectorRuntime,
@@ -72,7 +75,7 @@ async function draft(context: FeatureContext, message: WeComBotHostInboundMessag
   return { messageDraft, ownership: retained.ownership };
 }
 
-async function createMessageBridge(context: FeatureContext) {
+async function createMessageBridge(context: FeatureContext, reply: Parameters<typeof createConnectorCommandBridge>[1]['reply']) {
   const replySenders = createReplySenderMap(context);
   const subscriptions = new Map<string, Promise<void>>();
   const subscribe = (threadId: string): Promise<void> => {
@@ -87,26 +90,40 @@ async function createMessageBridge(context: FeatureContext) {
     return pending;
   };
   for (const binding of await context.threads.listBindings()) await subscribe(binding.threadId);
+  const routeCommand = createConnectorCommandBridge(context, {
+    connectorId: CONNECTOR_ID, identityId: IDENTITY_ID, reply,
+    settle: async () => {},
+    async bindingChanged(change) {
+      if (change.threadId !== undefined) await subscribe(change.threadId);
+      if (change.previousThreadId !== undefined && change.previousThreadId !== change.threadId &&
+          !(await context.threads.listBindings()).some(binding => binding.threadId === change.previousThreadId)) {
+        await context.messaging.unsubscribe(change.previousThreadId);
+        subscriptions.delete(change.previousThreadId);
+      }
+    },
+  });
   return {
     async deliver(message: WeComBotHostInboundMessage): Promise<void> {
-      const thread = await context.threads.ensureByKey(message.externalConversationId, { title: `WeCom ${message.externalConversationId}`.slice(0, 200) });
-      await subscribe(thread.id);
-      const prepared = await draft(context, message);
-      try {
-        const sent = await context.messaging.send(thread.id, prepared.messageDraft);
-        if (prepared.messageDraft.sender !== undefined) {
-          try {
-            await replySenders.record(sent.messageId, prepared.messageDraft.sender);
-          } catch (error) {
-            context.log('warn', 'WeCom bot reply-sender mapping record failed', {
-              errorName: error instanceof Error ? error.name : 'unknown',
-            });
+      await routeCommand(connectorCommandFacts(message), async () => {
+        const thread = await context.threads.ensureByKey(message.externalConversationId, { title: `WeCom ${message.externalConversationId}`.slice(0, 200) });
+        await subscribe(thread.id);
+        const prepared = await draft(context, message);
+        try {
+          const sent = await context.messaging.send(thread.id, prepared.messageDraft);
+          if (prepared.messageDraft.sender !== undefined) {
+            try {
+              await replySenders.record(sent.messageId, prepared.messageDraft.sender);
+            } catch (error) {
+              context.log('warn', 'WeCom bot reply-sender mapping record failed', {
+                errorName: error instanceof Error ? error.name : 'unknown',
+              });
+            }
           }
+        } catch (error) {
+          await releaseInboundMedia(context, prepared.ownership, error);
+          throw error;
         }
-      } catch (error) {
-        await releaseInboundMedia(context, prepared.ownership, error);
-        throw error;
-      }
+      });
     },
     async outbound(candidate: unknown) {
       const input = requireDelivery(candidate);
@@ -230,8 +247,10 @@ export function createWeComBotPluginModule(
         // activation-time snapshot and stay stale after a disconnect write-back.
         let adoptedBotId = initialBotId.trim();
         let adoptedBotSecret = initialBotSecret.trim();
-        const bridge = await createMessageBridge(context);
-        const runtime = createRuntime({
+        let runtime!: ReturnType<RuntimeFactory>;
+        const bridge = await createMessageBridge(context, (input, result) => runtime.outbound.sendFormattedReply(input.chatId,
+          { header: 'Clowder AI', body: result.response, origin: 'callback' }));
+        runtime = createRuntime({
           config: {
             botId: initialBotId,
             botSecret: initialBotSecret,
@@ -262,6 +281,7 @@ export function createWeComBotPluginModule(
         });
         return {
           actions: {
+            ...createConnectorPermissionActions(context.storage),
             'host.messaging.lifecycle': lifecycle,
             'wecom-bot.media-source.read': mediaSource.read,
             'wecom-bot.media-source.settle': mediaSource.settle,

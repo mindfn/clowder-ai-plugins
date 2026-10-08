@@ -55,6 +55,7 @@ test('manifest keeps the bot token secret and checkpoint authority out of packag
     'message.event.subscribe',
     'messaging.send',
     'secret.read',
+    'thread.readContent',
     'thread.listMetadata',
     'thread.write',
   ]);

@@ -193,6 +193,9 @@ export type {
   PluginTaskUpdateInput,
   PluginThreadBindingSummary,
   PluginThreadHost,
+  PluginThreadMessage,
+  PluginThreadCat,
+  PluginThreadCats,
   PluginThreadSummary,
 } from './module-host.js';
 
@@ -204,3 +207,6 @@ export {
   type ConnectorOutboundMedia,
   type ConnectorPresentation,
 } from './connector-runtime.js';
+
+export { createConnectorPermissionActions } from './connector-permission-actions.js';
+export { createConnectorCommandBridge } from './connector-command-bridge.js';
