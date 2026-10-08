@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, readFile, realpath } from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath, unlink } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extensionDigest, extensionFiles } from '../dist/extension-delivery.js';
@@ -7,7 +7,7 @@ import { prepareRuntimeDelivery } from '../dist/runtime-delivery.js';
 import { inspectNativeHostInstallation, installNativeHost, uninstallNativeHost } from './install-host.mjs';
 import { manifestLocation, PERSONAL_CHROME_NATIVE_HOST_NAME } from './native-host-install-contract.mjs';
 import { resolvePersonalChromeHostPaths } from './pairing-record.mjs';
-import { acquireProcessLease } from './native-socket-lease.mjs';
+import { acquireProcessLease, acquireInactiveSocketLease } from './native-socket-lease.mjs';
 
 const extensionDirectory = fileURLToPath(new URL('../extension/', import.meta.url));
 const FIELDS = new Set(['operation', 'projectRoot', 'homeDirectory']);
@@ -58,6 +58,7 @@ async function identity() {
 
 function failureCode(error) {
   if (error.code === 'EACCES' || error.code === 'EPERM') return 'PERMISSION_DENIED';
+  if (error.message?.includes('socket already has a live owner')) return 'HELPER_ACTIVE';
   if (error.message?.includes('already has a live owner')) return 'INSTALLATION_BUSY';
   if (error.message?.includes('helper is active')) return 'HELPER_ACTIVE';
   return 'INVALID_INSTALLATION';
@@ -72,6 +73,7 @@ export async function runPersonalChromeSetup(request) {
   const extensionId = await identity();
   const projection = { extensionId, extensionPath };
   let registrationLease;
+  let socketLease;
   try {
     const { manifestPath } = manifestLocation({ platform: process.platform, homeDirectory: options.homeDirectory });
     await guardDestination(options.projectRoot, paths.rootDirectory);
@@ -81,13 +83,13 @@ export async function runPersonalChromeSetup(request) {
       if (await metadata(paths.rootDirectory)) await guardDestination(paths.rootDirectory, path);
     }
     if (request.operation !== 'inspect') {
-      if (await metadata(paths.socketPath) || await metadata(`${paths.socketPath}.owner`)) {
-        return { ...projection, status: 'invalid_installation', errorCode: 'HELPER_ACTIVE' };
-      }
       // Native registration is per browser user, while the existing installer lease is per project.
       // Serialize product setup across projects before checking registration ownership.
       await mkdir(dirname(manifestPath), { recursive: true, mode: 0o700 });
       registrationLease = await acquireProcessLease(`${manifestPath}.setup`, { label: 'native registration' });
+      // Keep the helper's own socket fence through activation, delivery and cleanup.
+      // An existence check alone races a Chrome-triggered helper startup.
+      socketLease = await acquireInactiveSocketLease(paths.socketPath);
     }
     const existingManifest = await metadata(manifestPath);
     if (existingManifest) {
@@ -98,7 +100,12 @@ export async function runPersonalChromeSetup(request) {
       }
     }
     if (request.operation === 'uninstall') {
-      if (await metadata(paths.rootDirectory)) await uninstallNativeHost({ ...options, retainAuthorizations: true });
+      if (await metadata(paths.rootDirectory)) {
+        await uninstallNativeHost({ ...options, retainAuthorizations: true, socketLease });
+      } else if (existingManifest) {
+        // Ownership was checked above while holding both registration and helper fences.
+        await unlink(manifestPath);
+      }
       return { ...projection, status: 'not_installed' };
     }
     if (request.operation === 'install') {
@@ -125,7 +132,8 @@ export async function runPersonalChromeSetup(request) {
   } catch (error) {
     return { ...projection, status: 'invalid_installation', errorCode: failureCode(error) };
   } finally {
-    await registrationLease?.release();
+    try { await socketLease?.release(); }
+    finally { await registrationLease?.release(); }
   }
 }
 

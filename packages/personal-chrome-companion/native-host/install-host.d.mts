@@ -36,7 +36,11 @@ export function installNativeHost(options: NativeHostInstallOptions & {
   writePairingRecord?: (path: string, record: NativeHostPairingRecord) => Promise<unknown>;
 }): Promise<NativeHostInstallReceipt>;
 export function inspectNativeHostInstallation(options: NativeHostInstallOptions): Promise<NativeHostInstallReceipt>;
-export function uninstallNativeHost(options: NativeHostInstallOptions & { retainAuthorizations?: boolean }): Promise<{
+export function uninstallNativeHost(options: NativeHostInstallOptions & {
+  retainAuthorizations?: boolean;
+  /** Must be an unreleased acquireInactiveSocketLease fence for this project's socket. */
+  socketLease?: { release(): Promise<void> };
+}): Promise<{
   status: 'absent'; operation: 'uninstalled'; rootDirectory: string; manifestPath: string;
   pairingRecordPath: string; launcherPath: string; ledgerRetained: boolean; conversationBindingRemoved: boolean;
 }>;

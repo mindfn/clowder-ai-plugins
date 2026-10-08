@@ -53,7 +53,11 @@ action with INVALID_REQUEST. No raw exception text or pairing content is exposed
 Install is an explicit retry/repair of this installation. A valid pairing secret,
 socket identity and user state are preserved. Corrupt pairing is never silently
 rotated. A foreign registration is never overwritten. Mutation uses existing
-installer/delivery leases and activation rollback. If extension delivery fails
+installer/delivery leases and activation rollback. It holds the helper's original
+socket lease across the whole mutation, so even an earlier helper package cannot
+start while setup changes activation files. An owned browser registration is
+removed on uninstall even if project-side activation files have been lost.
+If extension delivery fails
 after helper activation, setup remains incomplete and retryable, not connected.
 
 Uninstall refuses an active helper and foreign registration. It removes only this

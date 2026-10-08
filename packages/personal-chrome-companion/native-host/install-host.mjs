@@ -29,7 +29,7 @@ import {
   restoreFileSnapshot,
   writeAtomicFile,
 } from './native-host-install-files.mjs';
-import { acquireProcessLease } from './native-socket-lease.mjs';
+import { acquireProcessLease, acquireInactiveSocketLease, assertInactiveSocketLeaseHeld } from './native-socket-lease.mjs';
 import {
   readPersonalChromePairingRecord,
   resolvePersonalChromeHostPaths,
@@ -315,9 +315,6 @@ async function uninstallNativeHostLocked({
   retainAuthorizations = false,
   paths,
 }) {
-  if ((await pathExists(paths.socketPath)) || (await pathExists(`${paths.socketPath}.owner`))) {
-    throw new Error('personal Chrome helper is active; stop Chrome before uninstall');
-  }
   const location = manifestLocation({ platform, homeDirectory, localAppData, userDataDirectory });
   if (await pathExists(location.manifestPath)) {
     const manifest = await readManifest(location.manifestPath);
@@ -348,7 +345,13 @@ export async function uninstallNativeHost(options = {}) {
   const { platform = process.platform } = options;
   assertInstallMutationSupported(platform);
   const paths = resolvePersonalChromeHostPaths(options.projectRoot);
-  return runInstallationMutation(paths, platform, () => uninstallNativeHostLocked({ ...options, platform, paths }));
+  const socketLease = options.socketLease ?? await acquireInactiveSocketLease(paths.socketPath);
+  assertInactiveSocketLeaseHeld(socketLease, paths.socketPath);
+  try {
+    return await runInstallationMutation(paths, platform, () => uninstallNativeHostLocked({ ...options, platform, paths }));
+  } finally {
+    if (!options.socketLease) await socketLease.release();
+  }
 }
 function argumentValue(name) {
   const index = process.argv.indexOf(name);

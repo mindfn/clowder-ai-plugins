@@ -427,8 +427,8 @@
             "packageName": "@clowder-ai/personal-chrome-companion",
             "version": "0.1.0-alpha.3",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/personal-chrome-companion/-/personal-chrome-companion-0.1.0-alpha.3.tgz",
-            "integrity": "sha512-f7bLvUUuB/CGfeYQlfR5zYN4R3T8rp23cB3pV/TXxUT6iiS9/nXPcXB6c8ldXcJJZZxb+NwXn3vXhT7xpw63KQ==",
-            "shasum": "24fca33037bef705214199fbe722dc8ddd0ff223",
+            "integrity": "sha512-oOGoZ9mrI81a5onZcOEmakBeyiSkNXrEahGn9bLmhAViR2+Ut+CPx82mAVHaUda7BDxFDZtsSpRDjaMwKVS2nw==",
+            "shasum": "e8958a1e6e251deb6b04525266715da77325f475",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/personal-chrome-companion"

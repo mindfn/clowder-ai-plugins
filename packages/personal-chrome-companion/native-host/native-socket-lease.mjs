@@ -3,6 +3,7 @@ import { link, lstat, readFile, unlink, writeFile } from 'node:fs/promises';
 import { connect } from 'node:net';
 
 const SOCKET_PROBE_TIMEOUT_MS = 1_000;
+const heldSocketLeases = new WeakMap();
 
 function sameSocketIdentity(left, right) {
   return left.dev === right.dev && left.ino === right.ino;
@@ -95,8 +96,36 @@ export async function acquireProcessLease(resourcePath, { label = 'resource' } =
   };
 }
 
-export function acquireSocketLease(socketPath) {
-  return acquireProcessLease(socketPath, { label: 'socket' });
+export async function acquireSocketLease(socketPath) {
+  const processLease = await acquireProcessLease(socketPath, { label: 'socket' });
+  const lease = {
+    async release() {
+      heldSocketLeases.delete(lease);
+      await processLease.release();
+    },
+  };
+  return lease;
+}
+
+/** Only an unreleased, inactive-socket fence can be reused by a nested mutation. */
+export function assertInactiveSocketLeaseHeld(lease, socketPath) {
+  if (heldSocketLeases.get(lease) !== socketPath) throw new Error('invalid held socket lease');
+}
+
+/** Shares the helper's original fence, including helpers from earlier packages. */
+export async function acquireInactiveSocketLease(socketPath) {
+  const lease = await acquireSocketLease(socketPath);
+  try {
+    let socket;
+    try { socket = await lstat(socketPath); }
+    catch (error) { if (error?.code !== 'ENOENT') throw error; }
+    if (socket) throw new Error('personal Chrome helper is active; stop Chrome before setup');
+    heldSocketLeases.set(lease, socketPath);
+    return lease;
+  } catch (error) {
+    await lease.release();
+    throw error;
+  }
 }
 
 async function socketIdentity(socketPath) {
