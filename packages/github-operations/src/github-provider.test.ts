@@ -2,8 +2,36 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { GitHubProvider } from './github-provider.js';
 import type { GitHubRequestOptions } from './business/infrastructure/github/request-budget.js';
+import { publicationBody, type NativeIssueDraft } from './native-issue-drafts.js';
 
 const target = { kind: 'pr' as const, repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
+
+test('native publisher uses a single gh POST and reconciles exact own issue content, never a forged marker alone', async () => {
+  const draft: NativeIssueDraft = { id: 'a'.repeat(64), repo: 'example/project', title: 'Issue', bodyMarkdown: 'Public text',
+    marker: '353d5833-14ea-4aab-8040-333d80ec7de3', status: 'publishing', createdAt: 1 };
+  const calls: string[][] = [];
+  let duplicate = false;
+  const provider = new GitHubProvider({ token: async () => 'fake-publish-token', log: { warn() {} }, execFileAsync: async (file, args) => {
+    assert.equal(file, 'gh'); calls.push(args);
+    if (args.includes('POST')) {
+      assert.ok(args.includes('--hostname') && args.includes('github.com'), 'public issue transport must not inherit GH_HOST');
+      assert.ok(args.includes(`body=${publicationBody(draft)}`));
+      return { stdout: JSON.stringify({ number: 7, html_url: 'https://github.com/example/project/issues/7' }) };
+    }
+    if (args[1] === 'user') return { stdout: 'owner' };
+    assert.ok(args[1]?.startsWith('https://api.github.com/repos/'), 'reconciliation must use the same fixed provider');
+    const exact = { number: 7, html_url: 'https://github.com/example/project/issues/7', title: draft.title, body: publicationBody(draft), user: { login: 'owner' } };
+    return { stdout: [exact, { ...exact, number: 8, user: { login: 'stranger' } }, { ...exact, number: 9, title: 'tampered' },
+      { ...exact, number: 10, pull_request: {} }, ...(duplicate ? [{ ...exact, number: 11 }] : [])].map(value => JSON.stringify(value)).join('\n') };
+  } });
+  const signal = new AbortController().signal;
+  const issue = await provider.create(draft, signal);
+  assert.deepEqual(await provider.find(draft, signal), issue);
+  duplicate = true;
+  await assert.rejects(provider.find(draft, signal), /multiple/);
+  assert.equal(calls.filter(args => args.includes('POST')).length, 1);
+  assert.ok(calls.some(args => args[1]?.includes('state=all&creator=owner')));
+});
 
 test('cloud observation fetches complete paginated comment history and retains review correlation after notification cursors advance', async () => {
   const calls: string[] = [];

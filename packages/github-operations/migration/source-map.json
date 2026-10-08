@@ -211,7 +211,16 @@
       "target": "packages/github-operations/src/business/domains/community/github/GitHubIssuePublisher.ts",
       "sourceSha256": "58c9b1c6bb308db82bbbf64892787971cc4d3acc777fc083e9dbe9243e22349e",
       "lines": 105,
-      "disposition": "copied-unadapted"
+      "disposition": "replaced-native-publication-transport",
+      "removedPackageCopy": true,
+      "reason": "Ruling404: legacy userId/confirmed source records stay in Host. Native installation-private drafts use generic owner-local operation, durable attempt journal and gh transport; no legacy adoption.",
+      "replacement": [
+        "packages/github-operations/src/native-issue-drafts.ts",
+        "packages/github-operations/src/github-provider.ts"
+      ],
+      "packageBusinessMoved": "native draft only; legacy admission retained",
+      "realPackageReplacementVerified": "builtin/fake-gh publication, restart recovery and isolation tests; Host installation/cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/github/GitHubPrFetcher.ts",
@@ -232,14 +241,32 @@
       "target": "packages/github-operations/src/business/domains/community/issue-analysis/FrustrationIssueSourceAdapter.ts",
       "sourceSha256": "fb25eaec75e8cfa799da8c3f5d5dbf23aa834093048b0cb1292094e6f9a175fa",
       "lines": 148,
-      "disposition": "copied-unadapted"
+      "disposition": "host-retained-legacy-draft-consumer",
+      "removedPackageCopy": true,
+      "reason": "Ruling404: legacy userId/confirmed source records stay in Host. Native installation-private drafts use generic owner-local operation, durable attempt journal and gh transport; no legacy adoption.",
+      "replacement": [
+        "packages/github-operations/src/native-issue-drafts.ts",
+        "packages/github-operations/src/github-provider.ts"
+      ],
+      "packageBusinessMoved": "native draft only; legacy admission retained",
+      "realPackageReplacementVerified": "builtin/fake-gh publication, restart recovery and isolation tests; Host installation/cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/issue-analysis/community-issue-preview-card-builder.ts",
       "target": "packages/github-operations/src/business/domains/community/issue-analysis/community-issue-preview-card-builder.ts",
       "sourceSha256": "bb1ca393226aeeaf6c67a961494bcd0873752c0ef11a42e50d6651ff302ab0c6",
       "lines": 75,
-      "disposition": "copied-unadapted"
+      "disposition": "host-retained-legacy-draft-consumer",
+      "removedPackageCopy": true,
+      "reason": "Ruling404: legacy userId/confirmed source records stay in Host. Native installation-private drafts use generic owner-local operation, durable attempt journal and gh transport; no legacy adoption.",
+      "replacement": [
+        "packages/github-operations/src/native-issue-drafts.ts",
+        "packages/github-operations/src/github-provider.ts"
+      ],
+      "packageBusinessMoved": "native draft only; legacy admission retained",
+      "realPackageReplacementVerified": "builtin/fake-gh publication, restart recovery and isolation tests; Host installation/cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/issue-analysis/issue-comment-classifier.ts",

@@ -91,6 +91,27 @@ fields, including corrupt historical records, rather than preserving them.
 
 ## Explicitly unfinished
 
+Ruling404 (`0001791455995015-000404-4cd051be`) keeps old Host draft ownership,
+from-frustration confirmation and recovery routes in Host. New private drafts
+use `github.draft.create/get` tools and `issueDrafts` Settings operation. They
+do not adopt a payload userId/confirmed or old storage records. The old copied
+draft store/model/source adapter/card builder and direct-fetch publisher were
+removed from the package; source-map records their retained/replaced disposition.
+The previous isolated SDK legacy-draft test is superseded by native carrier,
+storage/concurrency and fake-gh recovery tests; the frozen 181 tests are unchanged.
+
+| Slice | Business moved | Real package replacement verified | Host legacy removed |
+| --- | --- | --- | --- |
+| Provider board observations | Journal-only bounded read model | Builtin source carrier only | No |
+| Public text preview | Existing pure sanitizer | Builtin source carrier only | No |
+| Native draft publishing | Private storage, allowlist, owner operation, attempt journal | Builtin/fake provider and gh transport only; real Host consumption pending | No |
+| Legacy draft and from-frustration | Retained Host authenticated consumer | No adoption or replacement claimed | No |
+
+Publication response loss deliberately leaves an uncertain record. Retry performs
+only GET reconciliation; absent, changed, duplicate or differently authored
+provider evidence never authorizes another POST. No real external issue was
+created during these checks. Published/cancelled native history has no TTL.
+
 - Complete source-to-runtime business comparison and wider corrupted-state/event
   convergence audit.
 - Legacy state copy/verify and historical cursor migration; no old state deleted.

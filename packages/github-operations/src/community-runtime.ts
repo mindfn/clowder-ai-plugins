@@ -18,6 +18,7 @@ import { classifyIssueComment } from './business/domains/community/issue-analysi
 import { createGitHubFeedbackFilter } from './business/infrastructure/email/github-feedback-filter.js';
 import { createSetupNoiseFilter } from './business/infrastructure/email/setup-noise-filter.js';
 import { ExternalReviewCoordinator } from './business/domains/community/external-review/ExternalReviewCoordinator.js';
+import { providerObservation } from './community-read-model.js';
 
 export interface RepoSubject {
   kind: 'pr' | 'issue'; number: number; title: string; url: string;
@@ -136,6 +137,32 @@ export class CommunityRuntime {
     });
   }
   unregister(repo: string): Promise<boolean> { return this.serialize(() => this.configs.deleteByRepo(repo)); }
+
+  inspectRepository(value: unknown) {
+    return this.serialize(async () => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('repository inspection input required');
+      const input = value as Record<string, unknown>;
+      if (Object.keys(input).some(key => !['repo', 'after', 'limit'].includes(key))) throw new TypeError('unsupported repository inspection field');
+      if (typeof input.repo !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(input.repo)) throw new TypeError('invalid repository');
+      const repo = input.repo.toLowerCase();
+      const limit = input.limit ?? 50;
+      if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new TypeError('invalid pagination');
+      if (input.after !== undefined && (typeof input.after !== 'string' ||
+        !/^(?:pr|issue):[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#[1-9][0-9]*$/.test(input.after) ||
+        !input.after.toLowerCase().replace(/^(?:pr|issue):/, '').startsWith(repo + '#'))) throw new TypeError('invalid repository cursor');
+      const after = typeof input.after === 'string' ? input.after.toLowerCase() : '';
+      const subjects = (await this.events.listSubjects()).filter(subject =>
+        (subject.startsWith(`pr:${repo}#`) || subject.startsWith(`issue:${repo}#`)) && subject > after).sort();
+      const selected = subjects.slice(0, limit);
+      const items = [];
+      for (const subject of selected) {
+        this.lifetime.signal.throwIfAborted();
+        items.push(providerObservation(subject, await this.events.read(subject), await this.objects.get(subject)));
+      }
+      return { data: { repo, items, nextAfter: subjects.length > limit ? selected.at(-1)! : null,
+        provenance: 'installation-private-provider-observations' } };
+    });
+  }
 
   inspectSubject(value: unknown) {
     return this.serialize(async () => {

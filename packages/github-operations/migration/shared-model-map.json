@@ -718,7 +718,17 @@
           "lastLine": 100,
           "sha256": "1da56a9175cc2dd16b25abbf10de741540ffa0a33920855bc55fa530af73f01b"
         }
-      ]
+      ],
+      "disposition": "host-retained-legacy-draft-consumer",
+      "removedPackageCopy": true,
+      "reason": "Ruling404: legacy userId/confirmed source records stay in Host. Native installation-private drafts use generic owner-local operation, durable attempt journal and gh transport; no legacy adoption.",
+      "replacement": [
+        "packages/github-operations/src/native-issue-drafts.ts",
+        "packages/github-operations/src/github-provider.ts"
+      ],
+      "packageBusinessMoved": "native draft only; legacy admission retained",
+      "realPackageReplacementVerified": "builtin/fake-gh publication, restart recovery and isolation tests; Host installation/cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/shared/src/types/connector.ts",

@@ -9,9 +9,130 @@ import type { GitHubSnapshot } from './tracking-runtime.js';
 import type { RepoSubject } from './community-runtime.js';
 import { SdkCommunityEventLog } from './business/domains/community/CommunityEventLog.js';
 import { SdkCommunityObjectStore } from './business/domains/community/CommunityObjectStore.js';
+import { validateManifest, validateOperationRowsResult } from '@clowder-ai/plugin-contract';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
 const target = { kind: 'pr', repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
+
+test('native draft owner operation publishes once and recovers partial success after restart', async () => {
+  const f = host();
+  f.runtimeHost.config.get = async key => key === 'publishRepositories' ? 'example/project' : undefined;
+  let creates = 0;
+  let published: { number: number; url: string } | null = null;
+  const module = createGitHubPluginModule({ createIssuePublisher: () => ({
+    create: async () => { creates++; published = { number: 91, url: 'https://github.com/example/project/issues/91' }; return published; },
+    find: async () => published,
+  }) });
+  let active = await module.create(manifest).start(f.runtimeHost);
+  const create = manifest.contributions.find((c: { id: string }) => c.id === 'create-issue-draft');
+  assert.ok(create, 'native drafts must have a real package tool');
+  const input = { requestId: 'source-one', repo: 'example/project', title: 'Bug', bodyMarkdown: 'Observed /Users/private/file' };
+  const draft = await active.actions[create.action.method]!(input) as { data: { id: string; bodyMarkdown: string } };
+  assert.equal(draft.data.bodyMarkdown, 'Observed [redacted]');
+  assert.deepEqual(await active.actions[create.action.method]!(input), draft);
+  const operation = manifest.configuration.find((c: { key: string }) => c.key === 'issueDrafts');
+  const publish = operation.actions.find((a: { id: string }) => a.id === 'publish');
+  assert.equal(validateManifest(manifest).valid, true);
+  const rows = await active.actions['github.draft.list']!({}) as { data: unknown };
+  assert.equal(validateOperationRowsResult(operation, rows.data).valid, true);
+  assert.ok(publish.confirm, 'external publication requires explicit owner UX confirmation');
+  assert.ok(!manifest.contributions.some((c: { action?: { method: string } }) => c.action?.method === publish.action.method), 'publish must not be a general tool');
+  const cas = f.runtimeHost.storage.compareAndSet;
+  let broken = true;
+  f.runtimeHost.storage.compareAndSet = async (key, revision, value) => {
+    if (broken && key.startsWith('community.native-draft.') && (value as { status?: string }).status === 'published') throw new Error('disk unavailable');
+    return cas(key, revision, value);
+  };
+  await assert.rejects(async () => active.actions[publish.action.method]!({ input: { draftId: draft.data.id, token: 'stored-secret' } }), /disk unavailable/);
+  assert.equal(creates, 1);
+  await active.stop();
+  broken = false;
+  active = await module.create(manifest).start(f.runtimeHost);
+  const result = await active.actions[publish.action.method]!({ input: { draftId: draft.data.id } }) as { data: { status: string; issue: unknown } };
+  assert.equal(result.data.status, 'published');
+  assert.deepEqual(result.data.issue, published);
+  await active.actions[publish.action.method]!({ input: { draftId: draft.data.id } });
+  assert.equal(creates, 1);
+  await assert.rejects(async () => active.actions[create.action.method]!({ ...input, userId: 'owner' }), /unsupported/);
+  await assert.rejects(async () => active.actions[create.action.method]!({ ...input, requestId: 'other', repo: 'other/project' }), /allowlist/);
+  await active.stop();
+});
+
+test('native draft ambiguous publication never retries POST, and stop waits for provider cleanup', async () => {
+  const f = host();
+  f.runtimeHost.config.get = async () => 'example/project';
+  let creates = 0;
+  let release!: () => void;
+  let started!: () => void;
+  const begin = new Promise<void>(resolve => { started = resolve; });
+  const cleanup = new Promise<void>(resolve => { release = resolve; });
+  const module = createGitHubPluginModule({ createIssuePublisher: () => ({
+    create: async (_draft, signal) => {
+      creates++; started();
+      await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
+      await cleanup;
+      throw new Error('response lost');
+    },
+    find: async () => null,
+  }) });
+  let active = await module.create(manifest).start(f.runtimeHost);
+  const draft = await active.actions['github.draft.create']!({ requestId: 'stop-case', repo: 'example/project', title: 'Issue', bodyMarkdown: '' }) as { data: { id: string } };
+  const pending = Promise.resolve(active.actions['github.draft.publish']!({ input: { draftId: draft.data.id } })).catch(() => undefined);
+  await begin;
+  let stopped = false;
+  const stop = Promise.resolve(active.stop()).then(() => { stopped = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(stopped, false);
+  release(); await pending; await stop;
+  active = await module.create(manifest).start(f.runtimeHost);
+  const result = await active.actions['github.draft.publish']!({ input: { draftId: draft.data.id } }) as { data: { status: string } };
+  assert.equal(result.data.status, 'uncertain');
+  assert.equal(creates, 1);
+  await active.stop();
+});
+
+test('generic repository observations include journal-only subjects with bounded stable pages and no governance actions', async () => {
+  const f = host();
+  const events = new SdkCommunityEventLog(f.runtimeHost.storage);
+  for (const [number, kind] of [[1, 'issue.opened'], [2, 'issue.closed'], [3, 'pr.merged']] as const) {
+    const type = kind.startsWith('issue') ? 'issue' : 'pr';
+    await events.append({ sourceEventId: `board:${number}`, subjectKey: `${type}:example/project#${number}`,
+      kind, classification: 'state-changing', at: number, payload: { title: `Subject ${number}` } });
+  }
+  const active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+  const tool = manifest.contributions.find((value: { id: string }) => value.id === 'repository-observations');
+  assert.ok(tool, 'provider board read model must be reachable from its package contribution');
+  const call = active.actions[tool.action.method]!;
+  const first = await call({ repo: 'example/project', limit: 2 }) as { data: { items: { subjectKey: string; state: string; title: string }[]; nextAfter: string | null } };
+  assert.deepEqual(first.data.items.map(item => [item.subjectKey, item.state, item.title]), [
+    ['issue:example/project#1', 'open', 'Subject 1'], ['issue:example/project#2', 'closed', 'Subject 2'],
+  ]);
+  const second = await call({ repo: 'example/project', after: first.data.nextAfter, limit: 2 }) as typeof first;
+  assert.equal(second.data.items[0]?.state, 'merged');
+  assert.equal(second.data.nextAfter, null);
+  assert.doesNotMatch(JSON.stringify([first, second]), /ownerThreadId|assignedCatId|actionLease|recommendedActions|automationState/);
+  await assert.rejects(async () => call({ repo: 'example/project', limit: 101 }), /pagination/);
+  await assert.rejects(async () => call({ repo: 'example/project', after: 'pr:other/project#1' }), /cursor/);
+  assert.equal(f.deliveries.length, 0);
+  await active.stop();
+});
+
+test('generic public draft preview sanitizes without claiming owner identity, saving a draft or publishing', async () => {
+  const f = host();
+  const active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+  const tool = manifest.contributions.find((value: { id: string }) => value.id === 'preview-issue');
+  assert.ok(tool, 'sanitization must be available through the real package');
+  const before = await f.runtimeHost.storage.list();
+  const preview = await active.actions[tool.action.method]!({ title: 'Issue thread_secret123', bodyMarkdown: 'Error at /Users/private/file' }) as { data: { title: string; bodyMarkdown: string; saved: boolean; published: boolean } };
+  assert.equal(preview.data.title, 'Issue [redacted]');
+  assert.equal(preview.data.bodyMarkdown, 'Error at [redacted]');
+  assert.equal(preview.data.saved, false);
+  assert.equal(preview.data.published, false);
+  await assert.rejects(async () => active.actions[tool.action.method]!({ title: 'Issue', bodyMarkdown: '', userId: 'owner' }), /unsupported/);
+  assert.deepEqual(await f.runtimeHost.storage.list(), before);
+  assert.equal(f.deliveries.length, 0);
+  await active.stop();
+});
 
 for (const path of ['repo-scan', 'repo-comment-poll', 'webhook'] as const) test(`${path} retries durable append / failed projection without dropping events or duplicating notifications`, async () => {
   const f = host();

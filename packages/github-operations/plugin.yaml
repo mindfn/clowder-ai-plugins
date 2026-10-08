@@ -10,6 +10,34 @@ icon:
   type: svg
   src: assets/icon.svg
 configuration:
+  - key: publishRepositories
+    label: Repositories allowed for public issue drafts
+    description: Comma-separated owner/repository names. Empty disables issue publishing.
+    kind: string
+    required: false
+  - key: issueDrafts
+    label: Plugin-native issue drafts
+    description: Review sanitized drafts before publishing. Legacy Host drafts remain in their existing entry point.
+    kind: operation
+    required: false
+    actions:
+      - id: list
+        label: Drafts
+        render: status
+        resultRender: rows
+        action: { method: github.draft.list }
+      - id: publish
+        label: Publish or recover publication
+        render: row
+        confirm: Publish this sanitized draft to its GitHub repository? If publication already started, only check its existing outcome.
+        action: { method: github.draft.publish }
+        next: list
+      - id: cancel
+        label: Cancel draft
+        render: row
+        confirm: Cancel this unpublished draft? Its history will remain stored.
+        action: { method: github.draft.cancel }
+        next: list
   - key: webhookSecret
     label: GitHub Webhook Secret
     kind: secret
@@ -31,6 +59,56 @@ configuration:
     kind: string
     required: false
 contributions:
+  - type: tool
+    id: get-issue-draft
+    name: github_get_issue_draft
+    description: Read the complete sanitized draft and its publication outcome by ID, including retained cancelled or published records. Does not publish.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      required: [draftId]
+      properties:
+        draftId: { type: string, pattern: '^[a-f0-9]{64}$' }
+    action: { method: github.draft.get }
+  - type: tool
+    id: create-issue-draft
+    name: github_create_issue_draft
+    description: Save sanitized public issue text as an installation-private draft. Publishing requires the owner-confirmed Settings action. Cannot import legacy Host ownership or confirmation.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      required: [requestId, repo, title, bodyMarkdown]
+      properties:
+        requestId: { type: string, pattern: '^[A-Za-z0-9_.:-]{1,128}$' }
+        repo: { type: string, pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' }
+        title: { type: string, minLength: 1, maxLength: 256 }
+        bodyMarkdown: { type: string, maxLength: 65536 }
+    action: { method: github.draft.create }
+  - type: tool
+    id: repository-observations
+    name: github_repository_observations
+    description: Read a bounded page of locally collected provider observations, including webhook-only subjects. No network fetch, governance verdict, assignment or closure action.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      required: [repo]
+      properties:
+        repo: { type: string, pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' }
+        after: { type: string }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+    action: { method: github.repository.observations }
+  - type: tool
+    id: preview-issue
+    name: github_preview_issue
+    description: Sanitize explicitly supplied public issue text for preview. Does not save a draft, authenticate its owner, or publish to GitHub.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      required: [title, bodyMarkdown]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 256 }
+        bodyMarkdown: { type: string, maxLength: 65536 }
+    action: { method: github.issue.preview }
   - type: skill
     id: github-operations
     path: skills/github-operations
@@ -201,6 +279,10 @@ features:
     name: GitHub collaboration operations
     resources: []
     contributions:
+      - { type: tool, id: get-issue-draft }
+      - { type: tool, id: create-issue-draft }
+      - { type: tool, id: repository-observations }
+      - { type: tool, id: preview-issue }
       - { type: skill, id: github-operations }
       - { type: webhook, id: repository-events }
       - { type: tool, id: list-repository }

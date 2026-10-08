@@ -8,6 +8,7 @@ import { fetchGitHubReviewThreads } from './business/infrastructure/github/fetch
 import type { GitHubComment, GitHubReview, GitHubSnapshot, GitHubTarget, GitHubTrackingProvider } from './tracking-runtime.js';
 import type { CommunityProvider, RepoSubject } from './community-runtime.js';
 import type { RepoIssueComment } from './business/infrastructure/connectors/github-repo-event/RepoCommentPollTaskSpec.js';
+import { publicationBody, type NativeIssueDraft, type NativeIssuePublisher, type PublishedIssue } from './native-issue-drafts.js';
 
 interface ApiComment {
   id: number; user: { login: string; type?: string }; body?: string;
@@ -35,7 +36,7 @@ function ciOptions(options: GitHubRequestOptions): FetchPrCiStatusOptions {
 }
 
 /** Real gh JSON transport, retaining the migrated quota, pagination and child-close handling. */
-export class GitHubProvider implements GitHubTrackingProvider, CommunityProvider {
+export class GitHubProvider implements GitHubTrackingProvider, CommunityProvider, NativeIssuePublisher {
   private login: string | undefined;
   constructor(private readonly options: {
     token(): Promise<string | undefined>;
@@ -44,6 +45,26 @@ export class GitHubProvider implements GitHubTrackingProvider, CommunityProvider
   }) {}
 
   selfLogin(): string | undefined { return this.login; }
+
+  async create(draft: NativeIssueDraft, signal: AbortSignal): Promise<PublishedIssue> {
+    const options = await this.requestOptions(signal);
+    // One invocation, no POST retries. The caller durably records the attempt
+    // before reaching this transport and reconciles ambiguous results by GET.
+    const value = JSON.parse((await executeGitHubRequest(['api', `/repos/${draft.repo}/issues`, '--hostname', 'github.com', '--method', 'POST',
+      '--raw-field', `title=${draft.title}`, '--raw-field', `body=${publicationBody(draft)}`], options)).stdout);
+    return { number: value.number, url: value.html_url };
+  }
+
+  async find(draft: NativeIssueDraft, signal: AbortSignal): Promise<PublishedIssue | null> {
+    const options = await this.requestOptions(AbortSignal.any([signal, AbortSignal.timeout(30_000)]));
+    const login = (await executeGitHubRequest(['api', 'user', '--hostname', 'github.com', '--jq', '.login'], options)).stdout.trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(login)) throw new Error('GitHub account unavailable for publication reconciliation');
+    const issues = await fetchPaginated(`https://api.github.com/repos/${draft.repo}/issues?state=all&creator=${encodeURIComponent(login)}`, options);
+    const matches = issues.filter(value => !value.pull_request && value.user?.login?.toLowerCase() === login.toLowerCase() &&
+      value.title === draft.title && value.body === publicationBody(draft));
+    if (matches.length > 1) throw new Error('multiple issues match the publication marker');
+    return matches.length === 1 ? { number: matches[0].number, url: matches[0].html_url } : null;
+  }
 
   async forCiBatch(targets: readonly GitHubTarget[], signal: AbortSignal): Promise<GitHubTrackingProvider> {
     const options = await this.requestOptions(signal);

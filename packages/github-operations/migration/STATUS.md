@@ -32,7 +32,7 @@ part of the intended runtime.
   recovers interrupted materialization. No Host Redis migration is executed.
 - Twelve frozen source test files (181 tests) are copied with import-edge changes
   only; provenance is in test-source-map.json. Whole-package clean build and
-  238/238 tests pass at this checkpoint, including provider projection, CI
+  245/245 tests pass at this checkpoint, including provider projection, CI
   rerun/delivery, review pacing, bounded polling, cleanup and batched CI. The
   changed behaviors have individual RED/GREEN evidence; this is not full parity.
 - Whole-package source and test typechecks pass. Source hashes/declaration
@@ -47,8 +47,8 @@ part of the intended runtime.
   build, tests and lint explicitly. The frozen machine inventory remains in its
   pending checkpoint; implementationProgress records actual implementation
   evidence separately, preserving the existing single catalog exception.
-- The previous clean checkpoint `2689213` passed all 29 repository gate steps
-  in 264.969 seconds with unchanged HEAD and clean worktree. New source changes
+- The previous clean checkpoint `6dba6b3` passed all 29 repository gate steps
+  in 259.1 seconds with unchanged HEAD and clean worktree. New source changes
   have separate targeted/typecheck/build/package evidence; that old gate is not
   claimed for this new tree.
 - Ruling338 removes the copied assignment-writing TriageOrchestrator. Pure triage
@@ -60,11 +60,23 @@ part of the intended runtime.
   correlation, without Host wait state. Timeout messages use the existing outbox.
   Three real carrier projection-failure cases and reconciler recovery are covered;
   failed projection cannot be silently retired by delivery/scan dedup.
+- Ruling404: new installation-private drafts are reachable through generic tools;
+  publication is an owner-local declared operation with explicit confirmation.
+  Sanitization, repository allowlist and a durable publication-attempt journal
+  precede the single gh POST. Restart only reconciles the original exact marker,
+  authenticated GitHub author and content; uncertain results never repeat POST.
+  Storage-failure recovery, concurrent carriers, cancellation, corrupt outcome
+  identity and awaited stop are tested with isolated providers, not real GitHub.
+  The legacy userId/confirmed draft pipeline is removed from the package copy
+  and retained in Host. Its old GET/cancel/publish/from-frustration paths are not
+  covered by native draft verification or authorized for deletion.
+- Repository observations expose bounded pages of provider-only journal facts,
+  including webhook-only subjects. They do not replace Host governance boards.
 
 ## Remaining implementation and verification
 
-1. Adapt the remaining Community read models/drafts/external-review/tool/webhook
-   business and register MCP/skills through the existing generic mechanisms.
+1. Complete the Community business comparison and legacy-state disposition;
+   native draft/read-model carrier tests do not prove full old-route replacement.
 2. Complete per-file business comparison. Remove superseded copied Host
    orchestration only after accounting for its business behavior. Old wait/
    custody producers are retirement candidates, not a new plugin prerequisite.

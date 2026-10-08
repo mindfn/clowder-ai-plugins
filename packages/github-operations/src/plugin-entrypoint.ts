@@ -4,12 +4,15 @@ import { GitHubTrackingRuntime, type GitHubTarget, type GitHubTrackingProvider }
 import { CommunityRuntime, type CommunityProvider } from './community-runtime.js';
 import type { UpsertRepoConfigInput } from './business/domains/community/CommunityRepoConfigStore.js';
 import { recommendTriage } from './triage-recommendation.js';
+import { previewPublicIssue } from './community-read-model.js';
+import { NativeIssueDraftRuntime, type NativeIssuePublisher } from './native-issue-drafts.js';
 
 interface Provider extends GitHubTrackingProvider { selfLogin(): string | undefined }
 export interface GitHubPluginOptions {
   /** Test the real carrier with an isolated provider; production uses the migrated gh transport. */
   readonly createProvider?: (context: FeatureContext) => Provider;
   readonly createCommunityProvider?: (context: FeatureContext) => CommunityProvider;
+  readonly createIssuePublisher?: (context: FeatureContext) => NativeIssuePublisher;
 }
 
 function target(value: unknown, register: boolean): GitHubTarget {
@@ -28,6 +31,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
     log: { warn: (message, fields) => context.log('warn', message, fields) },
   });
   const provider = options.createProvider?.(context) ?? transport;
+  const drafts = new NativeIssueDraftRuntime(context, options.createIssuePublisher?.(context) ?? transport);
   const community = new CommunityRuntime(context, options.createCommunityProvider?.(context) ?? transport);
   const tracking = new GitHubTrackingRuntime({
     storage: context.storage, threads: context.threads, send: context.messaging.send,
@@ -68,9 +72,16 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.repository.unregister': async (value: unknown) => ({ data: { removed: await community.unregister(repoInput(value, false).repo as string) } }),
       'github.repository.list': async () => ({ data: { repositories: await community.configs.listAll() } }),
       'github.subject.inspect': (value: unknown) => community.inspectSubject(value),
+      'github.repository.observations': (value: unknown) => community.inspectRepository(value),
+      'github.issue.preview': previewPublicIssue,
+      'github.draft.create': (value: unknown) => drafts.create(value),
+      'github.draft.get': (value: unknown) => drafts.get(value),
+      'github.draft.list': () => drafts.list(),
+      'github.draft.publish': (value: unknown) => drafts.publish(value),
+      'github.draft.cancel': (value: unknown) => drafts.cancel(value),
       'github.triage.recommend': recommendTriage,
     },
-    dispose: async () => { await Promise.all([tracking.stop(), community.stop()]); },
+    dispose: async () => { await Promise.all([tracking.stop(), community.stop(), drafts.stop()]); },
   };
 }
 

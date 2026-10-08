@@ -8,7 +8,6 @@ import { CommunityReconciliationFindingStore } from './business/domains/communit
 import type { CommunityEvent } from './business/model/index.js';
 import { memoryStorage } from '../test/memory-storage.js';
 import { SdkCommunityIssueStore } from './business/domains/community/CommunityIssueStore.js';
-import { SdkCommunityIssueDraftStore } from './business/domains/community/CommunityIssueDraftStore.js';
 
 const event = (id: string, subjectKey = 'issue:example/project#1'): CommunityEvent => ({
   sourceEventId: id, subjectKey, kind: 'issue.opened', classification: 'state-changing', payload: {}, at: 1,
@@ -95,22 +94,4 @@ test('issue observation storage fails closed on corrupt metadata or historical a
   await assert.rejects(issues.get(issue.id), /unsupported/);
   await assert.rejects(issues.listAll(), /unsupported/);
   await assert.rejects(issues.update(issue.id, { title: 'cannot silently preserve governance' }), /unsupported/);
-});
-
-test('SDK drafts deduplicate concurrent creates, retain cancelled history and reject terminal edits across restart', async () => {
-  const storage = memoryStorage(), first = new SdkCommunityIssueDraftStore(storage), second = new SdkCommunityIssueDraftStore(storage);
-  const input = { sourceType: 'cat_initiated' as const, sourceId: 'source-1', title: 'Title', bodyMarkdown: 'Body',
-    targetRepo: 'example/project', labels: ['bug'], threadId: 'thread-1', userId: 'owner' };
-  const created = await Promise.allSettled([first.create(input), second.create(input)]);
-  assert.equal(created.filter(r => r.status === 'fulfilled').length, 1);
-  const draft = (await first.getBySourceId(input.sourceId))!;
-  await second.cancel(draft.draftId);
-  assert.equal((await first.getById(draft.draftId))?.status, 'cancelled');
-  assert.equal(await first.getBySourceId(input.sourceId), null);
-  const replacement = await first.create(input);
-  await second.publish({ draftId: replacement.draftId, githubIssueNumber: 5, githubIssueUrl: 'https://github.com/example/project/issues/5' });
-  await assert.rejects(first.cancel(replacement.draftId), /not draft/);
-  await assert.rejects(first.updateContent(draft.draftId, 'changed', 'changed'), /not draft/);
-  assert.equal((await new SdkCommunityIssueDraftStore(storage).getById(replacement.draftId))?.status, 'published');
-  assert.equal((await first.getById(draft.draftId))?.title, 'Title');
 });
