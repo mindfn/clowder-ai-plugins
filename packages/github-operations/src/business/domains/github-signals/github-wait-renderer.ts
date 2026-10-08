@@ -1,4 +1,4 @@
-import type { GitHubWaitOutcomeV1 } from '@cat-cafe/shared';
+import type { GitHubWaitOutcomeV1 } from '../../model/index.js';
 
 export const REVIEW_LOOP_BRAKE_NEXT_STEP = '[review-loop-brake]';
 export const REVIEW_LOOP_HISTORY_WARN_NEXT_STEP = '[review-loop-history-unavailable] ';

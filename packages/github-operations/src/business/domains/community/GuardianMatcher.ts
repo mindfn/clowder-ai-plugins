@@ -1,6 +1,8 @@
-import type { CatId, ReviewPolicy, Roster } from '@cat-cafe/shared';
-import { createCatId } from '@cat-cafe/shared';
-import { getDefaultCatId, getReviewPolicy, getRoster } from '../../config/cat-config-loader.js';
+import type { CatId, ReviewPolicy, Roster } from '../../model/index.js';
+import { createCatId } from '../../model/index.js';
+const DEFAULT_REVIEW_POLICY: ReviewPolicy = {
+  requireDifferentFamily: true, preferActiveInThread: true, preferLead: true, excludeUnavailable: true,
+};
 
 export interface GuardianMatchOptions {
   author: CatId;
@@ -8,12 +10,11 @@ export interface GuardianMatchOptions {
   policy?: Partial<ReviewPolicy>;
   threadActivity?: Record<string, number>;
   /**
-   * Roster override (test seam). Production callers omit this and fall back to
-   * the live `getRoster()`. Tests inject an explicit roster so guardian matching
-   * is hermetic to the global cat-config singleton + ambient `.cat-cafe` catalog
-   * artifacts other concurrent test files may leave behind (F211 candidates=0 flake).
+   * Explicit installation roster. No Host process-global catalog fallback.
    */
-  roster?: Roster;
+  roster: Roster;
+  /** Installation configuration, never the Host's process-global roster. */
+  defaultCatId: CatId;
 }
 
 export interface GuardianMatchResult {
@@ -24,15 +25,15 @@ export interface GuardianMatchResult {
 }
 
 export async function resolveGuardian(options: GuardianMatchOptions): Promise<GuardianMatchResult> {
-  const roster = options.roster ?? getRoster();
-  const defaultPolicy = getReviewPolicy();
+  const roster = options.roster;
+  const defaultPolicy = DEFAULT_REVIEW_POLICY;
   const policy: ReviewPolicy = { ...defaultPolicy, ...options.policy };
   const authorId = options.author as string;
   const reviewerId = options.reviewer as string;
   const authorEntry = roster[authorId];
 
   if (!authorEntry) {
-    return { guardian: getDefaultCatId(), isDegraded: false, candidates: [] };
+    return { guardian: options.defaultCatId, isDegraded: false, candidates: [] };
   }
 
   const eligible = Object.entries(roster).filter(
@@ -72,7 +73,7 @@ export async function resolveGuardian(options: GuardianMatchOptions): Promise<Gu
   }
 
   return {
-    guardian: getDefaultCatId(),
+    guardian: options.defaultCatId,
     isDegraded: true,
     degradeReason: 'No guardians available',
     candidates: allIds,

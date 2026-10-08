@@ -1,31 +1,6 @@
-/**
- * CommunityEventLog — append-only Redis-backed event log (F168 Phase A)
- *
- * Redis layout (bare keys; ioredis keyPrefix applied by client factory):
- *   community:events:log:{subjectKey}  → LIST of JSON-encoded CommunityEvent
- *   community:events:seen              → SET of sourceEventId (global dedup)
- *   community:events:subjects          → SET of subjectKey values
- *
- * Append atomicity: Lua MULTI-style script checks the `seen` SET and appends
- * to the log list in one round-trip, preventing duplicate appends under
- * concurrent writers.
- *
- * Canonical guarantee: TTL is never set on event keys (铁律 #5 / LL-048).
- *
- * NOTE on ioredis keyPrefix:
- *   Normal ioredis commands receive the keyPrefix automatically.
- *   Keys referenced inside Lua KEYS[] are also prefixed by ioredis.
- *   Dynamic keys built in Lua (ARGV-derived) must carry the prefix explicitly.
- *   See RedisRuntimeSessionStore for the established pattern.
- */
-
-import type { CommunityEvent } from '@cat-cafe/shared';
-import type { RedisClient } from '@cat-cafe/shared/utils';
-import { CommunityKeys } from './community-keys.js';
-
-// ---------------------------------------------------------------------------
-// Interface
-// ---------------------------------------------------------------------------
+import { createHash } from 'node:crypto';
+import type { PluginStorageHost, PluginStorageEntry } from '@clowder-ai/plugin-sdk';
+import type { CommunityEvent } from '../../model/index.js';
 
 export interface ICommunityEventLog {
   /**
@@ -46,67 +21,65 @@ export interface ICommunityEventLog {
   listSubjects(): Promise<string[]>;
 }
 
-// ---------------------------------------------------------------------------
-// Lua script: atomic idempotent append
-// ---------------------------------------------------------------------------
+interface JournalHead { next: number; pending: CommunityEvent | null }
+interface StoredEvent { sequence: number; event: CommunityEvent }
+const HEAD = 'community.journal.v1';
+const EVENTS = 'community.event.';
+const eventKey = (id: string) => EVENTS + createHash('sha256').update(id).digest('hex');
 
-/**
- * KEYS[1] = community:events:log:{subjectKey}   (per-subject LIST)
- * KEYS[2] = community:events:seen               (global SET)
- * KEYS[3] = community:events:subjects           (global subjects SET)
- *
- * ARGV[1] = sourceEventId
- * ARGV[2] = JSON-encoded CommunityEvent
- * ARGV[3] = subjectKey
- *
- * Returns: 0 (already seen) or list length after push (>= 1)
- */
-const APPEND_LUA = `
-local already = redis.call('SISMEMBER', KEYS[2], ARGV[1])
-if already == 1 then
-  return 0
-end
-redis.call('SADD', KEYS[2], ARGV[1])
-redis.call('SADD', KEYS[3], ARGV[3])
-return redis.call('RPUSH', KEYS[1], ARGV[2])
-`;
+/** Package-private journal using existing SDK CAS. One bounded reservation
+ * makes a crashed append recoverable; immutable event records never expire.
+ * Revisions need not be globally ordered across storage keys. */
+export class SdkCommunityEventLog implements ICommunityEventLog {
+  constructor(private readonly storage: PluginStorageHost) {}
 
-// ---------------------------------------------------------------------------
-// Redis implementation
-// ---------------------------------------------------------------------------
+  private async settle(entry: PluginStorageEntry): Promise<void> {
+    const head = entry.value as JournalHead;
+    if (!head.pending) return;
+    await this.storage.compareAndSet(eventKey(head.pending.sourceEventId), null, {
+      sequence: head.next, event: head.pending,
+    } satisfies StoredEvent);
+    await this.storage.compareAndSet(HEAD, entry.revision, { next: head.next + 1, pending: null } satisfies JournalHead);
+  }
 
-export class RedisCommunityEventLog implements ICommunityEventLog {
-  constructor(private readonly redis: RedisClient) {}
+  private async ready(): Promise<PluginStorageEntry> {
+    for (let attempt = 0; attempt < 256; attempt++) {
+      const entry = await this.storage.get(HEAD);
+      if (!entry) {
+        await this.storage.compareAndSet(HEAD, null, { next: 0, pending: null } satisfies JournalHead);
+        continue;
+      }
+      const head = entry.value as JournalHead;
+      if (!Number.isSafeInteger(head.next) || head.next < 0) throw new Error('Invalid Community journal head');
+      if (!head.pending) return entry;
+      await this.settle(entry);
+    }
+    throw new Error('Community journal contention; retry append');
+  }
 
   async append(event: CommunityEvent): Promise<{ appended: boolean; sequence: number }> {
-    const logKey = CommunityKeys.eventLog(event.subjectKey);
-    const seenKey = CommunityKeys.eventsSeen;
-    const subjectsKey = CommunityKeys.eventsSubjects;
-
-    const result = (await this.redis.eval(
-      APPEND_LUA,
-      3,
-      logKey,
-      seenKey,
-      subjectsKey,
-      event.sourceEventId,
-      JSON.stringify(event),
-      event.subjectKey,
-    )) as number;
-
-    if (result === 0) {
-      return { appended: false, sequence: -1 };
+    if (!event.sourceEventId || !event.subjectKey) throw new TypeError('Community event requires source and subject');
+    for (let attempt = 0; attempt < 256; attempt++) {
+      const head = await this.ready();
+      if (await this.storage.get(eventKey(event.sourceEventId))) return { appended: false, sequence: -1 };
+      const reservation = await this.storage.compareAndSet(HEAD, head.revision, { ...head.value as JournalHead, pending: event });
+      if (!reservation.applied) continue;
+      await this.ready();
+      const events = await this.read(event.subjectKey);
+      return { appended: true, sequence: events.findIndex(candidate => candidate.sourceEventId === event.sourceEventId) };
     }
-    return { appended: true, sequence: result - 1 };
+    throw new Error('Community journal contention; retry append');
   }
 
+  private async entries(): Promise<StoredEvent[]> {
+    await this.ready();
+    return Object.entries(await this.storage.list()).filter(([key]) => key.startsWith(EVENTS))
+      .map(([, entry]) => entry.value as StoredEvent).sort((a, b) => a.sequence - b.sequence);
+  }
   async read(subjectKey: string, fromSequence = 0): Promise<CommunityEvent[]> {
-    const logKey = CommunityKeys.eventLog(subjectKey);
-    const raw = await this.redis.lrange(logKey, fromSequence, -1);
-    return raw.map((s) => JSON.parse(s) as CommunityEvent);
+    return (await this.entries()).filter(entry => entry.event.subjectKey === subjectKey).slice(fromSequence).map(entry => entry.event);
   }
-
   async listSubjects(): Promise<string[]> {
-    return this.redis.smembers(CommunityKeys.eventsSubjects);
+    return [...new Set((await this.entries()).map(entry => entry.event.subjectKey))];
   }
 }

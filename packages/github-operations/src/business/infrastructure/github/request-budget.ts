@@ -2,17 +2,15 @@ import { createHash } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { createModuleLogger } from '../logger.js';
 import { awaitGitHubCaller } from './abortable-wait.js';
 import { buildGhCliEnv, withHiddenGhCliWindow } from './gh-cli-env.js';
 import { executeGitHubProcess, type GitHubProcessOptions } from './gh-process.js';
-
-const log = createModuleLogger('github/request-budget');
 
 export interface GitHubRequestOptions {
   ghToken?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
+  log?: { warn(message: string, fields?: Readonly<Record<string, unknown>>): void };
   execFileAsync?: (file: string, args: string[], opts: GitHubProcessOptions) => Promise<{ stdout: string }>;
 }
 
@@ -148,7 +146,7 @@ export class GitHubRequestBudget {
       const blockedUntil = retryAt(error, this.now());
       if (blockedUntil !== undefined) {
         this.blocked.set(key, Math.max(this.blocked.get(key) ?? 0, blockedUntil));
-        log.warn({ retryAt: blockedUntil }, 'GitHub credential quota paused until reset');
+        options.log?.warn('GitHub credential quota paused until reset', { retryAt: blockedUntil });
         // Forget only expired credentials; never evict an active quota fence.
         for (const [credential, deadline] of this.blocked) if (deadline <= this.now()) this.blocked.delete(credential);
         throw new GitHubRateLimitError(blockedUntil);

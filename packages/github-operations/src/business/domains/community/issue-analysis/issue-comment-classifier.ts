@@ -1,4 +1,4 @@
-import type { IssueCommentSuppressionReason } from '@cat-cafe/shared';
+import type { IssueCommentSuppressionReason } from '../../../model/index.js';
 import { isCriticalIssueSignal } from './issue-fix-evidence.js';
 
 export interface ClassifiableIssueComment {

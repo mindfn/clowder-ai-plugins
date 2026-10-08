@@ -3,18 +3,12 @@ import type {
   CommunityObjectProjection,
   ExternalCloudReviewStatus,
   ExternalReviewAggregate,
-} from '@cat-cafe/shared';
-import { prSubjectKey } from '@cat-cafe/shared';
-import type { FastifyBaseLogger } from 'fastify';
+} from '../../../model/index.js';
+import { prSubjectKey } from '../../../model/index.js';
 import type { CiPollResult } from '../../../infrastructure/email/ci-cd-contract.js';
-import {
-  externalCaseHeadObserved,
-  externalCasePendingDeliveryAgeSeconds,
-} from '../../../infrastructure/telemetry/instruments.js';
 import type { ICommunityEventLog } from '../CommunityEventLog.js';
 import type { ICommunityObjectStore } from '../CommunityObjectStore.js';
 import type { ICommunityRepoConfigStore } from '../CommunityRepoConfigStore.js';
-import type { ExternalPendingVerdictSettlementResult } from './ExternalReviewVerdictService.js';
 import { decideExternalReviewReadiness, type ExternalReviewReadinessDecision } from './external-review-aggregate.js';
 
 interface ExternalReviewProjectorPort {
@@ -25,7 +19,6 @@ interface ExternalReviewProjectorPort {
 export interface ExternalReviewTrackingTarget {
   readonly threadId: string;
   readonly catId: string;
-  readonly userId: string;
 }
 
 export interface ExternalCloudObservation {
@@ -47,9 +40,7 @@ export type ExternalReviewCoordinatorResult =
         | ExternalReviewWaitReason
         | 'wake_already_delivered_for_head'
         | 'projection_unavailable'
-        | 'explicit_wait_required'
-        | 'pending_verdict_settled'
-        | 'pending_verdict_settlement_failed';
+        | 'ready_for_notification';
     };
 
 export interface ExternalReviewCoordinatorOptions {
@@ -57,8 +48,7 @@ export interface ExternalReviewCoordinatorOptions {
   readonly eventLog: ICommunityEventLog;
   readonly projector: ExternalReviewProjectorPort;
   readonly objectStore: Pick<ICommunityObjectStore, 'get'>;
-  readonly settlePendingVerdict?: (subjectKey: string) => Promise<ExternalPendingVerdictSettlementResult>;
-  readonly log: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>;
+  readonly log: Readonly<Record<'info' | 'warn' | 'error', (...args: unknown[]) => void>>;
   readonly now?: () => number;
 }
 
@@ -87,18 +77,26 @@ export class ExternalReviewCoordinator {
     return projection?.externalReview?.lifecycle !== 'terminal';
   }
 
-  async recordCi(poll: CiPollResult, tracking: ExternalReviewTrackingTarget): Promise<ExternalReviewCoordinatorResult> {
+  async recordCi(poll: Pick<CiPollResult, 'repoFullName' | 'prNumber' | 'headSha' | 'aggregateBucket'>, tracking: ExternalReviewTrackingTarget): Promise<ExternalReviewCoordinatorResult> {
     const initialized = await this.initialize(poll.repoFullName, poll.prNumber, poll.headSha, tracking);
     if (!initialized) return { kind: 'not_tracked' };
 
     const status = poll.aggregateBucket;
+    const current = await this.readAggregate(initialized.subjectKey);
+    const previous = current?.ci?.headSha === poll.headSha && current.ci.headGeneration === initialized.headGeneration
+      ? current.ci : null;
+    if (previous?.status === status) return this.maybeWake(initialized.subjectKey);
+    // A rerun can return to a previously seen status at the same HEAD. Use the
+    // preceding observation as the transition identity, not status alone. A
+    // failed append/project retry reconstructs this same id and repairs replay.
+    const observedAt = Math.max(this.now(), (previous?.observedAt ?? 0) + 1);
     await this.appendAndApply(
       makeEvent(
-        `f168:ci:${initialized.subjectKey}:g${initialized.headGeneration}:${poll.headSha}:${status}`,
+        `f168:ci:${initialized.subjectKey}:g${initialized.headGeneration}:${poll.headSha}:${status}:after:${previous?.observedAt ?? 0}`,
         initialized.subjectKey,
         'case.ci_observed',
         { headSha: poll.headSha, headGeneration: initialized.headGeneration, status },
-        this.now(),
+        observedAt,
       ),
     );
     return this.maybeWake(initialized.subjectKey);
@@ -213,7 +211,7 @@ export class ExternalReviewCoordinator {
         '[F168] duplicate canonical event repaired projection by rebuild',
       );
     }
-    if (appended && event.kind === 'case.head_observed') externalCaseHeadObserved.add(1);
+    if (appended && event.kind === 'case.head_observed') this.opts.log.info({ subjectKey: event.subjectKey }, 'GitHub HEAD observed');
     return appended;
   }
 
@@ -237,7 +235,7 @@ export class ExternalReviewCoordinator {
     let aggregate = await this.readAggregate(subjectKey);
     if (!aggregate) return { kind: 'state_only', reason: 'projection_unavailable' };
     if (aggregate.delivery?.kind === 'pending_delivery') {
-      externalCasePendingDeliveryAgeSeconds.record(Math.max(0, this.now() - aggregate.delivery.createdAt) / 1000);
+      this.opts.log.info({ subjectKey, seconds: Math.max(0, this.now() - aggregate.delivery.createdAt) / 1000 }, 'GitHub pending delivery age');
     }
     if (
       aggregate.wake?.headSha === aggregate.currentHeadSha &&
@@ -271,33 +269,9 @@ export class ExternalReviewCoordinator {
     }
     const deliveryReadiness = decideExternalReviewReadiness({ ...aggregate, wake: null });
     if (deliveryReadiness.kind === 'wait') return { kind: 'state_only', reason: deliveryReadiness.reason };
-    const pendingSettlement = await this.settlePendingVerdict(subjectKey, aggregate);
-    if (pendingSettlement) return pendingSettlement;
-    // F280: readiness remains durable case truth. Only an explicit typed wait
-    // may project it into connector delivery/invocation.
-    return { kind: 'state_only', reason: 'explicit_wait_required' };
-  }
-
-  private async settlePendingVerdict(
-    subjectKey: string,
-    aggregate: ExternalReviewAggregate,
-  ): Promise<ExternalReviewCoordinatorResult | null> {
-    if (!aggregate.pendingVerdict || !this.opts.settlePendingVerdict) return null;
-    try {
-      const settlement = await this.opts.settlePendingVerdict(subjectKey);
-      if (settlement.kind === 'settled') {
-        return { kind: 'state_only', reason: 'pending_verdict_settled' };
-      }
-      if (settlement.kind === 'waiting') {
-        this.opts.log.warn(
-          { subjectKey, reason: settlement.reason },
-          '[F168] pending verdict remained fail-closed after canonical readiness',
-        );
-      }
-      return null;
-    } catch (error) {
-      this.opts.log.error({ subjectKey, error }, '[F168] pending verdict auto-settlement failed closed');
-      return { kind: 'state_only', reason: 'pending_verdict_settlement_failed' };
-    }
+    // This is provider readiness, not a typed review verdict or custody transition.
+    // The package may notify through SDK messaging; Host governance consumes its
+    // own authenticated callback separately.
+    return { kind: 'state_only', reason: 'ready_for_notification' };
   }
 }

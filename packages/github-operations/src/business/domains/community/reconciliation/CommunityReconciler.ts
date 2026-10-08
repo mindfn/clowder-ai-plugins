@@ -17,7 +17,7 @@
  * All functions are pure — no IO, no Redis, no side-effects.
  */
 
-import type { CommunityEvent, CommunityObjectProjection } from '@cat-cafe/shared';
+import type { CommunityEvent, CommunityObjectProjection } from '../../../model/index.js';
 import { DEFAULT_SLA_POLICY, evaluateSlaFindings, type SlaPolicy } from '../community-sla-policy.js';
 
 // ---------------------------------------------------------------------------

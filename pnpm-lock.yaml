@@ -296,6 +296,13 @@ importers:
         version: 2.9.0
 
   packages/github-operations:
+    dependencies:
+      '@clowder-ai/plugin-contract':
+        specifier: workspace:0.1.0-beta.29
+        version: link:../plugin-contract
+      '@clowder-ai/plugin-sdk':
+        specifier: workspace:0.2.0-beta.12
+        version: link:../plugin-sdk
     devDependencies:
       '@types/node':
         specifier: ^20.17.0

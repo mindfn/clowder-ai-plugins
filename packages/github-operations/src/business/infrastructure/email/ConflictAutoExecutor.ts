@@ -7,7 +7,6 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { listWorktrees } from '../../domains/workspace/workspace-security.js';
 import { withHiddenGhCliWindow } from '../github/gh-cli-env.js';
 
 const execFileAsync = promisify(execFile);
@@ -20,6 +19,9 @@ export type AutoResolveResult =
   | { kind: 'skipped'; reason: string };
 
 export interface ConflictAutoExecutorOptions {
+  /** Explicit caller-owned workspace inventory. Never read a Host registry or
+   * infer access to its runtime worktree. This executor is not auto-activated. */
+  readonly listWorktrees: (repoRoot?: string) => Promise<readonly { branch: string; root: string }[]>;
   readonly log: {
     info: (...args: unknown[]) => void;
     warn: (...args: unknown[]) => void;
@@ -167,7 +169,7 @@ export class ConflictAutoExecutor {
 
   async findWorktree(branch: string): Promise<string | null> {
     try {
-      const entries = await listWorktrees(this.opts.repoRoot);
+      const entries = await this.opts.listWorktrees(this.opts.repoRoot);
       return entries.find((e) => e.branch === branch)?.root ?? null;
     } catch {
       return null;

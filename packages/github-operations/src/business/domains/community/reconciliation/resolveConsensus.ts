@@ -1,4 +1,4 @@
-import type { ConsensusResult, TriageEntry, Verdict } from '@cat-cafe/shared';
+import type { ConsensusResult, TriageEntry, Verdict } from '../../../model/index.js';
 
 export function resolveConsensus(entries: readonly TriageEntry[]): ConsensusResult {
   if (entries.length === 0) throw new Error('resolveConsensus requires at least one entry');

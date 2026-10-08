@@ -1,4 +1,4 @@
-import type { IssueState, IssueType } from '@cat-cafe/shared';
+import type { IssueState, IssueType } from '../../../model/index.js';
 
 export interface GhIssueFull {
   number: number;

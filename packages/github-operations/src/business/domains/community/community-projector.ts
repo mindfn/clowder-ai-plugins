@@ -20,8 +20,8 @@ import type {
   CommunityObjectProjection,
   CommunityObjectState,
   IssueFixEvidence,
-} from '@cat-cafe/shared';
-import { canonicalizeCommunitySubjectKey } from '@cat-cafe/shared';
+} from '../../model/index.js';
+import { canonicalizeCommunitySubjectKey } from '../../model/index.js';
 import type { ICommunityEventLog } from './CommunityEventLog.js';
 import type { ICommunityObjectStore } from './CommunityObjectStore.js';
 import { parseLinkedIssues } from './community-link-parser.js';

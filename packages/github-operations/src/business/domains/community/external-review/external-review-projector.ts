@@ -1,4 +1,4 @@
-import type { CommunityEvent, ExternalReviewAggregate } from '@cat-cafe/shared';
+import type { CommunityEvent, ExternalReviewAggregate } from '../../../model/index.js';
 import {
   applyExternalReviewEvent,
   createExternalReviewAggregate,

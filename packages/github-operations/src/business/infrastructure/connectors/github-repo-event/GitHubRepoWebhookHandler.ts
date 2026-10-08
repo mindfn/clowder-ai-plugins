@@ -3,25 +3,15 @@
  *
  * Pipeline: HMAC → event filter → allowlist → validate → dedup → normalize → bind thread → deliver → trigger → confirm
  */
-import type { CatId, CommunityEvent, CommunityEventKind, ConnectorSource } from '@cat-cafe/shared';
+import type { CommunityEvent, CommunityEventKind } from '../../../model/index.js';
 import type { ICommunityEventLog } from '../../../domains/community/CommunityEventLog.js';
 import { issueCommentEventId } from '../../../domains/community/community-keys.js';
 import {
   classifyIssueComment as classifyIssueCommentActivity,
   type IssueCommentClassification,
 } from '../../../domains/community/issue-analysis/issue-comment-classifier.js';
-import type { WebhookHandleResult } from '../../../routes/connector-webhooks.js';
-import type {
-  ConnectorDeliveryDeps,
-  ConnectorDeliveryInput,
-  ConnectorDeliveryResult,
-} from '../../email/deliver-connector-message.js';
-import type { IConnectorThreadBindingStore } from '../ConnectorThreadBindingStore.js';
-import { type InboxThreadStore, resolveInboxThread } from './inbox-thread-resolver.js';
 import type { ReconciliationDedup } from './ReconciliationDedup.js';
-import type { RedisDeliveryDedup, RedisLike } from './RedisDeliveryDedup.js';
-import type { ResolveRepoInboxCatId } from './RepoInboxOwnerResolver.js';
-import type { GitHubRepoInboxConfig, RepoInboxSignal } from './types.js';
+import type { RepoInboxSignal } from './types.js';
 import { verifyGitHubSignature } from './verify-signature.js';
 
 /** Minimal projector interface — only apply() needed here. */
@@ -54,32 +44,20 @@ const LOG_ONLY_EVENTS = new Set([
   'pull_request_review.submitted',
 ]);
 
+export type WebhookHandleResult =
+  | { kind: 'error'; status: number; message: string }
+  | { kind: 'skipped'; reason: string }
+  | { kind: 'processed'; messageId: string };
 export interface GitHubRepoHandlerDeps {
-  readonly bindingStore: Pick<IConnectorThreadBindingStore, 'getByExternal' | 'bind'>;
-  /** F167 R3 P2: reuse the typed InboxThreadStore shape from inbox-thread-resolver
-   *  instead of duplicating untyped `any` here. Locks the marker lifecycle to the
-   *  ThreadKind union per AGENTS.md 禁 any redline. */
-  readonly threadStore: InboxThreadStore;
-  readonly deliverFn: (deps: ConnectorDeliveryDeps, input: ConnectorDeliveryInput) => Promise<ConnectorDeliveryResult>;
-  readonly invokeTrigger: {
-    trigger(
-      threadId: string,
-      catId: CatId,
-      userId: string,
-      message: string,
-      messageId: string,
-    ): void | Promise<unknown>;
+  readonly deliver: (signal: RepoInboxSignal, content: string) => Promise<{ messageId: string }>;
+  readonly dedup: {
+    claim(id: string): Promise<boolean>;
+    confirm(id: string): Promise<void>;
+    rollback(id: string): Promise<void>;
   };
-  readonly dedup: RedisDeliveryDedup;
-  readonly deliveryDeps?: ConnectorDeliveryDeps;
-  readonly redis?: RedisLike; // KD-20: per-repo inbox thread creation lock
-  readonly reconciliationDedup?: Pick<ReconciliationDedup, 'markNotified'>; // Phase B bridge
-  /** Dynamic canonical owner lookup. Called once immediately before each delivery. */
-  readonly resolveInboxCatId?: ResolveRepoInboxCatId;
-  // F168 Phase A: community event log + projector (best-effort, optional)
+  readonly reconciliationDedup?: Pick<ReconciliationDedup, 'markNotified'>;
   readonly eventLog?: ICommunityEventLog;
   readonly projector?: ICommunityProjectorApply;
-  /** Canonical classifier shared with both polling collection paths. */
   readonly classifyIssueComment?: (comment: { author: string; body: string }) => IssueCommentClassification;
 }
 
@@ -87,7 +65,7 @@ export class GitHubRepoWebhookHandler {
   readonly connectorId = CONNECTOR_ID;
 
   constructor(
-    private readonly config: GitHubRepoInboxConfig,
+    private readonly config: { webhookSecret: string; repoAllowlist: string[] },
     private readonly deps: GitHubRepoHandlerDeps,
   ) {}
 
@@ -104,6 +82,7 @@ export class GitHubRepoWebhookHandler {
       return { kind: 'skipped', reason: `Unhandled event type: ${eventType}` };
     }
 
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return { kind: 'error', status: 400, message: 'Invalid webhook payload' };
     const payload = body as Record<string, unknown>;
     const action = payload.action as string;
     if (!allowedActions.includes(action)) {
@@ -150,7 +129,10 @@ export class GitHubRepoWebhookHandler {
     // 5. Validate subject exists (P2-1: fail-closed on malformed payload)
     // Only reached for inbox-notification events (not log-only).
     const subject = (payload[eventType] ?? payload.issue) as Record<string, unknown> | undefined;
-    if (!subject) {
+    if (!subject || !Number.isSafeInteger(subject.number) || (subject.number as number) < 1 ||
+        typeof subject.title !== 'string' || typeof subject.html_url !== 'string' ||
+        typeof (subject.user as { login?: unknown } | undefined)?.login !== 'string') {
+      await this.deps.dedup.rollback(deliveryId);
       return { kind: 'error', status: 400, message: `Missing subject in ${eventType} payload` };
     }
 
@@ -169,7 +151,7 @@ export class GitHubRepoWebhookHandler {
     // P1-3: Separate delivery try-catch from confirm.
     // If delivery fails → rollback (safe: message not sent, GitHub can retry).
     // If confirm fails → do NOT rollback (message delivered, claim stays to block retries).
-    let delivered: ConnectorDeliveryResult;
+    let delivered: { messageId: string };
     // 7. Normalize (hoisted for Phase B bridge access after confirm)
     const signal = this.normalize(eventType, action, payload, subject, deliveryId);
 
@@ -185,55 +167,9 @@ export class GitHubRepoWebhookHandler {
     }
 
     try {
-      const inboxCatId = this.deps.resolveInboxCatId
-        ? await this.deps.resolveInboxCatId(signal.repoFullName)
-        : this.config.inboxCatId;
-
-      // 8. Find or create per-repo inbox thread (KD-14, KD-20)
-      const threadId = await this.ensureInboxThread(signal.repoFullName);
-
-      // 9. Build message
-      const content = this.formatMessage(signal);
-
-      // 10. ConnectorSource (KD-12)
-      const source: ConnectorSource = {
-        connector: CONNECTOR_ID,
-        label: 'Repo Inbox',
-        icon: 'github',
-        url: signal.url,
-        meta: {
-          repoFullName: signal.repoFullName,
-          subjectType: signal.subjectType,
-          number: signal.number,
-          action: signal.action,
-          deliveryId: signal.deliveryId,
-          authorAssociation: signal.authorAssociation,
-        },
-        sender: {
-          id: String((payload.sender as { id: number }).id),
-          name: signal.authorLogin,
-        },
-      };
-
-      // 11. Deliver (AC-A7)
-      delivered = await this.deps.deliverFn(this.deps.deliveryDeps ?? ({} as ConnectorDeliveryDeps), {
-        threadId,
-        userId: this.config.defaultUserId,
-        catId: inboxCatId,
-        content,
-        source,
-      });
-
-      // 12. Trigger cat (KD-17)
-      void Promise.resolve(
-        this.deps.invokeTrigger.trigger(
-          threadId,
-          inboxCatId as CatId,
-          this.config.defaultUserId,
-          content,
-          delivered.messageId,
-        ),
-      ).catch(() => {});
+      // Routing and wake use the installation's authorized repository config.
+      // No Host-specific inbox creation, thread-kind stamp or custody authority.
+      delivered = await this.deps.deliver(signal, this.formatMessage(signal));
     } catch (err) {
       // Safe rollback: message not delivered — allow GitHub retry
       await this.deps.dedup.rollback(deliveryId);
@@ -506,19 +442,4 @@ export class GitHubRepoWebhookHandler {
     }
   }
 
-  private async ensureInboxThread(repoFullName: string): Promise<string> {
-    // F167 R2: delegate to shared resolver so webhook path + reconciliation path
-    // share identical bind+stamp+self-heal logic (single root cause for R1 P1#2).
-    const result = await resolveInboxThread(
-      {
-        bindingStore: this.deps.bindingStore,
-        threadStore: this.deps.threadStore,
-        connectorId: CONNECTOR_ID,
-        defaultUserId: this.config.defaultUserId,
-        redis: this.deps.redis,
-      },
-      repoFullName,
-    );
-    return result.threadId;
-  }
 }

@@ -51,3 +51,9 @@ export const CommunityKeys = {
 export function issueCommentEventId(repoFullName: string, issueNumber: number, commentId: number): string {
   return `comment:${repoFullName}#${issueNumber}:${commentId}`;
 }
+
+/** A dismissal mutates the same GitHub review id. Preserve the existing
+ * submitted-review identity, while recording its later dismissal as a new fact. */
+export function reviewEventId(repoFullName: string, prNumber: number, reviewId: number | string, state?: string): string {
+  return `review:${repoFullName}#${prNumber}:${reviewId}${state?.toUpperCase() === 'DISMISSED' ? ':dismissed' : ''}`;
+}

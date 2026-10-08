@@ -1,4 +1,4 @@
-import type { CommunityEvent, IssueFixEvidence } from '@cat-cafe/shared';
+import type { CommunityEvent, IssueFixEvidence } from '../../../model/index.js';
 
 export interface LinkedPullRequestEvidenceProjection {
   readonly repo: string;

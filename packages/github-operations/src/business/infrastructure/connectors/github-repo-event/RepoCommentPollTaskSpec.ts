@@ -37,8 +37,8 @@
  * fans out from the case projection. An un-routed issue has no owner thread, so
  * delivery is intentionally not this poller's concern.
  */
-import type { CommunityEvent } from '@cat-cafe/shared';
-import { issueSubjectKey } from '@cat-cafe/shared';
+import type { CommunityEvent } from '../../../model/index.js';
+import { issueSubjectKey } from '../../../model/index.js';
 import type { ICommunityEventLog } from '../../../domains/community/CommunityEventLog.js';
 import { issueCommentEventId } from '../../../domains/community/community-keys.js';
 import {
@@ -47,7 +47,6 @@ import {
 } from '../../../domains/community/issue-analysis/issue-comment-classifier.js';
 import { gitHubAdmissionCanContinue } from '../../github/admission-budget.js';
 import { GitHubRateLimitError } from '../../github/request-budget.js';
-import type { GateResult, TaskSpec_P1 } from '../../scheduler/types.js';
 
 /** Minimal projector interface — only apply() is needed here. */
 interface ICommunityProjectorApply {
@@ -182,15 +181,11 @@ async function pollSingleRepo(opts: RepoCommentPollTaskSpecOptions, repo: string
   }
 }
 
-export function repoCommentPollTaskSpec(opts: RepoCommentPollTaskSpecOptions): TaskSpec_P1 {
+/** Package-owned collector. Lifecycle cancellation comes from the plugin disposer. */
+export function createRepoCommentPoller(opts: RepoCommentPollTaskSpecOptions) {
   let nextRepoIndex = 0;
-  return {
-    id: opts.id ?? 'repo-comment-poll',
-    profile: 'poller',
-    trigger: { type: 'interval', ms: opts.pollIntervalMs ?? 60_000 },
-    admission: {
-      async gate(ctx): Promise<GateResult> {
-        const signal = ctx?.signal;
+  return async (signal: AbortSignal): Promise<void> => {
+    const ctx = { signal, deadlineMs: Date.now() + (opts.pollIntervalMs ?? 30_000) };
         signal?.throwIfAborted();
         const startIndex = nextRepoIndex % Math.max(1, opts.repoAllowlist.length);
         for (let step = 0; step < opts.repoAllowlist.length; step++) {
@@ -210,35 +205,7 @@ export function repoCommentPollTaskSpec(opts: RepoCommentPollTaskSpecOptions): T
           }
         }
 
-        // Collection-only: all work (append + project) happened above. There is no
-        // delivery signal to execute — un-routed issues have no owner thread, and
-        // delivery is the downstream router's responsibility.
-        signal?.throwIfAborted();
-        return { run: false, reason: 'repo-comment poll: collection-only' };
-      },
-    },
-    run: {
-      overlap: 'skip',
-      timeoutMs: 30_000,
-      // Unreachable by design: the gate never emits workItems (collection-only).
-      // The warn surfaces the broken invariant if a future change starts emitting them.
-      async execute(): Promise<void> {
-        opts.log.warn('[repo-comment-poll] execute() invoked unexpectedly — collection-only poller emits no workItems');
-      },
-    },
-    state: { runLedger: 'sqlite' },
-    // Collection-only poller is no-signal by design every tick; recording would
-    // flood the run ledger with SKIP_NO_SIGNAL rows and misrepresent it as "0
-    // delivered / dead" in the schedule panel. Collection observability comes from
-    // opts.log and the event log itself.
-    outcome: { whenNoSignal: 'drop' },
-    enabled: () => opts.repoAllowlist.length > 0,
-    actor: { role: 'repo-watcher', costTier: 'cheap' },
-    display: {
-      label: '仓库追评巡检',
-      category: 'issue',
-      description: '仓库级追评轮询：覆盖未路由 issue 的评论，灭 per-issue 盲区',
-      subjectKind: 'issue',
-    },
+
+    signal.throwIfAborted();
   };
 }

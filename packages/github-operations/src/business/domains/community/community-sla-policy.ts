@@ -12,7 +12,7 @@
  * Callers pass in `now` to keep evaluation deterministic in tests.
  */
 
-import type { CommunityObjectProjection } from '@cat-cafe/shared';
+import type { CommunityObjectProjection } from '../../model/index.js';
 
 // ---------------------------------------------------------------------------
 // Policy shape

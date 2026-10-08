@@ -6,7 +6,7 @@
  * - Published: collapsed success card with GitHub issue link
  */
 
-import type { CommunityIssueDraft, RichCardBlock } from '@cat-cafe/shared';
+import type { CommunityIssueDraft, RichCardBlock } from '../../../model/index.js';
 
 // ── Draft preview card ────────────────────────────────────────
 

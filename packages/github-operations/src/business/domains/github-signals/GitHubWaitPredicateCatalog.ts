@@ -7,8 +7,8 @@ import type {
   GitHubWaitBaseline,
   GitHubWaitMatchedDelta,
   GitHubWaitPredicate,
-} from '@cat-cafe/shared';
-import { GITHUB_ISSUE_WAIT_PREDICATE_LIMIT, GITHUB_PR_WAIT_PREDICATE_LIMIT, sameGitHubLogin } from '@cat-cafe/shared';
+} from '../../model/index.js';
+import { GITHUB_ISSUE_WAIT_PREDICATE_LIMIT, GITHUB_PR_WAIT_PREDICATE_LIMIT, sameGitHubLogin } from '../../model/index.js';
 import { z } from 'zod';
 import { dismissedVerdicts } from './GitHubReviewVerdicts.js';
 

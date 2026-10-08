@@ -1,23 +1,5 @@
-/**
- * CommunityReconciliationFindingStore — Redis-backed finding store (F168 Phase D)
- *
- * Stores reconciliation and SLA findings as operational read-model state.
- * No TTL — findings are persistent (铁律 #5 / LL-048).
- *
- * Redis layout (ioredis keyPrefix applied by client factory):
- *   community:reconciliation:finding:{findingId}           → HASH (finding fields)
- *   community:reconciliation:subject:{subjectKey}          → SET  (findingIds)
- *   community:reconciliation:index                         → SET  (all findingIds)
- *
- * Status lifecycle: open → acknowledged → resolved
- *                   open → waived (sticky unless evidence fingerprint changes)
- */
-
-import type { RedisClient } from '@cat-cafe/shared/utils';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import { createHash } from 'node:crypto';
+import type { PluginStorageHost } from '@clowder-ai/plugin-sdk';
 
 export type FindingStatus = 'open' | 'acknowledged' | 'resolved' | 'waived';
 
@@ -50,195 +32,74 @@ export interface FindingInput {
   evidenceFingerprint?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Key helpers
-// ---------------------------------------------------------------------------
+const PREFIX = 'community.finding.';
+const keyOf = (id: string) => PREFIX + createHash('sha256').update(id).digest('hex');
 
-const KEY_NS = 'community:reconciliation:';
-
-function findingKey(findingId: string): string {
-  return `${KEY_NS}finding:${findingId}`;
-}
-
-function subjectSetKey(subjectKey: string): string {
-  return `${KEY_NS}subject:${subjectKey}`;
-}
-
-const INDEX_KEY = `${KEY_NS}index`;
-
-// ---------------------------------------------------------------------------
-// Implementation
-// ---------------------------------------------------------------------------
-
+/** Persistent package-private finding state. Original reopening/waiver rules
+ * remain unchanged; the storage edge uses SDK CAS instead of Redis hashes. */
 export class CommunityReconciliationFindingStore {
-  constructor(private readonly redis: RedisClient) {}
+  constructor(private readonly storage: PluginStorageHost) {}
 
-  // ─── Write operations ──────────────────────────────────────────────────
-
-  /**
-   * Idempotent upsert. Creates finding as 'open' if new.
-   * If finding exists and is 'waived', only reopens if evidenceFingerprint changed.
-   */
-  async upsert(input: FindingInput): Promise<void> {
-    const existing = await this.get(input.findingId);
-    const now = Date.now();
-
-    if (existing) {
-      // Waived finding: only reopen if evidence fingerprint changed
-      if (existing.status === 'waived') {
-        const newFingerprint = input.evidenceFingerprint ?? null;
-        if (newFingerprint && newFingerprint !== existing.evidenceFingerprint) {
-          await this.redis.hmset(findingKey(input.findingId), {
-            status: 'open',
-            message: input.message,
-            evidenceFingerprint: newFingerprint ?? '',
-            waiver: '',
-            updatedAt: String(now),
-          });
-        }
-        // Otherwise stay waived — idempotent
-        return;
-      }
-      // Resolved → reopen (drift recurred)
-      if (existing.status === 'resolved') {
-        await this.redis.hmset(findingKey(input.findingId), {
-          status: 'open',
-          message: input.message,
-          evidenceFingerprint: input.evidenceFingerprint ?? '',
-          updatedAt: String(now),
-        });
-        return;
-      }
-      // Already open/acknowledged — update message but keep status
-      await this.redis.hmset(findingKey(input.findingId), {
-        message: input.message,
-        evidenceFingerprint: input.evidenceFingerprint ?? '',
-        updatedAt: String(now),
-      });
-      return;
+  private async update(id: string, reducer: (old: ReconciliationFinding | null) => ReconciliationFinding | null): Promise<void> {
+    for (let attempt = 0; attempt < 64; attempt++) {
+      const entry = await this.storage.get(keyOf(id));
+      const old = entry?.value as ReconciliationFinding ?? null;
+      const next = reducer(old);
+      if (next === old || next === null) return;
+      if ((await this.storage.compareAndSet(keyOf(id), entry?.revision ?? null, next)).applied) return;
     }
-
-    // New finding — create as open
-    await this.redis.hmset(findingKey(input.findingId), {
-      findingId: input.findingId,
-      subjectKey: input.subjectKey,
-      findingKind: input.findingKind,
-      severity: input.severity,
-      message: input.message,
-      status: 'open',
-      waiver: '',
-      evidenceFingerprint: input.evidenceFingerprint ?? '',
-      createdAt: String(now),
-      updatedAt: String(now),
-    });
-    await this.redis.sadd(subjectSetKey(input.subjectKey), input.findingId);
-    await this.redis.sadd(INDEX_KEY, input.findingId);
+    throw new Error('Finding changed concurrently; retry');
   }
 
-  async acknowledge(findingId: string): Promise<void> {
-    await this.redis.hmset(findingKey(findingId), {
-      status: 'acknowledged',
-      updatedAt: String(Date.now()),
+  async upsert(input: FindingInput): Promise<void> {
+    await this.update(input.findingId, old => {
+      const now = Date.now();
+      if (!old) return {
+        ...input, status: 'open', waiver: null, evidenceFingerprint: input.evidenceFingerprint ?? null,
+        createdAt: now, updatedAt: now,
+      };
+      if (old.status === 'waived') {
+        if (!input.evidenceFingerprint || input.evidenceFingerprint === old.evidenceFingerprint) return old;
+        return { ...old, status: 'open', message: input.message, evidenceFingerprint: input.evidenceFingerprint, waiver: null, updatedAt: now };
+      }
+      return {
+        ...old, status: old.status === 'resolved' ? 'open' : old.status, message: input.message,
+        evidenceFingerprint: input.evidenceFingerprint ?? null, updatedAt: now,
+      };
     });
   }
 
-  async resolve(findingId: string): Promise<void> {
-    await this.redis.hmset(findingKey(findingId), {
-      status: 'resolved',
-      updatedAt: String(Date.now()),
-    });
+  async acknowledge(id: string): Promise<void> {
+    await this.update(id, old => old && { ...old, status: 'acknowledged', updatedAt: Date.now() });
   }
-
-  /**
-   * Waive a finding with audit trail.
-   * Rejects if reason/actor/evidence are empty strings.
-   */
-  async waive(findingId: string, waiver: FindingWaiver): Promise<void> {
+  async resolve(id: string): Promise<void> {
+    await this.update(id, old => old && { ...old, status: 'resolved', updatedAt: Date.now() });
+  }
+  async waive(id: string, waiver: FindingWaiver): Promise<void> {
     if (!waiver.reason) throw new Error('Waiver requires non-empty reason');
     if (!waiver.actor) throw new Error('Waiver requires non-empty actor');
     if (!waiver.evidence) throw new Error('Waiver requires non-empty evidence');
-
-    await this.redis.hmset(findingKey(findingId), {
-      status: 'waived',
-      waiver: JSON.stringify(waiver),
-      updatedAt: String(Date.now()),
-    });
+    await this.update(id, old => old && { ...old, status: 'waived', waiver, updatedAt: Date.now() });
   }
-
-  /**
-   * Resolve all open/acknowledged findings for a subject that are NOT in
-   * the `stillPresent` set. Waived findings are never auto-resolved.
-   */
   async resolveAbsent(subjectKey: string, stillPresent: string[]): Promise<void> {
-    const presentSet = new Set(stillPresent);
-    const findingIds = await this.redis.smembers(subjectSetKey(subjectKey));
-    for (const id of findingIds) {
-      if (presentSet.has(id)) continue;
-      const finding = await this.get(id);
-      if (!finding) continue;
-      if (finding.status === 'open' || finding.status === 'acknowledged') {
-        await this.resolve(id);
-      }
+    const present = new Set(stillPresent);
+    for (const finding of await this.listBySubject(subjectKey)) {
+      if (!present.has(finding.findingId)) await this.update(finding.findingId, old =>
+        old && (old.status === 'open' || old.status === 'acknowledged')
+          ? { ...old, status: 'resolved', updatedAt: Date.now() } : old);
     }
   }
-
-  // ─── Read operations ───────────────────────────────────────────────────
-
-  async get(findingId: string): Promise<ReconciliationFinding | null> {
-    const raw = await this.redis.hgetall(findingKey(findingId));
-    if (!raw || !raw.findingId) return null;
-    return deserializeFinding(raw);
+  async get(id: string): Promise<ReconciliationFinding | null> {
+    return (await this.storage.get(keyOf(id)))?.value as ReconciliationFinding ?? null;
   }
-
   async listBySubject(subjectKey: string): Promise<ReconciliationFinding[]> {
-    const ids = await this.redis.smembers(subjectSetKey(subjectKey));
-    const results: ReconciliationFinding[] = [];
-    for (const id of ids) {
-      const f = await this.get(id);
-      if (f) results.push(f);
-    }
-    return results;
+    return (await this.listAll()).filter(finding => finding.subjectKey === subjectKey);
   }
-
   async listOpen(): Promise<ReconciliationFinding[]> {
-    const allIds = await this.redis.smembers(INDEX_KEY);
-    const results: ReconciliationFinding[] = [];
-    for (const id of allIds) {
-      const f = await this.get(id);
-      if (f && (f.status === 'open' || f.status === 'acknowledged')) {
-        results.push(f);
-      }
-    }
-    return results;
+    return (await this.listAll()).filter(finding => finding.status === 'open' || finding.status === 'acknowledged');
   }
-
-  /** Return all findings regardless of status (D-PR2 read-model contract for D-PR3 UX). */
   async listAll(): Promise<ReconciliationFinding[]> {
-    const allIds = await this.redis.smembers(INDEX_KEY);
-    const results: ReconciliationFinding[] = [];
-    for (const id of allIds) {
-      const f = await this.get(id);
-      if (f) results.push(f);
-    }
-    return results;
+    return Object.entries(await this.storage.list()).filter(([key]) => key.startsWith(PREFIX))
+      .map(([, entry]) => entry.value as ReconciliationFinding);
   }
-}
-
-// ---------------------------------------------------------------------------
-// Serialization helpers
-// ---------------------------------------------------------------------------
-
-function deserializeFinding(raw: Record<string, string>): ReconciliationFinding {
-  return {
-    findingId: raw.findingId,
-    subjectKey: raw.subjectKey,
-    findingKind: raw.findingKind,
-    severity: raw.severity,
-    message: raw.message,
-    status: raw.status as FindingStatus,
-    waiver: raw.waiver ? JSON.parse(raw.waiver) : null,
-    evidenceFingerprint: raw.evidenceFingerprint || null,
-    createdAt: Number(raw.createdAt),
-    updatedAt: Number(raw.updatedAt),
-  };
 }

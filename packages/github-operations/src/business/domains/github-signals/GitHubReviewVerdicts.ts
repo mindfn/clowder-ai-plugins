@@ -1,4 +1,4 @@
-import type { GitHubReviewVerdictState, GitHubReviewVerdicts } from '@cat-cafe/shared';
+import type { GitHubReviewVerdictState, GitHubReviewVerdicts } from '../../model/index.js';
 
 /**
  * #1392: a review decision can change without a new review. GitHub dismisses a verdict in place: the

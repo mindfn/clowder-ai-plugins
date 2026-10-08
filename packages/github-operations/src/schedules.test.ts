@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { parse } from 'yaml';
 
-import { GITHUB_SCHEDULES, runGitHubSchedule } from './schedules.js';
+import { GITHUB_SCHEDULES } from './schedules.js';
 
 test('schedule inventory preserves all seven Core GitHub operations and polling budgets', () => {
   assert.deepEqual(GITHUB_SCHEDULES, [
@@ -17,16 +17,6 @@ test('schedule inventory preserves all seven Core GitHub operations and polling 
   ]);
 });
 
-test('dispatch delegates stateful work to the Host-owned operation port', async () => {
-  const calls: unknown[] = [];
-  const invocation = { scheduleId: 'review-feedback' as const, runId: 'run-1', scheduledAt: '2026-09-20T00:00:00Z' };
-  const result = await runGitHubSchedule(invocation, {
-    async run(input) { calls.push(input); return { publishedEventCount: 2 }; },
-  });
-  assert.deepEqual(calls, [invocation]);
-  assert.deepEqual(result, { publishedEventCount: 2 });
-});
-
 test('manifest schedule contributions match package-owned inventory exactly', async () => {
   const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as {
     contributions: Array<{ type: string; id: string; schedule?: { everyMs?: number }; policy?: { timeoutMs?: number } }>;
@@ -36,10 +26,23 @@ test('manifest schedule contributions match package-owned inventory exactly', as
     .filter(item => item.type === 'schedule')
     .map(item => ({ id: item.id, everyMs: item.schedule?.everyMs, timeoutMs: item.policy?.timeoutMs }));
   assert.deepEqual(schedules, [...GITHUB_SCHEDULES]);
-  assert.deepEqual(manifest.features[0]?.capabilities, ['schedule.register', 'events.publish']);
+  assert.ok(manifest.features[0]?.capabilities.includes('messaging.send'));
+  assert.ok(manifest.features[0]?.capabilities.includes('plugin.state.set'));
+  assert.ok(!manifest.features[0]?.capabilities.includes('events.publish'));
 });
 
 test('runtime source contains no ambient token, env, or persistence fallback', async () => {
   const source = await readFile(new URL('./schedules.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /process\.env|readFile|writeFile|Redis|GITHUB_TOKEN|GITHUB_MCP_PAT/);
+});
+
+test('skills use generic declaration and repository MCP transport is not revived', async () => {
+  const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
+  const skill = manifest.contributions.find((item: { type: string }) => item.type === 'skill');
+  assert.equal(skill.path, 'skills/github-operations');
+  const content = await readFile(new URL(`../${skill.path}/SKILL.md`, import.meta.url), 'utf8');
+  assert.match(content, /plugin_list_tools/);
+  assert.match(content, /plugin_call/);
+  assert.equal(manifest.contributions.some((item: { type: string }) => item.type === 'mcp'), false);
+  assert.equal(manifest.runtime.transport, 'builtin');
 });

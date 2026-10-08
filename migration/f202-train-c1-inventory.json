@@ -165,11 +165,11 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "beta.12 module dependency and seven schedule action handlers required before terminal",
+      "sdkClosure": "beta.12 existing activation/stop/storage/thread/message interfaces; W3 implementation in progress",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
-      "runtimeClosure": "carrier-neutral module and operation bodies pending C1 implementation",
+      "runtimeClosure": "builtin seven-schedule, tracking, repository, observations and signed-webhook carrier tests pass; whole-package typecheck/build green, complete business parity pending; no stdio action claim",
       "catalogClosure": "required; pending deterministic catalog generation",
-      "freshConsumerClosure": "required; pending aggregate install/import journey"
+      "freshConsumerClosure": "required; pending aggregate install/import plus separate Host npm/local-directory/fixed-Git install-enable-run evidence"
     },
     {
       "directory": "video-analysis",
@@ -530,8 +530,8 @@
       "sourceRoots": ["packages/api/src/plugins/github"],
       "configKeys": ["GITHUB_SETUP_NOISE_BOT_LOGINS"],
       "secretKeys": ["GITHUB_TOKEN", "GITHUB_MCP_PAT"],
-      "bindingData": ["Repository tracking registrations and authenticated GitHub identity stay Host-owned"],
-      "data": ["Schedule cursors, deduplication keys, and delivery leases stay Host-owned"],
+      "bindingData": ["Package owns repository/tracking destinations via SDK storage; Host validates installation and thread grants"],
+      "data": ["Package owns cursors, deduplication, Community facts and notification outbox in SDK storage; old Host data remains untouched pending explicit copy/verification"],
       "currentConsumers": [
         "packages/api/src/domains/plugin/PluginRegistry.ts",
         "packages/api/src/domains/plugin/ScheduleFactoryRegistry.ts",
@@ -546,8 +546,13 @@
       ],
       "targetPackage": "@clowder-ai/github-operations",
       "catalogPluginId": "official.github-operations",
-      "runtimeRequirements": ["schedule contributions", "events.publish", "Host-owned tracking state"],
+      "runtimeRequirements": ["builtin activation/stop/disposer", "schedule contributions", "SDK storage", "SDK thread bindings", "messaging.send with optional wake", "generic tool/skill/webhook registration"],
       "implementationStatus": "port-declared, implementation-pending-in-plugins",
+      "implementationProgress": {
+        "stage": "W3 SDK builtin business implementation in progress; frozen pending checkpoint remains until catalog and full parity close",
+        "packageVerification": "source/test typechecks, clean build and 218 tests pass at current checkpoint",
+        "remaining": ["cloud and remaining Community composition", "complete source parity and legacy state copy verification", "fresh-consumer and catalog/artifact closure", "full gate and independent review", "Host npm/local-directory/fixed-Git install-enable-run"]
+      },
       "rollback": "Disable package schedules before restoring Core factories against unchanged Host schedule state."
     },
     {

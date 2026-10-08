@@ -1,4 +1,4 @@
-import type { AwaitStateV1, GitHubWaitOutcomeV1 } from '@cat-cafe/shared';
+import type { AwaitStateV1, GitHubWaitOutcomeV1 } from '../../model/index.js';
 
 export type CiBucket = 'pass' | 'fail' | 'pending' | 'external_infrastructure';
 export type CiExecutionFailure = 'billing_spending_limit_zero_step';

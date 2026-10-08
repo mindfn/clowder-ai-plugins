@@ -1,4 +1,4 @@
-import type { AwaitStateV1 } from '@cat-cafe/shared';
+import type { AwaitStateV1 } from '../../../model/index.js';
 import type { PrFeedbackComment, PrReviewDecision } from '../../../infrastructure/email/ReviewFeedbackRouter.js';
 import type { ExternalCloudObservation } from './ExternalReviewCoordinator.js';
 

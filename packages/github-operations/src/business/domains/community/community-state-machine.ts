@@ -18,7 +18,7 @@
  *   (historical data). Uses payload.mappedState as the target state.
  */
 
-import type { CommunityEvent, CommunityObjectProjection, CommunityObjectState } from '@cat-cafe/shared';
+import type { CommunityEvent, CommunityObjectProjection, CommunityObjectState } from '../../model/index.js';
 import { validateIssueFixEvidence } from './issue-analysis/issue-fix-evidence.js';
 
 // ---------------------------------------------------------------------------

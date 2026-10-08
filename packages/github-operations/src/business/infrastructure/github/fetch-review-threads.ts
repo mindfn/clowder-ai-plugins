@@ -1,4 +1,4 @@
-import type { GitHubReviewThreadBaseline } from '@cat-cafe/shared';
+import type { GitHubReviewThreadBaseline } from '../../model/index.js';
 import { executeGitHubRequest, type GitHubRequestOptions } from './request-budget.js';
 
 export async function fetchGitHubReviewThreads(

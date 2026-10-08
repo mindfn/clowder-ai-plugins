@@ -18,10 +18,13 @@
  *   INV-4/5/6: via RoleResolver.resolve('narrator') fail-closed contract
  */
 
-import { createCatId, type RoleResolver } from '@cat-cafe/shared';
-import type { FastifyBaseLogger } from 'fastify';
-
-import type { WakeCatFn } from '../../cats/services/game/GameNarratorDriver.js';
+import { createCatId, type RoleResolver } from '../../../model/index.js';
+interface BusinessLogger {
+  info(...args: unknown[]): void;
+  warn(...args: unknown[]): void;
+  error(...args: unknown[]): void;
+}
+type WakeCatFn = (input: { threadId: string; catId: string; briefing: string; timeoutMs: number }) => Promise<unknown>;
 
 // ---------------------------------------------------------------------------
 // D0.2: Persistent dedup store interface (replaces process-local Set)
@@ -58,7 +61,7 @@ export interface NarratorDriverDeps {
   readonly narratorThreadId: string;
   /** Proven production mechanism: GameNarratorDriver.WakeCatFn (SPIKE-1 candidate a). */
   readonly wakeCat: WakeCatFn;
-  readonly log: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>;
+  readonly log: BusinessLogger;
   /** D0.2: Persistent dedup store for INV-3 idempotency. */
   readonly dedupStore: NarratorDedupStore;
 }
@@ -107,7 +110,7 @@ export class NarratorDriver {
   static checkNarratorBootConfig(opts: {
     narratorRoleConfigured: boolean;
     narratorThreadId: string | undefined;
-    log: Pick<FastifyBaseLogger, 'warn'>;
+    log: Pick<BusinessLogger, 'warn'>;
   }): void {
     if (opts.narratorRoleConfigured && !opts.narratorThreadId) {
       opts.log.warn(

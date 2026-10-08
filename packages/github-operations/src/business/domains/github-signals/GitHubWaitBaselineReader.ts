@@ -3,7 +3,7 @@ import type {
   GitHubPrWaitPredicate,
   GitHubReviewThreadBaseline,
   PrAutomationState,
-} from '@cat-cafe/shared';
+} from '../../model/index.js';
 import { reviewVerdictsOf } from './GitHubReviewVerdicts.js';
 
 interface GithubIdItem {

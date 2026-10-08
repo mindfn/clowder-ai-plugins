@@ -10,6 +10,10 @@ icon:
   type: svg
   src: assets/icon.svg
 configuration:
+  - key: webhookSecret
+    label: GitHub Webhook Secret
+    kind: secret
+    required: false
   - key: token
     label: Personal Access Token
     kind: secret
@@ -23,11 +27,75 @@ configuration:
     kind: string
     required: false
 contributions:
+  - type: skill
+    id: github-operations
+    path: skills/github-operations
+  - type: webhook
+    id: repository-events
+    path: github/events
+    methods: [POST]
+    verificationSecretRef: webhookSecret
+    action: { method: github.webhook }
+  - type: identity
+    id: github-notification
+    displayName: GitHub
+  - type: tool
+    id: register-tracking
+    name: github_register_tracking
+    description: Track a PR or issue and send updates to an authorized thread. The plugin retires tracking when the subject closes.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      properties:
+        kind: { type: string, enum: [pr, issue] }
+        repoFullName: { type: string, pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' }
+        number: { type: integer, minimum: 1 }
+        threadId: { type: string, minLength: 1 }
+        catId: { type: string, minLength: 1 }
+        reviewThreadIds:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 256 }
+      required: [kind, repoFullName, number, threadId, catId]
+    action: { method: github.tracking.register }
+  - type: tool
+    id: unregister-tracking
+    name: github_unregister_tracking
+    description: Stop tracking a PR or issue while retaining its private delivery history.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      properties:
+        kind: { type: string, enum: [pr, issue] }
+        repoFullName: { type: string, pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' }
+        number: { type: integer, minimum: 1 }
+      required: [kind, repoFullName, number]
+    action: { method: github.tracking.unregister }
+  - type: tool
+    id: list-tracking
+    name: github_list_tracking
+    description: List this installation's PR and issue tracking status and pending deliveries.
+    inputSchema: { type: object, additionalProperties: false, properties: {} }
+    action: { method: github.tracking.list }
   - type: schedule
     id: cicd-check
     schedule: { kind: interval, everyMs: 60000 }
     action: { method: github.cicd-check }
     policy: { overlap: skip, timeoutMs: 30000 }
+  - type: tool
+    id: inspect-subject
+    name: github_inspect_subject
+    description: Read this installation's PR or issue observations and derived status. These are provider facts, not a governance verdict or approval.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      properties:
+        subjectKey: { type: string, pattern: '^(pr|issue):[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*$' }
+        fromSequence: { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+      required: [subjectKey]
+    action: { method: github.subject.inspect }
   - type: schedule
     id: conflict-check
     schedule: { kind: interval, everyMs: 300000 }
@@ -58,11 +126,56 @@ contributions:
     schedule: { kind: interval, everyMs: 600000 }
     action: { method: github.community-reconciler }
     policy: { overlap: skip, timeoutMs: 120000 }
+  - type: tool
+    id: register-repository
+    name: github_register_repository
+    description: Register an authorized repository inbox for package-owned collection and notifications.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      properties:
+        repo: { type: string, pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' }
+        guardThreadId: { type: string, minLength: 1 }
+        guardCatId: { type: string, minLength: 1 }
+        reviewMode: { type: string, enum: [observe_only, maintainer_review] }
+        cloudReviewPolicy: { type: string, enum: [optional, required] }
+      required: [repo, guardThreadId, guardCatId]
+    action: { method: github.repository.register }
+  - type: tool
+    id: unregister-repository
+    name: github_unregister_repository
+    description: Stop repository collection while retaining historical events.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      properties:
+        repo: { type: string, pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' }
+      required: [repo]
+    action: { method: github.repository.unregister }
+  - type: tool
+    id: list-repository
+    name: github_list_repository
+    description: List configured repository inboxes.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      properties: {}
+    action: { method: github.repository.list }
 features:
   - id: github-collaboration
     name: GitHub collaboration operations
     resources: []
     contributions:
+      - { type: skill, id: github-operations }
+      - { type: webhook, id: repository-events }
+      - { type: tool, id: list-repository }
+      - { type: tool, id: unregister-repository }
+      - { type: tool, id: register-repository }
+      - { type: identity, id: github-notification }
+      - { type: tool, id: register-tracking }
+      - { type: tool, id: unregister-tracking }
+      - { type: tool, id: list-tracking }
+      - { type: tool, id: inspect-subject }
       - { type: schedule, id: cicd-check }
       - { type: schedule, id: conflict-check }
       - { type: schedule, id: review-feedback }
@@ -70,7 +183,7 @@ features:
       - { type: schedule, id: issue-tracking }
       - { type: schedule, id: repo-comment-poll }
       - { type: schedule, id: community-reconciler }
-    capabilities: [schedule.register, events.publish]
+    capabilities: [schedule.register, plugin.config.read, secret.read, plugin.state.get, plugin.state.set, thread.listMetadata, thread.write, messaging.send]
 runtime:
-  transport: stdio
-  entrypoint: dist/stdio-entrypoint.js
+  transport: builtin
+  entrypoint: dist/plugin-entrypoint.js

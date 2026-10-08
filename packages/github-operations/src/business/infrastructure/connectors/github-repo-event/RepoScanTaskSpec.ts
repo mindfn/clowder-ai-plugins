@@ -1,96 +1,37 @@
 /**
- * F141 Phase B: RepoScanTaskSpec — Reconciliation scanning
- *
- * Queries `gh api` for open PRs/Issues in allowlisted repos, filters via
- * business dedup (KD-15), and delivers missed events through the same
- * deliverConnectorMessage pipeline as Phase A webhooks.
- *
- * Follows F139 TaskSpec_P1 consumer pattern (CiCdCheckTaskSpec etc).
+ * Repository reconciliation business copied from Host 496e2408.
+ * Admission selection, first-run baseline, filtering and five-item round-robin
+ * budget remain package-owned. Host thread-kind stamping and task/wake plumbing
+ * are replaced by the SDK notification callback supplied by this installation.
  */
-import type { CatId, CommunityEvent, ConnectorSource } from '@cat-cafe/shared';
+import type { CommunityEvent } from '../../../model/index.js';
 import type { ICommunityEventLog } from '../../../domains/community/CommunityEventLog.js';
-import type {
-  ConnectorDeliveryDeps,
-  ConnectorDeliveryInput,
-  ConnectorDeliveryResult,
-} from '../../email/deliver-connector-message.js';
 import { gitHubAdmissionCanContinue } from '../../github/admission-budget.js';
 import { GitHubRateLimitError } from '../../github/request-budget.js';
-import type { ExecuteContext, GateCtx, TaskSpec_P1, WorkItem } from '../../scheduler/types.js';
-import type { IConnectorThreadBindingStore } from '../ConnectorThreadBindingStore.js';
-import { type InboxThreadStore, selfHealInboxThreadKind } from './inbox-thread-resolver.js';
 import type { ReconciliationDedup } from './ReconciliationDedup.js';
-import type { ResolveRepoInboxCatId } from './RepoInboxOwnerResolver.js';
 import type { RepoInboxSignal } from './types.js';
 
-/** Minimal projector interface — only apply() needed here. */
-interface ICommunityProjectorApply {
-  apply(event: CommunityEvent): Promise<void>;
-}
-
-const CONNECTOR_ID = 'github-repo-event';
+interface WorkItem<T> { signal: T; subjectKey: string }
+interface ScanAdmission { run: boolean; reason?: string; workItems?: WorkItem<RepoInboxSignal>[] }
 const DEFAULT_MAX_WORK_ITEMS_PER_RUN = 5;
-/** Repo owner's own PRs/issues should not trigger community intake. */
 const SKIP_AUTHOR_ASSOCIATIONS = new Set(['OWNER']);
-
 export interface GhPrItem {
-  number: number;
-  title: string;
-  html_url: string;
-  user: string;
-  author_association: string;
-  draft: boolean;
+  number: number; title: string; html_url: string; user: string; author_association: string; draft: boolean;
 }
-
 export interface GhIssueItem {
-  number: number;
-  title: string;
-  html_url: string;
-  user: string;
-  author_association: string;
+  number: number; title: string; html_url: string; user: string; author_association: string;
 }
-
-export interface RepoScanTaskSpecOptions {
+export interface RepoScannerOptions {
   repoAllowlist: string[];
-  /** Compatibility fallback when a repo has no canonical community routing config. */
-  inboxCatId: string;
-  /** Dynamic canonical owner lookup. Called once immediately before each delivery. */
-  resolveInboxCatId?: ResolveRepoInboxCatId;
-  defaultUserId: string;
-  reconciliationDedup: Pick<
-    ReconciliationDedup,
-    'isNotified' | 'markNotified' | 'isBaselineEstablished' | 'markBaselineEstablished'
-  >;
-  bindingStore: Pick<IConnectorThreadBindingStore, 'getByExternal'>;
-  /**
-   * F167 R2 P1#2: read+stamp threadKind on pre-existing inbox bindings so the
-   * reconciliation delivery path can't bypass the gate-keeping marker. Optional
-   * for backward compat with minimal test mocks; when absent, reconciliation
-   * delivers as before but emits a warn so missing wiring is visible.
-   */
-  threadStore?: Pick<InboxThreadStore, 'get' | 'updateThreadKind'>;
-  deliverFn: (deps: ConnectorDeliveryDeps, input: ConnectorDeliveryInput) => Promise<ConnectorDeliveryResult>;
-  deliveryDeps: ConnectorDeliveryDeps;
-  invokeTrigger: {
-    trigger(
-      threadId: string,
-      catId: CatId,
-      userId: string,
-      message: string,
-      messageId: string,
-    ): void | Promise<unknown>;
-  };
+  reconciliationDedup: Pick<ReconciliationDedup, 'isNotified' | 'markNotified' | 'isBaselineEstablished' | 'markBaselineEstablished'>;
   fetchOpenPRs: (repo: string, signal?: AbortSignal) => Promise<GhPrItem[]>;
   fetchOpenIssues: (repo: string, signal?: AbortSignal) => Promise<GhIssueItem[]>;
+  deliver: (signal: RepoInboxSignal, content: string) => Promise<void>;
   log: { info(...args: unknown[]): void; warn(...args: unknown[]): void };
-  pollIntervalMs?: number;
   maxWorkItemsPerRun?: number;
   skipHistoricalOnFirstRun?: boolean;
-  /** F202-2B: Override task ID for plugin-scoped schedule instances */
-  id?: string;
-  // F168 Phase A: community event log + projector (best-effort, optional)
   eventLog?: ICommunityEventLog;
-  projector?: ICommunityProjectorApply;
+  projector?: { apply(event: CommunityEvent): Promise<void> };
 }
 
 function formatReconciliationMessage(signal: RepoInboxSignal): string {
@@ -103,12 +44,11 @@ function formatReconciliationMessage(signal: RepoInboxSignal): string {
   ].join('\n');
 }
 
-export function createRepoScanTaskSpec(opts: RepoScanTaskSpecOptions): TaskSpec_P1<RepoInboxSignal> {
+export function createRepoScanner(opts: RepoScannerOptions): (signal: AbortSignal) => Promise<void> {
   const maxWorkItemsPerRun = Math.max(1, opts.maxWorkItemsPerRun ?? DEFAULT_MAX_WORK_ITEMS_PER_RUN);
   const skipHistoricalOnFirstRun = opts.skipHistoricalOnFirstRun ?? true;
   let nextWorkItemOffset = 0;
   let nextRepoIndex = 0;
-
   function selectWorkItems(workItems: WorkItem<RepoInboxSignal>[]): WorkItem<RepoInboxSignal>[] {
     if (workItems.length <= maxWorkItemsPerRun) {
       nextWorkItemOffset = 0;
@@ -124,13 +64,8 @@ export function createRepoScanTaskSpec(opts: RepoScanTaskSpecOptions): TaskSpec_
     return selected;
   }
 
-  return {
-    id: opts.id ?? 'repo-scan',
-    profile: 'poller',
-    trigger: { type: 'interval', ms: opts.pollIntervalMs ?? 300_000 },
-    admission: {
-      async gate(ctx: GateCtx) {
-        const signal = ctx?.signal;
+  async function collect(abortSignal: AbortSignal): Promise<ScanAdmission> {
+        const signal = abortSignal;
         signal?.throwIfAborted();
         if (opts.repoAllowlist.length === 0) {
           return { run: false, reason: 'no repos in allowlist' };
@@ -143,41 +78,11 @@ export function createRepoScanTaskSpec(opts: RepoScanTaskSpecOptions): TaskSpec_
         const startIndex = nextRepoIndex % opts.repoAllowlist.length;
         for (let step = 0; step < opts.repoAllowlist.length; step++) {
           signal?.throwIfAborted();
-          if (step > 0 && !gitHubAdmissionCanContinue(ctx)) break;
+          if (step > 0 && !gitHubAdmissionCanContinue({ signal })) break;
           const index = (startIndex + step) % opts.repoAllowlist.length;
           const repo = opts.repoAllowlist[index]!;
           nextRepoIndex = (index + 1) % opts.repoAllowlist.length;
           try {
-            // F167 R2 P2: self-heal gate-keeping marker for every allowlisted
-            // repo's inbox binding at admission.gate, INDEPENDENT of whether
-            // run.execute fires. Without this, a quiet repo (no unnotified
-            // items → run:false) leaves pre-rollout `threadKind=undefined`
-            // forever, and cats continuing in that inbox thread can still call
-            // register_pr_tracking/hold_ball before any webhook/reconciliation
-            // signal touches the binding (cloud P2 on 9d997e559).
-            //
-            // F167 R4 P2 (cloud finding on fc2c3895d): the lookup + self-heal
-            // BOTH must sit inside this best-effort try. The outer per-repo
-            // catch (line ~225) is reserved for genuine scan failures
-            // (fetchOpenPRs/Issues/dedup); if `bindingStore.getByExternal`
-            // throws here on a transient Redis read, the outer catch would
-            // skip fetchOpenPRs/Issues for this poll → reconciliation delayed
-            // or missed. Wrap both calls together → marker repair cannot
-            // abort scanning (mirrors INV-G7 fail-open).
-            //
-            // Idempotent — selfHealInboxThreadKind no-ops when marker already
-            // 'gate-keeping' and itself fails open internally.
-            if (opts.threadStore) {
-              try {
-                const repoBinding = await opts.bindingStore.getByExternal(CONNECTOR_ID, repo);
-                if (repoBinding) {
-                  await selfHealInboxThreadKind(opts.threadStore, repoBinding.threadId);
-                }
-              } catch {
-                // Swallowed: marker repair must never abort the per-repo scan.
-              }
-            }
-
             const repoWorkItems: WorkItem<RepoInboxSignal>[] = [];
             const baselineEstablished =
               !skipHistoricalOnFirstRun || (await opts.reconciliationDedup.isBaselineEstablished(repo));
@@ -268,62 +173,13 @@ export function createRepoScanTaskSpec(opts: RepoScanTaskSpecOptions): TaskSpec_
         }
 
         return { run: true, workItems: selectWorkItems(workItems) };
-      },
-    },
-    run: {
-      overlap: 'skip',
-      timeoutMs: 30_000,
-      async execute(signal: RepoInboxSignal, _subjectKey: string, ctx: ExecuteContext) {
-        ctx.signal?.throwIfAborted();
-        const binding = await opts.bindingStore.getByExternal(CONNECTOR_ID, signal.repoFullName);
-        ctx.signal?.throwIfAborted();
-        if (!binding) {
-          opts.log.warn(`[repo-scan] No inbox thread for ${signal.repoFullName}, skipping`);
-          return;
-        }
-
-        // F167 R2 P1#2: self-heal gate-keeping marker BEFORE delivery. Without
-        // this, pre-rollout inbox threads whose only activity is reconciliation
-        // (e.g. quiet repos that never receive a live webhook) would silently
-        // bypass the trigger-time guard, since they'd never go through
-        // ensureInboxThread's stamping path. Best-effort; failure does not block
-        // delivery (same fail-open discipline as gate-keeping-guard.ts INV-G7).
-        if (opts.threadStore) {
-          await selfHealInboxThreadKind(opts.threadStore, binding.threadId);
-        } else {
-          opts.log.warn(
-            `[repo-scan] threadStore not wired — gate-keeping marker self-heal skipped for ${signal.repoFullName} thread=${binding.threadId}`,
-          );
-        }
-
-        const inboxCatId = opts.resolveInboxCatId ? await opts.resolveInboxCatId(signal.repoFullName) : opts.inboxCatId;
-
-        const content = formatReconciliationMessage(signal);
-        const source: ConnectorSource = {
-          connector: CONNECTOR_ID,
-          label: 'Repo Inbox (reconciliation)',
-          icon: 'github',
-          url: signal.url,
-          meta: {
-            repoFullName: signal.repoFullName,
-            subjectType: signal.subjectType,
-            number: signal.number,
-            action: signal.action,
-            deliveryId: signal.deliveryId,
-            authorAssociation: signal.authorAssociation,
-          },
-          sender: { id: signal.authorLogin, name: signal.authorLogin },
-        };
-
-        ctx.signal?.throwIfAborted();
-        const delivered = await opts.deliverFn(opts.deliveryDeps, {
-          threadId: binding.threadId,
-          userId: opts.defaultUserId,
-          catId: inboxCatId,
-          content,
-          source,
-        });
-
+  }
+  return async abortSignal => {
+    const admission = await collect(abortSignal);
+    for (const item of admission.workItems ?? []) {
+      abortSignal.throwIfAborted();
+      const signal = item.signal;
+      await opts.deliver(signal, formatReconciliationMessage(signal));
         // Delivery, its dedup marker, event projection, and wake are one bounded
         // completion group. Cancellation is safe before delivery, never between
         // the durable message and the marker that suppresses duplicate scans.
@@ -358,30 +214,6 @@ export function createRepoScanTaskSpec(opts: RepoScanTaskSpecOptions): TaskSpec_
           }
         }
 
-        try {
-          await Promise.resolve(
-            opts.invokeTrigger.trigger(
-              binding.threadId,
-              inboxCatId as CatId,
-              opts.defaultUserId,
-              content,
-              delivered.messageId,
-            ),
-          );
-        } catch {
-          opts.log.warn(`[repo-scan] trigger failed for ${signal.repoFullName}#${signal.number}`);
-        }
-      },
-    },
-    state: { runLedger: 'sqlite' },
-    outcome: { whenNoSignal: 'record' },
-    enabled: () => opts.repoAllowlist.length > 0,
-    actor: { role: 'repo-watcher', costTier: 'cheap' },
-    display: {
-      label: '仓库巡检',
-      category: 'repo',
-      description: '补偿扫描：发现 webhook 漏掉的新 PR/Issue',
-      subjectKind: 'repo',
-    },
+    }
   };
 }

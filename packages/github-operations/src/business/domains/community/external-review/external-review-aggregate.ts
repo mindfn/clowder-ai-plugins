@@ -6,7 +6,7 @@ import type {
   ExternalReviewMode,
   PendingExternalReviewVerdict,
   ReviewDeliveryOutcome,
-} from '@cat-cafe/shared';
+} from '../../../model/index.js';
 
 export interface CreateExternalReviewAggregateInput {
   readonly mode: ExternalReviewMode;

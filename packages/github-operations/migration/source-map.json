@@ -2,7 +2,7 @@
   "sourceRepository": "zts212653/clowder-ai",
   "sourceHead": "496e24089ffb5f99fa241e04c7ee0850df227be4",
   "packageBaseHead": "80e26fc4bc2c337449c80e3f32184db1a96f07cf",
-  "status": "unadapted baseline; not runnable and not a completed migration",
+  "status": "in progress; package runtime tests do not prove Host installation-source acceptance",
   "entries": [
     {
       "source": "packages/api/src/domains/community/CommunityEventLog.ts",
@@ -149,14 +149,16 @@
       "target": "packages/github-operations/src/business/domains/community/external-review/ExternalReviewCoordinator.ts",
       "sourceSha256": "3581f26b1a3df183b77799894f2ea90b28935c70f7d7db1aae2aefc715371661",
       "lines": 303,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-observation-adapted",
+      "reason": "Private events/projection/readiness retained; removed Host telemetry, typed verdict settlement and explicit-wait dependency. Real SDK builtin HEAD/CI observation and same-HEAD rerun projection verified; cloud composition remains pending."
     },
     {
       "source": "packages/api/src/domains/community/external-review/ExternalReviewVerdictService.ts",
-      "target": "packages/github-operations/src/business/domains/community/external-review/ExternalReviewVerdictService.ts",
       "sourceSha256": "9195de5a8ed68af0c6cf8f611988ad03c69fb319b931874d0781214f36bd177f",
       "lines": 511,
-      "disposition": "copied-unadapted"
+      "disposition": "host-retained-governance-consumer",
+      "removedPackageCopy": "packages/github-operations/src/business/domains/community/external-review/ExternalReviewVerdictService.ts",
+      "reason": "W3 coordinator boundary ruling: callback principal, reviewer admission, lease preflight/completion and canonical verdict writes remain in existing Host governance; provider-specific adapters require Host cutover separation. Package copy removed, not typecheck-excluded."
     },
     {
       "source": "packages/api/src/domains/community/external-review/external-cloud-review-classifier.ts",
@@ -181,10 +183,11 @@
     },
     {
       "source": "packages/api/src/domains/community/external-review/external-review-verdict-submission.ts",
-      "target": "packages/github-operations/src/business/domains/community/external-review/external-review-verdict-submission.ts",
       "sourceSha256": "f1f01bec4995400a3803cbd37a24f66e267d598aa8299b12435fa15e988297a4",
       "lines": 362,
-      "disposition": "copied-unadapted"
+      "disposition": "host-retained-governance-consumer",
+      "removedPackageCopy": "packages/github-operations/src/business/domains/community/external-review/external-review-verdict-submission.ts",
+      "reason": "W3 coordinator boundary ruling: callback principal, reviewer admission, lease preflight/completion and canonical verdict writes remain in existing Host governance; provider-specific adapters require Host cutover separation. Package copy removed, not typecheck-excluded."
     },
     {
       "source": "packages/api/src/domains/community/github/GitHubIssueFetcher.ts",
@@ -314,10 +317,17 @@
     },
     {
       "source": "packages/api/src/domains/github-signals/GitHubWaitLifecycleService.ts",
-      "target": "packages/github-operations/src/business/domains/github-signals/GitHubWaitLifecycleService.ts",
       "sourceSha256": "ddebf61937a6b4695e5617eb05bab31b8792e845a7e977d802f94f9a6afc3ea9",
       "lines": 496,
-      "disposition": "copied-unadapted"
+      "disposition": "host-orchestration-replaced",
+      "removedPackageCopy": "packages/github-operations/src/business/domains/github-signals/GitHubWaitLifecycleService.ts",
+      "replacement": [
+        "packages/github-operations/src/tracking-runtime.ts",
+        "packages/github-operations/src/community-runtime.ts",
+        "packages/github-operations/src/plugin-entrypoint.ts"
+      ],
+      "reason": "tracking-runtime.ts owns SDK CAS registrations, durable delivery outbox, terminal retirement and SDK send; no wait generations, ownerFence, task automationState, deadline renewal, lifecycle authority or Host recovery writes. Existing Host wait producers retire only after Host no-double-run proof.",
+      "parity": "pending-complete-mechanical-audit"
     },
     {
       "source": "packages/api/src/domains/github-signals/GitHubWaitPredicateCatalog.ts",
@@ -328,10 +338,17 @@
     },
     {
       "source": "packages/api/src/domains/github-signals/GitHubWaitRenewalBaseline.ts",
-      "target": "packages/github-operations/src/business/domains/github-signals/GitHubWaitRenewalBaseline.ts",
       "sourceSha256": "414d7081e0f5cfa4c3861290a1b423a97b41e4b7a7d02d2952fd4111e709058e",
       "lines": 213,
-      "disposition": "copied-unadapted"
+      "disposition": "host-orchestration-replaced",
+      "removedPackageCopy": "packages/github-operations/src/business/domains/github-signals/GitHubWaitRenewalBaseline.ts",
+      "replacement": [
+        "packages/github-operations/src/tracking-runtime.ts",
+        "packages/github-operations/src/community-runtime.ts",
+        "packages/github-operations/src/plugin-entrypoint.ts"
+      ],
+      "reason": "tracking-runtime.ts captures per-endpoint cursors and review/thread baselines from the same provider observation; no Host wait renewal contract. Historical imported cursor migration remains unverified.",
+      "parity": "pending-complete-mechanical-audit"
     },
     {
       "source": "packages/api/src/domains/github-signals/github-wait-renderer.ts",
@@ -391,10 +408,17 @@
     },
     {
       "source": "packages/api/src/infrastructure/connectors/github-repo-event/inbox-thread-resolver.ts",
-      "target": "packages/github-operations/src/business/infrastructure/connectors/github-repo-event/inbox-thread-resolver.ts",
       "sourceSha256": "fec00a2319efa1cb0b3235a74e4c5b82f185a45a8b8e87e9c06c579fea755dff",
       "lines": 226,
-      "disposition": "copied-unadapted"
+      "disposition": "host-orchestration-replaced",
+      "removedPackageCopy": "packages/github-operations/src/business/infrastructure/connectors/github-repo-event/inbox-thread-resolver.ts",
+      "replacement": [
+        "packages/github-operations/src/tracking-runtime.ts",
+        "packages/github-operations/src/community-runtime.ts",
+        "packages/github-operations/src/plugin-entrypoint.ts"
+      ],
+      "reason": "community-runtime uses explicitly registered SDK-authorized thread/binding. Host-owned threadKind stamps and gate-keeping authority are not inferred or written by plugin.",
+      "parity": "pending-complete-mechanical-audit"
     },
     {
       "source": "packages/api/src/infrastructure/connectors/github-repo-event/types.ts",
@@ -412,17 +436,25 @@
     },
     {
       "source": "packages/api/src/infrastructure/email/CiCdCheckTaskSpec.ts",
-      "target": "packages/github-operations/src/business/infrastructure/email/CiCdCheckTaskSpec.ts",
       "sourceSha256": "63a9e8d72b946047416627d68d9a28c24b073805d3ccc73efd946466b6199424",
       "lines": 236,
-      "disposition": "copied-unadapted"
+      "disposition": "host-orchestration-replaced",
+      "removedPackageCopy": "packages/github-operations/src/business/infrastructure/email/CiCdCheckTaskSpec.ts",
+      "replacement": [
+        "packages/github-operations/src/tracking-runtime.ts",
+        "packages/github-operations/src/community-runtime.ts",
+        "packages/github-operations/src/plugin-entrypoint.ts"
+      ],
+      "reason": "plugin-entrypoint.ts schedules tracking-runtime.poll(cicd-check), github-provider.ts retains exact-HEAD/empty-rollup checks. Batch CI read and complete performance parity remain pending.",
+      "parity": "pending-complete-mechanical-audit"
     },
     {
       "source": "packages/api/src/infrastructure/email/CiCdRouter.ts",
       "target": "packages/github-operations/src/business/infrastructure/email/CiCdRouter.ts",
       "sourceSha256": "81343d99d2cf0e0535ef44b6cba3eb31038b2f5e91cbfae466a251cd8156a1af",
       "lines": 473,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-types-or-pure-policy-retained",
+      "reason": "Host task/wait/connector class removed; pure provider types or policies retained. Package runtime carries polling and SDK notification; see boundary-parity.md."
     },
     {
       "source": "packages/api/src/infrastructure/email/ConflictAutoExecutor.ts",
@@ -433,17 +465,25 @@
     },
     {
       "source": "packages/api/src/infrastructure/email/ConflictCheckTaskSpec.ts",
-      "target": "packages/github-operations/src/business/infrastructure/email/ConflictCheckTaskSpec.ts",
       "sourceSha256": "cf695f5efbc159c9bacb67e3e0aae2b69fed0709b59dd129ccc20e8f815597a7",
       "lines": 201,
-      "disposition": "copied-unadapted"
+      "disposition": "host-orchestration-replaced",
+      "removedPackageCopy": "packages/github-operations/src/business/infrastructure/email/ConflictCheckTaskSpec.ts",
+      "replacement": [
+        "packages/github-operations/src/tracking-runtime.ts",
+        "packages/github-operations/src/community-runtime.ts",
+        "packages/github-operations/src/plugin-entrypoint.ts"
+      ],
+      "reason": "plugin-entrypoint.ts schedules tracking-runtime.poll(conflict-check). UNKNOWN suppressed, change/recovery observed. Notification does not authorize git rebase/force/write; auto-executor is not activated. Poll-budget fairness parity remains pending.",
+      "parity": "pending-complete-mechanical-audit"
     },
     {
       "source": "packages/api/src/infrastructure/email/ConflictRouter.ts",
       "target": "packages/github-operations/src/business/infrastructure/email/ConflictRouter.ts",
       "sourceSha256": "977764fd40174b3d85b4a4ad6926bf3b1f6023a77dd479975d0da105267d460e",
       "lines": 85,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-types-or-pure-policy-retained",
+      "reason": "Host task/wait/connector class removed; pure provider types or policies retained. Package runtime carries polling and SDK notification; see boundary-parity.md."
     },
     {
       "source": "packages/api/src/infrastructure/email/ConnectorInvokeTrigger.ts",
@@ -455,14 +495,22 @@
       "target": "packages/github-operations/src/business/infrastructure/email/IssueCommentRouter.ts",
       "sourceSha256": "cd0931f994ed4a8e7ceb01799fa03dd361e546e7ae293baf470f0784f19d9395",
       "lines": 138,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-types-or-pure-policy-retained",
+      "reason": "Host task/wait/connector class removed; pure provider types or policies retained. Package runtime carries polling and SDK notification; see boundary-parity.md."
     },
     {
       "source": "packages/api/src/infrastructure/email/IssueCommentTaskSpec.ts",
-      "target": "packages/github-operations/src/business/infrastructure/email/IssueCommentTaskSpec.ts",
       "sourceSha256": "e3aaa2fc8867c6f41e65b202e1f59f50f9efbec52bb2a4d85f3b97709a7c3834",
       "lines": 791,
-      "disposition": "copied-unadapted"
+      "disposition": "host-orchestration-replaced",
+      "removedPackageCopy": "packages/github-operations/src/business/infrastructure/email/IssueCommentTaskSpec.ts",
+      "replacement": [
+        "packages/github-operations/src/tracking-runtime.ts",
+        "packages/github-operations/src/community-runtime.ts",
+        "packages/github-operations/src/plugin-entrypoint.ts"
+      ],
+      "reason": "tracking-runtime plus Community journal/classifier retain critical overrides, self/noise filtering, terminal collection and durable SDK message retry. No per-action caller, invokeTrigger or wait custody producer.",
+      "parity": "pending-complete-mechanical-audit"
     },
     {
       "source": "packages/api/src/infrastructure/email/PrTrackingStore.ts",
@@ -473,38 +521,67 @@
     },
     {
       "source": "packages/api/src/infrastructure/email/RedisPrTrackingStore.ts",
-      "target": "packages/github-operations/src/business/infrastructure/email/RedisPrTrackingStore.ts",
       "sourceSha256": "2ecf2eda1dedb23c98a4a69bc1ef8d2dd313500b4453c0baee101c2bae977242",
       "lines": 199,
-      "disposition": "copied-unadapted"
+      "disposition": "host-orchestration-replaced",
+      "removedPackageCopy": "packages/github-operations/src/business/infrastructure/email/RedisPrTrackingStore.ts",
+      "replacement": [
+        "packages/github-operations/src/tracking-runtime.ts",
+        "packages/github-operations/src/community-runtime.ts",
+        "packages/github-operations/src/plugin-entrypoint.ts"
+      ],
+      "reason": "tracking-runtime stores installation-private registrations/cursors/outbox through SDK CAS; unregister retains history. No direct Redis client or production key access. Old data copy/verify pending.",
+      "parity": "pending-complete-mechanical-audit"
     },
     {
       "source": "packages/api/src/infrastructure/email/ReviewFeedbackRouter.ts",
       "target": "packages/github-operations/src/business/infrastructure/email/ReviewFeedbackRouter.ts",
       "sourceSha256": "f714af471f8c389dab8043bba284ed126a26f8f8620f724bf674e125c192dbaf",
       "lines": 183,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-types-or-pure-policy-retained",
+      "reason": "Host task/wait/connector class removed; pure provider types or policies retained. Package runtime carries polling and SDK notification; see boundary-parity.md."
     },
     {
       "source": "packages/api/src/infrastructure/email/ReviewFeedbackTaskSpec.ts",
-      "target": "packages/github-operations/src/business/infrastructure/email/ReviewFeedbackTaskSpec.ts",
       "sourceSha256": "6d346c70d6e325de0e0bfdf12517f7da3f44cc961b11005c58cde27583511268",
       "lines": 1095,
-      "disposition": "copied-unadapted"
+      "disposition": "host-orchestration-replaced",
+      "removedPackageCopy": "packages/github-operations/src/business/infrastructure/email/ReviewFeedbackTaskSpec.ts",
+      "replacement": [
+        "packages/github-operations/src/tracking-runtime.ts",
+        "packages/github-operations/src/community-runtime.ts",
+        "packages/github-operations/src/plugin-entrypoint.ts"
+      ],
+      "reason": "github-provider/tracking-runtime/community-runtime retain split cursors, all-review snapshot/dismissal, stale-head filtering, event-before-delivery, terminal final collection, durable retry and review-thread observation. Historical migration/legacy auto-rotation, cloud classifier and review-loop pacing require explicit parity audit; Host task repair is not copied.",
+      "parity": "pending-complete-mechanical-audit"
     },
     {
       "source": "packages/api/src/infrastructure/email/ReviewFeedbackTerminalEffects.ts",
-      "target": "packages/github-operations/src/business/infrastructure/email/ReviewFeedbackTerminalEffects.ts",
       "sourceSha256": "9cd29c969d4f1eae7e06ab76f8c7a566883093bdd171683843caf0b9b86dc8d3",
       "lines": 78,
-      "disposition": "copied-unadapted"
+      "disposition": "host-orchestration-replaced",
+      "removedPackageCopy": "packages/github-operations/src/business/infrastructure/email/ReviewFeedbackTerminalEffects.ts",
+      "replacement": [
+        "packages/github-operations/src/tracking-runtime.ts",
+        "packages/github-operations/src/community-runtime.ts",
+        "packages/github-operations/src/plugin-entrypoint.ts"
+      ],
+      "reason": "community-runtime.collectTracking records lifecycle only after collection. Host distillation/managed-work attribution remain common downstream consumers, not private imports.",
+      "parity": "pending-complete-mechanical-audit"
     },
     {
       "source": "packages/api/src/infrastructure/email/backfill-legacy-pr-tracking.ts",
-      "target": "packages/github-operations/src/business/infrastructure/email/backfill-legacy-pr-tracking.ts",
       "sourceSha256": "6af5833f3768c2a2d178b70a36fd842d787fb7a413c8027d3bbc8dc6e2072990",
       "lines": 90,
-      "disposition": "copied-unadapted"
+      "disposition": "host-orchestration-replaced",
+      "removedPackageCopy": "packages/github-operations/src/business/infrastructure/email/backfill-legacy-pr-tracking.ts",
+      "replacement": [
+        "packages/github-operations/src/tracking-runtime.ts",
+        "packages/github-operations/src/community-runtime.ts",
+        "packages/github-operations/src/plugin-entrypoint.ts"
+      ],
+      "reason": "Old Redis-to-Host-TaskStore backfill is not the new plugin state migration. No production state read/deleted. Copy/verify migration input and historical cursor tests remain pending.",
+      "parity": "pending-complete-mechanical-audit"
     },
     {
       "source": "packages/api/src/infrastructure/email/ci-cd-contract.ts",

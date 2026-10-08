@@ -1,17 +1,4 @@
-/**
- * F202 Phase 2D: IssueCommentRouter — format + deliver GitHub issue comment notifications.
- *
- * Mirrors ReviewFeedbackRouter pattern: route(signal, tracking) → connector message.
- * AC-D-security: External comment bodies wrapped in [UNTRUSTED EXTERNAL CONTENT].
- * AC-C2: the Phase-C issue continuation note is appended when present.
- */
-import type { ConnectorSource } from '@cat-cafe/shared';
-import type { FastifyBaseLogger } from 'fastify';
 import { selectIssueFixReadiness } from '../../domains/community/issue-analysis/issue-fix-evidence.js';
-import type { ConnectorDeliveryDeps } from './deliver-connector-message.js';
-import { deliverConnectorMessage } from './deliver-connector-message.js';
-
-// ── Domain Types ──────────────────────────────────────────────────
 
 export interface IssueComment {
   readonly id: number;
@@ -29,66 +16,6 @@ export interface IssueCommentSignal {
   readonly issueNumber: number;
   readonly newComments: readonly IssueComment[];
 }
-
-// ── Router ────────────────────────────────────────────────────────
-
-export type IssueCommentRouteResult =
-  | { kind: 'notified'; threadId: string; catId: string; messageId: string; content: string }
-  | { kind: 'skipped'; reason: string };
-
-export interface IssueCommentRouterOptions {
-  readonly deliveryDeps: ConnectorDeliveryDeps;
-  readonly log: FastifyBaseLogger;
-}
-
-export class IssueCommentRouter {
-  private readonly opts: IssueCommentRouterOptions;
-
-  constructor(opts: IssueCommentRouterOptions) {
-    this.opts = opts;
-  }
-
-  async route(
-    signal: IssueCommentSignal,
-    tracking: { threadId: string; catId: string; userId: string },
-  ): Promise<IssueCommentRouteResult> {
-    if (signal.newComments.length === 0) {
-      return { kind: 'skipped', reason: 'no new comments' };
-    }
-
-    const content = buildIssueCommentContent(signal);
-
-    const source: ConnectorSource = {
-      connector: 'github-issue-comment',
-      label: 'Issue Comment',
-      icon: 'github',
-      url: `https://github.com/${signal.repoFullName}/issues/${signal.issueNumber}`,
-    };
-
-    const result = await deliverConnectorMessage(this.opts.deliveryDeps, {
-      threadId: tracking.threadId,
-      userId: tracking.userId,
-      catId: tracking.catId,
-      content,
-      source,
-    });
-
-    this.opts.log.info(
-      `[IssueCommentRouter] ${signal.repoFullName}#${signal.issueNumber} → ${tracking.catId} ` +
-        `(${signal.newComments.length} comments)`,
-    );
-
-    return {
-      kind: 'notified',
-      threadId: tracking.threadId,
-      catId: tracking.catId,
-      messageId: result.messageId,
-      content,
-    };
-  }
-}
-
-// ── Message Formatting ────────────────────────────────────────────
 
 export function buildIssueCommentContent(signal: IssueCommentSignal): string {
   const lines: string[] = [

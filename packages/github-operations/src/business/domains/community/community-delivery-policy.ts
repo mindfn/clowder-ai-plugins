@@ -12,7 +12,7 @@ import type {
   CommunityObjectState,
   GitHubAuthorAssociation,
   IssueCommentSuppressionReason,
-} from '@cat-cafe/shared';
+} from '../../model/index.js';
 
 export type DeliveryDecision = 'wake-owner' | 'silent-log';
 

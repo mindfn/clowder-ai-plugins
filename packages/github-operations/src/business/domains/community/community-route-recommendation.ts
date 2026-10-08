@@ -6,5 +6,5 @@
  * This file re-exports for backward compatibility with existing API imports.
  */
 
-export type { ParseRouteRecommendationResult } from '@cat-cafe/shared';
-export { parseRouteRecommendation } from '@cat-cafe/shared';
+export type { ParseRouteRecommendationResult } from '../../model/index.js';
+export { parseRouteRecommendation } from '../../model/index.js';

@@ -88,12 +88,16 @@ test('every package gate runs typecheck, test, lint, and build like the workflow
     'Video generation gates',
     'Weixin MP gates',
     'WeChat visible reader gates',
+    'GitHub operations gates',
   ]) {
     const step = steps.find((entry) => entry.name === name);
+    assert.ok(step, `${name} must run in the shared local/CI gate`);
     for (const script of ['typecheck', 'test', 'lint', 'build']) {
       assert.ok(step.command.includes(` ${script}`), `${name} missing ${script}`);
     }
   }
+  const github = steps.find(entry => entry.name === 'GitHub operations gates');
+  assert.ok(github.command.indexOf(' build') < github.command.indexOf(' test'), 'GitHub tests load the declared built entrypoint');
   const genoffice = steps.find((entry) => entry.name === 'GenOffice typecheck and tests');
   assert.ok(genoffice.command.includes('typecheck'));
   assert.ok(genoffice.command.includes('test'));

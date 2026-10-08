@@ -2,19 +2,18 @@
  * CommunityRepoConfigStore — Per-repo routing configuration (F168 Phase F — SO-0)
  *
  * operator defines guard thread + guard cat per repo. Static config, not a state machine.
- * Both InMemory (for unit tests) and Redis (for production) implementations.
+ * Both InMemory (for unit tests) and SDK storage (for production) implementations.
  *
  * INV-F0: No repo config = fail-closed (no backfill, no autoRoute).
  *
- * Redis layout (ioredis keyPrefix applied by client factory):
- *   community:repo-config:{repo}         → HASH (config fields)
- *   community:repo-configs:index         → SET  (all repo keys)
- *
+ * Production state uses the SDK's private installation namespace.
+ * Existing Host data is copied by explicit migration, never renamed or deleted.
  * TTL=0 — persistent (铁律 #5 / LL-048).
  */
 
-import type { CommunityRepoConfig } from '@cat-cafe/shared';
-import type { RedisClient } from '@cat-cafe/shared/utils';
+import type { CommunityRepoConfig } from '../../model/index.js';
+import { createHash } from 'node:crypto';
+import type { PluginStorageHost } from '@clowder-ai/plugin-sdk';
 
 // ---------------------------------------------------------------------------
 // Upsert input (repo + guard thread + guard cat)
@@ -80,176 +79,37 @@ export class InMemoryCommunityRepoConfigStore implements ICommunityRepoConfigSto
   }
 }
 
-// ---------------------------------------------------------------------------
-// Redis key helpers
-// ---------------------------------------------------------------------------
+const PREFIX = 'community.repo.';
+const keyOf = (repo: string) => PREFIX + createHash('sha256').update(canonicalRepoName(repo)).digest('hex');
 
-const KEY_NS = 'community:repo-config:';
-const INDEX_KEY = 'community:repo-configs:index';
-
-function configKey(repo: string): string {
-  return `${KEY_NS}${repo}`;
-}
-
-const MIGRATE_LEGACY_REPO_CONFIG_KEYS_LUA = `
-local canonicalExists = redis.call('EXISTS', KEYS[1])
-if canonicalExists == 0 then
-  local winnerIndex = nil
-  local winnerUpdatedAt = -1
-  for i = 3, #KEYS do
-    if redis.call('EXISTS', KEYS[i]) == 1 then
-      local updatedAt = tonumber(redis.call('HGET', KEYS[i], 'updatedAt')) or 0
-      if winnerIndex == nil or updatedAt > winnerUpdatedAt then
-        winnerIndex = i
-        winnerUpdatedAt = updatedAt
-      end
-    end
-  end
-  if winnerIndex ~= nil then
-    redis.call('RENAME', KEYS[winnerIndex], KEYS[1])
-    redis.call('HSET', KEYS[1], 'repo', ARGV[1])
-  end
-end
-
-for i = 3, #KEYS do
-  if redis.call('EXISTS', KEYS[i]) == 1 then
-    redis.call('DEL', KEYS[i])
-  end
-  redis.call('SREM', KEYS[2], ARGV[i - 1])
-end
-
-if redis.call('EXISTS', KEYS[1]) == 1 then
-  redis.call('SADD', KEYS[2], ARGV[1])
-  return 1
-end
-return 0
-`;
-
-// ---------------------------------------------------------------------------
-// Redis implementation (production)
-// ---------------------------------------------------------------------------
-
-export class RedisCommunityRepoConfigStore implements ICommunityRepoConfigStore {
-  constructor(private readonly redis: RedisClient) {}
-
+export class SdkCommunityRepoConfigStore implements ICommunityRepoConfigStore {
+  constructor(private readonly storage: PluginStorageHost) {}
   async upsert(input: UpsertRepoConfigInput): Promise<CommunityRepoConfig> {
     const repo = canonicalRepoName(input.repo);
-    await this.migrateLegacyRepos(repo);
-    const key = configKey(repo);
-    const now = Date.now();
-
-    // Read the existing row once so omitted policy fields preserve explicit opt-in.
-    const existingRaw = await this.redis.hgetall(key);
-    const existing = Object.keys(existingRaw).length > 0 ? hydrate(existingRaw) : null;
-    const createdAt = existing?.createdAt ?? now;
-
-    const config: CommunityRepoConfig = {
-      repo,
-      guardThreadId: input.guardThreadId,
-      guardCatId: input.guardCatId,
-      reviewMode: input.reviewMode ?? existing?.reviewMode ?? 'observe_only',
-      cloudReviewPolicy: input.cloudReviewPolicy ?? existing?.cloudReviewPolicy ?? 'optional',
-      createdAt,
-      updatedAt: now,
-    };
-
-    await this.redis
-      .multi()
-      .hmset(key, {
-        repo: config.repo,
-        guardThreadId: config.guardThreadId,
-        guardCatId: config.guardCatId,
-        reviewMode: config.reviewMode,
-        cloudReviewPolicy: config.cloudReviewPolicy,
-        createdAt: String(config.createdAt),
-        updatedAt: String(config.updatedAt),
-      })
-      .sadd(INDEX_KEY, repo)
-      .exec();
-
-    return config;
+    for (let attempt = 0; attempt < 64; attempt++) {
+      const entry = await this.storage.get(keyOf(repo));
+      const existing = entry?.value as CommunityRepoConfig | undefined;
+      const now = Date.now();
+      const config: CommunityRepoConfig = {
+        repo, guardThreadId: input.guardThreadId, guardCatId: input.guardCatId,
+        reviewMode: input.reviewMode ?? existing?.reviewMode ?? 'observe_only',
+        cloudReviewPolicy: input.cloudReviewPolicy ?? existing?.cloudReviewPolicy ?? 'optional',
+        createdAt: existing?.createdAt ?? now, updatedAt: now,
+      };
+      if ((await this.storage.compareAndSet(keyOf(repo), entry?.revision ?? null, config)).applied) return config;
+    }
+    throw new Error('Repository configuration changed concurrently');
   }
-
   async getByRepo(repo: string): Promise<CommunityRepoConfig | null> {
-    const canonicalRepo = canonicalRepoName(repo);
-    await this.migrateLegacyRepos(canonicalRepo);
-    const raw = await this.redis.hgetall(configKey(canonicalRepo));
-    if (!raw || Object.keys(raw).length === 0) return null;
-    return hydrate(raw);
+    return (await this.storage.get(keyOf(repo)))?.value as CommunityRepoConfig ?? null;
   }
-
   async listAll(): Promise<CommunityRepoConfig[]> {
-    const repos = await this.redis.smembers(INDEX_KEY);
-    if (repos.length === 0) return [];
-
-    const canonicalRepos = [...new Set(repos.map(canonicalRepoName))];
-    for (const repo of canonicalRepos) {
-      if (repos.some((candidate) => candidate !== repo && canonicalRepoName(candidate) === repo)) {
-        await this.migrateLegacyRepos(repo, repos);
-      }
-    }
-
-    const pipeline = this.redis.pipeline();
-    for (const repo of canonicalRepos) {
-      pipeline.hgetall(configKey(repo));
-    }
-    const results = await pipeline.exec();
-    if (!results) return [];
-
-    const configs: CommunityRepoConfig[] = [];
-    for (const [err, raw] of results) {
-      if (err || !raw || typeof raw !== 'object' || Object.keys(raw as object).length === 0) continue;
-      configs.push(hydrate(raw as Record<string, string>));
-    }
-    return configs;
+    return Object.entries(await this.storage.list()).filter(([key]) => key.startsWith(PREFIX))
+      .map(([, entry]) => entry.value as CommunityRepoConfig);
   }
-
-  async deleteByRepo(repo: string): Promise<boolean> {
-    const canonicalRepo = canonicalRepoName(repo);
-    await this.migrateLegacyRepos(canonicalRepo);
-    const key = configKey(canonicalRepo);
-    const existed = await this.redis.exists(key);
-    if (!existed) return false;
-
-    await this.redis.multi().del(key).srem(INDEX_KEY, canonicalRepo).exec();
-    return true;
-  }
-
-  private async migrateLegacyRepos(canonicalRepo: string, indexedRepos?: readonly string[]): Promise<void> {
-    const repos = indexedRepos ?? (await this.redis.smembers(INDEX_KEY));
-    const legacyRepos = repos.filter(
-      (candidate) => candidate !== canonicalRepo && canonicalRepoName(candidate) === canonicalRepo,
-    );
-    if (legacyRepos.length === 0) return;
-
-    const keys = [configKey(canonicalRepo), INDEX_KEY, ...legacyRepos.map(configKey)];
-    await this.redis.eval(MIGRATE_LEGACY_REPO_CONFIG_KEYS_LUA, keys.length, ...keys, canonicalRepo, ...legacyRepos);
-  }
+  async deleteByRepo(repo: string): Promise<boolean> { return (await this.storage.delete(keyOf(repo))).deleted; }
 }
 
-// ---------------------------------------------------------------------------
-// Hydration helper
-// ---------------------------------------------------------------------------
-
-function hydrate(raw: Record<string, string>): CommunityRepoConfig {
-  return {
-    repo: raw.repo,
-    guardThreadId: raw.guardThreadId,
-    guardCatId: raw.guardCatId,
-    reviewMode: raw.reviewMode === 'maintainer_review' ? 'maintainer_review' : 'observe_only',
-    cloudReviewPolicy: raw.cloudReviewPolicy === 'required' ? 'required' : 'optional',
-    createdAt: Number(raw.createdAt),
-    updatedAt: Number(raw.updatedAt),
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
-
-export function createCommunityRepoConfigStore(redis?: RedisClient): ICommunityRepoConfigStore {
-  if (redis) {
-    return new RedisCommunityRepoConfigStore(redis);
-  }
-  return new InMemoryCommunityRepoConfigStore();
+export function createCommunityRepoConfigStore(storage: PluginStorageHost): ICommunityRepoConfigStore {
+  return new SdkCommunityRepoConfigStore(storage);
 }

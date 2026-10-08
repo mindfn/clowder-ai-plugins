@@ -18,9 +18,8 @@
  * The TaskSpec_P1 execute is called once with a batch signal.
  */
 
-import type { CommunityObjectProjection } from '@cat-cafe/shared';
+import type { CommunityObjectProjection } from '../../../model/index.js';
 import { GitHubRateLimitError } from '../../../infrastructure/github/request-budget.js';
-import type { ExecuteContext, GateCtx, TaskSpec_P1 } from '../../../infrastructure/scheduler/types.js';
 import type { ICommunityEventLog } from '../CommunityEventLog.js';
 import type { ICommunityObjectStore } from '../CommunityObjectStore.js';
 import type { SlaPolicy } from '../community-sla-policy.js';
@@ -80,44 +79,10 @@ function parseSubjectKey(subjectKey: string): ParsedSubject | null {
   };
 }
 
-// ---------------------------------------------------------------------------
-// TaskSpec creation
-// ---------------------------------------------------------------------------
-
-/** Signal type for the reconciler batch run. */
-interface ReconcilerBatchSignal {
-  subjectKeys: string[];
-}
-
-export function createCommunityReconcilerTaskSpec(
-  opts: CommunityReconcilerTaskSpecOptions,
-): TaskSpec_P1<ReconcilerBatchSignal> {
-  return {
-    id: opts.id ?? 'community-reconciler',
-    profile: 'poller',
-    trigger: { type: 'interval', ms: opts.pollIntervalMs ?? 600_000 },
-    admission: {
-      async gate(_ctx: GateCtx) {
-        const subjectKeys = await opts.objectStore.listSubjectKeys();
-        if (subjectKeys.length === 0) {
-          return { run: false, reason: 'no tracked community subjects' };
-        }
-        // Batch: single work item with all subjects
-        return {
-          run: true,
-          workItems: [
-            {
-              subjectKey: 'community:reconciler:batch',
-              signal: { subjectKeys },
-            },
-          ],
-        };
-      },
-    },
-    run: {
-      overlap: 'skip',
-      timeoutMs: 120_000,
-      async execute(signal: ReconcilerBatchSignal, _subjectKey: string, ctx: ExecuteContext) {
+/** Run the migrated reconciliation business within the enabled plugin lifetime. */
+export async function runCommunityReconciliation(opts: CommunityReconcilerTaskSpecOptions, abortSignal: AbortSignal): Promise<void> {
+  const ctx = { signal: abortSignal };
+  const signal = { subjectKeys: await opts.objectStore.listSubjectKeys() };
         ctx.signal?.throwIfAborted();
         const baselineEstablished = await opts.isBaselineEstablished();
         ctx.signal?.throwIfAborted();
@@ -228,10 +193,4 @@ export function createCommunityReconcilerTaskSpec(
         opts.log.info(
           `[reconciler] Run complete: ${result.events.length} events, ${result.findings.length} findings, ${result.warnings.length} warnings`,
         );
-      },
-    },
-    state: { runLedger: 'sqlite' },
-    outcome: { whenNoSignal: 'drop' },
-    enabled: () => true,
-  };
 }

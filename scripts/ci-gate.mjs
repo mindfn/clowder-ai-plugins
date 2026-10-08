@@ -112,6 +112,10 @@ export function buildGateSteps() {
       name: 'GenOffice typecheck and tests',
       command: chain('@clowder-ai/genoffice-docx', ['typecheck', 'test']),
     },
+    {
+      name: 'GitHub operations gates',
+      command: chain('@clowder-ai/github-operations', ['typecheck', 'build', 'test', 'lint']),
+    },
     { name: 'Git guards', command: 'pnpm test:guards' },
     { name: 'Fresh consumer install', command: 'pnpm test:fresh-consumer' },
     { name: 'Train C1 inventory closure', command: 'pnpm test:train-c1-inventory' },
