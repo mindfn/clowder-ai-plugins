@@ -17,6 +17,22 @@ for (const [name, factoryName] of Object.entries(factories)) {
   test(`${name} actual entrypoint intercepts commands and preserves permission authority`, async () => {
     const entry = await import(`../packages/connector-${name}/src/plugin-entrypoint.ts`);
     const manifest = parse(await readFile(new URL(`../packages/connector-${name}/plugin.yaml`, import.meta.url), 'utf8'));
+    const targets = ['permissionWhitelistEnabled', 'permissionCommandAdminOnly', 'permissionAdminIdsJson', 'permissionGroupsJson', 'permissionRevision'];
+    const settings = manifest.configuration.find(field => field.key === 'connector_permissions');
+    assert.equal(settings.kind, 'operation'); assert.equal(settings.hidden, undefined);
+    assert.deepEqual(settings.target, targets);
+    assert.deepEqual(settings.actions.map(action => [action.id, action.action.method]), [['read', 'permissions.read']]);
+    const apply = manifest.configuration.find(field => field.key === 'connector_permissions_apply');
+    assert.equal(apply.kind, 'operation'); assert.equal(apply.hidden, undefined);
+    assert.deepEqual(apply.target, targets);
+    assert.deepEqual(apply.actions.map(action => [action.id, action.action.method]), [['configure', 'permissions.configure']]);
+    assert.ok(apply.actions[0].confirm, 'mutation requires owner confirmation while read remains independently reachable');
+    const fields = manifest.configuration.filter(field => targets.includes(field.key));
+    assert.deepEqual(fields.map(field => field.key), targets);
+    assert.deepEqual(fields.map(field => field.kind), ['select', 'select', 'string', 'string', 'string']);
+    assert.ok(fields.every(field => field.default === undefined));
+    assert.ok(fields.slice(0, 4).every(field => field.hidden === undefined));
+    assert.equal(fields[4].hidden, true, 'only optimistic revision token is an internal form field');
     const state = new Map(); const replies = []; const sent = []; const closes = []; let inbound;
     const outbound = { async sendFormattedReply(chat, envelope, metadata) { replies.push({ chat, body: envelope.body, metadata }); },
       async sendReply(chat, body) { replies.push({ chat, body }); },
@@ -46,10 +62,19 @@ for (const [name, factoryName] of Object.entries(factories)) {
     try {
       await assert.rejects(inbound(input('/where', 'repairable')), /permission.*initializ/i);
       assert.equal(sent.length, 0, 'uninitialized policy cannot deliver or audit');
+      assert.equal((await active.actions['permissions.read']({})).data.status, 'uninitialized');
+      assert.equal(state.size, 0, 'reading owner form never initializes permission state');
       const snapshot = { config: { whitelistEnabled: 'true', commandAdminOnly: 'true', adminOpenIds: '["admin"]' }, groups: {} };
       const receipt = await active.actions['permissions.importLegacy']({ input: { appSecret: 'never-store', protocolVersion: 1,
         sourceDigest: createHash('sha256').update(canonical(snapshot)).digest('hex'), snapshot } });
       assert.equal(receipt.data.status, 'imported');
+      const form = await active.actions['permissions.read']({});
+      assert.equal(form.targetValues.permissionAdminIdsJson, '["admin"]');
+      const updated = await active.actions['permissions.configure']({ input: { ...form.targetValues, appSecret: 'never-store' } });
+      assert.equal(updated.data.status, 'configured');
+      const repeated = await active.actions['permissions.importLegacy']({ input: { protocolVersion: 1,
+        sourceDigest: receipt.data.sourceDigest, snapshot } });
+      assert.equal(repeated.data.status, 'preserved_existing');
       await inbound(input('/where', 'repairable'));
       assert.equal(replies.length, 1); assert.match(replies[0].body, /Bound/);
       assert.equal(sent.length, 1); assert.equal(sent[0].threadId, 'system'); assert.equal(sent[0].wake, undefined);

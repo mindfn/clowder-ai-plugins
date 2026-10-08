@@ -40,6 +40,7 @@ function admins(value: unknown): string[] {
 }
 function group(value: unknown) {
   const data = record(value);
+  keys(data, ['externalChatId', 'label', 'addedAt']);
   if (typeof data.addedAt !== 'number' || !Number.isSafeInteger(data.addedAt) || data.addedAt < 0) throw new TypeError('invalid group timestamp');
   if (data.label !== undefined && typeof data.label !== 'string') throw new TypeError('invalid group label');
   return { externalChatId: id(data.externalChatId), ...(data.label === undefined ? {} : { label: data.label }), addedAt: data.addedAt };
@@ -119,6 +120,39 @@ export function createConnectorPermissionStore(storage: PluginStorageHost) {
   };
   return {
     get,
+    async readForOwner() {
+      const entry = await storage.get(KEY);
+      return entry === undefined ? undefined : { revision: entry.revision, value: validate(entry.value) };
+    },
+    /** Explicit owner-local replacement, fenced to the revision displayed on
+     * the card. Concurrent command mutations require a reload, never a retry
+     * that silently overwrites a newer policy. */
+    async configure(value: unknown, now = Date.now()) {
+      const data = record(value);
+      keys(data, ['expectedRevision', 'whitelistEnabled', 'commandAdminOnly', 'adminOpenIds', 'allowedGroups']);
+      const expected = data.expectedRevision;
+      if (expected !== null && (typeof expected !== 'number' || !Number.isSafeInteger(expected) || expected < 1)) {
+        throw new TypeError('invalid permission revision');
+      }
+      if (!Array.isArray(data.allowedGroups) || data.allowedGroups.length > 5000) throw new TypeError('invalid owner groups');
+      const groups = data.allowedGroups.map(value => {
+        const item = record(value); keys(item, ['externalChatId', 'label']);
+        if (item.label !== undefined && typeof item.label !== 'string') throw new TypeError('invalid group label');
+        return { externalChatId: id(item.externalChatId), ...(item.label === undefined ? {} : { label: item.label }) };
+      });
+      const current = await storage.get(KEY);
+      // Validate corrupt state even when the caller presents a stale revision.
+      const previous = current === undefined ? undefined : validate(current.value);
+      if ((current?.revision ?? null) !== expected) throw new Error('permissions changed; reload current permissions');
+      const initial = validate({ v: 1, whitelistEnabled: data.whitelistEnabled, commandAdminOnly: data.commandAdminOnly,
+        adminConfigured: true, adminOpenIds: data.adminOpenIds,
+        allowedGroups: groups.map(item => ({ ...item,
+          addedAt: previous?.allowedGroups.find(g => g.externalChatId === item.externalChatId)?.addedAt ?? now })) });
+      const result = await storage.compareAndSet(KEY, expected as number | null, initial);
+      if (!result.applied) throw new Error('permissions changed; reload current permissions');
+      if (result.revision === undefined) throw new Error('configured permission receipt is missing storage revision');
+      return { revision: result.revision, value: initial };
+    },
     /** Invoked only by the declared owner-local operation. No payload identity authorizes this call. */
     async importLegacy(value: unknown) {
       const input = legacyImport(value);

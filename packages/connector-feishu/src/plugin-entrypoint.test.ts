@@ -129,7 +129,7 @@ test('module exposes both manifest-declared connector and webhook actions', asyn
   const secrets: Record<string, string> = { appSecret: 'secret', verificationToken: '' };
   const active = await entrypoint.create(manifest).start(host(config, secrets));
   assert.deepEqual(Object.keys(active.actions).sort(), [
-    'feishu.disconnect', 'feishu.media-source.read', 'feishu.media-source.settle', 'feishu.outbound', 'feishu.qr-generate', 'feishu.qr-status', 'feishu.test', 'feishu.webhook', 'host.messaging.lifecycle', 'permissions.importLegacy',
+    'feishu.disconnect', 'feishu.media-source.read', 'feishu.media-source.settle', 'feishu.outbound', 'feishu.qr-generate', 'feishu.qr-status', 'feishu.test', 'feishu.webhook', 'host.messaging.lifecycle', 'permissions.configure', 'permissions.importLegacy', 'permissions.read',
   ]);
   const request = {
     method: 'POST', path: 'feishu/events', query: {},
