@@ -29,7 +29,7 @@ binding, configuration/secret, state, and messaging surfaces.
 
 ## Exposed capability
 
-The package contributes one WeChat identity and message subscription and requests `plugin.config.read`, `plugin.state.get`, `plugin.state.set`, `media.read`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.listMetadata`, `thread.write`. It also declares the `weixin_qr_login` operation (`qr-generate` / `qr-status` / `disconnect`) and a `weixin.test` connection check. QR login
+The package contributes one WeChat identity and message subscription and requests `plugin.config.read`, `plugin.state.get`, `plugin.state.set`, `media.read`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.readContent`, `thread.listMetadata`, `thread.write`. It also declares the `weixin_qr_login` operation (`qr-generate` / `qr-status` / `disconnect`) and a `weixin.test` connection check. QR login
 obtains a Bot Token but leaves credential persistence and activation under Host control.
 
 ## 迁移已知差异
@@ -39,3 +39,25 @@ obtains a Bot Token but leaves credential persistence and activation under Host 
 - **`apiBaseUrl` 已删除**：出站媒体只接受 Host 授权的 `hmr_*` 引用，并在 outbound action 返回前通过 `media.read` 读完；旧的相对 URL、绝对路径与裸引用不再读取，改为向用户显示媒体不可用提示。
 - **凭据只经由 operation target 写入**：Bot Token 仅通过 `weixin_qr_login` 的 `targetValues` 由 Host 持久化，包内不写 `context.storage`、不打印凭据。
 - **「已连接」展示依赖 Host W2-2c**：判断依据是 operation target 是否有值，而不是旧 Hub 的实时连接状态；实时状态请使用 `weixin.test`（有 token 且轮询活跃才返回 ok）。
+
+## Commands and owner permission recovery
+
+The builtin entrypoint intercepts `/where`, `/new`, `/threads`, `/use`, `/thread`, `/commands`, `/cats`,
+`/status`, `/history`, `/unbind`, `/allow-group`, `/deny-group`, `/focus`, and `/ask` before ordinary ingress.
+Commands reply through the provider and keep their audit quiet. Only an explicit body in `/thread` or
+`/ask` requests Agent invocation; successful delivery is acknowledged only after the Host accepts it.
+`/use` traverses the owner-visible live thread inventory beyond the first 50 rows, deduplicates IDs and
+rejects a non-progressing or exhausted traversal instead of selecting from an incomplete list.
+
+Permission state starts **uninitialized**, not permissive. After the declared runtime is available, use
+Settings “读取当前权限”, edit the visible whitelist/admin/group fields, then explicitly confirm
+“应用权限设置”. Reading does not initialize state; saving requires the displayed revision. If a concurrent
+change makes the form stale, read it again before saving. An explicitly empty admin list stays empty.
+Group facts come from the authenticated provider adapter; direct-only integrations do not invent groups.
+
+“一次性导入旧权限” accepts only the bounded raw snapshot supplied by the owner-authorized Host cutover
+tool, after confirmation; the package never connects to legacy Redis. It recomputes the snapshot digest
+and inserts permission state only when absent. The same untouched digest returns `already_applied`;
+existing or subsequently edited state returns `preserved_existing`, never an overwrite. Disabling the
+plugin preserves this state. Keep the old Host implementation and hashes until actual replacement and
+no-double-run verification pass; archive tests alone do not authorize their deletion.

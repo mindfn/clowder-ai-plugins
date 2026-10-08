@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { parse } from 'yaml';
 
 const factories = { feishu: 'createFeishuPluginModule', dingtalk: 'createDingTalkPluginModule',
@@ -11,12 +13,28 @@ const canonical = value => value && typeof value === 'object' && !Array.isArray(
   ? `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
   : JSON.stringify(value);
 
-// Real package module + real SDK carrier; only provider transport and Host ports
-// are substituted. This is entrypoint evidence, not final packed acceptance.
+// The optional roots select physically extracted archives outside the checkout.
+// Provider transport and Host ports remain substituted in both modes: packed
+// execution proves closure, not production provider/Host installation acceptance.
+const packedRoots = process.env.CLOWDER_CONNECTOR_PACKED_ROOTS === undefined
+  ? undefined : JSON.parse(process.env.CLOWDER_CONNECTOR_PACKED_ROOTS);
+if (packedRoots !== undefined) assert.deepEqual(Object.keys(packedRoots).sort(), Object.keys(factories).sort());
 for (const [name, factoryName] of Object.entries(factories)) {
-  test(`${name} actual entrypoint intercepts commands and preserves permission authority`, async () => {
-    const entry = await import(`../packages/connector-${name}/src/plugin-entrypoint.ts`);
-    const manifest = parse(await readFile(new URL(`../packages/connector-${name}/plugin.yaml`, import.meta.url), 'utf8'));
+  test(`${name} ${packedRoots ? 'packed' : 'source'} entrypoint intercepts commands and preserves permission authority`, async () => {
+    const packageRoot = packedRoots?.[name];
+    const entry = await import(packageRoot === undefined
+      ? `../packages/connector-${name}/src/plugin-entrypoint.ts`
+      : pathToFileURL(join(packageRoot, 'dist/plugin-entrypoint.js')).href);
+    const manifest = parse(await readFile(packageRoot === undefined
+      ? new URL(`../packages/connector-${name}/plugin.yaml`, import.meta.url)
+      : join(packageRoot, 'plugin.yaml'), 'utf8'));
+    if (packageRoot !== undefined) {
+      const pkg = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'));
+      const sdk = JSON.parse(await readFile(join(packageRoot, 'node_modules/@clowder-ai/plugin-sdk/package.json'), 'utf8'));
+      assert.equal(pkg.version, '0.1.0-alpha.3'); assert.equal(manifest.version, pkg.version);
+      assert.equal(pkg.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.13');
+      assert.equal(sdk.version, '0.2.0-beta.13');
+    }
     const targets = ['permissionWhitelistEnabled', 'permissionCommandAdminOnly', 'permissionAdminIdsJson', 'permissionGroupsJson', 'permissionRevision'];
     const settings = manifest.configuration.find(field => field.key === 'connector_permissions');
     assert.equal(settings.kind, 'operation'); assert.equal(settings.hidden, undefined);
@@ -41,6 +59,8 @@ for (const [name, factoryName] of Object.entries(factories)) {
       return { outbound, async start() {}, async stop() {} }; });
     const summary = id => ({ id, title: 'Bound', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] });
     const threads = new Map([['bound', { ...summary('bound'), featureRefs: ['F202'] }]]);
+    for (let i = 0; i < 50; i++) threads.set(`recent-${i}`, { ...summary(`recent-${i}`), lastActiveAt: 100 + i });
+    threads.set('old-far', { ...summary('old-far'), title: 'Older thread 51', lastActiveAt: 0, featureRefs: ['F999'] });
     const bindings = new Map([['chat', 'bound']]);
     const cat = { catId: 'cat-eqdvbcxw', displayName: '砚砚', aliases: ['@sol'] };
     const host = {
@@ -57,7 +77,10 @@ for (const [name, factoryName] of Object.entries(factories)) {
         listBindings: async () => [...bindings].map(([key, threadId]) => ({ key, threadId, createdAt: 1 })),
         findByKey: async key => threads.get(bindings.get(key)) ?? null,
         get: async id => threads.get(id) ?? null,
-        list: async () => [...threads.values()].sort((a, b) => b.lastActiveAt - a.lastActiveAt),
+        list: async ({ limit = 50, before } = {}) => [...threads.values()]
+          .sort((a, b) => b.lastActiveAt - a.lastActiveAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+          .filter(row => before === undefined || row.lastActiveAt < before.lastActiveAt ||
+            (row.lastActiveAt === before.lastActiveAt && row.id > before.id)).slice(0, limit),
         create: async ({ title }) => { const thread = { ...summary(`new-${threads.size}`), title, lastActiveAt: 2 };
           threads.set(thread.id, thread); return thread; },
         bind: async (key, threadId) => { bindings.set(key, threadId); return { key, threadId, createdAt: 1 }; },
@@ -85,6 +108,8 @@ for (const [name, factoryName] of Object.entries(factories)) {
       const receipt = await active.actions['permissions.importLegacy']({ input: { appSecret: 'never-store', protocolVersion: 1,
         sourceDigest: createHash('sha256').update(canonical(snapshot)).digest('hex'), snapshot } });
       assert.equal(receipt.data.status, 'imported');
+      assert.equal((await active.actions['permissions.importLegacy']({ input: { protocolVersion: 1,
+        sourceDigest: receipt.data.sourceDigest, snapshot } })).data.status, 'already_applied');
       const form = await active.actions['permissions.read']({});
       assert.equal(form.targetValues.permissionAdminIdsJson, '["admin"]');
       const updated = await active.actions['permissions.configure']({ input: { ...form.targetValues, appSecret: 'never-store' } });
@@ -97,6 +122,9 @@ for (const [name, factoryName] of Object.entries(factories)) {
       assert.equal(sent.length, 1); assert.equal(sent[0].threadId, 'system'); assert.equal(sent[0].wake, undefined);
       await inbound(input('/where', 'repairable'));
       assert.equal(replies.length, 1, 'redelivery does not repeat command');
+      await inbound(input('/use F999', 'far-inventory'));
+      assert.equal(bindings.get('chat'), 'old-far', 'actual entrypoint selects beyond the first 50 inventory rows');
+      await inbound(input('/use F202', 'restore-far-inventory'));
       const commands = ['/commands', '/threads', '/use F202', '/thread bound explicit-thread-body', '/cats', '/status',
         '/history 1', '/focus sol', '/focus clear', '/ask sol explicit-ask-body', '/new Owner-created', '/where',
         '/unbind', '/allow-group explicit-group', '/deny-group explicit-group'];
@@ -132,9 +160,27 @@ for (const [name, factoryName] of Object.entries(factories)) {
         await inbound(input('/where', 'denied', true, 'outsider'));
         assert.equal(sent.length, auditCount, 'admin-only group command never wakes or audits');
       }
-      if (name === 'xiaoyi') assert.equal(closes.length, commands.length,
-        'two explicit bodies remain unsettled; initial where and restored binding are settled');
+      if (name === 'xiaoyi') assert.equal(closes.length, replies.length - 2,
+        'only two explicit bodies remain unsettled');
       assert.equal(JSON.stringify(state.get('connector.permissions.v1')).includes('never-store'), false);
+      const persisted = structuredClone(state.get('connector.permissions.v1'));
+      const beforeStop = sent.length;
+      await active.stop();
+      await assert.rejects(inbound(input('/where', 'late-after-stop')));
+      assert.equal(sent.length, beforeStop, 'stopped carrier cannot deliver late command events');
+      assert.deepEqual(state.get('connector.permissions.v1'), persisted, 'stop preserves owner permission state');
+      state.clear(); // isolated fixture only: start a separate fresh-owner journey.
+      const fresh = await entrypoint.create(manifest).start(host);
+      try {
+        const empty = await fresh.actions['permissions.read']({});
+        assert.equal(empty.data.status, 'uninitialized'); assert.equal(state.size, 0);
+        await fresh.actions['permissions.configure']({ input: empty.targetValues });
+        const configured = await fresh.actions['permissions.read']({});
+        assert.equal(configured.data.status, 'configured');
+        assert.equal(configured.targetValues.permissionAdminIdsJson, '[]');
+        assert.equal((await fresh.actions['permissions.importLegacy']({ input: { protocolVersion: 1,
+          sourceDigest: receipt.data.sourceDigest, snapshot } })).data.status, 'preserved_existing');
+      } finally { await fresh.stop(); }
     } finally { await active.stop(); }
   });
 }
