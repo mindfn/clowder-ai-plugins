@@ -52,6 +52,7 @@ for (const [name, factoryName] of Object.entries(factories)) {
     assert.ok(fields.slice(0, 4).every(field => field.hidden === undefined));
     assert.equal(fields[4].hidden, true, 'only optimistic revision token is an internal form field');
     const state = new Map(); const replies = []; const sent = []; const closes = []; let inbound;
+    let delayedPermissionRead;
     const outbound = { async sendFormattedReply(chat, envelope, metadata) { replies.push({ chat, body: envelope.body, metadata }); },
       async sendReply(chat, body) { replies.push({ chat, body }); },
       async onDeliveryBatchDone(chat, done) { closes.push({ chat, done }); } };
@@ -66,7 +67,8 @@ for (const [name, factoryName] of Object.entries(factories)) {
     const host = {
       config: { get: async key => ({ connectionMode: 'webhook', appKey: 'app', corpId: 'corp', agentId: 'agent',
         botId: 'bot', accessKey: 'access' })[key] }, secrets: { get: async () => 'secret' },
-      storage: { get: async key => state.get(key), list: async () => Object.fromEntries(state),
+      storage: { get: async key => key === 'connector.permissions.v1' && delayedPermissionRead !== undefined
+        ? delayedPermissionRead() : state.get(key), list: async () => Object.fromEntries(state),
         compareAndSet: async (key, expected, value) => {
           const current = state.get(key);
           if ((current?.revision ?? null) !== expected) return { applied: false, revision: current?.revision };
@@ -165,9 +167,20 @@ for (const [name, factoryName] of Object.entries(factories)) {
       assert.equal(JSON.stringify(state.get('connector.permissions.v1')).includes('never-store'), false);
       const persisted = structuredClone(state.get('connector.permissions.v1'));
       const beforeStop = sent.length;
+      const repliesBeforeStop = replies.length;
+      let enterRead, finishRead;
+      const entered = new Promise(resolve => { enterRead = resolve; });
+      const lateReceipt = new Promise(resolve => { finishRead = resolve; });
+      delayedPermissionRead = () => { enterRead(); return lateReceipt; };
+      const inFlight = inbound(input('/where', 'in-flight-before-stop'));
+      await entered;
       await active.stop();
+      finishRead(persisted);
+      await assert.rejects(inFlight, /revoked/i, 'late Host permission receipt cannot cross the revoked carrier');
+      delayedPermissionRead = undefined;
       await assert.rejects(inbound(input('/where', 'late-after-stop')));
       assert.equal(sent.length, beforeStop, 'stopped carrier cannot deliver late command events');
+      assert.equal(replies.length, repliesBeforeStop, 'in-flight command cannot reply success after stop');
       assert.deepEqual(state.get('connector.permissions.v1'), persisted, 'stop preserves owner permission state');
       state.clear(); // isolated fixture only: start a separate fresh-owner journey.
       const fresh = await entrypoint.create(manifest).start(host);
