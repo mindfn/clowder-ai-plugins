@@ -550,7 +550,7 @@
       "implementationStatus": "port-declared, implementation-pending-in-plugins",
       "implementationProgress": {
         "stage": "W3 SDK builtin business implementation in progress; frozen pending checkpoint remains until catalog and full parity close",
-        "packageVerification": "source/test typechecks, clean build and 218 tests pass at current checkpoint",
+        "packageVerification": "source/test typechecks, clean build and 227 tests pass; prior exact394fe96 checkpoint passed29/29; later source changes require their own gate",
         "remaining": ["cloud and remaining Community composition", "complete source parity and legacy state copy verification", "fresh-consumer and catalog/artifact closure", "full gate and independent review", "Host npm/local-directory/fixed-Git install-enable-run"]
       },
       "rollback": "Disable package schedules before restoring Core factories against unchanged Host schedule state."

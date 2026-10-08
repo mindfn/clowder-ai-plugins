@@ -40,6 +40,29 @@ contributions:
     id: github-notification
     displayName: GitHub
   - type: tool
+    id: recommend-triage
+    name: github_recommend_triage
+    description: Compare supplied issue observations and recommend a direction. This does not authenticate reviewers, accept a case, assign a guardian, or record a formal decision.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      required: [issueType, observations]
+      properties:
+        issueType: { type: string, enum: [bug, feature, enhancement, question] }
+        observations:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            type: object
+            additionalProperties: false
+            required: [sourceId, verdict]
+            properties:
+              sourceId: { type: string, minLength: 1, maxLength: 256 }
+              verdict: { type: string, enum: [WELCOME, NEEDS-DISCUSSION, POLITELY-DECLINE] }
+              reasonCode: { type: string, maxLength: 256 }
+    action: { method: github.triage.recommend }
+  - type: tool
     id: register-tracking
     name: github_register_tracking
     description: Track a PR or issue and send updates to an authorized thread. The plugin retires tracking when the subject closes.
@@ -176,6 +199,7 @@ features:
       - { type: tool, id: unregister-tracking }
       - { type: tool, id: list-tracking }
       - { type: tool, id: inspect-subject }
+      - { type: tool, id: recommend-triage }
       - { type: schedule, id: cicd-check }
       - { type: schedule, id: conflict-check }
       - { type: schedule, id: review-feedback }

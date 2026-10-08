@@ -68,6 +68,7 @@ export class CommunityRuntime {
     };
     this.scan = createRepoScanner({
       repoAllowlist: this.repos, log: context.logger, eventLog: this.events, projector: this.projector,
+      ...this.pollProgress('repo-scan'),
       reconciliationDedup: {
         isNotified: async (repo, kind, number) => !!await context.storage.get(stateKey('scan-notified', `${kind}:${repo}#${number}`)),
         markNotified: async (repo, kind, number) => { await context.storage.set(stateKey('scan-notified', `${kind}:${repo}#${number}`), true); },
@@ -94,6 +95,7 @@ export class CommunityRuntime {
     });
     this.commentPoll = createRepoCommentPoller({
       repoAllowlist: this.repos, eventLog: this.events, projector: this.projector,
+      ...this.pollProgress('repo-comment-poll'),
       fetchRepoComments: (repo, since, signal) => provider.repoComments(repo, since, signal ?? this.lifetime.signal),
       readCursor: async repo => (await context.storage.get(stateKey('comment-cursor', repo)))?.value as string | undefined,
       writeCursor: async (repo, value) => { await context.storage.set(stateKey('comment-cursor', repo), value); },
@@ -103,6 +105,19 @@ export class CommunityRuntime {
       }),
       log: context.logger,
     });
+  }
+
+  private pollProgress(kind: string) {
+    const key = `community.poll-progress.${kind}`;
+    return {
+      readProgress: async (): Promise<string | undefined> => {
+        const entry = await this.context.storage.get(key);
+        if (!entry) return undefined;
+        if (typeof entry.value !== 'string') throw new TypeError('invalid persisted repository poll progress');
+        return entry.value;
+      },
+      writeProgress: async (repo: string) => { await this.context.storage.set(key, repo); },
+    };
   }
 
   private serialize<T>(operation: () => Promise<T>): Promise<T> {
@@ -258,13 +273,14 @@ export class CommunityRuntime {
       // Only configured repositories remain active; historical projections are retained.
       const active = new Set(this.repos);
       await runCommunityReconciliation({
+        ...this.pollProgress('community-reconciler'),
         objectStore: { get: subject => this.objects.get(subject), listSubjectKeys: async () =>
           (await this.objects.listSubjectKeys()).filter(subject => active.has(subject.replace(/^(?:pr|issue):/, '').replace(/#\d+$/, ''))) },
         eventLog: this.events, projector: this.projector, findingStore: this.findings,
         fetchIssueState: (repo, number, signal) => this.provider.state(repo, 'issue', number, signal ?? this.lifetime.signal),
         fetchPrState: (repo, number, signal) => this.provider.state(repo, 'pr', number, signal ?? this.lifetime.signal),
-        isBaselineEstablished: async () => !!await this.context.storage.get('community.reconciler.baseline'),
-        markBaselineEstablished: async () => { await this.context.storage.set('community.reconciler.baseline', true); },
+        isBaselineEstablished: async subject => !!await this.context.storage.get(stateKey('reconciler-baseline', subject)),
+        markBaselineEstablished: async subject => { await this.context.storage.set(stateKey('reconciler-baseline', subject), true); },
         log: this.context.logger,
       }, signal);
     });

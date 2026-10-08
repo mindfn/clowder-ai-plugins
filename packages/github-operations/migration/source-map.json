@@ -44,7 +44,16 @@
       "target": "packages/github-operations/src/business/domains/community/TriageOrchestrator.ts",
       "sourceSha256": "b240c7c5c108e820a444477d4f9e349213848608980416aeb853c9b9eb26db8f",
       "lines": 182,
-      "disposition": "copied-unadapted"
+      "disposition": "host-retained-governance-consumer",
+      "removedPackageCopy": true,
+      "reason": "Ruling338: durable assignment, routeAcceptance and accepted-case writes stay Host-owned. Only the pure consensus recommendation is callable in the package; supplied evidence labels are not authenticated reviewers.",
+      "replacement": [
+        "packages/github-operations/src/triage-recommendation.ts",
+        "packages/github-operations/src/business/domains/community/reconciliation/resolveConsensus.ts"
+      ],
+      "packageBusinessMoved": "pure recommendation only",
+      "realPackageReplacementVerified": "generic builtin triage recommendation test; governance replacement not claimed",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/community-auto-tracking.ts",
@@ -278,7 +287,11 @@
       "target": "packages/github-operations/src/business/domains/community/reconciliation/CommunityReconcilerTaskSpec.ts",
       "sourceSha256": "d08014d5c39fbf9c52f9167b94e8b9c7a7b33ff110d63bad5b50641269d2a9fb",
       "lines": 237,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-runtime-adapted",
+      "reason": "Package-owned bounded admission, per-read cancellation awaiting cleanup, durable fairness progress. Reconciliation establishes quiet baseline per successful subject, preserving failed/deferred subjects and findings.",
+      "packageBusinessMoved": "provider polling and pure reconciliation",
+      "realPackageReplacementVerified": "package repo-poll-lifecycle tests; Host installation/cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/reconciliation/CommunityReconciliationFindingStore.ts",
@@ -390,7 +403,11 @@
       "target": "packages/github-operations/src/business/infrastructure/connectors/github-repo-event/RepoCommentPollTaskSpec.ts",
       "sourceSha256": "841fd58acd036fa02b2312ed72dc63a974537c9c6101e9e95fe7e782f401858c",
       "lines": 244,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-runtime-adapted",
+      "reason": "Package-owned bounded admission, per-read cancellation awaiting cleanup, durable fairness progress. Reconciliation establishes quiet baseline per successful subject, preserving failed/deferred subjects and findings.",
+      "packageBusinessMoved": "provider polling and pure reconciliation",
+      "realPackageReplacementVerified": "package repo-poll-lifecycle tests; Host installation/cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/connectors/github-repo-event/RepoInboxOwnerResolver.ts",
@@ -404,7 +421,11 @@
       "target": "packages/github-operations/src/business/infrastructure/connectors/github-repo-event/RepoScanTaskSpec.ts",
       "sourceSha256": "cf7672cad4a39ead889a51890262ea118e0d60bba4b7cb54f22dceab1351b6f4",
       "lines": 387,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-runtime-adapted",
+      "reason": "Package-owned bounded admission, per-read cancellation awaiting cleanup, durable fairness progress. Reconciliation establishes quiet baseline per successful subject, preserving failed/deferred subjects and findings.",
+      "packageBusinessMoved": "provider polling and pure reconciliation",
+      "realPackageReplacementVerified": "package repo-poll-lifecycle tests; Host installation/cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/connectors/github-repo-event/inbox-thread-resolver.ts",
@@ -668,7 +689,11 @@
       "target": "packages/github-operations/src/business/infrastructure/github/admission-budget.ts",
       "sourceSha256": "fb9a8457398039e0c6b1ba602760e1fdf494b99db325612fe05a9dd8b500df72",
       "lines": 13,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-runtime-adapted",
+      "reason": "Package-owned bounded admission, per-read cancellation awaiting cleanup, durable fairness progress. Reconciliation establishes quiet baseline per successful subject, preserving failed/deferred subjects and findings.",
+      "packageBusinessMoved": "provider polling and pure reconciliation",
+      "realPackageReplacementVerified": "package repo-poll-lifecycle tests; Host installation/cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/github/comment-cursors.ts",
@@ -755,5 +780,10 @@
     "GitHub workflow skills",
     "GitHub distillation hooks",
     "tests and Host-to-package substitution proof"
-  ]
+  ],
+  "stageLedger": {
+    "packageBusinessMoved": "partial; source-specific dispositions below",
+    "realPackageReplacementVerified": "pending complete candidate and all three Host installation sources",
+    "hostLegacyRemoved": false
+  }
 }

@@ -1,196 +1,96 @@
-/**
- * CommunityReconcilerTaskSpec — schedule-driven reconciliation (F168 Phase D, D3)
- *
- * Reads CommunityObjectProjection snapshots + live GitHub state for each
- * tracked subject, runs the pure `reconcile()` engine, then:
- *   1. Appends missing fact events to the Event Log
- *   2. Calls projector.apply for each newly appended event
- *   3. Upserts findings into CommunityReconciliationFindingStore
- *   4. Auto-resolves findings that are no longer present
- *
- * Redis-gated like repo-scan: requires objectStore, eventLog, projector,
- * and findingStore plus GitHub fetch functions.
- *
- * Note: The reconciler runs the pure `reconcile()` across ALL subjects in
- * the gate phase (collecting work items), then processes all events + findings
- * in a single execute call. This is because drift detection benefits from
- * batch context (e.g., resolveAbsent needs the full finding set per subject).
- * The TaskSpec_P1 execute is called once with a batch signal.
+/** Package-owned scheduling of the unchanged pure Community reconciler.
+ * Each subject is independent in reconcile(). Bound admission and persist the
+ * last attempt so a large installation makes progress across runtime restarts.
+ * First successful observation stays quiet per subject; a failed read cannot
+ * establish its baseline, clear findings, or prevent other subjects progressing.
  */
-
 import type { CommunityObjectProjection } from '../../../model/index.js';
-import { GitHubRateLimitError } from '../../../infrastructure/github/request-budget.js';
+import { gitHubAdmissionCanContinue, gitHubPollBudget, readGitHubObject, type GitHubPollOptions } from '../../../infrastructure/github/admission-budget.js';
 import type { ICommunityEventLog } from '../CommunityEventLog.js';
 import type { ICommunityObjectStore } from '../CommunityObjectStore.js';
 import type { SlaPolicy } from '../community-sla-policy.js';
 import { type GitHubSnapshot, reconcile } from './CommunityReconciler.js';
 import type { CommunityReconciliationFindingStore } from './CommunityReconciliationFindingStore.js';
 
-// ---------------------------------------------------------------------------
-// Minimal projector interface
-// ---------------------------------------------------------------------------
-
-interface IProjectorApply {
-  apply(event: Parameters<ICommunityEventLog['append']>[0]): Promise<void>;
-}
-
-// ---------------------------------------------------------------------------
-// Options
-// ---------------------------------------------------------------------------
-
-export interface CommunityReconcilerTaskSpecOptions {
+export interface CommunityReconcilerTaskSpecOptions extends GitHubPollOptions {
   objectStore: Pick<ICommunityObjectStore, 'get' | 'listSubjectKeys'>;
   eventLog: ICommunityEventLog;
-  projector: IProjectorApply;
+  projector: { apply(event: Parameters<ICommunityEventLog['append']>[0]): Promise<void> };
   findingStore: CommunityReconciliationFindingStore;
-  /** Fetch live GitHub state for an issue. */
   fetchIssueState: (repo: string, number: number, signal?: AbortSignal) => Promise<GitHubSnapshot | null>;
-  /** Fetch live GitHub state for a PR. */
   fetchPrState: (repo: string, number: number, signal?: AbortSignal) => Promise<GitHubSnapshot | null>;
   slaPolicy?: SlaPolicy;
   log: { info(...args: unknown[]): void; warn(...args: unknown[]): void };
-  /** Task poll interval (default 10 minutes). */
-  pollIntervalMs?: number;
-  /** Override task ID for plugin-scoped instances. */
-  id?: string;
-  /** Track whether baseline has been established across runs. */
-  isBaselineEstablished: () => Promise<boolean>;
-  markBaselineEstablished: () => Promise<void>;
+  isBaselineEstablished: (subjectKey: string) => Promise<boolean>;
+  markBaselineEstablished: (subjectKey: string) => Promise<void>;
 }
 
-// ---------------------------------------------------------------------------
-// Subject key parsing
-// ---------------------------------------------------------------------------
-
-interface ParsedSubject {
-  type: 'issue' | 'pr';
-  repo: string;
-  number: number;
+export async function runCommunityReconciliation(opts: CommunityReconcilerTaskSpecOptions, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  const budget = gitHubPollBudget(signal, opts);
+  const subjects = [...await opts.objectStore.listSubjectKeys()].sort();
+  if (!subjects.length) return;
+  const progress = await opts.readProgress?.();
+  const previous = progress === undefined ? -1 : subjects.indexOf(progress);
+  const start = (previous + 1) % subjects.length;
+  for (let step = 0; step < subjects.length; step++) {
+    signal.throwIfAborted();
+    if (step > 0 && !gitHubAdmissionCanContinue(budget)) break;
+    const subject = subjects[(start + step) % subjects.length]!;
+    try {
+      const projection = await opts.objectStore.get(subject);
+      signal.throwIfAborted();
+      if (!projection) continue;
+      const parsed = subject.match(/^(issue|pr):([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)#([1-9][0-9]*)$/);
+      if (!parsed || !Number.isSafeInteger(Number(parsed[3]))) {
+        opts.log.warn(`[reconciler] Cannot parse subjectKey: ${subject}`);
+        continue;
+      }
+      const baselineEstablished = await opts.isBaselineEstablished(subject);
+      let snapshot: GitHubSnapshot | null = null, fetched = false;
+      try {
+        const read = parsed[1] === 'issue' ? opts.fetchIssueState : opts.fetchPrState;
+        snapshot = await readGitHubObject(budget, childSignal => read(parsed[2]!, Number(parsed[3]), childSignal));
+        fetched = true;
+      } catch (error) {
+        signal.throwIfAborted();
+        opts.log.warn(`[reconciler] Failed to fetch GitHub state for ${subject}; findings retained`, error);
+      }
+      signal.throwIfAborted();
+      if (!baselineEstablished) {
+        if (fetched) await opts.markBaselineEstablished(subject);
+        continue;
+      }
+      await applySubject(opts, projection, snapshot, fetched, signal);
+    } finally {
+      await opts.writeProgress?.(subject);
+    }
+  }
+  signal.throwIfAborted();
 }
 
-function parseSubjectKey(subjectKey: string): ParsedSubject | null {
-  // Format: issue:owner/repo#N or pr:owner/repo#N
-  const match = subjectKey.match(/^(issue|pr):(.+)#(\d+)$/);
-  if (!match) return null;
-  return {
-    type: match[1] as 'issue' | 'pr',
-    repo: match[2],
-    number: Number(match[3]),
-  };
-}
-
-/** Run the migrated reconciliation business within the enabled plugin lifetime. */
-export async function runCommunityReconciliation(opts: CommunityReconcilerTaskSpecOptions, abortSignal: AbortSignal): Promise<void> {
-  const ctx = { signal: abortSignal };
-  const signal = { subjectKeys: await opts.objectStore.listSubjectKeys() };
-        ctx.signal?.throwIfAborted();
-        const baselineEstablished = await opts.isBaselineEstablished();
-        ctx.signal?.throwIfAborted();
-        const { subjectKeys } = signal;
-
-        // Fetch all projections + GitHub snapshots
-        const projections: CommunityObjectProjection[] = [];
-        const githubSnapshots = new Map<string, GitHubSnapshot>();
-        // Track subjects with successful GitHub fetches — only these are safe
-        // to pass through resolveAbsent (D3.4: fetch failure must not clear findings)
-        const fetchSuccessSubjects = new Set<string>();
-
-        for (const sk of subjectKeys) {
-          ctx.signal?.throwIfAborted();
-          const projection = await opts.objectStore.get(sk);
-          ctx.signal?.throwIfAborted();
-          if (!projection) continue;
-
-          projections.push(projection);
-
-          const parsed = parseSubjectKey(sk);
-          if (!parsed) {
-            opts.log.warn(`[reconciler] Cannot parse subjectKey: ${sk}`);
-            continue;
-          }
-
-          try {
-            const fetchFn = parsed.type === 'issue' ? opts.fetchIssueState : opts.fetchPrState;
-            const ghSnap = await fetchFn(parsed.repo, parsed.number, ctx.signal);
-            ctx.signal?.throwIfAborted();
-            if (ghSnap) {
-              githubSnapshots.set(sk, ghSnap);
-            }
-            // Mark as successfully fetched even if ghSnap is null (API returned no data)
-            // — null is a valid "not found" answer, distinct from a fetch error
-            fetchSuccessSubjects.add(sk);
-          } catch (err) {
-            ctx.signal?.throwIfAborted();
-            if (err instanceof GitHubRateLimitError) continue;
-            opts.log.warn(`[reconciler] Failed to fetch GitHub state for ${sk}:`, err);
-            // Do NOT add to fetchSuccessSubjects — resolveAbsent must skip this subject
-          }
-        }
-
-        ctx.signal?.throwIfAborted();
-        if (projections.length === 0) return;
-
-        // Run pure reconciliation
-        const result = reconcile({
-          projections,
-          githubSnapshots,
-          baselineEstablished,
-          now: Date.now(),
-          slaPolicy: opts.slaPolicy,
-        });
-
-        // Log warnings
-        for (const w of result.warnings) {
-          opts.log.warn(`[reconciler] ${w}`);
-        }
-
-        // Establish baseline on first run — only if ALL projected subjects
-        // were fetched successfully. Partial baseline would miss pre-existing
-        // drift for failed subjects on the next (non-baseline) run.
-        if (result.isBaseline) {
-          if (fetchSuccessSubjects.size === projections.length) {
-            await opts.markBaselineEstablished();
-            opts.log.info(`[reconciler] Baseline established for ${projections.length} subjects`);
-          } else {
-            opts.log.warn(
-              `[reconciler] Baseline deferred: ${fetchSuccessSubjects.size}/${projections.length} subjects fetched successfully`,
-            );
-          }
-          return;
-        }
-
-        // Append events to Event Log + projector
-        for (const event of result.events) {
-          ctx.signal?.throwIfAborted();
-          // An appended event and its projector application are one causal unit.
-          // Cancellation is safe before append, never between append and apply.
-          const { appended } = await opts.eventLog.append(event);
-          if (appended) {
-            await opts.projector.apply(event);
-            opts.log.info(`[reconciler] Appended ${event.kind} for ${event.subjectKey}`);
-          }
-        }
-
-        // Upsert findings
-        const currentFindingIds: string[] = [];
-        for (const finding of result.findings) {
-          ctx.signal?.throwIfAborted();
-          await opts.findingStore.upsert(finding);
-          currentFindingIds.push(finding.findingId);
-        }
-
-        // Auto-resolve absent findings only for subjects with successful GitHub fetches.
-        // D3.4: transient fetch failure must not clear existing findings.
-        for (const subjectKey of fetchSuccessSubjects) {
-          ctx.signal?.throwIfAborted();
-          const subjectFindings = currentFindingIds.filter((id) => {
-            const finding = result.findings.find((f) => f.findingId === id);
-            return finding?.subjectKey === subjectKey;
-          });
-          await opts.findingStore.resolveAbsent(subjectKey, subjectFindings);
-        }
-
-        opts.log.info(
-          `[reconciler] Run complete: ${result.events.length} events, ${result.findings.length} findings, ${result.warnings.length} warnings`,
-        );
+async function applySubject(opts: CommunityReconcilerTaskSpecOptions, projection: CommunityObjectProjection,
+  snapshot: GitHubSnapshot | null, fetched: boolean, signal: AbortSignal): Promise<void> {
+  const subject = projection.subjectKey;
+  const result = reconcile({ projections: [projection],
+    githubSnapshots: snapshot ? new Map([[subject, snapshot]]) : new Map(),
+    baselineEstablished: true, now: (opts.now ?? Date.now)(), slaPolicy: opts.slaPolicy,
+  });
+  for (const warning of result.warnings) opts.log.warn(`[reconciler] ${warning}`);
+  for (const event of result.events) {
+    signal.throwIfAborted();
+    const { appended } = await opts.eventLog.append(event);
+    // Never interrupt between durable append and its projection.
+    if (appended) await opts.projector.apply(event);
+  }
+  for (const finding of result.findings) {
+    signal.throwIfAborted();
+    await opts.findingStore.upsert(finding);
+  }
+  // Local SLA evaluation remains useful on fetch failure, but only a successful
+  // remote read (including an explicit not-found) may resolve absent findings.
+  if (fetched) {
+    signal.throwIfAborted();
+    await opts.findingStore.resolveAbsent(subject, result.findings.map(finding => finding.findingId));
+  }
 }

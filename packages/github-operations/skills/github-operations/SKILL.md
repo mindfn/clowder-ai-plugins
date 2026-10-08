@@ -22,6 +22,11 @@ derived PR/issue status. Follow its pagination cursor for older/later records.
 These observations do not register a typed review verdict or complete an action
 lease; those remain the Host's authenticated governance operations.
 
+Use the triage-recommendation tool to compare supplied observations. Its source
+labels identify evidence, not authenticated reviewers. A recommendation never
+accepts a case, signs off a guardian, or validates a route; use the existing
+authenticated Host governance entrypoints for those decisions.
+
 For a repository inbox, register the repository and its authorized thread/recipient.
 The first scan records a historical baseline without flooding the thread. Later
 scans, comments and signed webhooks feed the same package-owned state. With no

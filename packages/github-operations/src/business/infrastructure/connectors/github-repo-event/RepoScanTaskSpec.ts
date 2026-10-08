@@ -6,7 +6,7 @@
  */
 import type { CommunityEvent } from '../../../model/index.js';
 import type { ICommunityEventLog } from '../../../domains/community/CommunityEventLog.js';
-import { gitHubAdmissionCanContinue } from '../../github/admission-budget.js';
+import { gitHubAdmissionCanContinue, gitHubPollBudget, readGitHubObject, type GitHubPollOptions } from '../../github/admission-budget.js';
 import { GitHubRateLimitError } from '../../github/request-budget.js';
 import type { ReconciliationDedup } from './ReconciliationDedup.js';
 import type { RepoInboxSignal } from './types.js';
@@ -21,7 +21,7 @@ export interface GhPrItem {
 export interface GhIssueItem {
   number: number; title: string; html_url: string; user: string; author_association: string;
 }
-export interface RepoScannerOptions {
+export interface RepoScannerOptions extends GitHubPollOptions {
   repoAllowlist: string[];
   reconciliationDedup: Pick<ReconciliationDedup, 'isNotified' | 'markNotified' | 'isBaselineEstablished' | 'markBaselineEstablished'>;
   fetchOpenPRs: (repo: string, signal?: AbortSignal) => Promise<GhPrItem[]>;
@@ -66,6 +66,7 @@ export function createRepoScanner(opts: RepoScannerOptions): (signal: AbortSigna
 
   async function collect(abortSignal: AbortSignal): Promise<ScanAdmission> {
         const signal = abortSignal;
+        const budget = gitHubPollBudget(signal, opts);
         signal?.throwIfAborted();
         if (opts.repoAllowlist.length === 0) {
           return { run: false, reason: 'no repos in allowlist' };
@@ -75,10 +76,12 @@ export function createRepoScanner(opts: RepoScannerOptions): (signal: AbortSigna
         let baselinedItemCount = 0;
         let baselinedRepoCount = 0;
 
-        const startIndex = nextRepoIndex % opts.repoAllowlist.length;
+        const progress = await opts.readProgress?.();
+        const priorIndex = progress === undefined ? -1 : opts.repoAllowlist.indexOf(progress);
+        const startIndex = (priorIndex < 0 ? nextRepoIndex : priorIndex + 1) % opts.repoAllowlist.length;
         for (let step = 0; step < opts.repoAllowlist.length; step++) {
           signal?.throwIfAborted();
-          if (step > 0 && !gitHubAdmissionCanContinue({ signal })) break;
+          if (step > 0 && !gitHubAdmissionCanContinue(budget)) break;
           const index = (startIndex + step) % opts.repoAllowlist.length;
           const repo = opts.repoAllowlist[index]!;
           nextRepoIndex = (index + 1) % opts.repoAllowlist.length;
@@ -88,7 +91,7 @@ export function createRepoScanner(opts: RepoScannerOptions): (signal: AbortSigna
               !skipHistoricalOnFirstRun || (await opts.reconciliationDedup.isBaselineEstablished(repo));
 
             signal?.throwIfAborted();
-            const prs = await opts.fetchOpenPRs(repo, signal);
+            const prs = await readGitHubObject(budget, objectSignal => opts.fetchOpenPRs(repo, objectSignal));
             signal?.throwIfAborted();
             for (const pr of prs) {
               signal?.throwIfAborted();
@@ -113,7 +116,7 @@ export function createRepoScanner(opts: RepoScannerOptions): (signal: AbortSigna
             }
 
             signal?.throwIfAborted();
-            const issues = await opts.fetchOpenIssues(repo, signal);
+            const issues = await readGitHubObject(budget, objectSignal => opts.fetchOpenIssues(repo, objectSignal));
             signal?.throwIfAborted();
             for (const issue of issues) {
               signal?.throwIfAborted();
@@ -158,6 +161,8 @@ export function createRepoScanner(opts: RepoScannerOptions): (signal: AbortSigna
             signal?.throwIfAborted();
             if (error instanceof GitHubRateLimitError) continue;
             opts.log.warn(`[repo-scan] Failed to scan ${repo}, skipping`);
+          } finally {
+            await opts.writeProgress?.(repo);
           }
         }
 

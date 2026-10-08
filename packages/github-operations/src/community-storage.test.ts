@@ -9,7 +9,6 @@ import type { CommunityEvent } from './business/model/index.js';
 import { memoryStorage } from '../test/memory-storage.js';
 import { SdkCommunityIssueStore } from './business/domains/community/CommunityIssueStore.js';
 import { SdkCommunityIssueDraftStore } from './business/domains/community/CommunityIssueDraftStore.js';
-import { TriageOrchestrator } from './business/domains/community/TriageOrchestrator.js';
 
 const event = (id: string, subjectKey = 'issue:example/project#1'): CommunityEvent => ({
   sourceEventId: id, subjectKey, kind: 'issue.opened', classification: 'state-changing', payload: {}, at: 1,
@@ -71,20 +70,31 @@ test('finding waivers remain sticky, changed evidence reopens, absent findings r
   assert.equal((await restored.get(input.findingId))?.status, 'open');
 });
 
-test('SDK issue store atomically deduplicates subjects and drives the unchanged triage decision', async () => {
+test('SDK issue observations deduplicate subjects without creating governance authority', async () => {
   const storage = memoryStorage(), first = new SdkCommunityIssueStore(storage), second = new SdkCommunityIssueStore(storage);
   const input = { repo: 'example/project', issueNumber: 3, issueType: 'bug' as const, title: 'broken parser' };
   const created = await Promise.all([first.create(input), second.create(input)]);
   assert.equal(created.filter(Boolean).length, 1);
   const issue = created.find(Boolean)!;
-  const triage = new TriageOrchestrator({ communityIssueStore: first });
-  const result = await triage.recordTriageEntry(issue.id, {
-    catId: 'reviewer', verdict: 'WELCOME', timestamp: 1,
-    questions: (['Q1', 'Q2', 'Q3', 'Q4', 'Q5'] as const).map(id => ({ id, result: 'PASS' })),
-  });
-  assert.equal(result.action, 'resolved');
-  assert.equal((await second.get(issue.id))?.state, 'accepted');
+  await first.update(issue.id, { title: 'observed title', linkedPrNumbers: [12] });
+  assert.equal((await second.get(issue.id))?.title, 'observed title');
+  assert.equal('guardianAssignment' in issue, false);
+  for (const field of ['state', 'assignedCatId', 'assignedThreadId', 'guardianAssignment', 'ownerDecision', 'routeAcceptance', 'routeSource']) {
+    await assert.rejects(first.update(issue.id, { [field]: 'forged' }), /unsupported/);
+  }
   assert.equal((await second.listByRepo('example/project')).length, 1);
+});
+
+test('issue observation storage fails closed on corrupt metadata or historical authority fields', async () => {
+  const storage = memoryStorage(), issues = new SdkCommunityIssueStore(storage);
+  const issue = (await issues.create({ repo: 'example/project', issueNumber: 3, issueType: 'bug', title: 'observed' }))!;
+  await assert.rejects(issues.update(issue.id, { linkedPrNumbers: [-1] }), /invalid/);
+  await assert.rejects(issues.update(issue.id, { title: '' }), /invalid/);
+  assert.equal((await issues.get(issue.id))?.title, 'observed');
+  await storage.set(`community.issue.${issue.id}`, { ...issue, guardianAssignment: { signedOff: true } });
+  await assert.rejects(issues.get(issue.id), /unsupported/);
+  await assert.rejects(issues.listAll(), /unsupported/);
+  await assert.rejects(issues.update(issue.id, { title: 'cannot silently preserve governance' }), /unsupported/);
 });
 
 test('SDK drafts deduplicate concurrent creates, retain cancelled history and reject terminal edits across restart', async () => {

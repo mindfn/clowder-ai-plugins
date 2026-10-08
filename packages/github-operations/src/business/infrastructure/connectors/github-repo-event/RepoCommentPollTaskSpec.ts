@@ -45,7 +45,7 @@ import {
   classifyIssueComment,
   type IssueCommentClassification,
 } from '../../../domains/community/issue-analysis/issue-comment-classifier.js';
-import { gitHubAdmissionCanContinue } from '../../github/admission-budget.js';
+import { gitHubAdmissionCanContinue, gitHubPollBudget, readGitHubObject, type GitHubPollOptions } from '../../github/admission-budget.js';
 import { GitHubRateLimitError } from '../../github/request-budget.js';
 
 /** Minimal projector interface — only apply() is needed here. */
@@ -76,7 +76,7 @@ export interface RepoIssueComment {
   isPullRequest: boolean;
 }
 
-export interface RepoCommentPollTaskSpecOptions {
+export interface RepoCommentPollTaskSpecOptions extends GitHubPollOptions {
   readonly eventLog: ICommunityEventLog;
   readonly projector?: ICommunityProjectorApply;
   /**
@@ -185,9 +185,11 @@ async function pollSingleRepo(opts: RepoCommentPollTaskSpecOptions, repo: string
 export function createRepoCommentPoller(opts: RepoCommentPollTaskSpecOptions) {
   let nextRepoIndex = 0;
   return async (signal: AbortSignal): Promise<void> => {
-    const ctx = { signal, deadlineMs: Date.now() + (opts.pollIntervalMs ?? 30_000) };
+    const ctx = gitHubPollBudget(signal, opts);
         signal?.throwIfAborted();
-        const startIndex = nextRepoIndex % Math.max(1, opts.repoAllowlist.length);
+        const progress = await opts.readProgress?.();
+        const priorIndex = progress === undefined ? -1 : opts.repoAllowlist.indexOf(progress);
+        const startIndex = (priorIndex < 0 ? nextRepoIndex : priorIndex + 1) % Math.max(1, opts.repoAllowlist.length);
         for (let step = 0; step < opts.repoAllowlist.length; step++) {
           signal?.throwIfAborted();
           if (step > 0 && !gitHubAdmissionCanContinue(ctx)) break;
@@ -195,13 +197,17 @@ export function createRepoCommentPoller(opts: RepoCommentPollTaskSpecOptions) {
           const repo = opts.repoAllowlist[index]!;
           nextRepoIndex = (index + 1) % opts.repoAllowlist.length;
           try {
-            await pollSingleRepo(opts, repo, signal);
+            await pollSingleRepo({ ...opts,
+              fetchRepoComments: (repo, since) => readGitHubObject(ctx, objectSignal => opts.fetchRepoComments(repo, since, objectSignal)),
+            }, repo, signal);
           } catch (e) {
             signal?.throwIfAborted();
             if (e instanceof GitHubRateLimitError) continue;
             // fail-open: one repo's fetch/append failure must not block the others.
             // The cursor is not advanced for this repo, so the next poll retries.
             opts.log.warn(`[repo-comment-poll] failed to poll ${repo}, will retry next tick`, e);
+          } finally {
+            await opts.writeProgress?.(repo);
           }
         }
 

@@ -3,6 +3,7 @@ import { GitHubProvider } from './github-provider.js';
 import { GitHubTrackingRuntime, type GitHubTarget, type GitHubTrackingProvider } from './tracking-runtime.js';
 import { CommunityRuntime, type CommunityProvider } from './community-runtime.js';
 import type { UpsertRepoConfigInput } from './business/domains/community/CommunityRepoConfigStore.js';
+import { recommendTriage } from './triage-recommendation.js';
 
 interface Provider extends GitHubTrackingProvider { selfLogin(): string | undefined }
 export interface GitHubPluginOptions {
@@ -61,6 +62,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.repository.unregister': async (value: unknown) => ({ data: { removed: await community.unregister(repoInput(value, false).repo as string) } }),
       'github.repository.list': async () => ({ data: { repositories: await community.configs.listAll() } }),
       'github.subject.inspect': (value: unknown) => community.inspectSubject(value),
+      'github.triage.recommend': recommendTriage,
     },
     dispose: async () => { await Promise.all([tracking.stop(), community.stop()]); },
   };

@@ -24,6 +24,15 @@ coordinator retains provider observations/projection/readiness but cannot settle
 typed verdicts or complete leases. Host must split its GitHub proof adapters from
 the retained governance consumer during cutover.
 
+Ruling338 (`0001791453332710-000338-54e30e41`) applies the same boundary to
+request-guardian, guardian-signoff, validate-route and await-external. Host owns
+authenticated principals, token issuance, assignments and admission. The copied
+TriageOrchestrator also wrote durable route/acceptance fields and is removed from
+the package. Its pure consensus rule is retained behind a generic recommendation
+tool; supplied observation labels neither authenticate cats nor establish a
+formal decision. The SDK issue metadata store rejects assignment/signoff/route
+fields, including corrupt historical records, rather than preserving them.
+
 ## Verified runtime behavior
 
 - Seven declared schedules and real SDK builtin activation, idle-without-tracking,
@@ -52,13 +61,29 @@ the retained governance consumer during cutover.
   projections through generic plugin tools, not a new Host route.
 - Repository scan's five-item budget, round-robin progress and failed-repo
   isolation, signed webhook admission and shared event dedup, comment collection.
+- Scan, repository comments and reconciler use actual admission deadlines,
+  durable fairness cursors and bounded remote reads. Timeout waits for provider
+  close and cannot establish a baseline or clear findings. Reconciliation now
+  establishes its quiet initial baseline per successfully visited subject,
+  allowing bounded slices to progress without repeatedly restarting a global
+  all-subject baseline. This adaptation preserves each subject's initial silence.
+
+## Three separate evidence ledgers
+
+| Area | Package business moved | Real package replacement verified | Host old implementation deleted |
+| --- | --- | --- | --- |
+| Tracking/provider notifications | Implemented, full source comparison pending | Builtin fake-provider journey passed; installation sources pending | No |
+| Repository polling/reconciliation | Bounded package runtime implemented | Cleanup/fairness/baseline regressions passed; Host consumption pending | No |
+| Triage recommendation | Pure consensus exposed via generic tool | Real YAML → builtin action passed; no governance mutation | No |
+| Guardian/signoff/route/await authority | Retained in Host; copied mutator removed | No replacement claimed | No |
+| Cloud, remaining Community and state import | Incomplete | Pending | No |
 
 ## Explicitly unfinished
 
 - Complete source-to-runtime business comparison, including cloud correlation
-  and the remaining repository-poll budget/cancellation paths.
+  and wider corrupted-state/event convergence audit.
 - Legacy state copy/verify and historical cursor migration; no old state deleted.
-- Community tools/triage/draft integration and remaining cloud observation composition.
+- Remaining Community read models/drafts and cloud observation composition.
 - Whole candidate build, fresh-consumer, pins/catalog, deterministic artifacts,
   full gate, independent review and Host no-double-run/cutover evidence.
 - Real Host npm, local-directory and pinned-Git install → enable → run, each a

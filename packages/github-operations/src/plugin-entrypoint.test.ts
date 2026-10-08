@@ -13,6 +13,29 @@ import { SdkCommunityObjectStore } from './business/domains/community/CommunityO
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
 const target = { kind: 'pr', repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
 
+test('real generic triage tool computes a recommendation without persisting acceptance or authenticating supplied observers', async () => {
+  const f = host();
+  const active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+  const tool = manifest.contributions.find((value: { id: string }) => value.id === 'recommend-triage');
+  assert.ok(tool, 'pure triage business must have a real generic package contribution');
+  const recommend = active.actions[tool.action.method]!;
+  const before = await f.runtimeHost.storage.list();
+  const observation = { sourceId: 'comment:1', verdict: 'WELCOME' };
+  const first = await recommend({ issueType: 'feature', observations: [observation] }) as { data: Record<string, unknown> };
+  assert.equal(first.data.decision, 'needs-more-observations');
+  const result = await recommend({ issueType: 'feature', observations: [observation,
+    { sourceId: 'comment:2', verdict: 'POLITELY-DECLINE' }] }) as { data: Record<string, unknown> };
+  assert.equal(result.data.decision, 'NEEDS-DISCUSSION');
+  assert.equal(result.data.requiresAuthenticatedDecision, true);
+  assert.equal(result.data.provenance, 'supplied-observations');
+  await assert.rejects(async () => recommend({ issueType: 'bug', observations: [observation], principal: { catId: 'spoof' } }), /unsupported/);
+  await assert.rejects(async () => recommend({ issueType: 'feature', observations: [observation, observation] }), /distinct/);
+  await assert.rejects(async () => recommend({ issueType: 'bug', observations: [{ ...observation, catId: 'spoof' }] }), /unsupported/);
+  assert.deepEqual(await f.runtimeHost.storage.list(), before);
+  assert.equal(f.deliveries.length, 0);
+  await active.stop();
+});
+
 test('real builtin projects provider HEAD and CI without accepting or writing a governance verdict', async () => {
   const f = host();
   let snapshot: GitHubSnapshot = { state: 'open', headSha: 'a'.repeat(40), ci: 'pending', comments: [], reviews: [] };
