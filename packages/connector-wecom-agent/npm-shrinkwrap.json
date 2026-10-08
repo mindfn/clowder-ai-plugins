@@ -32,7 +32,7 @@
     "node_modules/@clowder-ai/plugin-sdk": {
       "version": "0.2.0-beta.13",
       "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.13.tgz",
-      "integrity": "sha512-BWXHu2zXwFCsLQfdFKy78gbFqOOMTkFPfJu+UgfDwYMQ7J9QkoxRxMpTFAD+edRFqLJauU4bVajSidkmxQTb+g==",
+      "integrity": "sha512-GLq2Kuu7xrlzlrB2nOAPXogJLGPwLLC8Bwr7B8fujiRGaDG7rwB0yDg1hyJbu/QiHINXlOoOVEtz9dVE11ZiLw==",
       "license": "MIT",
       "dependencies": {
         "@clowder-ai/plugin-contract": "0.1.0-beta.29"

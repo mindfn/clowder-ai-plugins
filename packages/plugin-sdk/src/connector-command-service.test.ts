@@ -5,9 +5,9 @@ import { parseConnectorCommand, decodeLegacyConnectorPermissions } from './conne
 
 function fixture() {
   const threads = [
-    { id: 'first', title: 'Latest', createdAt: 1, lastActiveAt: 30, featureRefs: ['F202'], preferredCats: ['cat-eqdvbcxw'] },
-    { id: 'second', title: 'Other project', createdAt: 2, lastActiveAt: 20, featureRefs: ['F080'], preferredCats: [] },
-    { id: 'third', title: 'Old Latest', createdAt: 3, lastActiveAt: 10, featureRefs: [], preferredCats: [] },
+    { id: 'first', deepLinkUrl: 'https://hub.example/thread/first', title: 'Latest', createdAt: 1, lastActiveAt: 30, featureRefs: ['F202'], preferredCats: ['cat-eqdvbcxw'] },
+    { id: 'second', deepLinkUrl: 'https://hub.example/thread/second', title: 'Other project', createdAt: 2, lastActiveAt: 20, featureRefs: ['F080'], preferredCats: [] },
+    { id: 'third', deepLinkUrl: 'https://hub.example/thread/third', title: 'Old Latest', createdAt: 3, lastActiveAt: 10, featureRefs: [], preferredCats: [] },
   ];
   let bound: string | undefined = 'first';
   const effects: unknown[] = [];
@@ -18,7 +18,7 @@ function fixture() {
     threads: {
       async findByKey() { return threads.find(t => t.id === bound) ?? null; },
       async get(id) { return threads.find(t => t.id === id) ?? null; },
-      async create(input) { effects.push(['create', input.title]); return { id: 'new', title: input.title, createdAt: 4, lastActiveAt: 40, preferredCats: [], featureRefs: [] }; },
+      async create(input) { effects.push(['create', input.title]); return { id: 'new', deepLinkUrl: 'https://hub.example/thread/new', title: input.title, createdAt: 4, lastActiveAt: 40, preferredCats: [], featureRefs: [] }; },
       async bind(key, threadId) { effects.push(['bind', key, threadId]); bound = threadId; return { key, threadId, createdAt: 4 }; },
       async unbind(key) { effects.push(['unbind', key]); bound = undefined; return true; },
       async list() { effects.push(['list']); return threads; },
@@ -39,7 +39,6 @@ function fixture() {
       async denyGroup(id) { effects.push(['deny', id]); return false; },
     },
     async bindingChanged(change) { effects.push(['changed', change]); },
-    threadUrl: id => `https://hub.example/thread/${encodeURIComponent(id)}`,
     now: () => 100,
     connectorId: 'feishu',
   };
@@ -148,7 +147,7 @@ test('use resolves title, feature and prefix beyond the first50 owner threads', 
   for (const selector of ['Archived-Needle', 'F999', 'archived-']) {
     const f = fixture(); const rows = Array.from({ length: 51 }, (_, i) => ({
       id: i === 50 ? 'archived-id' : `recent-${i}`, title: i === 50 ? 'Archived-Needle' : 'Recent',
-      createdAt: 1, lastActiveAt: 100 - i, preferredCats: [], featureRefs: i === 50 ? ['F999'] : [] }));
+      deepLinkUrl: `https://hub.example/thread/item-${i}`, createdAt: 1, lastActiveAt: 100 - i, preferredCats: [], featureRefs: i === 50 ? ['F999'] : [] }));
     const calls: unknown[] = [];
     f.services.threads.list = async options => {
       calls.push(options);
@@ -163,7 +162,7 @@ test('use resolves title, feature and prefix beyond the first50 owner threads', 
 });
 test('an exact full page requests its empty tail; equal-time ordering uses JS strings', async () => {
   const f = fixture(); const rows = Array.from({ length: 50 }, (_, i) => ({ id: `T${String(i).padStart(2, '0')}`,
-    title: 'Recent', createdAt: 1, lastActiveAt: 10, preferredCats: [], featureRefs: [] }));
+    deepLinkUrl: `https://hub.example/thread/item-${i}`, title: 'Recent', createdAt: 1, lastActiveAt: 10, preferredCats: [], featureRefs: [] }));
   rows[0]!.id = 'A'; rows[1]!.id = 'a'; rows.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   let calls = 0;
   f.services.threads.list = async options => { calls++;
@@ -176,7 +175,7 @@ test('an exact full page requests its empty tail; equal-time ordering uses JS st
 });
 test('live pages deduplicate moved thread IDs; non-progressing cursor cannot loop or bind', async () => {
   const f = fixture(); const rows = Array.from({ length: 50 }, (_, i) => ({ id: `item-${i}`,
-    title: 'Recent', createdAt: 1, lastActiveAt: 100 - i, preferredCats: [], featureRefs: [] }));
+    deepLinkUrl: `https://hub.example/thread/item-${i}`, title: 'Recent', createdAt: 1, lastActiveAt: 100 - i, preferredCats: [], featureRefs: [] }));
   let calls = 0;
   f.services.threads.list = async () => ++calls === 1 ? rows : [{ ...rows[0]!, lastActiveAt: 40, title: 'Moved duplicate' }];
   assert.match((await f.run('/use Moved duplicate')).response, /找不到/, 'first projection wins for each id in this live traversal');
@@ -194,7 +193,7 @@ test('an unfinished inventory budget refuses rather than binds a partial match o
   f.services.threads.list = async () => {
     const page = calls++;
     return Array.from({ length: 50 }, (_, i) => ({ id: `item-${page}-${i}`, title: 'partial-match',
-      createdAt: 1, lastActiveAt: 100000 - page * 50 - i, preferredCats: [], featureRefs: [] }));
+      deepLinkUrl: `https://hub.example/thread/item-${page}-${i}`, createdAt: 1, lastActiveAt: 100000 - page * 50 - i, preferredCats: [], featureRefs: [] }));
   };
   await assert.rejects(f.run('/use partial-match'), /traversal limit/);
   assert.equal(calls, 200);

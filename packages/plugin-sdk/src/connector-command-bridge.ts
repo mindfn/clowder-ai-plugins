@@ -16,7 +16,7 @@ export function createConnectorCommandBridge(context: FeatureContext, options: {
   const permissions = createConnectorPermissionStore(context.storage);
   const execute = createConnectorCommandService({ connectorId: options.connectorId,
     threads: context.threads, permissions, bindingChanged: options.bindingChanged,
-    threadUrl: () => undefined, now: Date.now });
+    now: Date.now });
   // Host's durable ledger is scoped to plugin instance + key, not chat or
   // target thread. Match the router's chat/event identity without exposing
   // unbounded provider IDs or ambiguous delimiter concatenation.

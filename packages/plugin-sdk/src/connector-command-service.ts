@@ -15,7 +15,6 @@ export interface ConnectorCommandServices {
     denyGroup(id: string): Promise<boolean>;
   };
   bindingChanged(input: { chatId: string; previousThreadId?: string; threadId?: string }): Promise<void>;
-  threadUrl(id: string): string | undefined;
   now(): number;
 }
 
@@ -38,10 +37,7 @@ function selectThread(input: string, threads: readonly ConnectorCommandThread[])
 }
 
 export function createConnectorCommandService(services: ConnectorCommandServices) {
-  const link = (id: string): string => {
-    const url = services.threadUrl(id);
-    return url === undefined ? '' : `\n🔗 ${url}`;
-  };
+  const link = (thread: ConnectorCommandThread): string => `\n🔗 ${thread.deepLinkUrl}`;
   const inventory = async (recentOnly = false) => {
     const found = new Map<string, ConnectorCommandThread>();
     let before: { lastActiveAt: number; id: string } | undefined;
@@ -75,7 +71,7 @@ export function createConnectorCommandService(services: ConnectorCommandServices
       case 'new': {
         const thread = await services.threads.create({ title: args || '新对话' });
         await bind(input.chatId, thread.id);
-        return { response: `✨ 新 thread${args ? ` "${args}"` : ''} 已创建\nID: ${thread.id}${link(thread.id)}\n\n现在的消息会发到这个 thread。` };
+        return { response: `✨ 新 thread${args ? ` "${args}"` : ''} 已创建\nID: ${thread.id}${link(thread)}\n\n现在的消息会发到这个 thread。` };
       }
       case 'threads': {
         const threads = (await inventory(true)).slice(0, 10);
@@ -89,7 +85,7 @@ export function createConnectorCommandService(services: ConnectorCommandServices
         const thread = selectThread(args, await inventory());
         if (!thread) return { response: `❌ 找不到匹配 "${args}" 的 thread。用 /threads 查看可用列表。` };
         await bind(input.chatId, thread.id);
-        return { response: `🔄 已切换到: ${thread.title ?? '(无标题)'}\nID: ${thread.id}${link(thread.id)}` };
+        return { response: `🔄 已切换到: ${thread.title ?? '(无标题)'}\nID: ${thread.id}${link(thread)}` };
       }
       case 'thread': {
         const [prefix, ...body] = args.split(/\s+/);
@@ -104,7 +100,7 @@ export function createConnectorCommandService(services: ConnectorCommandServices
     const bound = await services.threads.findByKey(input.chatId);
     if (!bound) return { response: '📍 当前没有绑定的 thread。发送消息或用 /new 创建新 thread，或用 /use 切换。' };
     switch (command.name) {
-      case 'where': return { response: `📍 当前 thread: ${bound.title ?? '(无标题)'}\nID: ${bound.id}${link(bound.id)}` };
+      case 'where': return { response: `📍 当前 thread: ${bound.title ?? '(无标题)'}\nID: ${bound.id}${link(bound)}` };
       case 'unbind': {
         await services.threads.unbind(input.chatId);
         await services.bindingChanged({ chatId: input.chatId, previousThreadId: bound.id });
@@ -117,7 +113,7 @@ export function createConnectorCommandService(services: ConnectorCommandServices
         const last = cats.participants.length ? Math.max(...cats.participants.map(cat => cat.lastMessageAt)) : undefined;
         return { response: ['📊 Thread 状态', `  标题：${bound.title ?? '(无标题)'}`, `  创建：${new Date(bound.createdAt).toLocaleDateString('zh-CN')}`,
           `  参与猫：${cats.participants.length} 只`, `  最近活跃：${last === undefined ? '未知' : Math.max(0, Math.floor((services.now() - last) / 60000)) + ' 分钟前'}`,
-          ...(bound.preferredCats?.length ? [`  首选猫：${bound.preferredCats.map(id => names.get(id) ?? id).join(', ')}`] : []), link(bound.id).trim(),
+          ...(bound.preferredCats?.length ? [`  首选猫：${bound.preferredCats.map(id => names.get(id) ?? id).join(', ')}`] : []), link(bound).trim(),
         ].filter(Boolean).join('\n') };
       }
       case 'focus': {
@@ -146,8 +142,7 @@ export function createConnectorCommandService(services: ConnectorCommandServices
         // millisecond. Never manufacture a cursor from the local clock.
         const messages = await services.threads.readMessages(bound.id, { limit: Math.max(200, count * 100) });
         const cats = await services.threads.getCats(bound.id);
-        const url = services.threadUrl(bound.id);
-        return { response: formatConnectorHistory({ connectorId: services.connectorId, messages, count, cats, ...(url === undefined ? {} : { threadUrl: url }) }) };
+        return { response: formatConnectorHistory({ connectorId: services.connectorId, messages, count, cats, threadUrl: bound.deepLinkUrl }) };
       }
     }
   };

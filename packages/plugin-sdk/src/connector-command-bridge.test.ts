@@ -9,11 +9,17 @@ function fixture() {
   const sent: { threadId: string; key: string }[] = [];
   const receipts = new Map<string, { messageId: string; threadId: string }>();
   const replies: string[] = [];
-  const summary = { id: 'target', title: 'Target', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] };
+  const responses: string[] = [];
+  const deepLinkUrl = 'https://owner.example:8443/thread/Host%2F%E7%BA%BF%3F%23%25';
+  const summary = { id: 'target', deepLinkUrl, title: 'Target', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] };
   const context = {
     storage: { async get() { return { revision: 1, value: { v: 1, whitelistEnabled: false,
       commandAdminOnly: false, adminConfigured: true, adminOpenIds: [], allowedGroups: [] } }; } },
     threads: { async get(id: string) { return id === summary.id ? summary : null; }, async findByKey() { return summary; }, async list() { return [summary]; },
+      async create() { return summary; }, async readMessages() { return [
+        { id: 'owner', timestamp: 1, sender: { kind: 'owner' }, content: 'question' },
+        { id: 'cat', timestamp: 2, sender: { kind: 'cat', catId: 'sol' }, content: 'answer'.repeat(6000) },
+      ]; }, async getCats() { return { participants: [], routableNow: [], routableNotJoined: [], notRoutable: [] }; },
       async bind() {}, async ensureSystemThread() { return { ...summary, id: 'system' }; } },
     messaging: { async send(threadId: string, draft: { idempotencyKey: string }) {
       const previous = receipts.get(draft.idempotencyKey);
@@ -23,8 +29,17 @@ function fixture() {
     } },
   } as unknown as FeatureContext;
   const bridge = () => createConnectorCommandBridge(context, { connectorId: 'fixture', identityId: 'fixture',
-    async bindingChanged() {}, async reply(input) { replies.push(input.chatId); }, async settle() {} });
-  return { sent, replies, bridge };
+    async bindingChanged() {}, async reply(input, result) { replies.push(input.chatId); responses.push(result.response); }, async settle() {} });
+  return { sent, replies, responses, deepLinkUrl, bridge };
+}
+
+for (const text of ['/where', '/new Owner title', '/use target', '/history 1', '/status']) {
+  test(`actual bridge consumes Host-authored summary navigation for ${text}`, async () => {
+    const f = fixture();
+    await f.bridge()({ chatId: 'chat', providerMessageId: 'navigation', group: false, text });
+    assert.ok(f.responses[0]?.includes(f.deepLinkUrl), 'use the projected URL verbatim, not a guessed origin or id lookup');
+    assert.equal(f.sent.length, 1); assert.equal(f.sent[0]?.threadId, 'system');
+  });
 }
 
 for (const text of ['/where', '/thread target body']) {

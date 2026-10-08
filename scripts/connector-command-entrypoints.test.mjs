@@ -53,12 +53,14 @@ for (const [name, factoryName] of Object.entries(factories)) {
     assert.equal(fields[4].hidden, true, 'only optimistic revision token is an internal form field');
     const state = new Map(); const replies = []; const sent = []; const closes = []; let inbound;
     let delayedPermissionRead;
+    let historyAnswer = '真实历史回答';
     const outbound = { async sendFormattedReply(chat, envelope, metadata) { replies.push({ chat, body: envelope.body, metadata }); },
       async sendReply(chat, body) { replies.push({ chat, body }); },
       async onDeliveryBatchDone(chat, done) { closes.push({ chat, done }); } };
     const entrypoint = entry[factoryName](options => { inbound = options.host.deliver;
       return { outbound, async start() {}, async stop() {} }; });
-    const summary = id => ({ id, title: 'Bound', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] });
+    const summary = id => ({ id, deepLinkUrl: `https://owner.example:8443/thread/${encodeURIComponent(id)}`,
+      title: 'Bound', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] });
     const threads = new Map([['bound', { ...summary('bound'), featureRefs: ['F202'] }]]);
     for (let i = 0; i < 50; i++) threads.set(`recent-${i}`, { ...summary(`recent-${i}`), lastActiveAt: 100 + i });
     threads.set('old-far', { ...summary('old-far'), title: 'Older thread 51', lastActiveAt: 0, featureRefs: ['F999'] });
@@ -91,7 +93,7 @@ for (const [name, factoryName] of Object.entries(factories)) {
         getCats: async () => ({ participants: [{ ...cat, lastMessageAt: 1, messageCount: 1 }],
           routableNow: [cat], routableNotJoined: [], notRoutable: [] }),
         readMessages: async () => [{ id: 'owner-message', timestamp: 1, sender: { kind: 'owner' }, content: '真实历史问题' },
-          { id: 'cat-message', timestamp: 2, sender: { kind: 'cat', catId: cat.catId }, content: '真实历史回答' }],
+          { id: 'cat-message', timestamp: 2, sender: { kind: 'cat', catId: cat.catId }, content: historyAnswer }],
         ensureSystemThread: async () => summary('system'), ensureByKey: async () => summary('bound'),
       },
       messaging: { subscribe: async () => {}, unsubscribe: async () => {}, send: async input => {
@@ -121,6 +123,7 @@ for (const [name, factoryName] of Object.entries(factories)) {
       assert.equal(repeated.data.status, 'preserved_existing');
       await inbound(input('/where', 'repairable'));
       assert.equal(replies.length, 1); assert.match(replies[0].body, /Bound/);
+      assert.ok(replies[0].body.includes(threads.get('bound').deepLinkUrl));
       assert.equal(sent.length, 1); assert.equal(sent[0].threadId, 'system'); assert.equal(sent[0].wake, undefined);
       await inbound(input('/where', 'repairable'));
       assert.equal(replies.length, 1, 'redelivery does not repeat command');
@@ -136,6 +139,10 @@ for (const [name, factoryName] of Object.entries(factories)) {
         await inbound(input(text, `command-${index}`));
         seenCommands.add(text.split(' ')[0]);
         assert.equal(replies.length, previousReplies + 1, `${text} must reply once through provider adapter`);
+        if (['/use F202', '/status', '/new Owner-created', '/where'].includes(text)) {
+          assert.ok(replies.at(-1).body.includes(threads.get(bindings.get('chat')).deepLinkUrl),
+            `${text} uses the actual Host summary navigation field`);
+        }
         if (text === '/focus sol') assert.deepEqual(threads.get('bound').preferredCats, [cat.catId]);
         if (text === '/focus clear') assert.deepEqual(threads.get('bound').preferredCats, []);
         if (text === '/history 1') assert.match(replies.at(-1).body, /真实历史问题/);
@@ -144,6 +151,12 @@ for (const [name, factoryName] of Object.entries(factories)) {
         if (text === '/allow-group explicit-group') assert.equal(state.get('connector.permissions.v1').value.allowedGroups[0].externalChatId, 'explicit-group');
         if (text === '/deny-group explicit-group') assert.deepEqual(state.get('connector.permissions.v1').value.allowedGroups, []);
       }
+      await inbound(input('/use F202', 'history-link-binding'));
+      historyAnswer = '真实历史回答'.repeat(6000);
+      await inbound(input('/history 1', 'truncated-history-link'));
+      assert.ok(replies.at(-1).body.includes(threads.get('bound').deepLinkUrl));
+      assert.match(replies.at(-1).body, /内容已精简/);
+      historyAnswer = '真实历史回答';
       assert.equal(seenCommands.size, 14);
       const forwarded = sent.filter(send => send.payload.provenance.origin?.kind === 'external');
       assert.equal(forwarded.length, 2, 'only the two explicit bodies invoke an agent');

@@ -35,7 +35,7 @@ test('accepted thread projections and preferredCats patch cross the real Feature
     async list(options?: unknown) { seen.push(['list', options]); return []; },
     async readMessages(id: string, options: unknown) { seen.push(['readMessages', id, options]); return []; },
     async getCats(id: string) { seen.push(['getCats', id]); return { participants: [], routableNow: [], routableNotJoined: [], notRoutable: [] }; },
-    async update(id: string, patch: unknown) { seen.push(['update', id, patch]); return { id, title: null, createdAt: 1, lastActiveAt: 1, featureRefs: [], preferredCats: [] }; },
+    async update(id: string, patch: unknown) { seen.push(['update', id, patch]); return { id, deepLinkUrl: 'https://owner.example/thread/projected', title: null, createdAt: 1, lastActiveAt: 1, featureRefs: [], preferredCats: [] }; },
   });
   const session = createFeatureContextSession(BINDING, adapter);
   const threads = session.context.threads;
@@ -48,7 +48,8 @@ test('accepted thread projections and preferredCats patch cross the real Feature
   await threads.list({ limit: 50, before: { lastActiveAt: 30, id: 'thread-30' } });
   await threads.readMessages('thread', { before: { timestamp: 20, id: 'message-20' }, limit: 500 });
   await threads.getCats('thread');
-  await threads.update('thread', { preferredCats: [] });
+  assert.equal((await threads.update('thread', { preferredCats: [] })).deepLinkUrl,
+    'https://owner.example/thread/projected', 'the wrapper preserves Host navigation without reconstructing it');
   assert.deepEqual(seen, [['list', { limit: 50, before: { lastActiveAt: 30, id: 'thread-30' } }], ['readMessages', 'thread', { before: { timestamp: 20, id: 'message-20' }, limit: 500 }],
     ['getCats', 'thread'], ['update', 'thread', { preferredCats: [] }]]);
   await session.revoke();
