@@ -10,4 +10,3 @@ test('telegram command normalization preserves explicit provider identity and ev
 test('telegram remains direct-only at the existing provider support boundary', () => {
   assert.equal(connectorCommandFacts({ ...message, externalConversationId: 'group:fake' }).group, false);
 });
-

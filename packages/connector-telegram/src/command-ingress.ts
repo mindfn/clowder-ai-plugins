@@ -12,4 +12,3 @@ export function connectorCommandFacts(message: TelegramHostInboundMessage) {
     senderId: sender === 'unknown' || sender === '' ? undefined : sender,
   };
 }
-

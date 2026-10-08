@@ -12,4 +12,3 @@ export function connectorCommandFacts(message: WeixinHostInboundMessage) {
     senderId: sender === 'unknown' || sender === '' ? undefined : sender,
   };
 }
-

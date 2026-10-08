@@ -17,6 +17,104 @@ import { verifySelfContainedArchive } from './verify-self-contained-artifact.mjs
 
 const execFileAsync = promisify(execFile);
 
+test('runtime projection removes only dependency declarations and retains all runtime assets', async (t) => {
+  const { projectRuntimeDependencies } = await import('./pack-self-contained-artifact.mjs');
+  assert.equal(typeof projectRuntimeDependencies, 'function');
+  const root = await mkdtemp(join(tmpdir(), 'clowder-runtime-projection-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const removed = ['node_modules/@fixture/sdk/types/index.d.ts', 'node_modules/@fixture/sdk/types/index.d.ts.map',
+    'node_modules/@fixture/sdk/types/index.d.mts', 'node_modules/@fixture/sdk/types/index.d.mts.map',
+    'node_modules/@fixture/sdk/node_modules/nested/index.d.cts',
+    'node_modules/@fixture/sdk/node_modules/nested/index.d.cts.map'];
+  const retained = ['dist/index.d.ts', 'dist/index.d.ts.map', 'package.json', 'npm-shrinkwrap.json',
+    'node_modules/@fixture/sdk/package.json', 'node_modules/@fixture/sdk/lib/index.js',
+    'node_modules/@fixture/sdk/es/index.js', 'node_modules/@fixture/sdk/lib/index.js.map',
+    'node_modules/@fixture/sdk/types/runtime.json', 'node_modules/@fixture/sdk/types/dynamic.wasm',
+    'node_modules/@fixture/sdk/certs/root.pem', 'node_modules/@fixture/sdk/LICENSE',
+    'node_modules/@fixture/sdk/d.ts.json', 'node_modules/@fixture/sdk/index.d.ts.js'];
+  for (const name of [...removed, ...retained]) {
+    await mkdir(join(root, name, '..'), { recursive: true });
+    await writeFile(join(root, name), name);
+  }
+  const proof = await projectRuntimeDependencies(root);
+  assert.deepEqual(proof.removed.map(row => row.path).sort(), removed.sort());
+  for (const name of retained) assert.equal(await readFile(join(root, name), 'utf8'), name);
+  for (const name of removed) await assert.rejects(readFile(join(root, name)), { code: 'ENOENT' });
+  assert.equal(proof.removedBytes, removed.reduce((total, name) => total + Buffer.byteLength(name), 0));
+  assert.deepEqual(await projectRuntimeDependencies(root), { removed: [], removedBytes: 0 });
+});
+
+test('runtime projection brings a declaration-heavy fixture below the unchanged 32MiB admission budget', async (t) => {
+  const { projectRuntimeDependencies } = await import('./pack-self-contained-artifact.mjs');
+  assert.equal(typeof projectRuntimeDependencies, 'function');
+  const root = await mkdtemp(join(tmpdir(), 'clowder-runtime-budget-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'node_modules/sdk/types'), { recursive: true });
+  const runtime = Buffer.alloc(25 * 1024 * 1024, 7);
+  const declarations = Buffer.alloc(16 * 1024 * 1024, 32);
+  await writeFile(join(root, 'node_modules/sdk/types/index.d.ts'), declarations);
+  await writeFile(join(root, 'node_modules/sdk/runtime.bin'), runtime);
+  assert.ok(runtime.length + declarations.length > 32 * 1024 * 1024);
+  const proof = await projectRuntimeDependencies(root);
+  assert.equal(proof.removedBytes, declarations.length);
+  assert.deepEqual(await readFile(join(root, 'node_modules/sdk/runtime.bin')), runtime);
+  assert.ok(runtime.length < 32 * 1024 * 1024);
+});
+
+test('runtime projection rejects linked dependency trees without touching the link target', async (t) => {
+  const { projectRuntimeDependencies } = await import('./pack-self-contained-artifact.mjs');
+  assert.equal(typeof projectRuntimeDependencies, 'function');
+  const root = await mkdtemp(join(tmpdir(), 'clowder-runtime-linked-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'outside'));
+  await writeFile(join(root, 'outside/index.d.ts'), 'must remain');
+  await symlink(join(root, 'outside'), join(root, 'node_modules'));
+  await assert.rejects(projectRuntimeDependencies(root), /symlink/u);
+  assert.equal(await readFile(join(root, 'outside/index.d.ts'), 'utf8'), 'must remain');
+});
+
+test('projected archive still relocates with conditional runtime exports and dynamic assets', async (t) => {
+  const { projectRuntimeDependencies } = await import('./pack-self-contained-artifact.mjs');
+  const original = await fixture(t, 'export default { create() {} };\n', 'builtin', { sdk: '1.0.0' });
+  const root = await mkdtemp(join(tmpdir(), 'clowder-runtime-relocated-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  assert.equal(spawnSync('tar', ['-xzf', original, '-C', root]).status, 0);
+  const packageRoot = join(root, 'package');
+  const sdk = join(packageRoot, 'node_modules/sdk');
+  await mkdir(join(sdk, 'lib'));
+  await mkdir(join(sdk, 'types'));
+  await writeFile(join(sdk, 'package.json'), JSON.stringify({ name: 'sdk', version: '1.0.0', type: 'module',
+    main: './lib/index.js', types: './types/index.d.ts',
+    exports: { '.': { types: './types/index.d.ts', import: './lib/index.js' } } }));
+  await writeFile(join(sdk, 'types/index.d.ts'), 'export declare const value: string;\n');
+  await writeFile(join(sdk, 'lib/data.json'), '{"value":"runtime asset"}');
+  await writeFile(join(sdk, 'lib/root.pem'), 'runtime certificate');
+  await writeFile(join(sdk, 'lib/index.js.map'), '{"version":3}');
+  await writeFile(join(sdk, 'lib/index.js'), [
+    "import { readFileSync } from 'node:fs';",
+    "export const value = JSON.parse(readFileSync(new URL('./data.json', import.meta.url), 'utf8')).value;",
+    "if (readFileSync(new URL('./root.pem', import.meta.url), 'utf8') !== 'runtime certificate') throw new Error('lost cert');",
+    "if (readFileSync(new URL('./index.js.map', import.meta.url), 'utf8') !== '{\"version\":3}') throw new Error('lost runtime map');",
+  ].join('\n'));
+  const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json')));
+  manifest.dependencies = { sdk: '1.0.0' };
+  await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest));
+  const lock = JSON.parse(await readFile(join(packageRoot, 'npm-shrinkwrap.json')));
+  lock.packages[''].dependencies = manifest.dependencies;
+  lock.packages['node_modules/sdk'].resolved = 'https://registry.npmjs.org/sdk/-/sdk-1.0.0.tgz';
+  await writeFile(join(packageRoot, 'npm-shrinkwrap.json'), JSON.stringify(lock));
+  await writeFile(join(packageRoot, 'dist/index.js'), "import { value } from 'sdk'; export { value };\n");
+  await writeFile(join(packageRoot, 'dist/plugin-entrypoint.js'),
+    "import { value } from 'sdk'; if (value !== 'runtime asset') throw new Error('bad asset'); export default { create() { return value; } };\n");
+  const projection = await projectRuntimeDependencies(packageRoot);
+  assert.equal(projection.removed.length, 1);
+  const archive = join(root, 'runtime.tgz');
+  await createDeterministicArchive(root, archive);
+  const proof = await verifySelfContainedArchive(archive);
+  assert.equal(proof.relocation.runtimeEntrypointLoaded, true);
+  assert.equal(proof.relocation.checkedDirectDependencies, 1);
+});
+
 async function fixture(t, runtimeSource, transport = 'builtin', installedDependencies = {}, lockedVersions = {}, entryDeclaration = {}) {
   const root = await mkdtemp(join(tmpdir(), 'clowder-self-contained-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));

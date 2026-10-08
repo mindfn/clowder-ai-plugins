@@ -13,4 +13,3 @@ export function connectorCommandFacts(message: DingTalkHostInboundMessage) {
     senderId: sender === 'unknown' || sender === '' ? undefined : sender,
   };
 }
-

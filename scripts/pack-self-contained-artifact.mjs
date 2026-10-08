@@ -153,6 +153,35 @@ function packCheckoutPackage(directory, destination) {
   return join(destination, artifact.filename);
 }
 
+// Self-contained archives are execution artifacts, not TypeScript development
+// installations. Keep canonical plugin files intact and project only the
+// installed dependency tree. Runtime maps/assets and package metadata stay.
+export function isDependencyDeclaration(path) {
+  return path.startsWith('node_modules/') && /\.d\.(?:ts|mts|cts)(?:\.map)?$/u.test(path);
+}
+
+export async function projectRuntimeDependencies(packageRoot) {
+  const removed = [];
+  async function collect(relativePath) {
+    const absolutePath = join(packageRoot, relativePath);
+    const stat = await lstat(absolutePath);
+    assert.ok(!stat.isSymbolicLink(), `runtime dependency projection has a symlink: ${relativePath}`);
+    if (stat.isFile()) {
+      if (isDependencyDeclaration(relativePath)) removed.push({ path: relativePath, bytes: stat.size });
+      return;
+    }
+    assert.ok(stat.isDirectory(), `runtime dependency projection has a non-regular member: ${relativePath}`);
+    for (const name of (await readdir(absolutePath)).sort()) {
+      await collect(`${relativePath}/${name}`);
+    }
+  }
+  // Validate the entire physical tree before deleting any candidate file; never
+  // follow links, even when the linked name looks like a declaration.
+  await collect('node_modules');
+  for (const member of removed) await rm(join(packageRoot, member.path));
+  return { removed, removedBytes: removed.reduce((total, member) => total + member.bytes, 0) };
+}
+
 export async function publishImmutableArtifact(candidate, destination) {
   const pending = join(dirname(destination), `.${basename(destination)}.${randomUUID()}.tmp`);
   try {
@@ -274,6 +303,7 @@ async function main() {
     );
 
     await rm(join(stagedPackage, 'node_modules/.package-lock.json'), { force: true });
+    const runtimeProjection = await projectRuntimeDependencies(stagedPackage);
     const candidate = join(temporaryRoot, 'candidate.tgz');
     await createDeterministicArchive(stageRoot, candidate);
     const verification = await verifySelfContainedArchive(candidate);
@@ -293,6 +323,7 @@ async function main() {
       relocatedEntrypointLoaded: true,
       runtimeEntrypointLoaded: verification.relocation.runtimeEntrypointLoaded,
       checkedDirectDependencies: verification.relocation.checkedDirectDependencies,
+      runtimeProjection,
     }, null, 2)}\n`);
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
