@@ -27,6 +27,8 @@ export type FeishuWebhookResult =
 export interface FeishuHostInboundMessage {
   readonly externalConversationId: string;
   readonly providerMessageId: string;
+  /** Provider sender identity for admission; independent of group reply attribution. */
+  readonly externalSenderId?: string;
   readonly text: string;
   readonly attachments?: readonly Readonly<{
     type: 'image' | 'file' | 'audio';
@@ -326,6 +328,7 @@ async function providerMessage(adapter: FeishuRuntimeAdapter, message: FeishuInb
   return {
     externalConversationId: message.chatId,
     providerMessageId: message.messageId,
+    ...(message.senderId === 'unknown' || message.senderId.trim() === '' ? {} : { externalSenderId: message.senderId }),
     text: message.text,
     ...(attachments === undefined ? {} : { attachments }),
     ...(sender === undefined ? {} : { sender }),
@@ -346,6 +349,7 @@ async function cardMessage(adapter: FeishuRuntimeAdapter, action: FeishuCardActi
   return {
     externalConversationId: action.chatId,
     providerMessageId: action.eventId,
+    ...(action.senderId === 'unknown' || action.senderId.trim() === '' ? {} : { externalSenderId: action.senderId }),
     text: command ?? JSON.stringify(action.actionValue),
     ...(command === undefined || action.senderId === '' ? {} : { sender: { id: action.senderId } }),
     conversation: { type: chatType === 'group' ? 'group' : 'direct' },

@@ -17,6 +17,39 @@ const fetchFn: typeof fetch = async (input) => new Response(
   { status: 200, headers: { 'content-type': 'application/json' } },
 );
 
+test('private provider identity is preserved separately from group reply attribution', async (t) => {
+  const delivered: Array<Record<string, unknown>> = [];
+  const subject = adapter();
+  subject.parseEvent = () => ({ chatId: 'direct-1', senderId: 'admin-1', messageId: 'direct-message',
+    text: '/allow-group group-1', chatType: 'p2p' });
+  const runtime = createFeishuConnectorRuntime({
+    config: { appId: 'app', appSecret: 'secret', connectionMode: 'webhook' },
+    host: { deliver: async message => { delivered.push({ ...message }); } },
+    logger, fetchFn, createAdapter: () => subject,
+  });
+  t.after(() => runtime.stop());
+  await runtime.start();
+  await runtime.handleWebhook({ body: { event: true } });
+  assert.equal(delivered[0]?.externalSenderId, 'admin-1');
+  assert.equal(delivered[0]?.sender, undefined, 'private chat must not acquire group mention metadata');
+});
+
+test('unknown provider sender never becomes command-admin identity', async (t) => {
+  const delivered: Array<Record<string, unknown>> = [];
+  const subject = adapter();
+  subject.parseEvent = () => ({ chatId: 'direct-1', senderId: 'unknown', messageId: 'unknown-message',
+    text: '/allow-group group-1', chatType: 'p2p' });
+  const runtime = createFeishuConnectorRuntime({
+    config: { appId: 'app', appSecret: 'secret', connectionMode: 'webhook' },
+    host: { deliver: async message => { delivered.push({ ...message }); } },
+    logger, fetchFn, createAdapter: () => subject,
+  });
+  t.after(() => runtime.stop());
+  await runtime.start();
+  await runtime.handleWebhook({ body: { event: true } });
+  assert.equal(delivered[0]?.externalSenderId, undefined);
+});
+
 // Hold provider I/O across a lifecycle boundary instead of relying on a slow
 // real network request to finish after the SDK has revoked the Host logger.
 for (const boundary of ['stop', 'disconnect', 'connect'] as const) {
@@ -141,6 +174,7 @@ test('webhook runtime verifies provider input and delivers resolved provider fac
   });
   assert.deepEqual(delivered, [{
     externalConversationId: 'group-1', providerMessageId: 'message-1', text: '@cat is ordinary text',
+    externalSenderId: 'user-1',
     attachments: [{ type: 'image', platformKey: 'image-1' }],
     sender: { id: 'user-1', name: 'User' },
     conversation: { type: 'group', title: 'Group' },

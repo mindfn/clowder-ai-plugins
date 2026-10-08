@@ -1,4 +1,5 @@
 import {
+  createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
@@ -429,6 +430,7 @@ export function createTelegramPluginModule(
         });
         return {
           actions: {
+            ...createConnectorPermissionActions(context.storage),
             'host.messaging.lifecycle': lifecycle,
             'telegram.media-source.read': mediaSource.read,
             'telegram.media-source.settle': mediaSource.settle,

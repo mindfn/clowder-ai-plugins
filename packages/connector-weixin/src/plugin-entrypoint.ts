@@ -1,4 +1,5 @@
 import {
+  createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
@@ -250,6 +251,7 @@ export function createWeixinPluginModule(createRuntime: RuntimeFactory = createW
         let qrPayload: string | undefined;
         return {
           actions: {
+            ...createConnectorPermissionActions(context.storage),
             'weixin.media-source.read': mediaSource.read,
             'weixin.media-source.settle': mediaSource.settle,
             'weixin.qr-generate': async () => {

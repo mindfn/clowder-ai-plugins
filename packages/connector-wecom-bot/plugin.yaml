@@ -10,6 +10,17 @@ icon:
   type: svg
   src: assets/icon.svg
 configuration:
+  - key: legacy_permissions
+    label: 一次性导入旧权限
+    kind: operation
+    required: false
+    actions:
+      - id: import
+        label: 导入旧权限
+        render: button
+        confirm: 确认从已授权的旧连接器权限快照导入？已有权限不会被覆盖。
+        action:
+          method: permissions.importLegacy
   - key: botId
     label: Bot ID
     kind: string
@@ -82,6 +93,7 @@ features:
       - messaging.send
       - secret.read
       - thread.listMetadata
+      - thread.readContent
       - thread.write
 runtime:
   transport: builtin

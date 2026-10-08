@@ -92,17 +92,20 @@ function host(
     },
     threads: {
       get: async () => null,
-      create: async () => ({ id: 'thread-1', title: 'Fixture', createdAt: 1, lastActiveAt: 1 }),
-      update: async () => ({ id: 'thread-1', title: 'Fixture', createdAt: 1, lastActiveAt: 1 }),
+      list: async () => [],
+      readMessages: async () => [],
+      getCats: async () => ({ participants: [], routableNow: [], routableNotJoined: [], notRoutable: [] }),
+      create: async () => ({ id: 'thread-1', title: 'Fixture', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] }),
+      update: async () => ({ id: 'thread-1', title: 'Fixture', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] }),
       findByKey: async () => null,
       ensureByKey: async (key: string, input: unknown) => {
         calls.push({ operation: 'threads.ensureByKey', value: { key, input } });
-        return { id: 'thread-1', title: 'Fixture', createdAt: 1, lastActiveAt: 1 };
+        return { id: 'thread-1', title: 'Fixture', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] };
       },
       bind: async () => ({ key: 'fixture', threadId: 'thread-1', createdAt: 1 }),
       unbind: async () => true,
       listBindings: async () => [],
-      ensureSystemThread: async () => ({ id: 'system-thread', title: 'System', createdAt: 1, lastActiveAt: 1 }),
+      ensureSystemThread: async () => ({ id: 'system-thread', title: 'System', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] }),
     },
     messaging: {
       send: async (input: unknown) => {
@@ -304,7 +307,7 @@ function moduleWithJourney(received: unknown[]) {
           },
         }), { messageId: 'message-1', threadId: 'thread-1' });
         assert.deepEqual(await context.threads.ensureByKey('fixture', { title: 'Fixture' }), {
-          id: 'thread-1', title: 'Fixture', createdAt: 1, lastActiveAt: 1,
+          id: 'thread-1', title: 'Fixture', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [],
         });
         assert.deepEqual(await context.storage.compareAndSet('cursor', null, { sequence: 1 }), {
           applied: true, revision: 3,

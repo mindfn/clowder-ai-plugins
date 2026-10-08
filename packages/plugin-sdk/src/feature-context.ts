@@ -359,6 +359,9 @@ export function createFeatureContextSession(
   };
   const threads: PluginThreadHost = {
     get: (threadId) => runWhileActive(() => adapter.threads.get(threadId)),
+    list: (options) => runWhileActive(() => adapter.threads.list(options)),
+    readMessages: (threadId, options) => runWhileActive(() => adapter.threads.readMessages(threadId, options)),
+    getCats: (threadId) => runWhileActive(() => adapter.threads.getCats(threadId)),
     create: (input) => runWhileActive(() => adapter.threads.create(input)),
     update: (threadId, patch) => runWhileActive(() => adapter.threads.update(threadId, patch)),
     findByKey: (key) => runWhileActive(() => adapter.threads.findByKey(key)),

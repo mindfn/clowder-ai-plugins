@@ -7,16 +7,77 @@ import { parse } from 'yaml';
 import moduleEntrypoint, { createFeishuPluginModule } from './plugin-entrypoint.js';
 import type { FeishuConnectorRuntime } from './runtime.js';
 import { FeishuAdapter } from './FeishuAdapter.js';
+import { validateManifest } from '../../plugin-contract/dist/index.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
+
+test('all seven connectors declare a schema-valid confirmed owner permission import action', async () => {
+  for (const name of ['feishu', 'dingtalk', 'telegram', 'wecom-agent', 'wecom-bot', 'weixin', 'xiaoyi']) {
+    const value = parse(await readFile(new URL(`../../connector-${name}/plugin.yaml`, import.meta.url), 'utf8'));
+    assert.equal(validateManifest(value).valid, true, name);
+    const operation = value.configuration.find((field: { key: string }) => field.key === 'legacy_permissions');
+    assert.ok(operation, name);
+    assert.equal(operation.hidden, undefined);
+    assert.equal(operation.actions[0].id, 'import');
+    assert.ok(operation.actions[0].confirm);
+    assert.equal(operation.actions[0].action.method, 'permissions.importLegacy');
+  }
+});
+
+test('real builtin import action accepts merged config, remains idempotent and omits secrets', async () => {
+  const entrypoint = createFeishuPluginModule(() => ({ async start() {}, async stop() {}, outbound: {} }) as FeishuConnectorRuntime<FeishuAdapter>);
+  const active = await entrypoint.create(manifest).start(host({ connectionMode: 'webhook' }, { appSecret: 'secret' }, [], [], false));
+  const input = { protocolVersion: 1,
+    sourceDigest: '449c5887711ea90c6c14ff8f26adfeefc2d7f129f2bac9db59259c2915b5cad3',
+    snapshot: { config: { whitelistEnabled: 'true', commandAdminOnly: 'false', adminOpenIds: '[]' },
+      groups: { chat: '{"label":"Group","addedAt":12}' } }, appSecret: 'do-not-store' };
+  const action = active.actions['permissions.importLegacy']; assert.ok(action);
+  const receipt = await action({ input });
+  assert.equal((receipt as { data: { status: string } }).data.status, 'imported');
+  assert.equal(JSON.stringify(receipt).includes('do-not-store'), false);
+  assert.equal((await action({ input }) as { data: { status: string } }).data.status, 'already_applied');
+  await active.stop();
+});
+
+test('real Feishu entrypoint intercepts where before normal ingress and audits without wake', async () => {
+  const sent: Array<{ idempotencyKey: string; sourceEventId?: string }> = []; const drafts: unknown[] = []; const replies: string[] = [];
+  const entrypoint = createFeishuPluginModule(options => ({
+    outbound: { async sendFormattedReply(_chat: string, value: { body: string }) { replies.push(value.body); } },
+    async start() {}, async stop() {},
+    async handleWebhook() {
+      await options.host.deliver({ externalConversationId: 'chat-1', providerMessageId: 'where-event', text: '/where',
+        externalSenderId: 'admin', conversation: { type: 'direct' } });
+      return { kind: 'processed', messageId: 'where-event' };
+    },
+  }) as unknown as FeishuConnectorRuntime<FeishuAdapter>);
+  const pluginHost = host({ connectionMode: 'webhook' }, { appSecret: 'secret' }, sent, drafts, false);
+  Object.assign(pluginHost.threads, {
+    async findByKey() { return { id: 'thread-1', title: 'Bound', createdAt: 1, lastActiveAt: 1, featureRefs: [], preferredCats: [] }; },
+    async ensureSystemThread() { return { id: 'system', title: 'System', createdAt: 1, lastActiveAt: 1, featureRefs: [], preferredCats: [] }; },
+  });
+  const active = await entrypoint.create(manifest).start(pluginHost);
+  await active.actions['permissions.importLegacy']!({ input: { protocolVersion: 1,
+    sourceDigest: '449c5887711ea90c6c14ff8f26adfeefc2d7f129f2bac9db59259c2915b5cad3',
+    snapshot: { config: { whitelistEnabled: 'true', commandAdminOnly: 'false', adminOpenIds: '[]' }, groups: { chat: '{"label":"Group","addedAt":12}' } } } });
+  await active.actions['feishu.webhook']!({ request: { method: 'POST', path: 'feishu/events', query: {}, body: {}, rawBody: Buffer.from('{}'), headers: {} } });
+  assert.equal(replies.length, 1); assert.match(replies[0]!, /Bound/);
+  assert.equal(drafts.length, 1, 'quiet audit only, no normal ingress');
+  const audit = drafts[0] as { threadId: string; wake?: unknown; payload: { provenance?: { origin?: unknown } } };
+  assert.equal(audit.threadId, 'system'); assert.equal(audit.wake, undefined); assert.equal(audit.payload.provenance?.origin, undefined);
+  await active.stop();
+});
 
 function host(
   config: Record<string, unknown>,
   secrets: Record<string, string>,
   sent: Array<{ idempotencyKey: string; sourceEventId?: string }> = [],
   drafts: unknown[] = [],
+  initialized = true,
 ): ModulePluginHostShape {
   const state = new Map<string, { revision: number; value: unknown }>();
+  // Existing owner-configured state for non-migration fixtures, not an activation default.
+  if (initialized) state.set('connector.permissions.v1', { revision: 1, value: { v: 1, whitelistEnabled: false,
+    commandAdminOnly: false, adminConfigured: true, adminOpenIds: [], allowedGroups: [] } });
   return {
     config: { get: async key => config[key] },
     secrets: { get: async key => secrets[key] },
@@ -68,7 +129,7 @@ test('module exposes both manifest-declared connector and webhook actions', asyn
   const secrets: Record<string, string> = { appSecret: 'secret', verificationToken: '' };
   const active = await entrypoint.create(manifest).start(host(config, secrets));
   assert.deepEqual(Object.keys(active.actions).sort(), [
-    'feishu.disconnect', 'feishu.media-source.read', 'feishu.media-source.settle', 'feishu.outbound', 'feishu.qr-generate', 'feishu.qr-status', 'feishu.test', 'feishu.webhook', 'host.messaging.lifecycle',
+    'feishu.disconnect', 'feishu.media-source.read', 'feishu.media-source.settle', 'feishu.outbound', 'feishu.qr-generate', 'feishu.qr-status', 'feishu.test', 'feishu.webhook', 'host.messaging.lifecycle', 'permissions.importLegacy',
   ]);
   const request = {
     method: 'POST', path: 'feishu/events', query: {},
@@ -135,7 +196,7 @@ test('presentation v2 started uses placeholderLine and suffixes the recorded rep
   ));
   await deliver({
     externalConversationId: 'chat-1', providerMessageId: 'provider-1', text: 'inbound',
-    conversation: { title: 'Chat' },
+    conversation: { type: 'group', title: 'Chat' },
     sender: { id: 'user-1', name: '张三' },
   });
   const action = active.actions['host.messaging.lifecycle']!;
@@ -225,7 +286,6 @@ test('replayed Feishu webhook derives the same Host idempotency and source event
     });
   }
   assert.deepEqual(sent, [
-    { idempotencyKey: 'provider-message-1', sourceEventId: 'provider-message-1' },
     { idempotencyKey: 'provider-message-1', sourceEventId: 'provider-message-1' },
   ]);
   const serialized = JSON.stringify(drafts);

@@ -28,6 +28,35 @@ const BINDING: FeatureBinding = {
   executionLease: 'opaque-host-signed-lease',
 };
 
+test('accepted thread projections and preferredCats patch cross the real FeatureContext wrapper', async () => {
+  const adapter = new RecordingAdapter();
+  const seen: unknown[] = [];
+  Object.assign(adapter.threads, {
+    async list(options?: unknown) { seen.push(['list', options]); return []; },
+    async readMessages(id: string, options: unknown) { seen.push(['readMessages', id, options]); return []; },
+    async getCats(id: string) { seen.push(['getCats', id]); return { participants: [], routableNow: [], routableNotJoined: [], notRoutable: [] }; },
+    async update(id: string, patch: unknown) { seen.push(['update', id, patch]); return { id, title: null, createdAt: 1, lastActiveAt: 1, featureRefs: [], preferredCats: [] }; },
+  });
+  const session = createFeatureContextSession(BINDING, adapter);
+  const threads = session.context.threads;
+  if (false) {
+    // @ts-expect-error Numeric-only cursors lose messages sharing a timeline millisecond.
+    await threads.readMessages('thread', { before: 20, limit: 1 });
+  }
+  await threads.list({ limit: 50 });
+  await threads.readMessages('thread', { before: { timestamp: 20, id: 'message-20' }, limit: 500 });
+  await threads.getCats('thread');
+  await threads.update('thread', { preferredCats: [] });
+  assert.deepEqual(seen, [['list', { limit: 50 }], ['readMessages', 'thread', { before: { timestamp: 20, id: 'message-20' }, limit: 500 }],
+    ['getCats', 'thread'], ['update', 'thread', { preferredCats: [] }]]);
+  await session.revoke();
+  for (const invoke of [() => threads.list(), () => threads.readMessages('thread', { limit: 1 }),
+    () => threads.getCats('thread'), () => threads.update('thread', { preferredCats: [] })]) {
+    await assert.rejects(invoke(), FeatureContextRevokedError);
+  }
+  assert.equal(seen.length, 4);
+});
+
 test('dataDirectory rejects a path when data.directory was not granted', () => {
   const adapter = new RecordingAdapter();
   const { context } = createFeatureContextSession(
@@ -118,6 +147,9 @@ class RecordingAdapter implements FeatureHostAdapter {
 
   readonly threads = {
     get: async () => null,
+    list: async () => [],
+    readMessages: async () => [],
+    getCats: async () => ({ participants: [], routableNow: [], routableNotJoined: [], notRoutable: [] }),
     create: async () => { throw new Error('not implemented by fixture'); },
     update: async () => { throw new Error('not implemented by fixture'); },
     findByKey: async () => null,

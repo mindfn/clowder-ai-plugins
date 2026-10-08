@@ -41,6 +41,32 @@ export interface PluginThreadSummary {
   readonly title: string | null;
   readonly createdAt: number;
   readonly lastActiveAt: number;
+  readonly preferredCats: readonly string[];
+  readonly featureRefs: readonly string[];
+}
+
+export interface PluginThreadMessage {
+  readonly id: string;
+  readonly timestamp: number;
+  readonly content: string;
+  readonly sender: { readonly kind: 'owner' | 'cat' | 'system'; readonly catId?: string };
+}
+
+export interface PluginThreadCat {
+  readonly catId: string;
+  readonly displayName: string;
+  readonly aliases: readonly string[];
+}
+
+export interface PluginThreadCats {
+  readonly participants: readonly (PluginThreadCat & {
+    readonly lastMessageAt: number;
+    readonly messageCount: number;
+    readonly lastResponseHealthy?: boolean;
+  })[];
+  readonly routableNow: readonly PluginThreadCat[];
+  readonly routableNotJoined: readonly PluginThreadCat[];
+  readonly notRoutable: readonly PluginThreadCat[];
 }
 
 export interface PluginThreadBindingSummary {
@@ -51,8 +77,12 @@ export interface PluginThreadBindingSummary {
 
 export interface PluginThreadHost {
   get(threadId: string): Promise<PluginThreadSummary | null>;
+  list(options?: { readonly limit?: number }): Promise<readonly PluginThreadSummary[]>;
+  /** Exclusive timeline cursor: timestamp and id must come from the same returned row. */
+  readMessages(threadId: string, options: { readonly before?: { readonly timestamp: number; readonly id: string }; readonly limit: number }): Promise<readonly PluginThreadMessage[]>;
+  getCats(threadId: string): Promise<PluginThreadCats>;
   create(input: { readonly title: string }): Promise<PluginThreadSummary>;
-  update(threadId: string, patch: { readonly title: string }): Promise<PluginThreadSummary>;
+  update(threadId: string, patch: { readonly title?: string; readonly preferredCats?: readonly string[] }): Promise<PluginThreadSummary>;
   findByKey(key: string): Promise<PluginThreadSummary | null>;
   ensureByKey(key: string, input: { readonly title: string }): Promise<PluginThreadSummary>;
   bind(key: string, threadId: string): Promise<PluginThreadBindingSummary>;
