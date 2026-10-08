@@ -1,153 +1,7 @@
 {
   "sourceHead": "496e24089ffb5f99fa241e04c7ee0850df227be4",
-  "method": "Referenced declaration closure; exact declaration text, imports pruned; private protocol models, not a Host runtime dependency.",
+  "method": "Current package import declaration closure from frozen Host source; exact selected statements and hashes, obsolete legacy declaration roots removed. Private models do not confer Host authority.",
   "entries": [
-    {
-      "source": "packages/shared/src/types/growing-artifact.ts",
-      "target": "packages/github-operations/src/business/model/types/growing-artifact.ts",
-      "sourceSha256": "097e8845ad4c4f4d78ca00625cb87f3ae491d60678a1bab478b2a30b93854fee",
-      "statements": [
-        {
-          "firstLine": 1,
-          "lastLine": 3,
-          "sha256": "b068e751dac2d802ad30ec45954e55847c6a9a9ef0cfd6556c3bf68efade5c2c"
-        },
-        {
-          "firstLine": 3,
-          "lastLine": 14,
-          "sha256": "78f46c8f41f778eb5c648cfcde5f113623ede67944d67917a0fb0636cd464c7a"
-        }
-      ]
-    },
-    {
-      "source": "packages/shared/src/types/growing-development.ts",
-      "target": "packages/github-operations/src/business/model/types/growing-development.ts",
-      "sourceSha256": "7210349ecdbc3e5e28fcbd2de7c6750bb5a0f5779a8ffe5eb7677a1158a073d2",
-      "statements": [
-        {
-          "firstLine": 1,
-          "lastLine": 3,
-          "sha256": "8d9d671631cd704b1dd2550de9a3a6cf65b2865cc7f918a75a2840292f19c8a3"
-        },
-        {
-          "firstLine": 3,
-          "lastLine": 4,
-          "sha256": "20c9ce688ebef67ddc1fbd55468b8604efcc4bdf30a239561a70b3f40c6c6d3a"
-        },
-        {
-          "firstLine": 4,
-          "lastLine": 5,
-          "sha256": "33a667950b2bf32627b1b61d2263e0de2a289be42e4d7ecb5aab9a454d32f218"
-        },
-        {
-          "firstLine": 5,
-          "lastLine": 6,
-          "sha256": "deeb0780c376df8737fab32a8862a9a02b494bcac443f1b914b7b9841332be1c"
-        },
-        {
-          "firstLine": 6,
-          "lastLine": 10,
-          "sha256": "2a1a82337e9a22683cc9989af5481a6d0f09de41b3d0f81a7f5c75e7393f296e"
-        },
-        {
-          "firstLine": 10,
-          "lastLine": 11,
-          "sha256": "ba5ca1ee0ea5f404d7b45929fac231a705e0568e1bdf44e9575153c29ee37596"
-        },
-        {
-          "firstLine": 11,
-          "lastLine": 14,
-          "sha256": "45335d1d2479fec64e8a1096276b769fcead9c5a3e2ee3e7479f3b46701c6bb8"
-        },
-        {
-          "firstLine": 14,
-          "lastLine": 15,
-          "sha256": "caf7bcc5c5aaa42a38e0ae48601d10cd59ae824f7b384afb968e107dd7bd1f73"
-        },
-        {
-          "firstLine": 15,
-          "lastLine": 16,
-          "sha256": "62a3201aea10cd94a8333817663d6eefd5e76f18aa8b720798fc1969d7d99dc3"
-        },
-        {
-          "firstLine": 16,
-          "lastLine": 42,
-          "sha256": "ef1179ec1f92b039ba7eacf12e85b23f3908180d8bf68f364315fac6aebf4683"
-        }
-      ]
-    },
-    {
-      "source": "packages/shared/src/types/growing.ts",
-      "target": "packages/github-operations/src/business/model/types/growing.ts",
-      "sourceSha256": "b6dc2bc4786c82d1ca97408afa291e0ebec6e8f8baaca4ae4c46cab6f073f26e",
-      "statements": [
-        {
-          "firstLine": 3,
-          "lastLine": 5,
-          "sha256": "067c512a478a0eb2234882e42e73db39f50f4f84ff9ea4af11f617d0c5abaa04"
-        },
-        {
-          "firstLine": 5,
-          "lastLine": 6,
-          "sha256": "68dcaaa7dd0bfef3f6ee6494b914e9b7ce5541382f8b64b655db2620bbf83cf1"
-        },
-        {
-          "firstLine": 6,
-          "lastLine": 7,
-          "sha256": "336064ed8d5414e2158ff9cf4f98f83a756b50c047c8bd38d112f0540bd4fc33"
-        },
-        {
-          "firstLine": 7,
-          "lastLine": 8,
-          "sha256": "f71c9f3ce69dd620e99b67c7854f854521cfc5620fab3863b32c7891cc4081ee"
-        },
-        {
-          "firstLine": 8,
-          "lastLine": 9,
-          "sha256": "5e87cf0570338f4c82671daf2254ff880ab7e43815b2df91a1b3b445b856a517"
-        },
-        {
-          "firstLine": 85,
-          "lastLine": 92,
-          "sha256": "7da309fd0e2f6063583634fda9666867a0f2fb7bd2217fcbb880a20396ebcb66"
-        },
-        {
-          "firstLine": 92,
-          "lastLine": 104,
-          "sha256": "20477f851035daabd353893a8af646d31add4a1e5116d94ffa8f84feab164bb3"
-        },
-        {
-          "firstLine": 104,
-          "lastLine": 111,
-          "sha256": "c77a59782393c0c0eebcc7d7df4ff42aa982ae36cf04f54a0926b37ffd5862e5"
-        },
-        {
-          "firstLine": 111,
-          "lastLine": 116,
-          "sha256": "899d284375fd83162df9ae8e08eecad6f2480d8264ef17fc9785f2a326a4ad64"
-        },
-        {
-          "firstLine": 116,
-          "lastLine": 128,
-          "sha256": "aff9924bc159194167fac23855086c09845cb1b3ea348c65d5dafcc7504bad8b"
-        },
-        {
-          "firstLine": 128,
-          "lastLine": 161,
-          "sha256": "5435c924a0df6e56ac11d71e3138316b1eebd7741201a72760cd7eb37ec09f91"
-        },
-        {
-          "firstLine": 161,
-          "lastLine": 200,
-          "sha256": "d1d84f2719bbbd8b860dd5933eae55951b6702a6c8551874dc9967204cad7deb"
-        },
-        {
-          "firstLine": 294,
-          "lastLine": 295,
-          "sha256": "91551105a44c844128837af2c387af80298127f57399e1fec4f9fca1fffb7dff"
-        }
-      ]
-    },
     {
       "source": "packages/shared/src/types/ids.ts",
       "target": "packages/github-operations/src/business/model/types/ids.ts",
@@ -167,11 +21,6 @@
           "firstLine": 12,
           "lastLine": 13,
           "sha256": "eb5f9901c1f99812dae7bdc89e916f41c2e90b39dbff10cbec78b5ea19ca3989"
-        },
-        {
-          "firstLine": 17,
-          "lastLine": 26,
-          "sha256": "3ac42c6cb7cce37a9f3d827ad2e2da4eba867d084796243e97371c4a406bf701"
         },
         {
           "firstLine": 40,
@@ -199,201 +48,6 @@
           "firstLine": 199,
           "lastLine": 214,
           "sha256": "d5c93444d7c4365178ce1da1e964a4e75e7ec0035145e117018be84b47adfe5a"
-        }
-      ]
-    },
-    {
-      "source": "packages/shared/src/types/concierge.ts",
-      "target": "packages/github-operations/src/business/model/types/concierge.ts",
-      "sourceSha256": "ff0eaaf649ffc1ffa10fe63a83c0806d947d0effb8627a68b27b49c0dadbff5f",
-      "statements": [
-        {
-          "firstLine": 95,
-          "lastLine": 105,
-          "sha256": "37b1e9aae9a6e5c59b65a9961aff8672951b841ffccfbc2679d33d0df3c78a71"
-        },
-        {
-          "firstLine": 105,
-          "lastLine": 106,
-          "sha256": "8c06a942e228074c9ba1d394ff18c182262c189b417e61f50b28d9eeaa239bfe"
-        },
-        {
-          "firstLine": 106,
-          "lastLine": 107,
-          "sha256": "d85e148649d4e0390f698baeaf24b9302ed3795e6eb9d6e851f93fe0d0648b86"
-        }
-      ]
-    },
-    {
-      "source": "packages/shared/src/types/wait-termination.ts",
-      "target": "packages/github-operations/src/business/model/types/wait-termination.ts",
-      "sourceSha256": "81778b14580861734af5e6bf2823f72cb0a46f7362e80a58a70ab171950b42cb",
-      "statements": [
-        {
-          "firstLine": 1,
-          "lastLine": 3,
-          "sha256": "ecb05ce75487c247d1231d72038fdb97dd17ca1164e5f72ece6a105cd8f9c90e"
-        },
-        {
-          "firstLine": 3,
-          "lastLine": 4,
-          "sha256": "9d60edce2c14e830ee08a9b7c5e69c2fed781793f1efa065027e9aa45b392560"
-        },
-        {
-          "firstLine": 4,
-          "lastLine": 5,
-          "sha256": "68ba94a3092eefc11f711fbdcb7a3423a2f15cb69fa2224d470f33b70d47b9de"
-        },
-        {
-          "firstLine": 5,
-          "lastLine": 14,
-          "sha256": "08a2ca9a9e41496109e75800b84557d5e842e22e8ece924e876e93c4c97d2d9b"
-        },
-        {
-          "firstLine": 14,
-          "lastLine": 20,
-          "sha256": "bdf3bf57fd4a00a981294bb216e6ec3b30172f83b9ea31af0224cd1caf62d0c6"
-        },
-        {
-          "firstLine": 20,
-          "lastLine": 36,
-          "sha256": "9defa5936292362b81a4bd5c14df7ba89a02665b45f78369ef16bbb8d788c013"
-        },
-        {
-          "firstLine": 36,
-          "lastLine": 38,
-          "sha256": "17b63e96abdc9d33aac70c3d7e07aadc9a6807e7ff114fe9a1463567bdcf941e"
-        },
-        {
-          "firstLine": 56,
-          "lastLine": 58,
-          "sha256": "c33fa8cfe7b2354897328668ff35a45c73c3f722314caaf7e7486f5cc6c7dc43"
-        },
-        {
-          "firstLine": 58,
-          "lastLine": 59,
-          "sha256": "fbc9066d2edd076f820487bc0c3c6e66415d2be5fe601f32cad8ee3a4968f8df"
-        },
-        {
-          "firstLine": 59,
-          "lastLine": 60,
-          "sha256": "2fb760599d78201b4f32263fb4ae62dd49576b0f0ba9acb7d1956d4fed5d4f11"
-        }
-      ]
-    },
-    {
-      "source": "packages/shared/src/types/wait-contract.ts",
-      "target": "packages/github-operations/src/business/model/types/wait-contract.ts",
-      "sourceSha256": "434d541c383297c7944f94870f83b6a2aa80b062673bbff372480acf8ec3abcd",
-      "statements": [
-        {
-          "firstLine": 1,
-          "lastLine": 9,
-          "sha256": "c75601a40a93cdc80c155269f143cd74e91812d9dcd51b7f4772f96666805cba"
-        },
-        {
-          "firstLine": 9,
-          "lastLine": 23,
-          "sha256": "a1a1b20f90227952aeb619a2219789448a621aeb4099eb27701dfe65d625d5e9"
-        },
-        {
-          "firstLine": 23,
-          "lastLine": 43,
-          "sha256": "859dcc4579ffe57a2df2f7d09a0e16c03318a801c182d2d51e9bf7580ee7eaec"
-        },
-        {
-          "firstLine": 43,
-          "lastLine": 45,
-          "sha256": "51e8bf7bbbf65ae7735a3586fe391510ca14e670250d4c5c5a4b6bf473eecb5f"
-        },
-        {
-          "firstLine": 45,
-          "lastLine": 59,
-          "sha256": "7dc227e98976991b18d248109cbaf2fe0db3818be4cc2e1b87a32851621ea695"
-        },
-        {
-          "firstLine": 59,
-          "lastLine": 65,
-          "sha256": "e6f229598c158751d5c3b835b960af161e61d5d6bfd52f9bbb783d30b23fe100"
-        },
-        {
-          "firstLine": 65,
-          "lastLine": 93,
-          "sha256": "1145ccefdce99de46bc37608c1c83a955dbeb00dfa13c6340ec1d31588531e53"
-        },
-        {
-          "firstLine": 93,
-          "lastLine": 116,
-          "sha256": "f77ea86f12a4c17fdda5cf87a922b84d13d5685b8235ec5f8cb0320c24228fbe"
-        },
-        {
-          "firstLine": 116,
-          "lastLine": 130,
-          "sha256": "e79010038baeabf99bf013e08e044c423ec34ac4c653fd489bebc1832192bc32"
-        }
-      ]
-    },
-    {
-      "source": "packages/shared/src/types/deployment-wait.ts",
-      "target": "packages/github-operations/src/business/model/types/deployment-wait.ts",
-      "sourceSha256": "d2582a3972596e5e4e7329c68284d0cb85919d1e914c295211bb441e609209fd",
-      "statements": [
-        {
-          "firstLine": 2,
-          "lastLine": 4,
-          "sha256": "f55d9414dea965ca6cbad04baaeb404fa7832bcc4669bd432c2c6aaf6c86684f"
-        },
-        {
-          "firstLine": 4,
-          "lastLine": 5,
-          "sha256": "9ab211c4704b6874051ce033b7a2131dc53f40415ab08cab352ea55ddfc68522"
-        },
-        {
-          "firstLine": 18,
-          "lastLine": 30,
-          "sha256": "2cd3a8248bd9ca37d5700daa65a72958367e45a98b84bd2ff026a78595c6be4a"
-        },
-        {
-          "firstLine": 30,
-          "lastLine": 37,
-          "sha256": "28653a8e25dfcee92fca56c4f3f433e88f697bf3677b96b5442b1c0a0c367b1f"
-        },
-        {
-          "firstLine": 37,
-          "lastLine": 43,
-          "sha256": "4ec99fa027bfff16a326efb487531be079a417cc4728c40aaba6feab2a7c19c5"
-        },
-        {
-          "firstLine": 43,
-          "lastLine": 50,
-          "sha256": "1bc248e5762d8644249078fc63d4d6cda54d2541fa0b8d11cfae3da7db9f0438"
-        },
-        {
-          "firstLine": 60,
-          "lastLine": 71,
-          "sha256": "a2e42680f65d32a968a7978717be88ffb73b70db12bbf42f16e0b2d9dff12dc3"
-        },
-        {
-          "firstLine": 71,
-          "lastLine": 82,
-          "sha256": "54826b65781b5cd97a54305ec77d0df1866283222e572b1bf94ddde716ccf118"
-        },
-        {
-          "firstLine": 82,
-          "lastLine": 93,
-          "sha256": "4e67a483289a3169a5f6d9d038695c998b715fd966613a1ba134fa6a11fef3db"
-        }
-      ]
-    },
-    {
-      "source": "packages/shared/src/types/ball-custody.ts",
-      "target": "packages/github-operations/src/business/model/types/ball-custody.ts",
-      "sourceSha256": "3476440bd3e7637ed808c55739bd992e692d355f165f5ddbef63575237bfc6b1",
-      "statements": [
-        {
-          "firstLine": 90,
-          "lastLine": 93,
-          "sha256": "595cc223a3ad22e47c3b45f8d4490ae1d0e7f37a5e3fa3e854ddc169baa9fa1e"
         }
       ]
     },
@@ -508,36 +162,6 @@
           "firstLine": 18,
           "lastLine": 21,
           "sha256": "4bf1c623d82fb0a4f32fa77a047564eaf751c24213452510edc81a3679c78696"
-        },
-        {
-          "firstLine": 21,
-          "lastLine": 26,
-          "sha256": "cf8be7a7e48d973e0f6f37a22f490cf63e06dfae4d7bbf8601b3e56820e1736e"
-        },
-        {
-          "firstLine": 26,
-          "lastLine": 33,
-          "sha256": "5ba6391ed8cd255ab8a6d616c9a32c288c3ff81f5bd4f572ece896282054cc57"
-        },
-        {
-          "firstLine": 33,
-          "lastLine": 36,
-          "sha256": "c5e067d1dcb2425fb3de3cb1f91253c4042fac5b00f5cf3b5f824db9effe2d4d"
-        },
-        {
-          "firstLine": 36,
-          "lastLine": 41,
-          "sha256": "267bb6228805216e7079f0f1d77d39beb47919f59c925b888b9fe4439bacb2dc"
-        },
-        {
-          "firstLine": 41,
-          "lastLine": 53,
-          "sha256": "374547aa05e116f09b1aed6f528f80d29bfdb6b232fc0d1722e7ed3fe72dd9b6"
-        },
-        {
-          "firstLine": 53,
-          "lastLine": 62,
-          "sha256": "02743966880830a33d33970070c523ef88108defd15351fc488a4fef2fdee1ef"
         }
       ]
     },
@@ -632,11 +256,6 @@
           "sha256": "921cc0fe51d3b14d60ffa7d65715a1fd1c2f44864b70204d11edd240fd14f0b1"
         },
         {
-          "firstLine": 131,
-          "lastLine": 136,
-          "sha256": "ea162881e4000ad8c28e85510b5d8c743a462931a0079021eb7bb608beb726e4"
-        },
-        {
           "firstLine": 136,
           "lastLine": 146,
           "sha256": "e162341d02ff357231d319a5610c938ec2b3fbbb49f442bb727f3e5113d2075d"
@@ -645,11 +264,6 @@
           "firstLine": 146,
           "lastLine": 158,
           "sha256": "ae1d32986a06800b836845f1ef2a11c585518084f5ae5259fcf8e51940245078"
-        },
-        {
-          "firstLine": 180,
-          "lastLine": 199,
-          "sha256": "424e03ea397445ae183bb481b26c4f01c7a9e173b4684b8bae19fb48dab4bf5b"
         },
         {
           "firstLine": 199,
@@ -662,120 +276,9 @@
           "sha256": "ce98f0e1565f943cdc5525c336ac4bb7b897008a30e5d0c4ecd328fe54cb1163"
         },
         {
-          "firstLine": 209,
-          "lastLine": 212,
-          "sha256": "c0318346acc39ad71f8a0a525b479368f3b664f0842280be1f983b0c3ade16fb"
-        },
-        {
           "firstLine": 212,
           "lastLine": 229,
           "sha256": "24221ef6d138ce64b58642eacba1125144cd34e8ba63a3bb1208a556cfa121ca"
-        },
-        {
-          "firstLine": 229,
-          "lastLine": 274,
-          "sha256": "c58d9b9f6e7319e11fdded2a7e90d5a02b1426951c0ffc4baa2267bdb1e7580b"
-        }
-      ]
-    },
-    {
-      "source": "packages/shared/src/types/community-issue-draft.ts",
-      "target": "packages/github-operations/src/business/model/types/community-issue-draft.ts",
-      "sourceSha256": "70fa34d7cc59e6fc422af40c44f859c83dfde4beb3833caadd3301843457e9ae",
-      "statements": [
-        {
-          "firstLine": 8,
-          "lastLine": 18,
-          "sha256": "b7d46b8a2d8d647187b16b0b18255ca508b1f871a535a25abefaf5c32063dfbf"
-        },
-        {
-          "firstLine": 18,
-          "lastLine": 23,
-          "sha256": "f6924547b3c0afdd79264a665854774e8c959edc7392139e1b2903a012eeead6"
-        },
-        {
-          "firstLine": 23,
-          "lastLine": 55,
-          "sha256": "ed8ae664a3eaf48a52d917e5b2a4b574b81b810a6d4942c7f1020ecabbe5bb67"
-        },
-        {
-          "firstLine": 55,
-          "lastLine": 68,
-          "sha256": "18035f7f8657d7bd982edd43e3af8bcea11d27144c5a8274151a2ad093fad8ac"
-        },
-        {
-          "firstLine": 68,
-          "lastLine": 72,
-          "sha256": "68251e735823f8040c74bd82facd28c11f287345cc6a9e3a92207dd721220c96"
-        },
-        {
-          "firstLine": 72,
-          "lastLine": 76,
-          "sha256": "2d6187f94886ebcd1fd90af36deecde8bb5a10c50af6586c7adb3e4bd5b9273d"
-        },
-        {
-          "firstLine": 76,
-          "lastLine": 100,
-          "sha256": "1da56a9175cc2dd16b25abbf10de741540ffa0a33920855bc55fa530af73f01b"
-        }
-      ],
-      "disposition": "host-retained-legacy-draft-consumer",
-      "removedPackageCopy": true,
-      "reason": "Ruling404: legacy userId/confirmed source records stay in Host. Native installation-private drafts use generic owner-local operation, durable attempt journal and gh transport; no legacy adoption.",
-      "replacement": [
-        "packages/github-operations/src/native-issue-drafts.ts",
-        "packages/github-operations/src/github-provider.ts"
-      ],
-      "packageBusinessMoved": "native draft only; legacy admission retained",
-      "realPackageReplacementVerified": "builtin/fake-gh publication, restart recovery and isolation tests; Host installation/cutover pending",
-      "hostLegacyRemoved": false
-    },
-    {
-      "source": "packages/shared/src/types/connector.ts",
-      "target": "packages/github-operations/src/business/model/types/connector.ts",
-      "sourceSha256": "14a826d435729050c465de2d8911f9e5fbf6605935a9f084309b57b132e9924c",
-      "statements": [
-        {
-          "firstLine": 59,
-          "lastLine": 75,
-          "sha256": "3219a5a93ecd8523c0c4261d952318d65bc3cd252ae9339d619cf3d1d2035b8e"
-        }
-      ]
-    },
-    {
-      "source": "packages/shared/src/types/frustration-issue.ts",
-      "target": "packages/github-operations/src/business/model/types/frustration-issue.ts",
-      "sourceSha256": "9b15d4a67c46989af4554a93db6e1b16da3c56a2f7f8a2462d2361dd69127045",
-      "statements": [
-        {
-          "firstLine": 11,
-          "lastLine": 22,
-          "sha256": "51dd9a859dcbfa7cfa0d4f00900917e178f7fec09f1a12cea9c163883d20de60"
-        },
-        {
-          "firstLine": 22,
-          "lastLine": 32,
-          "sha256": "bfb5dc2768d2c9f3f4a3558508360680acf2955b6f5083db41c2a43763d4e60f"
-        },
-        {
-          "firstLine": 32,
-          "lastLine": 40,
-          "sha256": "b731b2d9a01aaec9984391c3a8e2efedb7d3e648296bad0def049337d8447990"
-        },
-        {
-          "firstLine": 40,
-          "lastLine": 46,
-          "sha256": "d0ea1726b5cabc309b55040fd0fc780eb681c30db35e589d568e9be6777b5a91"
-        },
-        {
-          "firstLine": 46,
-          "lastLine": 52,
-          "sha256": "78e7c8dea1f9354f5a0cc379a38f2ff993e7838ed9e627551283144944e1028a"
-        },
-        {
-          "firstLine": 52,
-          "lastLine": 88,
-          "sha256": "62913b002ec6c40da0515be8be666e0a7484d204a3676256d0bbc0024f72b778"
         }
       ]
     },
@@ -784,76 +287,6 @@
       "target": "packages/github-operations/src/business/model/types/github-wait.ts",
       "sourceSha256": "4ed3e62e1453e2dc8c777d157448a5554c64969346cd079053cdef966832457f",
       "statements": [
-        {
-          "firstLine": 13,
-          "lastLine": 24,
-          "sha256": "8ffe3a2b3d4ffcb200c55902f20c0fe348602b46a1553773005ca4a2600b06f5"
-        },
-        {
-          "firstLine": 24,
-          "lastLine": 26,
-          "sha256": "c6f132804f7c0d413690fdba8928a16c8ca11f73100273f8b240011b3f31e672"
-        },
-        {
-          "firstLine": 26,
-          "lastLine": 31,
-          "sha256": "fd4093b01d354414045ce5f23537d2f4b0f56d6cf23a4c882fa44c8d39c6f4c8"
-        },
-        {
-          "firstLine": 31,
-          "lastLine": 43,
-          "sha256": "f5a3adeb262ea565d759c7ebb78e4ed3f69b4e9096e13846e61504bb53994830"
-        },
-        {
-          "firstLine": 43,
-          "lastLine": 45,
-          "sha256": "d969b36d08530d4211b0bfce46a687e11bcc6f776086e515e376a2e48a928722"
-        },
-        {
-          "firstLine": 45,
-          "lastLine": 65,
-          "sha256": "7c5bbf2ed466261f64c8d9202023f9ca4e417f69e90e4a93f943fafaa8742d19"
-        },
-        {
-          "firstLine": 98,
-          "lastLine": 121,
-          "sha256": "5100ada7c9d1e3dca54beff1774afb610a9819eef91fb5f40d76bccf66751961"
-        },
-        {
-          "firstLine": 133,
-          "lastLine": 139,
-          "sha256": "eb3f7e44b439850e9651fc4906d0aae31b2ae0be1cce79ca763d6724030bbd27"
-        },
-        {
-          "firstLine": 139,
-          "lastLine": 145,
-          "sha256": "442cebf8844c7f323853237fe4a55e921dbfc11874b313986849893c6bc0d71f"
-        },
-        {
-          "firstLine": 382,
-          "lastLine": 384,
-          "sha256": "a63b2692034f6d6971cdf884af33f520786dc0fc71884b8e5310d285441ed754"
-        },
-        {
-          "firstLine": 384,
-          "lastLine": 426,
-          "sha256": "ba06995851f235553924e8c5a16d75737735ee2a14c5c314585a73191b60fb28"
-        },
-        {
-          "firstLine": 426,
-          "lastLine": 428,
-          "sha256": "cd07f3136166c6f809cda9758684d9d7034520f82bd8db3324f92a5e89be1f8a"
-        },
-        {
-          "firstLine": 428,
-          "lastLine": 429,
-          "sha256": "78457463f922379031fa48bfcf305641ed646d139f4ab194d851a23319487a9f"
-        },
-        {
-          "firstLine": 429,
-          "lastLine": 431,
-          "sha256": "df594da3344fda7105f16e2e17af25bda36ac89f6552dec9d585ecbd4f494653"
-        },
         {
           "firstLine": 431,
           "lastLine": 437,
@@ -868,216 +301,6 @@
           "firstLine": 444,
           "lastLine": 449,
           "sha256": "0b580eb6d77ac7fb05e44504420dee6eb02fb802cf2e0afab538583418b41fc3"
-        },
-        {
-          "firstLine": 449,
-          "lastLine": 476,
-          "sha256": "28abe2ecca82ce3067d4ae638dbd2496c6e3d2da3bc98cc8fc0cb2d0ff677c2d"
-        },
-        {
-          "firstLine": 476,
-          "lastLine": 485,
-          "sha256": "dfc0b4f7d6a41b92aad3b9fb548e06d5b5b73c5ace343dfa037fb27c82962fae"
-        },
-        {
-          "firstLine": 485,
-          "lastLine": 487,
-          "sha256": "431ac6ab5806752151c96bb04a33bd674ff67c6bf2b3e515376d85338b775aba"
-        },
-        {
-          "firstLine": 487,
-          "lastLine": 488,
-          "sha256": "3e701c4f8434144262018337be88d5adee0766d6ad814fe27434f1a4cc6ee2cf"
-        },
-        {
-          "firstLine": 488,
-          "lastLine": 492,
-          "sha256": "91919b21257c5abeb4c42b1f73f8c67efb08f35f97d67734ed4f50b62286d666"
-        },
-        {
-          "firstLine": 492,
-          "lastLine": 499,
-          "sha256": "97d6672422ff99aec1e31c4f95139d5b477b055be048ea8a44f94eea38b6c093"
-        },
-        {
-          "firstLine": 499,
-          "lastLine": 506,
-          "sha256": "b3b5650559886e61686937b3e32938300ac09537e7f9ce29c706cdcb5b11f339"
-        },
-        {
-          "firstLine": 506,
-          "lastLine": 508,
-          "sha256": "5d4eb050aa96f7bf600a335a61e2950c13a0ab639796eb0f1d9395bb05cf6167"
-        },
-        {
-          "firstLine": 508,
-          "lastLine": 520,
-          "sha256": "834c92ccee17d33037c21dc8484c9263ac82400d0564933fdbe70934c591ffc2"
-        },
-        {
-          "firstLine": 520,
-          "lastLine": 534,
-          "sha256": "b54d5d9762c86fdd28f761ad1f91c2a9cd208c6ede9d9aadce81e88c3f5d6e42"
-        }
-      ]
-    },
-    {
-      "source": "packages/shared/src/types/managed-work.ts",
-      "target": "packages/github-operations/src/business/model/types/managed-work.ts",
-      "sourceSha256": "b13f8d7a7c4a5bf0eece8c7f7530f2283a06b2610f71bdad6f7fef5ee57c4717",
-      "statements": [
-        {
-          "firstLine": 28,
-          "lastLine": 34,
-          "sha256": "0f223634bea78f00ce654311a0ef5dbc756c0c003aee9e64bc06153a49f5b405"
-        }
-      ]
-    },
-    {
-      "source": "packages/shared/src/types/memory-cue.ts",
-      "target": "packages/github-operations/src/business/model/types/memory-cue.ts",
-      "sourceSha256": "21345f248bdba1c192c4b7cba30c6d7a831acfa2dd07f978c89b9d4d264a0f5c",
-      "statements": [
-        {
-          "firstLine": 58,
-          "lastLine": 59,
-          "sha256": "f71c9f3ce69dd620e99b67c7854f854521cfc5620fab3863b32c7891cc4081ee"
-        },
-        {
-          "firstLine": 114,
-          "lastLine": 134,
-          "sha256": "0a1d2b6fe860b686adbea317147f3f76f004ab5b4fe84ec6b7db5990860962fb"
-        },
-        {
-          "firstLine": 317,
-          "lastLine": 318,
-          "sha256": "d6463f9644c939435cde11ee6c339bcca59a58c4fb0b276985a5b43554fc7631"
-        }
-      ]
-    },
-    {
-      "source": "packages/shared/src/types/rich.ts",
-      "target": "packages/github-operations/src/business/model/types/rich.ts",
-      "sourceSha256": "049bc621466081617bd5328c795da96f4d5e8f0aab22311f4f9953f2f8771106",
-      "statements": [
-        {
-          "firstLine": 1,
-          "lastLine": 18,
-          "sha256": "842d53ef05563beb2aa0cf3135f24dd83d5426c4ffcd1aed1e5b03b0746a4c43"
-        },
-        {
-          "firstLine": 18,
-          "lastLine": 28,
-          "sha256": "85ab52cdfbe0c6978838f4c95d2ef0508269d53a57ffe04dceb23a4e4a15d064"
-        },
-        {
-          "firstLine": 28,
-          "lastLine": 39,
-          "sha256": "edf00d7a5164d4f95e8957ec89ae4a6ce1774f6427ac654238fdd4a6fed95a6c"
-        },
-        {
-          "firstLine": 39,
-          "lastLine": 55,
-          "sha256": "bb3ef77bb36c178bce6d9f386b320bf06bb61f6a0229aeded7a42bdec9e6bee4"
-        }
-      ]
-    },
-    {
-      "source": "packages/shared/src/types/cross-thread-affordance.ts",
-      "target": "packages/github-operations/src/business/model/types/cross-thread-affordance.ts",
-      "sourceSha256": "d53a8f6fb0d8fbe2a6b5f5e189f31eb9f367c2d277c7adf72840b054c5b61c80",
-      "statements": [
-        {
-          "firstLine": 1,
-          "lastLine": 13,
-          "sha256": "d7c98d473bc12bc6b57b69c7cc4004eba93b9333d62a281410df827dadece8ab"
-        },
-        {
-          "firstLine": 13,
-          "lastLine": 28,
-          "sha256": "a85396fadf0075754ec8026313cac292bfca4ac0562386ee2ee61b7744f565c7"
-        },
-        {
-          "firstLine": 28,
-          "lastLine": 45,
-          "sha256": "ebb063be5427bc4d02e2511f65cbaa720121b34bc54e53aa13e6c8ec4305d399"
-        }
-      ]
-    },
-    {
-      "source": "packages/shared/src/types/task.ts",
-      "target": "packages/github-operations/src/business/model/types/task.ts",
-      "sourceSha256": "f25629ac3915f6fda8b1214e15c949f4c535118507e4a2c0e47862f66540c2dd",
-      "statements": [
-        {
-          "firstLine": 24,
-          "lastLine": 26,
-          "sha256": "ccb1ec69352beefcf80ad3bd88ff0d916cc2270e18c83f2d99d10c5018f9a3c1"
-        },
-        {
-          "firstLine": 37,
-          "lastLine": 45,
-          "sha256": "271236adc3f9c8fd25aea1a10262189f6f2a216add68920459a7127c2addd830"
-        },
-        {
-          "firstLine": 50,
-          "lastLine": 91,
-          "sha256": "56d4c4f5658d0c8f013a19e82fa5f603e4aaabecb79e64e4f9c2365e5dc587bd"
-        },
-        {
-          "firstLine": 91,
-          "lastLine": 98,
-          "sha256": "dde5b6d83eab0faa92ba6b67da04f83af8f4be7ffb624c1a7f688bcc9f2c3473"
-        },
-        {
-          "firstLine": 98,
-          "lastLine": 123,
-          "sha256": "b0c0c93a77ab239e7756f1ff9639ef0a3680f6e8d270681130f5a78dc69a56bd"
-        },
-        {
-          "firstLine": 123,
-          "lastLine": 140,
-          "sha256": "eb9b09522ea6e00b4b3d9720996cd1d460fd2a0822417f194cd054618b2d474a"
-        },
-        {
-          "firstLine": 140,
-          "lastLine": 149,
-          "sha256": "06f1cf4cdb2acbdad77a9718038af6eb8a8b5cfc90e2cb863f38fb93507f4eee"
-        },
-        {
-          "firstLine": 149,
-          "lastLine": 161,
-          "sha256": "477888e5b7fb01706eb81d513bd70fc7b027614d42aa38c37949b98562c60392"
-        },
-        {
-          "firstLine": 161,
-          "lastLine": 173,
-          "sha256": "e7f458723e9f6d6a009d440716c42363a8401c163eb8e9d80cacdb4f61f0098d"
-        },
-        {
-          "firstLine": 173,
-          "lastLine": 176,
-          "sha256": "54aa7c25c2d8eb45e20384d6bcdbab6a808783572a38194bd0eda7ddb6ff8140"
-        },
-        {
-          "firstLine": 176,
-          "lastLine": 188,
-          "sha256": "384af0f6192c7ff814f202eeccfb7d5aa3b2b1a238facc9bcab2869870f3a0ea"
-        },
-        {
-          "firstLine": 188,
-          "lastLine": 238,
-          "sha256": "05a5823fa5c068dee64a9375885e8c19a76dc212c59c907413dae41401872bb2"
-        },
-        {
-          "firstLine": 238,
-          "lastLine": 257,
-          "sha256": "a62e2a56e5e11935aff22d17383ccfc2e576c83671a1b83d7c7e405134ec37bc"
-        },
-        {
-          "firstLine": 257,
-          "lastLine": 272,
-          "sha256": "060c99aa07b2ae9b810b7c9a16cd99781798db19cbfa75b5e3092d1b227521a7"
         }
       ]
     },
@@ -1092,11 +315,6 @@
           "sha256": "aae03f687d7c43031b08c7263cb82f6259df6047370c41219474afb1e8b3508f"
         },
         {
-          "firstLine": 13,
-          "lastLine": 27,
-          "sha256": "ab910ff4324eea00cc2e6e57978a3a79c12b377e9a49728674ab9f1f1090b323"
-        },
-        {
           "firstLine": 27,
           "lastLine": 32,
           "sha256": "d077c4c772e08394e76e2b62bc0e028874753c50ed921a156856aef211321f78"
@@ -1105,13 +323,106 @@
           "firstLine": 32,
           "lastLine": 41,
           "sha256": "0cc2c6e1b9ff6c3f3c1a1de652224e596cba4babedf0cd17c372138981e92c72"
-        },
-        {
-          "firstLine": 41,
-          "lastLine": 55,
-          "sha256": "23310a343a1c1b9ce5ef9c7a4ff004ca1731eaf6a3d223427e61d222d0804604"
         }
       ]
+    }
+  ],
+  "excludedLegacyDeclarations": [
+    {
+      "source": "packages/shared/src/types/growing-artifact.ts",
+      "target": "packages/github-operations/src/business/model/types/growing-artifact.ts",
+      "sourceSha256": "097e8845ad4c4f4d78ca00625cb87f3ae491d60678a1bab478b2a30b93854fee",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/growing-development.ts",
+      "target": "packages/github-operations/src/business/model/types/growing-development.ts",
+      "sourceSha256": "7210349ecdbc3e5e28fcbd2de7c6750bb5a0f5779a8ffe5eb7677a1158a073d2",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/growing.ts",
+      "target": "packages/github-operations/src/business/model/types/growing.ts",
+      "sourceSha256": "b6dc2bc4786c82d1ca97408afa291e0ebec6e8f8baaca4ae4c46cab6f073f26e",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/concierge.ts",
+      "target": "packages/github-operations/src/business/model/types/concierge.ts",
+      "sourceSha256": "ff0eaaf649ffc1ffa10fe63a83c0806d947d0effb8627a68b27b49c0dadbff5f",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/wait-termination.ts",
+      "target": "packages/github-operations/src/business/model/types/wait-termination.ts",
+      "sourceSha256": "81778b14580861734af5e6bf2823f72cb0a46f7362e80a58a70ab171950b42cb",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/wait-contract.ts",
+      "target": "packages/github-operations/src/business/model/types/wait-contract.ts",
+      "sourceSha256": "434d541c383297c7944f94870f83b6a2aa80b062673bbff372480acf8ec3abcd",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/deployment-wait.ts",
+      "target": "packages/github-operations/src/business/model/types/deployment-wait.ts",
+      "sourceSha256": "d2582a3972596e5e4e7329c68284d0cb85919d1e914c295211bb441e609209fd",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/ball-custody.ts",
+      "target": "packages/github-operations/src/business/model/types/ball-custody.ts",
+      "sourceSha256": "3476440bd3e7637ed808c55739bd992e692d355f165f5ddbef63575237bfc6b1",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/community-issue-draft.ts",
+      "target": "packages/github-operations/src/business/model/types/community-issue-draft.ts",
+      "sourceSha256": "70fa34d7cc59e6fc422af40c44f859c83dfde4beb3833caadd3301843457e9ae",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/connector.ts",
+      "target": "packages/github-operations/src/business/model/types/connector.ts",
+      "sourceSha256": "14a826d435729050c465de2d8911f9e5fbf6605935a9f084309b57b132e9924c",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/frustration-issue.ts",
+      "target": "packages/github-operations/src/business/model/types/frustration-issue.ts",
+      "sourceSha256": "9b15d4a67c46989af4554a93db6e1b16da3c56a2f7f8a2462d2361dd69127045",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/managed-work.ts",
+      "target": "packages/github-operations/src/business/model/types/managed-work.ts",
+      "sourceSha256": "b13f8d7a7c4a5bf0eece8c7f7530f2283a06b2610f71bdad6f7fef5ee57c4717",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/memory-cue.ts",
+      "target": "packages/github-operations/src/business/model/types/memory-cue.ts",
+      "sourceSha256": "21345f248bdba1c192c4b7cba30c6d7a831acfa2dd07f978c89b9d4d264a0f5c",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/rich.ts",
+      "target": "packages/github-operations/src/business/model/types/rich.ts",
+      "sourceSha256": "049bc621466081617bd5328c795da96f4d5e8f0aab22311f4f9953f2f8771106",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/cross-thread-affordance.ts",
+      "target": "packages/github-operations/src/business/model/types/cross-thread-affordance.ts",
+      "sourceSha256": "d53a8f6fb0d8fbe2a6b5f5e189f31eb9f367c2d277c7adf72840b054c5b61c80",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
+    },
+    {
+      "source": "packages/shared/src/types/task.ts",
+      "target": "packages/github-operations/src/business/model/types/task.ts",
+      "sourceSha256": "f25629ac3915f6fda8b1214e15c949f4c535118507e4a2c0e47862f66540c2dd",
+      "reason": "No longer referenced by current package imports/exports after Host wait/task/authority adapters were removed; original Host declaration remains unchanged."
     }
   ]
 }

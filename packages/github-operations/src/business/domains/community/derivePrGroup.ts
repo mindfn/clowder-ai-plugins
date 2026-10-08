@@ -10,9 +10,16 @@
  *   conflict.mergeState = 'CONFLICTING' | 'MERGEABLE' | 'UNKNOWN'
  */
 
-import type { AutomationState, PrBoardGroup, TaskStatus } from '../../model/index.js';
+import type { PrBoardGroup } from '../../model/index.js';
 
-export function derivePrGroup(automationState?: AutomationState | null, taskStatus?: TaskStatus): PrBoardGroup {
+/** Read-only provider facts, not a Host TaskStore or wait/custody model. */
+interface PrBoardFacts {
+  readonly ci?: { readonly headSha?: string; readonly lastFingerprint?: string; readonly lastBucket?: string };
+  readonly conflict?: { readonly mergeState?: string };
+  readonly closedAt?: number;
+}
+
+export function derivePrGroup(automationState?: PrBoardFacts | null, taskStatus?: string): PrBoardGroup {
   if (taskStatus === 'done') return 'completed';
   if (!automationState) return 'in-review';
 

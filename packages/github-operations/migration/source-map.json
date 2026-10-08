@@ -187,7 +187,10 @@
       "target": "packages/github-operations/src/business/domains/community/derivePrGroup.ts",
       "sourceSha256": "b075e8c3bdcf542268f0261ba2c7e30177ea03197dc6a0abc6516d7062fd186c",
       "lines": 30,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-policy-retained-without-host-wait-model",
+      "reason": "Keep the provider classifier/data shape; remove unused Host task/wait rendering and declaration dependencies. No Host source edited.",
+      "hostLegacyRemoved": false,
+      "realPackageReplacementVerified": "source tests only; full parity pending"
     },
     {
       "source": "packages/api/src/domains/community/external-review/ExternalReviewCoordinator.ts",
@@ -427,7 +430,12 @@
       "target": "packages/github-operations/src/business/domains/github-signals/GitHubIssueWaitBaselineReader.ts",
       "sourceSha256": "33d493363f0f6e88d482fb2e4041d1523cae11d3d998d230ca8e4beed872ca44",
       "lines": 43,
-      "disposition": "copied-unadapted"
+      "disposition": "legacy-wait-producer-retirement-candidate",
+      "removedPackageCopy": true,
+      "reason": "Package tracking registration captures provider baselines without emitting Host automationState.",
+      "packageBusinessMoved": "replacement runtime implemented; source adapter removed",
+      "realPackageReplacementVerified": "source builtin tests only; packed and Host cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/github-signals/GitHubReviewVerdicts.ts",
@@ -441,7 +449,12 @@
       "target": "packages/github-operations/src/business/domains/github-signals/GitHubWaitBaselineReader.ts",
       "sourceSha256": "397e329170fcea089b4e93c5f8b0dd92f761e0ca5ae5fd53e68c06653c048c0d",
       "lines": 159,
-      "disposition": "copied-unadapted"
+      "disposition": "legacy-wait-producer-retirement-candidate",
+      "removedPackageCopy": true,
+      "reason": "Package tracking marker stores independent comment channels and review facts without Host wait admission.",
+      "packageBusinessMoved": "replacement runtime implemented; source adapter removed",
+      "realPackageReplacementVerified": "source builtin tests only; packed and Host cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/github-signals/GitHubWaitLifecycleService.ts",
@@ -462,7 +475,12 @@
       "target": "packages/github-operations/src/business/domains/github-signals/GitHubWaitPredicateCatalog.ts",
       "sourceSha256": "bbcbcf3d9a892fededf17ded1902fe35029b0b9c95289b6c255811501f02724f",
       "lines": 509,
-      "disposition": "copied-unadapted"
+      "disposition": "legacy-wait-producer-retirement-candidate",
+      "removedPackageCopy": true,
+      "reason": "Provider comparisons are handled by tracking-runtime and cloud classifier; explicit Host wait/custody predicates are not default plugin API.",
+      "packageBusinessMoved": "replacement runtime implemented; source adapter removed",
+      "realPackageReplacementVerified": "source builtin tests only; packed and Host cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/github-signals/GitHubWaitRenewalBaseline.ts",
@@ -483,7 +501,10 @@
       "target": "packages/github-operations/src/business/domains/github-signals/github-wait-renderer.ts",
       "sourceSha256": "66aedc1e978dede05630e2747d777e1090352101bb19d878ac0a69b2e413d75d",
       "lines": 100,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-policy-retained-without-host-wait-model",
+      "reason": "Keep the provider classifier/data shape; remove unused Host task/wait rendering and declaration dependencies. No Host source edited.",
+      "hostLegacyRemoved": false,
+      "realPackageReplacementVerified": "source tests only; full parity pending"
     },
     {
       "source": "packages/api/src/infrastructure/connectors/github-repo-event/GitHubRepoWebhookHandler.ts",
@@ -508,14 +529,24 @@
       "target": "packages/github-operations/src/business/infrastructure/connectors/github-repo-event/RedisDeliveryDedup.ts",
       "sourceSha256": "3e0f40401afcdbca091f7e5bb18393efa6fc5123c9cb30ae50668448a50b1183",
       "lines": 33,
-      "disposition": "copied-unadapted"
+      "disposition": "replaced-by-sdk-private-storage",
+      "removedPackageCopy": true,
+      "reason": "SdkDeliveryDedup preserves claim/confirm/rollback and technical replay window using CAS; user-visible events/messages have no TTL.",
+      "packageBusinessMoved": "replacement runtime implemented; source adapter removed",
+      "realPackageReplacementVerified": "source builtin tests only; packed and Host cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/connectors/github-repo-event/RepoCommentCursorStore.ts",
       "target": "packages/github-operations/src/business/infrastructure/connectors/github-repo-event/RepoCommentCursorStore.ts",
       "sourceSha256": "e6274966d72d4e7cf7cada6cdcd6a8085164f2ab0c51ea8418d14d7ad537bdc0",
       "lines": 36,
-      "disposition": "copied-unadapted"
+      "disposition": "replaced-by-sdk-private-storage",
+      "removedPackageCopy": true,
+      "reason": "CommunityRuntime reads/writes persistent comment-cursor with existing SDK storage; no Redis client dependency.",
+      "packageBusinessMoved": "replacement runtime implemented; source adapter removed",
+      "realPackageReplacementVerified": "source builtin tests only; packed and Host cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/connectors/github-repo-event/RepoCommentPollTaskSpec.ts",
@@ -533,7 +564,12 @@
       "target": "packages/github-operations/src/business/infrastructure/connectors/github-repo-event/RepoInboxOwnerResolver.ts",
       "sourceSha256": "07212e4ea4a2abe786c0a3b302eadae738bb1a185a4d6a7f7d89df646fd9dbd6",
       "lines": 38,
-      "disposition": "copied-unadapted"
+      "disposition": "replaced-by-installation-repository-registration",
+      "removedPackageCopy": true,
+      "reason": "Current CommunityRuntime looks up configured repository notification destination for each delivery; no environment fallback or implicit Host role.",
+      "packageBusinessMoved": "replacement runtime implemented; source adapter removed",
+      "realPackageReplacementVerified": "source builtin tests only; packed and Host cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/connectors/github-repo-event/RepoScanTaskSpec.ts",
@@ -667,7 +703,12 @@
       "target": "packages/github-operations/src/business/infrastructure/email/PrTrackingStore.ts",
       "sourceSha256": "9094d60fd77e8b5ec03222a7c19b20248131cd5c9100f52ad49ceb3c13ce7891",
       "lines": 117,
-      "disposition": "copied-unadapted"
+      "disposition": "replaced-by-package-tracking-runtime",
+      "removedPackageCopy": true,
+      "reason": "Persistent SDK registration/outbox replaces unused legacy in-memory registry; legacy production data copy remains pending.",
+      "packageBusinessMoved": "replacement runtime implemented; source adapter removed",
+      "realPackageReplacementVerified": "source builtin tests only; packed and Host cutover pending",
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/email/RedisPrTrackingStore.ts",
@@ -738,7 +779,10 @@
       "target": "packages/github-operations/src/business/infrastructure/email/ci-cd-contract.ts",
       "sourceSha256": "1c707097069496eda9ef6a611f0b85a1a3dc370fd8c4e10501ee933f029a9e8d",
       "lines": 74,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-policy-retained-without-host-wait-model",
+      "reason": "Keep the provider classifier/data shape; remove unused Host task/wait rendering and declaration dependencies. No Host source edited.",
+      "hostLegacyRemoved": false,
+      "realPackageReplacementVerified": "source tests only; full parity pending"
     },
     {
       "source": "packages/api/src/infrastructure/email/ci-execution-failure.ts",

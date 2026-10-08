@@ -1,4 +1,3 @@
-import type { AwaitStateV1, GitHubWaitOutcomeV1 } from '../../model/index.js';
 
 export type CiBucket = 'pass' | 'fail' | 'pending' | 'external_infrastructure';
 export type CiExecutionFailure = 'billing_spending_limit_zero_step';
@@ -24,51 +23,4 @@ export interface CiPollResult {
   readonly checks: readonly CiCheckDetail[];
   /** GitHub login of the user who merged the PR (only present when prState=merged). */
   readonly mergedByLogin?: string;
-}
-
-export type CiRouteResult =
-  | {
-      kind: 'notified';
-      threadId: string;
-      catId: string;
-      messageId: string;
-      bucket: CiBucket;
-      content: string;
-      headSha?: string;
-    }
-  | {
-      kind: 'lifecycle';
-      threadId: string;
-      catId: string;
-      messageId: string;
-      prState: 'merged' | 'closed';
-      content: string;
-    }
-  | { kind: 'deduped'; reason: string }
-  | { kind: 'skipped'; reason: string };
-
-/** Subset of the tracked TaskItem fields the lifecycle-close path reads. */
-export interface TrackedTaskLike {
-  readonly id: string;
-  readonly threadId: string;
-  readonly ownerCatId: string | null;
-  readonly userId?: string;
-  readonly title?: string;
-  readonly automationState?: {
-    readonly ci?: { readonly prState?: 'merged' | 'closed'; readonly headSha?: string };
-    readonly await?: AwaitStateV1;
-    readonly waitOutcome?: GitHubWaitOutcomeV1;
-  };
-}
-
-export function getConnectorDeliveryTarget(task: Pick<TrackedTaskLike, 'threadId' | 'userId' | 'ownerCatId'>): {
-  threadId: string;
-  userId: string;
-  catId: string;
-} {
-  return {
-    threadId: task.threadId,
-    userId: task.userId ?? '',
-    catId: task.ownerCatId ?? '',
-  };
 }

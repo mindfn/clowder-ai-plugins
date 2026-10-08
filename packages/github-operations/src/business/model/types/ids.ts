@@ -11,15 +11,6 @@ type Brand<T, B> = T & { readonly [brand]: B };
 export type CatId = Brand<string, 'CatId'>;
 
 /**
- * Generate a random ID with optional prefix
- */
-export function generateId(prefix?: string): string {
-  const timestamp = Date.now().toString(36);
-  const randomPart = Math.random().toString(36).substring(2, 10);
-  return prefix ? `${prefix}_${timestamp}${randomPart}` : `${timestamp}${randomPart}`;
-}
-
-/**
  * Create a CatId from a string (lightweight syntax check only).
  * Does NOT validate against a registry — use assertKnownCatId() for that.
  * @throws Error if id is empty or not a string

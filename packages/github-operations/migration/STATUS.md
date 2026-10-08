@@ -32,7 +32,7 @@ part of the intended runtime.
   recovers interrupted materialization. No Host Redis migration is executed.
 - Twelve frozen source test files (181 tests) are copied with import-edge changes
   only; provenance is in test-source-map.json. Whole-package clean build and
-  259/259 tests pass at this checkpoint, including provider projection, CI
+  260/260 tests pass at this checkpoint, including provider projection, CI
   rerun/delivery, review pacing, bounded polling, cleanup and batched CI. The
   changed behaviors have individual RED/GREEN evidence; this is not full parity.
 - Whole-package source and test typechecks pass. Source hashes/declaration
@@ -47,8 +47,8 @@ part of the intended runtime.
   build, tests and lint explicitly. The frozen machine inventory remains in its
   pending checkpoint; implementationProgress records actual implementation
   evidence separately, preserving the existing single catalog exception.
-- The previous clean checkpoint `b3906de` passed all 29 repository gate steps
-  in 257.461 seconds with unchanged HEAD and clean worktree. New source changes
+- The previous clean checkpoint `28a38cb` passed all 29 repository gate steps
+  in 276.249 seconds with unchanged HEAD and clean worktree. New source changes
   have separate targeted/typecheck/build/package evidence; that old gate is not
   claimed for this new tree.
 - Ruling338 removes the copied assignment-writing TriageOrchestrator. Pure triage
@@ -79,6 +79,15 @@ Current additional evidence: the owner-confirmed legacy issue metadata operation
 validates bounded raw snapshots before insert-only CAS. Concurrent imports,
 partial failure, restart and preservation of owner edits are verified. Governance
 fields are excluded; the Host export adapter remains pending.
+
+Emitted-module dependency inspection first found six undeclared `zod` imports
+in unused legacy wait/schema copies. The current package now retains seven
+shared declaration files (37 exports, 55 exact frozen-source statements), with
+omitted legacy roots recorded in shared-model-map.json. Old wait baseline/
+predicate producers and superseded Redis/in-memory adapters are excluded from
+the package; their Host counterparts and data remain untouched. Every emitted
+module is checked against declared production dependencies, including files not
+reachable from the entrypoint. This check is not a fresh-consumer installation.
 
 Ruling463 separates bounded provider briefings through ordinary SDK messaging
 from Host role bindings and authenticated callbacks. Those copied consumers and
