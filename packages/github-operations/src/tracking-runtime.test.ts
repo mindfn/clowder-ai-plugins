@@ -26,7 +26,8 @@ function fixture() {
   const deps = {
     storage,
     threads: {
-      get: async (id: string) => ({ id, title: 'Test', createdAt: 1, lastActiveAt: 1 }),
+      get: async (id: string) => ({ id, title: 'Test', createdAt: 1, lastActiveAt: 1,
+        preferredCats: [], featureRefs: [], deepLinkUrl: `https://host.example/thread/${encodeURIComponent(id)}` }),
       bind: async (key: string, threadId: string) => ({ key, threadId, createdAt: 1 }),
     },
     send: async (threadId: string, input: unknown) => {

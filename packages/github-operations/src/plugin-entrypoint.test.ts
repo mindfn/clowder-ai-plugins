@@ -373,6 +373,7 @@ test('the actual carrier preserves both a review and its later dismissal in the 
 });
 
 function host() {
+  const unusedThreadCall = async (): Promise<never> => { throw new Error('Unexpected thread API call'); };
   const entries = new Map<string, { revision: number; value: unknown }>();
   let revision = 0;
   const deliveries: unknown[] = [];
@@ -393,9 +394,14 @@ function host() {
     tasks: {} as ModulePluginHostShape['tasks'],
     media: { read: async () => { throw new Error('Unexpected media read'); } },
     threads: {
-      get: async id => ({ id, title: null, createdAt: 1, lastActiveAt: 1 }),
+      get: async id => ({ id, title: null, createdAt: 1, lastActiveAt: 1,
+        preferredCats: [], featureRefs: [], deepLinkUrl: `https://host.example/thread/${encodeURIComponent(id)}` }),
       bind: async (key, threadId) => ({ key, threadId, createdAt: 1 }),
-    } as ModulePluginHostShape['threads'],
+      list: unusedThreadCall, readMessages: unusedThreadCall, getCats: unusedThreadCall,
+      create: unusedThreadCall, update: unusedThreadCall, findByKey: unusedThreadCall,
+      ensureByKey: unusedThreadCall, unbind: unusedThreadCall, listBindings: unusedThreadCall,
+      ensureSystemThread: unusedThreadCall,
+    },
     messaging: {
       send: async input => { deliveries.push(input); return { messageId: `message-${deliveries.length}`, threadId: input.threadId }; },
     } as ModulePluginHostShape['messaging'],
