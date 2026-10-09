@@ -12,4 +12,3 @@ test('wecom-bot group policy follows provider conversation facts, never identifi
   assert.equal(connectorCommandFacts(group).group, true);
   assert.throws(() => connectorCommandFacts({ ...message, conversation: undefined } as unknown as WeComBotHostInboundMessage), /conversation/);
 });
-

@@ -10,4 +10,3 @@ test('wecom-agent command normalization preserves explicit provider identity and
 test('wecom-agent remains direct-only at the existing provider support boundary', () => {
   assert.equal(connectorCommandFacts({ ...message, externalConversationId: 'group:fake' }).group, false);
 });
-

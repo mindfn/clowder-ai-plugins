@@ -13,4 +13,3 @@ export function connectorCommandFacts(message: WeComBotHostInboundMessage) {
     senderId: sender === 'unknown' || sender === '' ? undefined : sender,
   };
 }
-

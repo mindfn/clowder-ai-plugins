@@ -12,4 +12,3 @@ test('dingtalk group policy follows provider conversation facts, never identifie
   assert.equal(connectorCommandFacts(group).group, true);
   assert.throws(() => connectorCommandFacts({ ...message, chatType: undefined } as unknown as DingTalkHostInboundMessage), /conversation/);
 });
-

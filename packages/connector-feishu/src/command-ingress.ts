@@ -13,4 +13,3 @@ export function connectorCommandFacts(message: FeishuHostInboundMessage) {
     senderId: sender === 'unknown' || sender === '' ? undefined : sender,
   };
 }
-

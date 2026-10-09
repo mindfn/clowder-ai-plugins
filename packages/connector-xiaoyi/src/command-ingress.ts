@@ -12,4 +12,3 @@ export function connectorCommandFacts(message: XiaoyiHostInboundMessage) {
     senderId: sender === 'unknown' || sender === '' ? undefined : sender,
   };
 }
-

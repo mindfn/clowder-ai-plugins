@@ -12,4 +12,3 @@ test('feishu group policy follows provider conversation facts, never identifier 
   assert.equal(connectorCommandFacts(group).group, true);
   assert.throws(() => connectorCommandFacts({ ...message, conversation: undefined } as unknown as FeishuHostInboundMessage), /conversation/);
 });
-

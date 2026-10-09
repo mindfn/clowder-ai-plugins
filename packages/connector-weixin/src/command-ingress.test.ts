@@ -10,4 +10,3 @@ test('weixin command normalization preserves explicit provider identity and even
 test('weixin remains direct-only at the existing provider support boundary', () => {
   assert.equal(connectorCommandFacts({ ...message, externalConversationId: 'group:fake' }).group, false);
 });
-
