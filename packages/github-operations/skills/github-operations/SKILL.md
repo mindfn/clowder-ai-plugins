@@ -30,7 +30,13 @@ review verdict or permission to merge. Ordinary messages remain on the same
 durable notification path.
 
 Use the declared subject-inspection tool to read the private event history and
-derived PR/issue status. Follow its pagination cursor for older/later records.
+derived state. For copied legacy metadata, use `github_inspect_legacy_history`
+with a canonical subject and bounded pagination. Its event types/times/source
+fingerprints describe past observations only. Bodies and Host decisions remain
+in the original history; do not infer current delivery, approval or ownership.
+
+Use current subject inspection for derived PR/issue status. Follow its
+pagination cursor for older/later records.
 These observations do not register a typed review verdict or complete an action
 lease; those remain the Host's authenticated governance operations.
 

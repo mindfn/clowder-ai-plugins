@@ -76,6 +76,8 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.issue.preview': previewPublicIssue,
       'github.issue.metadata': (value: unknown) => community.inspectIssueMetadata(value),
       'github.legacy-issues.import': (value: unknown) => community.importLegacyIssues(value),
+      'github.legacy-history.import': (value: unknown) => community.importLegacyHistory(value),
+      'github.legacy-history.inspect': (value: unknown) => community.inspectLegacyHistory(value),
       'github.legacy-repositories.import': (value: unknown) => community.importLegacyRepositoryProgress(value),
       'github.legacy-issue-progress.import': (value: unknown) => tracking.importLegacyIssueProgress(value),
       'github.draft.create': (value: unknown) => drafts.create(value),

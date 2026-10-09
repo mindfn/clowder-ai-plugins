@@ -208,6 +208,44 @@ access. Existing progress-copy tests now fail at the actual bind boundary.
 These isolated assertions still require new exact-archive Host consumption to
 close finding762. The owner-origin independent review gate remains separate.
 
+## Historical provider metadata (alpha.6 source slice)
+
+Before: looking up old GitHub activity requires finding the previous Host journal.
+After: a bounded event index can be copied and inspected in this installation,
+without replaying old events or treating history as current notification progress.
+The original journal remains the source for bodies and Host decisions.
+
+Frozen source `CommunityEventLog.ts` at Host496e24089ffb5f99fa241e04c7ee0850df227be4
+stores JSON strings in Redis LIST `community:events:log:{subjectKey}`. The new
+owner-confirmed operation `legacyProviderHistory/import` receives protocol1,
+sourceDigest and `snapshot: {events: {canonicalSubject: rawListStrings}}`.
+Canonical digest bytes fix outer `events`, sort subject keys in JS UTF-16 order
+and preserve each raw string and its LIST order. No Redis access or business
+decoding belongs in a future Host raw exporter; that exporter is still pending.
+
+The complete batch validates before writing: 256KiB, 50 subjects, 500 events,
+canonical lowercase subject/positive safe number, exact known event envelope,
+nonnegative safe timestamp, known classification/kind, matching subject and
+globally unique sourceEventId. Unknown schemas fail, not silently disappear.
+Known `case.*` events remain in Host and are counted, not persisted or replayed.
+Provider lifecycle/comment/label/review kinds retain ONLY kind, timestamp,
+original LIST sequence and SHA256 of their raw event. Payload, body, raw ID,
+classification, principals, leases and routes are never copied. Head/CI/cloud
+`case.*` history also remains Host-retained in this slice.
+
+Each subject becomes one bounded insert-only CAS record with no TTL, its raw
+LIST digest and excluded-event count. Identical retries are idempotent; different
+copies or owner changes are preserved; interrupted batches retry missing rows.
+Inspection returns validated metadata pages of at most100 plus a derived GitHub
+subject URL. Corrupt stored rows fail closed. Import/inspection never touches
+the active journal, projections, current cursors, registrations or notification
+keys, even if current tracking already exists. It does not feed projector replay.
+
+This is a historical metadata index, NOT full legacy journal/body migration.
+Large histories, Host events and original bodies remain available only in Host;
+raw export, exact packed validation and real Host acceptance remain separate.
+Do not describe this slice as PR progress, complete journal copy or cutover.
+
 ## Other legacy state remains explicitly pending or Host-retained
 
 | State | Current disposition | Missing evidence |
@@ -218,7 +256,7 @@ close finding762. The owner-origin independent review gate remains separate.
 | Issue pendingWake / waitOutcome / accepted assignment | Host-retained governance consumer | Authenticated Host settlement, not plugin payload replay |
 | Repository config | Explicit new registration; legacy destination not adopted | Owner-selected target/access check; Host old producer stop before cutover |
 | Repository scan dedup / comment cursor | Package inert copy + explicit registration restore implemented | Real Host raw export/copy and no-double-run cutover remain pending |
-| Community provider journal/history | Pending bounded provider-only copy | Do not import mixed authority events or replay old facts as new notifications |
+| Community provider journal/history | Bounded inert provider metadata index implemented; original bodies and all case.* events Host-retained | Raw export/packed/Host acceptance pending; no full journal copy or event replay claimed |
 | case.bootstrap / case.routed and assignment/signoff/route admission | Host-retained under ruling338 | Existing authenticated consumers stay; package copies removed |
 | Old drafts / from-frustration | Host-retained under ruling404 | Ownership/confirmation and legacy cutover not replaced by native drafts |
 | ConflictAutoExecutor | Retirement candidate under ruling463 | No default rebase/push capability; Host caller retirement/no-double-run still pending |

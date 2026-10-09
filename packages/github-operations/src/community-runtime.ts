@@ -21,6 +21,7 @@ import { providerObservation } from './community-read-model.js';
 import { SdkCommunityIssueStore } from './business/domains/community/CommunityIssueStore.js';
 import { copyLegacyIssueObservations, legacyIssueOperationInput } from './legacy-issue-observations.js';
 import { communityProgressKey as stateKey, copyLegacyRepositoryProgress, restoreLegacyRepositoryProgress } from './legacy-repository-progress.js';
+import { copyLegacyProviderHistory, inspectLegacyProviderHistory } from './legacy-provider-history.js';
 
 export interface RepoSubject {
   kind: 'pr' | 'issue'; number: number; title: string; url: string;
@@ -144,6 +145,15 @@ export class CommunityRuntime {
   importLegacyIssues(value: unknown) {
     return this.serialize(() => copyLegacyIssueObservations(legacyIssueOperationInput(value),
       new SdkCommunityIssueStore(this.context.storage), this.lifetime.signal));
+  }
+
+  importLegacyHistory(value: unknown) {
+    return this.serialize(() => copyLegacyProviderHistory(legacyIssueOperationInput(value),
+      this.context.storage, this.lifetime.signal));
+  }
+
+  inspectLegacyHistory(value: unknown) {
+    return this.serialize(() => inspectLegacyProviderHistory(value, this.context.storage));
   }
 
   importLegacyRepositoryProgress(value: unknown) {

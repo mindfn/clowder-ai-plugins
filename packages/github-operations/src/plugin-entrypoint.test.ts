@@ -11,9 +11,40 @@ import { SdkCommunityEventLog } from './business/domains/community/CommunityEven
 import { SdkCommunityObjectStore } from './business/domains/community/CommunityObjectStore.js';
 import { validateManifest, validateOperationRowsResult } from '@clowder-ai/plugin-contract';
 import { legacyRepositorySnapshotBytes } from './legacy-repository-progress.js';
+import { legacyHistoryBytes } from './legacy-provider-history.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
 const target = { kind: 'pr', repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
+
+test('declared history copy remains readable after restart without changing the live journal or starting delivery', async () => {
+  const f = host(); let reads = 0;
+  const module = createGitHubPluginModule({ createCommunityProvider: () => ({
+    listOpen: async () => { reads++; return []; }, repoComments: async () => { reads++; return []; },
+    state: async () => { reads++; return null; }, selfLogin: () => 'owner',
+  }) });
+  let active = await module.create(manifest).start(f.runtimeHost);
+  const event = { sourceEventId: 'current', subjectKey: 'issue:example/project#7', kind: 'issue.reopened' as const,
+    classification: 'state-changing' as const, payload: {}, at: 20 };
+  const log = new SdkCommunityEventLog(f.runtimeHost.storage);
+  await log.append(event);
+  const before = await f.runtimeHost.storage.list();
+  const operation = manifest.configuration.find((c: { key: string }) => c.key === 'legacyProviderHistory');
+  assert.ok(operation?.actions[0].confirm);
+  const events = { [event.subjectKey]: [JSON.stringify({ ...event, sourceEventId: 'old', kind: 'issue.closed', at: 10,
+    payload: { body: 'old-private-body', principal: 'old-private-principal' } })] };
+  const input = { protocolVersion: 1, snapshot: { events }, sourceDigest: createHash('sha256').update(legacyHistoryBytes(events)).digest('hex') };
+  await active.actions[operation.actions[0].action.method]!({ input: { ...input, token: 'stored-private-token' } });
+  for (const [key, entry] of Object.entries(before)) assert.deepEqual((await f.runtimeHost.storage.get(key)), entry);
+  assert.deepEqual(await log.read(event.subjectKey), [event]);
+  await active.stop(); active = await module.create(manifest).start(f.runtimeHost);
+  const tool = manifest.contributions.find((c: { id: string }) => c.id === 'inspect-legacy-history');
+  const result = await active.actions[tool.action.method]!({ subjectKey: event.subjectKey }) as { data: { items: Array<{ kind: string }> } };
+  assert.equal(result.data.items[0]?.kind, 'issue.closed');
+  await active.actions['github.repo-scan']!({});
+  assert.equal(reads, 0); assert.equal(f.deliveries.length, 0);
+  assert.doesNotMatch(JSON.stringify(await f.runtimeHost.storage.list()), /old-private|stored-private/);
+  await active.stop();
+});
 
 test('both registrations use the granted Host bind check without requesting thread content', async () => {
   const f = host(); let requests = 0; let rejection: string | undefined;

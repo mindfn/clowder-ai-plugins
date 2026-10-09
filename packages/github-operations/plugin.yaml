@@ -1,5 +1,5 @@
 pluginId: official.github-operations
-version: 0.1.0-alpha.5
+version: 0.1.0-alpha.6
 contractVersion: 0.1.0
 name: GitHub Operations
 description:
@@ -10,6 +10,17 @@ icon:
   type: svg
   src: assets/icon.svg
 configuration:
+  - key: legacyProviderHistory
+    label: Copy historical GitHub event metadata
+    description: Preserve event kinds, times and source references for later inspection. Bodies and Host governance remain in the original history. Does not replay events or change current tracking.
+    kind: operation
+    required: false
+    actions:
+      - id: import
+        label: Copy history metadata
+        render: button
+        confirm: Copy the supplied history metadata? Existing copies are preserved. Original bodies and Host decisions stay in the old history; this does not notify anyone or start tracking.
+        action: { method: github.legacy-history.import }
   - key: legacyIssueProgress
     label: Copy settled issue delivery progress
     description: Stage legacy issue cursors without adopting destinations or starting tracking. Pending Host wakes and waits must be settled first. Requires a raw Host snapshot.
@@ -254,6 +265,19 @@ contributions:
         limit: { type: integer, minimum: 1, maximum: 100 }
       required: [subjectKey]
     action: { method: github.subject.inspect }
+  - type: tool
+    id: inspect-legacy-history
+    name: github_inspect_legacy_history
+    description: Read copied historical GitHub event metadata. This is archived history, not current state, delivery progress or a governance verdict. Original bodies and Host decisions remain at the source.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      properties:
+        subjectKey: { type: string, pattern: '^(pr|issue):[a-z0-9_.-]+/[a-z0-9_.-]+#[1-9][0-9]*$' }
+        offset: { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+      required: [subjectKey]
+    action: { method: github.legacy-history.inspect }
   - type: schedule
     id: conflict-check
     schedule: { kind: interval, everyMs: 300000 }
@@ -339,6 +363,7 @@ features:
       - { type: tool, id: unregister-tracking }
       - { type: tool, id: list-tracking }
       - { type: tool, id: inspect-subject }
+      - { type: tool, id: inspect-legacy-history }
       - { type: tool, id: recommend-triage }
       - { type: schedule, id: cicd-check }
       - { type: schedule, id: conflict-check }
