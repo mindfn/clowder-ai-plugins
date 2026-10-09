@@ -10,9 +10,52 @@ import type { RepoSubject } from './community-runtime.js';
 import { SdkCommunityEventLog } from './business/domains/community/CommunityEventLog.js';
 import { SdkCommunityObjectStore } from './business/domains/community/CommunityObjectStore.js';
 import { validateManifest, validateOperationRowsResult } from '@clowder-ai/plugin-contract';
+import { legacyRepositorySnapshotBytes } from './legacy-repository-progress.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
 const target = { kind: 'pr', repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
+
+test('legacy repository progress stays inert until registration and resumes baseline/dedup/cursor after restart', async () => {
+  const f = host(); let requests = 0; const sinceValues: Array<string | undefined> = [];
+  const repo = target.repoFullName;
+  const module = createGitHubPluginModule({ createCommunityProvider: () => ({
+    listOpen: async () => { requests++; return [7, 8].map(number => ({ kind: 'issue' as const, number,
+      title: `Issue ${number}`, url: `https://github.com/${repo}/issues/${number}`, author: 'outside', authorAssociation: 'NONE', draft: false })); },
+    repoComments: async (_repo, since) => { sinceValues.push(since); return []; },
+    state: async () => null, selfLogin: () => 'owner',
+  }) });
+  let active = await module.create(manifest).start(f.runtimeHost);
+  const operation = manifest.configuration.find((c: { key: string }) => c.key === 'legacyRepositoryProgress');
+  assert.ok(operation, 'progress copy requires a declared owner-confirmed operation');
+  assert.ok(operation.actions[0].confirm);
+  const snapshot = { repositories: { [repo]: {
+    [`f141:baseline:${repo}`]: '1', [`f141:notified:${repo}#issue-7`]: '1',
+    [`community:repo-comment:cursor:${repo}`]: '2026-10-08T10:00:00.000Z',
+  } } };
+  const sourceDigest = createHash('sha256').update(legacyRepositorySnapshotBytes(snapshot.repositories)).digest('hex');
+  await active.actions[operation.actions[0].action.method]!({ input: { protocolVersion: 1, sourceDigest, snapshot, token: 'secret-config' } });
+  await active.actions['github.repo-scan']!({});
+  assert.equal(requests, 0); assert.equal(f.deliveries.length, 0);
+  assert.deepEqual(await active.actions['github.repository.list']!({}), { data: { repositories: [] } });
+  assert.doesNotMatch(JSON.stringify(await f.runtimeHost.storage.list()), /secret-config|guardThreadId|guardian/);
+  await active.stop();
+  active = await module.create(manifest).start(f.runtimeHost);
+  const originalGet = f.runtimeHost.threads.get;
+  f.runtimeHost.threads.get = async () => { throw new Error('Host access denied'); };
+  const beforeRegistration = await f.runtimeHost.storage.list();
+  await assert.rejects(async () => active.actions['github.repository.register']!({ repo, guardThreadId: 'foreign', guardCatId: target.catId }), /Host access denied/);
+  assert.deepEqual(await f.runtimeHost.storage.list(), beforeRegistration, 'no progress restoration before Host authorization');
+  f.runtimeHost.threads.get = originalGet;
+  await active.actions['github.repository.register']!({ repo, guardThreadId: target.threadId, guardCatId: target.catId });
+  await active.actions['github.repo-scan']!({});
+  assert.equal(f.deliveries.length, 1, 'already notified7 skipped; undelivered8 delivered instead of silently re-baselined');
+  assert.match(JSON.stringify(f.deliveries), /issues\/8/);
+  await active.actions['github.repo-comment-poll']!({});
+  assert.equal(sinceValues[0], '2026-10-08T09:59:59.000Z', 'poll uses imported cursor with existing1-second overlap');
+  await active.actions['github.repo-scan']!({});
+  assert.equal(f.deliveries.length, 1);
+  await active.stop();
+});
 
 test('repository intake sends a bounded sanitized provider briefing through ordinary messaging without narrator governance wiring', async () => {
   const f = host();

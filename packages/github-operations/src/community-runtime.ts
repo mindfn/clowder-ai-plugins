@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { FeatureContext } from '@clowder-ai/plugin-sdk';
 import { createRepoScanner } from './business/infrastructure/connectors/github-repo-event/RepoScanTaskSpec.js';
 import { GitHubRepoWebhookHandler } from './business/infrastructure/connectors/github-repo-event/GitHubRepoWebhookHandler.js';
@@ -21,6 +20,7 @@ import { ExternalReviewCoordinator } from './business/domains/community/external
 import { providerObservation } from './community-read-model.js';
 import { SdkCommunityIssueStore } from './business/domains/community/CommunityIssueStore.js';
 import { copyLegacyIssueObservations, legacyIssueOperationInput } from './legacy-issue-observations.js';
+import { communityProgressKey as stateKey, copyLegacyRepositoryProgress, restoreLegacyRepositoryProgress } from './legacy-repository-progress.js';
 
 export interface RepoSubject {
   kind: 'pr' | 'issue'; number: number; title: string; url: string;
@@ -32,7 +32,6 @@ export interface CommunityProvider {
   state(repo: string, kind: 'pr' | 'issue', number: number, signal: AbortSignal): Promise<ReconciliationSnapshot | null>;
   selfLogin(): string | undefined;
 }
-const stateKey = (kind: string, id: string) => `community.${kind}.${createHash('sha256').update(id).digest('hex')}`;
 
 /** Community business belongs to this installation. Host provides only storage,
  * thread permissions and message delivery, including the optional wake. */
@@ -135,6 +134,7 @@ export class CommunityRuntime {
       if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(input.repo) || !input.guardCatId?.trim()) throw new TypeError('repo and notification cat are required');
       if (!await this.context.threads.get(input.guardThreadId)) throw new Error('target thread does not exist');
       await this.context.threads.bind(`github-repository:${input.repo.toLowerCase()}`, input.guardThreadId);
+      await restoreLegacyRepositoryProgress(input.repo, this.context.storage, this.lifetime.signal);
       return this.configs.upsert(input);
     });
   }
@@ -143,6 +143,11 @@ export class CommunityRuntime {
   importLegacyIssues(value: unknown) {
     return this.serialize(() => copyLegacyIssueObservations(legacyIssueOperationInput(value),
       new SdkCommunityIssueStore(this.context.storage), this.lifetime.signal));
+  }
+
+  importLegacyRepositoryProgress(value: unknown) {
+    return this.serialize(() => copyLegacyRepositoryProgress(legacyIssueOperationInput(value),
+      this.context.storage, this.lifetime.signal));
   }
 
   inspectIssueMetadata(value: unknown) {
