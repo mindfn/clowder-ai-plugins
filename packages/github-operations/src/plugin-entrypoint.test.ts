@@ -527,6 +527,39 @@ test('the actual carrier preserves both a review and its later dismissal in the 
   await active.stop();
 });
 
+test('real carrier keeps dismissed reviews final in journal, cloud projection and notifications after restart', async () => {
+  const f = host(), head = 'a'.repeat(40), requestedAt = Date.now();
+  const trigger = { id: 7, author: 'owner', body: '@codex review', commentType: 'conversation' as const,
+    createdAt: new Date(requestedAt).toISOString() };
+  const review = { id: 8, author: 'chatgpt-codex-connector[bot]', state: 'APPROVED', commitId: head,
+    submittedAt: new Date(requestedAt + 1).toISOString() };
+  let snapshot: GitHubSnapshot = { state: 'open', headSha: head, ci: 'pass', commentsComplete: true, comments: [trigger], reviews: [] };
+  const module = createGitHubPluginModule({ createProvider: () => ({ read: async () => structuredClone(snapshot), selfLogin: () => 'owner' }) });
+  let active = await module.create(manifest).start(f.runtimeHost);
+  await active.actions['github.repository.register']!({ repo: target.repoFullName, guardThreadId: target.threadId,
+    guardCatId: target.catId, reviewMode: 'maintainer_review', cloudReviewPolicy: 'required' });
+  await active.actions['github.tracking.register']!({ ...target, cloudReviewRequest: { headSha: head, triggerCommentId: 7, requestedAt } });
+  snapshot = { ...snapshot, reviews: [review] }; await active.actions['github.review-feedback']!({});
+  snapshot = { ...snapshot, reviews: [{ ...review, state: 'DISMISSED' }] };
+  await active.actions['github.review-feedback']!({});
+  const objects = new SdkCommunityObjectStore(f.runtimeHost.storage), log = new SdkCommunityEventLog(f.runtimeHost.storage);
+  const cloud = async () => (await objects.get('pr:example/project#12'))?.externalReview?.cloud?.status;
+  const events = await log.read('pr:example/project#12'), delivered = f.deliveries.length;
+  assert.equal(await cloud(), 'failed_or_timeout');
+  await active.stop(); active = await module.create(manifest).start(f.runtimeHost);
+  for (const reviews of [[], [review], [{ ...review, state: 'DISMISSED' }]]) {
+    snapshot = { ...snapshot, reviews }; await active.actions['github.review-feedback']!({});
+    assert.equal(await cloud(), 'failed_or_timeout');
+    assert.equal(f.deliveries.length, delivered);
+    assert.deepEqual(await log.read('pr:example/project#12'), events);
+  }
+  snapshot = { ...snapshot, reviews: [{ ...review, state: 'DISMISSED' }, { ...review, id: 9 }] };
+  await active.actions['github.review-feedback']!({});
+  assert.equal(await cloud(), 'clean');
+  assert.equal(f.deliveries.length, delivered + 1);
+  await active.stop();
+});
+
 function host() {
   const unusedThreadCall = async (): Promise<never> => { throw new Error('Unexpected thread API call'); };
   const entries = new Map<string, { revision: number; value: unknown }>();

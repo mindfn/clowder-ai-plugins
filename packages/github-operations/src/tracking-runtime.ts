@@ -110,6 +110,12 @@ function subject(value: Pick<GitHubTarget, 'kind' | 'repoFullName' | 'number'>):
 function keyOf(target: Pick<GitHubTarget, 'kind' | 'repoFullName' | 'number'>): string {
   return PREFIX + createHash('sha256').update(subject(target)).digest('hex');
 }
+// GitHub dismisses a review in place. Preserve the migrated #1392 rule:
+// dismissal is final for that review ID, including late/omitted observations.
+function reviewChanged(review: GitHubReview, previous: Marker): boolean {
+  const known = previous.reviews[String(review.id)];
+  return !known?.startsWith('DISMISSED:') && known !== `${review.state}:${review.commitId ?? ''}`;
+}
 function marker(snapshot: GitHubSnapshot, previous?: Marker): Marker {
   return {
     ...(snapshot.headSha === undefined ? {} : { headSha: snapshot.headSha }),
@@ -118,7 +124,9 @@ function marker(snapshot: GitHubSnapshot, previous?: Marker): Marker {
     ...(snapshot.cloudObservation ? { cloud: JSON.stringify(snapshot.cloudObservation) } : previous?.cloud ? { cloud: previous.cloud } : {}),
     inline: snapshot.comments.filter(c => c.commentType === 'inline').reduce((max, c) => Math.max(max, c.id), previous?.inline ?? 0),
     conversation: snapshot.comments.filter(c => c.commentType === 'conversation').reduce((max, c) => Math.max(max, c.id), previous?.conversation ?? 0),
-    reviews: Object.fromEntries(snapshot.reviews.map(r => [String(r.id), `${r.state}:${r.commitId ?? ''}`])),
+    reviews: { ...previous?.reviews, ...Object.fromEntries(snapshot.reviews
+      .filter(r => !previous?.reviews[String(r.id)]?.startsWith('DISMISSED:'))
+      .map(r => [String(r.id), `${r.state}:${r.commitId ?? ''}`])) },
     ...(snapshot.reviewThreads ? { threads: Object.fromEntries(snapshot.reviewThreads.map(t => [t.reviewThreadId, { resolved: t.resolved, lastCommentId: t.lastCommentId }])) } : {}),
   };
 }
@@ -306,16 +314,22 @@ export class GitHubTrackingRuntime {
       const read = await provider.read(record.target, signal, feedback);
       signal.throwIfAborted();
       controller.signal.throwIfAborted();
-      const classification = record.target.kind === 'pr' && read.headSha && record.target.cloudReviewRequest
+      const reviews = read.reviews.map(review => feedback.reviews[String(review.id)]?.startsWith('DISMISSED:')
+        ? { ...review, state: 'DISMISSED' } : review);
+      const observedReviewIds = new Set(reviews.map(review => String(review.id)));
+      // A regressed provider list cannot clear prior cloud evidence via the
+      // no-review/comment fallback. Wait for a complete observation instead.
+      const missingReviewEvidence = Object.keys(feedback.reviews).some(id => !observedReviewIds.has(id));
+      const classification = !missingReviewEvidence && record.target.kind === 'pr' && read.headSha && record.target.cloudReviewRequest
         ? classifyExternalCloudReview({
           currentHeadSha: read.headSha, request: record.target.cloudReviewRequest,
-          commentsComplete: read.commentsComplete === true, comments: read.comments, reviews: read.reviews,
+          commentsComplete: read.commentsComplete === true, comments: read.comments, reviews,
           knownCloudReviewerLogins: await this.deps.cloudReviewerLogins?.() ?? ['chatgpt-codex-connector[bot]'],
           now: this.now(), timeoutMs: 30 * 60_000,
         }) : null;
       // Never accept a provider/plugin payload's pre-computed cloud verdict.
       const { cloudObservation: _untrusted, ...facts } = read;
-      const snapshot: GitHubSnapshot = { ...facts, ...(classification?.observation ? { cloudObservation: classification.observation } : {}) };
+      const snapshot: GitHubSnapshot = { ...facts, reviews, ...(classification?.observation ? { cloudObservation: classification.observation } : {}) };
       await this.deps.observe?.(record.target, snapshot);
       controller.signal.throwIfAborted();
       if (channel === 'review-feedback' || channel === 'issue-tracking' || snapshot.state !== 'open') {
@@ -325,7 +339,7 @@ export class GitHubTrackingRuntime {
             comment.id > (comment.commentType === 'inline' ? feedback.inline : feedback.conversation) &&
             (!comment.commitId || comment.commitId === snapshot.headSha)),
           reviews: snapshot.reviews.filter(review =>
-            feedback.reviews[String(review.id)] !== `${review.state}:${review.commitId ?? ''}` &&
+            reviewChanged(review, feedback) &&
             (!review.commitId || review.commitId === snapshot.headSha ||
               (review.state === 'DISMISSED' && feedback.reviews[String(review.id)] !== undefined))),
         });
@@ -338,7 +352,7 @@ export class GitHubTrackingRuntime {
       const selfMerge = snapshot.state === 'merged' && !!login &&
         snapshot.mergedByLogin?.toLowerCase() === login.toLowerCase();
       const newChangesRequested = snapshot.reviews.filter(review =>
-        review.state === 'CHANGES_REQUESTED' && feedback.reviews[String(review.id)] !== `${review.state}:${review.commitId ?? ''}` &&
+        review.state === 'CHANGES_REQUESTED' && reviewChanged(review, feedback) &&
         (!review.commitId || review.commitId === snapshot.headSha) && review.author.toLowerCase() !== login?.toLowerCase());
       const pauseReviewWake = snapshot.state === 'open' && channel === 'review-feedback' && newChangesRequested.length > 0 &&
         classifyGitHubReviewLoopBrake(snapshot.reviews, newChangesRequested.map(review => review.id), snapshot.authorLogin).kind === 'pause_once';
@@ -392,7 +406,7 @@ export class GitHubTrackingRuntime {
       for (const review of snapshot.reviews) {
         const knownDismissal = review.state === 'DISMISSED' && feedbackBefore.reviews[String(review.id)] !== undefined;
         if (echo.shouldSkipReview(review) || (review.commitId && review.commitId !== snapshot.headSha && !knownDismissal)) continue;
-        if (feedbackBefore.reviews[String(review.id)] === `${review.state}:${review.commitId ?? ''}`) continue;
+        if (!reviewChanged(review, feedbackBefore)) continue;
         lines.push(`- Review ${review.state} from ${review.author}: github:review:${review.id}`);
       }
       for (const thread of snapshot.reviewThreads ?? []) {

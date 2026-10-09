@@ -288,6 +288,69 @@ test('dismissal of a previously observed old-head review remains visible; stale 
   await runtime.stop();
 });
 
+test('cloud observation cannot turn a dismissed review clean through stale or missing provider reviews', async () => {
+  const f = fixture(), observed: GitHubSnapshot[] = [];
+  const deps = { ...f.deps, observe: async (_target: unknown, snapshot: GitHubSnapshot) => { observed.push(snapshot); } };
+  let runtime = new GitHubTrackingRuntime(deps);
+  const requestedAt = Date.parse('2026-01-01T00:00:00Z');
+  const review = { id: 8, author: 'chatgpt-codex-connector[bot]', state: 'DISMISSED',
+    commitId: 'a'.repeat(40), submittedAt: '2026-01-01T00:01:00Z' };
+  f.set({ ...f.snapshot(), commentsComplete: true, comments: [{ id: 7, author: 'owner', body: '@codex review',
+    commentType: 'conversation', createdAt: new Date(requestedAt).toISOString() }], reviews: [] });
+  await runtime.register({ ...target, cloudReviewRequest: { headSha: review.commitId, triggerCommentId: 7, requestedAt } });
+  f.set({ ...f.snapshot(), reviews: [review] }); await runtime.poll('review-feedback');
+  assert.equal(observed.at(-1)?.cloudObservation?.status, 'failed_or_timeout');
+  await runtime.stop(); runtime = new GitHubTrackingRuntime(deps);
+  f.set({ ...f.snapshot(), reviews: [{ ...review, state: 'APPROVED' }] });
+  await runtime.poll('review-feedback');
+  assert.equal(observed.at(-1)?.cloudObservation?.status, 'failed_or_timeout');
+  f.set({ ...f.snapshot(), reviews: [] }); await runtime.poll('review-feedback');
+  assert.equal(observed.at(-1)?.cloudObservation, undefined, 'missing known review evidence cannot replace the last cloud observation');
+  assert.equal(f.messages.length, 1);
+  f.set({ ...f.snapshot(), reviews: [review, { ...review, id: 9, state: 'APPROVED' }] });
+  await runtime.poll('review-feedback');
+  assert.equal(observed.at(-1)?.cloudObservation?.status, 'clean', 'a new review may establish a new observation');
+  assert.equal(f.messages.length, 2);
+  await runtime.stop();
+});
+
+for (const stale of ['omitted', 'same-head', 'old-head'] as const) {
+  test(`dismissed review stays final across ${stale} snapshot, restart and later terminal collection`, async () => {
+    const f = fixture(), collected: GitHubSnapshot[] = [];
+    const deps = { ...f.deps, collect: async (_target: unknown, snapshot: GitHubSnapshot) => { collected.push(snapshot); } };
+    let runtime = new GitHubTrackingRuntime(deps);
+    const review = { id: 8, author: 'reviewer', state: 'APPROVED', commitId: 'a'.repeat(40) };
+    f.set({ ...f.snapshot(), reviews: [review] }); await runtime.register(target);
+    f.set({ ...f.snapshot(), reviews: [{ ...review, state: 'DISMISSED' }] });
+    await runtime.poll('review-feedback');
+    assert.equal(f.messages.length, 1);
+    assert.deepEqual(collected.flatMap(s => s.reviews).map(r => r.state), ['DISMISSED']);
+    await runtime.stop(); runtime = new GitHubTrackingRuntime(deps);
+    f.set({ ...f.snapshot(), headSha: (stale === 'old-head' ? 'b' : 'a').repeat(40),
+      reviews: stale === 'omitted' ? [] : [review] });
+    await runtime.poll('review-feedback');
+    assert.equal(f.messages.length, 1, 'missing or stale provider data cannot revive a dismissed review');
+    const record = [...f.records.entries()].find(([key]) => key.startsWith('github.tracking.v1.'))![1].value as {
+      baselines: { 'review-feedback': { reviews: Record<string, string> } };
+    };
+    assert.equal(record.baselines['review-feedback'].reviews['8'], `DISMISSED:${review.commitId}`);
+    f.set({ ...f.snapshot(), reviews: [{ ...review, state: 'DISMISSED' }] });
+    await runtime.poll('review-feedback');
+    assert.equal(f.messages.length, 1, 'the same dismissal is not reported twice');
+    assert.deepEqual(collected.flatMap(s => s.reviews).map(r => r.state), ['DISMISSED']);
+    f.set({ ...f.snapshot(), reviews: [review, { ...review, id: 9, commitId: f.snapshot().headSha }] });
+    await runtime.poll('review-feedback');
+    assert.equal(f.messages.length, 2, 'a distinct review still notifies');
+    assert.deepEqual(collected.flatMap(s => s.reviews).map(r => r.id), [8, 9]);
+    f.set({ ...f.snapshot(), state: 'closed', reviews: [review] });
+    await runtime.poll('cicd-check');
+    assert.equal(f.messages.length, 3, 'terminal state still notifies');
+    assert.doesNotMatch(JSON.stringify(f.messages.at(-1)), /github:review:8/);
+    assert.deepEqual(collected.flatMap(s => s.reviews).map(r => r.id), [8, 9]);
+    await runtime.stop();
+  });
+}
+
 test('registered review-thread resolution and replies are observed without Host wait state', async () => {
   const f = fixture(), runtime = new GitHubTrackingRuntime(f.deps);
   f.set({ ...f.snapshot(), reviewThreads: [{ reviewThreadId: 'PRRT_1', resolved: false, lastCommentId: 'comment-1' }] });

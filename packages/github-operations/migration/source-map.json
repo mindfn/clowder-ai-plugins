@@ -472,7 +472,12 @@
       "target": "packages/github-operations/src/business/domains/github-signals/GitHubReviewVerdicts.ts",
       "sourceSha256": "b49b9afe7d52ce8fd65a99127e32087228fa6f3076b0a4107c982c434c4d65c5",
       "lines": 67,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-verdict-monotonicity-adapted-in-tracking-runtime",
+      "replacement": "packages/github-operations/src/tracking-runtime.ts",
+      "hostLegacyRemoved": false,
+      "realPackageReplacementVerified": false,
+      "reason": "The copied helper remains as frozen source evidence. Its #1392 dismissal-finality and retained-ID semantics are adapted to persistent plugin tracking markers, collector filtering, notification dedup and cloud observation inputs. No Host wait, assignment or typed verdict authority is adopted.",
+      "evidence": "migration/boundary-parity.md#review-dismissal-continuity; src/tracking-runtime.test.ts; src/plugin-entrypoint.test.ts"
     },
     {
       "source": "packages/api/src/domains/github-signals/GitHubWaitBaselineReader.ts",

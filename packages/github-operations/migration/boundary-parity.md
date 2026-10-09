@@ -194,3 +194,26 @@ Five source/artifact boundary regressions fail before removal and pass after a
 clean build. Package source map records each removed copy with
 `hostLegacyRemoved=false` and `realPackageReplacementVerified=false`; original
 frozen bytes remain at `6636763`. This is package cleanup, not full business parity.
+
+## Review dismissal continuity
+
+Frozen `GitHubReviewVerdicts.mergeReviewVerdicts` and its Host
+`GitHubWaitRenewalBaseline.renewVerdicts` consumer retain observed review IDs and
+make DISMISSED final independent of HEAD. Tracking's previous snapshot replacement
+lost that rule: an omitted review erased its marker, and a stale APPROVED snapshot
+could notify again, re-enter collection, or change a dismissed cloud observation
+back to clean. Source regressions reproduce all three failures.
+
+Private tracking markers now merge observations and keep dismissed IDs final.
+Collection, notifications and review-wake pacing use the same change predicate.
+Cloud correlation receives the remembered final state; a provider list missing
+previously seen reviews cannot replace the prior cloud observation. A later
+complete observation with a distinct review ID remains eligible. No new storage
+shape, Host wait state, caller authority or external write is introduced.
+
+Real SDK module coverage exercises journal/projection/notification continuity
+through stop/start and stale/missing snapshots. Runtime tests also cover changed
+HEAD, terminal collection and a distinct review. The frozen pure helper remains
+for source comparison; its existence alone is not runtime evidence. Host-specific
+wait and governance consumers remain in Host, and source-map retains
+realPackageReplacementVerified=false pending exact installed-Host acceptance.
