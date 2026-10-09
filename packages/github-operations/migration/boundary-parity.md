@@ -217,3 +217,30 @@ HEAD, terminal collection and a distinct review. The frozen pure helper remains
 for source comparison; its existence alone is not runtime evidence. Host-specific
 wait and governance consumers remain in Host, and source-map retains
 realPackageReplacementVerified=false pending exact installed-Host acceptance.
+
+## Repository comment reader parity
+
+Alpha.10 connects `GitHubProvider.repoComments` to the migrated repository
+comment reader. The alpha.9 replacement fetched every comment page and then one
+extra issue metadata response per distinct parent before returning any comments.
+This changed request cost from page-bound to parent-bound inside the existing
+per-repository deadline and added failure points before cursor progress. A
+two-page, 101-parent fixture reproduces the unwanted metadata request and no
+progress when it fails; it is not evidence of a measured production timeout.
+
+The active reader retains `sort=updated`, `direction=asc`, `since`, full-page
+completion and cancellation. The provider reads identity once and comment pages
+only. Parent kind uses the HTML URL's repository/kind/number path, checked against
+the requested repository and issue number. A plain `/pull/` substring mislabels
+issues owned by the legitimate account `pull`; that regression also failed before
+the exact-path fix. Malformed/mismatched parent URLs fail before any collection,
+and null bodies keep the provider's previous empty-string normalization.
+
+`github-provider.test.ts` exercises the actual provider and poller together:
+issue-only journal collection, PR-only cursor progress, incomplete-page zero
+writes, bounded request count, and parent-path refusal. These are isolated
+transport tests, not live GitHub or installed-Host acceptance. API field/query
+reference: [GitHub issue comments](https://docs.github.com/en/rest/issues/comments#list-issue-comments-for-a-repository).
+The source-disposition audit at f639add remains historical; this one formerly
+inactive helper now has a runtime caller. Its other factory methods are not
+claimed as activated by this change. Host legacy readers remain untouched.

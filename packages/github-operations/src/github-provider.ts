@@ -1,4 +1,5 @@
 import { fetchPaginated } from './business/infrastructure/github/fetch-paginated.js';
+import { createGitHubRepoPollReaders } from './business/infrastructure/github/repo-poll-readers.js';
 import { executeGitHubRequest, type GitHubRequestOptions } from './business/infrastructure/github/request-budget.js';
 import { fetchPrCiStatus, type FetchPrCiStatusOptions } from './business/infrastructure/email/ci-status-fetcher.js';
 import { fetchPrCiStatuses, ciStatusTargetKey } from './business/infrastructure/email/ci-status-batch-fetcher.js';
@@ -100,21 +101,11 @@ export class GitHubProvider implements GitHubTrackingProvider, CommunityProvider
   async repoComments(repo: string, since: string | undefined, signal: AbortSignal): Promise<RepoIssueComment[]> {
     const options = await this.requestOptions(signal);
     this.login = (await executeGitHubRequest(['api', 'user', '--jq', '.login'], options)).stdout.trim() || undefined;
-    const values = await fetchPaginated(`/repos/${repo}/issues/comments${since ? `?since=${encodeURIComponent(since)}` : ''}`, options);
-    const kinds = new Map<number, boolean>();
-    const comments: RepoIssueComment[] = [];
-    for (const value of values) {
-      const number = Number(String(value.issue_url).split('/').at(-1));
-      if (!Number.isSafeInteger(number) || number < 1) throw new Error('Invalid GitHub comment issue URL');
-      if (!kinds.has(number)) {
-        const metadata = JSON.parse((await executeGitHubRequest(['api', `/repos/${repo}/issues/${number}`], options)).stdout);
-        kinds.set(number, !!metadata.pull_request);
-      }
-      comments.push({ issueNumber: number, commentId: value.id, author: value.user.login,
-        authorAssociation: value.author_association, body: value.body ?? '', updatedAt: value.updated_at,
-        isPullRequest: kinds.get(number)! });
-    }
-    return comments;
+    // Reuse the migrated reader: each listing row already identifies its parent
+    // and PR/issue kind. Per-parent lookups multiply the bounded poll's requests.
+    return createGitHubRepoPollReaders({
+      getGitHubToken: () => options.ghToken, execFileAsync: options.execFileAsync,
+    }).fetchRepoComments(repo, since, signal);
   }
 
   async state(repo: string, kind: 'pr' | 'issue', number: number, signal: AbortSignal) {

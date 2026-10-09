@@ -1126,13 +1126,13 @@
       "target": "packages/github-operations/src/business/infrastructure/github/repo-poll-readers.ts",
       "sourceSha256": "8cfbc08b9908cdbb9a2ea47823c7eaf2a2b7fa787fc44fba28e8462d0241c1fc",
       "lines": 82,
-      "disposition": "inactive-copy-parity-open",
-      "reason": "No runtime-source import. GitHubProvider implements repository reads, but old updated-order query and new per-issue metadata lookup differ. All pages precede cursor commit; ordering difference alone is not a reproduced loss bug.",
-      "evidence": "src/github-provider.ts: repoComments; src/business/infrastructure/connectors/github-repo-event/RepoCommentPollTaskSpec.ts",
-      "packageBusinessMoved": "no new migration claim from this audit",
+      "disposition": "provider-repository-comment-reader-runtime",
+      "reason": "GitHubProvider.repoComments now invokes the migrated paginated reader with updated/asc and since. Parent kind is parsed from the exact repository/number HTML path instead of per-subject API reads or substring matching; complete pages and parent validation precede event/cursor writes. Other factory methods are not claimed as active provider replacements.",
+      "evidence": "src/github-provider.test.ts: page-only cost, real poller cursor/failure, parent path regressions; src/github-provider.ts; migration/boundary-parity.md#repository-comment-reader-parity",
+      "packageBusinessMoved": "repository comment provider adapter and bounded parent classification",
       "realPackageReplacementVerified": false,
       "hostLegacyRemoved": false,
-      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md (historical runtime-inactive classification; superseded for this row by alpha.10)"
     },
     {
       "source": "packages/api/src/infrastructure/github/request-budget.ts",

@@ -10,7 +10,7 @@ type GitHubRepoComment = {
   id: number;
   user: { login: string };
   author_association: string;
-  body: string;
+  body: string | null;
   updated_at: string;
   html_url: string;
 };
@@ -65,15 +65,19 @@ export function createGitHubRepoPollReaders(options: {
         `/repos/${repo}/issues/comments?${query}`,
         requestOptions(signal),
       )) as GitHubRepoComment[];
-      return comments.map((comment) => ({
-        issueNumber: Number(comment.issue_url.split('/').at(-1)),
-        commentId: comment.id,
-        author: comment.user.login,
-        authorAssociation: comment.author_association,
-        body: comment.body,
-        updatedAt: comment.updated_at,
-        isPullRequest: comment.html_url.includes('/pull/'),
-      }));
+      return comments.map((comment) => {
+        const issueNumber = Number(comment.issue_url.split('/').at(-1));
+        const parent = /^\/([^/]+\/[^/]+)\/(issues|pull)\/([1-9][0-9]*)$/.exec(new URL(comment.html_url).pathname);
+        if (!Number.isSafeInteger(issueNumber) || issueNumber < 1 || !parent ||
+            parent[1]!.toLowerCase() !== repo.toLowerCase() || Number(parent[3]) !== issueNumber) {
+          throw new Error('Invalid GitHub comment parent URL');
+        }
+        return {
+          issueNumber, commentId: comment.id, author: comment.user.login,
+          authorAssociation: comment.author_association, body: comment.body ?? '', updatedAt: comment.updated_at,
+          isPullRequest: parent[2] === 'pull',
+        };
+      });
     },
     fetchIssueState: (repo: string, number: number, signal?: AbortSignal) =>
       subjectState(repo, number, 'issues', signal),

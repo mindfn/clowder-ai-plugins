@@ -3,8 +3,93 @@ import test from 'node:test';
 import { GitHubProvider } from './github-provider.js';
 import type { GitHubRequestOptions } from './business/infrastructure/github/request-budget.js';
 import { publicationBody, type NativeIssueDraft } from './native-issue-drafts.js';
+import { createRepoCommentPoller } from './business/infrastructure/connectors/github-repo-event/RepoCommentPollTaskSpec.js';
 
 const target = { kind: 'pr' as const, repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
+
+function repositoryCommentsFixture(failLastPage = false) {
+  const calls: string[] = [];
+  const provider = new GitHubProvider({ token: async () => 'isolated-repository-comments', log: { warn() {} },
+    execFileAsync: async (_file, args) => {
+      const path = args[1]!; calls.push(path);
+      if (path === 'user') return { stdout: 'owner' };
+      if (!path.startsWith('/repos/example/project/issues/comments?')) {
+        throw new Error(`Unexpected per-subject metadata request: ${path}`);
+      }
+      const query = new URL(path, 'https://api.github.com').searchParams;
+      const second = query.get('page') === '2';
+      if (second && failLastPage) throw new Error('last comment page unavailable');
+      const row = (id: number) => ({ id, user: { login: 'contributor' }, author_association: 'NONE', body: 'comment',
+        issue_url: `https://api.github.com/repos/example/project/issues/${id}`,
+        html_url: `https://github.com/example/project/${id === 101 ? 'pull' : 'issues'}/${id}#issuecomment-${id}`,
+        updated_at: id === 101 ? '2026-10-08T01:00:02Z' : '2026-10-08T01:00:01Z' });
+      return { stdout: (second ? [row(101)] : Array.from({ length: 100 }, (_, i) => row(i + 1)))
+        .map(value => JSON.stringify(value)).join('\n') };
+    },
+  });
+  return { provider, calls };
+}
+
+test('repository comment reads preserve the migrated page-only request cost and updated-order query', async () => {
+  const { provider, calls } = repositoryCommentsFixture();
+  const since = '2026-10-08T00:00:00Z';
+  const comments = await provider.repoComments('example/project', since, new AbortController().signal);
+  assert.equal(comments.length, 101);
+  assert.equal(comments.filter(comment => comment.isPullRequest).length, 1);
+  assert.equal(comments.at(-1)?.issueNumber, 101);
+  assert.equal(calls.length, 3, 'one identity read and two pages, independent of subject count');
+  for (const path of calls.slice(1)) {
+    const query = new URL(path, 'https://api.github.com').searchParams;
+    assert.equal(query.get('sort'), 'updated');
+    assert.equal(query.get('direction'), 'asc');
+    assert.equal(query.get('since'), since);
+  }
+});
+
+test('real repository reader and poller collect issues, advance over PRs, and retain cursor on incomplete pages', async () => {
+  for (const failLastPage of [false, true]) {
+    const { provider, calls } = repositoryCommentsFixture(failLastPage);
+    let cursor = '2026-10-08T01:00:00Z';
+    const subjects: string[] = [];
+    const poll = createRepoCommentPoller({ repoAllowlist: ['example/project'],
+      eventLog: { append: async event => { subjects.push(event.subjectKey); return { appended: true, sequence: 0 }; },
+        read: async () => [], listSubjects: async () => [] },
+      fetchRepoComments: (repo, since, signal) => provider.repoComments(repo, since, signal!),
+      readCursor: async () => cursor, writeCursor: async (_repo, value) => { cursor = value; },
+      log: { info() {}, warn() {}, error() {} },
+    });
+    await poll(new AbortController().signal);
+    assert.equal(cursor, failLastPage ? '2026-10-08T01:00:00Z' : '2026-10-08T01:00:02Z');
+    assert.equal(subjects.length, failLastPage ? 0 : 100);
+    assert.ok(subjects.every(subject => subject.startsWith('issue:')));
+    assert.equal(calls.length, 3);
+  }
+});
+
+test('repository comment kind comes from the parent path, not an owner named pull; malformed parents fail closed', async () => {
+  for (const [html, expected] of [
+    ['https://github.com/pull/project/issues/7#issuecomment-4', false],
+    ['https://github.com/pull/project/pull/7#issuecomment-4', true],
+    ['https://github.com/other/project/issues/7#issuecomment-4', null],
+    ['https://github.com/pull/project/issues/8#issuecomment-4', null],
+    ['not-a-url', null],
+  ] as const) {
+    const provider = new GitHubProvider({ token: async () => 'isolated-comment-parent', log: { warn() {} },
+      execFileAsync: async (_file, args) => ({ stdout: args[1] === 'user' ? 'owner' : JSON.stringify({
+        id: 4, user: { login: 'contributor' }, author_association: 'NONE', body: null,
+        issue_url: 'https://api.github.com/repos/pull/project/issues/7', html_url: html,
+        updated_at: '2026-10-08T01:00:01Z',
+      }) }),
+    });
+    const read = provider.repoComments('pull/project', undefined, new AbortController().signal);
+    if (expected === null) await assert.rejects(read);
+    else {
+      const [comment] = await read;
+      assert.equal(comment?.isPullRequest, expected);
+      assert.equal(comment?.body, '');
+    }
+  }
+});
 
 test('native publisher uses a single gh POST and reconciles exact own issue content, never a forged marker alone', async () => {
   const draft: NativeIssueDraft = { id: 'a'.repeat(64), repo: 'example/project', title: 'Issue', bodyMarkdown: 'Public text',
