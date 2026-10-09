@@ -1,7 +1,5 @@
 export const GITHUB_SCHEDULES = [
-  { id: 'cicd-check', everyMs: 60_000, timeoutMs: 30_000 },
-  { id: 'conflict-check', everyMs: 300_000, timeoutMs: 30_000 },
-  { id: 'review-feedback', everyMs: 60_000, timeoutMs: 30_000 },
+  { id: 'pr-tracking', everyMs: 60_000, timeoutMs: 30_000 },
   { id: 'repo-scan', everyMs: 300_000, timeoutMs: 30_000 },
   { id: 'issue-tracking', everyMs: 60_000, timeoutMs: 30_000 },
   { id: 'repo-comment-poll', everyMs: 60_000, timeoutMs: 30_000 },

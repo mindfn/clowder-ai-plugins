@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { createHash, createHmac } from 'node:crypto';
 import test from 'node:test';
 import { parse } from 'yaml';
-import type { ModulePluginHostShape } from '@clowder-ai/plugin-sdk';
+import type { ModulePluginHostShape, PluginActionContext, PluginTaskItem } from '@clowder-ai/plugin-sdk';
 import { createGitHubPluginModule } from './plugin-entrypoint.js';
 import type { GitHubSnapshot } from './tracking-runtime.js';
 import type { RepoSubject } from './community-runtime.js';
@@ -16,6 +16,21 @@ import { ReviewTriggerReader } from './review-trigger-observation.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
 const target = { kind: 'pr', repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
+const caller: PluginActionContext = { catId: 'cat-1', threadId: 'thread-1', userId: 'user-1',
+  invocationId: 'invocation-1', source: { kind: 'primary', sourceMessageId: 'source-1' }, assertCurrent: async () => {} };
+const prInput = { registrationId: 'register-pr-12', repoFullName: target.repoFullName, prNumber: target.number };
+const completeSnapshot = (snapshot: GitHubSnapshot): GitHubSnapshot => structuredClone({
+  commentsComplete: true, trackingIdentity: { selfLogin: 'owner', subjectAuthorLogin: 'owner' }, ...snapshot });
+
+function coveredTriggerReader() {
+  return new ReviewTriggerReader({ token: async () => 'isolated-trigger', execFileAsync: async (_file, args) => {
+    const url = args[1]!, id = Number(url.match(/issues\/comments\/(\d+)$/)?.[1]);
+    return { stdout: id ? JSON.stringify({ id, body: '@codex review', issue_url: 'https://api.github.com/repos/example/project/issues/12',
+      created_at: new Date().toISOString() }) : url.includes('/reactions?')
+      ? JSON.stringify({ content: 'eyes', user: { login: 'chatgpt-codex-connector[bot]', type: 'Bot' } }) : '' };
+  } });
+}
+
 
 test('PR index refresh publishes provider metadata in existing repository inspection and survives module restart', async () => {
   const f = host(); let calls = 0;
@@ -152,7 +167,7 @@ test('declared history copy remains readable after restart without changing the 
   await active.stop();
 });
 
-test('both registrations use the granted Host bind check without requesting thread content', async () => {
+test('tracking uses authenticated invocation and repository registration uses Host bind without thread content', async () => {
   const f = host(); let requests = 0; let rejection: string | undefined;
   const originalBind = f.runtimeHost.threads.bind;
   f.runtimeHost.threads.get = async () => { throw new Error('thread.readContent not granted'); };
@@ -161,12 +176,12 @@ test('both registrations use the granted Host bind check without requesting thre
     return originalBind(...args);
   };
   const active = await createGitHubPluginModule({ createProvider: () => ({ selfLogin: () => 'owner',
-    async read() { requests++; return { state: 'open', comments: [], reviews: [] }; },
+    async read() { requests++; return completeSnapshot({ state: 'open', headSha: 'a'.repeat(40), ci: 'pending', comments: [], reviews: [] }); },
   }), createCommunityProvider: () => ({ selfLogin: () => 'owner',
     async listOpen() { requests++; return []; }, async repoComments() { requests++; return []; }, async state() { requests++; return null; },
   }) }).create(manifest).start(f.runtimeHost);
   const registrations = [
-    () => active.actions['github.tracking.register']!(target),
+    () => active.actions['github.typed-wait.register-pr']!(prInput, { ...caller, assertCurrent: async () => { if (rejection) throw new Error(rejection); } }),
     () => active.actions['github.repository.register']!({ repo: target.repoFullName, guardThreadId: target.threadId, guardCatId: target.catId }),
   ];
   for (const reject of ['missing thread', 'foreign owner', 'deleted thread']) {
@@ -185,13 +200,13 @@ test('both registrations use the granted Host bind check without requesting thre
   await active.stop();
 });
 
-test('settled issue progress resumes the delivered frontier, not the collected or registration snapshot frontier', async () => {
+test('historical issue copy stays inert; fresh typed registration freezes its own baseline', async () => {
   const f = host(); let reads = 0; const cursors: unknown[] = [];
-  const snapshot: GitHubSnapshot = { state: 'open', reviews: [], comments: [4, 5, 6].map(id => ({
+  let snapshot: GitHubSnapshot = { state: 'open', reviews: [], comments: [4, 5, 6].map(id => ({
     id, author: 'outside', body: `Question ${id}`, commentType: 'conversation',
   })) };
   const module = createGitHubPluginModule({ createProvider: () => ({ selfLogin: () => 'owner',
-    async read(_target, _signal, cursor) { reads++; cursors.push(cursor); return snapshot; },
+    async read(_target, _signal, cursor) { reads++; cursors.push(cursor); return completeSnapshot(snapshot); },
   }) });
   let active = await module.create(manifest).start(f.runtimeHost);
   const operation = manifest.configuration.find((c: { key: string }) => c.key === 'legacyIssueProgress');
@@ -208,17 +223,16 @@ test('settled issue progress resumes the delivered frontier, not the collected o
   assert.equal(reads, 0); assert.equal(f.deliveries.length, 0);
   assert.doesNotMatch(JSON.stringify(await f.runtimeHost.storage.list()), /old-private|stored-config-secret/);
   await active.stop(); active = await module.create(manifest).start(f.runtimeHost);
-  const bind = f.runtimeHost.threads.bind;
-  f.runtimeHost.threads.bind = async () => { throw new Error('Host denied'); };
-  await assert.rejects(async () => active.actions['github.tracking.register']!({ ...target, kind: 'issue' }), /Host denied/);
-  f.runtimeHost.threads.bind = bind;
-  await active.actions['github.tracking.register']!({ ...target, kind: 'issue' });
-  assert.equal(reads, 0, 'registration must not baseline over arrivals during migration');
+  const issueInput = { registrationId: 'issue-12', repoFullName: target.repoFullName, issueNumber: 12 };
+  await assert.rejects(async () => active.actions['github.typed-wait.register-issue']!(issueInput,
+    { ...caller, assertCurrent: async () => { throw new Error('Host denied'); } }), /Host denied/);
+  assert.equal(reads, 0);
+  await active.actions['github.typed-wait.register-issue']!(issueInput, caller);
+  assert.equal(reads, 1, 'old data copy is not live wait authority');
   await active.actions['github.issue-tracking']!({});
-  assert.equal((cursors[0] as { conversation: number }).conversation, 4);
-  assert.match(JSON.stringify(f.deliveries), /github:issue-comment:5/);
-  assert.match(JSON.stringify(f.deliveries), /github:issue-comment:6/);
-  assert.doesNotMatch(JSON.stringify(f.deliveries), /github:issue-comment:4/);
+  assert.equal(f.deliveries.length, 0);
+  snapshot = { ...snapshot, comments: [...snapshot.comments, { id: 7, author: 'outside', body: 'new', commentType: 'conversation' }] };
+  await active.actions['github.issue-tracking']!({});
   assert.equal(f.deliveries.length, 1);
   await active.actions[operation.actions[0].action.method]!({ input });
   await active.actions['github.issue-tracking']!({});
@@ -484,54 +498,60 @@ for (const path of ['repo-scan', 'repo-comment-poll', 'webhook'] as const) test(
   await active.stop();
 });
 
-test('real cloud tracking projects complete findings, survives restart and notifies timeout through the ordinary outbox', async () => {
+test('real cloud tracking projects findings across restart and an explicit wait deadline durably notifies expiry', async () => {
   const f = host();
   const head = 'a'.repeat(40);
   const requestedAt = Date.now();
+  let now = requestedAt;
   const trigger = { id: 10, author: 'owner', body: '@codex review', commentType: 'conversation' as const, createdAt: new Date(requestedAt).toISOString() };
-  const request = { headSha: head, triggerCommentId: 10, requestedAt };
   let snapshot: GitHubSnapshot = { state: 'open', headSha: head, ci: 'pass', comments: [trigger], reviews: [], commentsComplete: true };
-  const module = createGitHubPluginModule({ createProvider: () => ({ read: async () => structuredClone(snapshot), selfLogin: () => 'owner' }) });
+  const module = createGitHubPluginModule({ now: () => now, createReviewTriggerReader: coveredTriggerReader,
+    createProvider: () => ({ read: async () => completeSnapshot(snapshot), selfLogin: () => 'owner' }) });
   let active = await module.create(manifest).start(f.runtimeHost);
   await active.actions['github.repository.register']!({ repo: target.repoFullName, guardThreadId: target.threadId,
     guardCatId: target.catId, reviewMode: 'maintainer_review', cloudReviewPolicy: 'required' });
-  await active.actions['github.tracking.register']!({ ...target, cloudReviewRequest: request });
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.typed-wait.register-pr']!({ ...prInput,
+    when: [{ kind: 'pr_review_result_available', triggerCommentId: 10 }, { kind: 'pr_review_decision_changed' }] }, caller);
+  await active.actions['github.pr-tracking']!({});
   const objects = new SdkCommunityObjectStore(f.runtimeHost.storage);
   const cloud = async () => (await objects.get('pr:example/project#12'))?.externalReview?.cloud?.status;
   assert.equal(await cloud(), 'running');
   const review = { id: 20, author: 'chatgpt-codex-connector[bot]', state: 'COMMENTED', commitId: head, submittedAt: new Date(requestedAt + 1).toISOString() };
   const finding = { id: 30, author: review.author, body: 'P2', commentType: 'inline' as const, commitId: head, reviewId: 20 };
   snapshot = { ...snapshot, reviews: [review], comments: [trigger, finding] };
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.equal(await cloud(), 'blocking');
   const delivered = f.deliveries.length;
   await active.stop();
   active = await module.create(manifest).start(f.runtimeHost);
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.equal(await cloud(), 'blocking');
   assert.equal(f.deliveries.length, delivered);
   snapshot = { ...snapshot, comments: [trigger], commentsComplete: false };
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.equal(await cloud(), 'blocking', 'incomplete evidence cannot clear the previous finding');
   snapshot = { ...snapshot, commentsComplete: true };
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.equal(await cloud(), 'clean');
   snapshot = { ...snapshot, comments: [trigger, finding] };
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.equal(await cloud(), 'blocking', 'returning to a previously observed status must not dedup the real transition');
   snapshot = { ...snapshot, headSha: 'b'.repeat(40), commentsComplete: true };
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.notEqual(await cloud(), 'clean', 'an old request cannot settle a new HEAD');
-  await active.actions['github.tracking.unregister']!({ kind: target.kind, repoFullName: target.repoFullName, number: target.number });
+  await active.actions['github.typed-wait.unregister']!({ subjectKey: 'pr:example/project#12' }, caller);
   const old = Date.now() - 31 * 60_000;
   snapshot = { ...snapshot, comments: [{ ...trigger, id: 40, createdAt: new Date(old).toISOString() }], reviews: [] };
-  await active.actions['github.tracking.register']!({ ...target, cloudReviewRequest: { headSha: snapshot.headSha, triggerCommentId: 40, requestedAt: old } });
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.typed-wait.register-pr']!({ ...prInput, registrationId: 'second-cloud-wait',
+    expiresAt: now + 1000, when: [{ kind: 'pr_review_result_available', triggerCommentId: 40 }] }, caller);
+  await active.actions['github.pr-tracking']!({});
   assert.equal(await cloud(), 'failed_or_timeout');
-  assert.ok(JSON.stringify(f.deliveries).includes('Cloud review failed_or_timeout'), 'timeout needs a durable ordinary notification even without a new provider comment');
+  const priorExpiry = f.deliveries.length;
+  now += 1001;
+  await active.actions['github.pr-tracking']!({});
+  assert.equal(f.deliveries.length, priorExpiry + 1, 'explicit expiration needs a durable notification without a new comment');
   const before = f.deliveries.length;
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.equal(f.deliveries.length, before);
   const events = await new SdkCommunityEventLog(f.runtimeHost.storage).read('pr:example/project#12');
   assert.equal(events.some(event => event.kind === 'case.review_verdict_recorded'), false);
@@ -565,17 +585,17 @@ test('real builtin projects provider HEAD and CI without accepting or writing a 
   const f = host();
   let snapshot: GitHubSnapshot = { state: 'open', headSha: 'a'.repeat(40), ci: 'pending', comments: [], reviews: [] };
   const active = await createGitHubPluginModule({ createProvider: () => ({
-    read: async () => structuredClone(snapshot), selfLogin: () => 'owner',
+    read: async () => completeSnapshot(snapshot), selfLogin: () => 'owner',
   }) }).create(manifest).start(f.runtimeHost);
   await active.actions['github.repository.register']!({ repo: target.repoFullName, guardThreadId: target.threadId,
     guardCatId: target.catId, reviewMode: 'maintainer_review', cloudReviewPolicy: 'optional' });
-  await active.actions['github.tracking.register']!(target);
-  await active.actions['github.cicd-check']!({});
+  await active.actions['github.typed-wait.register-pr']!(prInput, caller);
+  await active.actions['github.pr-tracking']!({});
   const objects = new SdkCommunityObjectStore(f.runtimeHost.storage);
   assert.equal((await objects.get('pr:example/project#12'))?.externalReview?.ci?.status, 'pending');
   snapshot = { ...snapshot, ci: 'pass' };
-  await active.actions['github.cicd-check']!({});
-  await active.actions['github.cicd-check']!({});
+  await active.actions['github.pr-tracking']!({});
+  await active.actions['github.pr-tracking']!({});
   const aggregate = (await objects.get('pr:example/project#12'))!.externalReview!;
   assert.equal(aggregate.currentHeadSha, snapshot.headSha);
   assert.equal(aggregate.ci?.status, 'pass');
@@ -586,15 +606,13 @@ test('real builtin projects provider HEAD and CI without accepting or writing a 
   assert.equal(Object.keys(active.actions).some(method => /verdict|lease|admission/.test(method)), false);
   assert.equal(f.deliveries.length, 1, 'ordinary CI notification uses existing SDK messaging exactly once');
   snapshot = { ...snapshot, ci: 'pending' };
-  await active.actions['github.cicd-check']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.equal((await objects.get('pr:example/project#12'))?.externalReview?.ci?.status, 'pending', 'same-HEAD rerun must invalidate old pass');
   snapshot = { ...snapshot, ci: 'pass' };
-  await active.actions['github.cicd-check']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.equal((await objects.get('pr:example/project#12'))?.externalReview?.ci?.status, 'pass');
   assert.equal((await new SdkCommunityEventLog(f.runtimeHost.storage).read('pr:example/project#12')).filter(event => event.kind === 'case.ci_observed').length, 4);
-  assert.equal(f.deliveries.length, 3);
-  assert.equal(new Set(f.deliveries.map(value => (value as { idempotencyKey: string }).idempotencyKey)).size, 3,
-    'a later real pass transition must not reuse the previous pass notification id');
+  assert.equal(f.deliveries.length, 1, 'typed CI waits require a terminal fingerprint different from the frozen baseline');
   const inspection = manifest.contributions.find((value: { id: string }) => value.id === 'inspect-subject');
   assert.ok(inspection, 'observations must be readable through a real generic tool contribution');
   const inspect = active.actions[inspection.action.method]!;
@@ -611,15 +629,15 @@ test('real builtin projects provider HEAD and CI without accepting or writing a 
 test('the actual carrier preserves both a review and its later dismissal in the private journal', async () => {
   const f = host();
   let snapshot: GitHubSnapshot = { state: 'open', headSha: 'a'.repeat(40), ci: 'pending', comments: [], reviews: [] };
-  const module = createGitHubPluginModule({ createProvider: () => ({ read: async () => structuredClone(snapshot), selfLogin: () => 'owner' }) });
+  const module = createGitHubPluginModule({ createProvider: () => ({ read: async () => completeSnapshot(snapshot), selfLogin: () => 'owner' }) });
   const active = await module.create(manifest).start(f.runtimeHost);
-  await active.actions['github.tracking.register']!(target);
+  await active.actions['github.typed-wait.register-pr']!(prInput, caller);
   const review = { id: 8, author: 'reviewer', state: 'APPROVED', commitId: 'a'.repeat(40) };
   snapshot = { ...snapshot, reviews: [review] };
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
   snapshot = { ...snapshot, headSha: 'b'.repeat(40), reviews: [{ ...review, state: 'DISMISSED' }] };
-  await active.actions['github.review-feedback']!({});
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
+  await active.actions['github.pr-tracking']!({});
   const events = await new SdkCommunityEventLog(f.runtimeHost.storage).read('pr:example/project#12');
   assert.deepEqual(events.map(event => event.payload.reviewState), ['APPROVED', 'DISMISSED']);
   assert.equal(f.deliveries.length, 2);
@@ -633,33 +651,43 @@ test('real carrier keeps dismissed reviews final in journal, cloud projection an
   const review = { id: 8, author: 'chatgpt-codex-connector[bot]', state: 'APPROVED', commitId: head,
     submittedAt: new Date(requestedAt + 1).toISOString() };
   let snapshot: GitHubSnapshot = { state: 'open', headSha: head, ci: 'pass', commentsComplete: true, comments: [trigger], reviews: [] };
-  const module = createGitHubPluginModule({ createProvider: () => ({ read: async () => structuredClone(snapshot), selfLogin: () => 'owner' }) });
+  const module = createGitHubPluginModule({ createReviewTriggerReader: coveredTriggerReader,
+    createProvider: () => ({ read: async () => completeSnapshot(snapshot), selfLogin: () => 'owner' }) });
   let active = await module.create(manifest).start(f.runtimeHost);
   await active.actions['github.repository.register']!({ repo: target.repoFullName, guardThreadId: target.threadId,
     guardCatId: target.catId, reviewMode: 'maintainer_review', cloudReviewPolicy: 'required' });
-  await active.actions['github.tracking.register']!({ ...target, cloudReviewRequest: { headSha: head, triggerCommentId: 7, requestedAt } });
-  snapshot = { ...snapshot, reviews: [review] }; await active.actions['github.review-feedback']!({});
+  await active.actions['github.typed-wait.register-pr']!({ ...prInput,
+    when: [{ kind: 'pr_review_result_available', triggerCommentId: 7 }, { kind: 'pr_review_decision_changed' }] }, caller);
+  snapshot = { ...snapshot, reviews: [review] }; await active.actions['github.pr-tracking']!({});
   snapshot = { ...snapshot, reviews: [{ ...review, state: 'DISMISSED' }] };
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
   const objects = new SdkCommunityObjectStore(f.runtimeHost.storage), log = new SdkCommunityEventLog(f.runtimeHost.storage);
   const cloud = async () => (await objects.get('pr:example/project#12'))?.externalReview?.cloud?.status;
   const events = await log.read('pr:example/project#12'), delivered = f.deliveries.length;
   assert.equal(await cloud(), 'failed_or_timeout');
   await active.stop(); active = await module.create(manifest).start(f.runtimeHost);
   for (const reviews of [[], [review], [{ ...review, state: 'DISMISSED' }]]) {
-    snapshot = { ...snapshot, reviews }; await active.actions['github.review-feedback']!({});
+    snapshot = { ...snapshot, reviews }; await active.actions['github.pr-tracking']!({});
     assert.equal(await cloud(), 'failed_or_timeout');
     assert.equal(f.deliveries.length, delivered);
     assert.deepEqual(await log.read('pr:example/project#12'), events);
   }
   snapshot = { ...snapshot, reviews: [{ ...review, state: 'DISMISSED' }, { ...review, id: 9 }] };
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.equal(await cloud(), 'clean');
   assert.equal(f.deliveries.length, delivered + 1);
   await active.stop();
 });
 
 function host() {
+  const tasks = new Map<string, PluginTaskItem>();
+  const createTask: ModulePluginHostShape['tasks']['create'] = async input => {
+    if ([...tasks.values()].some(task => task.subjectKey === input.subjectKey)) throw new Error('Subject exists');
+    const task: PluginTaskItem = { id: `task-${tasks.size}`, kind: input.kind ?? 'work', subjectKey: input.subjectKey ?? null,
+      threadId: input.threadId, title: input.title, why: input.why ?? '', ownerCatId: input.ownerCatId ?? null,
+      status: 'todo', createdBy: 'system', createdAt: 1, updatedAt: 1 };
+    tasks.set(task.id, task); return structuredClone(task);
+  };
   const unusedThreadCall = async (): Promise<never> => { throw new Error('Unexpected thread API call'); };
   const entries = new Map<string, { revision: number; value: unknown }>();
   let revision = 0;
@@ -678,7 +706,23 @@ function host() {
   };
   const runtimeHost: ModulePluginHostShape = {
     storage, config: { get: async () => undefined }, secrets: { get: async () => undefined },
-    tasks: {} as ModulePluginHostShape['tasks'],
+    tasks: {
+      get: async id => structuredClone(tasks.get(id) ?? null),
+      getBySubject: async key => structuredClone([...tasks.values()].find(task => task.subjectKey === key) ?? null),
+      listByThread: async id => structuredClone([...tasks.values()].filter(task => task.threadId === id)),
+      listByKind: async kind => structuredClone([...tasks.values()].filter(task => task.kind === kind)),
+      create: createTask, upsertBySubject: createTask,
+      update: async (id, input) => { const task = tasks.get(id); if (!task) return null;
+        const next = { ...task, ...input }; tasks.set(id, next); return structuredClone(next); },
+      updateIfThreadId: async (id, threadId, input) => { const task = tasks.get(id); if (!task || task.threadId !== threadId) return null;
+        const next = { ...task, ...input }; tasks.set(id, next); return structuredClone(next); },
+      setWait: async (id, input) => { const task = tasks.get(id);
+        if (!task || (task.pluginWait?.generation ?? null) !== input.expectedGeneration) return null;
+        const next = { ...task, pluginWait: { pluginInstanceId: 'instance', generation: input.generation,
+          ...(input.active ? { await: { generation: input.generation, ...input.active } } : {}),
+          ...(input.outcome ? { waitOutcome: input.outcome } : {}) } };
+        tasks.set(id, structuredClone(next)); return structuredClone(next); },
+    },
     media: { read: async () => { throw new Error('Unexpected media read'); } },
     threads: {
       get: async id => ({ id, title: null, createdAt: 1, lastActiveAt: 1,
@@ -702,25 +746,25 @@ test('real manifest → SDK builtin activation → tracking → schedule → mes
   let snapshot: GitHubSnapshot = { state: 'open', headSha: 'a'.repeat(40), ci: 'pending', comments: [], reviews: [] };
   let reads = 0;
   const module = createGitHubPluginModule({ createProvider: () => ({
-    read: async () => { reads++; return structuredClone(snapshot); }, selfLogin: () => 'owner',
+    read: async () => { reads++; return completeSnapshot(snapshot); }, selfLogin: () => 'owner',
   }) });
   const active = await module.create(manifest).start(f.runtimeHost);
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.equal(reads, 0);
-  const tool = manifest.contributions.find((c: { id: string }) => c.id === 'register-tracking');
-  const registered = await active.actions[tool.action.method]!(target);
-  assert.equal((registered as { data: { active: boolean } }).data.active, true);
+  const tool = manifest.contributions.find((c: { id: string }) => c.id === 'register-pr-tracking');
+  const registered = await active.actions[tool.action.method]!(prInput, caller);
+  assert.ok((registered as any).automationState.await);
   snapshot = { ...snapshot, comments: [{ id: 1, author: 'maintainer', body: 'fix parser', commentType: 'conversation' }] };
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.equal(f.deliveries.length, 1);
   snapshot = { ...snapshot, state: 'merged' };
-  await active.actions['github.cicd-check']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.equal(f.deliveries.length, 2);
   const before = reads;
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.equal(reads, before);
   await active.stop();
-  await assert.rejects(async () => active.actions['github.tracking.register']!(target), /stopped|disposed|revoked/i);
+  await assert.rejects(async () => active.actions['github.typed-wait.register-pr']!(prInput, caller), /stopped|disposed|revoked/i);
 });
 
 test('builtin stop awaits in-flight provider cleanup and prevents a late notification', async () => {
@@ -737,24 +781,23 @@ test('builtin stop awaits in-flight provider cleanup and prevents a late notific
         signal.addEventListener('abort', () => { aborted = true; }, { once: true });
         began(); await closed; signal.throwIfAborted();
       }
-      return { state: 'open', ci: 'pending', comments: [], reviews: [] };
+      return completeSnapshot({ state: 'open', headSha: 'a'.repeat(40), ci: 'pending', comments: [], reviews: [] });
     }, selfLogin: () => 'owner',
   }) });
   const active = await module.create(manifest).start(f.runtimeHost);
-  await active.actions['github.tracking.register']!(target);
-  const poll = active.actions['github.review-feedback']!({});
-  const rejected = assert.rejects(async () => poll, /stopped/);
+  await active.actions['github.typed-wait.register-pr']!(prInput, caller);
+  const poll = active.actions['github.pr-tracking']!({});
   await started;
   let stopped = false;
   const stop = Promise.resolve(active.stop()).then(() => { stopped = true; });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(aborted, true);
   assert.equal(stopped, false);
-  release(); await stop; await rejected;
+  release(); await stop; await poll;
   assert.equal(f.deliveries.length, 0);
 });
 
-test('all seven declared schedules stay idle without registrations; repository inbox baselines then collects and stops', async () => {
+test('all five declared schedules stay idle without registrations; repository inbox baselines then collects and stops', async () => {
   const f = host(); let requests = 0;
   let items: RepoSubject[] = [{ kind: 'issue', number: 1, title: 'Historical', url: 'https://github.com/example/project/issues/1', author: 'contributor', authorAssociation: 'CONTRIBUTOR', draft: false }];
   const module = createGitHubPluginModule({ createCommunityProvider: () => ({
@@ -765,7 +808,7 @@ test('all seven declared schedules stay idle without registrations; repository i
   }) });
   const active = await module.create(manifest).start(f.runtimeHost);
   const schedules = manifest.contributions.filter((c: { type: string }) => c.type === 'schedule');
-  assert.equal(schedules.length, 7);
+  assert.equal(schedules.length, 5);
   for (const schedule of schedules) await active.actions[schedule.action.method]!({});
   assert.equal(requests, 0);
   await active.actions['github.repository.register']!({ repo: 'example/project', guardThreadId: 'thread-1', guardCatId: 'cat-1' });
@@ -848,14 +891,14 @@ test('declared webhook authenticates exact bytes, delivers via SDK, deduplicates
 
 test('tracking logs facts before delivery, rejects stale inline feedback, and retries a terminal collection failure', async () => {
   const f = host();
-  let snapshot: GitHubSnapshot = { state: 'open', headSha: 'b'.repeat(40), comments: [], reviews: [] };
+  let snapshot: GitHubSnapshot = { state: 'open', headSha: 'b'.repeat(40), ci: 'pending', comments: [], reviews: [] };
   const active = await createGitHubPluginModule({ createProvider: () => ({
-    read: async () => structuredClone(snapshot), selfLogin: () => 'owner',
+    read: async () => completeSnapshot(snapshot), selfLogin: () => 'owner',
   }) }).create(manifest).start(f.runtimeHost);
-  await active.actions['github.tracking.register']!(target);
+  await active.actions['github.typed-wait.register-pr']!(prInput, caller);
   snapshot = { ...snapshot, comments: [{ id: 1, author: 'maintainer', body: 'old commit',
     commentType: 'inline', commitId: 'a'.repeat(40) }] };
-  await active.actions['github.review-feedback']!({});
+  await active.actions['github.pr-tracking']!({});
   assert.equal(f.deliveries.length, 0, 'old-HEAD inline feedback is not an owner notification');
   const original = f.runtimeHost.storage.compareAndSet;
   let crash = true;
@@ -865,11 +908,11 @@ test('tracking logs facts before delivery, rejects stale inline feedback, and re
   };
   snapshot = { ...snapshot, state: 'merged', comments: [{ id: 2, author: 'maintainer', body: 'final',
     commentType: 'conversation' }] };
-  await assert.rejects(async () => active.actions['github.cicd-check']!({}), /event disk/);
+  await active.actions['github.pr-tracking']!({});
   assert.equal(f.deliveries.length, 0);
-  const pending = await active.actions['github.tracking.list']!({}) as { data: { tracking: { active: boolean }[] } };
-  assert.equal(pending.data.tracking[0]!.active, true);
-  await active.actions['github.cicd-check']!({});
+  const pending = await active.actions['github.tracking.list']!({}) as any;
+  assert.ok(pending.data.tracking[0]!.automationState.await);
+  await active.actions['github.pr-tracking']!({});
   assert.equal(f.deliveries.length, 1);
   const eventValues = Object.entries(await f.runtimeHost.storage.list()).filter(([key]) => key.startsWith('community.event.'));
   assert.equal(eventValues.length, 2, 'fresh comment and terminal lifecycle are durable, stale inline is absent');

@@ -7,6 +7,7 @@ import type { GitHubSnapshot } from './tracking-runtime.js';
 function fixture() {
   const rows = new Map<string, PluginStorageEntry>(); const tasks = new Map<string, PluginTaskItem>();
   const sent: unknown[] = []; let revision = 0; let reads = 0; let current = true; let sendFailure = false;
+  let projectionFailure = false;
   let snapshot: GitHubSnapshot = { state: 'open', headSha: 'a'.repeat(40), ci: 'pending', comments: [], reviews: [],
     commentsComplete: true, trackingIdentity: { selfLogin: 'self', subjectAuthorLogin: 'self' } };
   let read: (() => Promise<GitHubSnapshot>) | undefined;
@@ -19,6 +20,15 @@ function fixture() {
       },
     },
     tasks: {
+      setWait: async (id: string, input: any) => {
+        if (projectionFailure) return null;
+        const old = tasks.get(id);
+        if (!old || ((old as any).pluginWait?.generation ?? null) !== input.expectedGeneration) return null;
+        const task = { ...old, pluginWait: { pluginInstanceId: 'instance', generation: input.generation,
+          ...(input.active ? { await: { generation: input.generation, ...input.active } } : {}),
+          ...(input.outcome ? { waitOutcome: structuredClone(input.outcome) } : {}) } };
+        tasks.set(id, task); return structuredClone(task);
+      },
       get: async (id: string) => structuredClone(tasks.get(id) ?? null),
       getBySubject: async (subject: string) => structuredClone([...tasks.values()].find(task => task.subjectKey === subject) ?? null),
       create: async (value: Record<string, unknown>) => {
@@ -40,9 +50,63 @@ function fixture() {
     coverage: async () => ({ covered: true }), now: () => 1000 };
   return { context, caller, options, tasks, rows, sent, reads: () => reads, setSnapshot: (value: GitHubSnapshot) => { snapshot = value; },
     defer: (value: () => Promise<GitHubSnapshot>) => { read = value; }, stale: () => { current = false; },
-    failSend: (value: boolean) => { sendFailure = value; }, snapshot: () => snapshot };
+    failSend: (value: boolean) => { sendFailure = value; }, failProjection: (value: boolean) => { projectionFailure = value; }, snapshot: () => snapshot };
 }
 const input = { registrationId: 'registration', repoFullName: 'owner/repo', prNumber: 1 };
+
+test('Host projection failure retains the outbox; recovery projects active N+1 and pending N before sending', async () => {
+  const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
+  const task = await runtime.registerPr(input, f.caller);
+  f.failProjection(true);
+  f.setSnapshot({ ...f.snapshot(), comments: [{ id: 5, author: 'reviewer', body: 'result', commentType: 'conversation' }] });
+  await runtime.poll('pr');
+  assert.equal(f.sent.length, 0);
+  assert.equal((await runtime.store.get(task.id))?.automationState?.waitOutcome?.delivery, 'pending');
+  f.failProjection(false);
+  const send = f.context.messaging.send;
+  (f.context.messaging as any).send = async (...args: any[]) => {
+    const projection = (f.tasks.get(task.id) as any).pluginWait;
+    assert.equal(projection.await.generation, 2);
+    assert.equal(projection.waitOutcome.generation, 1);
+    assert.equal(projection.waitOutcome.delivery, 'pending');
+    return (send as any)(...args);
+  };
+  await runtime.recover();
+  assert.equal(f.sent.length, 1);
+  assert.equal((f.tasks.get(task.id) as any).pluginWait.waitOutcome.delivery, 'delivered');
+  await runtime.stop();
+});
+
+test('unknown initial projection result is repairable by exact authenticated replay without a new baseline', async () => {
+  const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
+  f.failProjection(true);
+  await assert.rejects(runtime.registerPr(input, f.caller), /projection/);
+  assert.equal(f.tasks.size, 1); assert.equal(f.reads(), 1);
+  f.setSnapshot({ ...f.snapshot(), comments: [{ id: 5, author: 'reviewer', body: 'arrived', commentType: 'conversation' }] });
+  await runtime.poll('pr'); assert.equal(f.reads(), 1); assert.equal(f.sent.length, 0);
+  f.failProjection(false);
+  const task = await runtime.registerPr(input, f.caller);
+  assert.equal(f.reads(), 1); assert.equal(task.automationState?.await?.generation, 1);
+  assert.equal(f.tasks.get(task.id)?.pluginWait?.generation, 1);
+  await runtime.poll('pr'); assert.equal(f.sent.length, 1);
+  await runtime.stop();
+});
+
+test('a failed delivered projection repairs during offline polling without resending the message', async () => {
+  const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
+  const task = await runtime.registerPr(input, f.caller);
+  const send = f.context.messaging.send;
+  (f.context.messaging as any).send = async (...args: any[]) => {
+    const result = await (send as any)(...args); f.failProjection(true); return result;
+  };
+  f.setSnapshot({ ...f.snapshot(), comments: [{ id: 5, author: 'reviewer', body: 'result', commentType: 'conversation' }] });
+  await runtime.poll('pr');
+  assert.equal(f.sent.length, 1); assert.equal(f.tasks.get(task.id)?.pluginWait?.waitOutcome?.delivery, 'pending');
+  f.failProjection(false); f.defer(async () => { throw new Error('offline'); });
+  await runtime.poll('pr');
+  assert.equal(f.sent.length, 1); assert.equal(f.tasks.get(task.id)?.pluginWait?.waitOutcome?.delivery, 'delivered');
+  await runtime.stop();
+});
 
 test('typed runtime freezes baseline, uses Host identity and replays registration without provider reads', async () => {
   const f = fixture(); const runtime = new TypedWaitRuntime(f.options);

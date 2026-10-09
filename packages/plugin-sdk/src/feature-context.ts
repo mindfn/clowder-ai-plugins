@@ -347,6 +347,7 @@ export function createFeatureContextSession(
       runWhileActive(() => adapter.storage.delete(key, expectedRevision)),
   };
   const tasks: PluginTaskHost = {
+    setWait: (taskId, input) => runWhileActive(() => adapter.tasks.setWait(taskId, input)),
     get: (taskId) => runWhileActive(() => adapter.tasks.get(taskId)),
     listByThread: (threadId) => runWhileActive(() => adapter.tasks.listByThread(threadId)),
     listByKind: (kind) => runWhileActive(() => adapter.tasks.listByKind(kind)),

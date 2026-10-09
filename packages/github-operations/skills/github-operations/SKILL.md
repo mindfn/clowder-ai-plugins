@@ -6,28 +6,29 @@ description: Track authorized GitHub PRs, issues and repository inboxes with the
 # GitHub Operations
 
 Read the installed plugin detail for `official.github-operations`. It must be
-enabled and running. Read its currently active tool schemas using the Host's
-generic `plugin_list_tools`, then invoke the exact contribution/name through
-`plugin_call`. Do not invent HTTP routes or tool arguments.
+enabled and running. Its native tracking MCP exposes
+`cat_cafe_register_pr_tracking`, `cat_cafe_register_issue_tracking` and
+`cat_cafe_unregister_tracking`. Use those tools directly with their current
+schemas. Do not invent HTTP routes or proxy calls.
 
-For a PR or issue, register its repository, kind and number with the requested
-thread and notification recipient. Registration observes the current baseline;
-subsequent changes arrive as ordinary messages, optionally waking that recipient.
-List tracking to confirm the stored destination and active status. Unregister
+For a PR or issue, supply its repository, number and a unique `registrationId`.
+Reuse that ID and identical arguments after an unknown response; a new ID means
+an intentional replacement. The Host supplies the authenticated current cat and
+thread. Registration observes a fresh live baseline; subsequent matching changes
+arrive as ordinary messages. Read the returned wait and notification coverage. Unregister
 when requested; terminal PR/issue state also retires tracking automatically.
 Unregistering retains historical records.
 
-To observe the result of an already posted cloud review request, PR tracking may
-include `cloudReviewRequest` with the full `headSha`, provider conversation
-`triggerCommentId`, and that comment's `requestedAt` in Unix milliseconds. Obtain
-these from provider evidence; this option does not post a request. The plugin
-requires the trigger's actual timestamp and fully paginated comments before
-classifying a result. A new HEAD or request requires unregistering and registering
-the new correlation. Configured cloud reviewer logins default to
+To observe an already posted cloud review request, use the advanced `when`
+predicate `pr_review_result_available` with its provider conversation
+`triggerCommentId`. The plugin reads and validates the actual trigger, HEAD and
+baseline; this option does not post a request. Configured cloud reviewer logins default to
 `chatgpt-codex-connector[bot]`; an explicitly empty setting disables matching.
 Running, blocking, clean and timeout are provider observations, never a formal
-review verdict or permission to merge. Ordinary messages remain on the same
-durable notification path.
+review verdict or permission to merge. Waits have no time-based termination unless
+you provide `expiresAt`; an explicit deadline produces a durable expiry outcome.
+Default automatic renewal preserves continuous tracking. Ordinary messages remain
+on the same durable notification path.
 
 Use the declared subject-inspection tool to read the private event history and
 derived state. For copied legacy metadata, use `github_inspect_legacy_history`

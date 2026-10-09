@@ -89,6 +89,7 @@ function host(
       upsertBySubject: async (input: unknown) => (calls.push({ operation: 'tasks.upsertBySubject', value: input }), task),
       update: async () => task,
       updateIfThreadId: async () => task,
+      setWait: async () => task,
     },
     threads: {
       get: async () => null,

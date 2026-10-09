@@ -1,6 +1,7 @@
-import { definePlugin, definePluginModule, type FeatureContext, type PluginModuleEntrypoint } from '@clowder-ai/plugin-sdk';
+import { definePlugin, definePluginModule, type FeatureContext, type PluginModuleEntrypoint, type PluginActionContext } from '@clowder-ai/plugin-sdk';
 import { GitHubProvider } from './github-provider.js';
-import { GitHubTrackingRuntime, type GitHubTarget, type GitHubTrackingProvider } from './tracking-runtime.js';
+import type { GitHubTrackingProvider } from './tracking-runtime.js';
+import { TypedWaitRuntime } from './typed-wait-runtime.js';
 import { CommunityRuntime, type CommunityProvider } from './community-runtime.js';
 import type { UpsertRepoConfigInput } from './business/domains/community/CommunityRepoConfigStore.js';
 import { recommendTriage } from './triage-recommendation.js';
@@ -12,22 +13,13 @@ import { ReviewTriggerReader } from './review-trigger-observation.js';
 
 interface Provider extends GitHubTrackingProvider { selfLogin(): string | undefined }
 export interface GitHubPluginOptions {
+  readonly now?: () => number;
   /** Test the real carrier with an isolated provider; production uses the migrated gh transport. */
   readonly createProvider?: (context: FeatureContext) => Provider;
   readonly createCommunityProvider?: (context: FeatureContext) => CommunityProvider;
   readonly createIssuePublisher?: (context: FeatureContext) => NativeIssuePublisher;
   readonly createPrIndexProvider?: (context: FeatureContext) => PrIndexProvider;
   readonly createReviewTriggerReader?: (context: FeatureContext) => ReviewTriggerReader;
-}
-
-function target(value: unknown, register: boolean): GitHubTarget {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('tracking input must be an object');
-  const input = value as Record<string, unknown>;
-  const fields = register ? ['kind', 'repoFullName', 'number', 'threadId', 'catId', 'reviewThreadIds', 'cloudReviewRequest'] : ['kind', 'repoFullName', 'number'];
-  if (Object.keys(input).some(key => !fields.includes(key))) throw new TypeError('unsupported tracking field');
-  // Destinations are routing requests, not caller identity or governance credentials.
-  // Host thread access and message grants remain authoritative.
-  return input as unknown as GitHubTarget;
 }
 
 async function activate(context: FeatureContext, options: GitHubPluginOptions) {
@@ -42,41 +34,31 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   const prIndex = new PrProviderIndex(context.storage, options.createPrIndexProvider?.(context) ?? new GitHubPrIndexProvider({ token: () => context.secrets.get('token') }));
   const drafts = new NativeIssueDraftRuntime(context, options.createIssuePublisher?.(context) ?? transport);
   const community = new CommunityRuntime(context, options.createCommunityProvider?.(context) ?? transport);
-  const tracking = new GitHubTrackingRuntime({
-    storage: context.storage, threads: context.threads, send: context.messaging.send,
-    provider, selfLogin: async () => provider.selfLogin(),
+  const tracking = new TypedWaitRuntime({
+    context, provider,
+    ...(options.now ? { now: options.now } : {}),
+    coverage: (repoFullName, prNumber, triggerCommentId) => reviewTriggers.observe({ repoFullName, prNumber, triggerCommentId }),
     collect: (target, snapshot) => community.collectTracking(target, snapshot),
     observe: (target, snapshot) => community.observeTracking(target, snapshot),
-    cloudReviewerLogins: async () => {
-      const value = await context.config.get('cloudReviewerLogins');
-      if (value === undefined) return ['chatgpt-codex-connector[bot]'];
-      if (typeof value !== 'string') throw new TypeError('cloudReviewerLogins must be a string');
-      return value.split(/[\s,]+/).filter(Boolean);
-    },
-    noiseLogins: async () => {
-      const value = await context.config.get('setupNoiseBotLogins');
-      if (value === undefined || value === '') return [];
-      if (typeof value !== 'string') throw new TypeError('setupNoiseBotLogins must be a string');
-      return value.split(/[\s,]+/).filter(Boolean);
-    },
   });
-  const poll = async (channel: 'cicd-check' | 'conflict-check' | 'review-feedback' | 'issue-tracking') => {
-    await tracking.poll(channel);
+  await tracking.recover();
+  const poll = async (kind: 'pr' | 'issue') => {
+    await tracking.poll(kind);
     return { data: { completed: true } };
   };
   return {
     actions: {
-      // Declared read-only query. Host governance must select its trusted instance
-      // independently; tool discovery does not establish proof authority.
+      // Pure provider observation; registration consumes it inside this module.
       'github.review-trigger.observe': (value: unknown) => reviewTriggers.observe(value),
       'github.webhook': (value: unknown) => community.webhook(value),
-      'github.tracking.register': async (value: unknown) => ({ data: await tracking.register(target(value, true)) }),
-      'github.tracking.unregister': async (value: unknown) => ({ data: await tracking.unregister(target(value, false)) }),
-      'github.tracking.list': async () => ({ data: { tracking: await tracking.list() } }),
-      'github.cicd-check': () => poll('cicd-check'),
-      'github.conflict-check': () => poll('conflict-check'),
-      'github.review-feedback': () => poll('review-feedback'),
-      'github.issue-tracking': () => poll('issue-tracking'),
+      'github.typed-wait.register-pr': (value: unknown, caller?: PluginActionContext) => tracking.registerPr(value, caller),
+      'github.typed-wait.register-issue': (value: unknown, caller?: PluginActionContext) => tracking.registerIssue(value, caller),
+      'github.typed-wait.unregister': (value: unknown, caller?: PluginActionContext) => tracking.unregister(value, caller),
+      'github.tracking.list': async () => ({ data: { tracking: [
+        ...await tracking.store.listByKind('pr_tracking'), ...await tracking.store.listByKind('issue_tracking'),
+      ] } }),
+      'github.pr-tracking': () => poll('pr'),
+      'github.issue-tracking': () => poll('issue'),
       'github.repo-scan': async () => { await community.run('repo-scan'); return { data: { completed: true } }; },
       'github.repo-comment-poll': async () => { await community.run('repo-comment-poll'); return { data: { completed: true } }; },
       'github.community-reconciler': async () => { await community.run('community-reconciler'); return { data: { completed: true } }; },

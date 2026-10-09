@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { FeatureContext, PluginActionContext, PluginStorageHost, PluginTaskItem } from '@clowder-ai/plugin-sdk';
+import type { FeatureContext, PluginActionContext, PluginStorageHost, PluginTaskItem, PluginWaitUpdate } from '@clowder-ai/plugin-sdk';
 import type { TaskItem } from './business/model/index.js';
 import { GitHubWaitLifecycleService } from './business/domains/github-signals/GitHubWaitLifecycleService.js';
 import { GitHubWaitStorage } from './typed-wait-storage.js';
@@ -8,6 +8,8 @@ import { preparePrWait, prepareIssueWait, installPreparedWait, registerPrWait, r
 import { registerPrTrackingInputSchema, registerIssueTrackingInputSchema, unregisterTrackingInputSchema } from './tracking-mcp-schemas.js';
 import { issueBaseline, prBaseline, waitObservation, waitTarget, waitEventSnapshot } from './typed-wait-provider.js';
 import type { GitHubSnapshot, GitHubTarget, GitHubTrackingProvider } from './tracking-runtime.js';
+import { copyLegacyIssueProgress } from './legacy-issue-progress.js';
+import { legacyIssueOperationInput } from './legacy-issue-observations.js';
 
 export interface TypedWaitRuntimeOptions {
   readonly context: FeatureContext;
@@ -69,6 +71,36 @@ export class TypedWaitRuntime {
     return current;
   }
 
+  private async projectWait(taskId: string, check: () => Promise<void>): Promise<void> {
+    await check();
+    // Always project current private state, never an immutable registration receipt.
+    const task = await this.store.get(taskId);
+    if (!task) throw new Error('Private tracking task is unavailable');
+    const active = task.automationState?.await;
+    const outcome = task.automationState?.waitOutcome;
+    const generation = Math.max(active?.generation ?? 0, outcome?.generation ?? 0);
+    if (!generation) return;
+    const host = await this.currentTask(task);
+    if (outcome && outcome.ownerFence?.kind !== 'containing_task') throw new Error('Unsupported wait owner fence');
+    const input: PluginWaitUpdate = {
+      expectedGeneration: host.pluginWait?.generation ?? null, generation,
+      active: active ? { ...(active.expiresAt === undefined ? {} : { expiresAt: active.expiresAt }) } : null,
+      ...(outcome ? { outcome: { outcomeId: outcome.outcomeId, generation: outcome.generation,
+        ownerFence: { kind: 'containing_task' as const, generation: outcome.ownerFence!.generation },
+        reason: outcome.reason, delivery: outcome.delivery } } : {}),
+    };
+    await check();
+    if (!await this.options.context.tasks.setWait(task.id, input)) throw new Error('Wait projection changed; retry from current state');
+    await check();
+  }
+
+  private async settleProjection(taskId: string, check: () => Promise<void>) {
+    await this.projectWait(taskId, check);
+    const latest = await this.store.get(taskId);
+    await check();
+    if (latest) await this.options.context.tasks.updateIfThreadId(taskId, latest.threadId, { status: latest.status });
+  }
+
   async registerPr(input: unknown, caller?: PluginActionContext): Promise<TaskItem> {
     return this.register('pr', z.object(registerPrTrackingInputSchema).strict().parse(input), caller);
   }
@@ -118,6 +150,7 @@ export class TypedWaitRuntime {
       const latest = await store.get(installed.id);
       await check();
       if (latest) await this.options.context.tasks.updateIfThreadId(installed.id, caller.threadId, { status: latest.status });
+      await this.projectWait(installed.id, check);
       return installed;
     });
   }
@@ -129,7 +162,7 @@ export class TypedWaitRuntime {
       log: { info: () => {}, warn: () => this.options.context.log('warn', 'GitHub wait delivery/event will be retried'),
         error: () => this.options.context.log('error', 'GitHub wait lifecycle failed') },
       deliveryDeps: { messaging: { send: async ({ threadId, ...draft }) => {
-        await check(); await this.currentTask(task); await check();
+        await this.projectWait(task.id, check);
         return this.options.context.messaging.send(threadId, draft);
       } } },
     });
@@ -147,7 +180,7 @@ export class TypedWaitRuntime {
       if (!task) return { unregistered: false };
       if (task.userId !== caller.userId) throw new TrackingRegistrationError(409, 'Tracking belongs to a different user');
       const result = await this.lifecycle(task, check).cancel(task.id, { kind: 'cat', catId: caller.catId, invocationId: caller.invocationId });
-      await check(); await this.options.context.tasks.updateIfThreadId(task.id, caller.threadId, { status: 'done' });
+      await this.settleProjection(task.id, check);
       return { unregistered: true, result };
     });
   }
@@ -159,8 +192,15 @@ export class TypedWaitRuntime {
       await this.run(task.subjectKey!, async signal => {
         const check = async () => { this.assertRunning(); signal.throwIfAborted(); };
         await this.lifecycle(task, check).recoverOutcome(task.id);
+        await this.settleProjection(task.id, check);
       }).catch(() => this.options.context.log('warn', 'GitHub pending outcome retained for recovery'));
     }
+  }
+
+  /** Historical copy stays inert: fresh typed registrations always freeze a live baseline. */
+  importLegacyIssueProgress(value: unknown) {
+    return this.run('legacy-issue-progress-import', signal =>
+      copyLegacyIssueProgress(legacyIssueOperationInput(value), this.options.context.storage, signal));
   }
 
   poll(kind: 'pr' | 'issue'): Promise<void> {
@@ -179,12 +219,15 @@ export class TypedWaitRuntime {
           if (!host || host.threadId !== current.threadId || host.ownerCatId !== current.ownerCatId || host.status === 'done') {
             await lifecycle.ownerChanged(task.id); return;
           }
+          // An initial failed projection needs an authenticated registration replay.
+          // A background poll cannot manufacture its missing invocation receipt.
+          if (!host.pluginWait) return;
           await lifecycle.recoverOutcome(task.id); await check();
-          if (!current.automationState?.await) return;
+          if (current.automationState?.waitOutcome) await this.settleProjection(task.id, check);
+          if (!current.automationState?.await) { await this.settleProjection(task.id, check); return; }
           if (current.automationState.await.expiresAt !== undefined && current.automationState.await.expiresAt <= this.now()) {
             await lifecycle.observe({ taskId: task.id, at: this.now(), facts: {} });
-            const expired = await this.store.get(task.id); await check();
-            if (expired) await this.options.context.tasks.updateIfThreadId(task.id, current.threadId, { status: expired.status });
+            await this.settleProjection(task.id, check);
             return;
           }
           const target = waitTarget(current);
@@ -198,8 +241,7 @@ export class TypedWaitRuntime {
           await this.options.collect?.(target, waitEventSnapshot(current, observed.snapshot)); await check();
           await this.currentTask(current); await check();
           await lifecycle.observe(observed.observation);
-          const latest = await this.store.get(task.id); await check();
-          if (latest) await this.options.context.tasks.updateIfThreadId(task.id, current.threadId, { status: latest.status });
+          await this.settleProjection(task.id, check);
         }).catch(() => this.options.context.log('warn', 'GitHub observation failed; wait and pending delivery remain recoverable'));
       }
     });

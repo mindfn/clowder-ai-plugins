@@ -188,6 +188,8 @@ export type {
   PluginTaskCreateInput,
   PluginTaskHost,
   PluginTaskItem,
+  PluginTaskWait,
+  PluginWaitUpdate,
   PluginTaskKind,
   PluginTaskStatus,
   PluginTaskUpdateInput,

@@ -146,6 +146,7 @@ class RecordingAdapter implements FeatureHostAdapter {
     upsertBySubject: async () => { throw new Error('not implemented by fixture'); },
     update: async () => null,
     updateIfThreadId: async () => null,
+    setWait: async () => null,
   } satisfies FeatureHostAdapter['tasks'];
 
   readonly threads = {
@@ -853,6 +854,26 @@ test('Host operation results never cross a revoked context boundary', async (t) 
       await rejection;
     });
   }
+});
+
+test('setWait delegates the full neutral snapshot and rejects a late result after revocation', async () => {
+  const adapter = new RecordingAdapter();
+  let release!: () => void;
+  let began!: () => void;
+  const started = new Promise<void>(resolve => { began = resolve; });
+  const input = { expectedGeneration: 1, generation: 2, active: { expiresAt: 1234 },
+    outcome: { outcomeId: 'outcome-1', generation: 1, ownerFence: { kind: 'containing_task' as const, generation: 1 },
+      reason: 'matched' as const, delivery: 'pending' as const } };
+  Object.assign(adapter.tasks, { setWait: async (id: string, value: unknown) => {
+    assert.equal(id, 'task-1'); assert.deepEqual(value, input); began();
+    await new Promise<void>(resolve => { release = resolve; }); return null;
+  } });
+  const session = createFeatureContextSession(BINDING, adapter);
+  const pending = session.context.tasks.setWait('task-1', input);
+  await started; await session.revoke();
+  const rejected = assert.rejects(pending, FeatureContextRevokedError);
+  release(); await rejected;
+  await assert.rejects(session.context.tasks.setWait('task-1', input), FeatureContextRevokedError);
 });
 
 test('revocation disposes owned registrations and rejects stale context while leaving siblings live', async () => {

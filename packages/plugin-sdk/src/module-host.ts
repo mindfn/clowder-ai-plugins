@@ -99,8 +99,30 @@ export interface PluginThreadHost {
 export type PluginTaskKind = 'work' | 'pr_tracking' | 'issue_tracking';
 export type PluginTaskStatus = 'todo' | 'doing' | 'blocked' | 'done';
 
+/** Complete neutral wait snapshot; Host supplies instance and invocation identity. */
+export interface PluginWaitUpdate {
+  readonly expectedGeneration: number | null;
+  readonly generation: number;
+  readonly active: { readonly expiresAt?: number } | null;
+  readonly outcome?: {
+    readonly outcomeId: string;
+    readonly generation: number;
+    readonly ownerFence: { readonly kind: 'containing_task'; readonly generation: number };
+    readonly reason: 'matched' | 'subject_terminal' | 'expired' | 'owner_changed' | 'superseded' | 'user_cancel';
+    readonly delivery: 'pending' | 'delivered' | 'not_applicable' | 'legacy_unfenced';
+  };
+}
+
+export interface PluginTaskWait {
+  readonly pluginInstanceId: string;
+  readonly generation: number;
+  readonly await?: { readonly generation: number; readonly expiresAt?: number };
+  readonly waitOutcome?: PluginWaitUpdate['outcome'];
+}
+
 /** Minimal stable projection of the Host-owned TaskItem. */
 export interface PluginTaskItem {
+  readonly pluginWait?: PluginTaskWait;
   readonly id: string;
   readonly kind: PluginTaskKind;
   readonly threadId: string;
@@ -132,6 +154,7 @@ export interface PluginTaskUpdateInput {
 }
 
 export interface PluginTaskHost {
+  setWait(taskId: string, input: PluginWaitUpdate): Promise<PluginTaskItem | null>;
   get(taskId: string): Promise<PluginTaskItem | null>;
   listByThread(threadId: string): Promise<readonly PluginTaskItem[]>;
   listByKind(kind: PluginTaskKind): Promise<readonly PluginTaskItem[]>;

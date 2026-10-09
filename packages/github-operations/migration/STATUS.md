@@ -7,6 +7,23 @@ created: 2026-10-08
 
 # W3 migration — in progress, not an installable candidate
 
+## Current operator180 composition (supersedes the historical checkpoint below)
+
+The current source uses native tracking MCP → authenticated SDK action → the
+same active module. All typed predicates, baselines, renewal and outbox state
+live in this package. The SDK delegates neutral `tasks.setWait`; the runtime
+persists that projection before sending and repairs delivery state after restart.
+Five schedules replace the previous three independent PR loops plus issue and
+repository polling. Tests now use the original typed-wait semantics: identical
+terminal CI fingerprints do not wake twice, and expiry requires an explicit
+deadline. The old simple tracker remains historical source, not an active worker.
+
+Local install, real Host continuation consumption and old caller deletion are
+still pending. npm/remote distribution and soak are separate later work. No
+historical source gate or archived artifact proves this new composition.
+
+## Historical checkpoint
+
 Authority: task 0001791444624720-000204-90f02d10, source thread
 thread_mrkn6povq4zzgh45. Scope corrections 243 and 256 take precedence over
 the initial mechanical copy of Host orchestration. Source is frozen at Host
