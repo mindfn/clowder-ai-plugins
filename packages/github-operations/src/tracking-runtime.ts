@@ -39,11 +39,13 @@ export interface GitHubReview {
   readonly authorAssociation?: string;
 }
 export interface GitHubSnapshot {
+  readonly trackingIdentity?: import('./business/model/index.js').GitHubTrackingIdentityV1;
   readonly state: 'open' | 'closed' | 'merged';
   readonly authorLogin?: string;
   readonly mergedByLogin?: string;
   readonly headSha?: string;
   readonly ci?: 'pending' | 'pass' | 'fail' | 'external_infrastructure';
+  readonly ciBlockerCount?: number;
   readonly mergeState?: string;
   readonly comments: readonly GitHubComment[];
   readonly reviews: readonly GitHubReview[];

@@ -123,15 +123,18 @@ export class GitHubProvider implements GitHubTrackingProvider, CommunityProvider
     };
     const account = await executeGitHubRequest(['api', 'user', '--jq', '.login'], options);
     this.login = account.stdout.trim() || undefined;
+    const selfLogin = this.login;
     const path = `/repos/${target.repoFullName}`;
     const metadata = JSON.parse((await executeGitHubRequest(
       ['api', `${path}/${target.kind === 'pr' ? 'pulls' : 'issues'}/${target.number}`], options,
-    )).stdout) as { state: string; user?: { login: string }; merged_at?: string | null; merged_by?: { login: string } | null; mergeable_state?: string; head?: { sha: string } };
+    )).stdout) as { state: string; user?: { login: string }; merged_at?: string | null; merged_by?: { login: string } | null; mergeable_state?: string; head?: { sha: string };
+      requested_reviewers?: { login: string }[]; base?: { repo?: { permissions?: { push?: boolean } } } };
     const complete = !!target.cloudReviewRequest || cursor === undefined;
     const conversation = await fetchPaginated(`${path}/issues/${target.number}/comments`, { ...options, sinceId: complete ? undefined : cursor?.conversation }) as ApiComment[];
     const comments: GitHubComment[] = conversation.map(c => commentOf(c, 'conversation'));
     const reviews: GitHubReview[] = [];
     let ci: GitHubSnapshot['ci'];
+    let ciBlockerCount: number | undefined;
     let reviewThreads: GitHubSnapshot['reviewThreads'];
     if (target.kind === 'pr') {
       const inline = await fetchPaginated(`${path}/pulls/${target.number}/comments`, { ...options, sinceId: complete ? undefined : cursor?.inline }) as ApiComment[];
@@ -151,14 +154,23 @@ export class GitHubProvider implements GitHubTrackingProvider, CommunityProvider
       if (status.headSha !== metadata.head?.sha) throw new Error('GitHub HEAD changed during snapshot; retry without advancing cursors');
       // Preserve CiCdRouter's empty-rollup rule: absence of checks is not a pass.
       ci = status.checkRollup === 'empty' ? 'pending' : classifyCiWaitBucket(status);
+      ciBlockerCount = status.checks.filter(check => check.bucket === 'fail').length;
     }
     signal.throwIfAborted();
+    const matchesSelf = (login: string) => !!selfLogin && login.toLowerCase() === selfLogin.toLowerCase();
+    const reviewerGround = metadata.requested_reviewers?.some(reviewer => matchesSelf(reviewer.login)) ? 'review_requested'
+      : reviews.some(review => matchesSelf(review.author)) ? 'review_submitted'
+      : metadata.base?.repo?.permissions?.push === true ? 'repo_write_access' : undefined;
     return {
+      trackingIdentity: { ...(selfLogin ? { selfLogin } : {}),
+        ...(metadata.user?.login ? { subjectAuthorLogin: metadata.user.login } : {}),
+        ...(reviewerGround ? { reviewerGround } : {}) },
       state: metadata.merged_at ? 'merged' : metadata.state === 'closed' ? 'closed' : 'open',
       ...(metadata.user?.login ? { authorLogin: metadata.user.login } : {}),
       ...(metadata.merged_by?.login ? { mergedByLogin: metadata.merged_by.login } : {}),
       ...(metadata.head ? { headSha: metadata.head.sha } : {}),
       ...(ci ? { ci } : {}),
+      ...(ciBlockerCount !== undefined ? { ciBlockerCount } : {}),
       ...(target.kind === 'pr' ? { mergeState: (metadata.mergeable_state ?? 'unknown').toUpperCase() } : {}),
       comments, reviews, commentsComplete: complete, ...(reviewThreads ? { reviewThreads } : {}),
     };

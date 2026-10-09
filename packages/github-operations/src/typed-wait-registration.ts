@@ -168,7 +168,7 @@ export async function installPreparedWait(store: GitHubWaitStorage, task: TaskIt
   const replay = await replayResult();
   if (replay) return replay;
   if (!current) {
-    const created = await store.create({ ...task, status: 'doing', automationState: plan.state }, request);
+    const created = await store.create({ ...task, status: 'doing', automationState: plan.state, notification: plan.notification }, request);
     if (!created) {
       const winner = await replayResult();
       if (winner) return winner;
@@ -193,6 +193,7 @@ export async function installPreparedWait(store: GitHubWaitStorage, task: TaskIt
     expectedGeneration: automationGeneration(previous), expectedUpdatedAt: current.updatedAt,
     status: 'doing', automationState: { ...previous, ...plan.state, await: active, waitOutcome: retained } as AutomationState,
     registration: request,
+    notification: plan.notification,
     ...(supersededOutcome ? { lifecycleEvent: lifecycleEvent(current, supersededOutcome) } : {}),
   });
   if (!installed) {

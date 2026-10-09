@@ -204,6 +204,31 @@ test('a moving HEAD rejects the inconsistent snapshot instead of advancing a cur
   await assert.rejects(f.provider.read(target, new AbortController().signal), /HEAD changed/);
 });
 
+test('real provider derives notification identity from account, author and positive reviewer grounds', async () => {
+  for (const ground of ['review_requested', 'review_submitted', 'repo_write_access', undefined] as const) {
+    const head = 'a'.repeat(40);
+    const provider = new GitHubProvider({ token: async () => undefined, log: { warn() {} },
+      execFileAsync: async (_file, args) => {
+        const path = args[1];
+        if (path === 'user') return { stdout: 'Reviewer\n' };
+        if (path === '/repos/example/project/pulls/12') return { stdout: JSON.stringify({ state: 'open', head: { sha: head },
+          user: { login: 'author' }, requested_reviewers: ground === 'review_requested' ? [{ login: 'reviewer' }] : [],
+          base: { repo: { permissions: { push: ground === 'repo_write_access' } } } }) };
+        if (path?.includes('/reviews?')) return { stdout: ground === 'review_submitted'
+          ? JSON.stringify({ id: 8, user: { login: 'reviewer' }, state: 'COMMENTED', commit_id: head }) : '' };
+        if (path?.includes('/comments?')) return { stdout: '' };
+        throw new Error('Unexpected read ' + path);
+      } });
+    const result = await provider.read(target, new AbortController().signal, undefined, {
+      repoFullName: target.repoFullName, prNumber: 12, headSha: head, prState: 'open', aggregateBucket: 'fail', checkRollup: 'present',
+      checks: [{ name: 'build', bucket: 'fail' }, { name: 'tests', bucket: 'fail' }],
+    });
+    assert.deepEqual(result.trackingIdentity, { selfLogin: 'Reviewer', subjectAuthorLogin: 'author',
+      ...(ground ? { reviewerGround: ground } : {}) });
+    assert.equal(result.ciBlockerCount, 2);
+  }
+});
+
 test('an aborted poll creates no gh child', async () => {
   const f = fixture(); const controller = new AbortController(); controller.abort(new Error('plugin stopped'));
   await assert.rejects(f.provider.read(target, controller.signal), /plugin stopped/);

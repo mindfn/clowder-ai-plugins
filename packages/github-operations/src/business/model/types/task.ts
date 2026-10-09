@@ -1,4 +1,4 @@
-import type { GitHubIssueAwaitStateV1, GitHubPrAwaitStateV1, GitHubWaitOutcomeV1 } from './github-wait.js';
+import type { GitHubIssueAwaitStateV1, GitHubPrAwaitStateV1, GitHubWaitOutcomeV1, GitHubNotificationCoverageV1 } from './github-wait.js';
 import type { PluginTaskItem } from '@clowder-ai/plugin-sdk';
 
 /** CI/CD automation state for pr_tracking tasks */
@@ -51,6 +51,8 @@ export interface ConflictAutomationState {
 
 /** Review feedback automation state for pr_tracking tasks */
 export interface ReviewAutomationState {
+  /** Full review-state frontier; retains dismissals and detects incomplete provider reads. */
+  readonly observedReviews?: Readonly<Record<string, string>>;
   /** @deprecated Combined cursor from schema v1. Inline and conversation IDs are incomparable. */
   readonly lastCommentCursor?: number;
   readonly lastInlineCommentCursor?: number;
@@ -131,4 +133,5 @@ export type AutomationState = PrAutomationState | IssueWaitAutomationState;
 export interface TaskItem extends PluginTaskItem {
   readonly automationState?: AutomationState;
   readonly userId?: string;
+  readonly notification?: GitHubNotificationCoverageV1;
 }

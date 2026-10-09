@@ -63,6 +63,19 @@ export class GitHubWaitStorage implements ITaskStore {
     return structuredClone((entry.value as RecordV1).lifecycleEvents ?? []);
   }
 
+  async appendLifecycleEvent(id: string, event: WaitTerminationEventV1): Promise<void> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const entry = await this.storage.get(key(id));
+      if (!entry || decode(entry.value).id !== id || event.waitId !== id) throw new Error('Wait event task mismatch');
+      const record = entry.value as RecordV1;
+      const events = record.lifecycleEvents ?? [];
+      if (events.some(item => item.eventId === event.eventId)) return;
+      if ((await this.storage.compareAndSet(key(id), entry.revision,
+        { ...record, lifecycleEvents: [...events, event] })).applied) return;
+    }
+    throw new Error('Wait event append raced; retry from durable outcome');
+  }
+
   async get(id: string): Promise<TaskItem | null> {
     const entry = await this.storage.get(key(id));
     if (!entry) return null;
@@ -92,6 +105,7 @@ export class GitHubWaitStorage implements ITaskStore {
     readonly status: TaskItem['status'];
     readonly registration?: RegistrationRequest;
     readonly lifecycleEvent?: WaitTerminationEventV1;
+    readonly notification?: TaskItem['notification'];
   }): Promise<TaskItem | null> {
     const entry = await this.storage.get(key(id));
     if (!entry) return null;
@@ -100,6 +114,7 @@ export class GitHubWaitStorage implements ITaskStore {
       || task.updatedAt !== input.expectedUpdatedAt) return null;
     const next: TaskItem = {
       ...task, automationState: input.automationState, status: input.status,
+      ...(input.notification ? { notification: input.notification } : {}),
       updatedAt: Math.max(this.now(), task.updatedAt + 1),
     };
     const record = entry.value as RecordV1;
