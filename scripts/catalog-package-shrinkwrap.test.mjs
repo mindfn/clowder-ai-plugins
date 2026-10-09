@@ -11,6 +11,9 @@ import {
   collectWorkspacePackageIntegrityMismatches,
 } from './catalog-package-shrinkwrap.mjs';
 
+import { readRetainedSdkClosure } from './retained-sdk-fixture.mjs';
+
+const retainedSdkClosures = [await readRetainedSdkClosure()];
 const repoRoot = new URL('../', import.meta.url);
 const workspaceContract = JSON.parse(
   await readFile(new URL('../packages/plugin-contract/package.json', import.meta.url), 'utf8'),
@@ -27,6 +30,7 @@ const productionTrainC1Consumers = [
   'connector-weixin',
   'connector-xiaoyi',
   'enterprise-workflow',
+  'github-operations',
   'personal-chrome-companion',
   'wechat-visible-reader',
   'weixin-mp',
@@ -59,13 +63,15 @@ async function packWorkspacePackage(packageDirectory) {
   }
 }
 
-test('every production Train C1 SDK consumer closes over the current workspace contract', async () => {
+test('every production Train C1 SDK consumer closes over its authenticated contract', async () => {
   for (const directory of productionTrainC1Consumers) {
     const shrinkwrap = JSON.parse(
       await readFile(new URL(`../packages/${directory}/npm-shrinkwrap.json`, import.meta.url), 'utf8'),
     );
     assertWorkspaceSdkContractClosure(shrinkwrap, {
+      sdkVersion: workspaceSdk.version,
       contractVersion: workspaceContract.version,
+      retainedSdkClosures,
     });
   }
 });
@@ -104,7 +110,7 @@ test('rejects a workspace SDK shrinkwrap that still pins the previous contract',
           },
         },
       },
-      { contractVersion: '0.1.0-beta.19' },
+      { sdkVersion: '0.2.0-beta.2', contractVersion: '0.1.0-beta.19' },
     ),
     /@clowder-ai\/plugin-sdk@0\.2\.0-beta\.2 through a stale @clowder-ai\/plugin-contract/u,
   );
@@ -122,9 +128,9 @@ test('a different SDK version cannot bypass the current contract closure', () =>
           },
         },
       },
-      { contractVersion: '0.1.0-beta.19' },
+      { sdkVersion: '0.2.0-beta.2', contractVersion: '0.1.0-beta.19' },
     ),
-    /@clowder-ai\/plugin-sdk@0\.2\.0-beta\.3 through a stale @clowder-ai\/plugin-contract/u,
+    /unrecognized SDK identity/u,
   );
 });
 
@@ -139,8 +145,45 @@ test('accepts a workspace SDK shrinkwrap closed over the current contract', () =
         },
       },
     },
-    { contractVersion: '0.1.0-beta.19' },
+    { sdkVersion: '0.2.0-beta.2', contractVersion: '0.1.0-beta.19' },
   ));
+});
+
+const retainedClosure = {
+  sdk: { version: '0.2.0-beta.12', integrity: 'sha512-retained-sdk' },
+  contract: { version: '0.1.0-beta.29', integrity: 'sha512-retained-contract' },
+};
+const multiVersionPolicy = {
+  sdkVersion: '0.2.0-beta.15', contractVersion: '0.1.0-beta.30',
+  retainedSdkClosures: [retainedClosure],
+};
+function retainedShrinkwrap() {
+  return { packages: {
+    'node_modules/@clowder-ai/plugin-sdk': {
+      ...retainedClosure.sdk, dependencies: { '@clowder-ai/plugin-contract': retainedClosure.contract.version },
+    },
+    'node_modules/@clowder-ai/plugin-contract': { ...retainedClosure.contract },
+  } };
+}
+test('accepts an exact authenticated historical SDK and its own contract without repinning', () => {
+  assert.doesNotThrow(() => assertWorkspaceSdkContractClosure(retainedShrinkwrap(), multiVersionPolicy));
+});
+test('rejects changed historical SDK or contract bytes and declaration drift', () => {
+  for (const name of ['plugin-sdk', 'plugin-contract']) {
+    const lock = retainedShrinkwrap();
+    lock.packages[`node_modules/@clowder-ai/${name}`].integrity = 'sha512-replaced';
+    assert.throws(() => assertWorkspaceSdkContractClosure(lock, multiVersionPolicy), /integrity/u);
+  }
+  const lock = retainedShrinkwrap();
+  lock.packages['node_modules/@clowder-ai/plugin-sdk'].dependencies['@clowder-ai/plugin-contract'] = '0.1.0-beta.30';
+  assert.throws(() => assertWorkspaceSdkContractClosure(lock, multiVersionPolicy), /contract dependency/u);
+});
+test('unknown SDK identity cannot masquerade as a current-contract consumer', () => {
+  const lock = retainedShrinkwrap();
+  lock.packages['node_modules/@clowder-ai/plugin-sdk'].version = '0.2.0-beta.99';
+  lock.packages['node_modules/@clowder-ai/plugin-sdk'].dependencies['@clowder-ai/plugin-contract'] = '0.1.0-beta.30';
+  lock.packages['node_modules/@clowder-ai/plugin-contract'].version = '0.1.0-beta.30';
+  assert.throws(() => assertWorkspaceSdkContractClosure(lock, multiVersionPolicy), /unrecognized SDK identity/u);
 });
 
 test('exact-head integrity only constrains shrinkwrap entries at the current workspace version', () => {

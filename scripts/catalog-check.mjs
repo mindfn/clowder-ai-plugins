@@ -20,6 +20,12 @@ import {
 import { assertStaticPackageDependencies } from './catalog-static-package.mjs';
 import { assertPackedRuntimeEntrypoints } from './catalog-runtime-entrypoints.mjs';
 
+import { readRetainedSdkClosure } from './retained-sdk-fixture.mjs';
+
+const retainedSdkClosures = [await readRetainedSdkClosure()];
+const workspaceSdk = JSON.parse(
+  await readFile(new URL('../packages/plugin-sdk/package.json', import.meta.url), 'utf8'),
+);
 const catalog = JSON.parse(await readFile(new URL('../catalog/catalog.json', import.meta.url), 'utf8'));
 const workspaceContract = JSON.parse(
   await readFile(new URL('../packages/plugin-contract/package.json', import.meta.url), 'utf8'),
@@ -306,7 +312,9 @@ async function verifyCatalogEntry(catalogEntry) {
       );
       assertProductionDependencyClosure(packageJson, shrinkwrap);
       assertWorkspaceSdkContractClosure(shrinkwrap, {
+        sdkVersion: workspaceSdk.version,
         contractVersion: workspaceContract.version,
+        retainedSdkClosures,
       });
       for (const [packagePath, entry] of Object.entries(shrinkwrap.packages ?? {})) {
         if (packagePath.length === 0) continue;

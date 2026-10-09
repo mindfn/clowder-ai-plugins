@@ -100,25 +100,37 @@ export function assertProductionDependencyClosure(packageJson, shrinkwrap) {
 
 export function assertWorkspaceSdkContractClosure(
   shrinkwrap,
-  { contractVersion },
+  { sdkVersion, contractVersion, retainedSdkClosures = [] },
 ) {
   const packages = shrinkwrap.packages ?? {};
   const sdkPath = 'node_modules/@clowder-ai/plugin-sdk';
   const sdkEntry = packages[sdkPath];
   if (!sdkEntry) return;
 
+  const retained = sdkEntry.version === sdkVersion ? undefined
+    : retainedSdkClosures.find(({ sdk }) => sdk.version === sdkEntry.version);
+  assert.ok(sdkEntry.version === sdkVersion || retained,
+    `npm-shrinkwrap.json has an unrecognized SDK identity: ${sdkEntry.version}`);
+  const expectedContract = retained?.contract.version ?? contractVersion;
+  if (retained) {
+    assert.equal(sdkEntry.integrity, retained.sdk.integrity, 'retained SDK integrity mismatch');
+  }
+
   assert.equal(
     sdkEntry.dependencies?.['@clowder-ai/plugin-contract'],
-    contractVersion,
+    expectedContract,
     `npm-shrinkwrap.json resolves @clowder-ai/plugin-sdk@${sdkEntry.version} through a stale @clowder-ai/plugin-contract dependency`,
   );
   const resolved = resolveDependencyEntry(packages, sdkPath, '@clowder-ai/plugin-contract');
   assert.ok(resolved, 'npm-shrinkwrap.json is missing the workspace SDK contract dependency');
   assert.equal(
     resolved.entry.version,
-    contractVersion,
-    `npm-shrinkwrap.json resolves the workspace SDK contract to ${resolved.entry.version}, expected ${contractVersion}`,
+    expectedContract,
+    `npm-shrinkwrap.json resolves the SDK contract to ${resolved.entry.version}, expected ${expectedContract}`,
   );
+  if (retained) {
+    assert.equal(resolved.entry.integrity, retained.contract.integrity, 'retained contract integrity mismatch');
+  }
 }
 
 export function collectWorkspacePackageIntegrityMismatches(
