@@ -86,6 +86,17 @@ function docxProviderManifest() {
   };
 }
 
+test('native MCP actions are declared separately from public tools and reject malformed entries', () => {
+  const manifest = videoManifest();
+  manifest.contributions[0] = { ...manifest.contributions[0], actions: [{ method: 'video.analyze' }] } as never;
+  assert.equal(validateManifest(manifest).valid, true);
+  for (const actions of [[], [{ method: '' }], [{ method: 'video.analyze', undeclared: true }], [{ method: 'video.analyze' }, { method: 'video.analyze' }]]) {
+    const invalid = structuredClone(manifest);
+    invalid.contributions[0] = { ...invalid.contributions[0], actions } as never;
+    assert.equal(validateManifest(invalid).valid, false);
+  }
+});
+
 test('admits typed static contributions and closed config/secret references', () => {
   assert.equal(validateManifest(videoManifest()).valid, true);
 

@@ -493,6 +493,13 @@
         "type": { "const": "mcp" },
         "id": { "type": "string", "minLength": 1 },
         "runtime": { "$ref": "#/$defs/ContributionRuntime" },
+        "actions": {
+          "description": "Module methods callable by this native MCP server; these do not publish direct tools.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/CallbackAction" }
+        },
         "environment": {
           "type": "object",
           "additionalProperties": { "$ref": "#/$defs/EnvironmentBinding" }

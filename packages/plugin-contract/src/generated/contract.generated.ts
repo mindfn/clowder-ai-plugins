@@ -254,6 +254,7 @@ export type McpContribution = {
   readonly type: 'mcp';
   readonly id: string;
   readonly runtime: ContributionRuntime;
+  readonly actions?: readonly CallbackAction[];
   readonly environment?: Readonly<Record<string, EnvironmentBinding>>;
 };
 export type SkillContribution = {
