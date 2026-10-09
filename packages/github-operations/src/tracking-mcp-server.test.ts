@@ -21,9 +21,12 @@ test('native MCP exposes the three tracking tools and dispatches directly to pac
     ]);
     assert.ok(tools.every(t => !Object.hasOwn(t.inputSchema.properties ?? {}, 'threadId')));
     const result = await client.callTool({ name: 'cat_cafe_register_pr_tracking',
-      arguments: { repoFullName: 'owner/repo', prNumber: 1 } });
+      arguments: { registrationId: 'registration-1', repoFullName: 'owner/repo', prNumber: 1 } });
     assert.equal(result.isError, undefined);
-    assert.deepEqual(calls, [{ repoFullName: 'owner/repo', prNumber: 1 }]);
+    assert.deepEqual(calls, [{ registrationId: 'registration-1', repoFullName: 'owner/repo', prNumber: 1 }]);
+    const missingId = await client.callTool({ name: 'cat_cafe_register_pr_tracking',
+      arguments: { repoFullName: 'owner/repo', prNumber: 1 } });
+    assert.equal(missingId.isError, true); assert.equal(calls.length, 1);
     const bad = await client.callTool({ name: 'cat_cafe_register_issue_tracking',
       arguments: { repoFullName: 'owner/repo', issueNumber: 0 } });
     assert.equal(bad.isError, true); assert.equal(calls.length, 1);

@@ -41,6 +41,7 @@ export interface ConnectorDeliveryDeps {
 export function deliverConnectorMessage(deps: ConnectorDeliveryDeps, input: ConnectorDeliveryInput) {
   return deps.messaging.send({
     threadId: input.threadId,
+    identity: input.source.connector,
     idempotencyKey: input.idempotencyKey,
     payload: { provenance: { epistemicStatus: 'observation' }, elements: [
       { elementId: input.idempotencyKey, kind: 'text', payload: { text: input.content } },

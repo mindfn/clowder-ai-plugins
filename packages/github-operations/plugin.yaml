@@ -203,6 +203,9 @@ contributions:
   - type: identity
     id: github-notification
     displayName: GitHub
+  - type: identity
+    id: github-wait
+    displayName: GitHub
   - type: tool
     id: recommend-triage
     name: github_recommend_triage
@@ -387,6 +390,7 @@ features:
       - { type: tool, id: unregister-repository }
       - { type: tool, id: register-repository }
       - { type: identity, id: github-notification }
+      - { type: identity, id: github-wait }
       - { type: tool, id: register-tracking }
       - { type: tool, id: unregister-tracking }
       - { type: tool, id: list-tracking }

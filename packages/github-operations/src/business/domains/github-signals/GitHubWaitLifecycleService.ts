@@ -118,7 +118,7 @@ function mergeCollectorState(
   };
 }
 
-function lifecycleEvent(task: TaskItem, outcome: GitHubWaitOutcomeV1): WaitTerminationEventV1 {
+export function lifecycleEvent(task: TaskItem, outcome: GitHubWaitOutcomeV1): WaitTerminationEventV1 {
   if (!task.userId || !task.ownerCatId) {
     throw new Error(`GitHub wait ${task.id} has no canonical owner identity`);
   }

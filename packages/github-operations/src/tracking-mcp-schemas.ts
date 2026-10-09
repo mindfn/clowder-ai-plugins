@@ -30,6 +30,8 @@ const githubWaitPredicateInputSchema = z.discriminatedUnion('kind', [
 
 // F280: server-bound typed wait registration — baseline and owner are never caller input.
 export const registerPrTrackingInputSchema = {
+  registrationId: z.string().trim().min(1).max(200).describe(
+    'Generate one unique ID for this registration intent. Reuse the same ID and arguments after an unknown response; use a new ID only to replace the wait intentionally.'),
   repoFullName: z.string().min(1).describe('Repository full name in owner/repo format (e.g. "zts212653/cat-cafe")'),
   prNumber: z.number().int().positive().describe('PR number'),
   when: z
@@ -52,6 +54,7 @@ export const registerPrTrackingInputSchema = {
     ),
   nextStep: z
     .string()
+    .trim()
     .min(1)
     .max(500)
     .optional()
@@ -78,6 +81,8 @@ export const registerPrTrackingInputSchema = {
 };
 
 export const registerIssueTrackingInputSchema = {
+  registrationId: z.string().trim().min(1).max(200).describe(
+    'Generate one unique ID for this registration intent. Reuse the same ID and arguments after an unknown response; use a new ID only to replace the wait intentionally.'),
   repoFullName: z.string().min(1).describe('Repository full name in owner/repo format (e.g. "zts212653/cat-cafe")'),
   issueNumber: z.number().int().positive().describe('Issue number'),
   when: z

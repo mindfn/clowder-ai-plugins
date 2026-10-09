@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
 import {
   DEFAULT_GITHUB_TRACKING_NEXT_STEP, describeGitHubNotificationCoverage,
   expandGitHubPrTrackingGoal, expandGitHubIssueTracking,
@@ -12,6 +13,7 @@ import type { InitialIssueWaitSnapshot } from './business/domains/github-signals
 import { transitionWaitState } from './business/domains/ball-custody/wait-state-machine.js';
 import { automationGeneration } from './business/domains/github-signals/TaskAutomationState.js';
 import type { GitHubWaitStorage } from './typed-wait-storage.js';
+import { lifecycleEvent } from './business/domains/github-signals/GitHubWaitLifecycleService.js';
 import { registerPrTrackingInputSchema, registerIssueTrackingInputSchema } from './tracking-mcp-schemas.js';
 
 export class TrackingRegistrationError extends Error {
@@ -23,6 +25,17 @@ export interface PreparedGitHubWait {
   readonly subjectKey: string;
   readonly state: AutomationState;
   readonly notification: GitHubNotificationCoverageV1;
+  /** Stable input intent, excluding time-varying provider observations. */
+  readonly requestFingerprint: string;
+  readonly registrationId: string;
+}
+
+function fingerprint(input: unknown): string {
+  const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
+    : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)
+      .filter(([, item]) => item !== undefined).sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, item]) => [name, canonical(item)])) : value;
+  return createHash('sha256').update(JSON.stringify(canonical(input))).digest('hex');
 }
 
 function subject(kind: 'pr' | 'issue', repo: string, number: number): string {
@@ -64,7 +77,8 @@ export async function preparePrWait(input: unknown, deps: {
     if (!coverage.covered) throw new TrackingRegistrationError(422, 'Review-result trigger is not covered: ' + (coverage.reason ?? 'uncovered'));
   }
   return {
-    kind: 'pr_tracking', subjectKey, notification: describeGitHubNotificationCoverage(perspective, when),
+    kind: 'pr_tracking', subjectKey, registrationId: value.registrationId, requestFingerprint: fingerprint(value),
+    notification: describeGitHubNotificationCoverage(perspective, when),
     state: { ...snapshot.collectorState, await: {
       v: 1, generation: 1, subjectRef: subjectKey as `pr:${string}#${number}`,
       ownerFence: { kind: 'containing_task', generation: 1 },
@@ -90,7 +104,8 @@ export async function prepareIssueWait(input: unknown, deps: {
   const when = value.when ? canonicalizeGitHubIssueWaitPredicates(value.when) : expandGitHubIssueTracking(identity);
   const snapshot = await deps.baseline(value.repoFullName, value.issueNumber);
   return {
-    kind: 'issue_tracking', subjectKey, notification: describeGitHubNotificationCoverage(perspective, when),
+    kind: 'issue_tracking', subjectKey, registrationId: value.registrationId, requestFingerprint: fingerprint(value),
+    notification: describeGitHubNotificationCoverage(perspective, when),
     state: { ...snapshot.collectorState, await: {
       v: 1, generation: 1, subjectRef: subjectKey as `issue:${string}#${number}`,
       ownerFence: { kind: 'containing_task', generation: 1 },
@@ -102,20 +117,64 @@ export async function prepareIssueWait(input: unknown, deps: {
   };
 }
 
+/** Replay before provider reads, including when the provider is down after a lost response. */
+async function registerWait(store: GitHubWaitStorage, task: TaskItem, kind: PreparedGitHubWait['kind'],
+  value: { registrationId: string; repoFullName: string; prNumber?: number; issueNumber?: number },
+  prepare: () => Promise<PreparedGitHubWait>): Promise<TaskItem> {
+  const expectedSubject = subject(kind === 'pr_tracking' ? 'pr' : 'issue', value.repoFullName,
+    (kind === 'pr_tracking' ? value.prNumber : value.issueNumber)!);
+  if (task.kind !== kind || task.subjectKey !== expectedSubject || !task.ownerCatId) {
+    throw new TrackingRegistrationError(409, 'Tracking task does not match the subject/owner');
+  }
+  const current = await store.get(task.id);
+  if (current) assertSameOwner(current, task);
+  const replay = await store.registrationResult(task.id, { id: value.registrationId, fingerprint: fingerprint(value) });
+  if (replay) { assertSameOwner(replay, task); return replay; }
+  return installPreparedWait(store, task, await prepare());
+}
+
+export function registerPrWait(store: GitHubWaitStorage, task: TaskItem, input: unknown,
+  deps: Parameters<typeof preparePrWait>[1]): Promise<TaskItem> {
+  const value = z.object(registerPrTrackingInputSchema).strict().parse(input);
+  return registerWait(store, task, 'pr_tracking', value, () => preparePrWait(value, deps));
+}
+
+export function registerIssueWait(store: GitHubWaitStorage, task: TaskItem, input: unknown,
+  deps: Parameters<typeof prepareIssueWait>[1]): Promise<TaskItem> {
+  const value = z.object(registerIssueTrackingInputSchema).strict().parse(input);
+  return registerWait(store, task, 'issue_tracking', value, () => prepareIssueWait(value, deps));
+}
+
+function assertSameOwner(current: TaskItem, task: TaskItem): void {
+  if (current.threadId !== task.threadId || current.ownerCatId !== task.ownerCatId
+    || current.userId !== task.userId || current.subjectKey !== task.subjectKey) {
+    throw new TrackingRegistrationError(409, 'Tracking belongs to a different owner or thread');
+  }
+}
+
 /** Port of the route's generation/outbox transition, on the plugin-private aggregate. */
 export async function installPreparedWait(store: GitHubWaitStorage, task: TaskItem, plan: PreparedGitHubWait): Promise<TaskItem> {
   if (task.kind !== plan.kind || task.subjectKey !== plan.subjectKey || !task.ownerCatId) {
     throw new TrackingRegistrationError(409, 'Tracking task does not match the subject/owner');
   }
   const current = await store.get(task.id);
+  if (current) assertSameOwner(current, task);
+  const request = { id: plan.registrationId, fingerprint: plan.requestFingerprint };
+  const replayResult = async () => {
+    const result = await store.registrationResult(task.id, request);
+    if (result) assertSameOwner(result, task);
+    return result;
+  };
+  const replay = await replayResult();
+  if (replay) return replay;
   if (!current) {
-    const created = await store.create({ ...task, status: 'doing', automationState: plan.state });
-    if (!created) throw new TrackingRegistrationError(409, 'Tracking registration raced');
+    const created = await store.create({ ...task, status: 'doing', automationState: plan.state }, request);
+    if (!created) {
+      const winner = await replayResult();
+      if (winner) return winner;
+      throw new TrackingRegistrationError(409, 'Tracking registration raced');
+    }
     return created;
-  }
-  if (current.threadId !== task.threadId || current.ownerCatId !== task.ownerCatId
-    || current.userId !== task.userId || current.subjectKey !== plan.subjectKey) {
-    throw new TrackingRegistrationError(409, 'Tracking belongs to a different owner or thread');
   }
   const previous = current.automationState;
   const at = plan.state.await!.createdAt;
@@ -133,7 +192,13 @@ export async function installPreparedWait(store: GitHubWaitStorage, task: TaskIt
   const installed = await store.replaceAutomationStateIfGeneration(task.id, {
     expectedGeneration: automationGeneration(previous), expectedUpdatedAt: current.updatedAt,
     status: 'doing', automationState: { ...previous, ...plan.state, await: active, waitOutcome: retained } as AutomationState,
+    registration: request,
+    ...(supersededOutcome ? { lifecycleEvent: lifecycleEvent(current, supersededOutcome) } : {}),
   });
-  if (!installed) throw new TrackingRegistrationError(409, 'Tracking registration raced');
+  if (!installed) {
+    const winner = await replayResult();
+    if (winner) return winner;
+    throw new TrackingRegistrationError(409, 'Tracking registration raced');
+  }
   return installed;
 }
