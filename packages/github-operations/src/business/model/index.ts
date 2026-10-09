@@ -35,3 +35,7 @@ export { createCatId } from './types/ids.js';
 export { issueSubjectKey } from './utils/subject-key.js';
 export { parseRouteRecommendation } from './types/community-issue.js';
 export { prSubjectKey } from './utils/subject-key.js';
+
+export * from './types/github-wait.js';
+export * from './types/wait-termination.js';
+export * from './types/task.js';

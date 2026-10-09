@@ -1,4 +1,4 @@
-import type { GitHubIssueWaitBaseline, IssueWaitAutomationState } from '@cat-cafe/shared';
+import type { GitHubIssueWaitBaseline, IssueWaitAutomationState } from '../../model/index.js';
 
 export interface InitialIssueWaitSnapshot {
   readonly baseline: GitHubIssueWaitBaseline;

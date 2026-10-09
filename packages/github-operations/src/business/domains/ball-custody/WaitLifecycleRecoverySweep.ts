@@ -1,4 +1,4 @@
-import type { ITaskStore } from '../cats/services/stores/ports/TaskStore.js';
+import type { ITaskStore } from '../github-signals/wait-ports.js';
 import type { GitHubWaitLifecycleService } from '../github-signals/GitHubWaitLifecycleService.js';
 
 export class WaitLifecycleRecoverySweep {

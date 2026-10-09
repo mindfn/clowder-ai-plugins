@@ -6,14 +6,10 @@ import type {
   TaskItem,
   WaitTerminationActor,
   WaitTerminationEventV1,
-} from '@cat-cafe/shared';
-import { createWaitContinuationCarrier, parseWaitOwnerFence } from '@cat-cafe/shared';
-import type {
-  ConnectorDeliveryDeps,
-  ConnectorDeliveryInput,
-} from '../../infrastructure/email/deliver-connector-message.js';
-import { deliverConnectorMessage } from '../../infrastructure/email/deliver-connector-message.js';
-import type { IWaitLifecycleEventLog } from '../ball-custody/WaitLifecycleEventLog.js';
+} from '../../model/index.js';
+import { createWaitContinuationCarrier, parseWaitOwnerFence } from '../../model/index.js';
+import type { ConnectorDeliveryDeps, ConnectorDeliveryInput, IWaitLifecycleEventLog, ITaskStore } from './wait-ports.js';
+import { deliverConnectorMessage, automationGeneration } from './wait-ports.js';
 import {
   isAwaitExpired,
   markWaitOutcomeDelivered,
@@ -21,8 +17,6 @@ import {
   transitionWaitState,
   type WaitTransitionEvent,
 } from '../ball-custody/wait-state-machine.js';
-import { automationGeneration } from '../cats/services/stores/ports/TaskAutomationState.js';
-import type { ITaskStore } from '../cats/services/stores/ports/TaskStore.js';
 import { type GitHubWaitFacts, matchGitHubWaitPredicates } from './GitHubWaitPredicateCatalog.js';
 import { planWaitRenewal, quietBaselineUpdate } from './GitHubWaitRenewalBaseline.js';
 import {

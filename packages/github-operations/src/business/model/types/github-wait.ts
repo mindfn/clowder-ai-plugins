@@ -1,4 +1,3 @@
-import type { DeploymentWaitOutcomeV1 } from './deployment-wait.js';
 import type { UnifiedAwaitStateV1, WaitOutcomeBaseV1 } from './wait-contract.js';
 
 export {
@@ -534,4 +533,4 @@ export interface GitHubWaitOutcomeV1 extends WaitOutcomeBaseV1<GitHubWaitSubject
 }
 
 /** Bounded F280 outcome union; each domain quarantines its own evidence fields. */
-export type WaitOutcomeV1 = GitHubWaitOutcomeV1 | DeploymentWaitOutcomeV1;
+export type WaitOutcomeV1 = GitHubWaitOutcomeV1;

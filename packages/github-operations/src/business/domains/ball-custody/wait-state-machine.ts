@@ -4,8 +4,8 @@ import type {
   GitHubWaitOutcomeV1,
   WaitTerminationActor,
   WaitTerminationReason,
-} from '@cat-cafe/shared';
-import { parseWaitOwnerFence } from '@cat-cafe/shared';
+} from '../../model/index.js';
+import { parseWaitOwnerFence } from '../../model/index.js';
 
 export interface WaitRuntimeState {
   readonly await?: AwaitStateV1;

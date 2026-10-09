@@ -520,12 +520,17 @@
       "target": "packages/github-operations/src/business/domains/github-signals/GitHubIssueWaitBaselineReader.ts",
       "sourceSha256": "33d493363f0f6e88d482fb2e4041d1523cae11d3d998d230ca8e4beed872ca44",
       "lines": 43,
-      "disposition": "legacy-wait-producer-retirement-candidate",
-      "removedPackageCopy": true,
-      "reason": "Package tracking registration captures provider baselines without emitting Host automationState.",
+      "disposition": "typed-wait-business-moved-boundary-adapted-integration-pending",
+      "reason": "Operator159/180 correction: full provider wait business belongs in plugin. Exact move 5697baf then package-local ports; installed native MCP/runtime composition pending.",
       "packageBusinessMoved": "replacement runtime implemented; source adapter removed",
-      "realPackageReplacementVerified": "source builtin tests only; packed and Host cutover pending",
-      "hostLegacyRemoved": false
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "previousDisposition": "legacy-wait-producer-retirement-candidate",
+      "sourceHead": "e95f2e14b1c511a977563a22e24f8e449a36a82d",
+      "evidence": [
+        "migration/typed-wait-boundary.md",
+        "migration/typed-wait-source-map.json"
+      ]
     },
     {
       "source": "packages/api/src/domains/github-signals/GitHubReviewVerdicts.ts",
@@ -544,62 +549,82 @@
       "target": "packages/github-operations/src/business/domains/github-signals/GitHubWaitBaselineReader.ts",
       "sourceSha256": "397e329170fcea089b4e93c5f8b0dd92f761e0ca5ae5fd53e68c06653c048c0d",
       "lines": 159,
-      "disposition": "legacy-wait-producer-retirement-candidate",
-      "removedPackageCopy": true,
-      "reason": "Package tracking marker stores independent comment channels and review facts without Host wait admission.",
+      "disposition": "typed-wait-business-moved-boundary-adapted-integration-pending",
+      "reason": "Operator159/180 correction: full provider wait business belongs in plugin. Exact move 5697baf then package-local ports; installed native MCP/runtime composition pending.",
       "packageBusinessMoved": "replacement runtime implemented; source adapter removed",
-      "realPackageReplacementVerified": "source builtin tests only; packed and Host cutover pending",
-      "hostLegacyRemoved": false
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "previousDisposition": "legacy-wait-producer-retirement-candidate",
+      "sourceHead": "e95f2e14b1c511a977563a22e24f8e449a36a82d",
+      "evidence": [
+        "migration/typed-wait-boundary.md",
+        "migration/typed-wait-source-map.json"
+      ]
     },
     {
       "source": "packages/api/src/domains/github-signals/GitHubWaitLifecycleService.ts",
       "sourceSha256": "ddebf61937a6b4695e5617eb05bab31b8792e845a7e977d802f94f9a6afc3ea9",
       "lines": 496,
-      "disposition": "host-orchestration-replaced",
-      "removedPackageCopy": "packages/github-operations/src/business/domains/github-signals/GitHubWaitLifecycleService.ts",
-      "replacement": [
-        "packages/github-operations/src/tracking-runtime.ts",
-        "packages/github-operations/src/community-runtime.ts",
-        "packages/github-operations/src/plugin-entrypoint.ts"
-      ],
-      "reason": "tracking-runtime.ts owns SDK CAS registrations, durable delivery outbox, terminal retirement and SDK send; no wait generations, ownerFence, task automationState, deadline renewal, lifecycle authority or Host recovery writes. Existing Host wait producers retire only after Host no-double-run proof.",
-      "parity": "pending-complete-mechanical-audit"
+      "disposition": "typed-wait-business-moved-boundary-adapted-integration-pending",
+      "reason": "Operator159/180 correction: full provider wait business belongs in plugin. Exact move 5697baf then package-local ports; installed native MCP/runtime composition pending.",
+      "previousDisposition": "host-orchestration-replaced",
+      "target": "packages/github-operations/src/business/domains/github-signals/GitHubWaitLifecycleService.ts",
+      "sourceHead": "e95f2e14b1c511a977563a22e24f8e449a36a82d",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "evidence": [
+        "migration/typed-wait-boundary.md",
+        "migration/typed-wait-source-map.json"
+      ]
     },
     {
       "source": "packages/api/src/domains/github-signals/GitHubWaitPredicateCatalog.ts",
       "target": "packages/github-operations/src/business/domains/github-signals/GitHubWaitPredicateCatalog.ts",
       "sourceSha256": "bbcbcf3d9a892fededf17ded1902fe35029b0b9c95289b6c255811501f02724f",
       "lines": 509,
-      "disposition": "legacy-wait-producer-retirement-candidate",
-      "removedPackageCopy": true,
-      "reason": "Provider comparisons are handled by tracking-runtime and cloud classifier; explicit Host wait/custody predicates are not default plugin API.",
+      "disposition": "typed-wait-business-moved-boundary-adapted-integration-pending",
+      "reason": "Operator159/180 correction: full provider wait business belongs in plugin. Exact move 5697baf then package-local ports; installed native MCP/runtime composition pending.",
       "packageBusinessMoved": "replacement runtime implemented; source adapter removed",
-      "realPackageReplacementVerified": "source builtin tests only; packed and Host cutover pending",
-      "hostLegacyRemoved": false
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "previousDisposition": "legacy-wait-producer-retirement-candidate",
+      "sourceHead": "e95f2e14b1c511a977563a22e24f8e449a36a82d",
+      "evidence": [
+        "migration/typed-wait-boundary.md",
+        "migration/typed-wait-source-map.json"
+      ]
     },
     {
       "source": "packages/api/src/domains/github-signals/GitHubWaitRenewalBaseline.ts",
       "sourceSha256": "414d7081e0f5cfa4c3861290a1b423a97b41e4b7a7d02d2952fd4111e709058e",
       "lines": 213,
-      "disposition": "host-orchestration-replaced",
-      "removedPackageCopy": "packages/github-operations/src/business/domains/github-signals/GitHubWaitRenewalBaseline.ts",
-      "replacement": [
-        "packages/github-operations/src/tracking-runtime.ts",
-        "packages/github-operations/src/community-runtime.ts",
-        "packages/github-operations/src/plugin-entrypoint.ts"
-      ],
-      "reason": "tracking-runtime.ts captures per-endpoint cursors and review/thread baselines from the same provider observation; no Host wait renewal contract. Historical imported cursor migration remains unverified.",
-      "parity": "pending-complete-mechanical-audit"
+      "disposition": "typed-wait-business-moved-boundary-adapted-integration-pending",
+      "reason": "Operator159/180 correction: full provider wait business belongs in plugin. Exact move 5697baf then package-local ports; installed native MCP/runtime composition pending.",
+      "previousDisposition": "host-orchestration-replaced",
+      "target": "packages/github-operations/src/business/domains/github-signals/GitHubWaitRenewalBaseline.ts",
+      "sourceHead": "e95f2e14b1c511a977563a22e24f8e449a36a82d",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "evidence": [
+        "migration/typed-wait-boundary.md",
+        "migration/typed-wait-source-map.json"
+      ]
     },
     {
       "source": "packages/api/src/domains/github-signals/github-wait-renderer.ts",
       "target": "packages/github-operations/src/business/domains/github-signals/github-wait-renderer.ts",
       "sourceSha256": "66aedc1e978dede05630e2747d777e1090352101bb19d878ac0a69b2e413d75d",
       "lines": 100,
-      "disposition": "provider-policy-retained-without-host-wait-model",
-      "reason": "Keep the provider classifier/data shape; remove unused Host task/wait rendering and declaration dependencies. No Host source edited.",
+      "disposition": "typed-wait-business-moved-boundary-adapted-integration-pending",
+      "reason": "Operator159/180 correction: full provider wait business belongs in plugin. Exact move 5697baf then package-local ports; installed native MCP/runtime composition pending.",
       "hostLegacyRemoved": false,
-      "realPackageReplacementVerified": "source tests only; full parity pending"
+      "realPackageReplacementVerified": false,
+      "previousDisposition": "provider-policy-retained-without-host-wait-model",
+      "sourceHead": "e95f2e14b1c511a977563a22e24f8e449a36a82d",
+      "evidence": [
+        "migration/typed-wait-boundary.md",
+        "migration/typed-wait-source-map.json"
+      ]
     },
     {
       "source": "packages/api/src/infrastructure/connectors/github-repo-event/GitHubRepoWebhookHandler.ts",
@@ -1159,6 +1184,90 @@
       "realPackageReplacementVerified": false,
       "hostLegacyRemoved": false,
       "dispositionAudit": "migration/source-disposition-audit-f639add.md"
+    },
+    {
+      "source": "packages/api/src/domains/ball-custody/wait-state-machine.ts",
+      "target": "packages/github-operations/src/business/domains/ball-custody/wait-state-machine.ts",
+      "sourceHead": "e95f2e14b1c511a977563a22e24f8e449a36a82d",
+      "sourceSha256": "831cd14d7937e12056679eee95c91ee30ca88fd9b81cc591648866bfa60aa972",
+      "disposition": "typed-wait-business-moved-boundary-adapted-integration-pending",
+      "reason": "Operator159/180 correction: full provider wait business belongs in plugin. Exact move 5697baf then package-local ports; installed native MCP/runtime composition pending.",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "evidence": [
+        "migration/typed-wait-boundary.md",
+        "migration/typed-wait-source-map.json"
+      ]
+    },
+    {
+      "source": "packages/api/src/domains/ball-custody/WaitLifecycleRecoverySweep.ts",
+      "target": "packages/github-operations/src/business/domains/ball-custody/WaitLifecycleRecoverySweep.ts",
+      "sourceHead": "e95f2e14b1c511a977563a22e24f8e449a36a82d",
+      "sourceSha256": "95b0aa96d4581c3aaa71a42d94f6db6b5f028e0f376550c4a4c540165573bf43",
+      "disposition": "typed-wait-business-moved-boundary-adapted-integration-pending",
+      "reason": "Operator159/180 correction: full provider wait business belongs in plugin. Exact move 5697baf then package-local ports; installed native MCP/runtime composition pending.",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "evidence": [
+        "migration/typed-wait-boundary.md",
+        "migration/typed-wait-source-map.json"
+      ]
+    },
+    {
+      "source": "packages/shared/src/types/github-wait.ts",
+      "target": "packages/github-operations/src/business/model/types/github-wait.ts",
+      "sourceHead": "e95f2e14b1c511a977563a22e24f8e449a36a82d",
+      "sourceSha256": "4ed3e62e1453e2dc8c777d157448a5554c64969346cd079053cdef966832457f",
+      "disposition": "typed-wait-business-moved-boundary-adapted-integration-pending",
+      "reason": "Operator159/180 correction: full provider wait business belongs in plugin. Exact move 5697baf then package-local ports; installed native MCP/runtime composition pending.",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "evidence": [
+        "migration/typed-wait-boundary.md",
+        "migration/typed-wait-source-map.json"
+      ]
+    },
+    {
+      "source": "packages/shared/src/types/wait-contract.ts",
+      "target": "packages/github-operations/src/business/model/types/wait-contract.ts",
+      "sourceHead": "e95f2e14b1c511a977563a22e24f8e449a36a82d",
+      "sourceSha256": "434d541c383297c7944f94870f83b6a2aa80b062673bbff372480acf8ec3abcd",
+      "disposition": "typed-wait-business-moved-boundary-adapted-integration-pending",
+      "reason": "Operator159/180 correction: full provider wait business belongs in plugin. Exact move 5697baf then package-local ports; installed native MCP/runtime composition pending.",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "evidence": [
+        "migration/typed-wait-boundary.md",
+        "migration/typed-wait-source-map.json"
+      ]
+    },
+    {
+      "source": "packages/shared/src/types/wait-termination.ts",
+      "target": "packages/github-operations/src/business/model/types/wait-termination.ts",
+      "sourceHead": "e95f2e14b1c511a977563a22e24f8e449a36a82d",
+      "sourceSha256": "81778b14580861734af5e6bf2823f72cb0a46f7362e80a58a70ab171950b42cb",
+      "disposition": "typed-wait-business-moved-boundary-adapted-integration-pending",
+      "reason": "Operator159/180 correction: full provider wait business belongs in plugin. Exact move 5697baf then package-local ports; installed native MCP/runtime composition pending.",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "evidence": [
+        "migration/typed-wait-boundary.md",
+        "migration/typed-wait-source-map.json"
+      ]
+    },
+    {
+      "source": "packages/shared/src/types/task.ts",
+      "target": "packages/github-operations/src/business/model/types/task.ts",
+      "sourceHead": "e95f2e14b1c511a977563a22e24f8e449a36a82d",
+      "sourceSha256": "f25629ac3915f6fda8b1214e15c949f4c535118507e4a2c0e47862f66540c2dd",
+      "disposition": "typed-wait-business-moved-boundary-adapted-integration-pending",
+      "reason": "Operator159/180 correction: full provider wait business belongs in plugin. Exact move 5697baf then package-local ports; installed native MCP/runtime composition pending.",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "evidence": [
+        "migration/typed-wait-boundary.md",
+        "migration/typed-wait-source-map.json"
+      ]
     }
   ],
   "remainingSourceGroups": [

@@ -303,6 +303,12 @@ importers:
       '@clowder-ai/plugin-sdk':
         specifier: 0.2.0-beta.15
         version: link:../plugin-sdk
+      '@modelcontextprotocol/sdk':
+        specifier: 1.26.0
+        version: 1.26.0(zod@3.25.76)
+      zod:
+        specifier: 3.25.76
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^20.17.0

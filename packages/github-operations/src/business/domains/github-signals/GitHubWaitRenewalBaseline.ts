@@ -7,7 +7,7 @@ import type {
   GitHubReviewVerdicts,
   IssueWaitAutomationState,
   PrAutomationState,
-} from '@cat-cafe/shared';
+} from '../../model/index.js';
 import type { WaitRenewalInstruction } from '../ball-custody/wait-state-machine.js';
 import { mergeReviewVerdicts } from './GitHubReviewVerdicts.js';
 import type { GitHubWaitFacts } from './GitHubWaitPredicateCatalog.js';
