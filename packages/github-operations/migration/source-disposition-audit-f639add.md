@@ -16,8 +16,11 @@ The twenty residual `copied-unadapted` labels were not twenty proven missing
 implementations. Reading every target, its importers, the runtime adapters and
 the named tests establishes seven active implementations, two type-only
 contracts and eleven inactive copies. All twenty frozen input SHA-256 values
-match the original package-copy commit. Static import reachability is only a
-navigation aid; a zero pending-disposition count is not zero remaining parity.
+match the original package-copy commit. The audit script scans static import
+and export declarations in `.ts` files under `src` and `test`; it does not scan
+JavaScript tests or dynamic imports. Its reachability is only a navigation aid,
+not a source/test absence proof. A zero pending-disposition count is not zero
+remaining parity.
 
 ## Active implementations: seven
 
@@ -51,20 +54,25 @@ pass claim.
 | File | Current alternative or retained boundary | Unproven part |
 | --- | --- | --- |
 | `community-delivery-policy.ts` | Active issue classifier and tracking/webhook filtering | Whole old delivery-policy equivalence |
-| `github/GitHubIssueFetcher.ts` | Provider list/state and observation inspection | Legacy labels-to-issueType/state mapping is not the current read model |
+| `github/GitHubIssueFetcher.ts` | Provider list/state and observation inspection; legacy JS helper tests remain | Legacy labels-to-issueType/state mapping is not the current read model |
 | `github/GitHubPrFetcher.ts` | Tracking/review observations | Legacy reply-state/latest-reviewed-SHA mapping |
 | `narrator/community-narrator-eligibility.ts` | Host case/bootstrap narrator admission retained | No package narrator admission or Host deletion claim |
 | `email/ci-message-content.ts` | Tracking constructs bounded notifications and durable outbox | Legacy lifecycle text/continuation equivalence |
 | `email/pr-tracking-keys.ts` | Private SDK tracking state | Old Redis state copy/caller retirement |
 | `email/severity-parser.ts` | Bounded provider notifications | Old aggregate severity-header behavior is not called |
-| `github/comment-cursors.ts` | Provider snapshots establish separate registration baselines | Every old caller's replacement/cutover |
+| `github/comment-cursors.ts` | Provider snapshots establish separate registration baselines; legacy JS helper tests remain | Every old caller's replacement/cutover |
 | `github/github-object-validator.ts` | Authenticated Host admission/lookup boundary retained | Current provider errors do not prove typed lookup consumers replaced |
 | `github/repo-poll-readers.ts` | `GitHubProvider.listOpen/repoComments/state` | Old updated-order query differs; new reader also reads issue metadata. No data-loss reproduction established |
 | `github/self-login-resolver.ts` | Provider refreshes login through `user` in active reads | Cached resolver's credential-switch/failure behavior is not automatically equivalent |
 
-The inactive rows have no source/test imports except the type-only contracts
-listed separately above. This is **not** authorization to remove Host callers
-or change the behavior expectation. The files remain present. Repo comment
+The eleven inactive rows have no runtime-source import. The independent review
+found two legacy JavaScript tests omitted by the static TypeScript scan:
+`test/github-issue-fetcher.test.js:8` dynamically imports `GitHubIssueFetcher.js`,
+and `test/github-comment-cursors.test.js:4` dynamically imports
+`comment-cursors.js`. A follow-up search across both `.ts` and `.js` files in
+`src` and `test` confirmed these references. The runtime classification stays
+7/2/11; it does not assert absence of test coverage. This is **not** authorization
+to remove Host callers or change the behavior expectation. The files remain present. Repo comment
 pagination is completed before the poller commits its maximum cursor; missing
 `sort=updated` alone therefore does not establish a lost-event bug.
 
