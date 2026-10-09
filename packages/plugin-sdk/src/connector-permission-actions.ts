@@ -13,23 +13,28 @@ function inputOf(params: unknown): Record<string, unknown> {
  * still rejects malformed snapshots and never trusts an input owner claim. */
 export function createConnectorPermissionActions(storage: PluginStorageHost) {
   const store = createConnectorPermissionStore(storage);
-  const form = (current: Awaited<ReturnType<typeof store.readForOwner>>) => {
+  type OwnerFormState = { revision: number; value: Awaited<ReturnType<typeof store.get>>; recoveryRequired?: boolean };
+  const form = (current: OwnerFormState | undefined) => {
     // This is an uncommitted form template, not an activation policy. Only the
     // owner-confirmed configure action may publish it through insert-only CAS.
     if (current === undefined) return { permissionRevision: 'new', permissionWhitelistEnabled: 'false',
       permissionCommandAdminOnly: 'false', permissionAdminIdsJson: '[]', permissionGroupsJson: '[]' };
     return { permissionRevision: String(current.revision), permissionWhitelistEnabled: String(current.value.whitelistEnabled),
       permissionCommandAdminOnly: String(current.value.commandAdminOnly), permissionAdminIdsJson: JSON.stringify(current.value.adminOpenIds),
-      permissionGroupsJson: JSON.stringify(current.value.allowedGroups.map(({ externalChatId, label }) =>
+      // A blank field is deliberately invalid, not an empty whitelist default.
+      // Recovery requires the owner to explicitly choose a bounded replacement.
+      permissionGroupsJson: current.recoveryRequired ? '' : JSON.stringify(current.value.allowedGroups.map(({ externalChatId, label }) =>
         ({ externalChatId, ...(label === undefined ? {} : { label }) }))) };
   };
   return {
     'permissions.read': async (_params: unknown) => {
       const current = await store.readForOwner();
       return { render: 'status' as const,
-        data: { status: current === undefined ? 'uninitialized' : 'configured',
+        data: { status: current === undefined ? 'uninitialized' : current.recoveryRequired ? 'recovery_required' : 'configured',
           adminCount: current?.value.adminOpenIds.length ?? 0, groupCount: current?.value.allowedGroups.length ?? 0 },
-        label: current === undefined ? '尚未初始化；读取不会启用权限。请明确确认并应用设置。' : '已读取当前权限；应用前请检查管理员和群白名单。',
+        label: current === undefined ? '尚未初始化；读取不会启用权限。请明确确认并应用设置。' : current.recoveryRequired
+          ? '旧白名单超过 5000 群，路由已拒绝；未截断或重置。请明确填写至多 5000 群的替代白名单，再确认应用。'
+          : '已读取当前权限；应用前请检查管理员和群白名单。',
         targetValues: form(current) };
     },
     'permissions.configure': async (params: unknown) => {
