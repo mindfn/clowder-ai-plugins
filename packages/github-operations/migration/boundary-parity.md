@@ -7,6 +7,52 @@ created: 2026-10-08
 
 # Boundary disposition and remaining parity
 
+## Exact-trigger provider observation
+
+Host ruling1069 (thread_mrkn6povq4zzgh45#0001791525103936-001069-de055173)
+accepts the existing instance-targeted invocation transport and pure package
+query, not a trusted proof provider or callback cutover. Alpha.11 adds
+`github.review-trigger.observe` with exactly repoFullName, prNumber and
+triggerCommentId. It returns the existing covered/uncovered observation union;
+it never consumes principal/lease/route fields, writes state, emits messages,
+registers tracking or calls any GitHub mutation.
+
+The real SDK carrier rejects undeclared actions (preserved RED evidence).
+Therefore the query uses an ordinary read-only tool contribution
+`github_observe_review_trigger`; no public SDK extension or hidden action bypass
+is added. Discovery or direct tool invocation confers no proof authority.
+Future governance consumption must still choose a trusted exact instance via
+Host policy and invoke it by instance, not first-active plugin-ID tool lookup.
+
+The query checks exact comment identity, fixed api.github.com subject origin,
+repo/PR path, review command, creation time and exact connector Bot EYES. It
+folds all pages from each of reviews/inline/conversation feedback, matching bot
+login/type and timestamps at or after the trigger. Requests share the migrated
+credential budget/child-close handler. Each endpoint permits at most 100 pages
+of 100 rows, each process has the existing 2MiB buffer limit, and one observation
+has a 30-second deadline. Any incomplete/oversized/malformed evidence throws;
+limits are not interpreted as a clean result. Pages are folded without retaining
+the full history. The stricter provider-origin check rejects forged same-path
+URLs rather than inheriting the old helper's path-only acceptance.
+
+Stop aborts secret wait and running requests, then joins outstanding provider
+cleanup; a stopped reader cannot start another query. Test-only clock/deadline
+defaults and submitted_at/created_at selection preserve explicit meanings, not
+alternate trust or success fallbacks. There is no old-helper retry/fallback.
+
+Source tests cover later-page EYES and each feedback stream, timestamp equality,
+wrong subject/command/actor, malformed evidence, page exhaustion, deadline and
+stop join. Real manifest-to-module tests prove raw observation return with zero
+storage/notification writes and awaited teardown. These remain isolated
+provider tests until exact packed verification is separately recorded.
+
+Host policy currently lacks purpose-specific approved provider binding and an
+activation fence carried through admission. Same-ID/digest stop/start, grant
+revoke/restore and runtime recovery are still Host negative-test obligations.
+No alpha.11 artifact is trusted for governance by this change. Host callback
+422/503 behavior, baseline/current-HEAD adapters, canonical verdict/lease writes
+and old-caller retirement remain unchanged and independently open.
+
 Source: Host `496e24089ffb5f99fa241e04c7ee0850df227be4`. Original copies remain
 in package commit `6636763`; source-map hashes identify every input. Removing
 replaced copies from the package is not deletion of any Host implementation.

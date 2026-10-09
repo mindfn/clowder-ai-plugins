@@ -1115,9 +1115,9 @@
       "lines": 180,
       "disposition": "legacy-host-admission-copy-removed",
       "removedPackageCopy": "packages/github-operations/src/business/infrastructure/github/pr-review-event-wait-coverage.ts",
-      "reason": "Rulings286/338 keep authenticated wait admission and route grants in Host. The frozen callbacks route consumes this exact-trigger provider proof before creating owner-fenced AwaitState. This copied adapter has no package runtime or test importer; remove its inactive duplicate. Provider evidence decomposition for the Host consumer remains a cutover gap; package cloud observation does not replace authenticated coverage admission.",
-      "evidence": "migration/boundary-parity.md#legacy-admission-helper-audit; src/migration-boundary.test.ts; scripts/audit-github-migration.mjs",
-      "packageBusinessMoved": "not claimed; Host admission helper copy removed",
+      "reason": "The old inactive copy remains removed. Under ruling1069, alpha.11 implements a bounded read-only exact-trigger observation in review-trigger-observation.ts through the existing declared action carrier. Host purpose-specific source trust, actual-activation/revision fences and authenticated wait admission are not implemented or replaced by this package query; Host callers remain unchanged.",
+      "evidence": "migration/boundary-parity.md#exact-trigger-provider-observation; src/review-trigger-observation.test.ts; src/plugin-entrypoint.test.ts; src/migration-boundary.test.ts",
+      "packageBusinessMoved": "pure provider exact-trigger observation only; no Host proof admission or caller retirement",
       "realPackageReplacementVerified": false,
       "hostLegacyRemoved": false
     },

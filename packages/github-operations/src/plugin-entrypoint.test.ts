@@ -12,9 +12,55 @@ import { SdkCommunityObjectStore } from './business/domains/community/CommunityO
 import { validateManifest, validateOperationRowsResult } from '@clowder-ai/plugin-contract';
 import { legacyRepositorySnapshotBytes } from './legacy-repository-progress.js';
 import { legacyHistoryBytes } from './legacy-provider-history.js';
+import { ReviewTriggerReader } from './review-trigger-observation.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
 const target = { kind: 'pr', repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
+
+test('declared review trigger observation stays read-only and module stop joins an unresolved query', async () => {
+  const f = host(); let started!: () => void; const entered = new Promise<void>(resolve => { started = resolve; });
+  let finish!: () => void; let aborted = false;
+  const active = await createGitHubPluginModule({ createReviewTriggerReader: () => new ReviewTriggerReader({
+    token: async () => 'isolated-module-trigger', execFileAsync: async (_file, _args, opts) => {
+      started(); await new Promise<void>(resolve => { finish = resolve; opts.signal!.addEventListener('abort', () => { aborted = true; }, { once: true }); });
+      return { stdout: '{}' };
+    },
+  }) }).create(manifest).start(f.runtimeHost);
+  const before = await f.runtimeHost.storage.list();
+  const action = active.actions['github.review-trigger.observe'];
+  assert.equal(typeof action, 'function');
+  const declaration = manifest.contributions.find((row: { action?: { method?: string } }) => row.action?.method === 'github.review-trigger.observe');
+  assert.equal(declaration.type, 'tool');
+  assert.match(declaration.description, /not.*authority/);
+  const input = { repoFullName: 'example/project', prNumber: 12, triggerCommentId: 7 };
+  await assert.rejects(async () => action!({ ...input, catId: 'forged', covered: true }));
+  const query = assert.rejects(async () => action!(input)); await entered;
+  let stopped = false; const stop = Promise.resolve(active.stop()).then(() => { stopped = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(aborted, true); assert.equal(stopped, false);
+  finish(); await Promise.all([query, stop]);
+  assert.deepEqual(await f.runtimeHost.storage.list(), before); assert.equal(f.deliveries.length, 0);
+  await assert.rejects(async () => action!(input), /stopped/);
+});
+
+test('declared exact-trigger tool returns the bounded observation without storage or notification writes', async () => {
+  const f = host(); let calls = 0;
+  const active = await createGitHubPluginModule({ createReviewTriggerReader: () => new ReviewTriggerReader({
+    token: async () => 'isolated-module-observation', now: () => 123,
+    execFileAsync: async (_file, args) => {
+      calls++; const url = args[1]!;
+      return { stdout: url.endsWith('/issues/comments/7') ? JSON.stringify({ id: 7, body: '@codex review',
+        issue_url: 'https://api.github.com/repos/example/project/issues/12', created_at: '2026-10-09T00:00:00Z' }) :
+        url.includes('/reactions?') ? JSON.stringify({ content: 'eyes', user: { login: 'chatgpt-codex-connector[bot]', type: 'Bot' } }) : '' };
+    },
+  }) }).create(manifest).start(f.runtimeHost);
+  const before = await f.runtimeHost.storage.list();
+  const tool = manifest.contributions.find((row: { id: string }) => row.id === 'observe-review-trigger');
+  assert.deepEqual(await active.actions[tool.action.method]!({ repoFullName: 'example/project', prNumber: 12, triggerCommentId: 7 }),
+    { covered: true, triggerCommentId: 7, observedAt: 123 });
+  assert.equal(calls, 5); assert.deepEqual(await f.runtimeHost.storage.list(), before);
+  assert.equal(f.deliveries.length, 0); await active.stop();
+});
 
 test('declared history copy remains readable after restart without changing the live journal or starting delivery', async () => {
   const f = host(); let reads = 0;

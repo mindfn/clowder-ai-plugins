@@ -6,6 +6,7 @@ import type { UpsertRepoConfigInput } from './business/domains/community/Communi
 import { recommendTriage } from './triage-recommendation.js';
 import { previewPublicIssue } from './community-read-model.js';
 import { NativeIssueDraftRuntime, type NativeIssuePublisher } from './native-issue-drafts.js';
+import { ReviewTriggerReader } from './review-trigger-observation.js';
 
 interface Provider extends GitHubTrackingProvider { selfLogin(): string | undefined }
 export interface GitHubPluginOptions {
@@ -13,6 +14,7 @@ export interface GitHubPluginOptions {
   readonly createProvider?: (context: FeatureContext) => Provider;
   readonly createCommunityProvider?: (context: FeatureContext) => CommunityProvider;
   readonly createIssuePublisher?: (context: FeatureContext) => NativeIssuePublisher;
+  readonly createReviewTriggerReader?: (context: FeatureContext) => ReviewTriggerReader;
 }
 
 function target(value: unknown, register: boolean): GitHubTarget {
@@ -31,6 +33,9 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
     log: { warn: (message, fields) => context.log('warn', message, fields) },
   });
   const provider = options.createProvider?.(context) ?? transport;
+  const reviewTriggers = options.createReviewTriggerReader?.(context) ?? new ReviewTriggerReader({
+    token: () => context.secrets.get('token'),
+  });
   const drafts = new NativeIssueDraftRuntime(context, options.createIssuePublisher?.(context) ?? transport);
   const community = new CommunityRuntime(context, options.createCommunityProvider?.(context) ?? transport);
   const tracking = new GitHubTrackingRuntime({
@@ -57,6 +62,9 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   };
   return {
     actions: {
+      // Declared read-only query. Host governance must select its trusted instance
+      // independently; tool discovery does not establish proof authority.
+      'github.review-trigger.observe': (value: unknown) => reviewTriggers.observe(value),
       'github.webhook': (value: unknown) => community.webhook(value),
       'github.tracking.register': async (value: unknown) => ({ data: await tracking.register(target(value, true)) }),
       'github.tracking.unregister': async (value: unknown) => ({ data: await tracking.unregister(target(value, false)) }),
@@ -87,7 +95,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.draft.cancel': (value: unknown) => drafts.cancel(value),
       'github.triage.recommend': recommendTriage,
     },
-    dispose: async () => { await Promise.all([tracking.stop(), community.stop(), drafts.stop()]); },
+    dispose: async () => { await Promise.all([tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop()]); },
   };
 }
 

@@ -1,5 +1,5 @@
 pluginId: official.github-operations
-version: 0.1.0-alpha.10
+version: 0.1.0-alpha.11
 contractVersion: 0.1.0
 name: GitHub Operations
 description:
@@ -103,6 +103,19 @@ configuration:
     kind: string
     required: false
 contributions:
+  - type: tool
+    id: observe-review-trigger
+    name: github_observe_review_trigger
+    description: Read exact review-trigger acceptance and subsequent feedback from GitHub. This is a provider observation, not admission, wait, reviewer or lease authority. Unavailable or incomplete evidence fails explicitly.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      required: [repoFullName, prNumber, triggerCommentId]
+      properties:
+        repoFullName: { type: string, maxLength: 256 }
+        prNumber: { type: integer, minimum: 1 }
+        triggerCommentId: { type: integer, minimum: 1 }
+    action: { method: github.review-trigger.observe }
   - type: tool
     id: issue-metadata
     name: github_issue_metadata
@@ -348,6 +361,7 @@ features:
     name: GitHub collaboration operations
     resources: []
     contributions:
+      - { type: tool, id: observe-review-trigger }
       - { type: tool, id: issue-metadata }
       - { type: tool, id: get-issue-draft }
       - { type: tool, id: create-issue-draft }
