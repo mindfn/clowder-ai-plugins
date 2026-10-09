@@ -27,10 +27,15 @@
     },
     {
       "source": "packages/api/src/domains/community/GuardianMatcher.ts",
-      "target": "packages/github-operations/src/business/domains/community/GuardianMatcher.ts",
       "sourceSha256": "56aadf8dfb26a2b70557e771acae58c27fdd2328b76897b383a942aaad5226d1",
       "lines": 80,
-      "disposition": "copied-unadapted"
+      "disposition": "legacy-host-admission-copy-removed",
+      "removedPackageCopy": "packages/github-operations/src/business/domains/community/GuardianMatcher.ts",
+      "reason": "Ruling338 keeps authenticated guardian assignment in Host. The frozen Host community-issues route checks principal, roster, accepted case and existing assignment before choosing a guardian and issuing signoff token. This copied helper has no package runtime or test importer; remove the unused private-roster alternative. No package guardian authority or Host replacement is claimed.",
+      "evidence": "migration/boundary-parity.md#legacy-admission-helper-audit; src/migration-boundary.test.ts; scripts/audit-github-migration.mjs",
+      "packageBusinessMoved": "not claimed; Host admission helper copy removed",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/domains/community/RoleResolver.ts",
@@ -974,10 +979,15 @@
     },
     {
       "source": "packages/api/src/infrastructure/github/pr-review-event-wait-coverage.ts",
-      "target": "packages/github-operations/src/business/infrastructure/github/pr-review-event-wait-coverage.ts",
       "sourceSha256": "cbb633db413a0a7023ea93bf0eb9b3cf7e5b799ddfac45340a4694bfe69f140b",
       "lines": 180,
-      "disposition": "copied-unadapted"
+      "disposition": "legacy-host-admission-copy-removed",
+      "removedPackageCopy": "packages/github-operations/src/business/infrastructure/github/pr-review-event-wait-coverage.ts",
+      "reason": "Rulings286/338 keep authenticated wait admission and route grants in Host. The frozen callbacks route consumes this exact-trigger provider proof before creating owner-fenced AwaitState. This copied adapter has no package runtime or test importer; remove its inactive duplicate. Provider evidence decomposition for the Host consumer remains a cutover gap; package cloud observation does not replace authenticated coverage admission.",
+      "evidence": "migration/boundary-parity.md#legacy-admission-helper-audit; src/migration-boundary.test.ts; scripts/audit-github-migration.mjs",
+      "packageBusinessMoved": "not claimed; Host admission helper copy removed",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false
     },
     {
       "source": "packages/api/src/infrastructure/github/repo-poll-readers.ts",

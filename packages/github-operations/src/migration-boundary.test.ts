@@ -31,3 +31,19 @@ for (const name of ['RoleResolver', 'narrator/NarratorDriver', 'narrator/RedisNa
     }
   });
 }
+
+for (const path of [
+  'domains/community/GuardianMatcher',
+  'infrastructure/github/pr-review-event-wait-coverage',
+]) {
+  test(`package excludes legacy Host admission helper ${path}`, async () => {
+    for (const directory of ['src', 'dist']) {
+      await assert.rejects(access(new URL(`../${directory}/business/${path}.${directory === 'src' ? 'ts' : 'js'}`, import.meta.url)), { code: 'ENOENT' });
+    }
+    const map = JSON.parse(await readFile(new URL('../migration/source-map.json', import.meta.url), 'utf8'));
+    const entry = map.entries.find((entry: { source: string }) => entry.source === `packages/api/src/${path}.ts`);
+    assert.equal(entry.disposition, 'legacy-host-admission-copy-removed');
+    assert.equal(entry.hostLegacyRemoved, false);
+    assert.equal(entry.realPackageReplacementVerified, false);
+  });
+}

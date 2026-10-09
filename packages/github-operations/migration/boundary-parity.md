@@ -141,3 +141,28 @@ New owner-confirmed raw issue metadata import has real builtin and insert-only
 CAS/recovery coverage. It intentionally does not migrate assignments, route
 acceptance, signoff, old drafts or pending wake authority. See
 `legacy-state-disposition.md` for each remaining state class and missing evidence.
+
+## Legacy admission helper audit
+
+Rulings286/338 also apply to the unused `GuardianMatcher` and
+`pr-review-event-wait-coverage` package copies. Three checks establish the scope:
+the frozen Host callers, all package imports/exports and tests, and the static
+entrypoint reachability report. Neither helper has a package caller. The boundary
+regression first failed while both source files existed and now checks both source
+and clean build output, plus their explicit non-replacement source-map status.
+
+- Host `routes/community-issues.ts` authenticates the principal and roster,
+  checks the accepted case and existing assignment, calls `resolveGuardian`,
+  then persists the guardian and issues a signoff token. Removing the package's
+  alternative private-roster matcher does not change or replace that consumer.
+- Host `routes/callbacks.ts` verifies exact review-trigger provider coverage
+  before creating owner-fenced AwaitState. The copied verifier itself reads
+  GitHub facts; it does not authorize a caller. Its unused package copy is removed
+  because no declared package action consumes this admission-specific adapter.
+  Splitting provider proof from the retained Host admission consumer remains
+  pending; ordinary package cloud observations do not close that obligation.
+
+The Host files and callers remain unchanged. This slice removes inactive shipped
+copies, not product capabilities or Host implementations. It proves neither
+legacy state copying nor no-double-run, and does not convert the remaining
+unwired provider/read-model copies into completed runtime parity.
