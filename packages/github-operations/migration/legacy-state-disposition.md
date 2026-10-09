@@ -165,7 +165,7 @@ Per-subject insert-only CAS preserves any existing registration (even inactive)
 and any different prior copy. Partial failure can be retried for missing rows.
 
 Import shares the registration's per-subject queue in the single active module.
-On first explicit registration, Host get/bind run before reading staging; a
+On first explicit registration, Host bind runs before reading staging; a
 copied issue skips the fresh provider baseline entirely. Its initial feedback
 marker uses the delivery frontier, then one CAS activates tracking. Failed CAS
 leaves staging inert and retryable. Later explicit unregister/re-register uses
@@ -182,8 +182,31 @@ Old collected history is not claimed as imported: the new journal idempotently
 collects provider facts from the delivery frontier. Historical journal copy,
 raw Host export, production copy and real cutover remain pending.
 
-This new business slice uses GitHub alpha.3 source identity. Frozen alpha.2 at
+This business slice was frozen as GitHub alpha.3 at3b640d7. Frozen alpha.2 at
 53e80f5 and all SDK beta.14/connector alpha.4 archives remain unchanged.
+
+## Host registration capability correction
+
+Real Host consumption of alpha.2 exposed a package error: the preliminary
+`threads.get` in both registration paths requires `thread.readContent`, which
+the manifest does not request. Alpha.3 inherited that error despite its local
+gate passing. Neither candidate's local tests establish actual Host registration.
+
+The correction in alpha.4 removes both redundant reads and uses the mandatory
+existing `threads.bind` as the authorization boundary. Host
+`plugin-thread-host.ts:156–175,315–320` validates the ID, rejects missing/deleted
+threads, checks owner/plugin ownership or an existing owner binding, and only
+then persists the binding under `thread.write`. The SDK directly forwards it.
+Both package paths await that check before provider reads, progress restoration
+or active config CAS. No thread content is needed, no grant is added, and no
+new Host API or private identity assertion is introduced.
+
+The real builtin regression denies every content read and exercises both
+registration methods. Missing/foreign/deleted bind failures leave package storage
+unchanged with zero provider requests; allowed binds succeed without content
+access. Existing progress-copy tests now fail at the actual bind boundary.
+These isolated assertions still require new exact-archive Host consumption to
+close finding762. The owner-origin independent review gate remains separate.
 
 ## Other legacy state remains explicitly pending or Host-retained
 

@@ -15,6 +15,39 @@ import { legacyRepositorySnapshotBytes } from './legacy-repository-progress.js';
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
 const target = { kind: 'pr', repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
 
+test('both registrations use the granted Host bind check without requesting thread content', async () => {
+  const f = host(); let requests = 0; let rejection: string | undefined;
+  const originalBind = f.runtimeHost.threads.bind;
+  f.runtimeHost.threads.get = async () => { throw new Error('thread.readContent not granted'); };
+  f.runtimeHost.threads.bind = async (...args) => {
+    if (rejection) throw new Error(rejection);
+    return originalBind(...args);
+  };
+  const active = await createGitHubPluginModule({ createProvider: () => ({ selfLogin: () => 'owner',
+    async read() { requests++; return { state: 'open', comments: [], reviews: [] }; },
+  }), createCommunityProvider: () => ({ selfLogin: () => 'owner',
+    async listOpen() { requests++; return []; }, async repoComments() { requests++; return []; }, async state() { requests++; return null; },
+  }) }).create(manifest).start(f.runtimeHost);
+  const registrations = [
+    () => active.actions['github.tracking.register']!(target),
+    () => active.actions['github.repository.register']!({ repo: target.repoFullName, guardThreadId: target.threadId, guardCatId: target.catId }),
+  ];
+  for (const reject of ['missing thread', 'foreign owner', 'deleted thread']) {
+    rejection = reject;
+    for (const register of registrations) {
+      const before = await f.runtimeHost.storage.list();
+      await assert.rejects(async () => register(), new RegExp(reject));
+      assert.deepEqual(await f.runtimeHost.storage.list(), before);
+      assert.equal(requests, 0, 'bind denial precedes provider requests and activation');
+    }
+  }
+  rejection = undefined;
+  for (const register of registrations) await register();
+  assert.equal(requests, 1, 'authorized tracking takes its normal baseline without content access');
+  assert.equal(f.deliveries.length, 0);
+  await active.stop();
+});
+
 test('settled issue progress resumes the delivered frontier, not the collected or registration snapshot frontier', async () => {
   const f = host(); let reads = 0; const cursors: unknown[] = [];
   const snapshot: GitHubSnapshot = { state: 'open', reviews: [], comments: [4, 5, 6].map(id => ({
@@ -38,10 +71,10 @@ test('settled issue progress resumes the delivered frontier, not the collected o
   assert.equal(reads, 0); assert.equal(f.deliveries.length, 0);
   assert.doesNotMatch(JSON.stringify(await f.runtimeHost.storage.list()), /old-private|stored-config-secret/);
   await active.stop(); active = await module.create(manifest).start(f.runtimeHost);
-  const get = f.runtimeHost.threads.get;
-  f.runtimeHost.threads.get = async () => { throw new Error('Host denied'); };
+  const bind = f.runtimeHost.threads.bind;
+  f.runtimeHost.threads.bind = async () => { throw new Error('Host denied'); };
   await assert.rejects(async () => active.actions['github.tracking.register']!({ ...target, kind: 'issue' }), /Host denied/);
-  f.runtimeHost.threads.get = get;
+  f.runtimeHost.threads.bind = bind;
   await active.actions['github.tracking.register']!({ ...target, kind: 'issue' });
   assert.equal(reads, 0, 'registration must not baseline over arrivals during migration');
   await active.actions['github.issue-tracking']!({});
@@ -81,12 +114,12 @@ test('legacy repository progress stays inert until registration and resumes base
   assert.doesNotMatch(JSON.stringify(await f.runtimeHost.storage.list()), /secret-config|guardThreadId|guardian/);
   await active.stop();
   active = await module.create(manifest).start(f.runtimeHost);
-  const originalGet = f.runtimeHost.threads.get;
-  f.runtimeHost.threads.get = async () => { throw new Error('Host access denied'); };
+  const originalBind = f.runtimeHost.threads.bind;
+  f.runtimeHost.threads.bind = async () => { throw new Error('Host access denied'); };
   const beforeRegistration = await f.runtimeHost.storage.list();
   await assert.rejects(async () => active.actions['github.repository.register']!({ repo, guardThreadId: 'foreign', guardCatId: target.catId }), /Host access denied/);
   assert.deepEqual(await f.runtimeHost.storage.list(), beforeRegistration, 'no progress restoration before Host authorization');
-  f.runtimeHost.threads.get = originalGet;
+  f.runtimeHost.threads.bind = originalBind;
   await active.actions['github.repository.register']!({ repo, guardThreadId: target.threadId, guardCatId: target.catId });
   await active.actions['github.repo-scan']!({});
   assert.equal(f.deliveries.length, 1, 'already notified7 skipped; undelivered8 delivered instead of silently re-baselined');

@@ -84,7 +84,7 @@ export interface GitHubTrackingDependencies {
   readonly pollBudgetMs?: number;
   readonly objectTimeoutMs?: number;
   readonly storage: PluginStorageHost;
-  readonly threads: Pick<PluginThreadHost, 'get' | 'bind'>;
+  readonly threads: Pick<PluginThreadHost, 'bind'>;
   readonly send: (threadId: string, draft: PluginMessagingDraft) => Promise<{ messageId: string; threadId: string }>;
   readonly provider: GitHubTrackingProvider;
   readonly selfLogin: () => Promise<string | undefined>;
@@ -192,8 +192,8 @@ export class GitHubTrackingRuntime {
           return { subjectKey: subject(input), active: true };
         }
       }
-      if (!await this.deps.threads.get(input.threadId)) throw new Error('target thread does not exist');
-      // Host verifies the installed plugin owner's access when establishing this binding.
+      // The mandatory Host bind validates existence, deleted state and owner
+      // access under thread.write before provider reads or state activation.
       await this.deps.threads.bind(subject(input), input.threadId);
       const copied = !old && input.kind === 'issue' ? await readLegacyIssueProgress(subject(input), this.deps.storage) : undefined;
       const baseline: Marker = copied ? { inline: 0, conversation: copied.delivered, reviews: {} }

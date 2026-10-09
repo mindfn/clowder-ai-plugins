@@ -132,7 +132,8 @@ export class CommunityRuntime {
   register(input: UpsertRepoConfigInput): Promise<unknown> {
     return this.serialize(async () => {
       if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(input.repo) || !input.guardCatId?.trim()) throw new TypeError('repo and notification cat are required');
-      if (!await this.context.threads.get(input.guardThreadId)) throw new Error('target thread does not exist');
+      // Host bind checks existence/deleted/access under the declared write grant.
+      // No thread content is needed to authorize this notification destination.
       await this.context.threads.bind(`github-repository:${input.repo.toLowerCase()}`, input.guardThreadId);
       await restoreLegacyRepositoryProgress(input.repo, this.context.storage, this.lifetime.signal);
       return this.configs.upsert(input);
