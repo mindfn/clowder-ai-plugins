@@ -473,7 +473,7 @@ export function createFeatureContextSession(
   };
 }
 
-export type PluginActionHandler = (input: unknown) => unknown | Promise<unknown>;
+export type PluginActionHandler = (input: unknown, context?: import('./module-action-client.js').PluginActionContext) => unknown | Promise<unknown>;
 
 export interface FeatureActivation {
   readonly actions?: Readonly<Record<string, PluginActionHandler>>;

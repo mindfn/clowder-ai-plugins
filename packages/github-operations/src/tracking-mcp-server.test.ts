@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createTrackingMcpServer } from './tracking-mcp-server.js';
+import { createTrackingMcpServer, createRemoteTrackingMcpServer, TRACKING_ACTION_METHODS } from './tracking-mcp-server.js';
 
 test('native MCP exposes the three tracking tools and dispatches directly to package handlers', async () => {
   const calls: unknown[] = [];
@@ -30,5 +30,25 @@ test('native MCP exposes the three tracking tools and dispatches directly to pac
     const bad = await client.callTool({ name: 'cat_cafe_register_issue_tracking',
       arguments: { repoFullName: 'owner/repo', issueNumber: 0 } });
     assert.equal(bad.isError, true); assert.equal(calls.length, 1);
+  } finally { await client.close(); await server.close(); }
+});
+
+test('native MCP forwards runtime metadata separately from validated tool arguments', async () => {
+  const calls: { method: string; input: unknown; meta: unknown; signal?: AbortSignal }[] = [];
+  const server = createRemoteTrackingMcpServer({ invoke: async (method, input, call) => {
+    calls.push({ method, input, meta: call._meta, signal: call.signal }); return { registered: true };
+  } });
+  const client = new Client({ name: 'tracking-native', version: '1' });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await server.connect(a); await client.connect(b);
+  try {
+    const meta = { threadId: 'native-thread', 'x-codex-turn-metadata': { thread_id: 'native-thread', turn_id: 'turn' } };
+    const args = { registrationId: 'stable-id', repoFullName: 'owner/repo', issueNumber: 3 };
+    const response = await client.callTool({ name: 'cat_cafe_register_issue_tracking', arguments: args, _meta: meta });
+    assert.equal(response.isError, undefined);
+    assert.equal(calls[0]?.method, TRACKING_ACTION_METHODS.registerIssue);
+    assert.deepEqual(calls[0]?.input, args);
+    assert.deepEqual(calls[0]?.meta, meta);
+    assert.ok(calls[0]?.signal instanceof AbortSignal);
   } finally { await client.close(); await server.close(); }
 });

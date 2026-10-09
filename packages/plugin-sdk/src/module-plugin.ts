@@ -201,9 +201,9 @@ async function startDefinedPluginModule(
           throw new TypeError(`action handler ${method} is exposed by multiple plugin features`);
         }
         actions[method] = presentationMethods.has(method)
-          ? (input: unknown) => {
+          ? (input, context) => {
               requireDeliveryPresentation(input);
-              return handler(input);
+              return handler(input, context);
             }
           : handler;
       }

@@ -219,6 +219,6 @@ export interface ModulePluginHostShape {
 }
 
 export interface PluginModuleActivationShape {
-  readonly actions: Readonly<Record<string, (input: unknown) => unknown | Promise<unknown>>>;
+  readonly actions: Readonly<Record<string, import('./feature-context.js').PluginActionHandler>>;
   stop(): void | Promise<void>;
 }
