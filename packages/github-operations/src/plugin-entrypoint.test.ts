@@ -22,7 +22,7 @@ test('PR index refresh publishes provider metadata in existing repository inspec
   const module = createGitHubPluginModule({ createPrIndexProvider: () => ({
     page: async () => { calls++; return [{ number: 12, title: 'Provider PR', state: 'open', merged_at: null,
       user: 'author', head_sha: 'a'.repeat(40), draft: true, labels: [], updated_at: '2026-10-09T00:00:00Z' }]; },
-    reviews: async () => [{ user: 'reviewer', state: 'COMMENTED', commit_id: 'b'.repeat(40) }],
+    reviewPage: async () => [{ user: 'reviewer', state: 'COMMENTED', commit_id: 'b'.repeat(40) }],
   }) });
   let active = await module.create(manifest).start(f.runtimeHost);
   const refresh = active.actions['github.pull-requests.refresh'];
@@ -37,6 +37,37 @@ test('PR index refresh publishes provider metadata in existing repository inspec
   result = await active.actions['github.repository.observations']!({ repo: 'example/project' }) as any;
   assert.equal(result.data.pullRequests.publishedGeneration, generation); assert.equal(calls, 1);
   assert.equal(f.deliveries.length, 0); await active.stop();
+});
+
+test('PR readback adapts to repository discovery, board and decision queue without invented identity or activity time', async () => {
+  const f = host(); const updated = ['2026-10-07T01:00:00Z', '2026-10-08T02:00:00Z'];
+  const active = await createGitHubPluginModule({ createPrIndexProvider: () => ({
+    page: async () => updated.map((updated_at, i) => ({ number:i+1, title:`PR ${i+1}`, user:'author', state:'open',
+      merged_at:null, head_sha:'a'.repeat(40), draft:false, updated_at })),
+    reviewPage: async () => [],
+  }) }).create(manifest).start(f.runtimeHost);
+  const read = async () => (await active.actions['github.repository.observations']!({repo:'owner/repo'}) as any).data.pullRequests;
+  await active.actions['github.pull-requests.refresh']!({repo:'Owner/Repo'});
+  const first = await read();
+  const discovery = (await active.actions['github.repository.list']!({}) as any).data.pullRequestRepositories;
+  assert.deepEqual({repos: discovery.map((r: any) => r.repo)}, {repos:['owner/repo']});
+  // Frozen c0201d1 board/queue PR-only field mapping. This is a consumer contract
+  // fixture, not installed Host routing or a claim that the legacy caller retired.
+  const adapt = (p: any) => ({taskId:p.subjectKey, prNumber:p.number, title:p.title, author:p.author,
+    state:p.state, status:p.state, replyState:p.replyState, group:p.state !== 'open' ? p.state : p.replyState,
+    headSha:p.headSha, draft:p.draft, updatedAt:p.updatedAt});
+  const board = {prItems:first.items.map(adapt)};
+  const tracked = {taskId:'host-task-2',prNumber:2,ownerCatId:'host-owner',threadId:'host-thread',updatedAt:321};
+  const queue = [tracked, ...first.items.filter((p: any) => p.number !== tracked.prNumber).map(adapt)];
+  assert.deepEqual(board.prItems.map((p: any) => [p.taskId,p.updatedAt]),
+    [['pr:owner/repo#1',Date.parse(updated[0]!)],['pr:owner/repo#2',Date.parse(updated[1]!)]]);
+  assert.deepEqual(queue[0],tracked); assert.equal(queue[1].taskId,'pr:owner/repo#1');
+  assert.ok(first.items.every((p: any) => !('ownerCatId' in p) && !('threadId' in p) && !('verdict' in p)));
+  await active.actions['github.pull-requests.refresh']!({repo:'owner/repo'}); const second = await read();
+  assert.notEqual(second.publishedGeneration,first.publishedGeneration);
+  assert.deepEqual(second.items.map(adapt),board.prItems);
+  assert.ok(second.items.every((p: any) => p.updatedAt !== second.observedAt));
+  await active.stop(); assert.equal(f.deliveries.length,0);
 });
 
 test('declared review trigger observation stays read-only and module stop joins an unresolved query', async () => {

@@ -17,17 +17,12 @@ export class GitHubPrIndexProvider implements PrIndexProvider {
   }
   page(repo: string, page: number, signal: AbortSignal) {
     return this.query(`https://api.github.com/repos/${repo}/pulls?state=all&sort=created&direction=asc&per_page=25&page=${page}`,
-      '.[] | {number,title,state,merged_at,user:.user.login,head_sha:.head.sha,draft}', signal);
+      '.[] | {number,title,state,merged_at,user:.user.login,head_sha:.head.sha,draft,updated_at}', signal);
   }
-  async reviews(repo: string, number: number, signal: AbortSignal) {
-    const rows: unknown[] = [];
-    for (let page = 1; page <= 100; page++) {
-      const next = await this.query(`https://api.github.com/repos/${repo}/pulls/${number}/reviews?per_page=100&page=${page}`,
-        '.[] | {user:.user.login,state,commit_id}', signal);
-      if (next.length > 100) throw new TypeError('oversized PR review page');
-      rows.push(...next);
-      if (next.length < 100) return rows;
-    }
-    throw new Error('PR review pagination exhausted');
+  async reviewPage(repo: string, number: number, page: number, signal: AbortSignal) {
+    const rows = await this.query(`https://api.github.com/repos/${repo}/pulls/${number}/reviews?per_page=100&page=${page}`,
+      '.[] | {user:.user.login,state,commit_id}', signal);
+    if (rows.length > 100) throw new TypeError('oversized PR review page');
+    return rows;
   }
 }

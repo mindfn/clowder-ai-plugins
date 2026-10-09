@@ -5,15 +5,17 @@ import { mapGitHubPr, type GhPrFull, type GhPrReview } from './business/domains/
 export interface PrIndexProvider {
   /** One complete page, in stable provider number order, at most 25 rows. */
   page(repo: string, page: number, signal: AbortSignal): Promise<unknown[]>;
-  /** Full bounded review history in provider order; errors must propagate. */
-  reviews(repo: string, number: number, signal: AbortSignal): Promise<unknown[]>;
+  /** One complete review page; durable continuation belongs to the index. */
+  reviewPage(repo: string, number: number, page: number, signal: AbortSignal): Promise<unknown[]>;
 }
 interface PrRow {
-  repo: string; number: number; title: string; author: string; draft: boolean;
+  repo: string; number: number; subjectKey: string; updatedAt: number; title: string; author: string; draft: boolean;
   state: 'open' | 'closed' | 'merged'; replyState: 'unreplied' | 'replied' | 'has-new-activity';
   headSha: string; lastReviewedSha: string | null;
 }
-interface Draft { generation: string; page: number; parts: string[]; numbers: number[] }
+interface PendingPage { key: string; count: number; offset: number; reviewPage: number; lastReview: GhPrReview | null; rows: PrRow[] }
+interface Draft { generation: string; page: number; parts: string[]; numbers: number[]; pending: PendingPage | null }
+class IndexLimitError extends Error {}
 interface Published { generation: string; count: number; observedAt: number; parts: string[] }
 interface Root { schema: 1; repo: string; published: Published | null; draft: Draft | null }
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -36,6 +38,12 @@ function sha(value: unknown): string {
   if (!/^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/.test(result)) throw new TypeError('invalid PR commit');
   return result;
 }
+function activityTime(value: unknown): number {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) throw new TypeError('invalid provider updated_at');
+  const millis = Date.parse(value), normalized = value.includes('.') ? value : value.replace('Z', '.000Z');
+  if (!Number.isFinite(millis) || new Date(millis).toISOString() !== normalized) throw new TypeError('invalid provider updated_at');
+  return millis;
+}
 function metadata(value: unknown): GhPrFull {
   const p = object(value);
   if (!Number.isSafeInteger(p.number) || (p.number as number) < 1 || !['open', 'closed'].includes(p.state as string) ||
@@ -44,11 +52,21 @@ function metadata(value: unknown): GhPrFull {
   }
   return { number: p.number as number, title: text(p.title, 1024), user: text(p.user, 100),
     state: p.state as string, merged_at: p.merged_at as string | null, head_sha: sha(p.head_sha), draft: p.draft,
-    labels: [], updated_at: '' };
+    labels: [], updated_at: new Date(activityTime(p.updated_at)).toISOString() };
 }
 function review(value: unknown): GhPrReview {
   const r = object(value);
   return { user: text(r.user, 100), state: text(r.state, 40), commit_id: sha(r.commit_id) };
+}
+function storedRow(value: unknown, repo: string): PrRow {
+  const row = object(value);
+  if (row.repo !== repo || !Number.isSafeInteger(row.number) || (row.number as number) < 1 || typeof row.draft !== 'boolean' ||
+      !['open', 'closed', 'merged'].includes(row.state as string) || !['unreplied', 'replied', 'has-new-activity'].includes(row.replyState as string)) throw new TypeError('invalid stored PR row');
+  if (row.subjectKey !== `pr:${repo}#${row.number}` || typeof row.updatedAt !== 'number' || !Number.isFinite(row.updatedAt)) throw new TypeError('PR observation refresh required: missing identity or provider activity time');
+  return { repo, number: row.number as number, subjectKey: row.subjectKey as string, updatedAt: row.updatedAt,
+    title: text(row.title, 1024), author: text(row.author, 100), state: row.state as PrRow['state'],
+    replyState: row.replyState as PrRow['replyState'], headSha: sha(row.headSha),
+    lastReviewedSha: row.lastReviewedSha === null ? null : sha(row.lastReviewedSha), draft: row.draft };
 }
 function rootOf(value: unknown, repo: string): Root {
   const r = object(value);
@@ -63,6 +81,20 @@ function rootOf(value: unknown, repo: string): Root {
     if (kind === 'draft' && (!Number.isSafeInteger(p.page) || (p.page as number) < 1 || (p.page as number) > 201 ||
         !Array.isArray(p.numbers) || p.numbers.length > 5000 || p.numbers.some(n => !Number.isSafeInteger(n) || n < 1) ||
         new Set(p.numbers).size !== p.numbers.length || p.parts.length !== (p.page as number) - 1 || p.numbers.length !== p.parts.length * 25)) throw new TypeError('invalid staged PR index');
+    if (kind === 'draft') {
+      // Alpha.12 drafts can resume at the page boundary they already persisted.
+      if (p.pending === undefined) p.pending = null;
+      if (p.pending !== null) {
+        const n = object(p.pending);
+        if (typeof n.key !== 'string' || !n.key.startsWith(`${prefix(repo)}${p.generation}.`) || n.key.length > 200 ||
+          !Number.isInteger(n.count) || (n.count as number) < 1 || (n.count as number) > 25 ||
+          !Number.isInteger(n.offset) || (n.offset as number) < 0 || (n.offset as number) >= (n.count as number) ||
+          !Number.isInteger(n.reviewPage) || (n.reviewPage as number) < 1 || (n.reviewPage as number) > 100 ||
+          !Array.isArray(n.rows) || n.rows.length !== n.offset) throw new TypeError('invalid PR review continuation');
+        n.rows.forEach(row => storedRow(row, repo));
+        if (n.lastReview !== null) review(n.lastReview);
+      }
+    }
   }
   return r as unknown as Root;
 }
@@ -95,56 +127,87 @@ export class PrProviderIndex {
     const signal = AbortSignal.any([this.lifetime.signal, deadline.signal]);
     try {
       const entry = await this.storage.get(rootKey(repo));
-      const root = entry ? rootOf(entry.value, repo) : { schema: 1 as const, repo, published: null, draft: null };
-      const draft: Draft = !restart && root.draft ? root.draft : { generation: randomUUID(), page: 1, parts: [], numbers: [] };
+      let revision = entry?.revision ?? null;
+      let root: Root = entry ? rootOf(entry.value, repo) : { schema: 1, repo, published: null, draft: null };
+      let draft: Draft = !restart && root.draft ? root.draft : { generation: randomUUID(), page: 1, parts: [], numbers: [], pending: null };
       let failedSubject: number | null = null;
+      const save = async (next: Root) => {
+        signal.throwIfAborted();
+        if (Buffer.byteLength(JSON.stringify(next)) > 128 * 1024) throw new IndexLimitError('PR continuation exceeds storage bound');
+        const result = await this.storage.compareAndSet(rootKey(repo), revision, next);
+        if (!result.applied) throw new Error('PR refresh changed concurrently');
+        if (typeof result.revision !== 'number') throw new Error('PR storage omitted applied revision');
+        revision = result.revision; root = next;
+      };
+      const chunk = async (value: unknown) => {
+        signal.throwIfAborted();
+        if (Buffer.byteLength(JSON.stringify(value)) > 128 * 1024) throw new IndexLimitError('PR page exceeds storage bound');
+        const key = `${prefix(repo)}${draft.generation}.${randomUUID()}`;
+        if (!(await this.storage.compareAndSet(key, null, value)).applied) throw new Error('PR generation key collision');
+        return key;
+      };
       try {
-        const values = await this.provider.page(repo, draft.page, signal); signal.throwIfAborted();
-        if (!Array.isArray(values) || values.length > 25) throw new TypeError('oversized PR page');
-        const prs = values.map(metadata), numbers = new Set(draft.numbers);
-        for (const pr of prs) {
-          if (numbers.has(pr.number)) throw new TypeError('duplicate PR in refresh');
-          numbers.add(pr.number);
+        let prs: GhPrFull[];
+        if (draft.pending) {
+          const staged = await this.storage.get(draft.pending.key);
+          if (!staged || !Array.isArray(staged.value) || staged.value.length !== draft.pending.count) throw new TypeError('missing staged PR metadata');
+          prs = staged.value.map(metadata);
+        } else {
+          const values = await this.provider.page(repo, draft.page, signal); signal.throwIfAborted();
+          if (!Array.isArray(values) || values.length > 25) throw new TypeError('oversized PR page');
+          prs = values.map(metadata);
+          const numbers = new Set(draft.numbers);
+          for (const pr of prs) {
+            if (numbers.has(pr.number)) throw new TypeError('duplicate PR in refresh');
+            numbers.add(pr.number);
+          }
+          if (numbers.size > 5000) throw new IndexLimitError('PR subject limit exceeded');
+          if (prs.length) {
+            draft = { ...draft, pending: { key: await chunk(prs), count: prs.length, offset: 0, reviewPage: 1, lastReview: null, rows: [] } };
+            await save({ ...root, draft });
+          }
         }
-        if (numbers.size > 5000) {
-          await this.storage.set(`${prefix(repo)}attempt`, { rootRevision: entry?.revision ?? null, status: 'limit_exceeded', attemptedAt: Date.now(), failedSubjects: [] });
-          return { status: 'limit_exceeded', complete: false, hasMore: false, restartRequired: true,
-          publishedGeneration: root.published?.generation ?? null, failedSubjects: [] };
-        }
-        const rows: PrRow[] = [];
-        for (const pr of prs) {
-          signal.throwIfAborted(); failedSubject = pr.number;
-          const raw = pr.state === 'open' ? await this.provider.reviews(repo, pr.number, signal) : [];
+        let rows = draft.pending?.rows ?? [];
+        while (draft.pending) {
           signal.throwIfAborted();
-          if (!Array.isArray(raw) || raw.length > 10000) throw new TypeError('oversized PR review history');
-          const mapped = mapGitHubPr(pr, raw.map(review));
-          rows.push({ repo, number: pr.number, title: pr.title, author: pr.user, draft: pr.draft,
-            headSha: pr.head_sha, ...mapped });
+          const pending = draft.pending, pr = prs[pending.offset]!;
+          failedSubject = pr.number;
+          const raw = pr.state === 'open' ? await this.provider.reviewPage(repo, pr.number, pending.reviewPage, signal) : [];
+          signal.throwIfAborted();
+          if (!Array.isArray(raw) || raw.length > 100) throw new TypeError('oversized PR review page');
+          let lastReview = pending.lastReview;
+          for (const value of raw) { const r = review(value); if (r.user !== pr.user) lastReview = r; }
+          if (raw.length === 100) {
+            if (pending.reviewPage === 100) throw new IndexLimitError('PR review page limit exceeded');
+            draft = { ...draft, pending: { ...pending, reviewPage: pending.reviewPage + 1, lastReview } };
+            await save({ ...root, draft });
+            continue;
+          }
+          rows = [...pending.rows, { repo, number: pr.number, subjectKey: `pr:${repo}#${pr.number}`, updatedAt: activityTime(pr.updated_at),
+            title: pr.title, author: pr.user, draft: pr.draft, headSha: pr.head_sha, ...mapGitHubPr(pr, lastReview ? [lastReview] : []) }];
+          if (rows.length === prs.length) break;
+          draft = { ...draft, pending: { ...pending, offset: pending.offset + 1, reviewPage: 1, lastReview: null, rows } };
+          await save({ ...root, draft });
         }
         signal.throwIfAborted(); failedSubject = null;
-        const key = `${prefix(repo)}${draft.generation}.${randomUUID()}`;
-        if (Buffer.byteLength(JSON.stringify(rows)) > 128 * 1024) throw new TypeError('PR page exceeds storage bound');
-        const stored = await this.storage.compareAndSet(key, null, rows);
-        if (!stored.applied) throw new Error('PR generation key collision');
-        const parts = [...draft.parts, key], complete = prs.length < 25;
-        const next: Root = { schema: 1, repo,
-          published: complete ? { generation: draft.generation, count: numbers.size, observedAt: Date.now(), parts } : root.published,
-          draft: complete ? null : { generation: draft.generation, page: draft.page + 1, parts, numbers: [...numbers] } };
-        signal.throwIfAborted();
-        const result = await this.storage.compareAndSet(rootKey(repo), entry?.revision ?? null, next);
-        if (!result.applied) throw new Error('PR refresh changed concurrently');
+        const parts = [...draft.parts, await chunk(rows)], complete = prs.length < 25;
+        const numbers = [...draft.numbers, ...prs.map(pr => pr.number)];
+        await save({ schema: 1, repo,
+          published: complete ? { generation: draft.generation, count: numbers.length, observedAt: Date.now(), parts } : root.published,
+          draft: complete ? null : { generation: draft.generation, page: draft.page + 1, parts, numbers, pending: null } });
         return { status: complete ? 'complete' : 'incomplete', complete, hasMore: !complete,
-          stagedCount: numbers.size, publishedGeneration: next.published?.generation ?? null,
-          observedAt: next.published?.observedAt ?? null, failedSubjects: [] };
+          stagedCount: numbers.length, publishedGeneration: root.published?.generation ?? null,
+          observedAt: root.published?.observedAt ?? null, failedSubjects: [] };
       } catch (error) {
         // The attempt is separate from the immutable published rows/root. A later
         // successful root revision makes this failure metadata inapplicable.
+        const limited = error instanceof IndexLimitError;
         if (!this.lifetime.signal.aborted) await this.storage.set(`${prefix(repo)}attempt`, {
-          rootRevision: entry?.revision ?? null, status: 'failed', attemptedAt: Date.now(),
+          rootRevision: revision, status: limited ? 'limit_exceeded' : 'failed', attemptedAt: Date.now(),
           failedSubjects: failedSubject === null ? [] : [failedSubject],
         });
         if (this.lifetime.signal.aborted) throw error;
-        return { status: 'failed', complete: false, hasMore: true,
+        return { status: limited ? 'limit_exceeded' : 'failed', complete: false, hasMore: !limited, restartRequired: limited,
           publishedGeneration: root.published?.generation ?? null,
           failedSubjects: failedSubject === null ? [] : [failedSubject] };
       }
@@ -172,12 +235,7 @@ export class PrProviderIndex {
       const part = await this.storage.get(published.parts[index]!);
       if (!part || !Array.isArray(part.value) || part.value.length > 25) throw new TypeError('missing or malformed PR generation page');
       for (const value of part.value.slice(Math.max(0, offset - index * 25), Math.min(25, end - index * 25))) {
-        const row = object(value);
-        if (row.repo !== repo || !Number.isSafeInteger(row.number) || (row.number as number) < 1 || typeof row.draft !== 'boolean' || !['open', 'closed', 'merged'].includes(row.state as string) || !['unreplied', 'replied', 'has-new-activity'].includes(row.replyState as string)) throw new TypeError('invalid stored PR row');
-        // Deliberate projection: injected authority fields are never returned.
-        items.push({ repo, number: row.number as number, title: text(row.title, 1024), author: text(row.author, 100),
-          state: row.state as PrRow['state'], replyState: row.replyState as PrRow['replyState'], headSha: sha(row.headSha),
-          lastReviewedSha: row.lastReviewedSha === null ? null : sha(row.lastReviewedSha), draft: row.draft as boolean });
+        items.push(storedRow(value, repo));
       }
     }
     if (items.length !== end - offset) throw new TypeError('incomplete published PR generation');

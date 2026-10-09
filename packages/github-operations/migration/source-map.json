@@ -352,7 +352,7 @@
       "reason": "Frozen pure mapper now consumed by pr-provider-index.ts. Repository generation publication and existing repository observation/list entrypoints expose provider metadata; Host sync and three consuming routes remain pending cutover.",
       "evidence": "src/pr-provider-index.test.ts; src/pr-index-provider.test.ts; src/plugin-entrypoint.test.ts",
       "packageBusinessMoved": "PR provider metadata and reply-state mapping; no task or governance authority",
-      "realPackageReplacementVerified": "38 focused tests including actual module and bounded provider transport; packed and Host cutover pending",
+      "realPackageReplacementVerified": "43 focused tests including durable review-page continuation and three-consumer shape adapter through real module; current packed and Host cutover pending",
       "hostLegacyRemoved": false,
       "dispositionAudit": "migration/source-disposition-audit-f639add.md (historical inactive row; superseded by PR provider index source implementation)"
     },

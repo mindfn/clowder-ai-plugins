@@ -295,8 +295,13 @@ claimed as activated by this change. Host legacy readers remain untouched.
 ## PR provider index: staged repository generations
 
 The explicit `github.pull-requests.refresh` action fetches one page of 25 PRs
-and complete bounded review histories for open subjects. Repeating the same repo
-continues the persisted staging generation. `restart: true` abandons the staging
+and bounded review pages for open subjects. Each successful review page or subject
+is persisted before advancing; the draft holds immutable PR metadata, subject
+offset, review page and the latest non-author review fold. Repeating the same repo
+after a timeout or restart resumes the unfinished review page instead of redoing
+completed subjects. One provider request must finish within its deadline; the
+whole 25-subject page need not. The existing 100-review-page cap fails explicitly
+without publishing a partial fold. `restart: true` abandons the staging
 reference and begins again. Only a short or empty final page publishes one root
 CAS; a full page is never treated as complete. A 5,000-subject limit returns
 `limit_exceeded` without publication. Provider pages are ordered by creation;
@@ -331,3 +336,25 @@ task/thread/owner/status/automation fields there. Show stale/incomplete metadata
 never silently relabel prior rows as this refresh. Prove single producer and
 consumer switching before retiring the old fetch/store. Fresh installation is
 supported first; the old in-memory index creates no required historical-copy gate.
+
+
+### Stable consumer identity and provider activity (alpha.13)
+
+Rows expose canonical `subjectKey = pr:<lowercase repo>#<number>` and numeric
+`updatedAt` from validated GitHub `updated_at` (UTC epoch milliseconds).
+`publishedGeneration`/`observedAt` identify publication, not row identity or activity.
+A new sweep of unchanged provider rows must not change their key or activity time.
+Old alpha.12 rows lacking activity time explicitly require refresh; their date is
+never invented from generation time. Page-bound alpha.12 drafts can resume at the
+persisted page boundary, and new drafts persist finer review-page progress.
+
+Frozen c0201d1 consumer contract: repository discovery merges the distinct
+`pullRequestRepositories[].repo` values with Host issue/task sources. Board and
+queue PR-only rows map `taskId <- subjectKey`, `prNumber <- number`, and
+`updatedAt <- updatedAt`; title/author/state/replyState/headSha/draft are provider
+fields. Their group is terminal state or open replyState. Host tracked PRs retain
+Host task identity, ownership, thread, automation and activity time; suppress the
+matching PR-only row by number. Neither a fresh UUID nor sweep time is a valid
+substitute for provider identity/activity. The real module test constructs all
+three shapes and is reused against packed bytes; it does not execute the Host
+routes and does not prove caller retirement or cutover.

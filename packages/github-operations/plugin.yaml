@@ -1,5 +1,5 @@
 pluginId: official.github-operations
-version: 0.1.0-alpha.12
+version: 0.1.0-alpha.13
 contractVersion: 0.1.0
 name: GitHub Operations
 description:
@@ -106,7 +106,7 @@ contributions:
   - type: tool
     id: refresh-pull-requests
     name: github_refresh_pull_requests
-    description: Fetch one bounded PR metadata page into a private staged generation. Repeat while incomplete; only a complete generation becomes visible. Provider observations do not grant Host governance authority.
+    description: Fetch one bounded PR metadata page into a private staged generation. Repeat while incomplete; retries resume persisted review-page progress. Only a complete generation becomes visible. Provider observations do not grant Host governance authority.
     inputSchema:
       type: object
       additionalProperties: false

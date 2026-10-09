@@ -12,22 +12,21 @@ test('actual transport uses bounded GET metadata pages and complete ordered revi
     return { stdout: Array.from({length: count}, (_, i) => JSON.stringify({ id: (page - 1) * 100 + i })).join('\n') };
   } });
   assert.equal((await provider.page('owner/repo', 2, new AbortController().signal)).length, 25);
-  const rows = await provider.reviews('owner/repo', 42, new AbortController().signal);
+  const rows = [...await provider.reviewPage('owner/repo', 42, 1, new AbortController().signal), ...await provider.reviewPage('owner/repo', 42, 2, new AbortController().signal)];
   assert.equal(rows.length, 101); assert.deepEqual(rows.at(-1), {id:100}); assert.equal(calls.length, 3);
   assert.match(calls[0]![1]!, /sort=created&direction=asc&per_page=25&page=2/);
   assert.ok(!calls[0]!.at(-1)!.includes('body'));
 });
 
-test('late review error, bad JSON and exhaustion never return partial history', async () => {
-  for (const mode of ['late-error','bad-json','exhausted']) {
+test('review page errors and corrupt JSON propagate without hiding continuation', async () => {
+  for (const mode of ['error','bad-json','oversized']) {
     let calls = 0;
-    const provider = new GitHubPrIndexProvider({token: async () => `isolated-index-${mode}`, execFileAsync: async () => {
-      calls++;
-      if (mode === 'late-error' && calls === 2) throw new Error('last page unavailable');
-      return {stdout: mode === 'bad-json' ? '{bad' : Array.from({length:100}, () => '{}').join('\n')};
+    const provider = new GitHubPrIndexProvider({token: async () => `isolated-index-${mode}`, execFileAsync: async (_file,args) => {
+      calls++; assert.match(args[1]!, /page=2$/);
+      if (mode === 'error') throw new Error('page unavailable');
+      return {stdout: mode === 'bad-json' ? '{bad' : Array.from({length:101}, () => '{}').join('\n')};
     }});
-    await assert.rejects(provider.reviews('owner/repo', 42, new AbortController().signal));
-    assert.equal(calls, mode === 'late-error' ? 2 : mode === 'bad-json' ? 1 : 100);
+    await assert.rejects(provider.reviewPage('owner/repo',42,2,new AbortController().signal)); assert.equal(calls,1);
   }
 });
 
