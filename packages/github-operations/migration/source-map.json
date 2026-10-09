@@ -9,21 +9,39 @@
       "target": "packages/github-operations/src/business/domains/community/CommunityEventLog.ts",
       "sourceSha256": "450381a790f2376db1b46b9f0432fe348129cdebdd85d1da78761e46bf84653a",
       "lines": 112,
-      "disposition": "copied-unadapted"
+      "disposition": "sdk-storage-adapted-runtime",
+      "reason": "SDK CAS journal with recoverable reservation and persistent immutable event records.",
+      "evidence": "src/community-storage.test.ts: journal ordering/dedup and interrupted append recovery",
+      "packageBusinessMoved": "active package implementation; scope described above",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/domains/community/CommunityObjectStore.ts",
       "target": "packages/github-operations/src/business/domains/community/CommunityObjectStore.ts",
       "sourceSha256": "f2787c1294d6cbd1eef11e2627917c88db3197335b9233ecfde571f69ccce370",
       "lines": 88,
-      "disposition": "copied-unadapted"
+      "disposition": "sdk-storage-adapted-runtime",
+      "reason": "Rebuildable canonical-subject projections use private SDK storage.",
+      "evidence": "src/community-storage.test.ts: projection/configuration runtime recreation",
+      "packageBusinessMoved": "active package implementation; scope described above",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/domains/community/CommunityRepoConfigStore.ts",
       "target": "packages/github-operations/src/business/domains/community/CommunityRepoConfigStore.ts",
       "sourceSha256": "e32855e6ef4152aef358acf9365efa6ee0cfc1a22164e91b87b590debe5285ad",
       "lines": 255,
-      "disposition": "copied-unadapted"
+      "disposition": "sdk-storage-adapted-runtime",
+      "reason": "SDK CAS repository configuration; CommunityRuntime.register binds the destination through Host before writing.",
+      "evidence": "src/community-storage.test.ts; src/plugin-entrypoint.test.ts: bind refusal has no state/provider effects",
+      "packageBusinessMoved": "active package implementation; scope described above",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/domains/community/GuardianMatcher.ts",
@@ -148,14 +166,26 @@
       "target": "packages/github-operations/src/business/domains/community/community-delivery-policy.ts",
       "sourceSha256": "bb1ad116b34a5990483d74ffca135ba3aec855e1c72c15df94595920e6d5d5ad",
       "lines": 69,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-copy-parity-open",
+      "reason": "No source/test import. Active issue classifier and tracking/webhook paths carry filtering; full old policy equivalence is not established by absence of callers.",
+      "evidence": "src/tracking-runtime.ts; src/business/domains/community/issue-analysis/issue-comment-classifier.ts",
+      "packageBusinessMoved": "no new migration claim from this audit",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/domains/community/community-keys.ts",
       "target": "packages/github-operations/src/business/domains/community/community-keys.ts",
       "sourceSha256": "9c0c12e8006949cf9b5ccb16e7c567ad4df050f2c951185b1ee6b695405cb496",
       "lines": 53,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-event-identity-runtime",
+      "reason": "Runtime consumes issue-comment/review event ID helpers; legacy Redis key constants do not establish a live Redis dependency.",
+      "evidence": "src/plugin-entrypoint.test.ts: collection dedup/dismissal; src/community-runtime.ts",
+      "packageBusinessMoved": "active package implementation; scope described above",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/domains/community/community-link-parser.ts",
@@ -174,7 +204,13 @@
       "target": "packages/github-operations/src/business/domains/community/community-projector.ts",
       "sourceSha256": "4e94ec135f3ee6bd97e8c5ab5e1997f7635b4a981144a7ae98906774cbdb5b10",
       "lines": 485,
-      "disposition": "copied-unadapted"
+      "disposition": "package-private-projection-runtime",
+      "reason": "Ordered projection/rebuild is active over private SDK journal/storage. Retained case reducer branches do not grant authenticated Host authority.",
+      "evidence": "src/community-storage.test.ts; src/repo-poll-lifecycle.test.ts: append/projection failure recovery",
+      "packageBusinessMoved": "active package implementation; scope described above",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/domains/community/community-route-recommendation.ts",
@@ -283,7 +319,13 @@
       "target": "packages/github-operations/src/business/domains/community/github/GitHubIssueFetcher.ts",
       "sourceSha256": "504bb4b20f83b489f8fbdac6b8af6724f7db790ae8db87ff0b8ce20e01854ad8",
       "lines": 42,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-copy-parity-open",
+      "reason": "No import. Legacy label-to-issueType/state mapper is not equivalent to the public provider observation read model; preserve this semantic gap explicitly.",
+      "evidence": "src/github-provider.ts: listOpen/state; src/community-read-model.ts: providerObservation",
+      "packageBusinessMoved": "no new migration claim from this audit",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/domains/community/github/GitHubIssuePublisher.ts",
@@ -306,7 +348,13 @@
       "target": "packages/github-operations/src/business/domains/community/github/GitHubPrFetcher.ts",
       "sourceSha256": "8553c45b3ff0c54f73d4ccb1a1f092d9f790439655cd36eb69a2ff7eed4b404f",
       "lines": 45,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-copy-parity-open",
+      "reason": "No import. Legacy reply-state/latest-reviewed-SHA mapper has no established one-to-one replacement; tracking/provider observations alone are not that proof.",
+      "evidence": "src/community-read-model.ts; src/tracking-runtime.ts",
+      "packageBusinessMoved": "no new migration claim from this audit",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/domains/community/issue-analysis/CommunityIssueSanitizer.ts",
@@ -411,7 +459,13 @@
       "target": "packages/github-operations/src/business/domains/community/narrator/community-narrator-eligibility.ts",
       "sourceSha256": "26e0115e6b4805c9016f69867c47f470fe121d29263a3e2df1bad7cbdc3b549e",
       "lines": 68,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-host-boundary-copy",
+      "reason": "No import. Legacy case.bootstrap narrator admission is Host-owned under rulings338/463; no package narrator admission or Host deletion claimed.",
+      "evidence": "migration/boundary-parity.md: retained Host authority",
+      "packageBusinessMoved": "no new migration claim from this audit",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/domains/community/reconciliation/CommunityReconciler.ts",
@@ -441,7 +495,13 @@
       "target": "packages/github-operations/src/business/domains/community/reconciliation/CommunityReconciliationFindingStore.ts",
       "sourceSha256": "0dc6d18ef8eb60c9bc94c13cf13cb969aeed09b4689f90850c38a09873f477c9",
       "lines": 244,
-      "disposition": "copied-unadapted"
+      "disposition": "sdk-storage-adapted-runtime",
+      "reason": "Private reconciliation findings use SDK CAS, with sticky waiver/reopen/resolve rules. Host case finding and waiver consumers remain independent.",
+      "evidence": "src/community-storage.test.ts: sticky waivers, changed evidence and absent findings",
+      "packageBusinessMoved": "active package implementation; scope described above",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/domains/community/reconciliation/resolveConsensus.ts",
@@ -557,7 +617,13 @@
       "target": "packages/github-operations/src/business/infrastructure/connectors/github-repo-event/ReconciliationDedup.ts",
       "sourceSha256": "4af49ea0c6c3019b2ed343b5c2e63dd995176ceab7ac45b028fa4ee3edea8532",
       "lines": 54,
-      "disposition": "copied-unadapted"
+      "disposition": "type-contract-only-runtime",
+      "reason": "Runtime imports only the type. CommunityRuntime supplies private SDK scan-notified/scan-baseline adapters; the copied Redis-backed class is not instantiated.",
+      "evidence": "src/community-runtime.ts: createRepoScanner reconciliationDedup; src/plugin-entrypoint.test.ts",
+      "packageBusinessMoved": "type contract only",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/infrastructure/connectors/github-repo-event/RedisDeliveryDedup.ts",
@@ -636,7 +702,13 @@
       "target": "packages/github-operations/src/business/infrastructure/connectors/github-repo-event/types.ts",
       "sourceSha256": "6c81a572639fdbb680eec8c843b2163da1db69fcfc7de995e007bd2ca8dc9b1c",
       "lines": 29,
-      "disposition": "copied-unadapted"
+      "disposition": "type-contract-only-runtime",
+      "reason": "RepoInboxSignal and configuration types are consumed; this file contributes no runtime implementation or Host authority.",
+      "evidence": "src/provider-briefing.ts; src/business/infrastructure/connectors/github-repo-event/{GitHubRepoWebhookHandler,RepoScanTaskSpec}.ts",
+      "packageBusinessMoved": "type contract only",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/infrastructure/connectors/github-repo-event/verify-signature.ts",
@@ -836,7 +908,13 @@
       "target": "packages/github-operations/src/business/infrastructure/email/ci-message-content.ts",
       "sourceSha256": "fde97b2a9cd823df008600e72dcbcb64a4859660439aa8b5bc248a729575fee5",
       "lines": 44,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-copy-parity-open",
+      "reason": "No import. TrackingRuntime constructs its own bounded notifications. Do not infer full legacy lifecycle-message/continuation parity from this unused builder.",
+      "evidence": "src/tracking-runtime.ts: notification construction and persistent outbox",
+      "packageBusinessMoved": "no new migration claim from this audit",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/infrastructure/email/ci-status-batch-fetcher.ts",
@@ -889,7 +967,13 @@
       "target": "packages/github-operations/src/business/infrastructure/email/pr-tracking-keys.ts",
       "sourceSha256": "e11d7720da27358d342b30552904dc9f975b0eb92800583e63868d3f855ad557",
       "lines": 16,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-legacy-storage-copy",
+      "reason": "No import. Private tracking storage uses SDK state; these old Redis key constants are not a live data bridge or completed old-state copy.",
+      "evidence": "src/tracking-runtime.ts; migration/legacy-state-disposition.md",
+      "packageBusinessMoved": "no new migration claim from this audit",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/infrastructure/email/setup-noise-filter.ts",
@@ -908,7 +992,13 @@
       "target": "packages/github-operations/src/business/infrastructure/email/severity-parser.ts",
       "sourceSha256": "90ffa90607b6ced2196f0f0f93798c3822ec55ae6042069f93fed783f65f8c61",
       "lines": 78,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-copy-parity-open",
+      "reason": "No import. Legacy aggregate P0/P1/P2 severity header parser is not called by current bounded notifications; no equivalence or removal acceptance claimed.",
+      "evidence": "src/tracking-runtime.ts: review-feedback notifications",
+      "packageBusinessMoved": "no new migration claim from this audit",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/infrastructure/github/abortable-wait.ts",
@@ -938,7 +1028,13 @@
       "target": "packages/github-operations/src/business/infrastructure/github/comment-cursors.ts",
       "sourceSha256": "285eb0ed6d5a012436c2c4bb86d6be88ddc06ae4a331230191341e30466316c4",
       "lines": 32,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-copy-parity-open",
+      "reason": "No import. Registration baselines come from provider snapshots with separate inline/conversation progress. Keep caller/cutover verification open.",
+      "evidence": "src/tracking-runtime.ts: register/baselines; src/github-provider.ts: read",
+      "packageBusinessMoved": "no new migration claim from this audit",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/infrastructure/github/comment-since.ts",
@@ -1005,7 +1101,13 @@
       "target": "packages/github-operations/src/business/infrastructure/github/github-object-validator.ts",
       "sourceSha256": "62756e29b803b6742b31630cca638d30cdb0df9e8aabc5e036f111864b156eb1",
       "lines": 150,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-host-boundary-copy",
+      "reason": "No import. Old typed lookup/auth/not-found classification remains relevant to Host registration/admission consumers; package transport errors do not prove those consumers replaced.",
+      "evidence": "src/github-provider.ts; migration/boundary-parity.md: authenticated Host consumers",
+      "packageBusinessMoved": "no new migration claim from this audit",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/infrastructure/github/pr-review-event-wait-coverage.ts",
@@ -1024,21 +1126,39 @@
       "target": "packages/github-operations/src/business/infrastructure/github/repo-poll-readers.ts",
       "sourceSha256": "8cfbc08b9908cdbb9a2ea47823c7eaf2a2b7fa787fc44fba28e8462d0241c1fc",
       "lines": 82,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-copy-parity-open",
+      "reason": "No import. GitHubProvider implements repository reads, but old updated-order query and new per-issue metadata lookup differ. All pages precede cursor commit; ordering difference alone is not a reproduced loss bug.",
+      "evidence": "src/github-provider.ts: repoComments; src/business/infrastructure/connectors/github-repo-event/RepoCommentPollTaskSpec.ts",
+      "packageBusinessMoved": "no new migration claim from this audit",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/infrastructure/github/request-budget.ts",
       "target": "packages/github-operations/src/business/infrastructure/github/request-budget.ts",
       "sourceSha256": "d6c14971487fdd6149a572dd37e7911029382790ec0e8d47079a3c3e37bb3de2",
       "lines": 168,
-      "disposition": "copied-unadapted"
+      "disposition": "provider-transport-adapted-runtime",
+      "reason": "Active shared credential quota, bounded queue, timeout and child-close transport.",
+      "evidence": "src/github-provider.test.ts; src/repo-poll-lifecycle.test.ts; src/business/infrastructure/github/request-budget.ts",
+      "packageBusinessMoved": "active package implementation; scope described above",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     },
     {
       "source": "packages/api/src/infrastructure/github/self-login-resolver.ts",
       "target": "packages/github-operations/src/business/infrastructure/github/self-login-resolver.ts",
       "sourceSha256": "8f1908a144fcaba83e942efa93b1fd4b824e1d36af4f939b589f6c91220676f8",
       "lines": 99,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-copy-parity-open",
+      "reason": "No import. Current provider refreshes login from user endpoint in active reads instead of using this cached resolver. Credential-switch/failure behavior must be assessed at that runtime boundary.",
+      "evidence": "src/github-provider.ts: repoComments/read/selfLogin",
+      "packageBusinessMoved": "no new migration claim from this audit",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
     }
   ],
   "remainingSourceGroups": [
