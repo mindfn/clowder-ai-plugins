@@ -1,15 +1,15 @@
 {
   "name": "@clowder-ai/connector-dingtalk",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "@clowder-ai/connector-dingtalk",
-      "version": "0.1.0-alpha.4",
+      "version": "0.1.0-alpha.5",
       "license": "MIT",
       "dependencies": {
-        "@clowder-ai/plugin-sdk": "0.2.0-beta.14",
+        "@clowder-ai/plugin-sdk": "0.2.0-beta.15",
         "dingtalk-stream": "2.1.6-beta.1"
       },
       "engines": {
@@ -17,9 +17,9 @@
       }
     },
     "node_modules/@clowder-ai/plugin-contract": {
-      "version": "0.1.0-beta.29",
-      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.1.0-beta.29.tgz",
-      "integrity": "sha512-77p2pQyLZvbC+kv7yOOzIdsXNYeUblxy50H6VQVQYx2CB6vwySSux2LvUXzPLvdVZCNuJkFHpY04mZ3vHmnXgQ==",
+      "version": "0.1.0-beta.30",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.1.0-beta.30.tgz",
+      "integrity": "sha512-4sWQdEjRgUBPB/VEC9f7WrtuwJh/AZPlcsVu4vOd2mH7U5TXep2srsf/bqLv/z6IotkNzN8z90mHVrO2WLPc/w==",
       "license": "MIT",
       "dependencies": {
         "ajv": "^8.17.0",
@@ -30,12 +30,12 @@
       }
     },
     "node_modules/@clowder-ai/plugin-sdk": {
-      "version": "0.2.0-beta.14",
-      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.14.tgz",
-      "integrity": "sha512-ig93V9/tLKo4E0knnCa7JK62WsCVyGyeI8YF7mt1a0fsHRwIeZAIp7iMDVhr7bCYM2WL4vpQB0nJCh1bU2y/RA==",
+      "version": "0.2.0-beta.15",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.15.tgz",
+      "integrity": "sha512-8KzckhCHr1hoO82WO82Ls/bn//dab6KoswcWPWf9fINlxYujEsa4+EQJscpRRR23WWizui1Ih2Kvq1hmKwyqzA==",
       "license": "MIT",
       "dependencies": {
-        "@clowder-ai/plugin-contract": "0.1.0-beta.29"
+        "@clowder-ai/plugin-contract": "0.1.0-beta.30"
       },
       "engines": {
         "node": ">=20.0.0"
