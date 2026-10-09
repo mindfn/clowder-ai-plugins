@@ -17,6 +17,28 @@ import { ReviewTriggerReader } from './review-trigger-observation.js';
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
 const target = { kind: 'pr', repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
 
+test('PR index refresh publishes provider metadata in existing repository inspection and survives module restart', async () => {
+  const f = host(); let calls = 0;
+  const module = createGitHubPluginModule({ createPrIndexProvider: () => ({
+    page: async () => { calls++; return [{ number: 12, title: 'Provider PR', state: 'open', merged_at: null,
+      user: 'author', head_sha: 'a'.repeat(40), draft: true, labels: [], updated_at: '2026-10-09T00:00:00Z' }]; },
+    reviews: async () => [{ user: 'reviewer', state: 'COMMENTED', commit_id: 'b'.repeat(40) }],
+  }) });
+  let active = await module.create(manifest).start(f.runtimeHost);
+  const refresh = active.actions['github.pull-requests.refresh'];
+  assert.equal(typeof refresh, 'function');
+  assert.equal((await refresh!({ repo: 'Example/Project' }) as any).data.status, 'complete');
+  let result = await active.actions['github.repository.observations']!({ repo: 'example/project' }) as any;
+  assert.equal(result.data.pullRequests.items[0].replyState, 'has-new-activity');
+  assert.equal(result.data.pullRequests.items[0].lastReviewedSha, 'b'.repeat(40));
+  assert.equal(result.data.pullRequests.items[0].draft, true);
+  const generation = result.data.pullRequests.publishedGeneration;
+  await active.stop(); active = await module.create(manifest).start(f.runtimeHost);
+  result = await active.actions['github.repository.observations']!({ repo: 'example/project' }) as any;
+  assert.equal(result.data.pullRequests.publishedGeneration, generation); assert.equal(calls, 1);
+  assert.equal(f.deliveries.length, 0); await active.stop();
+});
+
 test('declared review trigger observation stays read-only and module stop joins an unresolved query', async () => {
   const f = host(); let started!: () => void; const entered = new Promise<void>(resolve => { started = resolve; });
   let finish!: () => void; let aborted = false;
@@ -194,7 +216,7 @@ test('legacy repository progress stays inert until registration and resumes base
   await active.actions[operation.actions[0].action.method]!({ input: { protocolVersion: 1, sourceDigest, snapshot, token: 'secret-config' } });
   await active.actions['github.repo-scan']!({});
   assert.equal(requests, 0); assert.equal(f.deliveries.length, 0);
-  assert.deepEqual(await active.actions['github.repository.list']!({}), { data: { repositories: [] } });
+  assert.deepEqual(await active.actions['github.repository.list']!({}), { data: { repositories: [], pullRequestRepositories: [] } });
   assert.doesNotMatch(JSON.stringify(await f.runtimeHost.storage.list()), /secret-config|guardThreadId|guardian/);
   await active.stop();
   active = await module.create(manifest).start(f.runtimeHost);

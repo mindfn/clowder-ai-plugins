@@ -1,5 +1,5 @@
 pluginId: official.github-operations
-version: 0.1.0-alpha.11
+version: 0.1.0-alpha.12
 contractVersion: 0.1.0
 name: GitHub Operations
 description:
@@ -104,6 +104,18 @@ configuration:
     required: false
 contributions:
   - type: tool
+    id: refresh-pull-requests
+    name: github_refresh_pull_requests
+    description: Fetch one bounded PR metadata page into a private staged generation. Repeat while incomplete; only a complete generation becomes visible. Provider observations do not grant Host governance authority.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      required: [repo]
+      properties:
+        repo: { type: string, pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' }
+        restart: { type: boolean }
+    action: { method: github.pull-requests.refresh }
+  - type: tool
     id: observe-review-trigger
     name: github_observe_review_trigger
     description: Read exact review-trigger acceptance and subsequent feedback from GitHub. This is a provider observation, not admission, wait, reviewer or lease authority. Unavailable or incomplete evidence fails explicitly.
@@ -164,6 +176,7 @@ contributions:
       properties:
         repo: { type: string, pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' }
         after: { type: string }
+        prAfter: { type: string, maxLength: 160 }
         limit: { type: integer, minimum: 1, maximum: 100 }
     action: { method: github.repository.observations }
   - type: tool
@@ -350,7 +363,7 @@ contributions:
   - type: tool
     id: list-repository
     name: github_list_repository
-    description: List configured repository inboxes.
+    description: List configured repository inboxes and separately identify repositories with published private PR observations. Does not register polling or fetch GitHub.
     inputSchema:
       type: object
       additionalProperties: false
@@ -361,6 +374,7 @@ features:
     name: GitHub collaboration operations
     resources: []
     contributions:
+      - { type: tool, id: refresh-pull-requests }
       - { type: tool, id: observe-review-trigger }
       - { type: tool, id: issue-metadata }
       - { type: tool, id: get-issue-draft }

@@ -290,3 +290,44 @@ reference: [GitHub issue comments](https://docs.github.com/en/rest/issues/commen
 The source-disposition audit at f639add remains historical; this one formerly
 inactive helper now has a runtime caller. Its other factory methods are not
 claimed as activated by this change. Host legacy readers remain untouched.
+
+
+## PR provider index: staged repository generations
+
+The explicit `github.pull-requests.refresh` action fetches one page of 25 PRs
+and complete bounded review histories for open subjects. Repeating the same repo
+continues the persisted staging generation. `restart: true` abandons the staging
+reference and begins again. Only a short or empty final page publishes one root
+CAS; a full page is never treated as complete. A 5,000-subject limit returns
+`limit_exceeded` without publication. Provider pages are ordered by creation;
+this is a bounded observation sweep, not a GitHub point-in-time transaction.
+
+Existing `github.repository.observations` adds `data.pullRequests`, with provider
+rows, `publishedGeneration`, `observedAt`, `refreshStatus`, `failedSubjects`, and
+`nextAfter`. The separate `prAfter` cursor is generation-bound; callers restart
+pagination when a newer publication makes the cursor stale. Existing journal
+items and their `after` cursor remain independent. Existing `github.repository.list`
+adds `pullRequestRepositories` for published-index repository discovery, distinct
+from registered polling configurations. Readback does not fetch the provider.
+
+Each generation uses immutable chunk keys. Failed pages/reviews, timeout,
+malformed data, cross-page duplicate subjects, stop and root-CAS conflicts never
+replace the published rows. Failed-attempt metadata is separate and bound to the
+root revision it observed. Staged and superseded immutable chunks are retained;
+no TTL or destructive migration is introduced. This retention needs an explicit
+compaction policy before indefinite scheduled refresh is enabled (this action
+adds no schedule). No old row is presented as refreshed by a failed attempt.
+Terminal PRs clear `lastReviewedSha`; draft and reviewed SHA update even when
+`replyState` does not change. The mapped fields carry no reviewer approval,
+assignment, principal, lease, signoff or admission authority.
+
+Host cutover is **not implemented** by these package entrypoints. At frozen Host
+`c0201d1`, UI `CommunityPanel.handleSync` still posts `sync-prs`; that producer and
+`/api/community-repos`, `/api/community-board`, and the decision-queue read model
+still consume the old in-memory PR store. The cutover contract is to delegate
+sync to the installed instance until publication or explicit incomplete/failure,
+read the package's published generation in all three surfaces, and overlay Host
+task/thread/owner/status/automation fields there. Show stale/incomplete metadata;
+never silently relabel prior rows as this refresh. Prove single producer and
+consumer switching before retiring the old fetch/store. Fresh installation is
+supported first; the old in-memory index creates no required historical-copy gate.

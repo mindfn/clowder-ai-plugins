@@ -348,13 +348,13 @@
       "target": "packages/github-operations/src/business/domains/community/github/GitHubPrFetcher.ts",
       "sourceSha256": "8553c45b3ff0c54f73d4ccb1a1f092d9f790439655cd36eb69a2ff7eed4b404f",
       "lines": 45,
-      "disposition": "inactive-copy-parity-open",
-      "reason": "No runtime-source import. Legacy reply-state/latest-reviewed-SHA mapper has no established one-to-one replacement; tracking/provider observations alone are not that proof.",
-      "evidence": "src/community-read-model.ts; src/tracking-runtime.ts",
-      "packageBusinessMoved": "no new migration claim from this audit",
-      "realPackageReplacementVerified": false,
+      "disposition": "provider-logic-mechanically-retained",
+      "reason": "Frozen pure mapper now consumed by pr-provider-index.ts. Repository generation publication and existing repository observation/list entrypoints expose provider metadata; Host sync and three consuming routes remain pending cutover.",
+      "evidence": "src/pr-provider-index.test.ts; src/pr-index-provider.test.ts; src/plugin-entrypoint.test.ts",
+      "packageBusinessMoved": "PR provider metadata and reply-state mapping; no task or governance authority",
+      "realPackageReplacementVerified": "38 focused tests including actual module and bounded provider transport; packed and Host cutover pending",
       "hostLegacyRemoved": false,
-      "dispositionAudit": "migration/source-disposition-audit-f639add.md"
+      "dispositionAudit": "migration/source-disposition-audit-f639add.md (historical inactive row; superseded by PR provider index source implementation)"
     },
     {
       "source": "packages/api/src/domains/community/issue-analysis/CommunityIssueSanitizer.ts",

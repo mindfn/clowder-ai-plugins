@@ -6,6 +6,8 @@ import type { UpsertRepoConfigInput } from './business/domains/community/Communi
 import { recommendTriage } from './triage-recommendation.js';
 import { previewPublicIssue } from './community-read-model.js';
 import { NativeIssueDraftRuntime, type NativeIssuePublisher } from './native-issue-drafts.js';
+import { PrProviderIndex, type PrIndexProvider } from './pr-provider-index.js';
+import { GitHubPrIndexProvider } from './pr-index-provider.js';
 import { ReviewTriggerReader } from './review-trigger-observation.js';
 
 interface Provider extends GitHubTrackingProvider { selfLogin(): string | undefined }
@@ -14,6 +16,7 @@ export interface GitHubPluginOptions {
   readonly createProvider?: (context: FeatureContext) => Provider;
   readonly createCommunityProvider?: (context: FeatureContext) => CommunityProvider;
   readonly createIssuePublisher?: (context: FeatureContext) => NativeIssuePublisher;
+  readonly createPrIndexProvider?: (context: FeatureContext) => PrIndexProvider;
   readonly createReviewTriggerReader?: (context: FeatureContext) => ReviewTriggerReader;
 }
 
@@ -36,6 +39,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   const reviewTriggers = options.createReviewTriggerReader?.(context) ?? new ReviewTriggerReader({
     token: () => context.secrets.get('token'),
   });
+  const prIndex = new PrProviderIndex(context.storage, options.createPrIndexProvider?.(context) ?? new GitHubPrIndexProvider({ token: () => context.secrets.get('token') }));
   const drafts = new NativeIssueDraftRuntime(context, options.createIssuePublisher?.(context) ?? transport);
   const community = new CommunityRuntime(context, options.createCommunityProvider?.(context) ?? transport);
   const tracking = new GitHubTrackingRuntime({
@@ -78,9 +82,15 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.community-reconciler': async () => { await community.run('community-reconciler'); return { data: { completed: true } }; },
       'github.repository.register': async (value: unknown) => ({ data: await community.register(repoInput(value, true) as unknown as UpsertRepoConfigInput) }),
       'github.repository.unregister': async (value: unknown) => ({ data: { removed: await community.unregister(repoInput(value, false).repo as string) } }),
-      'github.repository.list': async () => ({ data: { repositories: await community.configs.listAll() } }),
+      'github.repository.list': async () => ({ data: { repositories: await community.configs.listAll(), pullRequestRepositories: await prIndex.repositories() } }),
       'github.subject.inspect': (value: unknown) => community.inspectSubject(value),
-      'github.repository.observations': (value: unknown) => community.inspectRepository(value),
+      'github.pull-requests.refresh': async (value: unknown) => ({ data: await prIndex.refresh(value) }),
+      'github.repository.observations': async (value: unknown) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('repository input required');
+        const { prAfter, ...input } = value as Record<string, unknown>;
+        const result = await community.inspectRepository(input);
+        return { data: { ...result.data, pullRequests: await prIndex.read(input.repo, prAfter, input.limit) } };
+      },
       'github.issue.preview': previewPublicIssue,
       'github.issue.metadata': (value: unknown) => community.inspectIssueMetadata(value),
       'github.legacy-issues.import': (value: unknown) => community.importLegacyIssues(value),
@@ -95,7 +105,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.draft.cancel': (value: unknown) => drafts.cancel(value),
       'github.triage.recommend': recommendTriage,
     },
-    dispose: async () => { await Promise.all([tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop()]); },
+    dispose: async () => { await Promise.all([tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
   };
 }
 
