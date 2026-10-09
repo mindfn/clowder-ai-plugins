@@ -15,6 +15,47 @@ import { legacyRepositorySnapshotBytes } from './legacy-repository-progress.js';
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
 const target = { kind: 'pr', repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
 
+test('settled issue progress resumes the delivered frontier, not the collected or registration snapshot frontier', async () => {
+  const f = host(); let reads = 0; const cursors: unknown[] = [];
+  const snapshot: GitHubSnapshot = { state: 'open', reviews: [], comments: [4, 5, 6].map(id => ({
+    id, author: 'outside', body: `Question ${id}`, commentType: 'conversation',
+  })) };
+  const module = createGitHubPluginModule({ createProvider: () => ({ selfLogin: () => 'owner',
+    async read(_target, _signal, cursor) { reads++; cursors.push(cursor); return snapshot; },
+  }) });
+  let active = await module.create(manifest).start(f.runtimeHost);
+  const operation = manifest.configuration.find((c: { key: string }) => c.key === 'legacyIssueProgress');
+  assert.ok(operation, 'issue progress requires a declared owner-confirmed copy action');
+  assert.ok(operation.actions[0].confirm);
+  const raw = { id: 'old-task', kind: 'issue_tracking', subjectKey: 'issue:example/project#12', status: 'doing',
+    threadId: 'old-private-thread', userId: 'old-private-owner',
+    automationState: JSON.stringify({ issue: { lastCommentCursor: 5, lastDeliveredCursor: 4, pendingWake: null } }) };
+  const bytes = '{"tasks":{"old-task":{' + Object.keys(raw).sort().map(key => JSON.stringify(key) + ':' +
+    JSON.stringify(raw[key as keyof typeof raw])).join(',') + '}}}';
+  const input = { protocolVersion: 1, sourceDigest: createHash('sha256').update(bytes).digest('hex'), snapshot: { tasks: { 'old-task': raw } } };
+  await active.actions[operation.actions[0].action.method]!({ input: { ...input, token: 'stored-config-secret' } });
+  await active.actions['github.issue-tracking']!({});
+  assert.equal(reads, 0); assert.equal(f.deliveries.length, 0);
+  assert.doesNotMatch(JSON.stringify(await f.runtimeHost.storage.list()), /old-private|stored-config-secret/);
+  await active.stop(); active = await module.create(manifest).start(f.runtimeHost);
+  const get = f.runtimeHost.threads.get;
+  f.runtimeHost.threads.get = async () => { throw new Error('Host denied'); };
+  await assert.rejects(async () => active.actions['github.tracking.register']!({ ...target, kind: 'issue' }), /Host denied/);
+  f.runtimeHost.threads.get = get;
+  await active.actions['github.tracking.register']!({ ...target, kind: 'issue' });
+  assert.equal(reads, 0, 'registration must not baseline over arrivals during migration');
+  await active.actions['github.issue-tracking']!({});
+  assert.equal((cursors[0] as { conversation: number }).conversation, 4);
+  assert.match(JSON.stringify(f.deliveries), /github:issue-comment:5/);
+  assert.match(JSON.stringify(f.deliveries), /github:issue-comment:6/);
+  assert.doesNotMatch(JSON.stringify(f.deliveries), /github:issue-comment:4/);
+  assert.equal(f.deliveries.length, 1);
+  await active.actions[operation.actions[0].action.method]!({ input });
+  await active.actions['github.issue-tracking']!({});
+  assert.equal(f.deliveries.length, 1, 'repeat copy cannot rewind live progress');
+  await active.stop();
+});
+
 test('legacy repository progress stays inert until registration and resumes baseline/dedup/cursor after restart', async () => {
   const f = host(); let requests = 0; const sinceValues: Array<string | undefined> = [];
   const repo = target.repoFullName;

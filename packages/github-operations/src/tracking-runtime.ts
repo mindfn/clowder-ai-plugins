@@ -6,6 +6,8 @@ import { classifyIssueComment } from './business/domains/community/issue-analysi
 import { classifyGitHubReviewLoopBrake } from './business/domains/github-signals/github-wait-renderer.js';
 import { classifyExternalCloudReview, type CloudReviewRequest } from './business/domains/community/external-review/external-cloud-review-classifier.js';
 import type { ExternalCloudObservation } from './business/domains/community/external-review/ExternalReviewCoordinator.js';
+import { copyLegacyIssueProgress, readLegacyIssueProgress } from './legacy-issue-progress.js';
+import { legacyIssueOperationInput } from './legacy-issue-observations.js';
 
 export interface GitHubTarget {
   readonly kind: 'pr' | 'issue';
@@ -193,9 +195,10 @@ export class GitHubTrackingRuntime {
       if (!await this.deps.threads.get(input.threadId)) throw new Error('target thread does not exist');
       // Host verifies the installed plugin owner's access when establishing this binding.
       await this.deps.threads.bind(subject(input), input.threadId);
-      const snapshot = await this.deps.provider.read(input, this.lifecycle.signal);
+      const copied = !old && input.kind === 'issue' ? await readLegacyIssueProgress(subject(input), this.deps.storage) : undefined;
+      const baseline: Marker = copied ? { inline: 0, conversation: copied.delivered, reviews: {} }
+        : marker(await this.deps.provider.read(input, this.lifecycle.signal));
       this.lifecycle.signal.throwIfAborted();
-      const baseline = marker(snapshot);
       const record: TrackingRecord = {
         schema: 1, registrationId: randomUUID(), pollSequence: 0, target: { ...input, repoFullName: input.repoFullName.toLowerCase() },
         active: true, terminal: false,
@@ -205,6 +208,11 @@ export class GitHubTrackingRuntime {
       if (!result.applied) throw new Error('registration changed concurrently');
       return { subjectKey: subject(input), active: true };
     });
+  }
+
+  async importLegacyIssueProgress(value: unknown) {
+    return this.serialize('legacy-issue-progress-import', () => copyLegacyIssueProgress(
+      legacyIssueOperationInput(value), this.deps.storage, this.lifecycle.signal, (key, work) => this.serialize(key, work)));
   }
 
   async unregister(target: Pick<GitHubTarget, 'kind' | 'repoFullName' | 'number'>): Promise<{ active: false }> {

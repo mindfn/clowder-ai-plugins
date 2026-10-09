@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import { GitHubTrackingRuntime, type GitHubSnapshot } from './tracking-runtime.js';
+import { legacyIssueProgressBytes } from './legacy-issue-progress.js';
 
 function fixture() {
   const records = new Map<string, { revision: number; value: unknown }>();
@@ -42,6 +44,39 @@ function fixture() {
 }
 
 const target = { kind: 'pr' as const, repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
+
+test('issue copy serializes with registration and a failed registration CAS leaves inert retryable progress', async () => {
+  const f = fixture(), runtime = new GitHubTrackingRuntime(f.deps);
+  const tasks = { old: { id: 'old', kind: 'issue_tracking', subjectKey: 'issue:example/project#12', status: 'doing',
+    automationState: JSON.stringify({ issue: { lastCommentCursor: 5, lastDeliveredCursor: 4 } }) } };
+  const input = { input: { protocolVersion: 1, snapshot: { tasks },
+    sourceDigest: createHash('sha256').update(legacyIssueProgressBytes(tasks)).digest('hex') } };
+  const cas = f.deps.storage.compareAndSet;
+  let release!: () => void, entered!: () => void;
+  const paused = new Promise<void>(resolve => { release = resolve; });
+  const staging = new Promise<void>(resolve => { entered = resolve; });
+  f.deps.storage.compareAndSet = async (key, expected, value) => {
+    if (key.startsWith('github.legacy-issue-progress.')) { entered(); await paused; return cas(key, expected, value); }
+    return { applied: false };
+  };
+  const copying = runtime.importLegacyIssueProgress(input);
+  await staging;
+  const registering = runtime.register({ ...target, kind: 'issue' });
+  const rejected = assert.rejects(registering, /changed concurrently/);
+  assert.equal(f.requests(), 0);
+  release(); await copying; await rejected;
+  assert.equal((await runtime.list()).length, 0);
+  assert.equal(f.requests(), 0);
+  f.deps.storage.compareAndSet = cas;
+  await runtime.register({ ...target, kind: 'issue' });
+  assert.equal(f.requests(), 0, 'retry restores copied frontier without requesting a fresh baseline');
+  const record = [...f.records.entries()].find(([key]) => key.startsWith('github.tracking.v1.'))![1].value as { baselines: { 'issue-tracking': { conversation: number } } };
+  assert.equal(record.baselines['issue-tracking'].conversation, 4);
+  await runtime.unregister({ ...target, kind: 'issue' });
+  await runtime.register({ ...target, kind: 'issue' });
+  assert.equal(f.requests(), 1, 'later explicit re-registration does not replay an old copied frontier');
+  await runtime.stop();
+});
 
 test('cloud correlation registration is idempotent across object key ordering but refuses a different request', async () => {
   const f = fixture();

@@ -77,6 +77,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.issue.metadata': (value: unknown) => community.inspectIssueMetadata(value),
       'github.legacy-issues.import': (value: unknown) => community.importLegacyIssues(value),
       'github.legacy-repositories.import': (value: unknown) => community.importLegacyRepositoryProgress(value),
+      'github.legacy-issue-progress.import': (value: unknown) => tracking.importLegacyIssueProgress(value),
       'github.draft.create': (value: unknown) => drafts.create(value),
       'github.draft.get': (value: unknown) => drafts.get(value),
       'github.draft.list': () => drafts.list(),

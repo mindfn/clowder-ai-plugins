@@ -128,13 +128,70 @@ export adapter, production copy, and no-double-run cutover remain unverified.
 Legacy journal history is still Host-retained pending its separate disposition;
 a copied collection cursor does not imply historical events were copied.
 
+## Implemented slice: settled issue delivery progress
+
+Before: re-registering a legacy issue takes a fresh provider baseline and can
+skip comments that were collected but never delivered, including arrivals during
+the move. After: an inert copy retains the old delivery frontier; explicit new
+registration checks Host access/binding and resumes from that frontier.
+
+Frozen sources are `RedisTaskCodec.ts:3–31` (raw hash serialization) and
+`IssueCommentTaskSpec.ts:277–295` (collection/delivery distinction), at Host
+`496e24089ffb5f99fa241e04c7ee0850df227be4`. The owner-local manifest operation
+`legacyIssueProgress/import` invokes `github.legacy-issue-progress.import`.
+Its wrapper extracts protocolVersion/sourceDigest/snapshot from params.input;
+stored config does not enter the digest. The envelope uses
+`snapshot: {tasks: {taskId: rawStringHash}}`. Canonical bytes fix the outer key
+`tasks`, sort task IDs and raw hash fields by JS UTF-16 order, and JSON-stringify
+each raw string without parsing/normalizing its contents. SHA-256 checks
+transport integrity, not ownership, settlement or old-producer shutdown.
+
+The complete batch validates before any write: at most 100 tasks and 256KiB,
+matching raw id, `issue_tracking`, status todo/doing, canonical issue subject,
+no duplicate normalized subjects, known raw hash fields and valid raw JSON
+automationState. The automation object accepts only issue progress. Pending
+wakes, await/other automation branches, nonempty probe/resolveMode/deploymentWait/
+dispatchGate/entrustedWork, terminal state and unknown schemas fail visibly.
+These exclusions require Host settlement or a separate adaptation; this is not
+a complete migration of every legacy tracking task.
+
+`lastCommentCursor` is required, nonnegative and safe integer. An explicit
+`lastDeliveredCursor` must not exceed it. If delivery is absent, the old Host
+single-cursor fallback applies: delivery equals the original collection cursor.
+The staged private record stores only normalized subject and both frontiers;
+old actors, destinations, prose, pending wake content and task identity are not
+persisted. No TTL, fetch, bind, notification, registration or polling occurs.
+Per-subject insert-only CAS preserves any existing registration (even inactive)
+and any different prior copy. Partial failure can be retried for missing rows.
+
+Import shares the registration's per-subject queue in the single active module.
+On first explicit registration, Host get/bind run before reading staging; a
+copied issue skips the fresh provider baseline entirely. Its initial feedback
+marker uses the delivery frontier, then one CAS activates tracking. Failed CAS
+leaves staging inert and retryable. Later explicit unregister/re-register uses
+normal new-registration semantics, not stale staged progress. A copy cannot
+rewind live cursors. Host's single-runtime/no-double-run guarantee and stopping
+the old producer remain required; the snapshot cannot attest either one.
+
+The real builtin journey copies collected=5/delivered=4, restarts, rejects a
+foreign Host target, explicitly registers and delivers comments 5 and 6 while
+excluding 4. Repeated copy/poll sends no duplicate. Focused tests also exercise
+concurrent staging, partial failure, registration contention/CAS failure,
+single-cursor fallback, corrupt state and every authority exclusion above.
+Old collected history is not claimed as imported: the new journal idempotently
+collects provider facts from the delivery frontier. Historical journal copy,
+raw Host export, production copy and real cutover remain pending.
+
+This new business slice uses GitHub alpha.3 source identity. Frozen alpha.2 at
+53e80f5 and all SDK beta.14/connector alpha.4 archives remain unchanged.
+
 ## Other legacy state remains explicitly pending or Host-retained
 
 | State | Current disposition | Missing evidence |
 | --- | --- | --- |
 | PR tracking hash / TaskStore provider cursors | Pending copy/verify adaptation | Join by canonical subject; preserve independent inline/conversation cursors and terminal/pending delivery facts |
 | Legacy combined PR comment cursor | Pending historical migration | IDs are different namespaces; cannot copy one scalar into both cursors or silently baseline over new activity |
-| Issue collected vs delivered cursors | Pending copy/verify adaptation | Resume from delivery frontier; do not claim collected comments were delivered |
+| Settled issue collected vs delivered cursors | Inert copy + explicit registration restore implemented | Raw Host export, production copy and cutover pending; unsettled/terminal tasks excluded |
 | Issue pendingWake / waitOutcome / accepted assignment | Host-retained governance consumer | Authenticated Host settlement, not plugin payload replay |
 | Repository config | Explicit new registration; legacy destination not adopted | Owner-selected target/access check; Host old producer stop before cutover |
 | Repository scan dedup / comment cursor | Package inert copy + explicit registration restore implemented | Real Host raw export/copy and no-double-run cutover remain pending |
@@ -145,6 +202,6 @@ a copied collection cursor does not imply historical events were copied.
 
 All three ledgers remain separate: this metadata business is implemented; real
 Host replacement is pending; no Host legacy implementation or data is deleted.
-The previous alpha.1/beta.13 graph is preserved at473783d. New business work is
-alpha.2 source only; final packaging waits for task296's exact beta.14 graph.
-No alpha.2 archive is frozen while the SDK dependency still points at beta.13.
+The previous alpha.1/beta.13 graph is preserved at473783d. Alpha.2/beta.14 is
+frozen at53e80f5 with a complete local gate; that evidence does not approve this
+new alpha.3 slice or establish CI, review, Host consumption or release.

@@ -1,5 +1,5 @@
 pluginId: official.github-operations
-version: 0.1.0-alpha.2
+version: 0.1.0-alpha.3
 contractVersion: 0.1.0
 name: GitHub Operations
 description:
@@ -10,6 +10,17 @@ icon:
   type: svg
   src: assets/icon.svg
 configuration:
+  - key: legacyIssueProgress
+    label: Copy settled issue delivery progress
+    description: Stage legacy issue cursors without adopting destinations or starting tracking. Pending Host wakes and waits must be settled first. Requires a raw Host snapshot.
+    kind: operation
+    required: false
+    actions:
+      - id: import
+        label: Copy issue progress
+        render: button
+        confirm: Copy settled issue delivery progress? Stop the old producer before explicitly registering tracking here. Existing records and Host obligations are preserved.
+        action: { method: github.legacy-issue-progress.import }
   - key: legacyRepositoryProgress
     label: Copy legacy repository progress once
     description: Stage repository scan and comment progress without starting polling. Register notification destinations separately after the Host cutover. Existing progress is preserved.
