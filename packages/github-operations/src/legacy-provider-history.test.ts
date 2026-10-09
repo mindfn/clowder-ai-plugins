@@ -15,6 +15,48 @@ const envelope = (events: Record<string, string[]> = { [subject]: [raw()] }) => 
 });
 const signal = () => new AbortController().signal;
 
+test('mixed-case source bytes survive validation while aliases share one canonical stored identity', async () => {
+  const storage = memoryStorage();
+  const source = 'pr:Owner/Repo#42', canonical = source.toLowerCase();
+  const event = raw('pr.opened', { subjectKey: source });
+  const input = envelope({ [source]: [event] });
+  assert.equal((await copyLegacyProviderHistory(input, storage, signal())).data.imported, 1);
+  assert.equal((await copyLegacyProviderHistory(input, storage, signal())).data.identical, 1);
+  const mixed = await inspectLegacyProviderHistory({ subjectKey: source }, storage);
+  assert.deepEqual(mixed, await inspectLegacyProviderHistory({ subjectKey: canonical }, storage));
+  assert.equal(mixed.data.subjectKey, canonical);
+  assert.equal(mixed.data.sourceDigest, createHash('sha256').update(JSON.stringify([event])).digest('hex'));
+  assert.equal(mixed.data.items[0]?.sourceFingerprint, createHash('sha256').update(event).digest('hex'));
+  const changedAlias = envelope({ [canonical]: [raw('pr.closed', { subjectKey: canonical })] });
+  assert.equal((await copyLegacyProviderHistory(changedAlias, storage, signal())).data.preserved, 1);
+  assert.deepEqual(await inspectLegacyProviderHistory({ subjectKey: source }, storage), mixed);
+  const keys = Object.keys(await storage.list());
+  assert.deepEqual(keys, [`github.legacy-provider-history.${createHash('sha256').update(canonical).digest('hex')}`]);
+
+  const concurrent = memoryStorage();
+  const results = await Promise.all([input, changedAlias].map(value => copyLegacyProviderHistory(value, concurrent, signal())));
+  assert.equal(results.reduce((n, r) => n + r.data.imported, 0), 1);
+  assert.equal(results.reduce((n, r) => n + r.data.preserved, 0), 1);
+  assert.equal(Object.keys(await concurrent.list()).length, 1);
+});
+
+test('case-fold collisions, raw subject mismatch and altered digest reject the whole batch before CAS', async () => {
+  const source = 'pr:Owner/Repo#42', canonical = source.toLowerCase();
+  const valid = envelope({ [source]: [raw('pr.opened', { subjectKey: source })] });
+  for (const input of [
+    envelope({ [subject]: [raw()], [source]: [raw('pr.opened', { subjectKey: source, sourceEventId: 'mixed' })],
+      [canonical]: [raw('pr.closed', { subjectKey: canonical, sourceEventId: 'lower' })] }),
+    envelope({ [subject]: [raw()], [source]: [raw('pr.opened', { subjectKey: canonical, sourceEventId: 'mismatch' })] }),
+    { ...valid, sourceDigest: envelope({ [canonical]: valid.snapshot.events[source]! }).sourceDigest },
+  ]) {
+    const storage = memoryStorage(); let writes = 0;
+    storage.compareAndSet = async () => { writes++; throw new Error('unexpected CAS'); };
+    await assert.rejects(copyLegacyProviderHistory(input, storage, signal()), /history/);
+    assert.equal(writes, 0);
+    assert.deepEqual(await storage.list(), {});
+  }
+});
+
 test('raw mixed history becomes inert provider metadata, never replayable authority or body', async () => {
   const storage = memoryStorage();
   const result = await copyLegacyProviderHistory(envelope({ [subject]: [raw(), raw('case.routed', { sourceEventId: 'route' })] }), storage, signal());

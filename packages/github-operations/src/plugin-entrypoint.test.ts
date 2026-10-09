@@ -30,15 +30,22 @@ test('declared history copy remains readable after restart without changing the 
   const before = await f.runtimeHost.storage.list();
   const operation = manifest.configuration.find((c: { key: string }) => c.key === 'legacyProviderHistory');
   assert.ok(operation?.actions[0].confirm);
-  const events = { [event.subjectKey]: [JSON.stringify({ ...event, sourceEventId: 'old', kind: 'issue.closed', at: 10,
+  const sourceSubject = 'issue:Example/Project#7';
+  const events = { [sourceSubject]: [JSON.stringify({ ...event, subjectKey: sourceSubject, sourceEventId: 'old', kind: 'issue.closed', at: 10,
     payload: { body: 'old-private-body', principal: 'old-private-principal' } })] };
   const input = { protocolVersion: 1, snapshot: { events }, sourceDigest: createHash('sha256').update(legacyHistoryBytes(events)).digest('hex') };
+  const collisions = { ...events, [event.subjectKey]: [JSON.stringify({ ...event, sourceEventId: 'alias' })] };
+  await assert.rejects(async () => active.actions[operation.actions[0].action.method]!({ input: {
+    protocolVersion: 1, snapshot: { events: collisions }, sourceDigest: createHash('sha256').update(legacyHistoryBytes(collisions)).digest('hex'),
+  } }), /duplicate canonical history subject/);
+  assert.deepEqual(await f.runtimeHost.storage.list(), before);
   await active.actions[operation.actions[0].action.method]!({ input: { ...input, token: 'stored-private-token' } });
   for (const [key, entry] of Object.entries(before)) assert.deepEqual((await f.runtimeHost.storage.get(key)), entry);
   assert.deepEqual(await log.read(event.subjectKey), [event]);
   await active.stop(); active = await module.create(manifest).start(f.runtimeHost);
   const tool = manifest.contributions.find((c: { id: string }) => c.id === 'inspect-legacy-history');
   const result = await active.actions[tool.action.method]!({ subjectKey: event.subjectKey }) as { data: { items: Array<{ kind: string }> } };
+  assert.deepEqual(await active.actions[tool.action.method]!({ subjectKey: sourceSubject }), result);
   assert.equal(result.data.items[0]?.kind, 'issue.closed');
   await active.actions['github.repo-scan']!({});
   assert.equal(reads, 0); assert.equal(f.deliveries.length, 0);

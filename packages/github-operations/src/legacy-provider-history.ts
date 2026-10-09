@@ -19,8 +19,8 @@ function object(value: unknown): Record<string, unknown> {
 }
 function subject(value: unknown): string {
   if (typeof value !== 'string' || value.length > 256 ||
-    !/^(?:pr|issue):[a-z0-9_.-]+\/[a-z0-9_.-]+#[1-9][0-9]*$/.test(value) ||
-    !Number.isSafeInteger(Number(value.slice(value.lastIndexOf('#') + 1)))) throw new TypeError('invalid canonical history subject');
+    !/^(?:pr|issue):[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#[1-9][0-9]*$/.test(value) ||
+    !Number.isSafeInteger(Number(value.slice(value.lastIndexOf('#') + 1)))) throw new TypeError('invalid history subject');
   return value;
 }
 function fields(value: Record<string, unknown>, allowed: string[]) {
@@ -45,9 +45,12 @@ function decode(value: unknown): { digest: string; histories: History[] } {
   if (Object.keys(events).length > 50) throw new TypeError('history exceeds 50 subjects');
   let total = 0;
   const ids = new Set<string>();
+  const identities = new Set<string>();
   const raws: Record<string, string[]> = Object.create(null);
   const histories = Object.keys(events).sort().map(s => {
-    subject(s);
+    const identity = subject(s).toLowerCase();
+    if (identities.has(identity)) throw new TypeError('duplicate canonical history subject');
+    identities.add(identity);
     const list = events[s];
     if (!Array.isArray(list) || list.some(v => typeof v !== 'string')) throw new TypeError('history requires raw LIST strings');
     total += list.length;
@@ -74,7 +77,9 @@ function decode(value: unknown): { digest: string; histories: History[] } {
     return { subjectKey: s, sourceDigest: hash(JSON.stringify(list)), sourceCount: list.length, hostEventsRetained, items };
   });
   if (hash(legacyHistoryBytes(raws)) !== input.sourceDigest) throw new TypeError('history digest mismatch');
-  return { digest: input.sourceDigest, histories };
+  // Verify exact legacy keys, event subjects and raw bytes before projecting
+  // storage identities. Never combine logs that alias within one snapshot.
+  return { digest: input.sourceDigest, histories: histories.map(history => ({ ...history, subjectKey: history.subjectKey.toLowerCase() })) };
 }
 
 /** One atomic inert row per subject. Never writes the active event log,
@@ -113,7 +118,7 @@ function readHistory(value: unknown, expected: string): History {
 
 export async function inspectLegacyProviderHistory(value: unknown, storage: PluginStorageHost) {
   const input = object(value); fields(input, ['subjectKey', 'offset', 'limit']);
-  const s = subject(input.subjectKey), offset = input.offset ?? 0, limit = input.limit ?? 50;
+  const s = subject(input.subjectKey).toLowerCase(), offset = input.offset ?? 0, limit = input.limit ?? 50;
   if (!safeCount(offset) || !safeCount(limit) || limit < 1 || limit > 100) throw new TypeError('invalid history pagination');
   const entry = await storage.get(key(s));
   const history = entry ? readHistory(entry.value, s) : null;

@@ -208,7 +208,7 @@ access. Existing progress-copy tests now fail at the actual bind boundary.
 These isolated assertions still require new exact-archive Host consumption to
 close finding762. The owner-origin independent review gate remains separate.
 
-## Historical provider metadata (alpha.6 source slice)
+## Historical provider metadata (alpha.7 case-preserving transport)
 
 Before: looking up old GitHub activity requires finding the previous Host journal.
 After: a bounded event index can be copied and inspected in this installation,
@@ -218,24 +218,31 @@ The original journal remains the source for bodies and Host decisions.
 Frozen source `CommunityEventLog.ts` at Host496e24089ffb5f99fa241e04c7ee0850df227be4
 stores JSON strings in Redis LIST `community:events:log:{subjectKey}`. The new
 owner-confirmed operation `legacyProviderHistory/import` receives protocol1,
-sourceDigest and `snapshot: {events: {canonicalSubject: rawListStrings}}`.
+sourceDigest and `snapshot: {events: {exactSourceSubject: rawListStrings}}`.
 Canonical digest bytes fix outer `events`, sort subject keys in JS UTF-16 order
-and preserve each raw string and its LIST order. No Redis access or business
-decoding belongs in a future Host raw exporter; that exporter is still pending.
+and preserve each raw string and its LIST order. The Host raw exporter reads
+the exact source key without decoding business JSON. Exporter review and real
+mixed-case Host consumption are separate from package validation.
 
 The complete batch validates before writing: 256KiB, 50 subjects, 500 events,
-canonical lowercase subject/positive safe number, exact known event envelope,
+ASCII repository subject/positive safe number, exact known event envelope,
 nonnegative safe timestamp, known classification/kind, matching subject and
-globally unique sourceEventId. Unknown schemas fail, not silently disappear.
+globally unique sourceEventId. Raw event subject must exactly match its source
+key, including case. Two source keys with the same lowercase identity reject
+the entire batch before any storage write; they are never merged or selected.
+Only after all validation and digest verification are destination identities
+normalized to lowercase. Unknown schemas fail, not silently disappear.
 Known `case.*` events remain in Host and are counted, not persisted or replayed.
 Provider lifecycle/comment/label/review kinds retain ONLY kind, timestamp,
 original LIST sequence and SHA256 of their raw event. Payload, body, raw ID,
 classification, principals, leases and routes are never copied. Head/CI/cloud
 `case.*` history also remains Host-retained in this slice.
 
-Each subject becomes one bounded insert-only CAS record with no TTL, its raw
+Each canonical subject becomes one bounded insert-only CAS record with no TTL, its raw
 LIST digest and excluded-event count. Identical retries are idempotent; different
 copies or owner changes are preserved; interrupted batches retry missing rows.
+Across batches, case aliases address that same row. Inspection accepts the
+original or lowercase repository spelling and returns the canonical identity.
 Inspection returns validated metadata pages of at most100 plus a derived GitHub
 subject URL. Corrupt stored rows fail closed. Import/inspection never touches
 the active journal, projections, current cursors, registrations or notification
