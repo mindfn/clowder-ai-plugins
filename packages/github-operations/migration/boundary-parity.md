@@ -166,3 +166,31 @@ The Host files and callers remain unchanged. This slice removes inactive shipped
 copies, not product capabilities or Host implementations. It proves neither
 legacy state copying nor no-double-run, and does not convert the remaining
 unwired provider/read-model copies into completed runtime parity.
+
+## Inactive decision read models
+
+The five copied files `community-closure-checklist`, `community-decision-queue`,
+`community-decision-queue-closure`, `community-decision-queue-types` and
+`community-route-recommendation` have no package runtime or test caller. The
+static audit at `6a238f1` finds only internal edges within this inactive cluster.
+Neither index/entrypoint exports them nor any declared action calls them.
+
+Source inspection establishes their role, not merely their unreachability:
+the queue consumes Host case state, assigned cat/thread, direction cards and
+closure waivers. It renders `/api/community-issues/*` resolve/report/waiver
+actions and `/api/community-findings/*` mutations; its checklist reports Host
+case closure readiness. `routes/community-decision-queue.ts` and its read-model
+adapter compose these fields from Host issue/task/object stores. The
+route-recommendation file only re-exports the shared Host route validator.
+
+Under rulings 286/338, these unused package copies are removed from source and
+clean build output. This does not claim that their Host board is replaced or
+authorize deletion of any Host consumer. Provider-specific board presentation
+and Host governance decomposition remain an explicit cutover gap. The declared
+`github_repository_observations` action still exposes provider facts and
+explicitly promises no governance verdict, assignment or closure action.
+
+Five source/artifact boundary regressions fail before removal and pass after a
+clean build. Package source map records each removed copy with
+`hostLegacyRemoved=false` and `realPackageReplacementVerified=false`; original
+frozen bytes remain at `6636763`. This is package cleanup, not full business parity.

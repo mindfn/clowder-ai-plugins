@@ -97,31 +97,51 @@
     },
     {
       "source": "packages/api/src/domains/community/community-closure-checklist.ts",
-      "target": "packages/github-operations/src/business/domains/community/community-closure-checklist.ts",
       "sourceSha256": "b6c3808a87a44916f71134a776508ebebefb0cb3b997b048aa93a5c317bcf0bd",
       "lines": 104,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-host-decision-read-model-copy-removed",
+      "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-closure-checklist.ts",
+      "hostLegacyRemoved": false,
+      "realPackageReplacementVerified": false,
+      "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
+      "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
+      "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
     },
     {
       "source": "packages/api/src/domains/community/community-decision-queue-closure.ts",
-      "target": "packages/github-operations/src/business/domains/community/community-decision-queue-closure.ts",
       "sourceSha256": "61a292ff26b7a2ac5ebc05f567ca3eb642f572d40b20e5863dacf0331f4b5543",
       "lines": 131,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-host-decision-read-model-copy-removed",
+      "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-decision-queue-closure.ts",
+      "hostLegacyRemoved": false,
+      "realPackageReplacementVerified": false,
+      "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
+      "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
+      "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
     },
     {
       "source": "packages/api/src/domains/community/community-decision-queue-types.ts",
-      "target": "packages/github-operations/src/business/domains/community/community-decision-queue-types.ts",
       "sourceSha256": "c54f330e0943ea57a1ce2d5a8b79813bffcfa0d20230149fe34ae282bc7995b3",
       "lines": 129,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-host-decision-read-model-copy-removed",
+      "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-decision-queue-types.ts",
+      "hostLegacyRemoved": false,
+      "realPackageReplacementVerified": false,
+      "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
+      "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
+      "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
     },
     {
       "source": "packages/api/src/domains/community/community-decision-queue.ts",
-      "target": "packages/github-operations/src/business/domains/community/community-decision-queue.ts",
       "sourceSha256": "9a2045622ada9a23427a6a561a3bd58794241be22486b57df48dfe2d6862e074",
       "lines": 368,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-host-decision-read-model-copy-removed",
+      "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-decision-queue.ts",
+      "hostLegacyRemoved": false,
+      "realPackageReplacementVerified": false,
+      "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
+      "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
+      "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
     },
     {
       "source": "packages/api/src/domains/community/community-delivery-policy.ts",
@@ -158,10 +178,15 @@
     },
     {
       "source": "packages/api/src/domains/community/community-route-recommendation.ts",
-      "target": "packages/github-operations/src/business/domains/community/community-route-recommendation.ts",
       "sourceSha256": "0520ef153febdffffbc58f045e234285cf120adddab9321b5a0079917325bd72",
       "lines": 10,
-      "disposition": "copied-unadapted"
+      "disposition": "inactive-host-decision-read-model-copy-removed",
+      "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-route-recommendation.ts",
+      "hostLegacyRemoved": false,
+      "realPackageReplacementVerified": false,
+      "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
+      "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
+      "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
     },
     {
       "source": "packages/api/src/domains/community/community-sla-policy.ts",

@@ -4,6 +4,20 @@ import test from 'node:test';
 
 // These consumers require Host-authenticated routing/assignment truth. Keeping
 // an unused compiled copy would make it available to package importers anyway.
+for (const name of ['community-closure-checklist', 'community-decision-queue',
+  'community-decision-queue-closure', 'community-decision-queue-types', 'community-route-recommendation']) {
+  test(`package excludes inactive Host decision/closure read model ${name}`, async () => {
+    for (const directory of ['src', 'dist']) {
+      await assert.rejects(access(new URL(`../${directory}/business/domains/community/${name}.${directory === 'src' ? 'ts' : 'js'}`, import.meta.url)), { code: 'ENOENT' });
+    }
+    const map = JSON.parse(await readFile(new URL('../migration/source-map.json', import.meta.url), 'utf8'));
+    const entry = map.entries.find((entry: { source: string }) => entry.source.endsWith(`/${name}.ts`));
+    assert.equal(entry.disposition, 'inactive-host-decision-read-model-copy-removed');
+    assert.equal(entry.hostLegacyRemoved, false);
+    assert.equal(entry.realPackageReplacementVerified, false);
+  });
+}
+
 for (const name of ['community-bootstrap', 'community-auto-tracking']) {
   test(`package excludes Host governance consumer ${name} from source and built artifact`, async () => {
     for (const directory of ['src', 'dist']) {
