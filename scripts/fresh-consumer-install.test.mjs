@@ -378,7 +378,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       ),
     );
     assert.equal(contractPackage.version, '0.1.0-beta.29');
-    assert.equal(sdkPackage.version, '0.2.0-beta.13');
+    assert.equal(sdkPackage.version, '0.2.0-beta.14');
     assert.equal(sdkPackage.dependencies['@clowder-ai/plugin-contract'], '0.1.0-beta.29');
     assert.equal(
       feishuPackage.dependencies['@clowder-ai/plugin-contract'],
@@ -429,8 +429,8 @@ test('packed public packages install and import in a fresh npm consumer', async 
     // really preserve the two dependency identities in one fresh installation.
     for (const [directory, expected] of [
       ...['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow'].map(name => [name, '0.2.0-beta.12']),
-      ...connectorPackages.map(({ name }) => [name.slice('@clowder-ai/'.length), '0.2.0-beta.13']),
-      ['github-operations', '0.2.0-beta.13'],
+      ...connectorPackages.map(({ name }) => [name.slice('@clowder-ai/'.length), '0.2.0-beta.14']),
+      ['github-operations', '0.2.0-beta.14'],
     ]) {
       const installedRoot = join(consumer, 'node_modules/@clowder-ai', directory);
       const resolvedUrl = run(process.execPath, ['--input-type=module', '--eval',
