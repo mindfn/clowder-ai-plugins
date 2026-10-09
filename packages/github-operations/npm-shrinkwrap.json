@@ -1,16 +1,16 @@
 {
   "name": "@clowder-ai/github-operations",
-  "version": "0.1.0-alpha.14",
+  "version": "0.1.0-alpha.15",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "@clowder-ai/github-operations",
-      "version": "0.1.0-alpha.14",
+      "version": "0.1.0-alpha.15",
       "license": "MIT",
       "dependencies": {
-        "@clowder-ai/plugin-contract": "0.1.0-beta.30",
-        "@clowder-ai/plugin-sdk": "0.2.0-beta.15",
+        "@clowder-ai/plugin-contract": "0.1.0-beta.32",
+        "@clowder-ai/plugin-sdk": "0.2.0-beta.16",
         "zod": "3.25.76",
         "@modelcontextprotocol/sdk": "1.26.0"
       },
@@ -19,21 +19,21 @@
       }
     },
     "node_modules/@clowder-ai/plugin-sdk": {
-      "version": "0.2.0-beta.15",
-      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.15.tgz",
-      "integrity": "sha512-8KzckhCHr1hoO82WO82Ls/bn//dab6KoswcWPWf9fINlxYujEsa4+EQJscpRRR23WWizui1Ih2Kvq1hmKwyqzA==",
+      "version": "0.2.0-beta.16",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.16.tgz",
+      "integrity": "sha512-V720g0J1d8q8cb6cdkDP71iwQI9QtzGKtLhw0DtbpBBxdsqVrOwMoCRoGxnFZPj+PzjSDdE9vRR/Q+ebEaNP7A==",
       "license": "MIT",
       "dependencies": {
-        "@clowder-ai/plugin-contract": "0.1.0-beta.30"
+        "@clowder-ai/plugin-contract": "0.1.0-beta.32"
       },
       "engines": {
         "node": ">=20.0.0"
       }
     },
     "node_modules/@clowder-ai/plugin-contract": {
-      "version": "0.1.0-beta.30",
-      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.1.0-beta.30.tgz",
-      "integrity": "sha512-4sWQdEjRgUBPB/VEC9f7WrtuwJh/AZPlcsVu4vOd2mH7U5TXep2srsf/bqLv/z6IotkNzN8z90mHVrO2WLPc/w==",
+      "version": "0.1.0-beta.32",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.1.0-beta.32.tgz",
+      "integrity": "sha512-FOn+kczQwcHRz1sW4N95QOILz0IVYPlFSc4S86isqWtNOwWiOMeQDOVqVqi1ptOCW/P/wUUYgxZ7nWxHx2UMJA==",
       "license": "MIT",
       "dependencies": {
         "ajv": "^8.17.0",

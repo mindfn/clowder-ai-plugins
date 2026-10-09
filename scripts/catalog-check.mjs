@@ -20,9 +20,9 @@ import {
 import { assertStaticPackageDependencies } from './catalog-static-package.mjs';
 import { assertPackedRuntimeEntrypoints } from './catalog-runtime-entrypoints.mjs';
 
-import { readRetainedSdkClosure } from './retained-sdk-fixture.mjs';
+import { readRetainedSdkClosures } from './retained-sdk-fixture.mjs';
 
-const retainedSdkClosures = [await readRetainedSdkClosure()];
+const retainedSdkClosures = await readRetainedSdkClosures();
 const workspaceSdk = JSON.parse(
   await readFile(new URL('../packages/plugin-sdk/package.json', import.meta.url), 'utf8'),
 );

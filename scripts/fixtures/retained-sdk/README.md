@@ -35,3 +35,19 @@ Size: 228047 bytes. SHA-256: `25225f3c1b3f9935c692dbca7f8f001eca70ab7c198165b4e9
 SRI: `sha512-77p2pQyLZvbC+kv7yOOzIdsXNYeUblxy50H6VQVQYx2CB6vwySSux2LvUXzPLvdVZCNuJkFHpY04mZ3vHmnXgQ==`.
 The test verifies the retained shrinkwrap and resolves each SDK's contract
 independently; beta.30 never masquerades as beta.29.
+
+## Retained SDK beta.15 and contract beta.30
+
+GitHub alpha.15 uses SDK beta.16 and contract beta.32. Other existing plugins
+retain their accepted beta.15/beta.30 dependency bytes. These MIT-licensed
+canonical archives come from the recorded `c4316f3` alpha.6 artifact graph,
+also reused by the independently verified alpha.14 graph at
+`d1a6bfb2db8fdf8f0a633ecb5e04ef3ac4a6444a`; they are immutable test inputs,
+not new releases. Evidence: `f202-handoff/w3-github/integrated-c4316f3-alpha6/canonical.json`.
+
+- SDK beta.15: 78680 bytes, SHA256 `60912dfbd6911794b84a303c409215524bfe3629c34c41e1564255aa106cd04f`.
+- Contract beta.30: 229585 bytes, SHA256 `55379eb6d73d690bef91224e6a0684c7ba8938a88c4b63c41e241e3fd3344dd3`.
+
+The fixture loader checks bytes, versions, SDK dependency and derived SRI
+against each retained consumer. It does not allow arbitrary old versions or
+replace their bytes with the current workspace packages.

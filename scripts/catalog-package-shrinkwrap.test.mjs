@@ -11,9 +11,9 @@ import {
   collectWorkspacePackageIntegrityMismatches,
 } from './catalog-package-shrinkwrap.mjs';
 
-import { readRetainedSdkClosure } from './retained-sdk-fixture.mjs';
+import { readRetainedSdkClosures } from './retained-sdk-fixture.mjs';
 
-const retainedSdkClosures = [await readRetainedSdkClosure()];
+const retainedSdkClosures = await readRetainedSdkClosures();
 const repoRoot = new URL('../', import.meta.url);
 const workspaceContract = JSON.parse(
   await readFile(new URL('../packages/plugin-contract/package.json', import.meta.url), 'utf8'),
