@@ -31,9 +31,9 @@ for (const [name, factoryName] of Object.entries(factories)) {
     if (packageRoot !== undefined) {
       const pkg = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'));
       const sdk = JSON.parse(await readFile(join(packageRoot, 'node_modules/@clowder-ai/plugin-sdk/package.json'), 'utf8'));
-      assert.equal(pkg.version, '0.1.0-alpha.3'); assert.equal(manifest.version, pkg.version);
-      assert.equal(pkg.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.13');
-      assert.equal(sdk.version, '0.2.0-beta.13');
+      assert.equal(pkg.version, '0.1.0-alpha.4'); assert.equal(manifest.version, pkg.version);
+      assert.equal(pkg.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.14');
+      assert.equal(sdk.version, '0.2.0-beta.14');
     }
     const targets = ['permissionWhitelistEnabled', 'permissionCommandAdminOnly', 'permissionAdminIdsJson', 'permissionGroupsJson', 'permissionRevision'];
     const settings = manifest.configuration.find(field => field.key === 'connector_permissions');
@@ -177,6 +177,37 @@ for (const [name, factoryName] of Object.entries(factories)) {
       }
       if (name === 'xiaoyi') assert.equal(closes.length, replies.length - 2,
         'only two explicit bodies remain unsettled');
+      // Exercise the shared durable invariant through every actual module and
+      // physical SDK, not a command-store substitute. Fixture injection below
+      // represents old buggy persisted state, never a production data write.
+      const priorPolicy = structuredClone(state.get('connector.permissions.v1').value);
+      const capForm = await active.actions['permissions.read']({});
+      const capGroups = Array.from({ length: 5000 }, (_, i) => ({ externalChatId: `g${i}` }));
+      await active.actions['permissions.configure']({ input: { ...capForm.targetValues,
+        permissionGroupsJson: JSON.stringify(capGroups) } });
+      const atCap = structuredClone(state.get('connector.permissions.v1'));
+      const beforeCapFailure = { sent: sent.length, replies: replies.length };
+      await assert.rejects(inbound(input('/allow-group g5000', 'group-5001')), /group bound/);
+      assert.deepEqual(state.get('connector.permissions.v1'), atCap);
+      assert.equal(sent.length, beforeCapFailure.sent); assert.equal(replies.length, beforeCapFailure.replies);
+      await inbound(input('/allow-group g0', 'cap-replacement'));
+      assert.equal(state.get('connector.permissions.v1').value.allowedGroups.length, 5000);
+      const validPolicy = structuredClone(state.get('connector.permissions.v1').value);
+      await host.storage.set('connector.permissions.v1', { ...validPolicy,
+        allowedGroups: [...validPolicy.allowedGroups, { externalChatId: 'g5000', addedAt: 5 }] });
+      const overCap = structuredClone(state.get('connector.permissions.v1'));
+      await assert.rejects(inbound(input('/where', 'oversized-closed')), /group bound/);
+      const recovery = await active.actions['permissions.read']({});
+      assert.equal(recovery.data.status, 'recovery_required'); assert.equal(recovery.data.groupCount, 5001);
+      assert.equal(recovery.targetValues.permissionGroupsJson, '');
+      assert.ok(Buffer.byteLength(JSON.stringify(recovery)) < 4096);
+      await assert.rejects(active.actions['permissions.configure']({ input: recovery.targetValues }));
+      assert.deepEqual(state.get('connector.permissions.v1'), overCap);
+      await active.actions['permissions.configure']({ input: { ...recovery.targetValues,
+        permissionGroupsJson: '[{"externalChatId":"g4999"}]' } });
+      assert.deepEqual(state.get('connector.permissions.v1').value.allowedGroups,
+        [validPolicy.allowedGroups.find(group => group.externalChatId === 'g4999')]);
+      await host.storage.set('connector.permissions.v1', priorPolicy);
       assert.equal(JSON.stringify(state.get('connector.permissions.v1')).includes('never-store'), false);
       const persisted = structuredClone(state.get('connector.permissions.v1'));
       const beforeStop = sent.length;

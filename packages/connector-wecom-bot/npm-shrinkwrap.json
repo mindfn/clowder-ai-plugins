@@ -1,15 +1,15 @@
 {
   "name": "@clowder-ai/connector-wecom-bot",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "@clowder-ai/connector-wecom-bot",
-      "version": "0.1.0-alpha.3",
+      "version": "0.1.0-alpha.4",
       "license": "MIT",
       "dependencies": {
-        "@clowder-ai/plugin-sdk": "0.2.0-beta.13",
+        "@clowder-ai/plugin-sdk": "0.2.0-beta.14",
         "@wecom/aibot-node-sdk": "1.0.4"
       },
       "engines": {
@@ -30,9 +30,9 @@
       }
     },
     "node_modules/@clowder-ai/plugin-sdk": {
-      "version": "0.2.0-beta.13",
-      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.13.tgz",
-      "integrity": "sha512-GLq2Kuu7xrlzlrB2nOAPXogJLGPwLLC8Bwr7B8fujiRGaDG7rwB0yDg1hyJbu/QiHINXlOoOVEtz9dVE11ZiLw==",
+      "version": "0.2.0-beta.14",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.14.tgz",
+      "integrity": "sha512-ig93V9/tLKo4E0knnCa7JK62WsCVyGyeI8YF7mt1a0fsHRwIeZAIp7iMDVhr7bCYM2WL4vpQB0nJCh1bU2y/RA==",
       "license": "MIT",
       "dependencies": {
         "@clowder-ai/plugin-contract": "0.1.0-beta.29"

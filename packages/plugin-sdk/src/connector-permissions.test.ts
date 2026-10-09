@@ -34,6 +34,47 @@ function envelope(snapshot: unknown = legacy) {
   return { protocolVersion: 1, sourceDigest: createHash('sha256').update(canonicalJson(snapshot)).digest('hex'), snapshot };
 }
 
+function policyWithGroups(count: number) {
+  return { ...decodeLegacyConnectorPermissions(legacy),
+    allowedGroups: Array.from({ length: count }, (_, i) => ({ externalChatId: `g${i}`, label: `Group ${i}`, addedAt: i })) };
+}
+
+test('shared durable group bound refuses group 5001 but permits replacement at capacity', async () => {
+  const host = storage(); const store = createConnectorPermissionStore(host);
+  await store.initialize(policyWithGroups(5000));
+  const before = await host.list();
+  await assert.rejects(store.allowGroup('g5000', 'overflow', 5000), /group bound/);
+  assert.deepEqual(await host.list(), before);
+  await store.allowGroup('g4999', 'Replacement', 6000);
+  assert.equal((await store.get()).allowedGroups.length, 5000);
+  assert.deepEqual((await store.get()).allowedGroups.at(-1), { externalChatId: 'g4999', label: 'Replacement', addedAt: 6000 });
+});
+
+test('concurrent last-slot admissions persist exactly one distinct group', async () => {
+  const host = storage(); const store = createConnectorPermissionStore(host);
+  await store.initialize(policyWithGroups(4999));
+  const results = await Promise.allSettled([store.allowGroup('a'), store.allowGroup('b')]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal((await store.get()).allowedGroups.length, 5000);
+});
+
+test('oversized stored state fails closed on runtime, import and initialization without mutation', async () => {
+  const host = storage(); const store = createConnectorPermissionStore(host);
+  const oversized = policyWithGroups(5001);
+  await host.set('connector.permissions.v1', oversized);
+  const before = await host.list();
+  await assert.rejects(store.get(), /group bound/);
+  await assert.rejects(store.allowGroup('g0'), /group bound/);
+  await assert.rejects(store.denyGroup('g5000'), /group bound/);
+  await assert.rejects(store.importLegacy(envelope()), /group bound/);
+  await assert.rejects(store.initialize(policyWithGroups(0)), /group bound/);
+  assert.throws(() => evaluateConnectorPermission(oversized, { chatId: 'direct', group: false, text: 'hello' }), /group bound/);
+  assert.deepEqual(await host.list(), before);
+  const empty = storage();
+  await assert.rejects(createConnectorPermissionStore(empty).initialize(oversized), /group bound/);
+  assert.deepEqual(await empty.list(), {});
+});
+
 test('frozen raw snapshot UTF-8 digest vector matches owner cutover bytes', async () => {
   const snapshot = { config: { whitelistEnabled: 'false', commandAdminOnly: 'true', adminOpenIds: '[]' },
     groups: { '群': '{"label":"测试","addedAt":3}', 'chat-2': '{"label":"B","addedAt":2}', 'chat-10': '{"label":"A","addedAt":1}' } };

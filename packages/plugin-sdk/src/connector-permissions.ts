@@ -5,6 +5,7 @@ import { canonicalJson } from './feature-context.js';
 
 const KEY = 'connector.permissions.v1';
 const ATTEMPTS = 8;
+const GROUP_LIMIT = 5000;
 export type ConnectorCommandName = 'where' | 'new' | 'threads' | 'use' | 'thread' | 'commands' | 'cats' | 'status' |
   'history' | 'unbind' | 'allow-group' | 'deny-group' | 'focus' | 'ask';
 export interface ConnectorPermissions {
@@ -45,7 +46,9 @@ function group(value: unknown) {
   if (data.label !== undefined && typeof data.label !== 'string') throw new TypeError('invalid group label');
   return { externalChatId: id(data.externalChatId), ...(data.label === undefined ? {} : { label: data.label }), addedAt: data.addedAt };
 }
-function validate(value: unknown): ConnectorPermissions {
+// Only the explicit owner recovery path may inspect a structurally valid old
+// oversized policy. Runtime reads and every published replacement stay bounded.
+function validateShape(value: unknown): ConnectorPermissions {
   const data = record(value);
   if (data.v !== 1 || !Array.isArray(data.allowedGroups)) throw new TypeError('invalid permission state');
   const allowedGroups = data.allowedGroups.map(group);
@@ -55,6 +58,14 @@ function validate(value: unknown): ConnectorPermissions {
   if (!adminConfigured && adminOpenIds.length) throw new TypeError('unconfigured admins must be empty');
   return { v: 1, whitelistEnabled: boolean(data.whitelistEnabled), commandAdminOnly: boolean(data.commandAdminOnly),
     adminConfigured, adminOpenIds, allowedGroups };
+}
+
+function validate(value: unknown): ConnectorPermissions {
+  const data = record(value);
+  if (Array.isArray(data.allowedGroups) && data.allowedGroups.length > GROUP_LIMIT) {
+    throw new TypeError('permission state exceeds group bound; owner recovery required');
+  }
+  return validateShape(value);
 }
 
 /** Decode an offline export of the two legacy Redis hashes; never connects to Redis. */
@@ -92,7 +103,7 @@ function legacyImport(value: unknown) {
   const snapshot = record(input.snapshot);
   const config = record(snapshot.config);
   const groups = record(snapshot.groups);
-  if (Object.keys(groups).length > 5000) throw new TypeError('permission import exceeds group bound');
+  if (Object.keys(groups).length > GROUP_LIMIT) throw new TypeError('permission import exceeds group bound');
   for (const hash of [config, groups]) {
     if (Object.values(hash).some(entry => typeof entry !== 'string')) throw new TypeError('legacy hash values must be strings');
   }
@@ -122,7 +133,9 @@ export function createConnectorPermissionStore(storage: PluginStorageHost) {
     get,
     async readForOwner() {
       const entry = await storage.get(KEY);
-      return entry === undefined ? undefined : { revision: entry.revision, value: validate(entry.value) };
+      if (entry === undefined) return undefined;
+      const value = validateShape(entry.value);
+      return { revision: entry.revision, value, recoveryRequired: value.allowedGroups.length > GROUP_LIMIT };
     },
     /** Explicit owner-local replacement, fenced to the revision displayed on
      * the card. Concurrent command mutations require a reload, never a retry
@@ -134,7 +147,7 @@ export function createConnectorPermissionStore(storage: PluginStorageHost) {
       if (expected !== null && (typeof expected !== 'number' || !Number.isSafeInteger(expected) || expected < 1)) {
         throw new TypeError('invalid permission revision');
       }
-      if (!Array.isArray(data.allowedGroups) || data.allowedGroups.length > 5000) throw new TypeError('invalid owner groups');
+      if (!Array.isArray(data.allowedGroups) || data.allowedGroups.length > GROUP_LIMIT) throw new TypeError('invalid owner groups');
       const groups = data.allowedGroups.map(value => {
         const item = record(value); keys(item, ['externalChatId', 'label']);
         if (item.label !== undefined && typeof item.label !== 'string') throw new TypeError('invalid group label');
@@ -142,7 +155,10 @@ export function createConnectorPermissionStore(storage: PluginStorageHost) {
       });
       const current = await storage.get(KEY);
       // Validate corrupt state even when the caller presents a stale revision.
-      const previous = current === undefined ? undefined : validate(current.value);
+      // An explicit revision-fenced owner replacement is the sole recovery for
+      // oversized old state. Keep existing timestamps; never truncate on read,
+      // reset during activation, or let command mutations bypass the bound.
+      const previous = current === undefined ? undefined : validateShape(current.value);
       if ((current?.revision ?? null) !== expected) throw new Error('permissions changed; reload current permissions');
       const initial = validate({ v: 1, whitelistEnabled: data.whitelistEnabled, commandAdminOnly: data.commandAdminOnly,
         adminConfigured: true, adminOpenIds: data.adminOpenIds,

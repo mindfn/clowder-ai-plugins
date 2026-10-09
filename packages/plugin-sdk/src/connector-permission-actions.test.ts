@@ -115,3 +115,54 @@ test('owner read and configure reject corrupt stored policy without restoring de
   await assert.rejects(actions['permissions.configure']({ input: initial.targetValues }));
   assert.deepEqual((await storage.get('connector.permissions.v1'))!.value, { v: 1 });
 });
+
+test('oversized state has explicit bounded owner recovery, never silent truncation or reset', async () => {
+  const storage = host(); const actions = createConnectorPermissionActions(storage);
+  const oversized = { v: 1, whitelistEnabled: true, commandAdminOnly: true,
+    adminConfigured: true, adminOpenIds: ['admin'],
+    allowedGroups: Array.from({ length: 5001 }, (_, i) => ({ externalChatId: `g${i}`, label: `Group ${i}`, addedAt: i })) };
+  await storage.set('connector.permissions.v1', oversized);
+  const before = await storage.list();
+  const read = await actions['permissions.read']({});
+  assert.equal(read.data.status, 'recovery_required');
+  assert.equal(read.data.groupCount, 5001);
+  assert.equal(read.targetValues.permissionGroupsJson, ''); // Invalid until explicitly supplied by owner.
+  assert.equal(read.targetValues.permissionAdminIdsJson, '["admin"]');
+  assert.ok(Buffer.byteLength(JSON.stringify(read)) < 4096);
+  assert.deepEqual(await storage.list(), before);
+  await assert.rejects(actions['permissions.configure']({ input: read.targetValues }));
+  await assert.rejects(actions['permissions.configure']({ input: { ...read.targetValues,
+    permissionGroupsJson: JSON.stringify(oversized.allowedGroups.map(({ externalChatId }) => ({ externalChatId }))) } }));
+  assert.deepEqual(await storage.list(), before);
+  const recovered = await actions['permissions.configure']({ input: { ...read.targetValues,
+    permissionGroupsJson: '[{"externalChatId":"g4999","label":"Kept"}]' } });
+  assert.equal(recovered.data.status, 'configured');
+  const state = await createConnectorPermissionStore(storage).get();
+  assert.equal(state.whitelistEnabled, true); assert.equal(state.commandAdminOnly, true);
+  assert.deepEqual(state.adminOpenIds, ['admin']);
+  assert.deepEqual(state.allowedGroups, [{ externalChatId: 'g4999', label: 'Kept', addedAt: 4999 }]);
+  await assert.rejects(actions['permissions.configure']({ input: { ...read.targetValues, permissionGroupsJson: '[]' } }), /changed.*reload/);
+  assert.deepEqual((await createConnectorPermissionStore(storage).get()).allowedGroups, state.allowedGroups);
+});
+
+test('oversized owner recovery still refuses malformed state and concurrent replacement', async () => {
+  const storage = host(); const actions = createConnectorPermissionActions(storage);
+  const oversized = { v: 1, whitelistEnabled: true, commandAdminOnly: true, adminConfigured: true, adminOpenIds: [],
+    allowedGroups: Array.from({ length: 5001 }, (_, i) => ({ externalChatId: `g${i}`, addedAt: i })) };
+  await storage.set('connector.permissions.v1', oversized);
+  const read = await actions['permissions.read']({});
+  const realCas = storage.compareAndSet.bind(storage);
+  storage.compareAndSet = async (key, expected, value) => {
+    await storage.set(key, { ...oversized, allowedGroups: [{ externalChatId: 'owner-new', addedAt: 3 }] });
+    return realCas(key, expected, value);
+  };
+  await assert.rejects(actions['permissions.configure']({ input: { ...read.targetValues,
+    permissionGroupsJson: '[]' } }), /changed.*reload/);
+  assert.equal((await createConnectorPermissionStore(storage).get()).allowedGroups[0]?.externalChatId, 'owner-new');
+  await storage.set('connector.permissions.v1', { ...oversized, adminOpenIds: [12] });
+  const before = await storage.list();
+  await assert.rejects(actions['permissions.read']({}));
+  await assert.rejects(actions['permissions.configure']({ input: { ...read.targetValues,
+    permissionRevision: String((await storage.get('connector.permissions.v1'))!.revision), permissionGroupsJson: '[]' } }));
+  assert.deepEqual(await storage.list(), before);
+});
