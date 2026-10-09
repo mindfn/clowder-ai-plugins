@@ -509,6 +509,8 @@ export interface ActivePluginFeatureOptions {
 
 function actionMethods(contribution: StaticContribution): readonly string[] {
   switch (contribution.type) {
+    case 'mcp':
+      return (contribution.actions ?? []).map(action => action.method);
     case 'schedule':
     case 'tool':
     case 'webhook':

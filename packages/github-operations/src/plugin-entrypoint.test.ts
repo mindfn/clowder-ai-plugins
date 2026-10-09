@@ -718,7 +718,7 @@ function host() {
         const next = { ...task, ...input }; tasks.set(id, next); return structuredClone(next); },
       setWait: async (id, input) => { const task = tasks.get(id);
         if (!task || (task.pluginWait?.generation ?? null) !== input.expectedGeneration) return null;
-        const next = { ...task, pluginWait: { pluginInstanceId: 'instance', generation: input.generation,
+        const next = { ...task, status: input.active ? 'doing' as const : input.outcome ? 'done' as const : task.status, pluginWait: { pluginInstanceId: 'instance', generation: input.generation,
           ...(input.active ? { await: { generation: input.generation, ...input.active } } : {}),
           ...(input.outcome ? { waitOutcome: input.outcome } : {}) } };
         tasks.set(id, structuredClone(next)); return structuredClone(next); },
@@ -751,8 +751,10 @@ test('real manifest → SDK builtin activation → tracking → schedule → mes
   const active = await module.create(manifest).start(f.runtimeHost);
   await active.actions['github.pr-tracking']!({});
   assert.equal(reads, 0);
-  const tool = manifest.contributions.find((c: { id: string }) => c.id === 'register-pr-tracking');
-  const registered = await active.actions[tool.action.method]!(prInput, caller);
+  const mcp = manifest.contributions.find((c: { id: string }) => c.id === 'github-tracking');
+  assert.equal(manifest.contributions.some((c: { type: string; action?: { method: string } }) =>
+    c.type === 'tool' && c.action?.method.startsWith('github.typed-wait.')), false);
+  const registered = await active.actions[mcp.actions[0].method]!(prInput, caller);
   assert.ok((registered as any).automationState.await);
   snapshot = { ...snapshot, comments: [{ id: 1, author: 'maintainer', body: 'fix parser', commentType: 'conversation' }] };
   await active.actions['github.pr-tracking']!({});

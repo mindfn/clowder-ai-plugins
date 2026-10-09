@@ -10,6 +10,7 @@ import {
   activateDefinedFeature,
   createFeatureContextSession,
   definePlugin,
+  featureActionMethods,
   type FeatureBinding,
   type FeatureContext,
   type FeatureHostAdapter,
@@ -372,6 +373,32 @@ test('module entrypoint accepts the Host-validated manifest without embedding a 
 test('module entrypoint guard rejects absent or ambiguous default exports', () => {
   assert.throws(() => requirePluginModuleEntrypoint(undefined), /default export.*PluginModuleEntrypoint/u);
   assert.throws(() => requirePluginModuleEntrypoint({ create: 'not-callable' }), /default export/u);
+});
+
+test('native MCP methods are feature-owned handlers without publishing direct tools', async () => {
+  const candidate = manifest();
+  candidate.contributions.push({ type: 'mcp', id: 'native', runtime: { transport: 'stdio', entrypoint: 'native.js' },
+    actions: [{ method: 'native.run' }] } as never);
+  candidate.contributions.push({ type: 'mcp', id: 'foreign', runtime: { transport: 'stdio', entrypoint: 'foreign.js' },
+    actions: [{ method: 'foreign.run' }] } as never);
+  candidate.features[0]!.contributions.push({ type: 'mcp', id: 'native' } as never);
+  candidate.features.push({ id: 'feature-2', name: 'Foreign feature', resources: [], capabilities: [],
+    contributions: [{ type: 'mcp', id: 'foreign' }] } as never);
+  assert.deepEqual([...featureActionMethods(candidate as never, 'feature-1')], ['native.run']);
+  const { context } = createFeatureContextSession(BINDING, new RecordingAdapter());
+  const defined = definePlugin({ manifest: candidate, activate: { 'feature-1': () => ({
+    actions: { 'native.run': async input => input }, dispose: () => undefined,
+  }) } });
+  const active = await activateDefinedFeature(defined, 'feature-1', context);
+  assert.equal(await active.actions['native.run']!('native input'), 'native input');
+  await active.dispose();
+  const invalidHandlers: ReadonlyArray<Readonly<Record<string, () => Promise<void>>>> = [
+    {}, { 'native.run': async () => undefined, 'foreign.run': async () => undefined },
+  ];
+  for (const actions of invalidHandlers) {
+    const invalid = definePlugin({ manifest: candidate, activate: { 'feature-1': () => ({ actions, dispose: () => undefined }) } });
+    await assert.rejects(activateDefinedFeature(invalid, 'feature-1', context), /no handler|not declared/);
+  }
 });
 
 test('feature activation closes declared method handlers and owns idempotent disposal', async () => {

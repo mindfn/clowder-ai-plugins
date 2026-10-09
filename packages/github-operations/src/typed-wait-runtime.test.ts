@@ -8,6 +8,9 @@ function fixture() {
   const rows = new Map<string, PluginStorageEntry>(); const tasks = new Map<string, PluginTaskItem>();
   const sent: unknown[] = []; let revision = 0; let reads = 0; let current = true; let sendFailure = false;
   let projectionFailure = false;
+  let reassignOnWrite = false;
+  const raceOwner = (id: string) => { const task = tasks.get(id);
+    if (reassignOnWrite && task) { reassignOnWrite = false; tasks.set(id, { ...task, ownerCatId: 'other' }); } };
   let snapshot: GitHubSnapshot = { state: 'open', headSha: 'a'.repeat(40), ci: 'pending', comments: [], reviews: [],
     commentsComplete: true, trackingIdentity: { selfLogin: 'self', subjectAuthorLogin: 'self' } };
   let read: (() => Promise<GitHubSnapshot>) | undefined;
@@ -22,9 +25,11 @@ function fixture() {
     tasks: {
       setWait: async (id: string, input: any) => {
         if (projectionFailure) return null;
+        raceOwner(id);
         const old = tasks.get(id);
+        if (old && old.ownerCatId !== 'astra') throw new Error('different owner');
         if (!old || ((old as any).pluginWait?.generation ?? null) !== input.expectedGeneration) return null;
-        const task = { ...old, pluginWait: { pluginInstanceId: 'instance', generation: input.generation,
+        const task = { ...old, status: input.active ? 'doing' as const : input.outcome ? 'done' as const : old.status, pluginWait: { pluginInstanceId: 'instance', generation: input.generation,
           ...(input.active ? { await: { generation: input.generation, ...input.active } } : {}),
           ...(input.outcome ? { waitOutcome: structuredClone(input.outcome) } : {}) } };
         tasks.set(id, task); return structuredClone(task);
@@ -36,6 +41,7 @@ function fixture() {
         tasks.set(task.id, task); return structuredClone(task);
       },
       updateIfThreadId: async (id: string, thread: string, value: object) => {
+        raceOwner(id);
         const old = tasks.get(id); if (!old || old.threadId !== thread) return null;
         const task = { ...old, ...value }; tasks.set(id, task); return structuredClone(task);
       },
@@ -50,9 +56,20 @@ function fixture() {
     coverage: async () => ({ covered: true }), now: () => 1000 };
   return { context, caller, options, tasks, rows, sent, reads: () => reads, setSnapshot: (value: GitHubSnapshot) => { snapshot = value; },
     defer: (value: () => Promise<GitHubSnapshot>) => { read = value; }, stale: () => { current = false; },
-    failSend: (value: boolean) => { sendFailure = value; }, failProjection: (value: boolean) => { projectionFailure = value; }, snapshot: () => snapshot };
+    failSend: (value: boolean) => { sendFailure = value; }, failProjection: (value: boolean) => { projectionFailure = value; },
+    raceOwnerOnWrite: () => { reassignOnWrite = true; }, snapshot: () => snapshot };
 }
 const input = { registrationId: 'registration', repoFullName: 'owner/repo', prNumber: 1 };
+
+test('same-thread reassignment cannot let an old registration overwrite the new owner status', async () => {
+  const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
+  f.raceOwnerOnWrite();
+  await assert.rejects(runtime.registerPr(input, f.caller), /owner/);
+  const task = [...f.tasks.values()][0]!;
+  assert.equal(task.ownerCatId, 'other'); assert.equal(task.status, 'todo');
+  assert.equal(task.pluginWait, undefined); assert.equal(f.sent.length, 0);
+  await runtime.stop();
+});
 
 test('Host projection failure retains the outbox; recovery projects active N+1 and pending N before sending', async () => {
   const f = fixture(); const runtime = new TypedWaitRuntime(f.options);

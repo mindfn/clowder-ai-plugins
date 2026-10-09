@@ -96,9 +96,6 @@ export class TypedWaitRuntime {
 
   private async settleProjection(taskId: string, check: () => Promise<void>) {
     await this.projectWait(taskId, check);
-    const latest = await this.store.get(taskId);
-    await check();
-    if (latest) await this.options.context.tasks.updateIfThreadId(taskId, latest.threadId, { status: latest.status });
   }
 
   async registerPr(input: unknown, caller?: PluginActionContext): Promise<TaskItem> {
@@ -147,9 +144,6 @@ export class TypedWaitRuntime {
       await check();
       // A receipt describes the original response, not the current wait. A delayed
       // replay after cancellation must not resurrect the Host task projection.
-      const latest = await store.get(installed.id);
-      await check();
-      if (latest) await this.options.context.tasks.updateIfThreadId(installed.id, caller.threadId, { status: latest.status });
       await this.projectWait(installed.id, check);
       return installed;
     });
