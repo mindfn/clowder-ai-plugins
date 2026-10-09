@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import type { PluginStorageHost, PluginStorageEntry } from '@clowder-ai/plugin-sdk';
 import { PrProviderIndex, type PrIndexProvider } from './pr-provider-index.js';
 
@@ -20,6 +21,36 @@ function fixture() {
 const repo = 'owner/repo';
 const pr = (number = 1, overrides = {}) => ({ updated_at: '2026-10-08T00:00:00Z', number, title: `PR ${number}`, user: 'author', state: 'open', merged_at: null, head_sha: 'a'.repeat(40), draft: true, ...overrides });
 const review = (commit = 'a') => ({ user: 'reviewer', state: 'COMMENTED', commit_id: commit.repeat(40) });
+
+test('frozen alpha12 draft and alpha13-touched legacy draft restart without publishing old chunks', async () => {
+  const frozen=JSON.parse(await readFile(new URL('../test/fixtures/pr-index-alpha12-page.json',import.meta.url),'utf8'));
+  assert.equal(frozen.sourceHead,'30ec27976b674a7c566fe7da2fc533960d95215b');
+  for (const touched of [false,true]) {
+    const f=fixture(); const entries=structuredClone(frozen.entries) as Record<string,PluginStorageEntry>;
+    for(const [key,entry] of Object.entries(entries)) {
+      if(touched && key.endsWith('.root')) (entry.value as any).draft.pending=null;
+      await f.storage.set(key,entry.value);
+    }
+    const oldChunks=structuredClone([...f.rows].filter(([key])=>!key.endsWith('.root')));
+    const pages:number[]=[]; let fail=true;
+    const index=new PrProviderIndex(f.storage,{page:async(_repo,page)=>{
+      pages.push(page);if(fail)throw Error('unavailable');
+      return page===1?Array.from({length:25},(_,i)=>pr(i+1)):[pr(26)];
+    },reviewPage:async()=>[]});
+    const originalRoot=structuredClone(f.root());
+    assert.equal((await index.refresh({repo})).status,'failed'); assert.deepEqual(f.root(),originalRoot);
+    fail=false; assert.equal((await index.refresh({repo})).status,'incomplete');
+    assert.equal((await index.read(repo)).publishedGeneration,null);
+    assert.equal((await index.refresh({repo})).status,'complete');
+    const result=await index.read(repo); assert.equal(result.items.length,26);
+    assert.deepEqual(pages,[1,1,2]);
+    assert.ok(result.items.every(row=>row.subjectKey===`pr:${repo}#${row.number}` && row.updatedAt===Date.parse('2026-10-08T00:00:00Z')));
+    for(const [key,entry] of oldChunks) assert.deepEqual(f.rows.get(key),entry);
+    const published=(f.root()[1].value as any).published;
+    assert.ok(published.parts.every((key:string)=>!oldChunks.some(([old])=>old===key)));
+    await index.stop();
+  }
+});
 
 test('review deadline resumes at unfinished subject and review page across restart', async () => {
   const f = fixture(); const calls: string[] = []; let slow = true;

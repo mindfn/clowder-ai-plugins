@@ -14,7 +14,7 @@ interface PrRow {
   headSha: string; lastReviewedSha: string | null;
 }
 interface PendingPage { key: string; count: number; offset: number; reviewPage: number; lastReview: GhPrReview | null; rows: PrRow[] }
-interface Draft { generation: string; page: number; parts: string[]; numbers: number[]; pending: PendingPage | null }
+interface Draft { rowSchema?: 2; generation: string; page: number; parts: string[]; numbers: number[]; pending: PendingPage | null }
 class IndexLimitError extends Error {}
 interface Published { generation: string; count: number; observedAt: number; parts: string[] }
 interface Root { schema: 1; repo: string; published: Published | null; draft: Draft | null }
@@ -82,9 +82,11 @@ function rootOf(value: unknown, repo: string): Root {
         !Array.isArray(p.numbers) || p.numbers.length > 5000 || p.numbers.some(n => !Number.isSafeInteger(n) || n < 1) ||
         new Set(p.numbers).size !== p.numbers.length || p.parts.length !== (p.page as number) - 1 || p.numbers.length !== p.parts.length * 25)) throw new TypeError('invalid staged PR index');
     if (kind === 'draft') {
-      // Alpha.12 drafts can resume at the page boundary they already persisted.
-      if (p.pending === undefined) p.pending = null;
-      if (p.pending !== null) {
+      // Unversioned drafts can contain alpha.12 chunks even after alpha.13 touched
+      // their continuation. Validate their envelope, but never reuse their parts.
+      if (p.rowSchema !== undefined && p.rowSchema !== 2) throw new TypeError('unsupported PR draft row schema');
+      if (p.rowSchema === 2 && p.pending === undefined) throw new TypeError('missing PR continuation');
+      if (p.pending !== null && p.pending !== undefined) {
         const n = object(p.pending);
         if (typeof n.key !== 'string' || !n.key.startsWith(`${prefix(repo)}${p.generation}.`) || n.key.length > 200 ||
           !Number.isInteger(n.count) || (n.count as number) < 1 || (n.count as number) > 25 ||
@@ -129,7 +131,8 @@ export class PrProviderIndex {
       const entry = await this.storage.get(rootKey(repo));
       let revision = entry?.revision ?? null;
       let root: Root = entry ? rootOf(entry.value, repo) : { schema: 1, repo, published: null, draft: null };
-      let draft: Draft = !restart && root.draft ? root.draft : { generation: randomUUID(), page: 1, parts: [], numbers: [], pending: null };
+      let draft: Draft = !restart && root.draft?.rowSchema === 2 ? root.draft :
+        { rowSchema: 2, generation: randomUUID(), page: 1, parts: [], numbers: [], pending: null };
       let failedSubject: number | null = null;
       const save = async (next: Root) => {
         signal.throwIfAborted();
@@ -194,7 +197,7 @@ export class PrProviderIndex {
         const numbers = [...draft.numbers, ...prs.map(pr => pr.number)];
         await save({ schema: 1, repo,
           published: complete ? { generation: draft.generation, count: numbers.length, observedAt: Date.now(), parts } : root.published,
-          draft: complete ? null : { generation: draft.generation, page: draft.page + 1, parts, numbers, pending: null } });
+          draft: complete ? null : { rowSchema: 2, generation: draft.generation, page: draft.page + 1, parts, numbers, pending: null } });
         return { status: complete ? 'complete' : 'incomplete', complete, hasMore: !complete,
           stagedCount: numbers.length, publishedGeneration: root.published?.generation ?? null,
           observedAt: root.published?.observedAt ?? null, failedSubjects: [] };

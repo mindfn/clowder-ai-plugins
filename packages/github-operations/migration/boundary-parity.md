@@ -345,8 +345,16 @@ Rows expose canonical `subjectKey = pr:<lowercase repo>#<number>` and numeric
 `publishedGeneration`/`observedAt` identify publication, not row identity or activity.
 A new sweep of unchanged provider rows must not change their key or activity time.
 Old alpha.12 rows lacking activity time explicitly require refresh; their date is
-never invented from generation time. Page-bound alpha.12 drafts can resume at the
-persisted page boundary, and new drafts persist finer review-page progress.
+never invented from generation time. Starting with alpha.14, all unversioned
+alpha.12/alpha.13 drafts restart automatically from page 1 into a new generation;
+old chunks remain untouched and cannot enter the new published generation. Only
+drafts marked `rowSchema: 2` resume their persisted subject/review-page progress.
+An unknown future row schema is rejected. A failed first request preserves the
+old root, and the previous published snapshot remains visible until replacement.
+The frozen alpha.12 page-bound storage fixture and its alpha.13-touched variant
+prove restart, failed-fetch preservation and complete/read consistency. Its
+source HEAD and runtime digest are recorded in the fixture; activity timestamps
+are fetched again from the provider, never synthesized.
 
 Frozen c0201d1 consumer contract: repository discovery merges the distinct
 `pullRequestRepositories[].repo` values with Host issue/task sources. Board and
