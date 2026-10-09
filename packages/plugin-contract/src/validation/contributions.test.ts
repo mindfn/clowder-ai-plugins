@@ -97,6 +97,23 @@ test('native MCP actions are declared separately from public tools and reject ma
   }
 });
 
+test('native MCP method allowlists reject fixed params instead of silently ignoring them', () => {
+  const manifest = videoManifest();
+  manifest.contributions[0] = { ...manifest.contributions[0],
+    actions: [{ method: 'video.analyze', params: { mode: 'readonly' } }] } as never;
+  assert.equal(validateManifest(manifest).valid, false);
+});
+
+test('native MCP duplicate methods cannot be disguised with different params or extra fields', () => {
+  for (const second of [{ method: 'video.analyze' },
+    { method: 'video.analyze', params: { mode: 'write' } }, { method: 'video.analyze', label: 'second' }]) {
+    const manifest = videoManifest();
+    manifest.contributions[0] = { ...manifest.contributions[0],
+      actions: [{ method: 'video.analyze' }, second] } as never;
+    assert.equal(validateManifest(manifest).valid, false);
+  }
+});
+
 test('admits typed static contributions and closed config/secret references', () => {
   assert.equal(validateManifest(videoManifest()).valid, true);
 
