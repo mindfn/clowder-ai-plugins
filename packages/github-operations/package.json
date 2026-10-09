@@ -1,6 +1,6 @@
 {
   "name": "@clowder-ai/github-operations",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "GitHub collaboration schedules and event operations for Clowder AI hosts",
   "license": "MIT",
   "type": "module",
@@ -51,7 +51,7 @@
     "directory": "packages/github-operations"
   },
   "dependencies": {
-    "@clowder-ai/plugin-contract": "0.1.0-beta.29",
-    "@clowder-ai/plugin-sdk": "0.2.0-beta.14"
+    "@clowder-ai/plugin-contract": "0.1.0-beta.30",
+    "@clowder-ai/plugin-sdk": "0.2.0-beta.15"
   }
 }

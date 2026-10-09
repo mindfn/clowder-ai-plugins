@@ -21,7 +21,17 @@ It is test input, not a new release or a replacement for registry publication.
 
 The fresh consumer test verifies the hash and checks SRI against all retained
 production shrinkwraps, then applies a version-specific test-only file resolver.
-It proves beta.12 and beta.13 can coexist without mutating published package
+It proves retained beta.12 and the current SDK can coexist without mutating published package
 manifests, rewriting SDK versions or relying on monorepo links. The installed
 resolution is checked from each package. It does not claim npm has published
 beta.12, nor bypass Host installation or authorization acceptance.
+
+## Retained contract beta.29
+
+The beta.12 SDK still requires contract beta.29. This unchanged canonical archive
+comes from the accepted de917e86f39631aa4b70006fa056c7be470942d8 graph
+(candidate-de917e8-artifact-matrix.json), and is used only as fresh-consumer input.
+Size: 228047 bytes. SHA-256: `25225f3c1b3f9935c692dbca7f8f001eca70ab7c198165b4e9ef69ca91d9b458`.
+SRI: `sha512-77p2pQyLZvbC+kv7yOOzIdsXNYeUblxy50H6VQVQYx2CB6vwySSux2LvUXzPLvdVZCNuJkFHpY04mZ3vHmnXgQ==`.
+The test verifies the retained shrinkwrap and resolves each SDK's contract
+independently; beta.30 never masquerades as beta.29.
