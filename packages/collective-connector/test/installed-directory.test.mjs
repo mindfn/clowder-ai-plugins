@@ -45,7 +45,7 @@ test('local directory installs into an empty consumer and runs the real SDK life
     run('npm', ['install', '--ignore-scripts', '--install-links', '--no-audit', '--no-fund', '--package-lock=false',
       '--registry=https://registry.npmjs.org', packageRoot, ...packed.slice(0, 2)], consumer);
     console.log(run(process.execPath, ['journey.mjs'], consumer).trim());
-    if (process.env.F202_COLLECTIVE_HOST_ROOT) {
+    if (process.env.F202_COLLECTIVE_HOST_ROOT || process.env.F202_COLLECTIVE_ARTIFACT_DIR) {
       const candidate = join(temporary, 'host-candidate');
       const installedRoot = join(consumer, 'node_modules/@clowder-ai/collective-connector');
       await cp(installedRoot, candidate, { recursive: true });
@@ -65,7 +65,7 @@ test('local directory installs into an empty consumer and runs the real SDK life
         console.log(JSON.stringify({ materializedArchive: archive, sha256: createHash('sha256').update(bytes).digest('hex'),
           shasum: createHash('sha1').update(bytes).digest('hex'), integrity: 'sha512-' + createHash('sha512').update(bytes).digest('base64') }));
       }
-      console.log(run(process.execPath, [fileURLToPath(new URL('./host-directory-journey.mjs', import.meta.url)),
+      if (process.env.F202_COLLECTIVE_HOST_ROOT) console.log(run(process.execPath, [fileURLToPath(new URL('./host-directory-journey.mjs', import.meta.url)),
         process.env.F202_COLLECTIVE_HOST_ROOT, candidate], root).trim());
     }
   } finally { await rm(temporary, { recursive: true, force: true }); }

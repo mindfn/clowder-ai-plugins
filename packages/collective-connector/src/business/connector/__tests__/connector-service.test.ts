@@ -264,7 +264,7 @@ describe('official Collective Connector', () => {
       schemaVersion: number;
       legacyConnections: Array<{ connectionId: string; reason: string; state: unknown }>;
     };
-    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.schemaVersion).toBe(3);
     expect(migratedText).not.toContain('endpointCredential');
     expect(migrated.legacyConnections).toMatchObject([
       {

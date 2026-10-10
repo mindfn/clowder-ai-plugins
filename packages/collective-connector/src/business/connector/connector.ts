@@ -1,3 +1,4 @@
+import { semanticDigest } from './local-operation-recovery.js';
 import { isDeepStrictEqual } from 'node:util';
 import {
   type CollectivePairingIntent,
@@ -14,7 +15,7 @@ import { desiredParticipationSchema } from './host-route-state.js';
 import { prepareReplyOperation, queueVerifiedAgentMessage, submitReplyOperation } from './outbox-custody.js';
 import { participationDeclaration, requireParticipation } from './participation-custody.js';
 import { ConnectorPersistence } from './persistence.js';
-import { type ConnectorProjection, projectConnection } from './projection.js';
+import { type ConnectorProjection, projectConnection, recoveryChoices } from './projection.js';
 import {
   beginInboxRouting,
   completeInboxRouting,
@@ -97,7 +98,7 @@ export class CollectiveConnector {
   static async open(options: CollectiveConnectorOptions): Promise<CollectiveConnector> {
     return new CollectiveConnector(
       await ConnectorPersistence.open(options.dataDirectory),
-      new CollectiveServiceClient(options.fetchImpl),
+      new CollectiveServiceClient(options.fetchImpl, 10_000, options.localTransport),
       options.verifyAgent,
       options.now ?? Date.now,
     );
@@ -285,9 +286,29 @@ export class CollectiveConnector {
     return this.withAuthority(connectionId, () => this.synchronization.revoke(connectionId));
   }
 
+  async recover(connectionId: string, operationId: string, expectedRevision: number,
+    mode: 'reconcile' | 'resume', owner: import('./recovery-proof.js').RecoveryOwnerContext): Promise<ConnectorProjection> {
+    // Serialize only this active call with existing authority edits; a durable hold owns no mutex.
+    return this.withAuthority(connectionId, () => this.synchronization.recover(connectionId, operationId, expectedRevision, mode, owner));
+  }
+
   async getProjection(connectionId: string): Promise<ConnectorProjection> {
     const snapshot = this.persistence.snapshot();
     return projectConnection(requireConnection(snapshot.connections[connectionId]), snapshot.hostRoutes[connectionId]);
+  }
+
+  listRecoveryRows(userId: string, after?: string) {
+    const state = this.persistence.snapshot();
+    const pending = Object.values(state.connections).filter(connection =>
+      state.hostRoutes[connection.connectionId]?.localOwnerUserId === userId,
+    ).flatMap(connection => (connection.localAttempts ?? []).filter(item => item.status !== 'settled').map(item => ({
+      key: semanticDigest([connection.connectionId, item.operationId]), connectionId: connection.connectionId,
+      endpointLabel: connection.endpointLabel, operation: { operationId: item.operationId, kind: item.kind,
+        revision: item.revision, effect: item.effect, reason: item.reason,
+        choices: recoveryChoices(connection, item) },
+    }))).sort((left, right) => left.key.localeCompare(right.key)).filter(row => !after || row.key > after);
+    const rows = pending.slice(0, 99);
+    return { rows, ...(pending.length > rows.length ? { next: rows.at(-1)!.key } : {}) };
   }
 
   async listConnections(): Promise<ConnectorProjection[]> {
@@ -352,11 +373,7 @@ export class CollectiveConnector {
       const route = state.hostRoutes[connectionId];
       if (!route || connection.authorityStatus !== 'connected' || !connection.endpointCredential)
         throw new Error('Participation is not configured');
-      await this.service.publishParticipation(
-        connection.serviceUrl,
-        connection.endpointCredential,
-        participationDeclaration(connection, route),
-      );
+      await this.synchronization.publishParticipation(connectionId);
     });
   }
 

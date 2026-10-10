@@ -202,7 +202,7 @@ export type ResourceReference = {
   readonly id: string;
 };
 export type ContributionReference = {
-  readonly type: 'identity' | 'schedule' | 'tool' | 'mcp' | 'skill' | 'limb' | 'webhook' | 'message-subscription' | 'media-source' | 'service' | 'connector' | 'cloud-conversation-host' | 'ui' | 'content-editor-provider' | 'desktop-window' | 'terminal-predicate-provider';
+  readonly type: 'identity' | 'schedule' | 'tool' | 'mcp' | 'skill' | 'limb' | 'webhook' | 'message-subscription' | 'media-source' | 'service' | 'connector' | 'cloud-conversation-host' | 'ui' | 'content-editor-provider' | 'desktop-window' | 'terminal-predicate-provider' | 'browser-service';
   readonly id: string;
 };
 export type PackageRelativePath = string;
@@ -641,7 +641,60 @@ export type ContentEditorProviderContribution = {
   readonly semanticMaterializer?: SemanticMaterializerDeclaration;
   readonly operations: readonly ['load' | 'settle' | 'comment' | 'tracked-change', 'load' | 'settle' | 'comment' | 'tracked-change', 'load' | 'settle' | 'comment' | 'tracked-change', 'load' | 'settle' | 'comment' | 'tracked-change'];
 };
-export type StaticContribution = TerminalPredicateProviderContribution | IdentityContribution | ScheduleContribution | DirectToolContribution | McpContribution | SkillContribution | LimbContribution | WebhookContribution | MessageSubscriptionContribution | MediaSourceContribution | ServiceContribution | ConnectorContribution | CloudConversationHostContribution | UiContribution | ContentEditorProviderContribution | DesktopWindowContribution;
+export type BrowserServiceMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+export type BrowserServiceHeader = {
+  readonly name: string;
+  readonly value: string;
+};
+export type BrowserServiceRoute = {
+  readonly method: BrowserServiceMethod;
+  readonly path: string;
+  readonly browser?: 'service' | 'parent' | 'callback';
+  readonly local?: 'omit-origin' | 'parent-origin';
+};
+export type BrowserServiceContribution = {
+  readonly type: 'browser-service';
+  readonly id: string;
+  readonly action: {
+    readonly method: string;
+  };
+  readonly routes: readonly BrowserServiceRoute[];
+  readonly credentials: {
+    readonly bearer: boolean;
+    readonly cookies: readonly ({
+      readonly name: string;
+      readonly path: string;
+      readonly httpOnly: true;
+      readonly sameSite: 'Strict';
+      readonly maxAgeSeconds: number;
+    })[];
+  };
+};
+export type BrowserServiceRequest = {
+  readonly version: 1;
+  readonly method: BrowserServiceMethod;
+  readonly path: string;
+  readonly rawQuery: string;
+  readonly headers: readonly BrowserServiceHeader[];
+  readonly rawBodyBase64: string;
+};
+export type BrowserServiceResponse = {
+  readonly status: number;
+  readonly headers: readonly BrowserServiceHeader[];
+  readonly bodyBase64: string;
+};
+export type BrowserServiceFailureCode = 'BROWSER_SERVICE_UNAVAILABLE' | 'BROWSER_SERVICE_REVOKED' | 'BROWSER_SERVICE_BUSY' | 'BROWSER_SERVICE_INVALID_REQUEST' | 'BROWSER_SERVICE_REQUEST_TOO_LARGE' | 'BROWSER_SERVICE_INVALID_RESPONSE' | 'BROWSER_SERVICE_RESPONSE_TOO_LARGE' | 'BROWSER_SERVICE_TIMEOUT';
+export type BrowserServiceTransportFailure = {
+  readonly kind: 'transport-error';
+  readonly code: BrowserServiceFailureCode;
+  readonly effect: 'not_started' | 'unknown';
+  readonly automaticRetry: false;
+};
+export type BrowserServiceDispatchResult = {
+  readonly kind: 'response';
+  readonly response: BrowserServiceResponse;
+} | BrowserServiceTransportFailure;
+export type StaticContribution = BrowserServiceContribution | TerminalPredicateProviderContribution | IdentityContribution | ScheduleContribution | DirectToolContribution | McpContribution | SkillContribution | LimbContribution | WebhookContribution | MessageSubscriptionContribution | MediaSourceContribution | ServiceContribution | ConnectorContribution | CloudConversationHostContribution | UiContribution | ContentEditorProviderContribution | DesktopWindowContribution;
 export type PluginFeature = {
   readonly id: string;
   readonly name: string;

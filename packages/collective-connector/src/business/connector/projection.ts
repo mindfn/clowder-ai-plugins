@@ -1,6 +1,6 @@
 import type { CollectiveClientAnchor } from '../contracts/index.js';
 
-import type { ConnectorConnectionState, HostRouteConfig } from './state.js';
+import type { ConnectorConnectionState, HostRouteConfig, LocalAttempt } from './state.js';
 
 export interface ConnectorProjection {
   readonly serviceUrl: string;
@@ -25,14 +25,26 @@ export interface ConnectorProjection {
     readonly failed: number;
     readonly latestFailure?: { readonly code: string; readonly message: string };
   };
+  readonly recovery?: { readonly held: number; readonly operations: readonly {
+    readonly operationId: string; readonly kind: LocalAttempt['kind']; readonly revision: number;
+    readonly effect: LocalAttempt['effect']; readonly reason: string; readonly choices: readonly ('reconcile' | 'resume')[];
+  }[] };
   readonly lastError?: string;
   readonly lastErrorCode?: string;
+}
+
+/** Retained history has no replay affordance after its endpoint authority is gone. */
+export function recoveryChoices(connection: ConnectorConnectionState, attempt: LocalAttempt): readonly ('reconcile' | 'resume')[] {
+  if (attempt.status !== 'held' || !connection.endpointCredential || !connection.authorizedHumanId ||
+    (attempt.kind === 'revoke' ? connection.authorityStatus !== 'revoking' : connection.authorityStatus !== 'connected')) return [];
+  return ['not_started', 'replay_safe'].includes(attempt.proof) ? ['reconcile', 'resume'] : ['reconcile'];
 }
 
 export function projectConnection(connection: ConnectorConnectionState, route?: HostRouteConfig): ConnectorProjection {
   const latestFailure = [...connection.inbox]
     .reverse()
     .find((item) => item.disposition === 'route_failed')?.routeFailure;
+  const held = (connection.localAttempts ?? []).filter(item => item.status !== 'settled');
   return {
     serviceUrl: connection.serviceUrl,
     canonicalClientAnchor: {
@@ -70,6 +82,10 @@ export function projectConnection(connection: ConnectorConnectionState, route?: 
       failed: connection.inbox.filter((item) => item.disposition === 'route_failed').length,
       ...(latestFailure ? { latestFailure: structuredClone(latestFailure) } : {}),
     },
+    ...(held.length ? { recovery: { held: held.length, operations: held.slice(0, 100).map(item => ({
+      operationId: item.operationId, kind: item.kind, revision: item.revision, effect: item.effect, reason: item.reason,
+      choices: recoveryChoices(connection, item),
+    })) } } : {}),
     ...(connection.lastError ? { lastError: connection.lastError } : {}),
     ...(connection.lastErrorCode ? { lastErrorCode: connection.lastErrorCode } : {}),
   };

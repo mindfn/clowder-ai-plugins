@@ -14,9 +14,12 @@ import {
   createSecret,
   createStableId,
   digestSecret,
+  secretMatches,
   PersistentServiceState,
   SERVICE_STATE_FILE,
 } from './persistence.js';
+import { assertConnectionCoordinates, requireAuthorizedHuman } from './connection-authority.js';
+import type { LocalRecoverySnapshot } from '../connector/recovery-proof.js';
 import type { ServiceState } from './state.js';
 import { CollectiveWorkPolicyStore } from './work-policy-store.js';
 
@@ -240,6 +243,27 @@ export class CollectiveServiceStore {
 
   revokeOwnConnection(endpointCredential: string, input: unknown) {
     return this.#connections.revokeOwnConnection(endpointCredential, input);
+  }
+
+  /** Package-owned recovery evidence: exact credential and coordinates, including revoked records. */
+  readLocalRecoverySnapshot(credential: string, coordinates: {
+    serviceInstanceId: string; collectiveId: string; connectionId: string; endpointId: string; authorizedHumanId: string;
+  }, clientEventId?: string): LocalRecoverySnapshot {
+    const state = this.persistence.snapshot();
+    const connection = state.connections[coordinates.connectionId];
+    if (!connection || !secretMatches(credential, connection.credentialDigest) ||
+      connection.endpointId !== coordinates.endpointId || connection.authorizedHumanId !== coordinates.authorizedHumanId)
+      throw new CollectiveServiceError('CONNECTION_NOT_FOUND', 'Recovery credential is invalid', 401);
+    assertConnectionCoordinates(state, connection, coordinates);
+    if (connection.status === 'connected') requireAuthorizedHuman(state, connection);
+    const published = state.participations[connection.connectionId];
+    const eventId = clientEventId ? state.clientEventIndex[`${coordinates.collectiveId}:connection:${coordinates.connectionId}:${clientEventId}`] : undefined;
+    const event = eventId ? state.events[coordinates.collectiveId]?.find(item => item.eventId === eventId) : undefined;
+    return structuredClone({ ...coordinates, status: connection.status,
+      lastAckedSequence: connection.lastAckedSequence, lastDeliveredSequence: connection.lastDeliveredSequence,
+      declaration: published ? { serviceInstanceId: published.serviceInstanceId, collectiveId: published.collectiveId,
+        connectionId: published.connectionId, revision: published.revision, agents: published.agents } : null,
+      ...(event ? { event } : {}) });
   }
 
   getConnectionProjection(connectionId: string) {

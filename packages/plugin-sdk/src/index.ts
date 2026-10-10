@@ -221,3 +221,5 @@ export * from './custody.js';
 export * from './deployment.js';
 
 export * from './frustration.js';
+
+export * from './browser-services.js';

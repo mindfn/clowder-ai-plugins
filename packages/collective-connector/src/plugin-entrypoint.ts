@@ -1,25 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { definePlugin, definePluginModule, type FeatureContext, type PluginModuleEntrypoint } from '@clowder-ai/plugin-sdk';
-import { resolveCollectivePublicUrl } from './business/service/cli-config.js';
+import { definePlugin, definePluginModule, type FeatureContext, type FeatureActivation, type PluginModuleEntrypoint } from '@clowder-ai/plugin-sdk';
+import { BROWSER_SERVICE_LIMITS, type BrowserServiceContribution } from '@clowder-ai/plugin-sdk';
+import { createNodeHttpAdapter } from './node-http-adapter.js';
+import { createLocalServiceTransport } from './local-service-transport.js';
+import { createRecoveryActions } from './recovery-actions.js';
+import { CollectiveConnector } from './business/connector/connector.js';
 import { GitHubAppManifestSetup } from './business/service/github-app-manifest-setup.js';
 import { ConfigurableGitHubHumanAuthProvider } from './business/service/github-human-auth-provider.js';
-import { startCollectiveServer } from './business/service/http-server.js';
 import { CollectiveServiceStore } from './business/service/store.js';
 import { createSecret } from './business/service/persistence.js';
 
-export interface CollectivePluginModuleOptions {
-  readonly startServer?: typeof startCollectiveServer;
-}
-
-function servicePort(value: unknown): number {
-  const port = value === undefined ? 5201 : value;
-  if (typeof port !== 'number' || !Number.isInteger(port) || port < 0 || port > 65535 || port === 3001 || port === 3002) {
-    throw new TypeError('service port must be an integer in 0..65535 outside reserved runtime ports');
-  }
-  return port;
-}
+export type CollectivePluginModuleOptions = Readonly<Record<string, never>>;
 
 async function readBootstrapSecret(path: string): Promise<string> {
   const secret = (await readFile(path, 'utf8')).trim();
@@ -50,63 +43,67 @@ async function writeBootstrapLink(path: string, link: string): Promise<void> {
   } finally { await rm(temporaryPath, { force: true }); }
 }
 
-async function activateService(context: FeatureContext, options: CollectivePluginModuleOptions) {
-  const port = servicePort(await context.config.get('servicePort'));
-  const origins = await context.config.get('allowedHostOrigins');
-  if (origins !== undefined && typeof origins !== 'string') throw new TypeError('allowedHostOrigins must be a comma-separated string');
-  const allowedHostOrigins = (origins ?? '').split(',').map(value => value.trim()).filter(Boolean).map(value => new URL(value).origin);
-  const publicUrl = await context.config.get('publicUrl');
-  if (publicUrl !== undefined && typeof publicUrl !== 'string') throw new TypeError('publicUrl must be a URL string');
-  resolveCollectivePublicUrl(publicUrl, '127.0.0.1', port);
+async function activateService(context: FeatureContext, declaration: BrowserServiceContribution): Promise<FeatureActivation> {
+  if (!context.browserServices) throw new Error('Collective requires the Host browser-service binding before start');
+  const binding = await context.browserServices.getBinding('collective-client-api');
+  await binding.assertCurrent();
+  const origin = new URL(binding.origin), parent = new URL(binding.parentOrigin);
+  if (origin.origin !== binding.origin || origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1' ||
+    !origin.port || origin.port === '3001' || origin.port === '3002' || origin.username || origin.password ||
+    parent.origin !== binding.parentOrigin || !['http:', 'https:'].includes(parent.protocol) || parent.username || parent.password ||
+    binding.clientBuildId !== 'collective-client-v2' || !/^[a-f0-9]{64}$/.test(binding.assetDigest) ||
+    Object.keys(binding.limits).length !== Object.keys(BROWSER_SERVICE_LIMITS).length ||
+    Object.entries(BROWSER_SERVICE_LIMITS).some(([key, value]) => binding.limits[key as keyof typeof BROWSER_SERVICE_LIMITS] !== value)) throw new Error('Collective Host binding is invalid');
+  const allowedHostOrigins = [binding.parentOrigin, binding.origin];
   const dataDirectory = join(context.dataDirectory, 'service');
   await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
   const provider = new ConfigurableGitHubHumanAuthProvider({});
   const githubAppSetup = await GitHubAppManifestSetup.open({ dataDirectory, provider });
   const bootstrapSecretPath = join(dataDirectory, 'owner-bootstrap.secret');
   const opened = await CollectiveServiceStore.open({ dataDirectory, humanAuthProvider: provider,
+    clientBuildId: binding.clientBuildId, humanAuthRedirectUri: binding.origin + '/api/auth/github/callback',
     createBootstrapSecret: () => escrowBootstrapSecret(bootstrapSecretPath),
   });
   const bootstrapSecret = opened.store.getMetadata().bootstrapNeeded ? await readBootstrapSecret(bootstrapSecretPath) : undefined;
   if (!bootstrapSecret) await rm(bootstrapSecretPath, { force: true });
   const bootstrapLinkPath = join(dataDirectory, 'owner-bootstrap.url');
-  const running = await (options.startServer ?? startCollectiveServer)({
-    store: opened.store, host: '127.0.0.1', port, allowedHostOrigins,
-    bootstrapLinkPath, githubAppSetup,
-  });
-  try {
-    const url = resolveCollectivePublicUrl(publicUrl, running.host, running.port);
-    opened.store.configureHumanAuthRedirectUri(new URL('/api/auth/github/callback', url).toString());
-    if (bootstrapSecret) {
-      await writeBootstrapLink(bootstrapLinkPath, url + '#bootstrap=' + encodeURIComponent(bootstrapSecret));
-    }
-  } catch (error) {
-    // Until activation returns its disposer, startup owns the acquired listener.
-    try { await running.close(); }
-    catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Collective activation and cleanup failed'); }
-    throw error;
-  }
+  if (bootstrapSecret) await writeBootstrapLink(bootstrapLinkPath, binding.origin + '#bootstrap=' + encodeURIComponent(bootstrapSecret));
+  await binding.assertCurrent();
+  const connector = await CollectiveConnector.open({ dataDirectory: join(context.dataDirectory, 'connector'),
+    // Native verification/control is not granted by browser-service transport.
+    verifyAgent: async () => false, localTransport: createLocalServiceTransport(context.browserServices, binding, opened.store) });
+  const contribution = declaration;
+  const dispatch = createNodeHttpAdapter({ store: opened.store, allowedHostOrigins, bootstrapLinkPath, githubAppSetup }, binding, contribution);
   let stopped = false;
   return {
     actions: {
+      ...createRecoveryActions(connector, binding),
+      'collective.http.dispatch': async (input, native, caller) => {
+        if (stopped || caller?.kind !== 'http') throw new Error('Collective HTTP context is required');
+        return dispatch(input, native, caller);
+      },
       'collective.service.status': async () => {
         if (stopped) throw new Error('Collective module is stopped');
         // Access is revoked by the same SDK session on disable.
         void context.dataDirectory;
-        return { render: 'status', data: { state: 'running', url: running.url, ...opened.store.getMetadata() } };
+        return { render: 'status', data: { state: 'running', url: binding.origin, ...opened.store.getMetadata(), connections: await connector.listConnections() } };
       },
     },
     async dispose() {
       stopped = true;
-      await running.close();
+
       if (!opened.store.getMetadata().bootstrapNeeded) await rm(bootstrapSecretPath, { force: true });
     },
   };
 }
 
-export function createCollectivePluginModule(options: CollectivePluginModuleOptions = {}): PluginModuleEntrypoint {
-  return definePluginModule(manifest => definePlugin({
-    manifest, activate: { 'collective-backend': context => activateService(context, options) },
-  }));
+export function createCollectivePluginModule(_options: CollectivePluginModuleOptions = {}): PluginModuleEntrypoint {
+  return definePluginModule(manifest => {
+    const plugin = definePlugin({ manifest });
+    const declaration = plugin.manifest.contributions?.find((item): item is BrowserServiceContribution => item.type === 'browser-service' && item.id === 'collective-client-api');
+    if (!declaration) throw new Error('Collective browser-service declaration is missing');
+    return definePlugin({ manifest, activate: { 'collective-backend': context => activateService(context, declaration) } });
+  });
 }
 
 export default createCollectivePluginModule();

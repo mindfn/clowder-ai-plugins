@@ -912,7 +912,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["identity", "schedule", "tool", "mcp", "skill", "limb", "webhook", "message-subscription", "media-source", "service", "connector", "cloud-conversation-host", "ui", "content-editor-provider", "desktop-window", "terminal-predicate-provider"]
+          "enum": ["identity", "schedule", "tool", "mcp", "skill", "limb", "webhook", "message-subscription", "media-source", "service", "connector", "cloud-conversation-host", "ui", "content-editor-provider", "desktop-window", "terminal-predicate-provider", "browser-service"]
         },
         "id": { "type": "string", "minLength": 1 }
       },
@@ -1883,8 +1883,297 @@
       "additionalProperties": false
     },
 
+      "BrowserServiceMethod": {
+        "type": "string",
+        "enum": [
+          "GET",
+          "POST",
+          "PUT",
+          "PATCH",
+          "DELETE"
+        ]
+      },
+      "BrowserServiceHeader": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9!#$%&'*+.^_`|~-]+$"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 8192
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "BrowserServiceRoute": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "$ref": "#/$defs/BrowserServiceMethod"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192,
+            "pattern": "^/[^?#\\\\]*$"
+          },
+          "browser": {
+            "enum": [
+              "service",
+              "parent",
+              "callback"
+            ]
+          },
+          "local": {
+            "enum": [
+              "omit-origin",
+              "parent-origin"
+            ]
+          }
+        },
+        "required": [
+          "method",
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "BrowserServiceContribution": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "const": "browser-service"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "action": {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              }
+            },
+            "required": [
+              "method"
+            ],
+            "additionalProperties": false
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/BrowserServiceRoute"
+            },
+            "maxItems": 200,
+            "minItems": 1
+          },
+          "credentials": {
+            "type": "object",
+            "properties": {
+              "bearer": {
+                "type": "boolean"
+              },
+              "cookies": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z0-9_-]+$"
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 8192,
+                      "pattern": "^/[^?#\\\\]*$"
+                    },
+                    "httpOnly": {
+                      "const": true
+                    },
+                    "sameSite": {
+                      "const": "Strict"
+                    },
+                    "maxAgeSeconds": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 3600
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "path",
+                    "httpOnly",
+                    "sameSite",
+                    "maxAgeSeconds"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 8
+              }
+            },
+            "required": [
+              "bearer",
+              "cookies"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "action",
+          "routes",
+          "credentials"
+        ],
+        "additionalProperties": false
+      },
+      "BrowserServiceRequest": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "const": 1
+          },
+          "method": {
+            "$ref": "#/$defs/BrowserServiceMethod"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "rawQuery": {
+            "type": "string",
+            "maxLength": 8192
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/BrowserServiceHeader"
+            },
+            "maxItems": 32
+          },
+          "rawBodyBase64": {
+            "type": "string",
+            "maxLength": 349528
+          }
+        },
+        "required": [
+          "version",
+          "method",
+          "path",
+          "rawQuery",
+          "headers",
+          "rawBodyBase64"
+        ],
+        "additionalProperties": false
+      },
+      "BrowserServiceResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 599
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/BrowserServiceHeader"
+            },
+            "maxItems": 32
+          },
+          "bodyBase64": {
+            "type": "string",
+            "maxLength": 44739244
+          }
+        },
+        "required": [
+          "status",
+          "headers",
+          "bodyBase64"
+        ],
+        "additionalProperties": false
+      },
+      "BrowserServiceFailureCode": {
+        "enum": [
+          "BROWSER_SERVICE_UNAVAILABLE",
+          "BROWSER_SERVICE_REVOKED",
+          "BROWSER_SERVICE_BUSY",
+          "BROWSER_SERVICE_INVALID_REQUEST",
+          "BROWSER_SERVICE_REQUEST_TOO_LARGE",
+          "BROWSER_SERVICE_INVALID_RESPONSE",
+          "BROWSER_SERVICE_RESPONSE_TOO_LARGE",
+          "BROWSER_SERVICE_TIMEOUT"
+        ]
+      },
+      "BrowserServiceTransportFailure": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "transport-error"
+          },
+          "code": {
+            "$ref": "#/$defs/BrowserServiceFailureCode"
+          },
+          "effect": {
+            "enum": [
+              "not_started",
+              "unknown"
+            ]
+          },
+          "automaticRetry": {
+            "const": false
+          }
+        },
+        "required": [
+          "kind",
+          "code",
+          "effect",
+          "automaticRetry"
+        ],
+        "additionalProperties": false
+      },
+      "BrowserServiceDispatchResult": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "response"
+              },
+              "response": {
+                "$ref": "#/$defs/BrowserServiceResponse"
+              }
+            },
+            "required": [
+              "kind",
+              "response"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "$ref": "#/$defs/BrowserServiceTransportFailure"
+          }
+        ]
+      },
+
     "StaticContribution": {
       "oneOf": [
+        { "$ref": "#/$defs/BrowserServiceContribution" },
         { "$ref": "#/$defs/TerminalPredicateProviderContribution" },
         { "$ref": "#/$defs/IdentityContribution" },
         { "$ref": "#/$defs/ScheduleContribution" },

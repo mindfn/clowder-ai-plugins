@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { type BigIntStats, constants, type Stats } from 'node:fs';
-import { lstat, mkdir, open, rename } from 'node:fs/promises';
+import { lstat, mkdir, open, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import {
@@ -29,14 +29,23 @@ export class ConnectorPersistence {
     try {
       const contents = await readPrivateRegularFile(filePath);
       const raw = JSON.parse(contents.toString('utf8')) as unknown;
-      const state = migrateConnectorState(raw);
+      const state = structuredClone(migrateConnectorState(raw)) as MutableConnectorState;
+      let recovered = false;
+      for (const connection of Object.values(state.connections)) {
+        for (const attempt of connection.localAttempts ?? []) {
+          if (attempt.status !== 'entered') continue;
+          attempt.status = 'held'; attempt.effect = 'unknown';
+          attempt.proof = 'unresolved'; attempt.reason = 'LOCAL_ATTEMPT_INTERRUPTED'; attempt.revision++;
+          attempt.updatedAt = new Date().toISOString(); recovered = true;
+        }
+      }
       const persistence = new ConnectorPersistence(filePath, state);
-      if (schemaVersionOf(raw) !== state.schemaVersion) await persistence.write(state);
+      if (recovered || schemaVersionOf(raw) !== state.schemaVersion) await persistence.write(state);
       return persistence;
     } catch (error) {
       if (!isMissingFile(error)) throw error;
       const persistence = new ConnectorPersistence(filePath, {
-        schemaVersion: 2,
+        schemaVersion: 3,
         connections: {},
         legacyConnections: [],
         hostRoutes: {},
@@ -50,7 +59,7 @@ export class ConnectorPersistence {
     return structuredClone(this.#state);
   }
 
-  async transaction<T>(mutate: (draft: MutableConnectorState) => T): Promise<T> {
+  async transaction<T>(mutate: (draft: MutableConnectorState) => T, assertCurrent?: () => Promise<void>): Promise<T> {
     let release: (() => void) | undefined;
     const previous = this.#tail;
     this.#tail = new Promise<void>((resolve) => {
@@ -58,12 +67,16 @@ export class ConnectorPersistence {
     });
     await previous;
     try {
+      await assertCurrent?.();
+      if (Object.values(this.#state.connections).some(connection => connection.localAttempts?.length) &&
+        !(await this.backingFileMatches(serializeState(this.#state))))
+        throw Object.assign(new Error('Local recovery state changed; reopen before another transition'), { code: 'COLLECTIVE_STATE_STALE' });
       const draft = structuredClone(this.#state) as MutableConnectorState;
       const result = mutate(draft);
       const validated = parseConnectorState(draft);
       const serialized = serializeState(validated);
       if (serialized !== serializeState(this.#state) || !(await this.backingFileMatches(serialized)))
-        await this.write(validated);
+        await this.write(validated, assertCurrent);
       this.#state = validated;
       return result;
     } finally {
@@ -84,7 +97,7 @@ export class ConnectorPersistence {
     }
   }
 
-  private async write(state: ConnectorState): Promise<void> {
+  private async write(state: ConnectorState, assertCurrent?: () => Promise<void>): Promise<void> {
     await assertPrivateDirectory(dirname(this.filePath));
     const temporaryPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
     const handle = await open(temporaryPath, 'wx', 0o600);
@@ -94,7 +107,8 @@ export class ConnectorPersistence {
     } finally {
       await handle.close();
     }
-    await rename(temporaryPath, this.filePath);
+    try { await assertCurrent?.(); await rename(temporaryPath, this.filePath); }
+    finally { await rm(temporaryPath, { force: true }); }
     const directoryHandle = await open(dirname(this.filePath), 'r');
     try {
       await directoryHandle.sync();

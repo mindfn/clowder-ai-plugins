@@ -1,5 +1,5 @@
 pluginId: official.collective-connector
-version: 0.1.0-alpha.1
+version: 0.1.0-alpha.2
 contractVersion: 0.1.0
 name: Collective
 description:
@@ -7,20 +7,6 @@ description:
   translations:
     zh-CN: Collective 后端服务；独立界面保留在宿主中。
 configuration:
-  - key: servicePort
-    label: Local service port
-    kind: number
-    required: false
-    default: 5201
-  - key: allowedHostOrigins
-    label: Allowed Host origins
-    kind: string
-    required: false
-    default: ""
-  - key: publicUrl
-    label: Public service URL
-    kind: string
-    required: false
   - key: service
     label: Service status
     kind: operation
@@ -31,11 +17,43 @@ configuration:
         render: status
         action:
           method: collective.service.status
+  - key: recovery
+    label: Verify held local operations
+    kind: operation
+    required: false
+    actions:
+      - id: list
+        label: Held operations
+        render: status
+        resultRender: rows
+        action:
+          method: collective.recovery.list
+      - id: page
+        label: More held operations
+        render: row
+        resultRender: rows
+        action:
+          method: collective.recovery.page
+      - id: reconcile
+        label: Verify result
+        render: row
+        resultRender: rows
+        action:
+          method: collective.recovery.reconcile
+      - id: resume
+        label: Resume this verified operation once
+        render: row
+        resultRender: rows
+        confirm: Resume the same operation once using its verified recovery proof?
+        action:
+          method: collective.recovery.resume
 features:
   - id: collective-backend
     name: Collective backend
     resources: []
-    contributions: []
+    contributions:
+      - type: browser-service
+        id: collective-client-api
     capabilities:
       - plugin.config.read
       - data.directory
@@ -43,3 +61,212 @@ runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js
   dataDirectory: collective
+contributions:
+  - type: browser-service
+    id: collective-client-api
+    action:
+      method: collective.http.dispatch
+    routes:
+      - method: POST
+        path: /api/acks
+        browser: service
+        local: omit-origin
+      - method: POST
+        path: /api/auth/completions/exchange
+        browser: service
+      - method: POST
+        path: /api/auth/github/begin
+        browser: service
+      - method: GET
+        path: /api/auth/github/callback
+        browser: callback
+      - method: GET
+        path: /api/auth/providers
+        browser: service
+      - method: POST
+        path: /api/bootstrap
+        browser: service
+      - method: GET
+        path: /api/collaboration
+        browser: service
+      - method: POST
+        path: /api/collaboration/binding-votes
+        browser: service
+      - method: POST
+        path: /api/collaboration/binding-votes/cast
+        browser: service
+      - method: POST
+        path: /api/collaboration/binding-votes/settle
+        browser: service
+      - method: POST
+        path: /api/collaboration/binding-votes/withdraw
+        browser: service
+      - method: POST
+        path: /api/collaboration/reactions/set
+        browser: service
+      - method: POST
+        path: /api/collaboration/roadmaps
+        browser: service
+      - method: POST
+        path: /api/collaboration/roadmaps/status
+        browser: service
+      - method: POST
+        path: /api/collaboration/roadmaps/works
+        browser: service
+      - method: POST
+        path: /api/collaboration/votes
+        browser: service
+      - method: POST
+        path: /api/collaboration/votes/cast
+        browser: service
+      - method: POST
+        path: /api/collaboration/votes/close
+        browser: service
+      - method: POST
+        path: /api/collaboration/work/accept-agent
+        browser: service
+        local: omit-origin
+      - method: GET
+        path: /api/collaboration/work/assigned
+        browser: service
+        local: omit-origin
+      - method: GET
+        path: /api/collaboration/work/assigned-by-assignment
+        browser: service
+        local: omit-origin
+      - method: POST
+        path: /api/collaboration/work/commit
+        browser: service
+      - method: POST
+        path: /api/collaboration/work/complete
+        browser: service
+      - method: POST
+        path: /api/collaboration/work/continue-agent
+        browser: service
+        local: omit-origin
+      - method: POST
+        path: /api/collaboration/work/decline
+        browser: service
+      - method: POST
+        path: /api/collaboration/work/dependencies
+        browser: service
+      - method: POST
+        path: /api/collaboration/work/host-admission
+        browser: service
+        local: omit-origin
+      - method: POST
+        path: /api/collaboration/work/propose
+        browser: service
+      - method: POST
+        path: /api/collaboration/work/propose-agent
+        browser: service
+        local: omit-origin
+      - method: POST
+        path: /api/collaboration/work/result/accept
+        browser: service
+      - method: POST
+        path: /api/collaboration/work/result/revision
+        browser: service
+      - method: POST
+        path: /api/collaboration/work/routing-context
+        browser: service
+        local: omit-origin
+      - method: POST
+        path: /api/collaboration/work/source-context
+        browser: service
+        local: omit-origin
+      - method: POST
+        path: /api/collectives
+        browser: service
+      - method: POST
+        path: /api/connections/exchange
+        local: parent-origin
+      - method: POST
+        path: /api/connections/revoke
+        browser: service
+      - method: POST
+        path: /api/connections/self-revoke
+        browser: service
+        local: omit-origin
+      - method: POST
+        path: /api/events/agent
+        browser: service
+        local: omit-origin
+      - method: GET
+        path: /api/events/endpoint
+        browser: service
+        local: omit-origin
+      - method: GET
+        path: /api/events/human
+        browser: service
+      - method: POST
+        path: /api/events/human
+        browser: service
+      - method: GET
+        path: /api/health
+        browser: service
+      - method: POST
+        path: /api/invites
+        browser: service
+      - method: POST
+        path: /api/join
+        browser: service
+      - method: GET
+        path: /api/me
+        browser: service
+      - method: GET
+        path: /api/members
+        browser: service
+      - method: POST
+        path: /api/memberships/self-leave
+        browser: service
+      - method: GET
+        path: /api/meta
+        browser: service
+        local: omit-origin
+      - method: POST
+        path: /api/pairing-intents
+        browser: service
+      - method: GET
+        path: /api/participants
+        browser: service
+      - method: GET
+        path: /api/participation
+        browser: service
+        local: omit-origin
+      - method: POST
+        path: /api/participation
+        browser: service
+        local: omit-origin
+      - method: POST
+        path: /api/participation/context
+        browser: service
+        local: omit-origin
+      - method: POST
+        path: /api/participation/work-policy/read
+        browser: service
+        local: omit-origin
+      - method: POST
+        path: /api/participation/work-policy/read-owner
+        browser: service
+      - method: POST
+        path: /api/participation/work-policy/register
+        browser: service
+      - method: POST
+        path: /api/participation/work-policy/revoke
+        browser: service
+        local: omit-origin
+      - method: POST
+        path: /api/setup/github-app/begin
+        browser: service
+      - method: GET
+        path: /api/setup/github-app/callback
+        browser: callback
+    credentials:
+      bearer: true
+      cookies:
+        - name: collective_auth_completion
+          path: /api/auth/completions/exchange
+          httpOnly: true
+          sameSite: Strict
+          maxAgeSeconds: 300

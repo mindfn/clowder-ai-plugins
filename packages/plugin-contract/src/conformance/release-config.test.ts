@@ -379,8 +379,8 @@ function replaceNamedActionStepOnce(
   return prereleasePublishAction.replace(step, mutatedStep);
 }
 
-test('neutral metadata ports publish beta.35 while the broker protocol stays at signed v0.1', () => {
-  assert.equal(contractPackage.version, '0.1.0-beta.35');
+test('browser-service transport advances the local package to beta.36 while the broker protocol stays at signed v0.1', () => {
+  assert.equal(contractPackage.version, '0.1.0-beta.36');
   assert.equal(contractPackage.private, false);
   assert.equal(messagingBehaviorSuite._meta?.contractVersion, '0.1.0');
 });

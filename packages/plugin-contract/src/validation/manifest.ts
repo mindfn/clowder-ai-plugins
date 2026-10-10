@@ -1,3 +1,4 @@
+import { browserServiceManifestError } from './browser-service.js';
 import { createRequire } from 'node:module';
 
 import type { PluginManifest } from '../generated/contract.generated.js';
@@ -105,6 +106,8 @@ function requiredWhenScalarType(
 export function validateManifest(value: unknown): ManifestValidationResult {
   if (validateSchema(value)) {
     const manifest = value as PluginManifest;
+    const browserError = browserServiceManifestError(manifest);
+    if (browserError) return semanticError('/contributions', '#/$defs/BrowserServiceContribution', 'browserService', browserError);
     const declaredTypes = new Set<string>();
     for (const [index, declaration] of (manifest.signals?.provides ?? []).entries()) {
       if (declaredTypes.has(declaration.type)) {

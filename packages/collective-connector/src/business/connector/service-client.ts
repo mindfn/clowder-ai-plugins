@@ -12,6 +12,8 @@ import {
   collectiveWorkProjectionSchema,
 } from '../contracts/index.js';
 import { z } from 'zod';
+import type { ConnectorConnectionState } from './state.js';
+import type { LocalRecoverySnapshot } from './recovery-proof.js';
 import { CollectiveWorkAuthorityClient } from './work-authority-client.js';
 
 const connectionResponseSchema = z
@@ -45,8 +47,24 @@ const pollResponseSchema = z
 export type ServiceConnectionResponse = z.infer<typeof connectionResponseSchema>;
 export type ServicePollResponse = z.infer<typeof pollResponseSchema>;
 
+export interface LocalTransportFailure {
+  readonly code: string;
+  readonly effect: 'not_started' | 'unknown';
+  readonly automaticRetry: false;
+}
+/** Private connector adapter. The public transport contract is owned by the SDK. */
+export interface CollectiveLocalTransport {
+  matches(serviceUrl: string): boolean;
+  assertCurrent(): Promise<void>;
+  fetch: typeof fetch;
+  readRecovery(connection: ConnectorConnectionState, clientEventId?: string): Promise<LocalRecoverySnapshot>;
+}
+
 export class ConnectorTransportError extends Error {
+  get automaticRetry(): false | undefined { return this.localFailure?.automaticRetry; }
+  get effect(): 'not_started' | 'unknown' | undefined { return this.localFailure?.effect; }
   get retryable(): boolean {
+    if (this.automaticRetry === false) return false;
     return (
       this.statusCode === undefined || this.statusCode === 408 || this.statusCode === 429 || this.statusCode >= 500
     );
@@ -58,6 +76,7 @@ export class ConnectorTransportError extends Error {
     message: string,
     readonly statusCode?: number,
     readonly causeCode?: string,
+    readonly localFailure?: LocalTransportFailure,
   ) {
     super(message);
     this.name = 'ConnectorTransportError';
@@ -69,7 +88,21 @@ export class CollectiveServiceClient {
   constructor(
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly timeoutMs = 10_000,
+    private readonly localTransport?: CollectiveLocalTransport,
   ) {}
+
+  usesLocalTransport(serviceUrl: string): boolean { return this.localTransport?.matches(serviceUrl) ?? false; }
+  async readLocalRecovery(connection: ConnectorConnectionState, clientEventId?: string): Promise<LocalRecoverySnapshot> {
+    if (!this.localTransport || !this.usesLocalTransport(connection.serviceUrl)) throw new Error('Local recovery is unavailable');
+    await this.localTransport.assertCurrent();
+    const result = await this.localTransport.readRecovery(connection, clientEventId);
+    await this.localTransport.assertCurrent();
+    if (result.serviceInstanceId !== connection.serviceInstanceId || result.collectiveId !== connection.collectiveId ||
+      result.connectionId !== connection.connectionId || result.endpointId !== connection.endpointId ||
+      result.authorizedHumanId !== connection.authorizedHumanId) throw new Error('Local recovery coordinates changed');
+    return result;
+  }
+  async assertLocalCurrent(): Promise<void> { await this.localTransport?.assertCurrent(); }
 
   async readMetadata(serviceUrl: string): Promise<{ serviceInstanceId: string; clientBuildId: string }> {
     const parsed = metadataResponseSchema.safeParse(await this.request(serviceUrl, '/api/meta'));
@@ -291,7 +324,7 @@ export class CollectiveServiceClient {
   ): Promise<Record<string, unknown>> {
     let response: Response;
     try {
-      response = await this.fetchImpl(`${new URL(serviceUrl).origin}${path}`, {
+      response = await (this.usesLocalTransport(serviceUrl) ? this.localTransport!.fetch : this.fetchImpl)(`${new URL(serviceUrl).origin}${path}`, {
         method: options.method ?? 'GET',
         signal: AbortSignal.timeout(this.timeoutMs),
         headers: {
@@ -303,6 +336,7 @@ export class CollectiveServiceClient {
         ...(options.body ? { body: JSON.stringify(options.body) } : {}),
       });
     } catch (cause) {
+      if (cause instanceof ConnectorTransportError && cause.automaticRetry === false) throw cause;
       throw new ConnectorTransportError('Collective Service is unreachable', undefined, transportErrorCode(cause));
     }
     const payload = (await response.json().catch(() => ({}))) as unknown;

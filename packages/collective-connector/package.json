@@ -1,6 +1,6 @@
 {
   "name": "@clowder-ai/collective-connector",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "private": true,
   "description": "Collective backend business and Host-loadable module",
   "license": "MIT",
@@ -26,15 +26,17 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.test.json",
     "test:lifecycle": "node --import tsx --test test/module-lifecycle.test.ts",
+    "test:transport": "node --import tsx --test test/transport-recovery.test.ts",
     "test:business": "vitest run src/business",
     "test:installed": "node --test test/installed-directory.test.mjs",
     "test:source": "node --test test/source-continuity.test.mjs",
-    "test": "pnpm test:lifecycle && pnpm test:business",
+    "test": "pnpm test:lifecycle && pnpm test:transport && pnpm test:business",
     "prepack": "pnpm build"
   },
   "dependencies": {
-    "@clowder-ai/plugin-sdk": "0.2.0-beta.19",
-    "zod": "3.25.76"
+    "@clowder-ai/plugin-sdk": "0.2.0-beta.20",
+    "zod": "3.25.76",
+    "@clowder-ai/plugin-contract": "0.1.0-beta.36"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",

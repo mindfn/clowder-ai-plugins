@@ -3,15 +3,19 @@ import { participationDeclaration, requireParticipation } from './participation-
 import { ConnectorPersistence } from './persistence.js';
 import { type ConnectorProjection, projectConnection } from './projection.js';
 import { CollectiveServiceClient, ConnectorTransportError } from './service-client.js';
+import { outboxInput, outboxPayload, settleOutbox, settleAck, settleRevoke, recoveryIntent } from './local-recovery-intent.js';
+import type { RecoveryOwnerContext } from './recovery-proof.js';
+import { LocalOperationRecovery, semanticDigest, connectionIdentity, recoveryRequired } from './local-operation-recovery.js';
 import type { ConnectorConnectionState } from './state.js';
 import type { ConnectorWorkAcceptanceCustody } from './work-acceptance-custody.js';
-import { revalidateQueuedWork, workOutboundIntent, workOutboundReceipt } from './work-outbound-authority.js';
+import { revalidateQueuedWork } from './work-outbound-authority.js';
 
 export interface ConnectorSyncHooks {
   readonly afterInboxPersist?: () => void | Promise<void>;
 }
 
 export class ConnectorSynchronization {
+  private readonly localRecovery: LocalOperationRecovery;
   readonly #syncs = new Map<string, Promise<ConnectorProjection>>();
 
   constructor(
@@ -21,7 +25,7 @@ export class ConnectorSynchronization {
     private readonly currentWorkGrant?: (
       source: CollectiveSourceIdentity,
     ) => ReturnType<ConnectorWorkAcceptanceCustody['resolveGrant']>,
-  ) {}
+  ) { this.localRecovery = new LocalOperationRecovery(persistence, service, now); }
 
   sync(connectionId: string, hooks: ConnectorSyncHooks = {}): Promise<ConnectorProjection> {
     const existing = this.#syncs.get(connectionId);
@@ -42,6 +46,60 @@ export class ConnectorSynchronization {
     return this.finishRevoke(connectionId);
   }
 
+  async publishParticipation(connectionId: string): Promise<void> {
+    const state = this.persistence.snapshot();
+    const connection = requireConnection(state.connections[connectionId]);
+    const route = state.hostRoutes[connectionId];
+    if (!route || connection.authorityStatus !== 'connected') throw new Error('Participation is not configured');
+    const declaration = participationDeclaration(connection, route);
+    if (this.service.usesLocalTransport(connection.serviceUrl)) {
+      const previous = connection.localAttempts?.find(item => item.kind === 'participation' && item.status !== 'settled');
+      if (previous) throw recoveryRequired();
+      if (connection.localAttempts?.some(item => item.kind === 'participation' && item.status === 'settled' &&
+        item.identityDigest === connectionIdentity(connection) && item.payloadDigest === semanticDigest(declaration))) return;
+    }
+    await this.localRecovery.run(connectionId, 'participation', String(declaration.revision), declaration,
+      () => this.service.publishParticipation(connection.serviceUrl, requireCredential(connection), declaration), () => {});
+  }
+
+  async recover(connectionId: string, operationId: string, expectedRevision: number,
+    mode: 'reconcile' | 'resume', owner: RecoveryOwnerContext): Promise<ConnectorProjection> {
+    // Authorization precedes proof reads, not merely the final write.
+    await owner.assertCurrent();
+    const state = this.persistence.snapshot();
+    if (state.hostRoutes[connectionId]?.localOwnerUserId !== owner.userId) throw recoveryRequired('RECOVERY_OWNER_REQUIRED');
+    const attempt = state.connections[connectionId]?.localAttempts?.find(item => item.operationId === operationId);
+    if (!attempt || attempt.status !== 'held' || attempt.revision !== expectedRevision) throw recoveryRequired();
+    const intent = recoveryIntent(state, connectionId, attempt, this.service);
+    if (mode === 'reconcile') {
+      await this.localRecovery.reconcile(connectionId, operationId, expectedRevision, owner, intent.proof, intent.settle,
+        current => { recoveryIntent(current, connectionId, attempt, this.service); });
+    } else {
+      await this.localRecovery.resume(connectionId, operationId, expectedRevision, owner, attempt.kind,
+        attempt.semanticKey, intent.payload, async () => {
+          if (attempt.kind === 'outbox') {
+            const currentState = this.persistence.snapshot();
+            const connection = requireConnection(currentState.connections[connectionId]);
+            const pending = connection.outbox.find(item => item.outboxId + ':' + item.clientEventId === attempt.semanticKey);
+            if (!pending || (pending.workPurpose && (!pending.replySource || !this.currentWorkGrant)))
+              throw recoveryRequired('WORK_RECOVERY_AUTHORITY_REQUIRED');
+            if (pending.replySource) {
+              requireParticipation(currentState, pending.replySource);
+              const context = await this.service.readParticipationContext(connection.serviceUrl, requireCredential(connection), pending.replySource, 0, 1);
+              await revalidateQueuedWork(this.service, connection, pending, context.source, this.currentWorkGrant);
+              requireParticipation(this.persistence.snapshot(), pending.replySource);
+            }
+          }
+          await owner.assertCurrent();
+          const current = this.persistence.snapshot();
+          const freshIntent = recoveryIntent(current, connectionId, attempt, this.service);
+          return freshIntent.dispatch();
+        }, intent.settle);
+    }
+    const current = this.persistence.snapshot();
+    return projectConnection(requireConnection(current.connections[connectionId]), current.hostRoutes[connectionId]);
+  }
+
   private async performSync(connectionId: string, hooks: ConnectorSyncHooks): Promise<ConnectorProjection> {
     const initialSnapshot = this.persistence.snapshot();
     const initial = requireConnection(initialSnapshot.connections[connectionId]);
@@ -52,11 +110,7 @@ export class ConnectorSynchronization {
     const hostRoute = initialSnapshot.hostRoutes[connectionId];
     if (hostRoute) {
       try {
-        await this.service.publishParticipation(
-          initial.serviceUrl,
-          requireCredential(initial),
-          participationDeclaration(initial, hostRoute),
-        );
+        await this.publishParticipation(connectionId);
       } catch (error) {
         if (!(error instanceof ConnectorTransportError)) throw error;
         return this.recordTransportFailure(connectionId, error);
@@ -152,7 +206,8 @@ export class ConnectorSynchronization {
                 item.failureCode = code;
               }
             });
-            if (code === 'CONNECTION_REVOKED') return this.markServiceRevoked(connectionId);
+            if (code === 'CONNECTION_REVOKED' && !this.service.usesLocalTransport(snapshot.serviceUrl))
+              return this.markServiceRevoked(connectionId);
             continue;
           }
           return this.markOffline(
@@ -170,32 +225,10 @@ export class ConnectorSynchronization {
         if (item) item.status = 'sending';
       });
       try {
-        const event = await this.service.postAgentMessage(snapshot.serviceUrl, requireCredential(snapshot), {
-          serviceInstanceId: snapshot.serviceInstanceId,
-          collectiveId: snapshot.collectiveId,
-          connectionId: snapshot.connectionId,
-          clientEventId: pending.clientEventId,
-          agent: pending.agent,
-          target: pending.target,
-          ...(pending.location ? { location: pending.location, recipient: { kind: 'channel' as const } } : {}),
-          ...(pending.replySource ? { participationRevision: pending.replySource.participationRevision } : {}),
-          ...(pending.replyToEventId ? { replyToEventId: pending.replyToEventId } : {}),
-          ...workOutboundIntent(pending),
-          body: pending.body,
-        });
-        const receipt = workOutboundReceipt(event, pending);
-        await this.persistence.transaction((state) => {
-          const connection = requireConnection(state.connections[connectionId]);
-          const item = connection.outbox.find((candidate) => candidate.outboxId === pending.outboxId);
-          if (item) {
-            item.status = 'accepted';
-            item.acceptedEventId = event.eventId;
-            if (item.workPurpose && receipt) item.workPurpose.workId = receipt.workId;
-          }
-          connection.liveStatus = 'online';
-          delete connection.lastError;
-          delete connection.lastErrorCode;
-        });
+        const input = outboxInput(snapshot, pending);
+        await this.localRecovery.run(connectionId, 'outbox', pending.outboxId + ':' + pending.clientEventId,
+          outboxPayload(snapshot, pending), () => this.service.postAgentMessage(snapshot.serviceUrl, requireCredential(snapshot), input),
+          (connection, event) => settleOutbox(connection, pending, event));
       } catch (error) {
         if (!(error instanceof ConnectorTransportError)) throw error;
         const refused = [
@@ -242,21 +275,13 @@ export class ConnectorSynchronization {
     if (sequence === undefined) {
       return projectConnection(snapshot, this.persistence.snapshot().hostRoutes[connectionId]);
     }
-    await this.service.acknowledge(snapshot.serviceUrl, requireCredential(snapshot), {
-      serviceInstanceId: snapshot.serviceInstanceId,
-      collectiveId: snapshot.collectiveId,
-      connectionId: snapshot.connectionId,
-      sequence,
-    });
-    return this.persistence.transaction((state) => {
-      const connection = requireConnection(state.connections[connectionId]);
-      connection.lastAckedSequence = Math.max(connection.lastAckedSequence, sequence);
-      delete connection.pendingAckSequence;
-      connection.liveStatus = 'online';
-      delete connection.lastError;
-      delete connection.lastErrorCode;
-      return projectConnection(connection, state.hostRoutes[connection.connectionId]);
-    });
+    await this.localRecovery.run(connectionId, 'ack', String(sequence), {
+      serviceInstanceId: snapshot.serviceInstanceId, collectiveId: snapshot.collectiveId, connectionId, sequence,
+    }, () => this.service.acknowledge(snapshot.serviceUrl, requireCredential(snapshot), {
+      serviceInstanceId: snapshot.serviceInstanceId, collectiveId: snapshot.collectiveId, connectionId, sequence,
+    }), connection => settleAck(connection, sequence));
+    const current = this.persistence.snapshot();
+    return projectConnection(requireConnection(current.connections[connectionId]), current.hostRoutes[connectionId]);
   }
 
   private async finishRevoke(connectionId: string): Promise<ConnectorProjection> {
@@ -264,6 +289,20 @@ export class ConnectorSynchronization {
     const snapshot = requireConnection(persisted.connections[connectionId]);
     if (snapshot.authorityStatus === 'revoked') {
       return projectConnection(snapshot, persisted.hostRoutes[connectionId]);
+    }
+    if (this.service.usesLocalTransport(snapshot.serviceUrl)) {
+      try {
+        await this.localRecovery.run(connectionId, 'revoke', 'authority', {
+          serviceInstanceId: snapshot.serviceInstanceId, collectiveId: snapshot.collectiveId, connectionId,
+        }, () => this.service.revoke(snapshot.serviceUrl, requireCredential(snapshot), {
+          serviceInstanceId: snapshot.serviceInstanceId, collectiveId: snapshot.collectiveId, connectionId,
+        }), connection => settleRevoke(connection));
+      } catch (error) {
+        return this.markOffline(connectionId, 'Revocation was requested but remains unconfirmed; use the plugin recovery rows',
+          'COLLECTIVE_REVOCATION_UNCONFIRMED');
+      }
+      const current = this.persistence.snapshot();
+      return projectConnection(requireConnection(current.connections[connectionId]), current.hostRoutes[connectionId]);
     }
     try {
       await this.service.revoke(snapshot.serviceUrl, requireCredential(snapshot), {
@@ -308,7 +347,8 @@ export class ConnectorSynchronization {
   }
 
   private recordTransportFailure(connectionId: string, error: ConnectorTransportError): Promise<ConnectorProjection> {
-    return error.causeCode === 'CONNECTION_REVOKED'
+    const connection = this.persistence.snapshot().connections[connectionId];
+    return error.causeCode === 'CONNECTION_REVOKED' && connection && !this.service.usesLocalTransport(connection.serviceUrl)
       ? this.markServiceRevoked(connectionId)
       : this.markOffline(connectionId, error.message, error.causeCode);
   }

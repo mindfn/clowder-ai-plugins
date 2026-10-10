@@ -1,9 +1,11 @@
+import type { BrowserServiceHost, PluginHostActionContext } from './browser-services.js';
 import { createFrustrationClient, type PluginFrustrationHost } from './frustration.js';
 import { createDeploymentClient, type PluginDeploymentHost } from './deployment.js';
 import { createCustodyClient, guardPredicateVerifier, type PluginCustodyHost, type PluginPredicateVerifier } from './custody.js';
 import {
   validateManifest,
   type Capability,
+  type BrowserServiceContribution,
   type CloudConversationHostContribution,
   type ContentEditorProviderContribution,
   type DirectToolContribution,
@@ -60,6 +62,7 @@ export interface HostContributionReceipt {
 export type PluginLogLevel = ModulePluginLogLevel;
 
 export interface FeatureHostAdapter {
+  readonly browserServices?: BrowserServiceHost;
   readonly frustration?: PluginFrustrationHost;
   readonly deployment?: PluginDeploymentHost;
   readonly custody?: PluginCustodyHost;
@@ -134,6 +137,7 @@ export interface ContributionRegistrar<T extends StaticContribution> {
 }
 
 export interface FeatureContext {
+  readonly browserServices?: BrowserServiceHost;
   readonly frustration: PluginFrustrationHost;
   readonly deployment: PluginDeploymentHost;
   readonly custody: PluginCustodyHost;
@@ -191,6 +195,7 @@ export interface FeatureContextSession {
 
 export interface FeatureContextSessionOptions {
   readonly messageSubscriptions?: readonly MessageSubscriptionContribution[];
+  readonly browserServices?: readonly BrowserServiceContribution[];
 }
 
 interface ActiveRegistration {
@@ -432,7 +437,22 @@ export function createFeatureContextSession(
     adapter.log(binding, level, message, fields);
   };
 
+  const browserServiceIds = new Set((options.browserServices ?? []).map(item => item.id));
+  const browserServices: BrowserServiceHost | undefined = adapter.browserServices ? {
+    getBinding: contributionId => runWhileActive(async () => {
+      if (!browserServiceIds.has(contributionId)) throw new FeaturePermissionError('browser-service is not owned by this feature');
+      const hostBinding = await adapter.browserServices!.getBinding(contributionId);
+      if (hostBinding.contributionId !== contributionId) throw new FeaturePermissionError('browser-service binding mismatch');
+      await hostBinding.assertCurrent();
+      return Object.freeze({ ...hostBinding, assertCurrent: () => runWhileActive(() => hostBinding.assertCurrent()) });
+    }),
+    dispatchLocal: (contributionId, request, call) => runWhileActive(() => {
+      if (!browserServiceIds.has(contributionId)) throw new FeaturePermissionError('browser-service is not owned by this feature');
+      return adapter.browserServices!.dispatchLocal(contributionId, request, call);
+    }),
+  } : undefined;
   const context: FeatureContext = {
+    ...(browserServices ? { browserServices } : {}),
     featureId: binding.featureId,
     config: { get: readConfig },
     secrets: { get: readSecret },
@@ -498,7 +518,7 @@ export function createFeatureContextSession(
   };
 }
 
-export type PluginActionHandler = (input: unknown, context?: import('./module-action-client.js').PluginActionContext) => unknown | Promise<unknown>;
+export type PluginActionHandler = (input: unknown, context?: import('./module-action-client.js').PluginActionContext, hostContext?: PluginHostActionContext) => unknown | Promise<unknown>;
 
 export interface FeatureActivation {
   readonly predicateVerifiers?: Readonly<Record<string, PluginPredicateVerifier>>;
@@ -540,6 +560,7 @@ function actionMethods(contribution: StaticContribution): readonly string[] {
     case 'schedule':
     case 'tool':
     case 'webhook':
+    case 'browser-service':
       return [contribution.action.method];
     case 'message-subscription':
       return [
@@ -591,7 +612,8 @@ export async function activateDefinedFeature(
   const result = await activate(context);
   const activation = result ?? {};
   const disposeActivation = activation.dispose ?? (() => undefined);
-  const actions = Object.freeze({ ...(activation.actions ?? {}) });
+  const rawActions = Object.freeze({ ...(activation.actions ?? {}) });
+  const actions = rawActions;
   const requiredMethods = featureActionMethods(plugin.manifest, featureId);
   const allowedMethods = new Set(requiredMethods);
   for (const method of options.additionalMethods ?? []) allowedMethods.add(method);
@@ -621,9 +643,39 @@ export async function activateDefinedFeature(
   const predicateVerifiers = Object.freeze(Object.fromEntries([...expected].map(([method, phase]) => [method,
     guardPredicateVerifier(phase, provided[method]!, () => { if (disposed) throw new FeatureContextRevokedError(); }),
   ])));
+  const httpMethods = new Map((plugin.manifest.contributions ?? []).filter(
+    (contribution): contribution is BrowserServiceContribution => contribution.type === 'browser-service',
+  ).map(contribution => [contribution.action.method, contribution.id]));
+  const guardedActions = Object.freeze(Object.fromEntries(Object.entries(actions).map(([method, handler]) => [method,
+    async (input: unknown, nativeContext?: import('./module-action-client.js').PluginActionContext, hostContext?: PluginHostActionContext) => {
+      const assertCall = async () => {
+        if (disposed) throw new FeatureContextRevokedError();
+        if (hostContext && (hostContext.kind !== 'http' && hostContext.kind !== 'owner-operation'))
+          throw new FeaturePermissionError('unknown Host action context');
+        if (httpMethods.has(method)) {
+          if (nativeContext !== undefined || hostContext?.kind !== 'http' || hostContext.contributionId !== httpMethods.get(method) ||
+            !['browser', 'local'].includes(hostContext.lane) || !hostContext.requestId)
+            throw new FeaturePermissionError('private browser-service action requires its exact HTTP context');
+        } else if (hostContext?.kind === 'http') throw new FeaturePermissionError('HTTP context cannot invoke ordinary actions');
+        if (hostContext?.kind === 'owner-operation') {
+          if (nativeContext !== undefined || !hostContext.userId || !hostContext.pluginInstanceId || !hostContext.requestId)
+            throw new FeaturePermissionError('owner-operation caller is invalid');
+          const operation = plugin.manifest.configuration?.find(field => field.kind === 'operation' && field.key === hostContext.operationKey);
+          if (!operation || operation.kind !== 'operation' || !operation.actions.some(action =>
+            action.id === hostContext.actionId && action.action.method === method))
+            throw new FeaturePermissionError('owner-operation tuple does not match its declared method');
+        }
+        if (hostContext) { hostContext.signal.throwIfAborted(); await hostContext.assertCurrent(); }
+        if (disposed) throw new FeatureContextRevokedError();
+      };
+      await assertCall();
+      const result = await handler(input, nativeContext, hostContext);
+      await assertCall(); return result;
+    },
+  ])));
   let disposePromise: Promise<void> | undefined;
   return Object.freeze({
-    actions,
+    actions: guardedActions,
     predicateVerifiers,
     dispose: () => {
       disposed = true;

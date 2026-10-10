@@ -49,12 +49,12 @@
       "workSubject": "task:0001789822127811-001843-1c2133b0",
       "acceptedSource": "thread_mrkn6povq4zzgh45#0001791628175747-000344-6c7e88b4",
       "businessSourceCommit": "ca5b831b48c165ea10c7389fe3eb4ba03d3e01e7",
-      "contractClosure": "plugin.yaml contractVersion 0.1.0; backend module checkpoint only",
-      "sdkClosure": "exact SDK 0.2.0-beta.19 with contract 0.1.0-beta.35; no public type or version change",
+      "contractClosure": "plugin.yaml contractVersion 0.1.0; local contract 0.1.0-beta.36 adds generic browser-service wire and SDK owner-operation pairing; no domain public exports",
+      "sdkClosure": "exact local SDK 0.2.0-beta.20 with contract 0.1.0-beta.36; both workspace links retained; W3 version synchronization remains a later coordinated step",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
-      "runtimeClosure": "builtin dist/plugin-entrypoint.js; actual lifecycle/failure/retry and production Host carrier pairing verified with isolated state",
+      "runtimeClosure": "builtin dist/plugin-entrypoint.js; Host binding before start; zero package listeners; local durable attempt/recovery and owner-row fixtures verified; actual Host transport/Manager pairing remains open",
       "catalogClosure": "not cataloged or released; private implementation checkpoint; original1843 still owns final catalog/release closure",
-      "freshConsumerClosure": "physical empty-consumer local-directory install/import and production Host directory admission verified; Settings/C2/routes and21 journeys remain open"
+      "freshConsumerClosure": "physical empty-consumer local-directory install/import and lifecycle with fixture Host binding; frozen Host93fee434 predates the new transport, so actual Host/Settings/C2/21 journeys remain open"
     },
     {
       "directory": "companion",

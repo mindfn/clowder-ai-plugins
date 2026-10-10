@@ -94,6 +94,7 @@ function declaredContributionAdapter(
       .map((contribution) => [`${contribution.type}:${contribution.id}`, canonicalJson(contribution)] as const),
   );
   return {
+    browserServices: host.browserServices,
     readConfig: (_binding, key) => host.config.get(key),
     readSecret: (_binding, key) => host.secrets.get(key),
     storage: host.storage,
@@ -181,6 +182,7 @@ async function startDefinedPluginModule(
         featureBinding(plugin, feature.id, host),
         declaredContributionAdapter(plugin, feature.id, host),
         {
+          browserServices: contributions.filter(contribution => contribution.type === 'browser-service'),
           messageSubscriptions: contributions.filter(
             (contribution): contribution is MessageSubscriptionContribution =>
               contribution.type === 'message-subscription',
@@ -206,9 +208,9 @@ async function startDefinedPluginModule(
           throw new TypeError(`action handler ${method} is exposed by multiple plugin features`);
         }
         actions[method] = presentationMethods.has(method)
-          ? (input, context) => {
+          ? (input, context, hostContext) => {
               requireDeliveryPresentation(input);
-              return handler(input, context);
+              return handler(input, context, hostContext);
             }
           : handler;
       }

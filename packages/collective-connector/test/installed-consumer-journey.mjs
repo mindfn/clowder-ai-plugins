@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { lstat, mkdtemp, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
-import { createServer } from 'node:http';
+import { Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { validateManifest } from '@clowder-ai/plugin-contract';
-import { requirePluginModuleEntrypoint } from '@clowder-ai/plugin-sdk';
+import { BROWSER_SERVICE_LIMITS, requirePluginModuleEntrypoint } from '@clowder-ai/plugin-sdk';
 import module from '@clowder-ai/collective-connector';
 
 // An installed caller must enter through the authorized module, never import domain implementation.
@@ -48,30 +48,49 @@ await assert.rejects(stat(join(packageRoot, 'dist/business/service/cli.js')), { 
 const directory = await mkdtemp(join(tmpdir(), 'installed-collective-data-'));
 const host = {
   dataDirectory: directory,
-  config: { async get(key) { return key === 'servicePort' ? 0 : undefined; } },
+  config: { async get() {} },
   secrets: { async get() { return undefined; } },
   storage: {}, tasks: {}, threads: {}, media: {}, messaging: {}, log() {},
+  browserServices: {
+    async getBinding(contributionId) { return { contributionId, origin: 'http://127.0.0.1:5271', parentOrigin: 'http://localhost:5172',
+      clientBuildId: 'collective-client-v2', assetDigest: 'a'.repeat(64), limits: BROWSER_SERVICE_LIMITS, async assertCurrent() {} }; },
+    async dispatchLocal() { throw new Error('Unused fixture local port'); },
+  },
 };
 let active;
+const originalListen = Server.prototype.listen;
+let listenerAttempts = 0;
+Server.prototype.listen = function () { listenerAttempts++; throw new Error('Package must never listen'); };
+async function request(path, init = {}) {
+  const caller = { kind: 'http', lane: 'browser', contributionId: 'collective-client-api', requestId: 'installed-request',
+    signal: new AbortController().signal, async assertCurrent() {} };
+  const headers = new Headers(init.headers);
+  if (init.method && init.method !== 'GET') headers.set('origin', 'http://127.0.0.1:5271');
+  const response = await active.actions['collective.http.dispatch']({ request: { version: 1, method: init.method ?? 'GET', path,
+    rawQuery: '', headers: [...headers.entries()].map(([name, value]) => ({ name, value })), rawBodyBase64: Buffer.from(init.body ?? '').toString('base64') } }, undefined, caller);
+  return new Response([204, 304].includes(response.status) ? null : Buffer.from(response.bodyBase64, 'base64'), {
+    status: response.status, headers: response.headers.map(row => [row.name, row.value]),
+  });
+}
 try {
   const plugin = entrypoint.create(manifest);
   active = await plugin.start(host);
   const status = (await active.actions['collective.service.status']({})).data;
   const base = status.url;
-  assert.equal((await fetch(base + '/api/health')).status, 200);
-  assert.equal((await fetch(base + '/')).status, 404, 'C2 UI is retained in Host');
+  assert.equal((await request('/api/health')).status, 200);
+  await assert.rejects(() => request('/'), /admitted/, 'C2 assets are served only by Host');
   const linkPath = join(directory, 'service/owner-bootstrap.url');
   assert.equal((await stat(linkPath)).mode & 0o777, 0o600);
   const link = new URL((await readFile(linkPath, 'utf8')).trim());
   const secret = new URLSearchParams(link.hash.slice(1)).get('bootstrap');
   assert.ok(secret);
-  const response = await fetch(base + '/api/bootstrap', {
+  const response = await request('/api/bootstrap', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ secret, displayName: 'Isolated installed owner' }),
   });
   assert.equal(response.status, 201);
   const owner = await response.json();
-  const created = await fetch(base + '/api/collectives', {
+  const created = await request('/api/collectives', {
     method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + owner.sessionToken },
     body: JSON.stringify({ name: 'Installed lifecycle proof' }),
   });
@@ -80,11 +99,7 @@ try {
   await active.stop();
   await assert.rejects(async () => active.actions['collective.service.status']({}), /revoked|stopped/);
   await assert.rejects(readFile(join(directory, 'service/owner-bootstrap.secret')), { code: 'ENOENT' });
-  const probe = createServer();
-  await new Promise((resolve, reject) => {
-    probe.once('error', reject); probe.listen(Number(new URL(base).port), '127.0.0.1', resolve);
-  });
-  await new Promise((resolve, reject) => probe.close(error => error ? reject(error) : resolve()));
+  assert.equal(listenerAttempts, 0);
   active = await plugin.start(host);
   const resumed = (await active.actions['collective.service.status']({})).data;
   assert.equal(resumed.serviceInstanceId, status.serviceInstanceId);
@@ -94,9 +109,10 @@ try {
   await assert.rejects(readFile(linkPath), { code: 'ENOENT' });
   console.log(JSON.stringify({ result: 'PASS', installedDirectory: true, physicalDependencyClosure: true,
     manifest: 'valid', lifecycle: 'start/bootstrap/create/disable/re-enable', statePreserved: true,
-    reservedPortsUsed: false, retainedC2: true, oldCliExcluded: true,
+    reservedPortsUsed: false, listenerAttempts, binding: 'Host fixture, not actual Host installed acceptance', retainedC2: true, oldCliExcluded: true,
     rejectedPrivateRootImports: privateImports, rejectedInternalSubpaths: 4 }));
 } finally {
+  Server.prototype.listen = originalListen;
   await active?.stop();
   await rm(directory, { recursive: true, force: true });
 }
