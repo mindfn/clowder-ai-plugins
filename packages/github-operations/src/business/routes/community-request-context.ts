@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
-import type { PluginActionContext } from '@clowder-ai/plugin-sdk';
+import type { PluginActionContext, PluginStorageHost } from '@clowder-ai/plugin-sdk';
 import type { FastifyInstance, FastifyReply, FastifyRequest, InjectOptions, LightMyRequestResponse } from 'fastify';
 
 type Principal = { readonly kind: 'owner'; readonly id: string } | { readonly kind: 'native'; readonly context: PluginActionContext };
@@ -13,6 +13,7 @@ export class CommunityRequestContext {
   private readonly current = new AsyncLocalStorage<Principal>();
   private readonly pending = new Map<string, Principal>();
   private readonly header = 'x-community-local-request';
+  private stopped = false;
   constructor(private readonly app: FastifyInstance) {
     // light-my-request creates its async resource outside the caller scope.
     // Re-enter at onRequest using a one-use in-process correlation key. This
@@ -26,15 +27,18 @@ export class CommunityRequestContext {
     });
   }
   injectOwner(principal: { readonly kind: 'owner'; readonly id: string }, options: InjectOptions): Promise<LightMyRequestResponse> {
+    this.assertActive();
     if (principal.kind !== 'owner' || !principal.id) throw new Error('Host owner principal required');
     return this.inject({ kind: 'owner', id: principal.id }, options);
   }
   async injectNative(context: PluginActionContext, options: InjectOptions): Promise<LightMyRequestResponse> {
+    this.assertActive();
     if (!context?.catId || !context.threadId || !context.userId || !context.invocationId || typeof context.assertCurrent !== 'function') throw new Error('Host native action context required');
     await context.assertCurrent();
     return this.inject({ kind: 'native', context }, options);
   }
   private async inject(principal: Principal, options: InjectOptions) {
+    this.assertActive();
     const key = randomUUID();
     const headers = Object.fromEntries(Object.entries(options.headers ?? {}).filter(([name]) => name.toLowerCase() !== this.header));
     this.pending.set(key, principal);
@@ -60,8 +64,23 @@ export class CommunityRequestContext {
     return false;
   }
   async assertCurrent(): Promise<void> {
+    this.assertActive();
     const principal = this.current.getStore();
     if (!principal) throw new Error('Authenticated Community request required');
     if (principal.kind === 'native') await principal.context.assertCurrent();
+    this.assertActive();
   }
+  /** Use only for request-owned workflow stores. Background collectors have
+   * their own module lifecycle and cannot borrow an invocation's authority. */
+  mutationStorage(storage: PluginStorageHost): PluginStorageHost {
+    return {
+      get: key => storage.get(key),
+      list: () => storage.list(),
+      set: async (key, value) => { await this.assertCurrent(); return storage.set(key, value); },
+      compareAndSet: async (key, expected, value) => { await this.assertCurrent(); return storage.compareAndSet(key, expected, value); },
+      delete: async (key, expected) => { await this.assertCurrent(); return storage.delete(key, expected); },
+    };
+  }
+  stop(): void { this.stopped = true; this.pending.clear(); }
+  private assertActive(): void { if (this.stopped) throw new Error('Community router stopped'); }
 }
