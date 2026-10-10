@@ -2,7 +2,7 @@ import {
   type CollectiveParticipationDeclaration,
   type CollectiveSourceIdentity,
   participationSourceIsCurrent,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import type { ConnectorConnectionState, ConnectorState, HostRouteConfig } from './state.js';
 
 export function requireParticipation(state: ConnectorState, source: CollectiveSourceIdentity) {

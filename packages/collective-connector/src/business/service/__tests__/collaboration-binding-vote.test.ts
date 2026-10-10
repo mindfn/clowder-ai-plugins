@@ -11,7 +11,7 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
 });
 
-async function inviteMember(current: Awaited<ReturnType<typeof fixture>>, identity: string) {
+async function inviteMember(current: Awaited<ReturnType<typeof participationFixture>>, identity: string) {
   const invite = await current.store.createInvite({
     sessionToken: current.owner.sessionToken,
     collectiveId: current.coordinates.collectiveId,
@@ -58,7 +58,7 @@ async function fixture() {
     purpose: '对这条路线已有权限的 Human 冻结一次判断契约。',
     workIds: [work.workId],
   });
-  const member = await inviteMember({ ...current, directory, source, work, roadmap }, 'binding-member');
+  const member = await inviteMember(current, 'binding-member');
   return { ...current, directory, source, work, roadmap, member };
 }
 

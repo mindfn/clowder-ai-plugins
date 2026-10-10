@@ -8,7 +8,7 @@ import {
   collectiveConnectionCoordinatesSchema,
   collectiveRegisterWorkPolicyRequestSchema,
   collectiveRevokeWorkPolicyRequestSchema,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { requireHumanCommand } from './collaboration-command-helpers.js';
 import { assertConnectionCoordinates, requireAuthorizedHuman, requireConnection } from './connection-authority.js';
 import { CollectiveServiceError } from './errors.js';

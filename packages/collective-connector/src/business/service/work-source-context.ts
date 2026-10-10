@@ -3,7 +3,7 @@ import {
   type CollectiveWorkRoutingReadRequest,
   type CollectiveWorkSourceReadRequest,
   collectiveWorkSourceContextSchema,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { workReferences } from './collaboration-agent-continuation.js';
 import { requireWorkSource } from './collaboration-command-helpers.js';
 import { projectCollectiveWork } from './collaboration-work.js';

@@ -1,4 +1,4 @@
-import type { CollectiveSourceIdentity } from '@cat-cafe/shared';
+import type { CollectiveSourceIdentity } from '../contracts/index.js';
 import { participationDeclaration, requireParticipation } from './participation-custody.js';
 import { ConnectorPersistence } from './persistence.js';
 import { type ConnectorProjection, projectConnection } from './projection.js';

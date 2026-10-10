@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { type CollectiveSourceIdentity, collectiveEventSourceIdentity } from '@cat-cafe/shared';
+import { type CollectiveSourceIdentity, collectiveEventSourceIdentity } from '../contracts/index.js';
 import type { CollectiveConnector } from './connector.js';
 import { participationError, requireParticipation } from './participation-custody.js';
 import type { ConnectorPersistence } from './persistence.js';

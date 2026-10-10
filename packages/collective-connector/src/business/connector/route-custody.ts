@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import { participationScopeStarts } from '@cat-cafe/shared';
+import { participationScopeStarts } from '../contracts/index.js';
 import { defaultDesiredParticipation } from './host-route-state.js';
 import { participationDeclaration, resolveMaterializedParticipation } from './participation-custody.js';
 import type { ConnectorPersistence } from './persistence.js';

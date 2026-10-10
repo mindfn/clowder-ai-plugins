@@ -2,7 +2,7 @@ import type {
   CollectiveAgentMessageRequest,
   CollectiveEventEnvelope,
   CollectiveSourceIdentity,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { participationError } from './participation-custody.js';
 import type { CollectiveServiceClient } from './service-client.js';
 import type { ConnectorConnectionState, ConnectorOutboxItem } from './state.js';

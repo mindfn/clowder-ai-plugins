@@ -5,7 +5,7 @@ import type {
   CollectiveBindingVoteRecord,
   CreateCollectiveBindingVoteRequest,
   WithdrawCollectiveBindingVoteRequest,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { requireRoadmap } from './collaboration-command-helpers.js';
 import { collaborationOperationReplay, recordCollaborationOperation } from './collaboration-operations.js';
 import { CollectiveServiceError } from './errors.js';

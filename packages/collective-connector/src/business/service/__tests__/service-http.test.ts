@@ -16,7 +16,7 @@ afterEach(async () => {
 });
 
 describe('Collective Service HTTP process boundary', () => {
-  it('serves one canonical client and walks owner/member/endpoint APIs', async () => {
+  it('keeps C2 assets out of backend and walks owner/member/endpoint APIs', async () => {
     const dataDirectory = await mkdtemp(join(tmpdir(), 'collective-http-test-'));
     directories.push(dataDirectory);
     const opened = await CollectiveServiceStore.open({
@@ -33,18 +33,10 @@ describe('Collective Service HTTP process boundary', () => {
     servers.push(server);
 
     const client = await fetch(server.url);
-    expect(client.status).toBe(200);
-    expect(client.headers.get('x-collective-client-build')).toBe('collective-client-v2');
-    expect(client.headers.get('content-security-policy')).toContain("script-src 'self'");
-    expect(client.headers.get('content-security-policy')).toContain("style-src 'self'");
-    const clientHtml = await client.text();
-    expect(clientHtml).toContain('data-client-root="collective"');
-    expect(clientHtml).toContain('/collective-client/app.js');
-    expect(clientHtml).not.toContain('Canonical order');
-    expect(clientHtml).not.toContain('Service truth');
-    expect(clientHtml).not.toContain('backed by the Service event log');
-    expect((await fetch(`${server.url}/collective-client/app.js`)).status).toBe(200);
-    expect((await fetch(`${server.url}/collective-client/app.css`)).status).toBe(200);
+    expect(client.status).toBe(404);
+    await expect(client.json()).resolves.toMatchObject({ error: { code: 'CLIENT_UNAVAILABLE' } });
+    expect((await fetch(`${server.url}/collective-client/app.js`)).status).toBe(404);
+    expect((await fetch(`${server.url}/collective-client/app.css`)).status).toBe(404);
 
     const owner = await post(server.url, '/api/bootstrap', {
       secret: opened.bootstrapSecret,

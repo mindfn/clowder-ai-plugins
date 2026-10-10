@@ -1,4 +1,4 @@
-import type { CollectiveMemberDirectory } from '@cat-cafe/shared';
+import type { CollectiveMemberDirectory } from '../contracts/index.js';
 import { requireHumanAuthBinding, requireMembership, resolveSession } from './identity-store.js';
 import type { ServiceState } from './state.js';
 

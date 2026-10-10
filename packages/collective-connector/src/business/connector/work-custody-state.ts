@@ -4,7 +4,7 @@ import {
   collectiveSourceIdentitySchema,
   collectiveWorkHostAdmissionRequestSchema,
   collectiveWorkPolicySchema,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { z } from 'zod';
 
 export const workCustodySchema = z

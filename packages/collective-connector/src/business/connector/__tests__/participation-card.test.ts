@@ -1,7 +1,9 @@
-import { collectiveParticipationDeclarationSchema } from '@cat-cafe/shared';
+import { collectiveParticipationDeclarationSchema } from '../../contracts/index.js';
 import { expect, it } from 'vitest';
 import { participationDeclaration } from '../participation-custody.js';
-import type { ConnectorConnectionState, HostRouteConfig } from '../state.js';
+import type { ConnectorConnectionState } from '../state.js';
+import { hostRouteConfigSchema } from '../host-route-state.js';
+const routeBase = { connectionId: 'con_aaaaaaaa', localOwnerUserId: 'owner', defaultIngressThreadId: 'private', humanNotificationThreadId: 'private', agentRoutes: {}, updatedAt: new Date().toISOString() };
 
 it('publishes the same registered Cat card in every allowed Channel without Host-private routes', () => {
   const connection = {
@@ -10,7 +12,8 @@ it('publishes the same registered Cat card in every allowed Channel without Host
     connectionId: 'con_aaaaaaaa',
     authorizedHumanId: 'human_a',
   } as ConnectorConnectionState;
-  const route = {
+  const route = hostRouteConfigSchema.parse({
+    ...routeBase,
     revision: 4,
     publicProfiles: {
       sol: { description: '复杂实现', avatarDataUrl: 'data:image/webp;base64,UklGRg==' },
@@ -28,7 +31,7 @@ it('publishes the same registered Cat card in every allowed Channel without Host
         participants: { sol: { displayName: '缅因猫（Sol）' } },
       },
     },
-  } as HostRouteConfig;
+  });
   const declaration = participationDeclaration(connection, route);
   expect(declaration.agents).toEqual([
     {
@@ -59,11 +62,12 @@ it('keeps the maximum admitted roster below the Service request-body ceiling', (
       { description: '中'.repeat(120), avatarDataUrl: `data:image/webp;base64,${'A'.repeat(1_176)}` },
     ]),
   );
-  const route = {
+  const route = hostRouteConfigSchema.parse({
+    ...routeBase,
     revision: 1,
     publicProfiles,
     channelRoutes: { general: { channelId: 'general', threadId: 'internal', participants } },
-  } as HostRouteConfig;
+  });
   const declaration = participationDeclaration(connection, route);
   expect(collectiveParticipationDeclarationSchema.parse(declaration)).toEqual(declaration);
   expect(Buffer.byteLength(JSON.stringify(declaration))).toBeLessThan(256 * 1_024);

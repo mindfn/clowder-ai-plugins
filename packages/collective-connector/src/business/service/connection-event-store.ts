@@ -7,7 +7,7 @@ import {
   collectiveConnectionCoordinatesSchema,
   collectiveHumanMessageRequestSchema,
   collectivePollRequestSchema,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { requireAgentMessageParticipation } from './agent-message-participation.js';
 import { recordCollectiveWorkResult } from './collaboration-work.js';
 import { recordCollectiveWorkProgress } from './collaboration-work-progress.js';

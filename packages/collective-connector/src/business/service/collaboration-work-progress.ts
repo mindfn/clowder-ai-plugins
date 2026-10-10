@@ -2,7 +2,7 @@ import type {
   CollectiveAgentMessageRequest,
   CollectiveEventEnvelope,
   CollectiveWorkProgressReceipt,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { collaborationActorFromEvent } from './collaboration-work.js';
 import { CollectiveServiceError } from './errors.js';
 import type { MutableServiceState, ServiceState } from './state.js';

@@ -1,4 +1,4 @@
-import type { CollectiveCollaborationActor, CollectiveEventEnvelope, CollectiveWorkRecord } from '@cat-cafe/shared';
+import type { CollectiveCollaborationActor, CollectiveEventEnvelope, CollectiveWorkRecord } from '../contracts/index.js';
 import { collaborationOperationReplay, recordCollaborationOperation } from './collaboration-operations.js';
 import { projectCollectiveWork, requireCollectiveWork } from './collaboration-work.js';
 import { assertServiceCoordinates } from './connection-authority.js';

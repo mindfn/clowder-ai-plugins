@@ -5,7 +5,7 @@ import {
   type CollectiveWorkHostAdmissionRequest,
   type CollectiveWorkProjection,
   collectivePairingIntentSchema,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { type StandingInterestInput, setStandingInterest } from './attention-custody.js';
 import { type ChannelListeningInput, setChannelListening } from './channel-listening-custody.js';
 import type { CollectiveConnectorOptions } from './connector-options.js';

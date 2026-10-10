@@ -3,7 +3,7 @@ import type {
   CollectiveContinueWorkRequest,
   CollectiveEventEnvelope,
   CollectiveWorkRecord,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { advanceWork, mutableWork, requireWorkSource } from './collaboration-command-helpers.js';
 import { collaborationOperationReplay, recordCollaborationOperation } from './collaboration-operations.js';
 import { projectCollectiveWork, requireCollectiveWork, requireWorkRevision } from './collaboration-work.js';

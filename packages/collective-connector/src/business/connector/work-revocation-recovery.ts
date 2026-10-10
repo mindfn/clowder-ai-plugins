@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { CollectiveWorkPolicy } from '@cat-cafe/shared';
+import type { CollectiveWorkPolicy } from '../contracts/index.js';
 import type { ConnectorPersistence } from './persistence.js';
 import { ConnectorTransportError } from './service-client.js';
 import type { ConnectorConnectionState } from './state.js';

@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collectiveWorkProjectionSchema } from '@cat-cafe/shared';
+import { collectiveWorkProjectionSchema } from '../../contracts/index.js';
 import { expect, it } from 'vitest';
 import { startCollectiveServer } from '../http-server.js';
 import { participationFixture } from './participation-fixture.js';

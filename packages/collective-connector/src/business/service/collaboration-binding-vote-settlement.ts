@@ -2,7 +2,7 @@ import type {
   CollectiveBindingVoteRecord,
   CollectiveDecisionRecord,
   WithdrawCollectiveBindingVoteRequest,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import {
   advanceBindingVote,
   bindingVoteInvalidationReason,

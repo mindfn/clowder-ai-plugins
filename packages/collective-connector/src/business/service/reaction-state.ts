@@ -1,4 +1,4 @@
-import { collectiveReactionEmojiSchema } from '@cat-cafe/shared';
+import { collectiveReactionEmojiSchema } from '../contracts/index.js';
 import { z } from 'zod';
 
 export const reactionRecordSchema = z

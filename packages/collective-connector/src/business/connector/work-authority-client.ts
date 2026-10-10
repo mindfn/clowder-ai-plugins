@@ -8,7 +8,7 @@ import {
   collectiveWorkPolicySchema,
   collectiveWorkProjectionSchema,
   collectiveWorkSourceContextSchema,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { z } from 'zod';
 
 type Coordinates = { serviceInstanceId: string; collectiveId: string; connectionId: string };

@@ -6,7 +6,7 @@ import type {
   CollectiveWorkProjection,
   CollectiveWorkRecord,
   CollectiveWorkResultReceipt,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { CollectiveServiceError } from './errors.js';
 import type { MutableServiceState, ServiceState } from './state.js';
 import { requireAcceptedWorkExecution } from './work-execution-authority.js';

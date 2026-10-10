@@ -1,10 +1,11 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { CollectiveSourceIdentity } from '@cat-cafe/shared';
+import type { CollectiveSourceIdentity } from '../../contracts/index.js';
 import { afterEach, expect, it } from 'vitest';
 import * as outbox from '../outbox-custody.js';
 import { ConnectorPersistence } from '../persistence.js';
+import { hostRouteConfigSchema } from '../host-route-state.js';
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -44,7 +45,7 @@ async function fixture() {
     const connection = state.connections[source.connectionId];
     for (const key of ['eventId', 'catId', 'participationRevision', 'location', 'actor'])
       Reflect.deleteProperty(connection, key);
-    state.hostRoutes[source.connectionId] = {
+    state.hostRoutes[source.connectionId] = hostRouteConfigSchema.parse({
       connectionId: source.connectionId,
       localOwnerUserId: 'owner',
       defaultIngressThreadId: 'ingress',
@@ -58,7 +59,7 @@ async function fixture() {
           participation: { displayName: 'Opus', channelIds: ['a'] },
         },
       },
-    };
+    });
   });
   return { dir, persistence, now: () => Date.now(), source, sourceRef: 'message:request', resultKey: 'immediate' };
 }

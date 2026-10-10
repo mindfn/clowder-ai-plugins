@@ -1,11 +1,7 @@
-import { readFile, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import {
-  COLLECTIVE_CLIENT_BUILD_ID,
-  collectiveClientHtml,
-  resolveCollectiveClientAsset,
-} from '@cat-cafe/collective-client';
+
 import { routeCollaborationPost } from './collaboration-http-routes.js';
 import { CollectiveServiceError } from './errors.js';
 import type { GitHubAppManifestSetup } from './github-app-manifest-setup.js';
@@ -75,13 +71,6 @@ async function routeRequest(
 ): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://collective.local');
   const method = request.method ?? 'GET';
-  const clientAsset = method === 'GET' ? resolveCollectiveClientAsset(url.pathname) : undefined;
-  if (clientAsset) {
-    response.setHeader('content-type', clientAsset.contentType);
-    response.setHeader('cache-control', 'no-cache');
-    response.writeHead(200).end(await readFile(clientAsset.path));
-    return;
-  }
   if (method === 'GET') {
     await routeGet(store, githubAppSetup, url, request, response);
     return;
@@ -339,7 +328,5 @@ function routeClientFallback(url: URL, response: ServerResponse): void {
     writeJson(response, 404, { error: { code: 'NOT_FOUND', message: 'Route not found' } });
     return;
   }
-  response.setHeader('content-type', 'text/html; charset=utf-8');
-  response.setHeader('x-collective-client-build', COLLECTIVE_CLIENT_BUILD_ID);
-  response.writeHead(200).end(collectiveClientHtml());
+  writeJson(response, 404, { error: { code: 'CLIENT_UNAVAILABLE', message: 'Client assets belong to the retained Host UI' } });
 }

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { CollectiveContinueWorkRequest, CollectiveSourceIdentity } from '@cat-cafe/shared';
+import type { CollectiveContinueWorkRequest, CollectiveSourceIdentity } from '../contracts/index.js';
 import { participationError, requireParticipation } from './participation-custody.js';
 import type { ConnectorPersistence } from './persistence.js';
 import { type CollectiveServiceClient, ConnectorTransportError } from './service-client.js';

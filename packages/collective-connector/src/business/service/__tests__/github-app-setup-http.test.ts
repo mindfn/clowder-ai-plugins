@@ -2,7 +2,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { prepareGitHubAppManifestSubmission } from '@cat-cafe/collective-client';
 import { afterEach, expect, it } from 'vitest';
 import { GitHubAppManifestSetup } from '../github-app-manifest-setup.js';
 import { ConfigurableGitHubHumanAuthProvider } from '../github-human-auth-provider.js';
@@ -53,12 +52,9 @@ it('lets the bootstrap holder create the GitHub App without receiving its genera
   expect(beginResponse.status).toBe(201);
   const begin = (await beginResponse.json()) as Record<string, unknown>;
   expect(begin.registrationUrl).toBe(`https://github.com/settings/apps/new?state=${'m'.repeat(43)}`);
-  const submission = prepareGitHubAppManifestSubmission(begin);
-  expect(submission.action).toBe(`https://github.com/settings/apps/new?state=${'m'.repeat(43)}`);
-  expect(submission.method).toBe('post');
-  expect(submission.fields).toHaveLength(1);
-  expect(submission.fields[0]?.name).toBe('manifest');
-  expect(JSON.parse(submission.fields[0]?.value ?? '')).toEqual({
+  // Form preparation remains protected by the retained Client human-auth-flow suite.
+  expect(begin.registrationUrl).toBe(`https://github.com/settings/apps/new?state=${'m'.repeat(43)}`);
+  expect(begin.manifest).toEqual({
     name: expect.stringMatching(/^Collective Service /),
     url: 'http://127.0.0.1',
     redirect_url: 'http://127.0.0.1/api/setup/github-app/callback',

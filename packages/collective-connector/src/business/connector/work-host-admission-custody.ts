@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import type { CollectiveWorkHostAdmissionRequest } from '@cat-cafe/shared';
+import type { CollectiveWorkHostAdmissionRequest } from '../contracts/index.js';
 import { participationError } from './participation-custody.js';
 import type { ConnectorWorkCustody } from './work-custody-state.js';
 

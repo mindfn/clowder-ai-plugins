@@ -7,7 +7,7 @@ import {
   collectiveParticipationDeclarationSchema,
   participationScopeStarts,
   participationSourceIsCurrent,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { z } from 'zod';
 import { assertConnectionCoordinates, requireAuthorizedHuman, requireConnection } from './connection-authority.js';
 import { CollectiveServiceError } from './errors.js';

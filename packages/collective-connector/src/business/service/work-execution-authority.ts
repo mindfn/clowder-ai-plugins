@@ -1,4 +1,4 @@
-import type { CollectiveWorkRecord } from '@cat-cafe/shared';
+import type { CollectiveWorkRecord } from '../contracts/index.js';
 import { requireWorkSource } from './collaboration-command-helpers.js';
 import { CollectiveServiceError } from './errors.js';
 import type { ServiceState } from './state.js';

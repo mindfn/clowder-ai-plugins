@@ -5,7 +5,7 @@ import {
   type CollectiveWorkHostAdmissionRequest,
   collectiveWorkAssignmentMatches,
   collectiveWorkExecutionMatches,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { participationError, requireParticipation } from './participation-custody.js';
 import type { ConnectorPersistence } from './persistence.js';
 import type { CollectiveServiceClient } from './service-client.js';

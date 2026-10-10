@@ -2,7 +2,7 @@ import type {
   CollectiveAgentMessageRequest,
   CollectiveWorkProgressReceipt,
   CollectiveWorkResultReceipt,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { issueCollectiveWorkResultReceipt } from './collaboration-work.js';
 import { issueCollectiveWorkProgressReceipt } from './collaboration-work-progress.js';
 import { CollectiveServiceError } from './errors.js';

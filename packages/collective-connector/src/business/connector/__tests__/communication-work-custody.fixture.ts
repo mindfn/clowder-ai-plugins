@@ -1,8 +1,8 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collectiveEventSourceIdentity } from '@cat-cafe/shared';
-import { CollectiveServiceStore, startCollectiveServer } from '../../../collective-service/src/index.js';
+import { collectiveEventSourceIdentity } from '../../contracts/index.js';
+import { CollectiveServiceStore, startCollectiveServer } from '../../service/index.js';
 import { CollectiveConnector } from '../connector.js';
 
 /** Production Service and Connector; OAuth and running-Cat attestations are explicit test fixtures. */
@@ -17,6 +17,7 @@ export async function fixture() {
       authenticate: async () => ({ providerSubject: '1001', handle: 'owner', displayName: 'Owner' }),
     },
   });
+  if (!opened.bootstrapSecret) throw new Error('Expected fresh Service');
   const owner = await opened.store.consumeBootstrap({ secret: opened.bootstrapSecret, displayName: 'Owner' });
   const collective = await opened.store.createCollective({ sessionToken: owner.sessionToken, name: 'Custody' });
   const auth = await opened.store.beginHumanAuth({

@@ -2,7 +2,7 @@ import type {
   CreateCollectiveRoadmapRequest,
   SetCollectiveRoadmapStatusRequest,
   SetCollectiveRoadmapWorksRequest,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import {
   humanActor,
   requireRoadmap,

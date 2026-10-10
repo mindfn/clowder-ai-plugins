@@ -10,7 +10,7 @@ import type {
   CollectiveWorkProgressReceipt,
   CollectiveWorkResultReceipt,
   CollectiveWorkRevisionNotice,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 
 import { CollectiveServiceError } from './errors.js';
 import { resolveEventAddress } from './event-location.js';

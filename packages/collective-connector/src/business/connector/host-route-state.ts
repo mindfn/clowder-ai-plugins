@@ -1,4 +1,4 @@
-import { type CollectiveStandingWork, collectiveStandingWorkSchema } from '@cat-cafe/shared';
+import { type CollectiveStandingWork, collectiveStandingWorkSchema } from '../contracts/index.js';
 import { z } from 'zod';
 
 const catIdSchema = z.string().trim().min(1).max(120);

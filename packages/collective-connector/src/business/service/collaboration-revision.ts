@@ -1,4 +1,4 @@
-import type { RequestCollectiveWorkRevisionRequest } from '@cat-cafe/shared';
+import type { RequestCollectiveWorkRevisionRequest } from '../contracts/index.js';
 import { advanceWork, humanActor, humanEventActor, mutableWork } from './collaboration-command-helpers.js';
 import { collaborationOperationReplay, recordCollaborationOperation } from './collaboration-operations.js';
 import {

@@ -6,8 +6,8 @@ import {
   CollectiveServiceStore,
   type RunningCollectiveServer,
   startCollectiveServer,
-} from '@cat-cafe/collective-service';
-import { collectiveEventSourceIdentity } from '@cat-cafe/shared';
+} from '../../service/index.js';
+import { collectiveEventSourceIdentity } from '../../contracts/index.js';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { CollectiveConnector } from '../connector.js';

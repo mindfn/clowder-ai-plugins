@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import type { CollectiveSourceIdentity } from '@cat-cafe/shared';
+import type { CollectiveSourceIdentity } from '../contracts/index.js';
 import { participationError, requireParticipation } from './participation-custody.js';
 import type { ConnectorPersistence } from './persistence.js';
 import type { ConnectorConnectionState } from './state.js';

@@ -2,7 +2,7 @@ import {
   type CollectiveReactionEmoji,
   type CollectiveReactionSummary,
   setCollectiveReactionRequestSchema,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { requireHumanCommand } from './collaboration-command-helpers.js';
 import { collaborationOperationReplay, recordCollaborationOperation } from './collaboration-operations.js';
 import { CollectiveServiceError } from './errors.js';

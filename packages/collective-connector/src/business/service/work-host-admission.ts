@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import type { CollectiveWorkHostAdmissionRequest } from '@cat-cafe/shared';
+import type { CollectiveWorkHostAdmissionRequest } from '../contracts/index.js';
 import { mutableWork, requireWorkSource } from './collaboration-command-helpers.js';
 import { projectCollectiveWork } from './collaboration-work.js';
 import { assertConnectionCoordinates, requireAuthorizedHuman, requireConnection } from './connection-authority.js';

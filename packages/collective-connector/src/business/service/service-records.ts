@@ -6,7 +6,7 @@ import type {
   CollectiveRoadmapRecord,
   CollectiveVoteRecord,
   CollectiveWorkRecord,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import type { HumanAuthAttemptRecord, HumanAuthBindingRecord, HumanAuthCompletionRecord } from './human-auth-state.js';
 import type { ParticipationRecord } from './participation-store.js';
 

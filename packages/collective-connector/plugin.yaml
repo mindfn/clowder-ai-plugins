@@ -1,0 +1,45 @@
+pluginId: official.collective-connector
+version: 0.1.0-alpha.1
+contractVersion: 0.1.0
+name: Collective
+description:
+  default: Collective backend service. Client UI remains in the Host.
+  translations:
+    zh-CN: Collective 后端服务；独立界面保留在宿主中。
+configuration:
+  - key: servicePort
+    label: Local service port
+    kind: number
+    required: false
+    default: 5201
+  - key: allowedHostOrigins
+    label: Allowed Host origins
+    kind: string
+    required: false
+    default: ""
+  - key: publicUrl
+    label: Public service URL
+    kind: string
+    required: false
+  - key: service
+    label: Service status
+    kind: operation
+    required: false
+    actions:
+      - id: status
+        label: Service status
+        render: status
+        action:
+          method: collective.service.status
+features:
+  - id: collective-backend
+    name: Collective backend
+    resources: []
+    contributions: []
+    capabilities:
+      - plugin.config.read
+      - data.directory
+runtime:
+  transport: builtin
+  entrypoint: dist/plugin-entrypoint.js
+  dataDirectory: collective

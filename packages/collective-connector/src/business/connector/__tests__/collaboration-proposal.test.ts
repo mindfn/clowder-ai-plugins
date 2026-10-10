@@ -5,7 +5,7 @@ import {
   CollectiveServiceStore,
   type RunningCollectiveServer,
   startCollectiveServer,
-} from '@cat-cafe/collective-service';
+} from '../../service/index.js';
 import { afterEach, expect, it } from 'vitest';
 import { CollectiveConnector } from '../connector.js';
 
@@ -83,6 +83,8 @@ it('submits one Cat-authored Work proposal through exact current participation a
     attentionRequest: 'response_requested',
     body: '把这段讨论整理成可继续推进的工作。',
   });
+  expect(request.location).toBeDefined();
+  if (!request.location) throw new Error('Expected located source');
   const source = {
     serviceInstanceId: opened.store.serviceInstanceId,
     collectiveId: collective.collectiveId,

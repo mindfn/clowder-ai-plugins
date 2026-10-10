@@ -4,7 +4,7 @@ import type {
   CollectiveVoteProjection,
   CollectiveVoteRecord,
   CreateCollectiveVoteRequest,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { requireWorkSource } from './collaboration-command-helpers.js';
 import { collaborationOperationReplay, recordCollaborationOperation } from './collaboration-operations.js';
 import { CollectiveServiceError } from './errors.js';

@@ -6,7 +6,7 @@ import {
   CollectiveServiceStore,
   type RunningCollectiveServer,
   startCollectiveServer,
-} from '@cat-cafe/collective-service';
+} from '../../service/index.js';
 import { afterEach, expect, it } from 'vitest';
 
 import { CollectiveConnector } from '../connector.js';

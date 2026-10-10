@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import type { GitHubAppManifestBeginResult } from '@cat-cafe/collective-client';
+export interface GitHubAppManifestBeginResult {
+  readonly registrationUrl: string;
+  readonly manifest: { readonly name: string; readonly url: string; readonly redirect_url: string; readonly callback_urls: readonly string[]; readonly public: true };
+}
 import { z } from 'zod';
 
 import { CollectiveServiceError } from './errors.js';

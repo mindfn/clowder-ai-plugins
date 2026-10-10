@@ -7,7 +7,7 @@ import {
   collectiveLocationSchema,
   collectiveSourceIdentitySchema,
   collectiveTargetSchema,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { z } from 'zod';
 import { type HostRouteConfig, hostRouteConfigSchema } from './host-route-state.js';
 import { type ConnectorRouteReceipt, routeReceiptSchema } from './route-receipt.js';

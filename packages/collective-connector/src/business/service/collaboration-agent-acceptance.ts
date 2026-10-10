@@ -2,7 +2,7 @@ import type {
   CollectiveAcceptWorkRequest,
   CollectiveCollaborationActor,
   CollectiveEventEnvelope,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { createWorkProposal, mutableWork, requireWorkSource } from './collaboration-command-helpers.js';
 import { commitCollectiveWorkAssignment } from './collaboration-commit.js';
 import { collaborationOperationReplay, recordCollaborationOperation } from './collaboration-operations.js';

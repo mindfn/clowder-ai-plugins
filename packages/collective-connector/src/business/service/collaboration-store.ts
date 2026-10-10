@@ -21,7 +21,7 @@ import {
   setCollectiveRoadmapStatusRequestSchema,
   setCollectiveRoadmapWorksRequestSchema,
   setCollectiveWorkDependenciesRequestSchema,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { acceptCollectiveWorkAsAgent } from './collaboration-agent-acceptance.js';
 import { continueCollectiveWorkAsAgent } from './collaboration-agent-continuation.js';
 import {

@@ -3,7 +3,7 @@ import type {
   CollectiveLocation,
   CollectiveRecipient,
   CollectiveTarget,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { CollectiveServiceError } from './errors.js';
 
 interface AddressInput {

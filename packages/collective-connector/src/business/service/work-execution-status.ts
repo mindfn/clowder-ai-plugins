@@ -1,4 +1,4 @@
-import type { CollectiveWorkProjection, CollectiveWorkRecord } from '@cat-cafe/shared';
+import type { CollectiveWorkProjection, CollectiveWorkRecord } from '../contracts/index.js';
 import { requireWorkSource } from './collaboration-command-helpers.js';
 import { CollectiveServiceError } from './errors.js';
 import { requireParticipant } from './participation-store.js';

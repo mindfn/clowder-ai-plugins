@@ -8,7 +8,7 @@ import {
   collectiveVoteRecordSchema,
   collectiveWorkPolicySchema,
   collectiveWorkRecordSchema,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { z } from 'zod';
 
 import { CollectiveServiceError } from './errors.js';

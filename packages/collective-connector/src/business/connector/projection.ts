@@ -1,4 +1,4 @@
-import type { CollectiveClientAnchor } from '@cat-cafe/shared';
+import type { CollectiveClientAnchor } from '../contracts/index.js';
 
 import type { ConnectorConnectionState, HostRouteConfig } from './state.js';
 

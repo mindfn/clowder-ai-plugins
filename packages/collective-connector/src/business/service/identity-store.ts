@@ -44,8 +44,12 @@ export class CollectiveIdentityStore {
     private readonly persistence: PersistentServiceState,
     private readonly now: () => number,
     private readonly humanAuthProvider?: HumanAuthProvider,
-    private readonly humanAuthRedirectUri = 'http://127.0.0.1/api/auth/github/callback',
+    private humanAuthRedirectUri = 'http://127.0.0.1/api/auth/github/callback',
   ) {}
+
+  configureHumanAuthRedirectUri(value: string): void {
+    this.humanAuthRedirectUri = value;
+  }
 
   getHumanAuthRedirectUri(): string {
     return this.humanAuthRedirectUri;

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { CollectiveSourceIdentity } from '@cat-cafe/shared';
+import type { CollectiveSourceIdentity } from '../contracts/index.js';
 import { prepareReplyOperation, submitReplyOperation } from './outbox-custody.js';
 import type { ConnectorPersistence } from './persistence.js';
 import type { VerifiedAgent } from './state.js';

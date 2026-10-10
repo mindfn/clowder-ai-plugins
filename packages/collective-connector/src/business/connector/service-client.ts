@@ -10,7 +10,7 @@ import {
   collectiveParticipationDeclarationSchema,
   collectiveWorkIdSchema,
   collectiveWorkProjectionSchema,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import { z } from 'zod';
 import { CollectiveWorkAuthorityClient } from './work-authority-client.js';
 

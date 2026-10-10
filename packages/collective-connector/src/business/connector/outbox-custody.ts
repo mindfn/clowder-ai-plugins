@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
-import { type CollectiveSourceIdentity, collectiveTargetSchema } from '@cat-cafe/shared';
+import { type CollectiveSourceIdentity, collectiveTargetSchema } from '../contracts/index.js';
 import { z } from 'zod';
 import { participationError, requireParticipation, resolveMaterializedParticipation } from './participation-custody.js';
 import type { ConnectorPersistence } from './persistence.js';

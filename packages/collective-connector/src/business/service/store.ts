@@ -1,6 +1,5 @@
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
-import { COLLECTIVE_CLIENT_BUILD_ID } from '@cat-cafe/collective-client';
 import { CollectiveBindingVoteStore } from './collaboration-binding-vote-store.js';
 import { CollectiveReactionStore } from './collaboration-reaction-store.js';
 import { CollectiveCollaborationStore } from './collaboration-store.js';
@@ -23,8 +22,12 @@ import { CollectiveWorkPolicyStore } from './work-policy-store.js';
 
 export interface OpenCollectiveServiceStoreOptions {
   readonly dataDirectory: string;
+  /** Retained C2 protocol label, not evidence that this backend serves Client assets. */
+  readonly clientBuildId?: string;
   readonly now?: () => number;
   readonly bootstrapTtlMs?: number;
+  /** Module lifecycle may durably escrow an unclaimed credential before initial state creation. */
+  readonly createBootstrapSecret?: () => Promise<string>;
   readonly humanAuthProvider?: HumanAuthProvider;
   readonly humanAuthRedirectUri?: string;
 }
@@ -48,6 +51,7 @@ export class CollectiveServiceStore {
     private readonly now: () => number,
     humanAuthProvider?: HumanAuthProvider,
     humanAuthRedirectUri?: string,
+    private readonly clientBuildId = 'collective-client-v2',
   ) {
     this.#identity = new CollectiveIdentityStore(persistence, now, humanAuthProvider, humanAuthRedirectUri);
     this.#connections = new CollectiveConnectionEventStore(persistence, now);
@@ -65,7 +69,7 @@ export class CollectiveServiceStore {
       await access(stateFile);
       const persistence = await PersistentServiceState.load(options.dataDirectory);
       return {
-        store: new CollectiveServiceStore(persistence, now, options.humanAuthProvider, options.humanAuthRedirectUri),
+        store: new CollectiveServiceStore(persistence, now, options.humanAuthProvider, options.humanAuthRedirectUri, options.clientBuildId),
       };
     } catch (error) {
       if (error instanceof CollectiveServiceError) throw error;
@@ -76,7 +80,7 @@ export class CollectiveServiceStore {
           500,
         );
       }
-      const bootstrapSecret = createSecret();
+      const bootstrapSecret = options.createBootstrapSecret ? await options.createBootstrapSecret() : createSecret();
       const createdAt = new Date(now()).toISOString();
       const state: ServiceState = {
         schemaVersion: 2,
@@ -110,7 +114,7 @@ export class CollectiveServiceStore {
       };
       const persistence = await PersistentServiceState.create(options.dataDirectory, state);
       return {
-        store: new CollectiveServiceStore(persistence, now, options.humanAuthProvider, options.humanAuthRedirectUri),
+        store: new CollectiveServiceStore(persistence, now, options.humanAuthProvider, options.humanAuthRedirectUri, options.clientBuildId),
         bootstrapSecret,
       };
     }
@@ -132,7 +136,7 @@ export class CollectiveServiceStore {
         ownerHumanId !== undefined &&
         Object.values(state.humanAuthBindings).some((binding) => binding.humanId === ownerHumanId) &&
         Object.keys(state.collectives).length > 0,
-      clientBuildId: COLLECTIVE_CLIENT_BUILD_ID,
+      clientBuildId: this.clientBuildId,
     };
   }
 
@@ -166,6 +170,10 @@ export class CollectiveServiceStore {
 
   getHumanAuthProviders() {
     return this.#identity.getHumanAuthProviders();
+  }
+
+  configureHumanAuthRedirectUri(value: string): void {
+    this.#identity.configureHumanAuthRedirectUri(value);
   }
 
   getHumanAuthRedirectUri() {

@@ -3,7 +3,7 @@ import {
   createCollectiveBindingVoteRequestSchema,
   settleCollectiveBindingVoteRequestSchema,
   withdrawCollectiveBindingVoteRequestSchema,
-} from '@cat-cafe/shared';
+} from '../contracts/index.js';
 import {
   castCollectiveBindingVote,
   createCollectiveBindingVote,
