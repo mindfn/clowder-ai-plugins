@@ -77,6 +77,10 @@ export class ExternalReviewVerdictService {
     const recordedAt = this.now();
     const delivery = materializeExternalReviewDelivery(input, currentHeadSha, recordedAt);
     const submissionFingerprint = verdictFingerprint(input, headGeneration);
+    if (aggregate.delivery?.kind === 'delivered' && aggregate.deliveredVerdictFingerprint !== submissionFingerprint) {
+      throw new ExternalReviewVerdictError('verdict_conflict',
+        'A delivered verdict is immutable; only the original submission may be replayed');
+    }
     if (aggregate.pendingVerdict && aggregate.pendingVerdict.fingerprint !== submissionFingerprint) {
       throw new ExternalReviewVerdictError(
         'verdict_conflict',
@@ -204,6 +208,7 @@ export class ExternalReviewVerdictService {
       payload: {
         headSha: currentHeadSha,
         headGeneration,
+        fingerprint: submissionFingerprint,
         verdict,
         summary,
         userNudgeRequired,

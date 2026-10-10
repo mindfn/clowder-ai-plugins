@@ -240,6 +240,9 @@ export interface ExternalReviewAggregate {
     readonly deliveredAt?: number;
   } | null;
   readonly delivery: ReviewDeliveryOutcome | null;
+  /** Immutable normalized submission for the delivered current HEAD generation.
+   * Older projections without this marker cannot authorize a changed replay. */
+  readonly deliveredVerdictFingerprint?: string | null;
   /**
    * Monotonic within one HEAD generation. Advances only when a pending reviewer
    * intent is invalidated, so a later accepted resubmission gets a new durable

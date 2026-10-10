@@ -183,3 +183,74 @@ test('assignment or terminal change during preflight cannot persist a current ve
     assert.equal((await f.objects.get(subject))?.externalReview?.pendingVerdict,null);
   }
 });
+
+
+test('completed lease only accepts the original verdict, summary, nudge and delivery on native replay', async t => {
+  const f = await nativeFixture(); t.after(() => f.runtime.stop()); let completed = false, completions = 0;
+  f.custody.preflight = async () => ({ ok: true, reason: completed ? 'verified_success' : 'active' });
+  f.custody.complete = async value => { completed = true; completions++; return { outcome: 'committed', leaseId: value.leaseId, generation: value.generation }; };
+  const original = await f.runtime.record(nativeInput, caller);
+  const before = (await f.objects.get(subject))!.externalReview;
+  for (const delta of [
+    { verdict: 'changes_requested' }, { summary: 'Replaced summary' }, { userNudgeRequired: true },
+    { delivery: { kind: 'delivered', githubUrl: 'https://github.com/example/project/pull/12#pullrequestreview-81' } },
+  ]) {
+    await assert.rejects(f.runtime.record({ ...nativeInput, ...delta }, caller), { code: 'verdict_conflict' });
+    assert.equal(completions, 1, 'conflicting replay never calls success-only Host completion');
+    assert.deepEqual((await f.objects.get(subject))!.externalReview, before);
+  }
+  assert.deepEqual(await f.runtime.record(nativeInput, { ...caller, invocationId: 'retry' }), original);
+  assert.equal(completions, 2, 'exact replay still reauthorizes with Host');
+  assert.equal((await f.events.read(subject)).filter(e => e.kind === 'case.review_verdict_recorded').length, 1);
+});
+
+test('committed verdict remains immutable after event append but projection failure and rebuild', async t => {
+  const f = await nativeFixture(); t.after(() => f.runtime.stop()); let completed = false, completions = 0;
+  f.custody.preflight = async () => ({ ok: true, reason: completed ? 'verified_success' : 'active' });
+  f.custody.complete = async value => { completed = true; completions++; return { outcome: 'committed', leaseId: value.leaseId, generation: value.generation }; };
+  const set = f.storage.set;
+  f.storage.set = async (key, value) => {
+    if (completed && key.startsWith('community.object.')) throw new Error('projection unavailable after completion');
+    return set(key, value);
+  };
+  await assert.rejects(f.runtime.record(nativeInput, caller), /projection unavailable/);
+  f.storage.set = set;
+  await assert.rejects(f.runtime.record({ ...nativeInput, summary: 'different' }, caller), { code: 'verdict_conflict' });
+  await f.projector.rebuild(subject);
+  await assert.rejects(f.runtime.record({ ...nativeInput, delivery: { ...nativeInput.delivery, githubUrl: 'https://github.com/example/project/pull/12#pullrequestreview-81' } }, caller), { code: 'verdict_conflict' });
+  assert.equal((await f.runtime.record(nativeInput, caller)).data.delivery.kind, 'delivered');
+  assert.equal(completions, 2);
+  assert.equal((await f.events.read(subject)).filter(e => e.kind === 'case.review_verdict_recorded').length, 1);
+});
+
+test('projector and replay retain the first delivered verdict against a later contradictory recorded event', async t => {
+  const f = await nativeFixture(); t.after(() => f.runtime.stop());
+  f.custody.complete = async value => ({ outcome: 'committed', leaseId: value.leaseId, generation: value.generation });
+  await f.runtime.record(nativeInput, caller);
+  const first = (await f.events.read(subject)).find(e => e.kind === 'case.review_verdict_recorded')!;
+  const later = { ...first, sourceEventId: 'contradictory-recorded', at: first.at + 1,
+    payload: { ...first.payload, verdict: 'changes_requested', delivery: { ...first.payload.delivery as object, githubUrl: 'https://github.com/example/project/pull/12#pullrequestreview-81' } } };
+  await f.events.append(later); await f.projector.apply(later);
+  assert.equal(((await f.objects.get(subject))!.externalReview!.delivery as { githubUrl: string }).githubUrl, input.delivery.githubUrl);
+  await f.projector.rebuild(subject);
+  assert.equal(((await f.objects.get(subject))!.externalReview!.delivery as { githubUrl: string }).githubUrl, input.delivery.githubUrl);
+});
+
+
+test('legacy delivered projection without a submission marker fails closed; a new HEAD generation clears the marker', async t => {
+  const f = await nativeFixture(); t.after(() => f.runtime.stop()); let completions = 0;
+  f.custody.complete = async value => { completions++; return { outcome: 'committed', leaseId: value.leaseId, generation: value.generation }; };
+  await f.runtime.record(nativeInput, caller);
+  const projection = (await f.objects.get(subject))!;
+  await f.objects.save({ ...projection, externalReview: { ...projection.externalReview!, deliveredVerdictFingerprint: undefined } });
+  await assert.rejects(f.runtime.record(nativeInput, caller), { code: 'verdict_conflict' });
+  assert.equal(completions, 1);
+  await f.projector.rebuild(subject);
+  const event = { sourceEventId: 'next-generation', subjectKey: subject, kind: 'case.head_observed' as const,
+    classification: 'informational' as const, payload: { headSha: 'c'.repeat(40) }, at: Date.now() };
+  await f.events.append(event); await f.projector.apply(event);
+  const next = (await f.objects.get(subject))!.externalReview!;
+  assert.equal(next.headGeneration, 2);
+  assert.equal(next.delivery, null);
+  assert.equal(next.deliveredVerdictFingerprint, null);
+});

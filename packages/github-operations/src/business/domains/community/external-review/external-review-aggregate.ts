@@ -99,6 +99,7 @@ export function createExternalReviewAggregate(input: CreateExternalReviewAggrega
     cloud: null,
     wake: null,
     delivery: null,
+    deliveredVerdictFingerprint: null,
     verdictSubmissionEpoch: 0,
     pendingVerdict: null,
     reviewerCatId: input.reviewerCatId ?? null,
@@ -309,6 +310,7 @@ function applyHeadObserved(
       cloud: null,
       wake: null,
       delivery: null,
+      deliveredVerdictFingerprint: null,
       verdictSubmissionEpoch: 0,
       pendingVerdict: null,
     },
@@ -462,6 +464,9 @@ function applyVerdictRecorded(
   if (state.delivery?.kind === 'delivered' && delivery.kind === 'pending_delivery') {
     return { ok: false, reason: 'delivery_regression' };
   }
+  // A successful lease replay reauthorizes the caller, not new business facts.
+  // Preserve the first canonical delivery in both live projection and rebuild.
+  if (state.delivery?.kind === 'delivered') return { ok: false, reason: 'verdict_conflict' };
   if (state.mode !== 'maintainer_review') return { ok: false, reason: 'observe_only' };
   if (
     state.lifecycle !== 'rereview_required' &&
@@ -481,6 +486,8 @@ function applyVerdictRecorded(
       lastDeliveredHeadSha: delivery.kind === 'delivered' ? headSha : state.lastDeliveredHeadSha,
       lastDeliveredHeadGeneration: delivery.kind === 'delivered' ? generation : state.lastDeliveredHeadGeneration,
       delivery,
+      deliveredVerdictFingerprint: delivery.kind === 'delivered' && typeof event.payload.fingerprint === 'string'
+        ? event.payload.fingerprint : null,
       pendingVerdict: null,
     },
   };
