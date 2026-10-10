@@ -2,15 +2,16 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-export interface GitHubAppManifestBeginResult {
-  readonly registrationUrl: string;
-  readonly manifest: { readonly name: string; readonly url: string; readonly redirect_url: string; readonly callback_urls: readonly string[]; readonly public: true };
-}
 import { z } from 'zod';
 
 import { CollectiveServiceError } from './errors.js';
 import { ConfigurableGitHubHumanAuthProvider, type GitHubOAuthCredentials } from './github-human-auth-provider.js';
 import { createSecret, digestSecret, secretMatches } from './persistence.js';
+
+export interface GitHubAppManifestBeginResult {
+  readonly registrationUrl: string;
+  readonly manifest: { readonly name: string; readonly url: string; readonly redirect_url: string; readonly callback_urls: readonly string[]; readonly public: true };
+}
 
 const CREDENTIAL_FILE = 'github-app-oauth.json';
 const SETUP_STATE_FILE = 'github-app-setup.json';

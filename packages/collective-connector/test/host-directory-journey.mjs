@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -16,7 +17,21 @@ const temporary = await mkdtemp(join(tmpdir(), 'collective-host-admission-'));
 process.env.LOG_DIR = join(temporary, 'logs');
 process.env.NODE_ENV = 'test';
 const domainRoot = join(hostRoot, 'packages/api/dist/domains/plugin');
-const load = path => import(pathToFileURL(join(domainRoot, path)).href);
+const hostBuildInputs = {};
+const load = async path => {
+  const absolutePath = join(domainRoot, path);
+  const sourcePath = `packages/api/src/domains/plugin/${path.replace(/\.js$/, '.ts')}`;
+  const source = await readFile(join(hostRoot, sourcePath));
+  const committedSource = execFileSync('git', ['show', `${expectedHead}:${sourcePath}`], { cwd: hostRoot });
+  assert.deepEqual(source, committedSource, `Host source must match frozen HEAD: ${sourcePath}`);
+  hostBuildInputs[path] = {
+    distSha256: createHash('sha256').update(await readFile(absolutePath)).digest('hex'),
+    sourcePath,
+    sourceSha256: createHash('sha256').update(source).digest('hex'),
+    sourceGitBlob: execFileSync('git', ['rev-parse', `${expectedHead}:${sourcePath}`], { cwd: hostRoot, encoding: 'utf8' }).trim(),
+  };
+  return import(pathToFileURL(absolutePath).href);
+};
 const { LocalPluginPackageAdmission } = await load('manager/local-package-admission.js');
 const { FilePluginInventoryStore } = await load('host-inventory/stores.js');
 const { HostInventoryControlPlane } = await load('host-inventory/control-plane.js');
@@ -81,7 +96,9 @@ try {
   console.log(JSON.stringify({ result: 'PASS', hostHead: expectedHead, localDirectoryAdmission: 'production',
     inventory: 'file/reloaded', provenance: 'local-directory', dependencyClosure: 'shipped',
     moduleCarrier: 'production', lifecycle: 'failed-start/retry/bootstrap/disable/re-enable',
-    statePreserved: true, hostProductWrites: false, settingsUI: 'unverified', fullC1: false }));
+    statePreserved: true, hostBuildInputs,
+    buildProofLimit: 'Direct dist hashes identify this run; source hashes match frozen HEAD. This is not a fresh-build or transitive-build proof.',
+    hostProductWrites: false, settingsUI: 'unverified', fullC1: false }));
 } finally {
   if (instanceId) await runtime.stop(instanceId, 'test_cleanup');
   await rm(temporary, { recursive: true, force: true });

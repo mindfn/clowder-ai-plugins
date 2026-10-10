@@ -81,8 +81,9 @@ Expiration follows the original domain policy; this checkpoint does not introduc
 
 Architecture cell: **Collective package-owned service/connector business + existing generic Host module
 carrier**. Map delta: **package ownership moves out of removed Host; no new Host/SDK authority cell**.
-Why: existing carrier lifecycle can own the in-process service; provider-neutral services supervision is
-not necessary for this backend. The new composition extends the moved service rather than another manager.
+Why: existing carrier lifecycle can own this checkpoint's in-process service and supplies the authorized
+data directory. The new composition extends the moved service rather than another manager. Release
+topology remains subject to the listener-consent and state-write measurements recorded below.
 
 ## Evidence and risk coverage
 
@@ -92,10 +93,13 @@ not necessary for this backend. The new composition extends the moved service ra
 - `test:installed`: exact local SDK/contract tarballs plus actual directory installation into an empty npm
   consumer; physical package/dependency imports, manifest/default entrypoint, every built JS module,
   backend bootstrap/create/disable/re-enable, retained C2 response, private modes and listener release.
+  Native ESM business imports must fail at the installed package root; internal subpaths are not exported.
 - With explicit `F202_COLLECTIVE_HOST_ROOT`: actual production local-directory admission, actual file
   inventory reload, local/untrusted source provenance and shipped dependencies, production builtin module
   carrier's failed-start/retry/bootstrap/disable/re-enable using fresh temporary Host state. This is a
   component integration, not the running Host or Settings/browser acceptance.
+  The probe records five direct dist input hashes and their frozen source hashes/Git blobs. Those hashes
+  identify the loaded build; they do not substitute for fresh-build or complete transitive-build evidence.
 
 Behavior risk is runtime composition; data risk is fresh private business state and startup recovery;
 security risk is bootstrap escrow and existing HTTP authentication; contract risk is default entrypoint,
@@ -117,3 +121,26 @@ The original missing-package2-fail RED is preserved as historical prerequisite e
 REDs separately demonstrate leaked post-listen ports and lost retry bootstrap; new GREENs prove their fixes.
 Latest logs, hashes, paired Host coordinates and gate report are in the original handoff evidence directory.
 Operator experience, fork soak, Linux release packing, publication and merging remain distinct later gates.
+
+## One-shot review379 disposition and continuation
+
+Opus reviewed exact `6195106b4ce30accf4ceef5e0be7565fcf53252d` in
+`thread_mrkn6povq4zzgh45#0001791632363246-000379-0c474c2f`: one blocking B1 (P2), with the
+13 semantic edges and in-process builtin accepted for this checkpoint. The persisted message contains
+the verdict in prose; no `localReviewFact` was returned by message/history readback. Repair review must
+produce a durable typed verdict for its exact new HEAD; the prose receipt is not promoted into that fact.
+
+| Item | Disposition, owner and trigger |
+| --- | --- |
+| B1 | Root exports narrowed to module factory/default/options only. Installed native ESM import rejection is RED before repair and must be GREEN after rebuilding. Daily independent reviewer verifies the repair. |
+| N1(a), release gate | Aggregate1843 retains the dependency. Before `releaseAdmission=true`, original Host/contract owner must supply explicit listener disclosure/consent through the installation contract. README now discloses loopback and in-process operation; this does not implement capability consent. |
+| N1(b), release gate | Aggregate1843 package owner measures whole-state serialization/fsync and Host event-loop impact using representative state sizes and traffic before release admission. If the result requires an external process, pair the exact caller with original Host/contract owner for authorized data-directory support; do not bypass authority inside the package. |
+| N2, next C2/onboarding state | Aggregate1843 pairs activation/status with original C2/Host owner: verify escrow against persisted digest/expiry and expose pending/expired/unrecoverable states. Any unclaimed-secret rotation is a separate business change requiring its own behavior RED; no reset or rotation is introduced here. |
+| N3 | Same-round probe records direct dist SHA256 and frozen tracked source SHA256/Git blobs. Reviewer379's source/build comparison supports the prior run; hashes identify subsequent runs without claiming fresh-build equivalence. |
+| N4 | README names retirement of `COLLECTIVE_SERVICE_HOST` and `COLLECTIVE_GITHUB_CLIENT_ID/SECRET`, fixed loopback and App Manifest configuration. Aggregate1843 and original Settings owner decide secret configuration at Settings composition. |
+| N5, next C2 composition | Aggregate1843 and original C2 owner establish one source for `clientBuildId` or a parity guard when Client composition lands. Current value remains the source protocol label, without a Client delivery claim. |
+| Nit | Move the Zod import before the package-local result interface; no semantic change. |
+
+These items remain in original1843. No new W4 task, W3 transfer, public domain type, SDK/contract bump,
+release admission or frozen Host product write is authorized. Ordinary repair review goes to the daily
+reviewer; one-shot architecture calibration is reopened only for a new architecture issue.

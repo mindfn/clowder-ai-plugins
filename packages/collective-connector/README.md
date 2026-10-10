@@ -28,11 +28,23 @@ The module reads only SDK configuration and its authorized data directory. The f
 retired. Existing domain persistence and authentication transitions are retained. Unclaimed credential
 expiry still follows the source service's 24-hour bootstrap policy. No old user state is imported.
 
+The retired CLI's `COLLECTIVE_SERVICE_HOST` is not read: the module binds `127.0.0.1` only.
+`COLLECTIVE_GITHUB_CLIENT_ID` and `COLLECTIVE_GITHUB_CLIENT_SECRET` are also not read; GitHub OAuth
+configuration currently comes from the existing App Manifest setup flow. Settings secret configuration
+remains a later composition decision.
+
+The package root exports only the default module, `createCollectivePluginModule`, and its options type.
+Connector/service internals and domain declarations remain private implementation details.
+
 ## Install permissions
 
 - `plugin.config.read`: read only the configuration supplied by the Host for this instance.
 - `data.directory`: persist Collective business state and private credentials in the Host-authorized
   package directory. Stop preserves that state; the package never falls back to another directory.
+
+While active, this builtin runs inside the Host process and opens a loopback HTTP listener (default
+port `5201`). Current Host capabilities do not separately express listener consent. Explicit installation
+disclosure/consent and measurements of state-write impact on the Host event loop remain release prerequisites.
 
 ## Verification from this checkout
 

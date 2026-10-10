@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { lstat, mkdtemp, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -7,6 +8,19 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { validateManifest } from '@clowder-ai/plugin-contract';
 import { requirePluginModuleEntrypoint } from '@clowder-ai/plugin-sdk';
 import module from '@clowder-ai/collective-connector';
+
+// An installed caller must enter through the authorized module, never import domain implementation.
+const privateImports = ['CollectiveConnector', 'CollectiveServiceStore', 'startCollectiveServer', 'collectiveStandingWorkSchema'];
+for (const name of privateImports) {
+  const bypass = spawnSync(process.execPath, ['--input-type=module', '--eval',
+    `import { ${name} } from '@clowder-ai/collective-connector';`],
+  { cwd: process.cwd(), encoding: 'utf8' });
+  assert.notEqual(bypass.status, 0, `root API must refuse direct import of ${name}`);
+  assert.match(bypass.stderr, /does not provide an export/);
+}
+for (const path of ['business/connector', 'business/service', 'business/contracts', 'dist/business/service/store.js']) {
+  await assert.rejects(import('@clowder-ai/collective-connector/' + path), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
+}
 
 const consumer = process.cwd();
 const packageRoot = join(consumer, 'node_modules/@clowder-ai/collective-connector');
@@ -80,7 +94,8 @@ try {
   await assert.rejects(readFile(linkPath), { code: 'ENOENT' });
   console.log(JSON.stringify({ result: 'PASS', installedDirectory: true, physicalDependencyClosure: true,
     manifest: 'valid', lifecycle: 'start/bootstrap/create/disable/re-enable', statePreserved: true,
-    reservedPortsUsed: false, retainedC2: true, oldCliExcluded: true }));
+    reservedPortsUsed: false, retainedC2: true, oldCliExcluded: true,
+    rejectedPrivateRootImports: privateImports, rejectedInternalSubpaths: 4 }));
 } finally {
   await active?.stop();
   await rm(directory, { recursive: true, force: true });
