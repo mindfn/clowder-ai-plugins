@@ -946,3 +946,23 @@ test('production module declares private review verifier role without exposing b
   await active.stop();
   await assert.rejects(active.predicateVerifiers![declared.freshnessMethod]!(request, ctx));
 });
+
+test('production schedule collects routed cases without a native registration or Host Task', async () => {
+  const { SdkCommunityCollectionStore } = await import('./community-collection.js');
+  const { registerRoutingTracking } = await import('./business/domains/community/community-auto-tracking.js');
+  const f = host(); let reads = 0;
+  const active = await createGitHubPluginModule({ createProvider: () => ({ selfLogin: () => undefined, read: async () => {
+    reads++; return { state: 'open', commentsComplete: true, comments: [{ id: 7, author: 'external', body: 'routed comment', commentType: 'conversation' }], reviews: [] };
+  } }) }).create(manifest).start(f.runtimeHost);
+  await active.actions['github.repository.register']!({ repo: 'example/project', guardThreadId: 'thread-1', guardCatId: 'cat-1' });
+  const store = new SdkCommunityCollectionStore(f.runtimeHost.storage);
+  await registerRoutingTracking({ kind: 'case.routed', subjectKey: 'issue:example/project#12', sourceEventId: 'route:production', classification: 'state-changing', at: 1,
+    payload: { ownerThreadId: 'thread-1', catId: 'cat-1' } }, store);
+  await active.actions['github.issue-tracking']!({});
+  assert.equal(reads, 1);
+  const events = await new SdkCommunityEventLog(f.runtimeHost.storage).read('issue:example/project#12');
+  assert.ok(events.some(event => event.kind === 'issue.commented' && event.payload.commentId === 7));
+  assert.equal((await active.actions['github.tracking.list']!({}) as any).data.tracking.length, 0);
+  assert.equal(f.deliveries.length, 0, 'collection does not fabricate owner invocation or native wait notification');
+  await active.stop();
+});

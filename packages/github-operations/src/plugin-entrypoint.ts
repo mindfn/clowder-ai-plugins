@@ -11,6 +11,7 @@ import { PrProviderIndex, type PrIndexProvider } from './pr-provider-index.js';
 import { GitHubPrIndexProvider } from './pr-index-provider.js';
 import { ReviewTriggerReader } from './review-trigger-observation.js';
 import { CommunityReviewPredicateRuntime } from './community-review-verifier.js';
+import { CommunityCollectionRuntime, SdkCommunityCollectionStore } from './community-collection.js';
 
 interface Provider extends GitHubTrackingProvider { selfLogin(): string | undefined }
 export interface GitHubPluginOptions {
@@ -36,6 +37,11 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   const drafts = new NativeIssueDraftRuntime(context, options.createIssuePublisher?.(context) ?? transport);
   const community = new CommunityRuntime(context, options.createCommunityProvider?.(context) ?? transport);
   const reviewPredicates = new CommunityReviewPredicateRuntime({ objectStore: community.objects, repoConfigStore: community.configs, provider: transport });
+  const collection = new CommunityCollectionRuntime({ store: new SdkCommunityCollectionStore(context.storage), provider,
+    allowed: async repo => !!await community.configs.getByRepo(repo),
+    collect: (target, snapshot) => community.collectTracking(target, snapshot),
+    observe: (target, snapshot) => community.observeTracking(target, snapshot),
+  });
   const tracking = new TypedWaitRuntime({
     context, provider,
     ...(options.now ? { now: options.now } : {}),
@@ -45,7 +51,9 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   });
   await tracking.recover();
   const poll = async (kind: 'pr' | 'issue') => {
-    await tracking.poll(kind);
+    // Admit both module-owned streams before awaiting either: shutdown must
+    // never resume a completed native tick into a newly started collector.
+    await Promise.all([tracking.poll(kind), collection.poll(kind)]);
     return { data: { completed: true } };
   };
   return {
@@ -90,7 +98,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.draft.cancel': (value: unknown) => drafts.cancel(value),
       'github.triage.recommend': recommendTriage,
     },
-    dispose: async () => { reviewPredicates.stop(); await Promise.all([tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
+    dispose: async () => { reviewPredicates.stop(); await Promise.all([collection.stop(), tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
   };
 }
 
