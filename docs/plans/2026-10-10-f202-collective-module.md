@@ -12,6 +12,10 @@ tips_exempt: Private migration checkpoint with no released Settings capability; 
 The original aggregate continues under Sol/cat-eqdvbcxw. This is an internal implementation/review
 checkpoint, with no W4/Collective/C1 completion, publication, catalog admission, or operator acceptance.
 The package remains private. Subsequent work extends this module and its moved business implementation.
+The repository package ledger classifies it as `manager-installable-private-development`, with
+`releaseAdmission=false` and `fullInstalledAcceptance=false`; it remains absent from the catalog.
+The existing source inventory guard now requires those fields and actual `private:true` for this
+classification, while retaining all public Manager artifact and capability disclosure checks.
 
 ## Accepted sources and writer boundary
 

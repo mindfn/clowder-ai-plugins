@@ -92,6 +92,7 @@ test('every repository package is classified and Manager artifacts carry explici
 
   const allowedClassifications = new Set([
     'manager-installable-official-public',
+    'manager-installable-private-development',
     'retained-external-baseline-specialized-host-wiring',
     'non-installable-library-or-fixture',
     'deprecated-or-migrated-artifact',
@@ -104,7 +105,16 @@ test('every repository package is classified and Manager artifacts carry explici
     );
     assert.match(entry.packageName, /^@clowder-ai\/[a-z0-9-]+$/u);
     if (entry.managerInstallable) {
-      assert.equal(entry.classification, 'manager-installable-official-public');
+      assert.ok(['manager-installable-official-public', 'manager-installable-private-development'].includes(entry.classification));
+      if (entry.classification === 'manager-installable-private-development') {
+        const pkg = JSON.parse(await readFile(new URL(`../packages/${entry.directory}/package.json`, import.meta.url), 'utf8'));
+        assert.equal(pkg.private, true, 'a development candidate must be physically unpublished');
+        assert.equal(entry.releaseAdmission, false);
+        assert.equal(entry.fullInstalledAcceptance, false);
+        assert.ok(entry.workSubject && entry.acceptedSource, 'unfinished work must retain its original responsibility and source');
+        const manifest = parse(await readFile(new URL(`../packages/${entry.directory}/plugin.yaml`, import.meta.url), 'utf8'));
+        assert.equal(catalog.plugins.some(item => item.pluginId === manifest.pluginId), false, 'a private development candidate must not silently enter the release catalog');
+      }
       for (const field of requiredInstallableClosureFields) {
         assert.equal(typeof entry[field], 'string', `${entry.directory}.${field} must be explicit`);
         assert.ok(entry[field].length > 0, `${entry.directory}.${field} must not be empty`);

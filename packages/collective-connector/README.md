@@ -28,6 +28,12 @@ The module reads only SDK configuration and its authorized data directory. The f
 retired. Existing domain persistence and authentication transitions are retained. Unclaimed credential
 expiry still follows the source service's 24-hour bootstrap policy. No old user state is imported.
 
+## Install permissions
+
+- `plugin.config.read`: read only the configuration supplied by the Host for this instance.
+- `data.directory`: persist Collective business state and private credentials in the Host-authorized
+  package directory. Stop preserves that state; the package never falls back to another directory.
+
 ## Verification from this checkout
 
 ```sh
