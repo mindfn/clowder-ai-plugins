@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { memoryStorage } from '../test/memory-storage.js';
 import { createCommunityHttpRouter, type CommunityHttpRouterOptions } from './community-http-router.js';
+import { CommunityProjector, CommunityProjectionOperations } from './business/domains/community/community-projector.js';
 import { createCatId } from './business/model/index.js';
 import { SdkCommunityWorkflowIssueStore, SdkCommunityIssueDraftStore } from './business/domains/community/CommunityWorkflowStores.js';
 import { NativeIssueDraftRuntime } from './native-issue-drafts.js';
@@ -12,6 +13,8 @@ import { CommunityReconciliationFindingStore } from './business/domains/communit
 function options(): CommunityHttpRouterOptions {
   return {
     storage: memoryStorage(),
+    threads: { get: async () => null, ensureByKey: async () => { throw new Error('unexpected thread creation'); } },
+    projectionOperations: new CommunityProjectionOperations(),
     issues: {
       guardianCatalog: async () => ({ roster: {}, defaultCatId: createCatId('guardian'), policy: { requireDifferentFamily: true, preferActiveInThread: true, preferLead: true, excludeUnavailable: true } }),
       taskStore: { listByKind: async () => [], getBySubject: async () => null, upsertBySubject: async () => { throw new Error('unexpected tracking'); }, delete: async () => false },
@@ -208,4 +211,59 @@ test('owner forwarding requires Host wrapper identity and preserves encoded repo
   assert.equal((await router.forwardOwner({ principal, method: 'DELETE', path: 'github/community-repo-configs/org%2Frepo' })).status, 200);
   const configs = await router.forwardOwner({ principal, method: 'GET', path: 'github/community-repo-configs' });
   assert.deepEqual(configs.body, []);
+});
+
+test('shared collector queue preserves request authority when a native report expires while queued', async t => {
+  const deps = options();
+  const events = new SdkCommunityEventLog(deps.storage), objects = new SdkCommunityObjectStore(deps.storage);
+  const background = new CommunityProjector(events, objects, deps.projectionOperations);
+  await background.apply({ sourceEventId: 'seed', subjectKey: 'issue:org/repo#1', kind: 'case.bootstrap', classification: 'state-changing', at: 1, payload: { mappedState: 'fixed' } });
+  const issues = new SdkCommunityWorkflowIssueStore(deps.storage);
+  const issue = (await issues.create({ repo: 'org/repo', issueNumber: 1, issueType: 'bug', title: 'Bug' }))!;
+  await issues.update(issue.id, { assignedCatId: 'assigned', assignedThreadId: 'thread', state: 'accepted' });
+  let verified!: () => void, release!: () => void;
+  const verifying = new Promise<void>(resolve => { verified = resolve; });
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const holding = deps.projectionOperations.run('issue:ORG/REPO#1', () => blocked);
+  deps.issues.verifyPublicIssueComment = async () => { verified(); return true; };
+  const router = await createCommunityHttpRouter(deps); t.after(async () => { release(); await router.stop(); });
+  let current = true;
+  const request = router.invokeNative('github.community.report', { id: issue.id, payload: { publicCommentUrl: 'https://github.com/org/repo/issues/1#issuecomment-42' } }, {
+    catId: 'assigned', threadId: 'thread', userId: 'owner', invocationId: 'inv', assertCurrent: async () => { if (!current) throw new Error('expired invocation'); },
+  });
+  await verifying;
+  await new Promise(resolve => setImmediate(resolve));
+  current = false; release(); await holding;
+  assert.equal((await request).status, 500);
+  assert.equal((await objects.get('issue:org/repo#1'))?.lastPublicCommentAt, null);
+  // Failed request neither poisons the shared queue nor lends its identity to the collector.
+  await background.apply({ sourceEventId: 'declined', subjectKey: 'issue:org/repo#1', kind: 'case.declined', classification: 'state-changing', at: 3, payload: {} });
+  assert.equal((await objects.get('issue:org/repo#1'))?.state, 'declined');
+});
+
+for (const explicitNewThread of [false, true]) test(`real resolve route retries the same SDK thread binding after lost reply (explicit=${explicitNewThread})`, async t => {
+  let creates = 0, lost = true;
+  const bindings = new Map<string, string>();
+  const deps: CommunityHttpRouterOptions = { ...options(), threads: {
+    get: async () => null,
+    ensureByKey: async (key, { title }) => {
+      if (!bindings.has(key)) bindings.set(key, `thread-${++creates}`);
+      if (lost) { lost = false; throw new Error('Host response lost'); }
+      const id = bindings.get(key)!;
+      return { id, title, deepLinkUrl: '/threads/'+id, createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] };
+    },
+  } };
+  const store = new SdkCommunityWorkflowIssueStore(deps.storage);
+  const issue = (await store.create({ repo: 'org/repo', issueNumber: 23, issueType: 'bug', title: 'Retry routing' }))!;
+  await store.update(issue.id, { state: 'pending-decision' });
+  let router = await createCommunityHttpRouter(deps); t.after(() => router.stop());
+  const request = { principal, method: 'POST', path: `github/community-issues/${issue.id}/resolve`, body: {
+    decision: 'accepted', ...(explicitNewThread ? { routeRecommendation: { kind: 'new-thread' } } : {}),
+  } };
+  assert.equal((await router.forwardOwner(request)).status, 500);
+  assert.equal((await store.get(issue.id))?.state, 'pending-decision');
+  await router.stop(); router = await createCommunityHttpRouter(deps);
+  assert.equal((await router.forwardOwner(request)).status, 200);
+  assert.equal(creates, 1);
+  assert.equal((await store.get(issue.id))?.assignedThreadId, 'thread-1');
 });

@@ -8,7 +8,7 @@ import { issueCommentEventId, reviewEventId } from './business/domains/community
 import { SdkCommunityEventLog } from './business/domains/community/CommunityEventLog.js';
 import { SdkCommunityObjectStore } from './business/domains/community/CommunityObjectStore.js';
 import { SdkCommunityRepoConfigStore, type UpsertRepoConfigInput } from './business/domains/community/CommunityRepoConfigStore.js';
-import { CommunityProjector } from './business/domains/community/community-projector.js';
+import { CommunityProjector, CommunityProjectionOperations } from './business/domains/community/community-projector.js';
 import { CommunityReconciliationFindingStore } from './business/domains/community/reconciliation/CommunityReconciliationFindingStore.js';
 import { runCommunityReconciliation } from './business/domains/community/reconciliation/CommunityReconcilerTaskSpec.js';
 import type { GitHubSnapshot as ReconciliationSnapshot } from './business/domains/community/reconciliation/CommunityReconciler.js';
@@ -41,6 +41,7 @@ export class CommunityRuntime {
   readonly objects: SdkCommunityObjectStore;
   readonly configs: SdkCommunityRepoConfigStore;
   readonly findings: CommunityReconciliationFindingStore;
+  readonly projectionOperations = new CommunityProjectionOperations();
   private readonly projector: CommunityProjector;
   private readonly observations: ExternalReviewCoordinator;
   private readonly lifetime = new AbortController();
@@ -57,7 +58,7 @@ export class CommunityRuntime {
     this.objects = new SdkCommunityObjectStore(context.storage);
     this.configs = new SdkCommunityRepoConfigStore(context.storage);
     this.findings = new CommunityReconciliationFindingStore(context.storage);
-    this.projector = new CommunityProjector(this.events, this.objects);
+    this.projector = new CommunityProjector(this.events, this.objects, this.projectionOperations);
     this.observations = new ExternalReviewCoordinator({
       repoConfigStore: this.configs, eventLog: this.events, projector: this.projector,
       objectStore: this.objects, log: context.logger,

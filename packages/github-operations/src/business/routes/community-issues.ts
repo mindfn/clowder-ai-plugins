@@ -502,7 +502,7 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
         // Without explicit creation here, routeAccepted takes the relatedFeature early
         // return and skips thread creation, leaving the issue without assignedThreadId.
         if (opts.threadStore) {
-          const newThread = await opts.threadStore.create(userId, `Community: ${issue.title}`);
+          const newThread = await opts.threadStore.create(userId, `Community: ${issue.title}`, issue.id);
           effectiveThreadId = newThread.id;
         }
       }

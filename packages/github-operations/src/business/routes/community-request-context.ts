@@ -1,6 +1,7 @@
+import type { CommunityThreads } from '../domains/community/ports/CommunityThreads.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { randomUUID } from 'node:crypto';
-import type { PluginActionContext, PluginStorageHost } from '@clowder-ai/plugin-sdk';
+import { createHash, randomUUID } from 'node:crypto';
+import type { PluginActionContext, PluginStorageHost, PluginThreadHost } from '@clowder-ai/plugin-sdk';
 import type { FastifyInstance, FastifyReply, FastifyRequest, InjectOptions, LightMyRequestResponse } from 'fastify';
 
 type Principal = { readonly kind: 'owner'; readonly id: string } | { readonly kind: 'native'; readonly context: PluginActionContext };
@@ -69,6 +70,28 @@ export class CommunityRequestContext {
     if (!principal) throw new Error('Authenticated Community request required');
     if (principal.kind === 'native') await principal.context.assertCurrent();
     this.assertActive();
+  }
+  /** SDK calls retain the Host's installation/grant filtering. The workflow's
+   * historical userId argument is a consistency check, never an SDK identity. */
+  threads(host: Pick<PluginThreadHost, 'get' | 'ensureByKey'>): CommunityThreads {
+    return {
+      get: async id => {
+        await this.assertCurrent();
+        const thread = await host.get(id);
+        await this.assertCurrent();
+        return thread ? { id: thread.id, title: thread.title } : null;
+      },
+      create: async (userId, title, caseId) => {
+        await this.assertCurrent();
+        if (userId !== this.userId()) throw new Error('Community thread user does not match authenticated caller');
+        // No body-supplied user is forwarded; Host authenticates the SDK edge.
+        if (!caseId) throw new Error('Community case identity required');
+        const key = 'community:case:' + createHash('sha256').update(JSON.stringify([userId, caseId])).digest('hex');
+        const thread = await host.ensureByKey(key, { title });
+        await this.assertCurrent();
+        return { id: thread.id };
+      },
+    };
   }
   /** Use only for request-owned workflow stores. Background collectors have
    * their own module lifecycle and cannot borrow an invocation's authority. */

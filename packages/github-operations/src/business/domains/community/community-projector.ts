@@ -106,13 +106,37 @@ function createProjection(
 // Projector
 // ---------------------------------------------------------------------------
 
+/** Shared by the background and request projectors of ONE active module.
+ * Stores and request guards remain separate; this owns only subject ordering.
+ * It is not a cross-process lock or a replacement for Host storage revisions. */
+export class CommunityProjectionOperations {
+  private readonly subjectOperations = new Map<string, Promise<unknown>>();
+  async run<T>(subjectKey: string, operation: () => Promise<T>): Promise<T> {
+    const canonicalSubjectKey = canonicalizeCommunitySubjectKey(subjectKey);
+    const predecessor = this.subjectOperations.get(canonicalSubjectKey);
+    const predecessorSettled = Promise.resolve(predecessor).then(
+      () => undefined,
+      () => undefined,
+    );
+    const current = predecessorSettled.then(operation);
+    this.subjectOperations.set(canonicalSubjectKey, current);
+    try {
+      return await current;
+    } finally {
+      if (this.subjectOperations.get(canonicalSubjectKey) === current) {
+        this.subjectOperations.delete(canonicalSubjectKey);
+      }
+    }
+  }
+
+}
+
 export class CommunityProjector {
   private readonly rebuildInFlight = new Map<string, Promise<void>>();
-  private readonly subjectOperations = new Map<string, Promise<unknown>>();
-
   constructor(
     private readonly eventLog: ICommunityEventLog,
     private readonly objectStore: ICommunityObjectStore,
+    private readonly operations = new CommunityProjectionOperations(),
   ) {}
 
   /**
@@ -363,22 +387,8 @@ export class CommunityProjector {
     for (const followUp of followUps) await followUp();
   }
 
-  private async runSubjectOperation<T>(subjectKey: string, operation: () => Promise<T>): Promise<T> {
-    const canonicalSubjectKey = canonicalizeCommunitySubjectKey(subjectKey);
-    const predecessor = this.subjectOperations.get(canonicalSubjectKey);
-    const predecessorSettled = Promise.resolve(predecessor).then(
-      () => undefined,
-      () => undefined,
-    );
-    const current = predecessorSettled.then(operation);
-    this.subjectOperations.set(canonicalSubjectKey, current);
-    try {
-      return await current;
-    } finally {
-      if (this.subjectOperations.get(canonicalSubjectKey) === current) {
-        this.subjectOperations.delete(canonicalSubjectKey);
-      }
-    }
+  private runSubjectOperation<T>(subjectKey: string, operation: () => Promise<T>): Promise<T> {
+    return this.operations.run(subjectKey, operation);
   }
 
   /**

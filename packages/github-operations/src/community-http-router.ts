@@ -1,5 +1,5 @@
 import Fastify, { type InjectOptions, type LightMyRequestResponse } from 'fastify';
-import type { PluginActionContext, PluginStorageHost } from '@clowder-ai/plugin-sdk';
+import type { PluginActionContext, PluginStorageHost, PluginThreadHost } from '@clowder-ai/plugin-sdk';
 import { z } from 'zod';
 import { NativeIssueDraftRuntime, type NativeIssuePublisher } from './native-issue-drafts.js';
 import { CommunityRequestContext } from './business/routes/community-request-context.js';
@@ -10,12 +10,15 @@ import { SdkCommunityWorkflowIssueStore, SdkCommunityPrStore, SdkCommunityIssueD
 import { SdkCommunityRepoConfigStore } from './business/domains/community/CommunityRepoConfigStore.js';
 import { SdkCommunityEventLog } from './business/domains/community/CommunityEventLog.js';
 import { SdkCommunityObjectStore } from './business/domains/community/CommunityObjectStore.js';
-import { CommunityProjector } from './business/domains/community/community-projector.js';
+import { CommunityProjector, type CommunityProjectionOperations } from './business/domains/community/community-projector.js';
 import { CommunityReconciliationFindingStore } from './business/domains/community/reconciliation/CommunityReconciliationFindingStore.js';
 
-type OwnedStores = 'requestContext' | 'communityIssueStore' | 'communityPrStore' | 'repoConfigStore' | 'eventLog' | 'objectStore' | 'projector' | 'findingStore';
+type OwnedStores = 'threadStore' | 'requestContext' | 'communityIssueStore' | 'communityPrStore' | 'repoConfigStore' | 'eventLog' | 'objectStore' | 'projector' | 'findingStore';
 export interface CommunityHttpRouterOptions {
   readonly storage: PluginStorageHost;
+  readonly threads: Pick<PluginThreadHost, 'get' | 'ensureByKey'>;
+  /** Share the active CommunityRuntime queue, never its unguarded stores. */
+  readonly projectionOperations: CommunityProjectionOperations;
   readonly issues: Omit<CommunityIssuesRoutesOptions, OwnedStores>;
   readonly drafts: Omit<CommunityIssueDraftRoutesOptions, 'requestContext' | 'communityIssueDraftStore' | 'publication'> & { publisher: NativeIssuePublisher };
 }
@@ -70,9 +73,9 @@ export async function createCommunityHttpRouter(options: CommunityHttpRouterOpti
     await scope.assertCurrent();
   });
   await app.register(communityIssueRoutes, {
-    ...options.issues, requestContext: scope, communityIssueStore: issues, communityPrStore: prs,
+    ...options.issues, requestContext: scope, threadStore: scope.threads(options.threads), communityIssueStore: issues, communityPrStore: prs,
     repoConfigStore: configs, eventLog: events, objectStore: objects,
-    projector: new CommunityProjector(events, objects), findingStore: findings,
+    projector: new CommunityProjector(events, objects, options.projectionOperations), findingStore: findings,
   });
   await app.register(communityRepoConfigRoutes, { requestContext: scope, repoConfigStore: configs });
   await app.register(communityIssueDraftRoutes, {

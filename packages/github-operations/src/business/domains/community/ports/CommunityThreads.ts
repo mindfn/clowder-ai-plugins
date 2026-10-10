@@ -3,5 +3,5 @@
  * business input is never an authentication source. */
 export interface CommunityThreads {
   get(threadId: string): Promise<{ id: string; title?: string | null; deletedAt?: number } | null>;
-  create(userId: string, title: string): Promise<{ id: string }>;
+  create(userId: string, title: string, caseId: string): Promise<{ id: string }>;
 }

@@ -163,7 +163,7 @@ export class TriageOrchestrator {
         `[TriageOrchestrator] routeAccepted: threadStore not wired — cannot create thread for issue ${issueId} (no relatedFeature). Check communityIssueRoutes registration in index.ts.`,
       );
     }
-    const thread = await this.deps.threadStore.create(userId, `Community: ${issue.title}`);
+    const thread = await this.deps.threadStore.create(userId, `Community: ${issue.title}`, issue.id);
     await this.deps.communityIssueStore.update(issueId, {
       state: 'accepted',
       assignedThreadId: thread.id,

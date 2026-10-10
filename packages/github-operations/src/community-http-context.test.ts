@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import test from 'node:test';
 import Fastify from 'fastify';
 import { CommunityRequestContext } from './business/routes/community-request-context.js';
@@ -53,4 +54,77 @@ test('concurrent native requests keep separate authenticated identities and rech
   await assert.rejects(context.injectNative({ ...caller('a'), assertCurrent: async () => { throw new Error('stale'); } }, { url: '/who' }), /stale/);
   assert.equal(context.caller(), null);
   await app.close();
+});
+
+test('SDK thread adapter uses authenticated scope and rejects forged user or stale invocation', async t => {
+  const app = Fastify(); t.after(() => app.close());
+  const scope = new CommunityRequestContext(app);
+  const creations: string[] = [];
+  const summary = { id: 'new-thread', deepLinkUrl: '/threads/new-thread', title: 'Title', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] };
+  const threads = scope.threads({
+    get: async id => id === 'visible' ? summary : null,
+    ensureByKey: async (_key, { title }) => { creations.push(title); return summary; },
+  });
+  let live = true;
+  app.post<{ Body: { userId: string; expire?: boolean } }>('/create', async request => {
+    if (request.body.expire) live = false;
+    return threads.create(request.body.userId, 'Community', 'case');
+  });
+  app.get('/read', async () => ({ visible: await threads.get('visible'), hidden: await threads.get('hidden') }));
+  await assert.rejects(threads.create('owner', 'outside', 'case'), /Authenticated/);
+  const caller = { catId: 'cat', userId: 'owner', threadId: 'thread', invocationId: 'inv', assertCurrent: async () => { if (!live) throw new Error('expired'); } };
+  assert.equal((await scope.injectNative(caller, { method: 'POST', url: '/create', payload: { userId: 'forged' } })).statusCode, 500);
+  assert.deepEqual(creations, []);
+  assert.equal((await scope.injectNative(caller, { method: 'POST', url: '/create', payload: { userId: 'owner' } })).statusCode, 200);
+  assert.deepEqual(creations, ['Community']);
+  assert.equal((await scope.injectNative(caller, { method: 'POST', url: '/create', payload: { userId: 'owner', expire: true } })).statusCode, 500);
+  assert.deepEqual(creations, ['Community']);
+  const read = await scope.injectOwner({ kind: 'owner', id: 'owner' }, { url: '/read' });
+  assert.deepEqual(read.json(), { visible: { id: 'new-thread', title: 'Title' }, hidden: null });
+  scope.stop();
+  await assert.rejects(threads.get('visible'), /stopped/);
+});
+
+test('thread creation retry after lost Host response reuses the same case binding', async t => {
+  const app = Fastify(); t.after(() => app.close());
+  const scope = new CommunityRequestContext(app);
+  const bound = new Map<string, string>(); let created = 0, lose = true;
+  const summary = (id: string) => ({ id, deepLinkUrl: '/threads/'+id, title: 'Title', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] });
+  const host = {
+    get: async () => null,
+    create: async () => { const id = String(++created); if (lose) { lose = false; throw new Error('response lost'); } return summary(id); },
+    ensureByKey: async (key: string) => {
+      if (!bound.has(key)) bound.set(key, String(++created));
+      if (lose) { lose = false; throw new Error('response lost'); }
+      return summary(bound.get(key)!);
+    },
+  };
+  const threads = scope.threads(host);
+  app.post('/create', async () => threads.create('owner', 'Community', 'case-1'));
+  const request = { method: 'POST', url: '/create' } as const;
+  assert.equal((await scope.injectOwner({ kind: 'owner', id: 'owner' }, request)).statusCode, 500);
+  assert.equal((await scope.injectOwner({ kind: 'owner', id: 'owner' }, request)).statusCode, 200);
+  assert.equal(created, 1);
+});
+
+
+test('embedded dispatch preserves the Host SDK async context as well as the package principal', async t => {
+  const app = Fastify(); t.after(() => app.close());
+  const scope = new CommunityRequestContext(app);
+  const hostIdentity = new AsyncLocalStorage<string>();
+  const threads = scope.threads({
+    get: async () => null,
+    ensureByKey: async () => {
+      await new Promise(resolve => setImmediate(resolve));
+      const user = hostIdentity.getStore();
+      if (user !== scope.userId()) throw new Error('Host SDK context lost');
+      return { id: user!, deepLinkUrl: '/threads/'+user, title: null, createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] };
+    },
+  });
+  app.post('/thread', async () => threads.create(scope.userId()!, 'Community', 'case'));
+  const replies = await Promise.all(['a', 'b'].map(user => hostIdentity.run(user, () => scope.injectOwner({ kind: 'owner', id: user }, { method: 'POST', url: '/thread' }))));
+  assert.deepEqual(replies.map(reply => ({ status: reply.statusCode, body: reply.json() })), [
+    { status: 200, body: { id: 'a' } }, { status: 200, body: { id: 'b' } },
+  ]);
+  assert.equal(hostIdentity.getStore(), undefined);
 });
