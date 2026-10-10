@@ -16,7 +16,7 @@ import { CommunityReconciliationFindingStore } from './business/domains/communit
 type OwnedStores = 'threadStore' | 'requestContext' | 'communityIssueStore' | 'communityPrStore' | 'repoConfigStore' | 'eventLog' | 'objectStore' | 'projector' | 'findingStore';
 export interface CommunityHttpRouterOptions {
   readonly storage: PluginStorageHost;
-  readonly threads: Pick<PluginThreadHost, 'get' | 'ensureByKey'>;
+  readonly threads: Pick<PluginThreadHost, 'list' | 'ensureByKey'>;
   /** Share the active CommunityRuntime queue, never its unguarded stores. */
   readonly projectionOperations: CommunityProjectionOperations;
   readonly issues: Omit<CommunityIssuesRoutesOptions, OwnedStores>;

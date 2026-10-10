@@ -60,9 +60,9 @@ test('SDK thread adapter uses authenticated scope and rejects forged user or sta
   const app = Fastify(); t.after(() => app.close());
   const scope = new CommunityRequestContext(app);
   const creations: string[] = [];
-  const summary = { id: 'new-thread', deepLinkUrl: '/threads/new-thread', title: 'Title', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] };
+  const summary = { id: 'visible', deepLinkUrl: '/threads/visible', title: 'Title', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] };
   const threads = scope.threads({
-    get: async id => id === 'visible' ? summary : null,
+    list: async () => [summary],
     ensureByKey: async (_key, { title }) => { creations.push(title); return summary; },
   });
   let live = true;
@@ -80,7 +80,7 @@ test('SDK thread adapter uses authenticated scope and rejects forged user or sta
   assert.equal((await scope.injectNative(caller, { method: 'POST', url: '/create', payload: { userId: 'owner', expire: true } })).statusCode, 500);
   assert.deepEqual(creations, ['Community']);
   const read = await scope.injectOwner({ kind: 'owner', id: 'owner' }, { url: '/read' });
-  assert.deepEqual(read.json(), { visible: { id: 'new-thread', title: 'Title' }, hidden: null });
+  assert.deepEqual(read.json(), { visible: { id: 'visible', title: 'Title' }, hidden: null });
   scope.stop();
   await assert.rejects(threads.get('visible'), /stopped/);
 });
@@ -91,7 +91,7 @@ test('thread creation retry after lost Host response reuses the same case bindin
   const bound = new Map<string, string>(); let created = 0, lose = true;
   const summary = (id: string) => ({ id, deepLinkUrl: '/threads/'+id, title: 'Title', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] });
   const host = {
-    get: async () => null,
+    list: async () => [],
     create: async () => { const id = String(++created); if (lose) { lose = false; throw new Error('response lost'); } return summary(id); },
     ensureByKey: async (key: string) => {
       if (!bound.has(key)) bound.set(key, String(++created));
@@ -113,7 +113,7 @@ test('embedded dispatch preserves the Host SDK async context as well as the pack
   const scope = new CommunityRequestContext(app);
   const hostIdentity = new AsyncLocalStorage<string>();
   const threads = scope.threads({
-    get: async () => null,
+    list: async () => [],
     ensureByKey: async () => {
       await new Promise(resolve => setImmediate(resolve));
       const user = hostIdentity.getStore();
@@ -127,4 +127,37 @@ test('embedded dispatch preserves the Host SDK async context as well as the pack
     { status: 200, body: { id: 'a' } }, { status: 200, body: { id: 'b' } },
   ]);
   assert.equal(hostIdentity.getStore(), undefined);
+});
+
+test('metadata lookup follows Host keyset pages without content access', async t => {
+  const app = Fastify(); t.after(() => app.close()); const scope = new CommunityRequestContext(app);
+  const rows = Array.from({ length: 51 }, (_, n) => ({ id: `t${String(n).padStart(3, '0')}`, title: `Thread ${n}`, deepLinkUrl: '/', createdAt: 1, lastActiveAt: 10, preferredCats: [], featureRefs: [] }));
+  const cursors: unknown[] = [];
+  const host = {
+    get: async () => { throw new Error('content access forbidden'); },
+    list: async (options?: { limit?: number; before?: { lastActiveAt: number; id: string } }) => {
+      assert.equal(options?.limit, 50); cursors.push(options?.before);
+      return options?.before ? rows.slice(50) : rows.slice(0, 50);
+    },
+    ensureByKey: async () => { throw new Error('unused'); },
+  };
+  const threads = scope.threads(host);
+  app.get('/last', () => threads.get('t050'));
+  const response = await scope.injectOwner({ kind: 'owner', id: 'owner' }, { url: '/last' });
+  assert.equal(response.statusCode, 200); assert.deepEqual(response.json(), { id: 't050', title: 'Thread 50' });
+  assert.deepEqual(cursors, [undefined, { lastActiveAt: 10, id: 't049' }]);
+});
+
+for (const failure of ['expired', 'nonadvancing'] as const) test(`metadata traversal fails closed on ${failure}`, async t => {
+  const app = Fastify(); t.after(() => app.close()); const scope = new CommunityRequestContext(app);
+  let current = true, pages = 0;
+  const rows = Array.from({ length: 50 }, (_, n) => ({ id: `t${String(n).padStart(3, '0')}`, title: 'Thread', deepLinkUrl: '/', createdAt: 1, lastActiveAt: 10, preferredCats: [], featureRefs: [] }));
+  const threads = scope.threads({
+    list: async () => { pages++; if (failure === 'expired') current = false; return rows; },
+    ensureByKey: async () => { throw new Error('unused'); },
+  });
+  app.get('/missing', () => threads.get('missing'));
+  const response = await scope.injectNative({ catId: 'cat', threadId: 'thread', userId: 'owner', invocationId: 'inv', assertCurrent: async () => { if (!current) throw new Error('expired'); } }, { url: '/missing' });
+  assert.equal(response.statusCode, 500);
+  assert.equal(pages, failure === 'expired' ? 1 : 2);
 });
