@@ -7,6 +7,7 @@
  */
 
 import { buildClosureActionItem } from './community-decision-queue-closure.js';
+import { communityActionEndpoint } from './community-plugin-http.js';
 import type {
   BuildCommunityDecisionQueueInput,
   CommunityBoardIssueLike,
@@ -204,7 +205,7 @@ function buildDirectionDecisionItem(
       {
         kind: 'resolve-direction',
         label: 'Resolve direction',
-        endpoint: `/api/community-issues/${issue.id}/resolve`,
+        endpoint: communityActionEndpoint('community-issues', issue.id, 'resolve'),
         method: 'POST',
       },
     ],
@@ -262,19 +263,19 @@ function buildFindingItem(
       {
         kind: 'acknowledge-finding',
         label: 'Acknowledge',
-        endpoint: `/api/community-findings/${encodeURIComponent(finding.findingId)}/acknowledge`,
+        endpoint: communityActionEndpoint('community-findings', finding.findingId, 'acknowledge'),
         method: 'POST',
       },
       {
         kind: 'resolve-finding',
         label: 'Resolve',
-        endpoint: `/api/community-findings/${encodeURIComponent(finding.findingId)}/resolve`,
+        endpoint: communityActionEndpoint('community-findings', finding.findingId, 'resolve'),
         method: 'POST',
       },
       {
         kind: 'waive-finding',
         label: 'Waive',
-        endpoint: `/api/community-findings/${encodeURIComponent(finding.findingId)}/waive`,
+        endpoint: communityActionEndpoint('community-findings', finding.findingId, 'waive'),
         method: 'POST',
         requiresAuditForm: true,
       },

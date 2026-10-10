@@ -3,6 +3,7 @@ import type {
   CommunityDecisionQueueItem,
   CommunityDecisionQueueKind,
 } from './community-decision-queue-types.js';
+import { communityActionEndpoint } from './community-plugin-http.js';
 
 const TERMINAL_PROJECTION_STATES = new Set(['closed', 'declined']);
 
@@ -58,14 +59,14 @@ export function buildClosureActionItem(
       {
         kind: 'mark-reported',
         label: 'Mark reported',
-        endpoint: `/api/community-issues/${subject.legacyIssueId}/report`,
+        endpoint: communityActionEndpoint('community-issues', subject.legacyIssueId, 'report'),
         method: 'POST',
         requiresAuditForm: true,
       },
       {
         kind: 'waive-closure',
         label: 'Waive closure',
-        endpoint: `/api/community-issues/${subject.legacyIssueId}/waive-closure`,
+        endpoint: communityActionEndpoint('community-issues', subject.legacyIssueId, 'waive-closure'),
         method: 'POST',
         requiresAuditForm: true,
       },

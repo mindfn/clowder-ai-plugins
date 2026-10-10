@@ -41,6 +41,24 @@ function baseFinding(overrides = {}) {
 }
 
 describe('buildCommunityDecisionQueue', () => {
+  test('all six local decision actions target the installed plugin and encode opaque IDs once', async () => {
+    const { buildCommunityDecisionQueue } = await import('../src/business/domains/community/community-decision-queue.js');
+    const opaque = 'id:acme/repo#1%?';
+    const queue = buildCommunityDecisionQueue({ repo: 'acme/repo', now: NOW, prItems: [],
+      issues: [baseIssue({ id: opaque, state: 'pending-decision', directionCard: { entries: [{ catId: 'opus', narrative: 'Choose' }] } }),
+        baseIssue({ id: opaque, issueNumber: 2, state: 'closed', projectionState: 'fixed', closureChecklist: {
+          readyToClose: false, waiverPresent: false, blockers: [{ kind: 'fixed-not-reported', detail: 'Reply needed' }],
+        } })],
+      findings: [baseFinding({ findingId: opaque })],
+    });
+    const actions = queue.flatMap(item => item.recommendedActions);
+    const root = '/api/plugins/official.github-operations/github';
+    assert.deepEqual(actions.map(action => action.endpoint).sort(), [
+      ...['resolve', 'report', 'waive-closure'].map(action => `${root}/community-issues/${encodeURIComponent(opaque)}/${action}`),
+      ...['acknowledge', 'resolve', 'waive'].map(action => `${root}/community-findings/${encodeURIComponent(opaque)}/${action}`),
+    ].sort());
+  });
+
   test('fixed issue with fixed-not-reported blocker produces closure-action item', async () => {
     const { buildCommunityDecisionQueue } = await import('../src/business/domains/community/community-decision-queue.js');
 

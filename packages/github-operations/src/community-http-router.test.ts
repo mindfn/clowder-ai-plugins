@@ -7,6 +7,7 @@ import { SdkCommunityWorkflowIssueStore, SdkCommunityIssueDraftStore } from './b
 import { NativeIssueDraftRuntime } from './native-issue-drafts.js';
 import { SdkCommunityEventLog } from './business/domains/community/CommunityEventLog.js';
 import { SdkCommunityObjectStore } from './business/domains/community/CommunityObjectStore.js';
+import { CommunityReconciliationFindingStore } from './business/domains/community/reconciliation/CommunityReconciliationFindingStore.js';
 
 function options(): CommunityHttpRouterOptions {
   return {
@@ -23,6 +24,24 @@ function options(): CommunityHttpRouterOptions {
   };
 }
 const principal = { kind: 'owner', id: 'owner' } as const;
+
+test('returned decision endpoint can be forwarded unchanged to its real package handler', async t => {
+  const deps = options();
+  const findings = new CommunityReconciliationFindingStore(deps.storage);
+  const findingId = 'reconcile:issue:org/repo#1:changed%?';
+  await findings.upsert({ findingId, subjectKey: 'issue:org/repo#1', findingKind: 'github-reopened-case-closed',
+    severity: 'warning', message: 'Reopened' });
+  const router = await createCommunityHttpRouter(deps); t.after(() => router.stop());
+  const queue = await router.forwardOwner({ principal, method: 'GET', path: 'github/community-decision-queue', query: { repo: 'org/repo' } });
+  assert.equal(queue.status, 200);
+  const action = queue.body.items[0].recommendedActions.find((value: {kind: string}) => value.kind === 'acknowledge-finding');
+  const prefix = '/api/plugins/official.github-operations/';
+  assert.equal(action.endpoint, `${prefix}github/community-findings/${encodeURIComponent(findingId)}/acknowledge`);
+  const response = await router.forwardOwner({ principal, method: action.method, path: action.endpoint.slice(prefix.length) });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.finding.findingId, findingId);
+  assert.equal((await findings.get(findingId))?.status, 'acknowledged');
+});
 
 for (const journal of [false, true]) test(`publication recovers after ${journal ? 'journal' : 'workflow'} result write loss`, async t => {
   const deps = options(); let creates = 0, finds = 0;
