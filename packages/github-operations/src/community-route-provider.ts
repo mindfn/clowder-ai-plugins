@@ -58,11 +58,11 @@ export class CommunityRouteProvider {
       const rows: unknown[] = stdout.trim() ? stdout.trim().split('\n').map(line => JSON.parse(line)) : [];
       if (rows.length > 100) throw new Error('Community provider page exceeds row limit');
       for (const row of rows) { const item = decode(row, repo); if (item !== null) all.push(item); }
+      // Revoke continuation as well as results when policy changes during any page.
+      if (!await awaitGitHubCaller(this.options.allowed(repo), signal)) throw new Error('Repository policy changed during Community read');
+      await this.current(signal);
       // Filtering PRs/pending reviews must not truncate a full provider page.
-      if (rows.length < 100) {
-        if (!await awaitGitHubCaller(this.options.allowed(repo), signal)) throw new Error('Repository policy changed during Community read');
-        await this.current(signal); return all;
-      }
+      if (rows.length < 100) return all;
     }
     throw new Error('Community synchronization exceeds page limit; no partial result committed');
   }

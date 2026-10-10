@@ -37,6 +37,20 @@ test('policy change during read and caller invalidation after credentials both f
   const g = fixture([[issue(1)]], { token: async () => { valid = false; return 'isolated'; }, current: async () => { if (!valid) throw new Error('stale'); } });
   await assert.rejects(g.provider.fetchIssues('org/repo'), /stale/); assert.equal(g.calls.length, 0); await g.provider.stop();
 });
+test('repository revocation after a full page prevents the next authenticated request', async () => {
+  let allowed = true, calls = 0;
+  const provider = new CommunityRouteProvider({ token: async () => 'isolated-policy-revocation',
+    allowed: async () => allowed, assertCurrent: async () => {},
+    execFileAsync: async () => {
+      calls++;
+      allowed = false;
+      return { stdout: calls === 1 ? Array.from({ length: 100 }, (_, i) => JSON.stringify(issue(i + 1))).join('\n') : '' };
+    } });
+  try {
+    await assert.rejects(provider.fetchIssues('org/repo'), /Repository policy changed/);
+    assert.equal(calls, 1, 'revocation must be observed before requesting page 2');
+  } finally { await provider.stop(); }
+});
 test('stop during credential read prevents any late request or result', async () => {
   let entered!: () => void, release!: () => void;
   const start = new Promise<void>(r => { entered = r; }), gate = new Promise<void>(r => { release = r; });
