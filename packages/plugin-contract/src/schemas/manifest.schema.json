@@ -6,7 +6,7 @@
   "x-clowder-capability-layers": {
     "L0": ["plugin.config.read", "plugin.state.get", "plugin.state.set"],
     "L1": ["messaging.send", "schedule.register", "events.publish", "messaging.appendElements", "media.read"],
-    "L2": ["onMessage", "message.event.subscribe", "secret.read", "thread.listMetadata", "thread.readContent", "thread.write", "task.read", "task.write", "memory.query", "memory.append", "memory.retrieve", "windows.create", "whisper.extend", "data.directory", "cloud.conversation.host"]
+    "L2": ["onMessage", "message.event.subscribe", "secret.read", "thread.listMetadata", "thread.readContent", "thread.write", "custody.invoke", "custody.verify", "task.read", "task.write", "memory.query", "memory.append", "memory.retrieve", "windows.create", "whisper.extend", "data.directory", "cloud.conversation.host"]
   },
   "x-clowder-data-class-strategies": {
     "cache": ["lifecycle", "retained", "ask-on-uninstall"],
@@ -18,6 +18,543 @@
   },
 
   "$defs": {
+    "TerminalPredicateProviderContribution": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "terminal-predicate-provider"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "actionFamily": {
+          "const": "review"
+        },
+        "predicateKind": {
+          "const": "review_delivered"
+        },
+        "subjectNamespace": {
+          "const": "pr"
+        },
+        "freshnessMethod": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+        },
+        "completionMethod": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "actionFamily",
+        "predicateKind",
+        "subjectNamespace",
+        "freshnessMethod",
+        "completionMethod"
+      ],
+      "additionalProperties": false
+    },
+    "CustodyPredicateInput": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "review_delivered"
+        },
+        "headSha": {
+          "type": "string",
+          "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+        }
+      },
+      "required": [
+        "kind",
+        "headSha"
+      ],
+      "additionalProperties": false
+    },
+    "CustodyCanonicalPredicate": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "review_delivered"
+        },
+        "subjectRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "identityKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "freshnessKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "headSha": {
+          "type": "string",
+          "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+        }
+      },
+      "required": [
+        "kind",
+        "subjectRef",
+        "identityKey",
+        "freshnessKey",
+        "digest",
+        "headSha"
+      ],
+      "additionalProperties": false
+    },
+    "CustodyCanonicalizeInput": {
+      "type": "object",
+      "properties": {
+        "actionFamily": {
+          "const": "review"
+        },
+        "subjectRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "predicate": {
+          "$ref": "#/$defs/CustodyPredicateInput"
+        }
+      },
+      "required": [
+        "actionFamily",
+        "subjectRef",
+        "predicate"
+      ],
+      "additionalProperties": false
+    },
+    "CustodyCanonicalizeResult": {
+      "type": "object",
+      "properties": {
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "CustodyPreflightInput": {
+      "type": "object",
+      "properties": {
+        "leaseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "terminalPredicateDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "leaseId",
+        "generation",
+        "terminalPredicateDigest"
+      ],
+      "additionalProperties": false
+    },
+    "CustodyPreflightResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "reason": {
+              "enum": [
+                "active",
+                "verified_success"
+              ]
+            }
+          },
+          "required": [
+            "ok",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "ok",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "CustodyCompleteInput": {
+      "type": "object",
+      "properties": {
+        "leaseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "leaseId",
+        "generation",
+        "evidenceRefs"
+      ],
+      "additionalProperties": false
+    },
+    "CustodyCompleteResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "outcome": {
+              "const": "committed"
+            },
+            "leaseId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "outcome",
+            "leaseId",
+            "generation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "outcome": {
+              "enum": [
+                "stale",
+                "mismatch",
+                "insufficient"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "outcome",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "PredicateFreshnessInput": {
+      "type": "object",
+      "properties": {
+        "actionFamily": {
+          "const": "review"
+        },
+        "subjectRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "predicate": {
+          "$ref": "#/$defs/CustodyCanonicalPredicate"
+        }
+      },
+      "required": [
+        "actionFamily",
+        "subjectRef",
+        "predicate"
+      ],
+      "additionalProperties": false
+    },
+    "PredicateCompletionInput": {
+      "type": "object",
+      "properties": {
+        "actionFamily": {
+          "const": "review"
+        },
+        "subjectRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "predicate": {
+          "$ref": "#/$defs/CustodyCanonicalPredicate"
+        },
+        "leaseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "actionFamily",
+        "subjectRef",
+        "predicate",
+        "leaseId",
+        "generation",
+        "evidenceRefs"
+      ],
+      "additionalProperties": false
+    },
+    "PredicateFreshnessResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "verified"
+            },
+            "evidenceRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "freshnessKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "ownerCatId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "holderThreadId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "status",
+            "evidenceRef",
+            "freshnessKey",
+            "ownerCatId",
+            "holderThreadId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "mismatch",
+                "insufficient"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "PredicateCompletionResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "verified"
+            },
+            "evidenceRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "predicateDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "freshnessKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "status",
+            "evidenceRef",
+            "predicateDigest",
+            "freshnessKey"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "enum": [
+                "mismatch",
+                "insufficient"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "PredicateProviderBinding": {
+      "type": "object",
+      "properties": {
+        "pluginInstanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "packageDigest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "featureId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "contributionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "freshnessMethod": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+        },
+        "completionMethod": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+        },
+        "grantRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "lifecycleRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "tenantScope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "installationProjectRoot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "pluginInstanceId",
+        "packageDigest",
+        "featureId",
+        "contributionId",
+        "freshnessMethod",
+        "completionMethod",
+        "grantRevision",
+        "lifecycleRevision",
+        "tenantScope",
+        "installationProjectRoot"
+      ],
+      "additionalProperties": false
+    },
     "SemVer": {
       "type": "string",
       "minLength": 1,
@@ -52,6 +589,8 @@
         "thread.listMetadata",
         "thread.readContent",
         "thread.write",
+        "custody.invoke",
+        "custody.verify",
         "task.read",
         "task.write",
         "memory.query",
@@ -111,7 +650,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["identity", "schedule", "tool", "mcp", "skill", "limb", "webhook", "message-subscription", "media-source", "service", "connector", "cloud-conversation-host", "ui", "content-editor-provider", "desktop-window"]
+          "enum": ["identity", "schedule", "tool", "mcp", "skill", "limb", "webhook", "message-subscription", "media-source", "service", "connector", "cloud-conversation-host", "ui", "content-editor-provider", "desktop-window", "terminal-predicate-provider"]
         },
         "id": { "type": "string", "minLength": 1 }
       },
@@ -1084,6 +1623,7 @@
 
     "StaticContribution": {
       "oneOf": [
+        { "$ref": "#/$defs/TerminalPredicateProviderContribution" },
         { "$ref": "#/$defs/IdentityContribution" },
         { "$ref": "#/$defs/ScheduleContribution" },
         { "$ref": "#/$defs/DirectToolContribution" },

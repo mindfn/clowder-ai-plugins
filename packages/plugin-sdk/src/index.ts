@@ -215,3 +215,5 @@ export { createConnectorCommandBridge } from './connector-command-bridge.js';
 
 export { createModuleActionClient, type ModuleActionCallOptions,
   type ModuleActionClientOptions, type PluginActionContext } from './module-action-client.js';
+
+export * from './custody.js';

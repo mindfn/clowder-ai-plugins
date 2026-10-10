@@ -51,8 +51,8 @@
     "directory": "packages/github-operations"
   },
   "dependencies": {
-    "@clowder-ai/plugin-contract": "0.1.0-beta.33",
-    "@clowder-ai/plugin-sdk": "0.2.0-beta.16",
+    "@clowder-ai/plugin-contract": "0.1.0-beta.34",
+    "@clowder-ai/plugin-sdk": "0.2.0-beta.17",
     "zod": "3.25.76",
     "@modelcontextprotocol/sdk": "1.26.0",
     "fastify": "4.29.1"

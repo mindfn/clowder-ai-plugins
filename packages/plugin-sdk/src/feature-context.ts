@@ -1,3 +1,4 @@
+import { createCustodyClient, guardPredicateVerifier, type PluginCustodyHost, type PluginPredicateVerifier } from './custody.js';
 import {
   validateManifest,
   type Capability,
@@ -57,6 +58,7 @@ export interface HostContributionReceipt {
 export type PluginLogLevel = ModulePluginLogLevel;
 
 export interface FeatureHostAdapter {
+  readonly custody?: PluginCustodyHost;
   readConfig(binding: FeatureBinding, key: string): Promise<unknown>;
   readSecret(binding: FeatureBinding, key: string): Promise<string | undefined>;
   readonly storage: PluginStorageHost;
@@ -128,6 +130,7 @@ export interface ContributionRegistrar<T extends StaticContribution> {
 }
 
 export interface FeatureContext {
+  readonly custody: PluginCustodyHost;
   readonly featureId: string;
   readonly config: { get(key: string): Promise<unknown> };
   readonly secrets: { get(key: string): Promise<string | undefined> };
@@ -358,6 +361,10 @@ export function createFeatureContextSession(
     updateIfThreadId: (taskId, expectedThreadId, input) =>
       runWhileActive(() => adapter.tasks.updateIfThreadId(taskId, expectedThreadId, input)),
   };
+  const custody = createCustodyClient(adapter.custody, () => {
+    assertActive();
+    if (!binding.grantedCapabilities.includes('custody.invoke')) throw new Error('custody.invoke not granted');
+  });
   const threads: PluginThreadHost = {
     get: (threadId) => runWhileActive(() => adapter.threads.get(threadId)),
     list: (options) => runWhileActive(() => adapter.threads.list(options)),
@@ -419,6 +426,7 @@ export function createFeatureContextSession(
     state: storage,
     tasks,
     threads,
+    custody,
     identity: registrar<IdentityContribution>('identity'),
     scheduler: registrar<ScheduleContribution>('schedule'),
     tools: registrar<DirectToolContribution>('tool'),
@@ -477,6 +485,7 @@ export function createFeatureContextSession(
 export type PluginActionHandler = (input: unknown, context?: import('./module-action-client.js').PluginActionContext) => unknown | Promise<unknown>;
 
 export interface FeatureActivation {
+  readonly predicateVerifiers?: Readonly<Record<string, PluginPredicateVerifier>>;
   readonly actions?: Readonly<Record<string, PluginActionHandler>>;
   dispose?(): void | Promise<void>;
 }
@@ -496,6 +505,7 @@ export interface DefinedPlugin {
 }
 
 export interface ActivePluginFeature {
+  readonly predicateVerifiers: Readonly<Record<string, PluginPredicateVerifier>>;
   readonly actions: Readonly<Record<string, PluginActionHandler>>;
   dispose(): Promise<void>;
 }
@@ -581,10 +591,26 @@ export async function activateDefinedFeature(
     await Promise.resolve(disposeActivation()).catch(() => undefined);
     throw new TypeError(`declared action ${missing} has no handler for feature ${featureId}`);
   }
+  let disposed = false;
+  const declared = (plugin.manifest.contributions ?? []).filter(c => c.type === 'terminal-predicate-provider' &&
+    plugin.manifest.features.find(f => f.id === featureId)?.contributions?.some(r => r.type === c.type && r.id === c.id));
+  const expected = new Map<string, 'freshness' | 'completion'>();
+  for (const c of declared) if (c.type === 'terminal-predicate-provider') {
+    expected.set(c.freshnessMethod, 'freshness'); expected.set(c.completionMethod, 'completion');
+  }
+  const provided = activation.predicateVerifiers ?? {};
+  const invalid = [...expected.keys()].some(method => !Object.hasOwn(provided, method) || typeof provided[method] !== 'function') ||
+    Object.keys(provided).some(method => !expected.has(method) || typeof provided[method] !== 'function' || Object.hasOwn(actions, method));
+  if (invalid) { await Promise.resolve(disposeActivation()).catch(() => undefined); throw new TypeError('predicate verifier handlers must exactly match feature declarations'); }
+  const predicateVerifiers = Object.freeze(Object.fromEntries([...expected].map(([method, phase]) => [method,
+    guardPredicateVerifier(phase, provided[method]!, () => { if (disposed) throw new FeatureContextRevokedError(); }),
+  ])));
   let disposePromise: Promise<void> | undefined;
   return Object.freeze({
     actions,
+    predicateVerifiers,
     dispose: () => {
+      disposed = true;
       disposePromise ??= Promise.resolve().then(() => disposeActivation());
       return disposePromise;
     },

@@ -70,3 +70,5 @@ export {
   validateDocxMaterializationRequest,
   validateDocxMaterializationResponse,
 } from './docx-materialization.js';
+
+export * from "./custody.js";

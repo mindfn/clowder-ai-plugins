@@ -225,6 +225,7 @@ export interface PluginMessagingHost {
 
 /** Structural mirror of the Host-owned in-process module surface. */
 export interface ModulePluginHostShape {
+  readonly custody?: import('./custody.js').PluginCustodyHost;
   readonly config: { get(key: string): Promise<unknown> };
   readonly secrets: { get(key: string): Promise<string | undefined> };
   readonly storage: PluginStorageHost;
@@ -242,6 +243,7 @@ export interface ModulePluginHostShape {
 }
 
 export interface PluginModuleActivationShape {
+  readonly predicateVerifiers?: Readonly<Record<string, import('./custody.js').PluginPredicateVerifier>>;
   readonly actions: Readonly<Record<string, import('./feature-context.js').PluginActionHandler>>;
   stop(): void | Promise<void>;
 }

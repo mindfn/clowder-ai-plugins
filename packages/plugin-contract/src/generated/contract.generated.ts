@@ -18,10 +18,108 @@ export type PackageIcon = {
 };
 export type PluginIcon = 'github' | PackageIcon;
 
+export type TerminalPredicateProviderContribution = {
+  readonly type: 'terminal-predicate-provider';
+  readonly id: string;
+  readonly actionFamily: 'review';
+  readonly predicateKind: 'review_delivered';
+  readonly subjectNamespace: 'pr';
+  readonly freshnessMethod: string;
+  readonly completionMethod: string;
+};
+export type CustodyPredicateInput = {
+  readonly kind: 'review_delivered';
+  readonly headSha: string;
+};
+export type CustodyCanonicalPredicate = {
+  readonly kind: 'review_delivered';
+  readonly subjectRef: string;
+  readonly identityKey: string;
+  readonly freshnessKey: string;
+  readonly digest: string;
+  readonly headSha: string;
+};
+export type CustodyCanonicalizeInput = {
+  readonly actionFamily: 'review';
+  readonly subjectRef: string;
+  readonly predicate: CustodyPredicateInput;
+};
+export type CustodyCanonicalizeResult = {
+  readonly digest: string;
+};
+export type CustodyPreflightInput = {
+  readonly leaseId: string;
+  readonly generation: number;
+  readonly terminalPredicateDigest: string;
+};
+export type CustodyPreflightResult = {
+  readonly ok: true;
+  readonly reason: 'active' | 'verified_success';
+} | {
+  readonly ok: false;
+  readonly reason: string;
+};
+export type CustodyCompleteInput = {
+  readonly leaseId: string;
+  readonly generation: number;
+  readonly evidenceRefs: readonly string[];
+};
+export type CustodyCompleteResult = {
+  readonly outcome: 'committed';
+  readonly leaseId: string;
+  readonly generation: number;
+} | {
+  readonly outcome: 'stale' | 'mismatch' | 'insufficient';
+  readonly reason: string;
+};
+export type PredicateFreshnessInput = {
+  readonly actionFamily: 'review';
+  readonly subjectRef: string;
+  readonly predicate: CustodyCanonicalPredicate;
+};
+export type PredicateCompletionInput = {
+  readonly actionFamily: 'review';
+  readonly subjectRef: string;
+  readonly predicate: CustodyCanonicalPredicate;
+  readonly leaseId: string;
+  readonly generation: number;
+  readonly evidenceRefs: readonly string[];
+};
+export type PredicateFreshnessResult = {
+  readonly status: 'verified';
+  readonly evidenceRef: string;
+  readonly freshnessKey: string;
+  readonly ownerCatId: string;
+  readonly holderThreadId: string;
+} | {
+  readonly status: 'mismatch' | 'insufficient';
+  readonly reason: string;
+};
+export type PredicateCompletionResult = {
+  readonly status: 'verified';
+  readonly evidenceRef: string;
+  readonly predicateDigest: string;
+  readonly freshnessKey: string;
+} | {
+  readonly status: 'mismatch' | 'insufficient';
+  readonly reason: string;
+};
+export type PredicateProviderBinding = {
+  readonly pluginInstanceId: string;
+  readonly packageDigest: string;
+  readonly featureId: string;
+  readonly contributionId: string;
+  readonly freshnessMethod: string;
+  readonly completionMethod: string;
+  readonly grantRevision: number;
+  readonly lifecycleRevision: number;
+  readonly tenantScope: string;
+  readonly installationProjectRoot: string;
+};
 export type SemVer = string;
 export type DataClass = 'cache' | 'ephemeral' | 'user-authored' | 'derived-user-visible' | 'relationship' | 'interaction-history';
 export type DataStrategy = 'lifecycle' | 'retained' | 'ask-on-uninstall';
-export type Capability = 'plugin.config.read' | 'plugin.state.get' | 'plugin.state.set' | 'messaging.send' | 'schedule.register' | 'events.publish' | 'messaging.appendElements' | 'media.read' | 'onMessage' | 'message.event.subscribe' | 'secret.read' | 'thread.listMetadata' | 'thread.readContent' | 'thread.write' | 'task.read' | 'task.write' | 'memory.query' | 'memory.append' | 'memory.retrieve' | 'windows.create' | 'whisper.extend' | 'data.directory' | 'cloud.conversation.host';
+export type Capability = 'plugin.config.read' | 'plugin.state.get' | 'plugin.state.set' | 'messaging.send' | 'schedule.register' | 'events.publish' | 'messaging.appendElements' | 'media.read' | 'onMessage' | 'message.event.subscribe' | 'secret.read' | 'thread.listMetadata' | 'thread.readContent' | 'thread.write' | 'custody.invoke' | 'custody.verify' | 'task.read' | 'task.write' | 'memory.query' | 'memory.append' | 'memory.retrieve' | 'windows.create' | 'whisper.extend' | 'data.directory' | 'cloud.conversation.host';
 export type DataDeclaration = {
   readonly name: string;
   readonly dataClass: 'cache';
@@ -58,7 +156,7 @@ export type ResourceReference = {
   readonly id: string;
 };
 export type ContributionReference = {
-  readonly type: 'identity' | 'schedule' | 'tool' | 'mcp' | 'skill' | 'limb' | 'webhook' | 'message-subscription' | 'media-source' | 'service' | 'connector' | 'cloud-conversation-host' | 'ui' | 'content-editor-provider' | 'desktop-window';
+  readonly type: 'identity' | 'schedule' | 'tool' | 'mcp' | 'skill' | 'limb' | 'webhook' | 'message-subscription' | 'media-source' | 'service' | 'connector' | 'cloud-conversation-host' | 'ui' | 'content-editor-provider' | 'desktop-window' | 'terminal-predicate-provider';
   readonly id: string;
 };
 export type PackageRelativePath = string;
@@ -497,7 +595,7 @@ export type ContentEditorProviderContribution = {
   readonly semanticMaterializer?: SemanticMaterializerDeclaration;
   readonly operations: readonly ['load' | 'settle' | 'comment' | 'tracked-change', 'load' | 'settle' | 'comment' | 'tracked-change', 'load' | 'settle' | 'comment' | 'tracked-change', 'load' | 'settle' | 'comment' | 'tracked-change'];
 };
-export type StaticContribution = IdentityContribution | ScheduleContribution | DirectToolContribution | McpContribution | SkillContribution | LimbContribution | WebhookContribution | MessageSubscriptionContribution | MediaSourceContribution | ServiceContribution | ConnectorContribution | CloudConversationHostContribution | UiContribution | ContentEditorProviderContribution | DesktopWindowContribution;
+export type StaticContribution = TerminalPredicateProviderContribution | IdentityContribution | ScheduleContribution | DirectToolContribution | McpContribution | SkillContribution | LimbContribution | WebhookContribution | MessageSubscriptionContribution | MediaSourceContribution | ServiceContribution | ConnectorContribution | CloudConversationHostContribution | UiContribution | ContentEditorProviderContribution | DesktopWindowContribution;
 export type PluginFeature = {
   readonly id: string;
   readonly name: string;
@@ -1794,7 +1892,7 @@ export type PermissionMatrixEntry = {
   readonly firstPartyPreset: boolean;
 };
 export type PermissionMatrixInput = {
-  readonly entries: readonly [PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry];
+  readonly entries: readonly [PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry];
 };
 export type DeleteReplayEventsInput = {
   readonly subscriptionId: string;
@@ -1897,7 +1995,7 @@ export const L0_CAPABILITIES = ['plugin.config.read', 'plugin.state.get', 'plugi
 export type L0Capability = (typeof L0_CAPABILITIES)[number];
 export const L1_CAPABILITIES = ['messaging.send', 'schedule.register', 'events.publish', 'messaging.appendElements', 'media.read'] as const;
 export type L1Capability = (typeof L1_CAPABILITIES)[number];
-export const L2_CAPABILITIES = ['onMessage', 'message.event.subscribe', 'secret.read', 'thread.listMetadata', 'thread.readContent', 'thread.write', 'task.read', 'task.write', 'memory.query', 'memory.append', 'memory.retrieve', 'windows.create', 'whisper.extend', 'data.directory', 'cloud.conversation.host'] as const;
+export const L2_CAPABILITIES = ['onMessage', 'message.event.subscribe', 'secret.read', 'thread.listMetadata', 'thread.readContent', 'thread.write', 'custody.invoke', 'custody.verify', 'task.read', 'task.write', 'memory.query', 'memory.append', 'memory.retrieve', 'windows.create', 'whisper.extend', 'data.directory', 'cloud.conversation.host'] as const;
 export type L2Capability = (typeof L2_CAPABILITIES)[number];
 export const CAPABILITY_TABLE = {
   L0: L0_CAPABILITIES,

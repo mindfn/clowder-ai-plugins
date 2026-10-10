@@ -298,10 +298,10 @@ importers:
   packages/github-operations:
     dependencies:
       '@clowder-ai/plugin-contract':
-        specifier: 0.1.0-beta.33
+        specifier: 0.1.0-beta.34
         version: link:../plugin-contract
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.16
+        specifier: 0.2.0-beta.17
         version: link:../plugin-sdk
       '@modelcontextprotocol/sdk':
         specifier: 1.26.0
@@ -392,7 +392,7 @@ importers:
   packages/plugin-sdk:
     dependencies:
       '@clowder-ai/plugin-contract':
-        specifier: 0.1.0-beta.33
+        specifier: 0.1.0-beta.34
         version: link:../plugin-contract
     devDependencies:
       '@types/node':

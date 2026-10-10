@@ -252,6 +252,30 @@ export function validateManifest(value: unknown): ManifestValidationResult {
     }
 
     const contributions = manifest.contributions ?? [];
+    const providers = contributions.filter(contribution => contribution.type === 'terminal-predicate-provider');
+    const providerKeys = new Set<string>();
+    const verifierMethods = new Set<string>();
+    const publicMethods = new Set<string>();
+    // Only ordinary {method} declarations are public invocation surfaces.
+    const collectMethods = (value: unknown): void => {
+      if (!value || typeof value !== 'object') return;
+      if ('method' in value && typeof value.method === 'string') publicMethods.add(value.method);
+      for (const child of Object.values(value)) collectMethods(child);
+    };
+    collectMethods(contributions); collectMethods(configuration); collectMethods(manifest.test);
+    for (const provider of providers) {
+      const fail = (message: string) => semanticError('/contributions', '#/$defs/TerminalPredicateProviderContribution/authority', 'predicateProviderAuthority', message);
+      if (manifest.runtime?.transport !== 'builtin') return fail('predicate providers require builtin runtime');
+      const key = `${provider.actionFamily}:${provider.predicateKind}:${provider.subjectNamespace}`;
+      if (providerKeys.has(key)) return fail('duplicate predicate provider selector');
+      providerKeys.add(key);
+      for (const method of [provider.freshnessMethod, provider.completionMethod]) {
+        if (verifierMethods.has(method) || publicMethods.has(method)) return fail('predicate verifier method must be private and unique');
+        verifierMethods.add(method);
+      }
+      const owner = manifest.features.filter(feature => feature.contributions?.some(reference => reference.type === provider.type && reference.id === provider.id));
+      if (owner.length !== 1 || !owner[0]!.capabilities.includes('custody.verify')) return fail('predicate provider requires one feature owner with custody.verify');
+    }
     const webhooks = contributions.filter(contribution => contribution.type === 'webhook');
     for (const [index, route] of webhooks.entries()) {
       const segments = route.path.split('/');

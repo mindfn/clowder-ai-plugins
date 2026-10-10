@@ -98,6 +98,7 @@ function declaredContributionAdapter(
     readSecret: (_binding, key) => host.secrets.get(key),
     storage: host.storage,
     tasks: host.tasks,
+    custody: host.custody,
     threads: host.threads,
     async registerContribution(_binding, contribution) {
       const key = `${contribution.type}:${contribution.id}`;
@@ -168,6 +169,7 @@ async function startDefinedPluginModule(
   const sessions: FeatureContextSession[] = [];
   const active: ActivePluginFeature[] = [];
   const actions: Record<string, PluginActionHandler> = {};
+  const predicateVerifiers: Record<string, import('./custody.js').PluginPredicateVerifier> = {};
   const globalMethods = globalActionMethods(plugin.manifest);
   try {
     for (const feature of plugin.manifest.features) {
@@ -189,6 +191,7 @@ async function startDefinedPluginModule(
         allowLimbHandlers: contributions.some((contribution) => contribution.type === 'limb'),
       });
       active.push(activated);
+      Object.assign(predicateVerifiers, activated.predicateVerifiers);
       const presentationMethods = new Set(
         contributions
           .filter((contribution): contribution is MessageSubscriptionContribution =>
@@ -214,6 +217,12 @@ async function startDefinedPluginModule(
     }
     const missing = [...expected].find((method) => !Object.hasOwn(actions, method));
     if (missing !== undefined) throw new TypeError(`declared action ${missing} has no plugin handler`);
+    for (const contribution of plugin.manifest.contributions ?? []) {
+      if (contribution.type !== 'terminal-predicate-provider') continue;
+      for (const method of [contribution.freshnessMethod, contribution.completionMethod]) {
+        if (!Object.hasOwn(predicateVerifiers, method) || Object.hasOwn(actions, method)) throw new TypeError(`private predicate verifier ${method} missing or public`);
+      }
+    }
   } catch (error) {
     await settleModuleFeatures(active, sessions).catch(() => undefined);
     throw error;
@@ -222,6 +231,7 @@ async function startDefinedPluginModule(
   let stopPromise: Promise<void> | undefined;
   return Object.freeze({
     actions: Object.freeze({ ...actions }),
+    predicateVerifiers: Object.freeze({ ...predicateVerifiers }),
     stop: () => {
       stopPromise ??= settleModuleFeatures(active, sessions);
       return stopPromise;
