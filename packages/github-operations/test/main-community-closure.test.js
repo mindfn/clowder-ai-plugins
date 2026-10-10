@@ -41,11 +41,13 @@ describe('case.reported state transition (D1)', () => {
     assert.deepStrictEqual(result, { ok: true, next: 'reported' });
   });
 
-  test('case.reported from any state → reported (wildcard from)', () => {
-    // case.reported uses from: '*' in transition table
-    for (const state of ['new', 'triaged', 'routed', 'in_progress', 'fixed', 'closed']) {
+  test('case.reported rejects states outside fixed/reported, including terminal cases', () => {
+    for (const state of ['new', 'triaged', 'routed', 'in_progress', 'awaiting_external', 'closed', 'declined']) {
       const result = transition(state, makeEvent('case.reported'), makeSnapshot());
-      assert.deepStrictEqual(result, { ok: true, next: 'reported' }, `from ${state}`);
+      assert.deepStrictEqual(result, { ok: false, reason: 'invalid_transition' }, `from ${state}`);
+    }
+    for (const state of ['fixed', 'reported']) {
+      assert.deepStrictEqual(transition(state, makeEvent('case.reported'), makeSnapshot()), { ok: true, next: 'reported' });
     }
   });
 });

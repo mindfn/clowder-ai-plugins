@@ -122,3 +122,29 @@ describe('CommunityProjector subject admission', () => {
     });
   });
 });
+
+for (const terminal of ['closed', 'declined']) it(`report decision waits for queued ${terminal} and remains rejected on replay`, async () => {
+  const eventLog = new MemoryEventLog();
+  const objects = new BarrierObjectStore();
+  const projector = new CommunityProjector(eventLog, objects);
+  const event = (kind, at, payload = {}) => ({ sourceEventId: `${kind}:${at}`, subjectKey, kind, classification: 'state-changing', payload, at });
+  const fixed = event('case.bootstrap', 1, { mappedState: 'fixed' });
+  const closing = event(terminal === 'closed' ? 'case.bootstrap' : 'case.declined', 2, { mappedState: terminal });
+  const report = event('case.reported', 3, { actor: 'owner', publicCommentUrl: 'https://github.com/owner/repo/issues/42#issuecomment-1' });
+  await eventLog.append(fixed); await projector.apply(fixed);
+  await eventLog.append(closing);
+  objects.armSaveBarrier();
+  const pending = projector.apply(closing);
+  await objects.saveEntered;
+  await eventLog.append(report);
+  const reporting = projector.applyChecked(report);
+  objects.releaseSave();
+  await pending;
+  assert.equal(await reporting, false);
+  assert.equal((await objects.get(subjectKey)).state, terminal);
+  assert.equal((await objects.get(subjectKey)).lastPublicCommentAt, null);
+  await projector.rebuild(subjectKey);
+  assert.equal((await objects.get(subjectKey)).state, terminal);
+  assert.equal((await objects.get(subjectKey)).lastPublicCommentAt, null);
+  assert.equal((await objects.get(subjectKey)).lastRejectedEvent.sourceEventId, report.sourceEventId);
+});

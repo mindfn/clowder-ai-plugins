@@ -337,12 +337,13 @@
       "target": "packages/github-operations/src/business/domains/community/community-state-machine.ts",
       "sourceSha256": "d917e08145aa7b250d9d4ca3378193e405ee4db8c8a366bac2a06235c6cfdfb4",
       "lines": 214,
-      "disposition": "provider-logic-mechanically-retained",
-      "mechanicalComparison": "type-import-path-only",
+      "disposition": "provider-policy-adapted-for-report-terminal-guard",
+      "mechanicalComparison": "business-body-changed",
       "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
       "packageBusinessMoved": "retained provider/pure logic",
       "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
-      "hostLegacyRemoved": false
+      "hostLegacyRemoved": false,
+      "adaptation": "Reject late case.reported outside fixed/reported at projection and replay time; native report provider validation cannot reopen a terminal case."
     },
     {
       "source": "packages/api/src/domains/community/derivePrGroup.ts",

@@ -66,7 +66,9 @@ const TRANSITION_TABLE: Record<string, TransitionRule> = {
   'case.route_validated': { from: new Set<CommunityObjectState>(['routed']), to: 'routed' },
   'case.route_rejected': { from: new Set<CommunityObjectState>(['routed']), to: 'triaged' },
   'case.declined': { from: '*', to: 'declined' },
-  'case.reported': { from: '*', to: 'reported' },
+  // Provider verification may finish after a concurrent terminal event. Enforce
+  // the closure contract at projection time (including replay), not only in HTTP.
+  'case.reported': { from: new Set<CommunityObjectState>(['fixed', 'reported']), to: 'reported' },
   'case.fix_evidence_recorded': { from: '*', to: 'FIX_EVIDENCE' },
 
   // F168 Phase B: owner declares "waiting for external response"

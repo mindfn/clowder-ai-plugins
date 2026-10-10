@@ -120,11 +120,17 @@ export class CommunityProjector {
    * The event MUST already be in the event log (append first).
    */
   async apply(event: CommunityEvent): Promise<void> {
-    const followUps = await this.runSubjectOperation(event.subjectKey, () => this.applySubject(event));
-    await this.runFollowUps(followUps);
+    await this.applyChecked(event);
   }
 
-  private async applySubject(event: CommunityEvent): Promise<Array<() => Promise<void>>> {
+  /** Return the transition decision made inside this projector's subject queue. */
+  async applyChecked(event: CommunityEvent): Promise<boolean> {
+    const result = await this.runSubjectOperation(event.subjectKey, () => this.applySubject(event));
+    await this.runFollowUps(result.followUps);
+    return result.accepted;
+  }
+
+  private async applySubject(event: CommunityEvent): Promise<{ accepted: boolean; followUps: Array<() => Promise<void>> }> {
     const followUps: Array<() => Promise<void>> = [];
     const now = event.at;
     const existing = await this.objectStore.get(event.subjectKey);
@@ -135,7 +141,7 @@ export class CommunityProjector {
     // state and never executes wake/GitHub side effects during replay.
     if (isExternalReviewEventKind(event.kind)) {
       const result = applyExternalReviewProjectionEvent(proj.externalReview, event);
-      if (!result.ok) return followUps;
+      if (!result.ok) return { accepted: false, followUps };
       const externalReviewUpdated: CommunityObjectProjection = {
         ...proj,
         externalReview: result.value,
@@ -153,7 +159,7 @@ export class CommunityProjector {
         if (typeof p.reviewerCatId === 'string') externalReviewUpdated.ownerRole = p.reviewerCatId;
       }
       await this.objectStore.save(externalReviewUpdated);
-      return followUps;
+      return { accepted: true, followUps };
     }
 
     const snapshot = {
@@ -169,7 +175,7 @@ export class CommunityProjector {
         // Internal calibration events (eval records) are not external activity —
         // skip projection entirely so rebuild() doesn't corrupt lastExternalActivityAt.
         if (event.kind === 'case.route_decision_eval' || exactSuppressed) {
-          return followUps;
+          return { accepted: true, followUps };
         }
         // Cloud R2 P2b: informational activity events (issue.commented, issue.labeled,
         // pr.review_submitted) have no state-machine transition. Do NOT set lastRejectedEvent
@@ -182,7 +188,7 @@ export class CommunityProjector {
           updatedAt: now,
         };
         await this.objectStore.save(updated);
-        return followUps;
+        return { accepted: true, followUps };
       }
       // State-changing event rejected — record for observability, do not change state
       const updated: CommunityObjectProjection = {
@@ -191,7 +197,7 @@ export class CommunityProjector {
         updatedAt: now,
       };
       await this.objectStore.save(updated);
-      return followUps;
+      return { accepted: false, followUps };
     }
 
     // Accepted — apply side effects then update state
@@ -294,7 +300,7 @@ export class CommunityProjector {
     if (event.kind === 'pr.merged' && updated.linkedIssues.length > 0) {
       followUps.push(() => this.cascadeMergedPr(event, updated.linkedIssues));
     }
-    return followUps;
+    return { accepted: true, followUps };
   }
 
   /**
@@ -400,7 +406,7 @@ export class CommunityProjector {
       await this.objectStore.delete(subjectKey);
       const events = await this.eventLog.read(subjectKey);
       const pending: Array<() => Promise<void>> = [];
-      for (const event of events) pending.push(...(await this.applySubject(event)));
+      for (const event of events) pending.push(...(await this.applySubject(event)).followUps);
       return pending;
     });
     await this.runFollowUps(followUps);

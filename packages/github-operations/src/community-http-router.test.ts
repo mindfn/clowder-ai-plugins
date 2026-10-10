@@ -128,6 +128,31 @@ test('native report rejects other case owners, other threads and forged actors',
 
 });
 
+for (const terminal of ['closed', 'declined'] as const) test(`report cannot reopen ${terminal} while provider verification is pending`, async t => {
+  const deps = options();
+  let entered!: () => void, release!: () => void;
+  const verifying = new Promise<void>(resolve => { entered = resolve; });
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  deps.issues.verifyPublicIssueComment = async () => { entered(); await blocked; return true; };
+  const issues = new SdkCommunityWorkflowIssueStore(deps.storage);
+  const issue = (await issues.create({ repo: 'org/repo', issueNumber: 1, issueType: 'bug', title: 'Bug' }))!;
+  await issues.update(issue.id, { assignedCatId: 'assigned', assignedThreadId: 'thread' });
+  const objects = new SdkCommunityObjectStore(deps.storage);
+  const projection = { repo: 'org/repo', type: 'issue' as const, number: 1, subjectKey: 'issue:org/repo#1', state: 'fixed' as const, ownerThreadId: 'thread', ownerRole: 'assigned', nextOwner: 'role' as const, lastExternalActivityAt: null, lastPublicCommentAt: null, linkedIssues: [], linkedPrs: [], closureWaiver: null, issueFixEvidence: null, externalReview: null, appliedEventCount: 0, lastRejectedEvent: null, deliveryCursor: null, createdAt: 1, updatedAt: 1 };
+  await objects.save(projection);
+  const router = await createCommunityHttpRouter(deps);
+  t.after(async () => { release(); await router.stop(); });
+  const pending = router.invokeNative('github.community.report', { id: issue.id, payload: { publicCommentUrl: 'https://github.com/org/repo/issues/1#issuecomment-123' } }, { catId: 'assigned', threadId: 'thread', userId: 'owner', invocationId: 'inv', assertCurrent: async () => {} });
+  await verifying;
+  await objects.save({ ...projection, state: terminal });
+  release();
+  const response = await pending;
+  const final = await objects.get(projection.subjectKey);
+  assert.equal(final?.state, terminal, 'late report must not reopen the terminal projection');
+  assert.equal(final?.lastPublicCommentAt, null, 'rejected report must not install closure evidence');
+  assert.equal(response.status, 409);
+});
+
 test('embedded whole Community routes persist owner changes and accept separately authenticated native triage', async t => {
   const deps = options(); let router = await createCommunityHttpRouter(deps);
   t.after(() => router.stop());

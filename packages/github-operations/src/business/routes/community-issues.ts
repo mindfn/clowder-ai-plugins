@@ -62,7 +62,7 @@ export interface CommunityIssuesRoutesOptions {
   fetchIssueCommentCursor?: (repoFullName: string, issueNumber: number) => Promise<number>;
   // F168 Phase A: community event log + projector (best-effort, optional)
   eventLog?: ICommunityEventLog;
-  projector?: { apply(event: CommunityEvent): Promise<void> };
+  projector?: { apply(event: CommunityEvent): Promise<void>; applyChecked(event: CommunityEvent): Promise<boolean> };
   // F168 Phase A Task 9: object store for board projection enrichment
   objectStore?: ICommunityObjectStore;
   // F168 Phase C C2.2: narrator spawn driver (optional; fire-and-forget after case.triaged)
@@ -1062,7 +1062,8 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
 
     const { appended } = await opts.eventLog.append(communityEvent);
     if (appended) {
-      await opts.projector.apply(communityEvent);
+      const accepted = await opts.projector.applyChecked(communityEvent);
+      if (!accepted) return reply.code(409).send({ error: 'Case no longer permits reporting', subjectKey, eventId: communityEvent.sourceEventId });
     }
 
     return { subjectKey, appended, eventId: communityEvent.sourceEventId };
