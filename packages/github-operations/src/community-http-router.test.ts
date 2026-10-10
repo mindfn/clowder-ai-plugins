@@ -21,7 +21,7 @@ function options(): CommunityHttpRouterOptions {
       taskStore: { listByKind: async () => [], getBySubject: async () => null, upsertBySubject: async () => { throw new Error('unexpected tracking'); }, delete: async () => false },
     },
     drafts: {
-      frustrationIssueStore: { getById: async () => null, setCommunityIssueDraftId: async () => { throw new Error('unexpected source update'); } },
+      frustration: { getSource: async () => null, linkDraft: async () => { throw new Error('unexpected source update'); } },
       publisher: { create: async () => { throw new Error('unexpected GitHub publish'); }, find: async () => null },
       config: { defaultRepo: 'org/repo', repoAllowlist: ['org/repo'] },
     },
@@ -291,4 +291,98 @@ for (const explicitNewThread of [false, true]) test(`real resolve route retries 
   assert.equal((await router.forwardOwner(request)).status, 200);
   assert.equal(creates, 1);
   assert.equal((await store.get(issue.id))?.assignedThreadId, 'thread-1');
+});
+
+function sourceFixture() {
+  const source = { issueId: 'fi_source', userId: 'owner', threadId: 'thread', status: 'confirmed' as const,
+    signalType: 'user_report' as const, signalDetail: {}, userDescription: 'Public report', recentMessageCount: 3,
+    communityIssueDraftId: null as string | null, sourceRevision: 'source-r1' };
+  let fail = false, lost = false, writes = 0;
+  const port = {
+    getSource: async () => structuredClone(source),
+    linkDraft: async (input: import('@clowder-ai/plugin-contract').FrustrationLinkDraftInput): Promise<import('@clowder-ai/plugin-contract').FrustrationLinkDraftResult> => {
+      writes++;
+      if (fail) throw new Error('source unavailable');
+      if (input.sourceRevision !== source.sourceRevision) return { outcome: 'stale_source' };
+      if (source.communityIssueDraftId === input.draftId) return { outcome: 'already_linked', draftId: input.draftId, sourceRevision: source.sourceRevision };
+      if (input.expectedDraftId !== source.communityIssueDraftId) return { outcome: 'conflict' };
+      source.communityIssueDraftId = input.draftId;
+      if (lost) { lost = false; throw new Error('link response lost'); }
+      return { outcome: 'linked', draftId: input.draftId, sourceRevision: source.sourceRevision };
+    },
+  };
+  const deps = options();
+  Object.assign(deps.drafts, { frustration: port });
+  const request = { principal, method: 'POST', path: 'github/community-issue-drafts/from-frustration-issue/fi_source' };
+  return { deps, port, source, request, fail: (value: boolean) => { fail = value; }, loseReply: () => { lost = true; }, writes: () => writes };
+}
+for (const lostReply of [false, true]) test(`source link ${lostReply ? 'lost reply' : 'failure'} recovers the same persisted draft after restart`, async t => {
+  const f = sourceFixture(); if (lostReply) f.loseReply(); else f.fail(true);
+  let router = await createCommunityHttpRouter(f.deps); t.after(() => router.stop());
+  assert.equal((await router.forwardOwner(f.request)).status, 502);
+  const store = new SdkCommunityIssueDraftStore(f.deps.storage), saved = await store.getBySourceId(f.source.issueId); assert.ok(saved);
+  assert.match(saved.bodyMarkdown, /3 conversation messages/);
+  await router.stop(); f.fail(false); router = await createCommunityHttpRouter(f.deps);
+  const retry = await router.forwardOwner(f.request); assert.equal(retry.status, 200); assert.equal(retry.body.draft.draftId, saved.draftId);
+  assert.equal(f.source.communityIssueDraftId, saved.draftId); assert.equal(f.writes(), 2);
+});
+test('cancel then recreate replaces only the cancelled predecessor and retains both records', async t => {
+  const f = sourceFixture(), router = await createCommunityHttpRouter(f.deps); t.after(() => router.stop());
+  const first = await router.forwardOwner(f.request); assert.equal(first.status, 200); const old = first.body.draft.draftId;
+  assert.equal((await router.forwardOwner({ principal, method: 'POST', path: `github/community-issue-drafts/by-id/${old}/cancel` })).status, 200);
+  const next = await router.forwardOwner(f.request); assert.equal(next.status, 200); assert.notEqual(next.body.draft.draftId, old);
+  assert.equal(f.source.communityIssueDraftId, next.body.draft.draftId);
+  assert.equal((await new SdkCommunityIssueDraftStore(f.deps.storage).getById(old))?.status, 'cancelled');
+});
+
+test('changed source cannot silently rebase an unlinked draft or override an unknown source link', async t => {
+  const f = sourceFixture(); f.fail(true); const router = await createCommunityHttpRouter(f.deps); t.after(() => router.stop());
+  assert.equal((await router.forwardOwner(f.request)).status, 502);
+  const store = new SdkCommunityIssueDraftStore(f.deps.storage), before = await store.getBySourceId(f.source.issueId); assert.ok(before);
+  f.fail(false); f.source.sourceRevision = 'source-r2';
+  const changed = await router.forwardOwner(f.request); assert.equal(changed.status, 409); assert.equal(f.writes(), 1);
+  assert.deepEqual(await store.getById(before.draftId), before);
+  f.source.sourceRevision = 'source-r1';
+  const other = await store.create({ sourceType: 'cat_initiated', sourceId: 'unrelated', userId: 'owner', threadId: 'thread', title: 'Other', bodyMarkdown: '', labels: [], targetRepo: 'org/repo' });
+  await store.cancel(other.draftId); f.source.communityIssueDraftId = other.draftId;
+  assert.equal((await router.forwardOwner(f.request)).status, 409); assert.equal(f.writes(), 1);
+  assert.equal(f.source.communityIssueDraftId, other.draftId);
+});
+test('source conflict is explicit and does not discard the recoverable private draft', async t => {
+  const f = sourceFixture(); f.port.linkDraft = async () => ({ outcome: 'conflict' });
+  const router = await createCommunityHttpRouter(f.deps); t.after(() => router.stop());
+  const result = await router.forwardOwner(f.request); assert.equal(result.status, 409); assert.match(result.body.error, /conflict/);
+  assert.ok(await new SdkCommunityIssueDraftStore(f.deps.storage).getBySourceId(f.source.issueId)); assert.equal(f.source.communityIssueDraftId, null);
+});
+for (const stopped of [false, true]) test(`late source link cannot report success after ${stopped ? 'stop' : 'cancellation'}`, async t => {
+  const f = sourceFixture(); let entered!: () => void, release!: () => void;
+  const started = new Promise<void>(r => { entered = r; }), gate = new Promise<void>(r => { release = r; });
+  const link = f.port.linkDraft; f.port.linkDraft = async input => { entered(); await gate; return link(input); };
+  const router = await createCommunityHttpRouter(f.deps); t.after(() => router.stop());
+  const pending = router.forwardOwner(f.request); await started;
+  const store = new SdkCommunityIssueDraftStore(f.deps.storage), draft = await store.getBySourceId(f.source.issueId); assert.ok(draft);
+  let stop: Promise<void> | undefined;
+  if (stopped) stop = router.stop(); else await store.cancel(draft.draftId);
+  release(); const result = await pending; assert.notEqual(result.status, 200); await stop;
+  assert.equal((await store.getById(draft.draftId))?.status, stopped ? 'draft' : 'cancelled');
+});
+test('concurrent source retries reuse one draft through a lost private CAS acknowledgement', async t => {
+  const f = sourceFixture(), cas = f.deps.storage.compareAndSet; let lost = true;
+  f.deps.storage.compareAndSet = async (key, revision, value) => {
+    const result = await cas(key, revision, value);
+    if (result.applied && lost && key.startsWith('community.workflow.draft-source.')) { lost = false; throw new Error('private reply lost'); }
+    return result;
+  };
+  const a = await createCommunityHttpRouter(f.deps), b = await createCommunityHttpRouter(f.deps); t.after(() => Promise.all([a.stop(), b.stop()]));
+  const results = await Promise.all([a.forwardOwner(f.request), b.forwardOwner(f.request)]);
+  assert.ok(results.every(r => r.status === 200)); assert.equal(results[0]!.body.draft.draftId, results[1]!.body.draft.draftId);
+  assert.equal(f.source.communityIssueDraftId, results[0]!.body.draft.draftId);
+});
+test('embedded source call retains the separate Host owner async context', async t => {
+  const { AsyncLocalStorage } = await import('node:async_hooks');
+  const owner = new AsyncLocalStorage<string>(); const f = sourceFixture(); const read = f.port.getSource, link = f.port.linkDraft;
+  f.port.getSource = async () => { assert.equal(owner.getStore(), 'host-owner'); return read(); };
+  f.port.linkDraft = async input => { assert.equal(owner.getStore(), 'host-owner'); return link(input); };
+  const router = await createCommunityHttpRouter(f.deps); t.after(() => router.stop());
+  assert.equal((await owner.run('host-owner', () => router.forwardOwner(f.request))).status, 200);
 });

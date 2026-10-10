@@ -14,7 +14,7 @@ async function fixture() {
   const router = await createCommunityHttpRouter({ storage, projectionOperations: new CommunityProjectionOperations(),
     threads: { get: async id => ({ id, title: 'Thread', deepLinkUrl: '/threads/'+id, createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] }), ensureByKey: async () => { throw new Error('unexpected creation'); } },
     issues: { guardianCatalog: async () => { throw new Error('unused catalog'); } },
-    drafts: { frustrationIssueStore: { getById: async () => null, setCommunityIssueDraftId: async () => { throw new Error('unused source'); } }, publisher: { create: async () => { throw new Error('unused publish'); }, find: async () => null }, config: { defaultRepo: 'org/repo', repoAllowlist: ['org/repo'] } },
+    drafts: { frustration: { getSource: async () => null, linkDraft: async () => { throw new Error('unused source'); } }, publisher: { create: async () => { throw new Error('unused publish'); }, find: async () => null }, config: { defaultRepo: 'org/repo', repoAllowlist: ['org/repo'] } },
   });
   const store = new SdkCommunityCollectionStore(storage), events = new SdkCommunityEventLog(storage);
   const route = async (catId: string) => {

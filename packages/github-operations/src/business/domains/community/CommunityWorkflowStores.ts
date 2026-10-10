@@ -113,8 +113,9 @@ export class SdkCommunityPrStore implements ICommunityPrStore {
   delete(id: string) { return this.records.delete(id); }
 }
 
-const draftCreate = z.object({ sourceType: z.enum(['frustration_issue', 'cat_initiated']), sourceId: text, title: text, bodyMarkdown: z.string(), targetRepo: repo, labels: z.array(text), threadId: text, userId: text }).strict();
+const draftCreate = z.object({ sourceType: z.enum(['frustration_issue', 'cat_initiated']), sourceId: text, sourceBinding: z.object({ revision: text, previousDraftId: text.nullable() }).strict().optional(), title: text, bodyMarkdown: z.string(), targetRepo: repo, labels: z.array(text), threadId: text, userId: text }).strict();
 const draftSchema = draftCreate.extend({ draftId: text, status: z.enum(['draft', 'publishing', 'published', 'cancelled']), githubIssueNumber: number.optional(), githubIssueUrl: z.string().url().optional(), createdAt: timestamp, publishedAt: timestamp.optional(), cancelledAt: timestamp.optional() }).strict().superRefine((draft, context) => {
+  if (draft.sourceBinding && draft.sourceType !== 'frustration_issue') context.addIssue({ code: 'custom', message: 'Source binding requires frustration source' });
   const published = draft.githubIssueNumber !== undefined && draft.githubIssueUrl !== undefined && draft.publishedAt !== undefined;
   const hasPublication = draft.githubIssueNumber !== undefined || draft.githubIssueUrl !== undefined || draft.publishedAt !== undefined;
   if (draft.status === 'published' && (!published || draft.cancelledAt !== undefined)) context.addIssue({ code: 'custom', message: 'Published draft requires complete publication result' });

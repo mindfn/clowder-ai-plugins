@@ -12,20 +12,17 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import type { ICommunityIssueDraftStore } from '../domains/community/ports/CommunityIssueDraftStore.js';
-import type { FrustrationIssue } from '../model/index.js';
+import type { PluginFrustrationHost } from '@clowder-ai/plugin-sdk';
+import { recoverFrustrationDraft, FrustrationDraftError } from '../domains/community/issue-analysis/FrustrationDraftRecovery.js';
 import type { CommunityIssueDraft } from '../model/index.js';
 import { sanitize } from '../domains/community/issue-analysis/CommunityIssueSanitizer.js';
-import { createDraftFromFrustrationIssue } from '../domains/community/issue-analysis/FrustrationIssueSourceAdapter.js';
 import type { CommunityRequestContext } from './community-request-context.js';
 
 // ── Options ───────────────────────────────────────────────────
 
 export interface CommunityIssueDraftRoutesOptions {
   communityIssueDraftStore: ICommunityIssueDraftStore;
-  frustrationIssueStore: {
-    getById(id: string): Promise<FrustrationIssue | null>;
-    setCommunityIssueDraftId(id: string, draftId: string): Promise<unknown>;
-  };
+  frustration: PluginFrustrationHost;
   requestContext: CommunityRequestContext;
   publication: { publish(draft: CommunityIssueDraft): Promise<{ issue?: { number: number; url: string } }> };
   config: {
@@ -69,7 +66,7 @@ const genericCreateBodySchema = z.object({
 // ── Routes ────────────────────────────────────────────────────
 
 export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRoutesOptions> = async (app, opts) => {
-  const { communityIssueDraftStore, frustrationIssueStore, publication, config } = opts;
+  const { communityIssueDraftStore, frustration, publication, config } = opts;
   const resolveUserId = opts.requestContext.userId.bind(opts.requestContext);
   const resolveStrictUserId = resolveUserId;
 
@@ -190,41 +187,16 @@ export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRo
 
     const { issueId } = paramsParse.data;
 
-    // Look up the FrustrationIssue
-    const issue = await frustrationIssueStore.getById(issueId);
-    if (!issue) {
-      reply.status(404);
-      return { error: 'Frustration issue not found' };
-    }
-    if (issue.userId !== userId) {
-      reply.status(403);
-      return { error: 'Not your issue' };
-    }
-    if (issue.status !== 'confirmed') {
-      reply.status(400);
-      return { error: `Issue is ${issue.status}, must be confirmed` };
-    }
-
-    // Create draft via source adapter
+    if (!opts.requestContext.requireOwner(reply)) return;
     try {
-      const draft = await createDraftFromFrustrationIssue(issue, {
-        draftStore: communityIssueDraftStore,
-        config,
+      const draft = await recoverFrustrationDraft(issueId, userId, {
+        source: frustration, drafts: communityIssueDraftStore, config,
+        assertCurrent: () => opts.requestContext.assertCurrent(),
       });
-      // Link draft back to frustration issue for persistence recovery (Iron Law #5:
-      // after refresh, FrustrationIssueCard reads communityIssueDraftId to restore preview)
-      await frustrationIssueStore.setCommunityIssueDraftId(issueId, draft.draftId);
       return { draft };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('already has')) {
-        // Return existing draft so frontend can recover (409 recovery path)
-        const existingDraft = await communityIssueDraftStore.getBySourceId(issueId);
-        reply.status(409);
-        return { error: 'Draft already exists for this issue', draft: existingDraft };
-      }
-      reply.status(500);
-      return { error: msg };
+    } catch (error) {
+      if (error instanceof FrustrationDraftError) return reply.code(error.status).send({ error: error.message, ...(error.draft ? { draft: error.draft } : {}) });
+      throw error;
     }
   });
 

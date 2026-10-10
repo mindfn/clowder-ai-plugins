@@ -31,6 +31,8 @@ export interface CommunityIssueDraft {
   // Source tracking (generic pipeline, KD-6)
   readonly sourceType: CommunityIssueDraftSourceType;
   readonly sourceId: string;
+  /** Private immutable source snapshot used to retry a Host link safely. */
+  readonly sourceBinding?: { readonly revision: string; readonly previousDraftId: string | null };
 
   // Content (sanitized)
   readonly title: string;
@@ -59,6 +61,8 @@ export interface CommunityIssueDraft {
 export interface CreateCommunityIssueDraftInput {
   readonly sourceType: CommunityIssueDraftSourceType;
   readonly sourceId: string;
+  /** Private immutable source snapshot used to retry a Host link safely. */
+  readonly sourceBinding?: { readonly revision: string; readonly previousDraftId: string | null };
   readonly title: string;
   readonly bodyMarkdown: string;
   readonly targetRepo: string;
@@ -89,6 +93,7 @@ export function createCommunityIssueDraft(input: CreateCommunityIssueDraftInput)
     status: 'draft',
     sourceType: input.sourceType,
     sourceId: input.sourceId,
+    ...(input.sourceBinding ? { sourceBinding: { ...input.sourceBinding } } : {}),
     title: input.title,
     bodyMarkdown: input.bodyMarkdown,
     targetRepo: input.targetRepo,

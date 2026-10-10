@@ -4,7 +4,8 @@
  * (e.g. cat-initiated issues) plug in as new adapters in Phase B.
  */
 
-import type { CommunityIssueDraft, FrustrationIssue, FrustrationSignalType } from '../../../model/index.js';
+import type { FrustrationSource } from '@clowder-ai/plugin-contract';
+import type { CommunityIssueDraft, FrustrationSignalType } from '../../../model/index.js';
 import type { ICommunityIssueDraftStore } from '../ports/CommunityIssueDraftStore.js';
 import { sanitize } from './CommunityIssueSanitizer.js';
 
@@ -34,7 +35,7 @@ const SIGNAL_TITLES: Record<FrustrationSignalType, (detail: Record<string, unkno
 
 // ── Body builder ──────────────────────────────────────────────
 
-function buildBody(issue: FrustrationIssue): string {
+function buildBody(issue: FrustrationSource): string {
   const sections: string[] = [];
 
   // Problem section
@@ -65,9 +66,9 @@ function buildBody(issue: FrustrationIssue): string {
   // Conversation context note (B-lite: raw messages are NOT included in public drafts
   // to eliminate unbounded data-leakage surface. Full context is retained locally in the
   // FrustrationIssue record. Only structured, safe fields appear in the published issue.)
-  if (issue.context.recentMessages?.length) {
+  if (issue.recentMessageCount) {
     sections.push(
-      `## Conversation Context\n\n*${issue.context.recentMessages.length} conversation messages were recorded locally but are not included in this public report for privacy.*`,
+      `## Conversation Context\n\n*${issue.recentMessageCount} conversation messages were recorded locally but are not included in this public report for privacy.*`,
     );
   }
 
@@ -86,7 +87,7 @@ function buildBody(issue: FrustrationIssue): string {
  * @throws if store rejects (duplicate sourceId, etc.)
  */
 export async function createDraftFromFrustrationIssue(
-  issue: FrustrationIssue,
+  issue: FrustrationSource,
   deps: SourceAdapterDeps,
 ): Promise<CommunityIssueDraft> {
   // Guard: only confirmed issues can become community drafts
@@ -114,6 +115,7 @@ export async function createDraftFromFrustrationIssue(
   const draft = await deps.draftStore.create({
     sourceType: 'frustration_issue',
     sourceId: issue.issueId,
+    sourceBinding: { revision: issue.sourceRevision, previousDraftId: issue.communityIssueDraftId },
     title: sanitized.title,
     bodyMarkdown: sanitized.bodyMarkdown,
     targetRepo: deps.config.defaultRepo,
