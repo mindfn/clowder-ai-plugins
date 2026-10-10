@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { FeatureContext, PluginActionContext, PluginTaskItem, PluginStorageEntry } from '@clowder-ai/plugin-sdk';
 import { TypedWaitRuntime } from './typed-wait-runtime.js';
 import type { GitHubSnapshot } from './tracking-runtime.js';
+import type { GitHubPrAwaitStateV1 } from './business/model/types/github-wait.js';
 
 function fixture() {
   const rows = new Map<string, PluginStorageEntry>(); const tasks = new Map<string, PluginTaskItem>();
@@ -236,4 +237,136 @@ test('unregister rejects a different user and owner changes terminate without no
   assert.equal((await runtime.store.get(task.id))?.automationState?.await, undefined);
   assert.equal(f.tasks.get(task.id)?.ownerCatId, 'other');
   await runtime.stop();
+});
+
+
+test('production typed polling consumes one scoped CI batch and retains healthy sibling wake idempotency', async () => {
+  const f = fixture(); let batches = 0, scopedReads = 0; const healthy = { ...f.snapshot(), ci: 'pass' as const };
+  const provider = { ...f.options.provider, forCiBatch: async (targets: readonly { number: number }[]) => {
+    batches++; if (batches === 1) assert.deepEqual(targets.map(t => t.number).sort(), [1, 2]);
+    return { read: async (target: { number: number }, signal: AbortSignal) => {
+      scopedReads++; signal.throwIfAborted();
+      if (target.number === 1) throw new Error('PR-local detail unavailable');
+      return healthy;
+    } };
+  } };
+  const runtime = new TypedWaitRuntime({ ...f.options, provider });
+  try {
+    const bad = await runtime.registerPr({ ...input, when: [{ kind: 'pr_ci_terminal' }] }, f.caller);
+    const good = await runtime.registerPr({ ...input, prNumber: 2, registrationId: 'second', when: [{ kind: 'pr_ci_terminal' }] }, f.caller);
+    const generation = (await runtime.store.get(bad.id))!.automationState!.await!.generation;
+    await runtime.poll('pr');
+    assert.equal(batches, 1); assert.equal(scopedReads, 2);
+    assert.equal((await runtime.store.get(bad.id))!.automationState!.await!.generation, generation);
+    assert.equal((await runtime.store.get(good.id))!.automationState!.waitOutcome!.delivery, 'delivered');
+    assert.equal(f.sent.length, 1);
+    await runtime.poll('pr'); assert.equal(f.sent.length, 1);
+  } finally { await runtime.stop(); }
+});
+
+
+import { GitHubProvider } from './github-provider.js';
+
+test('real CI transport isolates detail/truncation deadlines and resolves the configured token for each phase', async t => {
+  for (const mode of ['failure', 'truncated'] as const) {
+    const f = fixture(); let polling = false, token = 'isolated-batch-token', batches = 0;
+    const calls: { args: string[]; token?: string; signal?: AbortSignal }[] = [];
+    const localSignals: AbortSignal[] = [];
+    const head = 'a'.repeat(40);
+    const provider = new GitHubProvider({ token: async () => token, log: { warn() {} }, execFileAsync: async (_file, args, options) => {
+      if (polling) calls.push({ args, token: options.env?.GITHUB_TOKEN, signal: options.signal });
+      const path = args[1]!;
+      if (path === 'graphql') {
+        batches++; token = 'isolated-detail-token';
+        const pr = (bad: boolean) => ({ headRefOid: head, state: 'OPEN', commits: { nodes: [{ commit: { statusCheckRollup: { contexts: {
+          nodes: [{ __typename: 'CheckRun', name: 'gate', status: 'COMPLETED', conclusion: bad ? 'FAILURE' : 'SUCCESS' }],
+          pageInfo: { hasNextPage: bad && mode === 'truncated' },
+        } } } }] } });
+        return { stdout: JSON.stringify({ data: { r0: { p0: pr(true), p1: pr(false) } } }) };
+      }
+      if (polling && args[0] === 'pr' && args[2] === '1') {
+        assert.equal(path, mode === 'failure' ? 'checks' : 'view');
+        const signal = options.signal!; localSignals.push(signal);
+        await new Promise<void>((_resolve, reject) => {
+          if (signal.aborted) reject(signal.reason); else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        });
+        throw new Error('unreachable');
+      }
+      if (args[0] === 'pr' && path === 'view') return { stdout: JSON.stringify({ headRefOid: head, state: 'OPEN', statusCheckRollup: [] }) };
+      if (path === 'user') return { stdout: 'self' };
+      if (/\/pulls\/(1|2)$/.test(path)) return { stdout: JSON.stringify({ state: 'open', head: { sha: head }, user: { login: 'self' } }) };
+      if (path.includes('/comments?') || path.includes('/reviews?')) return { stdout: '' };
+      throw new Error('Unexpected CI request ' + args.join(' '));
+    } });
+    const runtime = new TypedWaitRuntime({ ...f.options, provider, objectTimeoutMs: 50 });
+    // Node's abort timers are unref'd; keep this isolated deadline fixture alive.
+    const keepAlive = setInterval(() => {}, 1000);
+    t.after(async () => { clearInterval(keepAlive); await runtime.stop(); });
+    const bad = await runtime.registerPr({ ...input, when: [{ kind: 'pr_ci_terminal' }] }, f.caller);
+    const good = await runtime.registerPr({ ...input, prNumber: 2, registrationId: 'second', when: [{ kind: 'pr_ci_terminal' }] }, f.caller);
+    const before = structuredClone((await runtime.store.get(bad.id))!.automationState);
+    polling = true; await runtime.poll('pr');
+    assert.equal(batches, 1); assert.equal(localSignals.length, 1); assert.equal(localSignals[0]!.aborted, true);
+    assert.equal(calls[0]!.args[1], 'graphql'); assert.equal(calls[0]!.token, 'isolated-batch-token');
+    assert.ok(calls.slice(1).every(call => call.token === 'isolated-detail-token'));
+    assert.ok(calls.filter(call => call.args[0] === 'pr').every(call => call.args[2] === '1'), 'healthy complete fact never falls back');
+    assert.deepEqual((await runtime.store.get(bad.id))!.automationState, before, 'timeout/unknown never advances the failed PR generation');
+    assert.equal((await runtime.store.get(good.id))!.automationState!.waitOutcome!.delivery, 'delivered');
+    assert.equal(f.sent.length, 1);
+    const deliveredGeneration = (await runtime.store.get(good.id))!.automationState!.await!.generation;
+    await runtime.poll('pr');
+    assert.equal(batches, 2); assert.equal(f.sent.length, 1);
+    assert.equal((await runtime.store.get(good.id))!.automationState!.await!.generation, deliveredGeneration);
+    clearInterval(keepAlive); await runtime.stop();
+  }
+});
+
+test('registration generation changed during batch cannot consume the previous generation snapshot', async () => {
+  const f = fixture(); let runtime!: TypedWaitRuntime, taskId = '', reads = 0;
+  const provider = { ...f.options.provider, forCiBatch: async () => {
+    const current = (await runtime.store.get(taskId))!;
+    await runtime.store.patchAutomationState(taskId, { await: { ...current.automationState!.await! as GitHubPrAwaitStateV1, generation: 2 } });
+    return { read: async () => { reads++; return { ...f.snapshot(), ci: 'pass' as const }; } };
+  } };
+  runtime = new TypedWaitRuntime({ ...f.options, provider });
+  try {
+    taskId = (await runtime.registerPr({ ...input, when: [{ kind: 'pr_ci_terminal' }] }, f.caller)).id;
+    await runtime.poll('pr');
+    assert.equal(reads, 0); assert.equal(f.sent.length, 0);
+    assert.equal((await runtime.store.get(taskId))!.automationState!.await!.generation, 2);
+  } finally { await runtime.stop(); }
+});
+
+
+test('CI batch failure still recovers a durable notification without advancing unavailable facts', async () => {
+  const f = fixture(); let failBatch = false;
+  const provider = { ...f.options.provider, forCiBatch: async () => {
+    if (failBatch) throw new Error('batch unavailable');
+    return { read: async () => ({ ...f.snapshot(), ci: 'pass' as const }) };
+  } };
+  const runtime = new TypedWaitRuntime({ ...f.options, provider });
+  try {
+    const task = await runtime.registerPr({ ...input, when: [{ kind: 'pr_ci_terminal' }] }, f.caller);
+    f.failSend(true); await runtime.poll('pr');
+    assert.equal(f.sent.length, 0);
+    assert.equal((await runtime.store.get(task.id))!.automationState!.waitOutcome!.delivery, 'pending');
+    failBatch = true; f.failSend(false); await runtime.poll('pr');
+    assert.equal(f.sent.length, 1);
+    assert.equal((await runtime.store.get(task.id))!.automationState!.waitOutcome!.delivery, 'delivered');
+    await runtime.poll('pr'); assert.equal(f.sent.length, 1);
+  } finally { await runtime.stop(); }
+});
+
+test('cancellation during shared CI admission prevents PR-local reads and wake', async () => {
+  const f = fixture(); let runtime!: TypedWaitRuntime, reads = 0;
+  const provider = { ...f.options.provider, forCiBatch: async () => {
+    assert.equal((await runtime.unregister({ subjectKey: 'pr:owner/repo#1' }, f.caller)).unregistered, true);
+    return { read: async () => { reads++; return { ...f.snapshot(), ci: 'pass' as const }; } };
+  } };
+  runtime = new TypedWaitRuntime({ ...f.options, provider });
+  try {
+    const task = await runtime.registerPr(input, f.caller);
+    await runtime.poll('pr'); assert.equal(reads, 0); assert.equal(f.sent.length, 0);
+    assert.equal((await runtime.store.get(task.id))!.automationState!.waitOutcome!.reason, 'user_cancel');
+  } finally { await runtime.stop(); }
 });

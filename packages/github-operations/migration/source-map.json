@@ -1109,24 +1109,34 @@
       "target": "packages/github-operations/src/business/infrastructure/email/ci-status-batch-fetcher.ts",
       "sourceSha256": "ee9369bfdd2f3cd7972055ea53e24f127c7dba62e06ec4c82496197a57fc02b9",
       "lines": 262,
-      "disposition": "provider-logic-mechanically-retained",
-      "mechanicalComparison": "byte-identical-to-frozen-source",
-      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
-      "packageBusinessMoved": "retained provider/pure logic",
-      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
-      "hostLegacyRemoved": false
+      "disposition": "provider-logic-adapted-runtime",
+      "mechanicalComparison": "business-body-changed",
+      "evidence": "src/typed-wait-runtime.test.ts and test/ci-status-batch-fetcher.test.js; real gh exec boundary, per-PR deadlines, dynamic configured credentials, generation/cancel/outbox recovery and wake dedup.",
+      "packageBusinessMoved": "Active TypedWaitRuntime -> GitHubProvider batch and PR-local readers; not old Host schedule factory",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "reason": "Adopts CI notification delta d867ace33 then 4f2b5644: batch base facts only, PR-local failure enrichment/truncated exact reads under caller signal.",
+      "adaptationSourceCommits": [
+        "d867ace33a56128d161b4f91680e2b34743643fe",
+        "4f2b5644e51e3d5c5d5050e23e8f7efeffec38bb"
+      ]
     },
     {
       "source": "packages/api/src/infrastructure/email/ci-status-fetcher.ts",
       "target": "packages/github-operations/src/business/infrastructure/email/ci-status-fetcher.ts",
       "sourceSha256": "b5dc7d4568467d3f6085ebcdd705a608ad7a29a5ef08938eda7b4cf2e0f465b7",
       "lines": 234,
-      "disposition": "provider-logic-mechanically-retained",
-      "mechanicalComparison": "byte-identical-to-frozen-source",
-      "evidence": "scripts/audit-github-migration.mjs checks frozen SHA256, current body and runtime import reachability; frozen unit and real builtin tests remain separate evidence",
-      "packageBusinessMoved": "retained provider/pure logic",
-      "realPackageReplacementVerified": "source carrier and unit tests only; fresh-consumer and Host installation pending",
-      "hostLegacyRemoved": false
+      "disposition": "provider-logic-adapted-runtime",
+      "mechanicalComparison": "business-body-changed",
+      "evidence": "src/typed-wait-runtime.test.ts and test/ci-status-batch-fetcher.test.js; real gh exec boundary, per-PR deadlines, dynamic configured credentials, generation/cancel/outbox recovery and wake dedup.",
+      "packageBusinessMoved": "Active TypedWaitRuntime -> GitHubProvider batch and PR-local readers; not old Host schedule factory",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "reason": "Adopts CI notification delta d867ace33 then 4f2b5644: batch base facts only, PR-local failure enrichment/truncated exact reads under caller signal.",
+      "adaptationSourceCommits": [
+        "d867ace33a56128d161b4f91680e2b34743643fe",
+        "4f2b5644e51e3d5c5d5050e23e8f7efeffec38bb"
+      ]
     },
     {
       "source": "packages/api/src/infrastructure/email/deliver-connector-message.ts",

@@ -18,6 +18,8 @@ export interface TypedWaitRuntimeOptions {
   readonly collect?: (target: GitHubTarget, snapshot: GitHubSnapshot) => Promise<void>;
   readonly observe?: (target: GitHubTarget, snapshot: GitHubSnapshot) => Promise<void>;
   readonly now?: () => number;
+  /** Bound each PR independently inside the bounded poll; tests may shorten it. */
+  readonly objectTimeoutMs?: number;
 }
 
 /** All provider predicates, registration receipts and notification outboxes live here.
@@ -46,11 +48,11 @@ export class TypedWaitRuntime {
     } satisfies PluginStorageHost, this.now);
   }
 
-  private run<T>(subject: string, action: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  private run<T>(subject: string, action: (signal: AbortSignal) => Promise<T>, timeoutMs = 30_000): Promise<T> {
     const previous = this.lanes.get(subject) ?? Promise.resolve();
     const operation = previous.catch(() => undefined).then(() => {
       this.assertRunning();
-      return action(AbortSignal.any([this.stopController.signal, AbortSignal.timeout(30_000)]));
+      return action(AbortSignal.any([this.stopController.signal, AbortSignal.timeout(timeoutMs)]));
     });
     this.lanes.set(subject, operation); this.work.add(operation);
     void operation.finally(() => {
@@ -202,8 +204,31 @@ export class TypedWaitRuntime {
     const operation = this.run(`poll:${kind}`, async signal => {
       const tasks = await this.store.listByKind(kind === 'pr' ? 'pr_tracking' : 'issue_tracking');
       const start = (this.offsets.get(kind) ?? 0) % Math.max(tasks.length, 1);
-      for (let i = 0; i < tasks.length && !signal.aborted; i++) {
-        const task = tasks[(start + i) % tasks.length]!;
+      // Freeze only currently authorized, active wait targets for this tick.
+      // This is a fact read, not native completion authority. Recheck below before
+      // using it: a concurrent registration must not inherit an older snapshot.
+      const selected = Array.from({ length: Math.min(tasks.length, 20) }, (_, i) => tasks[(start + i) % tasks.length]!);
+      const batchGenerations = new Map<string, number>();
+      let provider = this.options.provider;
+      let batchError: unknown;
+      if (kind === 'pr' && provider.forCiBatch) {
+        const targets: GitHubTarget[] = [];
+        for (const task of selected) {
+          const wait = task.automationState?.await;
+          if (!wait || (wait.expiresAt !== undefined && wait.expiresAt <= this.now())) continue;
+          const host = await this.options.context.tasks.get(task.id);
+          if (!host?.pluginWait || host.status === 'done' || host.threadId !== task.threadId || host.ownerCatId !== task.ownerCatId) continue;
+          targets.push(waitTarget(task)); batchGenerations.set(task.id, wait.generation);
+        }
+        if (targets.length) {
+          try { provider = await provider.forCiBatch(targets,
+            AbortSignal.any([signal, AbortSignal.timeout(this.options.objectTimeoutMs ?? 10_000)])); }
+          catch (error) { batchError = error; }
+        }
+        signal.throwIfAborted();
+      }
+      for (let i = 0; i < selected.length && !signal.aborted; i++) {
+        const task = selected[i]!;
         this.offsets.set(kind, (start + i + 1) % tasks.length);
         await this.run(task.subjectKey!, async taskSignal => {
           const check = async () => { this.assertRunning(); signal.throwIfAborted(); taskSignal.throwIfAborted(); };
@@ -224,8 +249,11 @@ export class TypedWaitRuntime {
             await this.settleProjection(task.id, check);
             return;
           }
+          if (batchError) throw batchError; // Recover durable outboxes even when new facts are unavailable.
           const target = waitTarget(current);
-          const snapshot = await this.options.provider.read(target, AbortSignal.any([signal, taskSignal]));
+          if (kind === 'pr' && this.options.provider.forCiBatch &&
+              batchGenerations.get(task.id) !== current.automationState.await.generation) return;
+          const snapshot = await provider.read(target, AbortSignal.any([signal, taskSignal]));
           await check();
           const configured = await this.options.context.config.get('cloudReviewerLogins');
           if (configured !== undefined && typeof configured !== 'string') throw new TypeError('cloudReviewerLogins must be a string');
@@ -236,7 +264,7 @@ export class TypedWaitRuntime {
           await this.currentTask(current); await check();
           await lifecycle.observe(observed.observation);
           await this.settleProjection(task.id, check);
-        }).catch(() => this.options.context.log('warn', 'GitHub observation failed; wait and pending delivery remain recoverable'));
+        }, this.options.objectTimeoutMs ?? 10_000).catch(() => this.options.context.log('warn', 'GitHub observation failed; wait and pending delivery remain recoverable'));
       }
     });
     this.polling.set(kind, operation);

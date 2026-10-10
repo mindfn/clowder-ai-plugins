@@ -148,3 +148,13 @@ background schedules never borrow the stored reviewer identity. The current
 publisher association is unavailable, so matching GitHub objects alone remain
 insufficient. This source integration requires the explicit `custody.invoke`
 grant and is not an installed-acceptance claim.
+
+
+PR notification polling admits at most 20 waits per tick using one scoped CI
+base-fact batch. Required-check diagnostics and truncated rollup reads run inside
+each PR's own 10-second deadline within the 30-second poll budget; failure leaves
+that wait's baseline and generation unchanged. Configured credentials are resolved
+again for each batch and per-PR CI read. Concurrent registration/cancellation is
+rechecked before consuming the batch; pending notifications can recover even when
+new batch facts are unavailable. These package regressions do not establish the
+upstream distributable gate or installed Host acceptance.

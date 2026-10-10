@@ -1,7 +1,7 @@
 import { fetchPaginated } from './business/infrastructure/github/fetch-paginated.js';
 import { createGitHubRepoPollReaders } from './business/infrastructure/github/repo-poll-readers.js';
 import { executeGitHubRequest, type GitHubRequestOptions } from './business/infrastructure/github/request-budget.js';
-import { fetchPrCiStatus, type FetchPrCiStatusOptions } from './business/infrastructure/email/ci-status-fetcher.js';
+import { fetchPrCiStatus, enrichPrCiStatus, type FetchPrCiStatusOptions } from './business/infrastructure/email/ci-status-fetcher.js';
 import { fetchPrCiStatuses, ciStatusTargetKey } from './business/infrastructure/email/ci-status-batch-fetcher.js';
 import type { CiPollResult } from './business/infrastructure/email/ci-cd-contract.js';
 import { classifyCiWaitBucket } from './business/infrastructure/email/CiCdRouter.js';
@@ -168,9 +168,13 @@ export class GitHubProvider implements GitHubTrackingProvider, CommunityProvider
         ...(r.author_association ? { authorAssociation: r.author_association } : {}),
       })));
       if (target.reviewThreadIds?.length) reviewThreads = await fetchGitHubReviewThreads(target.repoFullName, target.number, target.reviewThreadIds, options);
-      const status = batchCi !== undefined ? batchCi : await fetchPrCiStatus(target.repoFullName, target.number, {
-        warn: () => this.options.log.warn('GitHub CI read failed; preserving tracking baseline'),
-      }, ciOptions(options));
+      // Batch admission contains only base facts. Failure details and incomplete
+      // rollups use this PR's deadline and a freshly resolved configured token.
+      const ciRequest = ciOptions(await this.requestOptions(signal));
+      const ciLog = { warn: () => this.options.log.warn('GitHub CI read failed; preserving tracking baseline') };
+      const status = batchCi == null
+        ? await fetchPrCiStatus(target.repoFullName, target.number, ciLog, ciRequest)
+        : await enrichPrCiStatus(batchCi, ciLog, ciRequest);
       if (!status) throw new Error('GitHub CI snapshot unavailable');
       if (status.headSha !== metadata.head?.sha) throw new Error('GitHub HEAD changed during snapshot; retry without advancing cursors');
       // Preserve CiCdRouter's empty-rollup rule: absence of checks is not a pass.
