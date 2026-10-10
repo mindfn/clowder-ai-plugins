@@ -99,6 +99,8 @@ function declaredContributionAdapter(
     storage: host.storage,
     tasks: host.tasks,
     custody: host.custody,
+    deployment: host.deployment,
+    frustration: host.frustration,
     threads: host.threads,
     async registerContribution(_binding, contribution) {
       const key = `${contribution.type}:${contribution.id}`;

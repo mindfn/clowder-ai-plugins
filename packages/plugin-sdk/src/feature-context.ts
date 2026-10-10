@@ -1,3 +1,5 @@
+import { createFrustrationClient, type PluginFrustrationHost } from './frustration.js';
+import { createDeploymentClient, type PluginDeploymentHost } from './deployment.js';
 import { createCustodyClient, guardPredicateVerifier, type PluginCustodyHost, type PluginPredicateVerifier } from './custody.js';
 import {
   validateManifest,
@@ -58,6 +60,8 @@ export interface HostContributionReceipt {
 export type PluginLogLevel = ModulePluginLogLevel;
 
 export interface FeatureHostAdapter {
+  readonly frustration?: PluginFrustrationHost;
+  readonly deployment?: PluginDeploymentHost;
   readonly custody?: PluginCustodyHost;
   readConfig(binding: FeatureBinding, key: string): Promise<unknown>;
   readSecret(binding: FeatureBinding, key: string): Promise<string | undefined>;
@@ -130,6 +134,8 @@ export interface ContributionRegistrar<T extends StaticContribution> {
 }
 
 export interface FeatureContext {
+  readonly frustration: PluginFrustrationHost;
+  readonly deployment: PluginDeploymentHost;
   readonly custody: PluginCustodyHost;
   readonly featureId: string;
   readonly config: { get(key: string): Promise<unknown> };
@@ -361,6 +367,14 @@ export function createFeatureContextSession(
     updateIfThreadId: (taskId, expectedThreadId, input) =>
       runWhileActive(() => adapter.tasks.updateIfThreadId(taskId, expectedThreadId, input)),
   };
+  const frustration = createFrustrationClient(adapter.frustration, needed => {
+    assertActive();
+    for (const capability of needed) if (!binding.grantedCapabilities.includes(capability)) throw new Error(`${capability} not granted`);
+  });
+  const deployment = createDeploymentClient(adapter.deployment, () => {
+    assertActive();
+    if (!binding.grantedCapabilities.includes('deployment.read')) throw new Error('deployment.read not granted');
+  });
   const custody = createCustodyClient(adapter.custody, () => {
     assertActive();
     if (!binding.grantedCapabilities.includes('custody.invoke')) throw new Error('custody.invoke not granted');
@@ -427,6 +441,8 @@ export function createFeatureContextSession(
     tasks,
     threads,
     custody,
+    deployment,
+    frustration,
     identity: registrar<IdentityContribution>('identity'),
     scheduler: registrar<ScheduleContribution>('schedule'),
     tools: registrar<DirectToolContribution>('tool'),

@@ -631,7 +631,7 @@ test('validateBindingNonce boundary cases', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 test('MAX_GRANT_ITEMS is frozen at the complete v0 capability cardinality', () => {
-  assert.equal(MAX_GRANT_ITEMS, 25);
+  assert.equal(MAX_GRANT_ITEMS, 28);
 });
 
 test('validateEffectiveGrants accepts valid arrays', () => {

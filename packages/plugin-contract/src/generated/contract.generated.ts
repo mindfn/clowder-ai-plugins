@@ -18,6 +18,52 @@ export type PackageIcon = {
 };
 export type PluginIcon = 'github' | PackageIcon;
 
+export type FrustrationSourceId = string;
+export type FrustrationSource = {
+  readonly issueId: string;
+  readonly status: 'draft' | 'confirmed' | 'skipped' | 'false_positive';
+  readonly threadId: string;
+  readonly userId: string;
+  readonly signalType: 'cli_error' | 'cancel_burst' | 'text_frustration' | 'a2a_timeout' | 'retry_burst' | 'user_report';
+  readonly signalDetail: {
+    readonly cancelCount?: number;
+    readonly windowMs?: number;
+    readonly reasonCode?: string;
+    readonly publicSummary?: string;
+    readonly publicHint?: string;
+  };
+  readonly userDescription?: string;
+  readonly recentMessageCount: number;
+  readonly communityIssueDraftId: string | null;
+  readonly sourceRevision: string;
+};
+export type FrustrationLinkDraftInput = {
+  readonly issueId: string;
+  readonly sourceRevision: string;
+  readonly expectedDraftId: string | null;
+  readonly draftId: string;
+};
+export type FrustrationLinkDraftResult = {
+  readonly outcome: 'linked' | 'already_linked';
+  readonly draftId: string;
+  readonly sourceRevision: string;
+} | {
+  readonly outcome: 'missing' | 'not_confirmed' | 'stale_source' | 'conflict';
+};
+export type DeploymentCatalog = {
+  readonly roster: Readonly<Record<string, {
+    readonly family: string;
+    readonly available: boolean;
+    readonly lead: boolean;
+  }>>;
+  readonly defaultCatId: string;
+  readonly policy: {
+    readonly requireDifferentFamily: boolean;
+    readonly preferActiveInThread: boolean;
+    readonly preferLead: boolean;
+    readonly excludeUnavailable: boolean;
+  };
+};
 export type TerminalPredicateProviderContribution = {
   readonly type: 'terminal-predicate-provider';
   readonly id: string;
@@ -119,7 +165,7 @@ export type PredicateProviderBinding = {
 export type SemVer = string;
 export type DataClass = 'cache' | 'ephemeral' | 'user-authored' | 'derived-user-visible' | 'relationship' | 'interaction-history';
 export type DataStrategy = 'lifecycle' | 'retained' | 'ask-on-uninstall';
-export type Capability = 'plugin.config.read' | 'plugin.state.get' | 'plugin.state.set' | 'messaging.send' | 'schedule.register' | 'events.publish' | 'messaging.appendElements' | 'media.read' | 'onMessage' | 'message.event.subscribe' | 'secret.read' | 'thread.listMetadata' | 'thread.readContent' | 'thread.write' | 'custody.invoke' | 'custody.verify' | 'task.read' | 'task.write' | 'memory.query' | 'memory.append' | 'memory.retrieve' | 'windows.create' | 'whisper.extend' | 'data.directory' | 'cloud.conversation.host';
+export type Capability = 'plugin.config.read' | 'plugin.state.get' | 'plugin.state.set' | 'messaging.send' | 'schedule.register' | 'events.publish' | 'messaging.appendElements' | 'media.read' | 'onMessage' | 'message.event.subscribe' | 'secret.read' | 'thread.listMetadata' | 'thread.readContent' | 'thread.write' | 'custody.invoke' | 'custody.verify' | 'deployment.read' | 'frustration.read' | 'frustration.link' | 'task.read' | 'task.write' | 'memory.query' | 'memory.append' | 'memory.retrieve' | 'windows.create' | 'whisper.extend' | 'data.directory' | 'cloud.conversation.host';
 export type DataDeclaration = {
   readonly name: string;
   readonly dataClass: 'cache';
@@ -1892,7 +1938,7 @@ export type PermissionMatrixEntry = {
   readonly firstPartyPreset: boolean;
 };
 export type PermissionMatrixInput = {
-  readonly entries: readonly [PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry];
+  readonly entries: readonly [PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry];
 };
 export type DeleteReplayEventsInput = {
   readonly subscriptionId: string;
@@ -1995,7 +2041,7 @@ export const L0_CAPABILITIES = ['plugin.config.read', 'plugin.state.get', 'plugi
 export type L0Capability = (typeof L0_CAPABILITIES)[number];
 export const L1_CAPABILITIES = ['messaging.send', 'schedule.register', 'events.publish', 'messaging.appendElements', 'media.read'] as const;
 export type L1Capability = (typeof L1_CAPABILITIES)[number];
-export const L2_CAPABILITIES = ['onMessage', 'message.event.subscribe', 'secret.read', 'thread.listMetadata', 'thread.readContent', 'thread.write', 'custody.invoke', 'custody.verify', 'task.read', 'task.write', 'memory.query', 'memory.append', 'memory.retrieve', 'windows.create', 'whisper.extend', 'data.directory', 'cloud.conversation.host'] as const;
+export const L2_CAPABILITIES = ['onMessage', 'message.event.subscribe', 'secret.read', 'thread.listMetadata', 'thread.readContent', 'thread.write', 'custody.invoke', 'custody.verify', 'deployment.read', 'frustration.read', 'frustration.link', 'task.read', 'task.write', 'memory.query', 'memory.append', 'memory.retrieve', 'windows.create', 'whisper.extend', 'data.directory', 'cloud.conversation.host'] as const;
 export type L2Capability = (typeof L2_CAPABILITIES)[number];
 export const CAPABILITY_TABLE = {
   L0: L0_CAPABILITIES,

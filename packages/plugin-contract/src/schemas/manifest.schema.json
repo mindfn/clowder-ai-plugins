@@ -6,7 +6,7 @@
   "x-clowder-capability-layers": {
     "L0": ["plugin.config.read", "plugin.state.get", "plugin.state.set"],
     "L1": ["messaging.send", "schedule.register", "events.publish", "messaging.appendElements", "media.read"],
-    "L2": ["onMessage", "message.event.subscribe", "secret.read", "thread.listMetadata", "thread.readContent", "thread.write", "custody.invoke", "custody.verify", "task.read", "task.write", "memory.query", "memory.append", "memory.retrieve", "windows.create", "whisper.extend", "data.directory", "cloud.conversation.host"]
+    "L2": ["onMessage", "message.event.subscribe", "secret.read", "thread.listMetadata", "thread.readContent", "thread.write", "custody.invoke", "custody.verify", "deployment.read", "frustration.read", "frustration.link", "task.read", "task.write", "memory.query", "memory.append", "memory.retrieve", "windows.create", "whisper.extend", "data.directory", "cloud.conversation.host"]
   },
   "x-clowder-data-class-strategies": {
     "cache": ["lifecycle", "retained", "ask-on-uninstall"],
@@ -18,6 +18,265 @@
   },
 
   "$defs": {
+    "FrustrationSourceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "FrustrationSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issueId",
+        "status",
+        "threadId",
+        "userId",
+        "signalType",
+        "signalDetail",
+        "recentMessageCount",
+        "communityIssueDraftId",
+        "sourceRevision"
+      ],
+      "properties": {
+        "issueId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "confirmed",
+            "skipped",
+            "false_positive"
+          ]
+        },
+        "threadId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "signalType": {
+          "enum": [
+            "cli_error",
+            "cancel_burst",
+            "text_frustration",
+            "a2a_timeout",
+            "retry_burst",
+            "user_report"
+          ]
+        },
+        "signalDetail": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "cancelCount": {
+              "type": "number",
+              "minimum": 0
+            },
+            "windowMs": {
+              "type": "number",
+              "minimum": 0
+            },
+            "reasonCode": {
+              "type": "string",
+              "maxLength": 16384
+            },
+            "publicSummary": {
+              "type": "string",
+              "maxLength": 16384
+            },
+            "publicHint": {
+              "type": "string",
+              "maxLength": 16384
+            }
+          }
+        },
+        "userDescription": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "recentMessageCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "communityIssueDraftId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "sourceRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "FrustrationLinkDraftInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issueId",
+        "sourceRevision",
+        "expectedDraftId",
+        "draftId"
+      ],
+      "properties": {
+        "issueId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "sourceRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "expectedDraftId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "draftId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "FrustrationLinkDraftResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "outcome",
+            "draftId",
+            "sourceRevision"
+          ],
+          "properties": {
+            "outcome": {
+              "enum": [
+                "linked",
+                "already_linked"
+              ]
+            },
+            "draftId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "sourceRevision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "outcome"
+          ],
+          "properties": {
+            "outcome": {
+              "enum": [
+                "missing",
+                "not_confirmed",
+                "stale_source",
+                "conflict"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "DeploymentCatalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roster",
+        "defaultCatId",
+        "policy"
+      ],
+      "properties": {
+        "roster": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1024,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "family",
+              "available",
+              "lead"
+            ],
+            "properties": {
+              "family": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "available": {
+                "type": "boolean"
+              },
+              "lead": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "defaultCatId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requireDifferentFamily",
+            "preferActiveInThread",
+            "preferLead",
+            "excludeUnavailable"
+          ],
+          "properties": {
+            "requireDifferentFamily": {
+              "type": "boolean"
+            },
+            "preferActiveInThread": {
+              "type": "boolean"
+            },
+            "preferLead": {
+              "type": "boolean"
+            },
+            "excludeUnavailable": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
     "TerminalPredicateProviderContribution": {
       "type": "object",
       "properties": {
@@ -591,6 +850,9 @@
         "thread.write",
         "custody.invoke",
         "custody.verify",
+        "deployment.read",
+        "frustration.read",
+        "frustration.link",
         "task.read",
         "task.write",
         "memory.query",

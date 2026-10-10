@@ -72,3 +72,7 @@ export {
 } from './docx-materialization.js';
 
 export * from "./custody.js";
+
+export * from './deployment.js';
+
+export * from './frustration.js';

@@ -225,6 +225,8 @@ export interface PluginMessagingHost {
 
 /** Structural mirror of the Host-owned in-process module surface. */
 export interface ModulePluginHostShape {
+  readonly frustration?: import('./frustration.js').PluginFrustrationHost;
+  readonly deployment?: import('./deployment.js').PluginDeploymentHost;
   readonly custody?: import('./custody.js').PluginCustodyHost;
   readonly config: { get(key: string): Promise<unknown> };
   readonly secrets: { get(key: string): Promise<string | undefined> };

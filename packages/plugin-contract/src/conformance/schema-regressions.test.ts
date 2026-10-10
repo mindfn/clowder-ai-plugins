@@ -85,7 +85,7 @@ test('MessageDraft accepts the K-1 shape-approved draft', () => {
   assert.equal(validate('MessageDraft', makeK1Draft()), true);
 });
 
-test('G-0 locks all 25 capability ids to their signed authorization tiers', () => {
+test('G-0 locks all 28 capability ids to their signed authorization tiers', () => {
   const expectedLayers = {
     L0: ['plugin.config.read', 'plugin.state.get', 'plugin.state.set'],
     L1: ['messaging.send', 'schedule.register', 'events.publish', 'messaging.appendElements', 'media.read'],
@@ -98,6 +98,9 @@ test('G-0 locks all 25 capability ids to their signed authorization tiers', () =
       'thread.write',
       'custody.invoke',
       'custody.verify',
+      'deployment.read',
+      'frustration.read',
+      'frustration.link',
       'task.read',
       'task.write',
       'memory.query',
@@ -113,7 +116,7 @@ test('G-0 locks all 25 capability ids to their signed authorization tiers', () =
 
   assert.deepEqual(manifestSchema['x-clowder-capability-layers'], expectedLayers);
   assert.deepEqual(capabilityEnum, Object.values(expectedLayers).flat());
-  assert.equal(capabilityEnum?.length, 25);
+  assert.equal(capabilityEnum?.length, 28);
   assert.equal(expectedLayers.L2.includes('whisper.extend'), true);
   assert.equal(capabilityEnum?.includes('lifecycle'), false);
   assert.equal('x-clowder-capability-policy' in manifestSchema, false);
