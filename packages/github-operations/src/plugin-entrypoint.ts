@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { CommunityReviewVerdictRuntime, REVIEW_VERDICT_METHOD } from './community-review-verdict.js';
 import { CommunityNarratorRuntime } from './community-narrator.js';
 import { communityNativeMethods } from './community-native-actions.js';
@@ -17,6 +18,10 @@ import { GitHubPrIndexProvider } from './pr-index-provider.js';
 import { ReviewTriggerReader } from './review-trigger-observation.js';
 import { CommunityReviewPredicateRuntime } from './community-review-verifier.js';
 import { CommunityCollectionRuntime, SdkCommunityCollectionStore } from './community-collection.js';
+
+// Host declared webhook dispatch nests the request under action params. The
+// webhook handlers declare no static params; flat requests are invalid.
+const webhookEnvelope = z.object({ request: z.record(z.unknown()) }).strict();
 
 interface Provider extends GitHubTrackingProvider { selfLogin(): string | undefined }
 export interface GitHubPluginOptions {
@@ -101,11 +106,11 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       },
       'github.community.http': (value: unknown, caller?: PluginActionContext) => {
         if (caller) throw new Error('Community owner HTTP cannot be invoked as a native action');
-        return http.forwardOwner(value);
+        return http.forwardOwner(webhookEnvelope.parse(value).request);
       },
       // Pure provider observation; registration consumes it inside this module.
       'github.review-trigger.observe': (value: unknown) => reviewTriggers.observe(value),
-      'github.webhook': (value: unknown) => community.webhook(value),
+      'github.webhook': (value: unknown) => community.webhook(webhookEnvelope.parse(value).request),
       'github.typed-wait.register-pr': (value: unknown, caller?: PluginActionContext) => tracking.registerPr(value, caller),
       'github.typed-wait.register-issue': (value: unknown, caller?: PluginActionContext) => tracking.registerIssue(value, caller),
       'github.typed-wait.unregister': (value: unknown, caller?: PluginActionContext) => tracking.unregister(value, caller),

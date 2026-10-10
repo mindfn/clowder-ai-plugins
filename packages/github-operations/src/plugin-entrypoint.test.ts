@@ -482,7 +482,7 @@ for (const path of ['repo-scan', 'repo-comment-poll', 'webhook'] as const) test(
     issue: { number: 7, title: 'issue', html_url: items[0]!.url, user: { login: 'outside' }, author_association: 'NONE' } }));
   const input = path === 'webhook' ? { method: 'POST', rawBody, headers: { 'x-github-event': 'issues',
     'x-github-delivery': 'projection-retry', 'x-hub-signature-256': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}` } } : {};
-  const invoke = () => active.actions[`github.${path}`]!(input);
+  const invoke = () => active.actions[`github.${path}`]!(path === 'webhook' ? { request: input } : input);
   broken = true;
   // Repository loops isolate failures; webhook rejects for provider retry.
   try { await invoke(); } catch (error) { assert.match(String(error), /projection unavailable/); }
@@ -876,7 +876,7 @@ test('declared webhook authenticates exact bytes, delivers via SDK, deduplicates
   const rawBody = Buffer.from(JSON.stringify(body));
   const headers = { 'x-github-event': 'issues', 'x-github-delivery': 'isolated-delivery-1',
     'x-hub-signature-256': `sha256=${createHmac('sha256', 'isolated-test-secret').update(rawBody).digest('hex')}` };
-  const handle = async (input: unknown) => await active.actions[declaration.action.method]!(input) as { status: number };
+  const handle = async (input: unknown) => await active.actions[declaration.action.method]!({ request: input }) as { status: number };
   await active.actions['github.repository.register']!({ repo: 'example/project', guardThreadId: 'thread-1', guardCatId: 'cat-1' });
   assert.equal((await handle({ method: 'POST', rawBody, body, headers: { ...headers, 'x-hub-signature-256': 'sha256=bad' } })).status, 403);
   assert.equal(f.deliveries.length, 0);
@@ -980,7 +980,7 @@ test('production Community HTTP uses current publish configuration and durable s
     return { outcome: 'linked', draftId: input.draftId, sourceRevision: input.sourceRevision };
   } } });
   let active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
-  const request = (path: string, method = 'GET') => ({ principal: { kind: 'owner', id: 'user-1' }, method, path: `github/${path}` });
+  const request = (path: string, method = 'GET') => ({ request: { principal: { kind: 'owner', id: 'user-1' }, method, path: `github/${path}` } });
   try {
     const http = active.actions['github.community.http']; assert.equal(typeof http, 'function');
     assert.equal((await http!(request('community-issue-drafts/config')) as any).body.defaultRepo, 'example/project');
@@ -1001,7 +1001,7 @@ test('production Community HTTP uses current publish configuration and durable s
 
 test('production source route refuses unavailable Host port or disabled publishing without creating drafts', async () => {
   const f = host(), active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
-  const request = { principal: { kind: 'owner', id: 'user-1' }, method: 'POST', path: 'github/community-issue-drafts/from-frustration-issue/source-1' };
+  const request = { request: { principal: { kind: 'owner', id: 'user-1' }, method: 'POST', path: 'github/community-issue-drafts/from-frustration-issue/source-1' } };
   try {
     const before = await f.runtimeHost.storage.list();
     const unavailable = await active.actions['github.community.http']!(request) as any;
@@ -1023,8 +1023,8 @@ test('declared native Community triage requires Host context and persists authen
   try {
     const http = active.actions['github.community.http']!;
     const request = { principal: { kind: 'owner', id: 'user-1' }, method: 'POST', path: 'github/community-issues', body: { repo: 'org/repo', issueNumber: 1, title: 'Proposal', issueType: 'feature' } };
-    const created = await http(request) as any, id = created.body.id;
-    await http({ ...request, method: 'PATCH', path: `github/community-issues/${id}`, body: { state: 'discussing' } });
+    const created = await http({ request }) as any, id = created.body.id;
+    await http({ request: { ...request, method: 'PATCH', path: `github/community-issues/${id}`, body: { state: 'discussing' } } });
     const action = active.actions['github.community.triage-complete']; assert.equal(typeof action, 'function');
     const payload = { catId: caller.catId, verdict: 'WELCOME', questions: ['Q1','Q2','Q3','Q4','Q5'].map(id => ({ id, result: 'PASS' })) };
     await assert.rejects(async () => action!({ id, payload }), /native.*context/i);
@@ -1051,7 +1051,7 @@ test('production narrator intent survives outbox failure and recovers the same c
   };
   const module = createGitHubPluginModule();
   let active = await module.create(manifest).start(f.runtimeHost);
-  const http = (path: string, body?: unknown) => active.actions['github.community.http']!({ method: 'POST', path: 'github/'+path, principal: { kind: 'owner', id: 'user-1' }, ...(body ? { body } : {}) }) as Promise<any>;
+  const http = (path: string, body?: unknown) => active.actions['github.community.http']!({ request: { method: 'POST', path: 'github/'+path, principal: { kind: 'owner', id: 'user-1' }, ...(body ? { body } : {}) } }) as Promise<any>;
   const created = await http('community-issues', { repo: 'org/repo', issueNumber: 991, title: 'Narrator case', issueType: 'feature' });
   const id = created.body.id;
   assert.equal((await http(`community-issues/${id}/dispatch`)).status, 200);
@@ -1078,7 +1078,7 @@ function narratorHost() {
   return { ...f, config, catalog };
 }
 async function narratorCase(active: Awaited<ReturnType<ReturnType<ReturnType<typeof createGitHubPluginModule>['create']>['start']>>) {
-  const request = (method: string, path: string, body?: unknown) => active.actions['github.community.http']!({ method, path: 'github/'+path, principal: { kind: 'owner', id: 'user-1' }, ...(body ? { body } : {}) }) as Promise<any>;
+  const request = (method: string, path: string, body?: unknown) => active.actions['github.community.http']!({ request: { method, path: 'github/'+path, principal: { kind: 'owner', id: 'user-1' }, ...(body ? { body } : {}) } }) as Promise<any>;
   const created = await request('POST', 'community-issues', { repo: 'org/repo', issueNumber: 992, title: 'Narrator recovery', issueType: 'feature' });
   return { request, id: created.body.id as string };
 }
@@ -1250,4 +1250,24 @@ test('production native verdict uses SDK custody and private completion verifier
     assert.ok(manifest.features[0].capabilities.includes('custody.invoke'));
     assert.equal((await source.read(subjectKey)).some(e=>e.kind==='case.review_verdict_recorded'),false);
   } finally {await active.stop();}
+});
+
+// DeclaredRuntimeContributions forwards action.params plus a nested request.
+// Community contributions declare no params: only this envelope is accepted.
+test('production owner HTTP accepts only the Host envelope and preserves owner/native isolation', async () => {
+  const f = host(), active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+  const http = active.actions['github.community.http']!;
+  const request = { method: 'GET', path: 'github/community-issue-drafts/config', principal: { kind: 'owner', id: 'user-1' } };
+  try {
+    const before = await f.runtimeHost.storage.list();
+    for (const value of [request, {}, { request: null }, { request: [] }, { request, principal: request.principal }]) {
+      await assert.rejects(async () => http(value));
+    }
+    for (const principal of [undefined, { kind: 'anonymous' }, { kind: 'owner', id: '' }]) {
+      await assert.rejects(async () => http({ request: { ...request, principal } }));
+    }
+    await assert.rejects(async () => http({ request }, caller), /native/);
+    assert.deepEqual(await f.runtimeHost.storage.list(), before);
+    assert.equal((await http({ request }) as any).status, 200);
+  } finally { await active.stop(); }
 });
