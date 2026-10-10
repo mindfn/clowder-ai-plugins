@@ -2,33 +2,25 @@ import assert from 'node:assert/strict';
 import { access, readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-// These consumers require Host-authenticated routing/assignment truth. Keeping
-// an unused compiled copy would make it available to package importers anyway.
-for (const name of ['community-closure-checklist', 'community-decision-queue',
-  'community-decision-queue-closure', 'community-decision-queue-types', 'community-route-recommendation']) {
-  test(`package excludes inactive Host decision/closure read model ${name}`, async () => {
+// Operator043 moves the whole Community business to the package. This is
+// source/build inventory only; authenticated workflow and installed acceptance
+// remain separate evidence, never inferred from presence.
+for (const name of [
+  'GuardianMatcher', 'RoleResolver', 'TriageOrchestrator',
+  'community-closure-checklist', 'community-decision-queue',
+  'community-decision-queue-closure', 'community-decision-queue-types',
+  'community-route-recommendation', 'community-bootstrap', 'community-auto-tracking',
+  'narrator/NarratorDriver', 'narrator/RedisNarratorDedupStore',
+]) {
+  test(`whole Community migration accounts for ${name} without claiming installed replacement`, async () => {
     for (const directory of ['src', 'dist']) {
-      await assert.rejects(access(new URL(`../${directory}/business/domains/community/${name}.${directory === 'src' ? 'ts' : 'js'}`, import.meta.url)), { code: 'ENOENT' });
+      await access(new URL(`../${directory}/business/domains/community/${name}.${directory === 'src' ? 'ts' : 'js'}`, import.meta.url));
     }
     const map = JSON.parse(await readFile(new URL('../migration/source-map.json', import.meta.url), 'utf8'));
     const entry = map.entries.find((entry: { source: string }) => entry.source.endsWith(`/${name}.ts`));
-    assert.equal(entry.disposition, 'inactive-host-decision-read-model-copy-removed');
-    assert.equal(entry.hostLegacyRemoved, false);
+    assert.equal(entry.sourceHead, 'bb9f9f08ec574ee8888fbde9819ff95da96bb614');
+    assert.equal(entry.removedPackageCopy, undefined);
     assert.equal(entry.realPackageReplacementVerified, false);
-  });
-}
-
-for (const name of ['community-bootstrap', 'community-auto-tracking']) {
-  test(`package excludes Host governance consumer ${name} from source and built artifact`, async () => {
-    for (const directory of ['src', 'dist']) {
-      const extension = directory === 'src' ? 'ts' : 'js';
-      await assert.rejects(access(new URL(`../${directory}/business/domains/community/${name}.${extension}`, import.meta.url)),
-        { code: 'ENOENT' });
-    }
-    const map = JSON.parse(await readFile(new URL('../migration/source-map.json', import.meta.url), 'utf8'));
-    const entry = map.entries.find((entry: { source: string }) => entry.source.endsWith(`/${name}.ts`));
-    assert.equal(entry.disposition, 'host-retained-governance-consumer');
-    assert.equal(entry.hostLegacyRemoved, false);
   });
 }
 
@@ -38,26 +30,8 @@ test('default package does not ship the legacy automatic rebase/push executor', 
   }
 });
 
-for (const name of ['RoleResolver', 'narrator/NarratorDriver', 'narrator/RedisNarratorDedupStore']) {
-  test(`package does not ship legacy role/wake consumer ${name}`, async () => {
-    for (const directory of ['src', 'dist']) {
-      await assert.rejects(access(new URL(`../${directory}/business/domains/community/${name}.${directory === 'src' ? 'ts' : 'js'}`, import.meta.url)), { code: 'ENOENT' });
-    }
-  });
-}
-
-for (const path of [
-  'domains/community/GuardianMatcher',
-  'infrastructure/github/pr-review-event-wait-coverage',
-]) {
-  test(`package excludes legacy Host admission helper ${path}`, async () => {
-    for (const directory of ['src', 'dist']) {
-      await assert.rejects(access(new URL(`../${directory}/business/${path}.${directory === 'src' ? 'ts' : 'js'}`, import.meta.url)), { code: 'ENOENT' });
-    }
-    const map = JSON.parse(await readFile(new URL('../migration/source-map.json', import.meta.url), 'utf8'));
-    const entry = map.entries.find((entry: { source: string }) => entry.source === `packages/api/src/${path}.ts`);
-    assert.equal(entry.disposition, 'legacy-host-admission-copy-removed');
-    assert.equal(entry.hostLegacyRemoved, false);
-    assert.equal(entry.realPackageReplacementVerified, false);
-  });
-}
+test('package does not restore the old Host admission coverage helper', async () => {
+  for (const directory of ['src', 'dist']) {
+    await assert.rejects(access(new URL(`../${directory}/business/infrastructure/github/pr-review-event-wait-coverage.${directory === 'src' ? 'ts' : 'js'}`, import.meta.url)), { code: 'ENOENT' });
+  }
+});

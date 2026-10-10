@@ -1,13 +1,13 @@
-import type { ConsensusResult, DirectionCardPayload, IssueState, TriageEntry } from '@cat-cafe/shared';
-import { deriveTriageConfidence } from '@cat-cafe/shared';
-import type { ICommunityIssueStore } from '../cats/services/stores/ports/CommunityIssueStore.js';
-import type { IThreadStore } from '../cats/services/stores/ports/ThreadStore.js';
+import type { ConsensusResult, DirectionCardPayload, IssueState, TriageEntry } from '../../model/index.js';
+import { deriveTriageConfidence } from '../../model/index.js';
+import type { ICommunityIssueStore } from './ports/CommunityIssueStore.js';
+import type { CommunityThreads } from './ports/CommunityThreads.js';
 import type { ICommunityRepoConfigStore } from './CommunityRepoConfigStore.js';
 import { resolveConsensus } from './reconciliation/resolveConsensus.js';
 
 interface TriageOrchestratorDeps {
   communityIssueStore: Pick<ICommunityIssueStore, 'get' | 'update'>;
-  threadStore?: Pick<IThreadStore, 'create' | 'get'>;
+  threadStore?: CommunityThreads;
   // F168 Phase F: per-repo routing config for auto-route.
   // When wired, WELCOME consensus branches on confidence:
   //   high → auto-route (assignedCatId from config, routeAcceptance=pending)

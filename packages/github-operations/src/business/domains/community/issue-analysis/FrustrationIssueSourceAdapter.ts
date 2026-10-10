@@ -4,8 +4,8 @@
  * (e.g. cat-initiated issues) plug in as new adapters in Phase B.
  */
 
-import type { CommunityIssueDraft, FrustrationIssue, FrustrationSignalType } from '@cat-cafe/shared';
-import type { ICommunityIssueDraftStore } from '../../cats/services/stores/ports/CommunityIssueDraftStore.js';
+import type { CommunityIssueDraft, FrustrationIssue, FrustrationSignalType } from '../../../model/index.js';
+import type { ICommunityIssueDraftStore } from '../ports/CommunityIssueDraftStore.js';
 import { sanitize } from './CommunityIssueSanitizer.js';
 
 // ── Config ────────────────────────────────────────────────────

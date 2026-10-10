@@ -1,6 +1,6 @@
-import type { ICommunityIssueStore } from '../domains/cats/services/stores/ports/CommunityIssueStore.js';
-import type { ICommunityPrStore } from '../domains/cats/services/stores/ports/CommunityPrStore.js';
-import type { ITaskStore } from '../domains/cats/services/stores/ports/TaskStore.js';
+import type { ICommunityIssueStore } from '../domains/community/ports/CommunityIssueStore.js';
+import type { ICommunityPrStore } from '../domains/community/ports/CommunityPrStore.js';
+import type { CommunityTracking as ITaskStore } from '../domains/community/ports/CommunityTracking.js';
 import type { ICommunityObjectStore } from '../domains/community/CommunityObjectStore.js';
 import { computeClosureChecklist } from '../domains/community/community-closure-checklist.js';
 import type { CommunityBoardIssueLike, CommunityBoardPrLike } from '../domains/community/community-decision-queue.js';

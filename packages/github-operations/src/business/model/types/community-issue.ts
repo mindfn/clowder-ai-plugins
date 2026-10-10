@@ -1,5 +1,11 @@
-import type { CommunityRole } from './community-role.js';
+/**
+ * Community Issue Types (F168 — 社区事务编排引擎)
+ * Repo-agnostic issue/PR board for community operations.
+ */
 
+// F168 Phase C: imported for narrator TriageEntry extension (authoredByRole, recommendedOwnerRole).
+// The circular-import risk is absent: community-role.ts has no dependency on community-issue.ts.
+import type { CommunityRole } from './community-role.js';
 
 export type IssueState = 'unreplied' | 'discussing' | 'pending-decision' | 'accepted' | 'declined' | 'closed';
 export type IssueType = 'bug' | 'feature' | 'enhancement' | 'question';
@@ -124,6 +130,11 @@ export interface ConsensusResult {
   readonly resolvedAt: number;
 }
 
+export interface DirectionCardPayload {
+  readonly entries: readonly TriageEntry[];
+  readonly consensus?: ConsensusResult;
+}
+
 // Phase D: Intake Guardian types
 export interface IntakeChecklistItem {
   readonly id: string;
@@ -146,6 +157,47 @@ export interface GuardianAssignment {
   readonly checklist: readonly IntakeChecklistItem[];
 }
 
+export const DEFAULT_INTAKE_CHECKLIST: readonly Omit<IntakeChecklistItem, 'evidence' | 'verifiedAt' | 'verifiedBy'>[] =
+  [
+    { id: 'vision-alignment', label: '愿景对齐：交付物解决了co-creator的原始需求', required: true },
+    { id: 'test-coverage', label: '测试覆盖：新增行为有对应测试', required: true },
+    { id: 'doc-sync', label: '文档同步：spec/plan/BACKLOG 已更新', required: true },
+    { id: 'no-regression', label: '无回归：现有测试全绿', required: true },
+    { id: 'design-fidelity', label: '设计一致：UI 与设计稿一致（如适用）', required: false },
+  ];
+
+export function validateIntakeChecklist(checklist: readonly IntakeChecklistItem[]): {
+  valid: boolean;
+  missing: readonly string[];
+} {
+  const missing = DEFAULT_INTAKE_CHECKLIST.filter((item) => item.required)
+    .filter((req) => {
+      const found = checklist.find((c) => c.id === req.id);
+      return !found?.evidence;
+    })
+    .map((item) => item.id);
+  return { valid: missing.length === 0, missing };
+}
+
+export interface UpdateCommunityIssueInput {
+  readonly state?: IssueState;
+  readonly replyState?: ReplyState;
+  readonly consensusState?: ConsensusState;
+  readonly issueType?: IssueType;
+  readonly title?: string;
+  readonly assignedThreadId?: string | null;
+  readonly assignedCatId?: string | null;
+  readonly linkedPrNumbers?: readonly number[];
+  readonly directionCard?: Record<string, unknown> | null;
+  readonly ownerDecision?: 'accepted' | 'declined' | null;
+  readonly relatedFeature?: string | null;
+  readonly guardianAssignment?: GuardianAssignment | null;
+  readonly lastActivity?: { readonly at: number; readonly event: string };
+  // Phase F: route validation + source tracking
+  readonly routeAcceptance?: RouteAcceptance | null;
+  readonly routeSource?: RouteSource | null;
+}
+
 // ---------------------------------------------------------------------------
 // Phase F: Route acceptance state + source tracking (SO-2, SO-3)
 // ---------------------------------------------------------------------------
@@ -155,6 +207,9 @@ export type RouteAcceptance = 'pending' | 'accepted' | 'rejected';
 
 /** How the route was established. */
 export type RouteSource = 'auto' | 'manual' | 'backfill';
+
+/** Triage confidence level — binary split per operator direction. */
+export type TriageConfidence = 'high' | 'low';
 
 // ---------------------------------------------------------------------------
 // Phase F: Per-repo routing config (SO-0)
@@ -171,4 +226,49 @@ export interface CommunityRepoConfig {
   readonly cloudReviewPolicy: 'optional' | 'required';
   readonly createdAt: number;
   readonly updatedAt: number;
+}
+
+// ---------------------------------------------------------------------------
+// Phase F: deriveTriageConfidence — pure function (INV-F1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive triage confidence from a TriageEntry.
+ *
+ * HIGH requires ALL of:
+ *   1. routeRecommendation.kind === 'existing-thread' (knows where to go)
+ *   2. verdict === 'WELCOME' (direction confirmed)
+ *   3. All questions are PASS or WARN (no FAIL/UNKNOWN)
+ *   4. questions array is non-empty
+ *
+ * Everything else → LOW.
+ *
+ * INV-F1: Pure function — no side effects, no store reads.
+ */
+export function deriveTriageConfidence(
+  entry: Pick<TriageEntry, 'verdict' | 'questions' | 'routeRecommendation'>,
+): TriageConfidence {
+  // Must have an existing-thread route recommendation
+  if (!entry.routeRecommendation || entry.routeRecommendation.kind !== 'existing-thread') {
+    return 'low';
+  }
+
+  // Must be WELCOME verdict
+  if (entry.verdict !== 'WELCOME') {
+    return 'low';
+  }
+
+  // Questions must exist and be non-empty
+  const questions = entry.questions;
+  if (!questions || questions.length === 0) {
+    return 'low';
+  }
+
+  // All questions must be PASS or WARN
+  const allAcceptable = questions.every((q) => q.result === 'PASS' || q.result === 'WARN');
+  if (!allAcceptable) {
+    return 'low';
+  }
+
+  return 'high';
 }

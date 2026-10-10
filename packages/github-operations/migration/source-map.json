@@ -45,121 +45,207 @@
     },
     {
       "source": "packages/api/src/domains/community/GuardianMatcher.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "56aadf8dfb26a2b70557e771acae58c27fdd2328b76897b383a942aaad5226d1",
-      "lines": 80,
-      "disposition": "legacy-host-admission-copy-removed",
-      "removedPackageCopy": "packages/github-operations/src/business/domains/community/GuardianMatcher.ts",
-      "reason": "Ruling338 keeps authenticated guardian assignment in Host. The frozen Host community-issues route checks principal, roster, accepted case and existing assignment before choosing a guardian and issuing signoff token. This copied helper has no package runtime or test importer; remove the unused private-roster alternative. No package guardian authority or Host replacement is claimed.",
-      "evidence": "migration/boundary-parity.md#legacy-admission-helper-audit; src/migration-boundary.test.ts; scripts/audit-github-migration.mjs",
-      "packageBusinessMoved": "not claimed; Host admission helper copy removed",
+      "target": "packages/github-operations/src/business/domains/community/GuardianMatcher.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
       "realPackageReplacementVerified": false,
-      "hostLegacyRemoved": false
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "legacy-host-admission-copy-removed",
+        "removedPackageCopy": "packages/github-operations/src/business/domains/community/GuardianMatcher.ts",
+        "reason": "Ruling338 keeps authenticated guardian assignment in Host. The frozen Host community-issues route checks principal, roster, accepted case and existing assignment before choosing a guardian and issuing signoff token. This copied helper has no package runtime or test importer; remove the unused private-roster alternative. No package guardian authority or Host replacement is claimed.",
+        "evidence": "migration/boundary-parity.md#legacy-admission-helper-audit; src/migration-boundary.test.ts; scripts/audit-github-migration.mjs",
+        "packageBusinessMoved": "not claimed; Host admission helper copy removed",
+        "realPackageReplacementVerified": false,
+        "hostLegacyRemoved": false
+      }
     },
     {
       "source": "packages/api/src/domains/community/RoleResolver.ts",
-      "target": "packages/github-operations/src/business/domains/community/RoleResolver.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "ccf8df701ba658c4a9660b1df5e876f8755fd4383b6f5eb9186e56152dc4db46",
-      "lines": 159,
-      "disposition": "host-retained-governance-consumer",
-      "removedPackageCopy": true,
-      "reason": "Ruling463: Host retains authenticated role/thread bindings, triage-complete and assignment transitions. Package presentation uses bounded provider facts and ordinary SDK messaging; no private callback or narrator wake.",
-      "replacement": [
-        "packages/github-operations/src/provider-briefing.ts"
-      ],
-      "packageBusinessMoved": "provider presentation only; no role authority",
-      "realPackageReplacementVerified": "builtin repository scan briefing and deduplication test; Host cutover not claimed",
-      "hostLegacyRemoved": false
+      "target": "packages/github-operations/src/business/domains/community/RoleResolver.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "host-retained-governance-consumer",
+        "removedPackageCopy": true,
+        "reason": "Ruling463: Host retains authenticated role/thread bindings, triage-complete and assignment transitions. Package presentation uses bounded provider facts and ordinary SDK messaging; no private callback or narrator wake.",
+        "replacement": [
+          "packages/github-operations/src/provider-briefing.ts"
+        ],
+        "packageBusinessMoved": "provider presentation only; no role authority",
+        "realPackageReplacementVerified": "builtin repository scan briefing and deduplication test; Host cutover not claimed",
+        "hostLegacyRemoved": false
+      }
     },
     {
       "source": "packages/api/src/domains/community/TriageOrchestrator.ts",
-      "target": "packages/github-operations/src/business/domains/community/TriageOrchestrator.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "b240c7c5c108e820a444477d4f9e349213848608980416aeb853c9b9eb26db8f",
-      "lines": 182,
-      "disposition": "host-retained-governance-consumer",
-      "removedPackageCopy": true,
-      "reason": "Ruling338: durable assignment, routeAcceptance and accepted-case writes stay Host-owned. Only the pure consensus recommendation is callable in the package; supplied evidence labels are not authenticated reviewers.",
-      "replacement": [
-        "packages/github-operations/src/triage-recommendation.ts",
-        "packages/github-operations/src/business/domains/community/reconciliation/resolveConsensus.ts"
-      ],
-      "packageBusinessMoved": "pure recommendation only",
-      "realPackageReplacementVerified": "generic builtin triage recommendation test; governance replacement not claimed",
-      "hostLegacyRemoved": false
+      "target": "packages/github-operations/src/business/domains/community/TriageOrchestrator.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "host-retained-governance-consumer",
+        "removedPackageCopy": true,
+        "reason": "Ruling338: durable assignment, routeAcceptance and accepted-case writes stay Host-owned. Only the pure consensus recommendation is callable in the package; supplied evidence labels are not authenticated reviewers.",
+        "replacement": [
+          "packages/github-operations/src/triage-recommendation.ts",
+          "packages/github-operations/src/business/domains/community/reconciliation/resolveConsensus.ts"
+        ],
+        "packageBusinessMoved": "pure recommendation only",
+        "realPackageReplacementVerified": "generic builtin triage recommendation test; governance replacement not claimed",
+        "hostLegacyRemoved": false
+      }
     },
     {
       "source": "packages/api/src/domains/community/community-auto-tracking.ts",
-      "target": "packages/github-operations/src/business/domains/community/community-auto-tracking.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "1f96fb2e2362680d467dc6dc09ec50e25c681ddb11c24a94e3552a382e76cb33",
-      "lines": 131,
-      "disposition": "host-retained-governance-consumer",
-      "removedPackageCopy": true,
-      "reason": "Ruling338: canonical case.routed admission and its assignment-derived tracking transition stay with authenticated Host consumers. The package offers ordinary explicit registration, never derives authority from supplied event payloads.",
-      "replacement": [
-        "packages/github-operations/src/tracking-runtime.ts"
-      ],
-      "packageBusinessMoved": "explicit provider tracking only; authenticated routing bridge retained",
-      "realPackageReplacementVerified": "ordinary tracking builtin journey; Host routing replacement not claimed",
-      "hostLegacyRemoved": false
+      "target": "packages/github-operations/src/business/domains/community/community-auto-tracking.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "host-retained-governance-consumer",
+        "removedPackageCopy": true,
+        "reason": "Ruling338: canonical case.routed admission and its assignment-derived tracking transition stay with authenticated Host consumers. The package offers ordinary explicit registration, never derives authority from supplied event payloads.",
+        "replacement": [
+          "packages/github-operations/src/tracking-runtime.ts"
+        ],
+        "packageBusinessMoved": "explicit provider tracking only; authenticated routing bridge retained",
+        "realPackageReplacementVerified": "ordinary tracking builtin journey; Host routing replacement not claimed",
+        "hostLegacyRemoved": false
+      }
     },
     {
       "source": "packages/api/src/domains/community/community-bootstrap.ts",
-      "target": "packages/github-operations/src/business/domains/community/community-bootstrap.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "2a3907bfbdd6cc49b1e856670cc90782a02487660eb60bcfd5e319e6423b14e1",
-      "lines": 127,
-      "disposition": "host-retained-governance-consumer",
-      "removedPackageCopy": true,
-      "reason": "Ruling338: old case.bootstrap copies originalRecord including assignedThreadId/assignedCatId and maps accepted to routed. This is an authenticated legacy governance migration, not provider-state copy. No original records or Host files are removed.",
-      "packageBusinessMoved": "not applicable to provider-private state",
-      "realPackageReplacementVerified": "not claimed; legacy assignment state retained in Host",
-      "hostLegacyRemoved": false
+      "target": "packages/github-operations/src/business/domains/community/community-bootstrap.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "host-retained-governance-consumer",
+        "removedPackageCopy": true,
+        "reason": "Ruling338: old case.bootstrap copies originalRecord including assignedThreadId/assignedCatId and maps accepted to routed. This is an authenticated legacy governance migration, not provider-state copy. No original records or Host files are removed.",
+        "packageBusinessMoved": "not applicable to provider-private state",
+        "realPackageReplacementVerified": "not claimed; legacy assignment state retained in Host",
+        "hostLegacyRemoved": false
+      }
     },
     {
       "source": "packages/api/src/domains/community/community-closure-checklist.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "b6c3808a87a44916f71134a776508ebebefb0cb3b997b048aa93a5c317bcf0bd",
-      "lines": 104,
-      "disposition": "inactive-host-decision-read-model-copy-removed",
-      "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-closure-checklist.ts",
-      "hostLegacyRemoved": false,
+      "target": "packages/github-operations/src/business/domains/community/community-closure-checklist.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
       "realPackageReplacementVerified": false,
-      "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
-      "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
-      "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "inactive-host-decision-read-model-copy-removed",
+        "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-closure-checklist.ts",
+        "hostLegacyRemoved": false,
+        "realPackageReplacementVerified": false,
+        "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
+        "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
+        "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
+      }
     },
     {
       "source": "packages/api/src/domains/community/community-decision-queue-closure.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "61a292ff26b7a2ac5ebc05f567ca3eb642f572d40b20e5863dacf0331f4b5543",
-      "lines": 131,
-      "disposition": "inactive-host-decision-read-model-copy-removed",
-      "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-decision-queue-closure.ts",
-      "hostLegacyRemoved": false,
+      "target": "packages/github-operations/src/business/domains/community/community-decision-queue-closure.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
       "realPackageReplacementVerified": false,
-      "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
-      "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
-      "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "inactive-host-decision-read-model-copy-removed",
+        "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-decision-queue-closure.ts",
+        "hostLegacyRemoved": false,
+        "realPackageReplacementVerified": false,
+        "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
+        "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
+        "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
+      }
     },
     {
       "source": "packages/api/src/domains/community/community-decision-queue-types.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "c54f330e0943ea57a1ce2d5a8b79813bffcfa0d20230149fe34ae282bc7995b3",
-      "lines": 129,
-      "disposition": "inactive-host-decision-read-model-copy-removed",
-      "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-decision-queue-types.ts",
-      "hostLegacyRemoved": false,
+      "target": "packages/github-operations/src/business/domains/community/community-decision-queue-types.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
       "realPackageReplacementVerified": false,
-      "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
-      "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
-      "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "inactive-host-decision-read-model-copy-removed",
+        "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-decision-queue-types.ts",
+        "hostLegacyRemoved": false,
+        "realPackageReplacementVerified": false,
+        "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
+        "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
+        "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
+      }
     },
     {
       "source": "packages/api/src/domains/community/community-decision-queue.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "9a2045622ada9a23427a6a561a3bd58794241be22486b57df48dfe2d6862e074",
-      "lines": 368,
-      "disposition": "inactive-host-decision-read-model-copy-removed",
-      "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-decision-queue.ts",
-      "hostLegacyRemoved": false,
+      "target": "packages/github-operations/src/business/domains/community/community-decision-queue.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
       "realPackageReplacementVerified": false,
-      "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
-      "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
-      "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "inactive-host-decision-read-model-copy-removed",
+        "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-decision-queue.ts",
+        "hostLegacyRemoved": false,
+        "realPackageReplacementVerified": false,
+        "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
+        "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
+        "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
+      }
     },
     {
       "source": "packages/api/src/domains/community/community-delivery-policy.ts",
@@ -214,15 +300,25 @@
     },
     {
       "source": "packages/api/src/domains/community/community-route-recommendation.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "0520ef153febdffffbc58f045e234285cf120adddab9321b5a0079917325bd72",
-      "lines": 10,
-      "disposition": "inactive-host-decision-read-model-copy-removed",
-      "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-route-recommendation.ts",
-      "hostLegacyRemoved": false,
+      "target": "packages/github-operations/src/business/domains/community/community-route-recommendation.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
       "realPackageReplacementVerified": false,
-      "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
-      "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
-      "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "inactive-host-decision-read-model-copy-removed",
+        "removedPackageCopy": "packages/github-operations/src/business/domains/community/community-route-recommendation.ts",
+        "hostLegacyRemoved": false,
+        "realPackageReplacementVerified": false,
+        "packageBusinessMoved": "No runtime replacement claimed; unused package read-model copy removed",
+        "reason": "Rulings286/338 retain authenticated case/assignment/waiver authority in Host. This inactive read-model cluster has no package runtime/test caller; it renders Host-only closure/direction/finding endpoints and consumes Host case projections. Package repository observations do not replace this board. Host provider/UI decomposition remains open.",
+        "evidence": "migration/boundary-parity.md#inactive-decision-read-models; src/migration-boundary.test.ts; source-reachability-6a238f1.json (external evidence)"
+      }
     },
     {
       "source": "packages/api/src/domains/community/community-sla-policy.ts",
@@ -268,11 +364,21 @@
     },
     {
       "source": "packages/api/src/domains/community/external-review/ExternalReviewVerdictService.ts",
-      "sourceSha256": "9195de5a8ed68af0c6cf8f611988ad03c69fb319b931874d0781214f36bd177f",
-      "lines": 511,
-      "disposition": "host-retained-governance-consumer",
-      "removedPackageCopy": "packages/github-operations/src/business/domains/community/external-review/ExternalReviewVerdictService.ts",
-      "reason": "W3 coordinator boundary ruling: callback principal, reviewer admission, lease preflight/completion and canonical verdict writes remain in existing Host governance; provider-specific adapters require Host cutover separation. Package copy removed, not typecheck-excluded."
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
+      "sourceSha256": "3b3082cc73b806591f3a2e0b62a0172a3b1d116eb4cd693004d2972a6bbdd8e0",
+      "target": "packages/github-operations/src/business/domains/community/external-review/ExternalReviewVerdictService.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "host-retained-governance-consumer",
+        "removedPackageCopy": "packages/github-operations/src/business/domains/community/external-review/ExternalReviewVerdictService.ts",
+        "reason": "W3 coordinator boundary ruling: callback principal, reviewer admission, lease preflight/completion and canonical verdict writes remain in existing Host governance; provider-specific adapters require Host cutover separation. Package copy removed, not typecheck-excluded."
+      }
     },
     {
       "source": "packages/api/src/domains/community/external-review/external-cloud-review-classifier.ts",
@@ -308,11 +414,21 @@
     },
     {
       "source": "packages/api/src/domains/community/external-review/external-review-verdict-submission.ts",
-      "sourceSha256": "f1f01bec4995400a3803cbd37a24f66e267d598aa8299b12435fa15e988297a4",
-      "lines": 362,
-      "disposition": "host-retained-governance-consumer",
-      "removedPackageCopy": "packages/github-operations/src/business/domains/community/external-review/external-review-verdict-submission.ts",
-      "reason": "W3 coordinator boundary ruling: callback principal, reviewer admission, lease preflight/completion and canonical verdict writes remain in existing Host governance; provider-specific adapters require Host cutover separation. Package copy removed, not typecheck-excluded."
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
+      "sourceSha256": "2aa28bf463397c0ea9843840fd8b7927043f207ec4127d439f125fa628b63f23",
+      "target": "packages/github-operations/src/business/domains/community/external-review/external-review-verdict-submission.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "host-retained-governance-consumer",
+        "removedPackageCopy": "packages/github-operations/src/business/domains/community/external-review/external-review-verdict-submission.ts",
+        "reason": "W3 coordinator boundary ruling: callback principal, reviewer admission, lease preflight/completion and canonical verdict writes remain in existing Host governance; provider-specific adapters require Host cutover separation. Package copy removed, not typecheck-excluded."
+      }
     },
     {
       "source": "packages/api/src/domains/community/github/GitHubIssueFetcher.ts",
@@ -329,19 +445,28 @@
     },
     {
       "source": "packages/api/src/domains/community/github/GitHubIssuePublisher.ts",
-      "target": "packages/github-operations/src/business/domains/community/github/GitHubIssuePublisher.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "58c9b1c6bb308db82bbbf64892787971cc4d3acc777fc083e9dbe9243e22349e",
-      "lines": 105,
-      "disposition": "replaced-native-publication-transport",
-      "removedPackageCopy": true,
-      "reason": "Ruling404: legacy userId/confirmed source records stay in Host. Native installation-private drafts use generic owner-local operation, durable attempt journal and gh transport; no legacy adoption.",
-      "replacement": [
-        "packages/github-operations/src/native-issue-drafts.ts",
-        "packages/github-operations/src/github-provider.ts"
-      ],
-      "packageBusinessMoved": "native draft only; legacy admission retained",
-      "realPackageReplacementVerified": "builtin/fake-gh publication, restart recovery and isolation tests; Host installation/cutover pending",
-      "hostLegacyRemoved": false
+      "target": "packages/github-operations/src/business/domains/community/github/GitHubIssuePublisher.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "replaced-native-publication-transport",
+        "removedPackageCopy": true,
+        "reason": "Ruling404: legacy userId/confirmed source records stay in Host. Native installation-private drafts use generic owner-local operation, durable attempt journal and gh transport; no legacy adoption.",
+        "replacement": [
+          "packages/github-operations/src/native-issue-drafts.ts",
+          "packages/github-operations/src/github-provider.ts"
+        ],
+        "packageBusinessMoved": "native draft only; legacy admission retained",
+        "realPackageReplacementVerified": "builtin/fake-gh publication, restart recovery and isolation tests; Host installation/cutover pending",
+        "hostLegacyRemoved": false
+      }
     },
     {
       "source": "packages/api/src/domains/community/github/GitHubPrFetcher.ts",
@@ -370,35 +495,53 @@
     },
     {
       "source": "packages/api/src/domains/community/issue-analysis/FrustrationIssueSourceAdapter.ts",
-      "target": "packages/github-operations/src/business/domains/community/issue-analysis/FrustrationIssueSourceAdapter.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "fb25eaec75e8cfa799da8c3f5d5dbf23aa834093048b0cb1292094e6f9a175fa",
-      "lines": 148,
-      "disposition": "host-retained-legacy-draft-consumer",
-      "removedPackageCopy": true,
-      "reason": "Ruling404: legacy userId/confirmed source records stay in Host. Native installation-private drafts use generic owner-local operation, durable attempt journal and gh transport; no legacy adoption.",
-      "replacement": [
-        "packages/github-operations/src/native-issue-drafts.ts",
-        "packages/github-operations/src/github-provider.ts"
-      ],
-      "packageBusinessMoved": "native draft only; legacy admission retained",
-      "realPackageReplacementVerified": "builtin/fake-gh publication, restart recovery and isolation tests; Host installation/cutover pending",
-      "hostLegacyRemoved": false
+      "target": "packages/github-operations/src/business/domains/community/issue-analysis/FrustrationIssueSourceAdapter.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "host-retained-legacy-draft-consumer",
+        "removedPackageCopy": true,
+        "reason": "Ruling404: legacy userId/confirmed source records stay in Host. Native installation-private drafts use generic owner-local operation, durable attempt journal and gh transport; no legacy adoption.",
+        "replacement": [
+          "packages/github-operations/src/native-issue-drafts.ts",
+          "packages/github-operations/src/github-provider.ts"
+        ],
+        "packageBusinessMoved": "native draft only; legacy admission retained",
+        "realPackageReplacementVerified": "builtin/fake-gh publication, restart recovery and isolation tests; Host installation/cutover pending",
+        "hostLegacyRemoved": false
+      }
     },
     {
       "source": "packages/api/src/domains/community/issue-analysis/community-issue-preview-card-builder.ts",
-      "target": "packages/github-operations/src/business/domains/community/issue-analysis/community-issue-preview-card-builder.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "bb1ca393226aeeaf6c67a961494bcd0873752c0ef11a42e50d6651ff302ab0c6",
-      "lines": 75,
-      "disposition": "host-retained-legacy-draft-consumer",
-      "removedPackageCopy": true,
-      "reason": "Ruling404: legacy userId/confirmed source records stay in Host. Native installation-private drafts use generic owner-local operation, durable attempt journal and gh transport; no legacy adoption.",
-      "replacement": [
-        "packages/github-operations/src/native-issue-drafts.ts",
-        "packages/github-operations/src/github-provider.ts"
-      ],
-      "packageBusinessMoved": "native draft only; legacy admission retained",
-      "realPackageReplacementVerified": "builtin/fake-gh publication, restart recovery and isolation tests; Host installation/cutover pending",
-      "hostLegacyRemoved": false
+      "target": "packages/github-operations/src/business/domains/community/issue-analysis/community-issue-preview-card-builder.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "host-retained-legacy-draft-consumer",
+        "removedPackageCopy": true,
+        "reason": "Ruling404: legacy userId/confirmed source records stay in Host. Native installation-private drafts use generic owner-local operation, durable attempt journal and gh transport; no legacy adoption.",
+        "replacement": [
+          "packages/github-operations/src/native-issue-drafts.ts",
+          "packages/github-operations/src/github-provider.ts"
+        ],
+        "packageBusinessMoved": "native draft only; legacy admission retained",
+        "realPackageReplacementVerified": "builtin/fake-gh publication, restart recovery and isolation tests; Host installation/cutover pending",
+        "hostLegacyRemoved": false
+      }
     },
     {
       "source": "packages/api/src/domains/community/issue-analysis/issue-comment-classifier.ts",
@@ -426,33 +569,51 @@
     },
     {
       "source": "packages/api/src/domains/community/narrator/NarratorDriver.ts",
-      "target": "packages/github-operations/src/business/domains/community/narrator/NarratorDriver.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "c19be5a2004388e7f336bbc6ad8e6a1f63cf6ac35bdc49179e413cb10fb2702c",
-      "lines": 227,
-      "disposition": "presentation-migrated-governance-wiring-retained",
-      "removedPackageCopy": true,
-      "reason": "Ruling463: Host retains authenticated role/thread bindings, triage-complete and assignment transitions. Package presentation uses bounded provider facts and ordinary SDK messaging; no private callback or narrator wake.",
-      "replacement": [
-        "packages/github-operations/src/provider-briefing.ts"
-      ],
-      "packageBusinessMoved": "provider presentation only; no role authority",
-      "realPackageReplacementVerified": "builtin repository scan briefing and deduplication test; Host cutover not claimed",
-      "hostLegacyRemoved": false
+      "target": "packages/github-operations/src/business/domains/community/narrator/NarratorDriver.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "presentation-migrated-governance-wiring-retained",
+        "removedPackageCopy": true,
+        "reason": "Ruling463: Host retains authenticated role/thread bindings, triage-complete and assignment transitions. Package presentation uses bounded provider facts and ordinary SDK messaging; no private callback or narrator wake.",
+        "replacement": [
+          "packages/github-operations/src/provider-briefing.ts"
+        ],
+        "packageBusinessMoved": "provider presentation only; no role authority",
+        "realPackageReplacementVerified": "builtin repository scan briefing and deduplication test; Host cutover not claimed",
+        "hostLegacyRemoved": false
+      }
     },
     {
       "source": "packages/api/src/domains/community/narrator/RedisNarratorDedupStore.ts",
-      "target": "packages/github-operations/src/business/domains/community/narrator/RedisNarratorDedupStore.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
       "sourceSha256": "283c16b383dc506f5c681439ba265a03a1504c64a3a85ce6ddea97afaff150ee",
-      "lines": 50,
-      "disposition": "presentation-migrated-governance-wiring-retained",
-      "removedPackageCopy": true,
-      "reason": "Ruling463: Host retains authenticated role/thread bindings, triage-complete and assignment transitions. Package presentation uses bounded provider facts and ordinary SDK messaging; no private callback or narrator wake.",
-      "replacement": [
-        "packages/github-operations/src/provider-briefing.ts"
-      ],
-      "packageBusinessMoved": "provider presentation only; no role authority",
-      "realPackageReplacementVerified": "builtin repository scan briefing and deduplication test; Host cutover not claimed",
-      "hostLegacyRemoved": false
+      "target": "packages/github-operations/src/business/domains/community/narrator/RedisNarratorDedupStore.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json",
+      "supersededDisposition": {
+        "disposition": "presentation-migrated-governance-wiring-retained",
+        "removedPackageCopy": true,
+        "reason": "Ruling463: Host retains authenticated role/thread bindings, triage-complete and assignment transitions. Package presentation uses bounded provider facts and ordinary SDK messaging; no private callback or narrator wake.",
+        "replacement": [
+          "packages/github-operations/src/provider-briefing.ts"
+        ],
+        "packageBusinessMoved": "provider presentation only; no role authority",
+        "realPackageReplacementVerified": "builtin repository scan briefing and deduplication test; Host cutover not claimed",
+        "hostLegacyRemoved": false
+      }
     },
     {
       "source": "packages/api/src/domains/community/narrator/community-narrator-eligibility.ts",
@@ -1268,6 +1429,71 @@
         "migration/typed-wait-boundary.md",
         "migration/typed-wait-source-map.json"
       ]
+    },
+    {
+      "source": "packages/api/src/routes/community-issues.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
+      "sourceSha256": "f2ad1551c9f584239e850a821e15d995ade5ce2cd444603a913d886c06ee9db7",
+      "target": "packages/github-operations/src/business/routes/community-issues.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json"
+    },
+    {
+      "source": "packages/api/src/routes/community-issue-draft-routes.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
+      "sourceSha256": "e688c325f6c849c55852eb1096de7f7e8bafeb1807d2033aaf35d5e69b1d550c",
+      "target": "packages/github-operations/src/business/routes/community-issue-draft-routes.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json"
+    },
+    {
+      "source": "packages/api/src/routes/community-repo-config.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
+      "sourceSha256": "3901bbe3e55b6eb1c3ff0a5178bce905a97deee7116b458074b72f93a6c8534e",
+      "target": "packages/github-operations/src/business/routes/community-repo-config.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json"
+    },
+    {
+      "source": "packages/api/src/routes/community-decision-queue.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
+      "sourceSha256": "85e0c3c041f1de17db3817c31dcaed45cb14265698e44796295bbd43965cb2a2",
+      "target": "packages/github-operations/src/business/routes/community-decision-queue.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json"
+    },
+    {
+      "source": "packages/api/src/routes/community-decision-queue-read-model.ts",
+      "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
+      "sourceSha256": "a30d6ad30760bb9083e1c64453c94ba04f1eba96c8a6b2bec82dabb46e904149",
+      "target": "packages/github-operations/src/business/routes/community-decision-queue-read-model.ts",
+      "disposition": "copied-unadapted",
+      "reason": "Operator043 supersedes the previous Host-retained business boundary. Full Community business is copied from pinned main; package-local ports/storage and authenticated route adaptation are in progress. No production composition or installed replacement claim.",
+      "packageBusinessMoved": "source copy with partial boundary adaptation; runtime composition pending",
+      "realPackageReplacementVerified": false,
+      "hostLegacyRemoved": false,
+      "mechanicalCopyCommit": "6c55d53",
+      "evidence": "migration/f202-w3-whole-community-main.json"
     }
   ],
   "remainingSourceGroups": [
@@ -1282,5 +1508,12 @@
     "packageBusinessMoved": "partial; source-specific dispositions below",
     "realPackageReplacementVerified": "pending complete candidate and all three Host installation sources",
     "hostLegacyRemoved": false
+  },
+  "wholePluginMigration": {
+    "sourceHead": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
+    "packageBaseHead": "1428f826dd23bc256ee10a11331b0bf0def65feb",
+    "acceptedSource": "thread_mu8dg6h7l2x4ohsk#0001791597354169-000043-8e6a39d2",
+    "manifest": "migration/f202-w3-whole-community-main.json",
+    "status": "in progress: package-local source adaptation; production route/module composition and installed parity not yet verified"
   }
 }

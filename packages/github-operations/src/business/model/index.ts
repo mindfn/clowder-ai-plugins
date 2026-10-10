@@ -39,3 +39,13 @@ export { prSubjectKey } from './utils/subject-key.js';
 export * from './types/github-wait.js';
 export * from './types/wait-termination.js';
 export * from './types/task.js';
+
+export * from './types/community-issue.js';
+export * from './types/community-role.js';
+
+export * from './types/community-issue-draft.js';
+export * from './types/frustration-issue.js';
+
+export { parsePrSubjectKey, parseIssueSubjectKey } from './utils/subject-key.js';
+
+export type { RichCardBlock } from './types/rich-card.js';

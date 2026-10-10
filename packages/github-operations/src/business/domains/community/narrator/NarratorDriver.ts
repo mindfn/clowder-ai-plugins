@@ -18,10 +18,10 @@
  *   INV-4/5/6: via RoleResolver.resolve('narrator') fail-closed contract
  */
 
-import { createCatId, type RoleResolver } from '@cat-cafe/shared';
+import { createCatId, type RoleResolver } from '../../../model/index.js';
 import type { FastifyBaseLogger } from 'fastify';
 
-import type { WakeCatFn } from '../../cats/services/game/GameNarratorDriver.js';
+export type WakeCatFn = (input: { threadId: string; catId: string; briefing: string; timeoutMs: number }) => Promise<void>;
 
 // ---------------------------------------------------------------------------
 // D0.2: Persistent dedup store interface (replaces process-local Set)

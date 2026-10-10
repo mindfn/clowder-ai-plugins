@@ -3,13 +3,8 @@ import type {
   ExternalReviewAggregate,
   PendingExternalReviewVerdict,
   ReviewDeliveryOutcome,
-} from '@cat-cafe/shared';
-import { prSubjectKey } from '@cat-cafe/shared';
-import {
-  externalCaseUserNudgeRequired,
-  externalCaseVerdictRecorded,
-} from '../../../infrastructure/telemetry/instruments.js';
-import { canonicalizeActionTerminalPredicate } from '../../ball-custody/ActionTerminalPredicateCatalog.js';
+} from '../../../model/index.js';
+import { prSubjectKey } from '../../../model/index.js';
 import {
   decideExternalReviewReadiness,
   externalReviewVerdictAuthorizationFailure,
@@ -61,7 +56,7 @@ export class ExternalReviewVerdictService {
         'A delivered current-HEAD verdict cannot return to pending_delivery',
       );
     }
-    const completionPredicate = canonicalizeActionTerminalPredicate({
+    const completionPredicate = await this.opts.canonicalizeCompletionPredicate({
       actionFamily: 'review',
       subjectRef: subjectKey,
       predicate: { kind: 'review_delivered', headSha: currentHeadSha },
@@ -143,7 +138,7 @@ export class ExternalReviewVerdictService {
       return { kind: 'waiting', reason: readiness.kind === 'wait' ? readiness.reason : 'head_not_ready' };
     }
 
-    const completionPredicate = canonicalizeActionTerminalPredicate({
+    const completionPredicate = await this.opts.canonicalizeCompletionPredicate({
       actionFamily: 'review',
       subjectRef: subjectKey,
       predicate: { kind: 'review_delivered', headSha: pending.headSha },
@@ -250,9 +245,9 @@ export class ExternalReviewVerdictService {
     const { appended } = await this.opts.eventLog.append(event);
     if (appended) {
       await this.opts.projector.apply(event);
-      externalCaseVerdictRecorded.add(1);
+      this.opts.recordVerdict?.();
       if (userNudgeRequired) {
-        (this.opts.recordUserNudgeRequired ?? (() => externalCaseUserNudgeRequired.add(1)))();
+        this.opts.recordUserNudgeRequired?.();
       }
     }
 

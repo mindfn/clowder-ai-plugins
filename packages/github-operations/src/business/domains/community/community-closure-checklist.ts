@@ -13,7 +13,7 @@
  * only REPORTS what's missing so the owner knows what to do.
  */
 
-import type { CommunityClosureWaiver, CommunityObjectState } from '@cat-cafe/shared';
+import type { CommunityClosureWaiver, CommunityObjectState } from '../../model/index.js';
 
 // ---------------------------------------------------------------------------
 // Types

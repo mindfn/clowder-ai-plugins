@@ -10,12 +10,12 @@
 
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { ICommunityIssueStore } from '../domains/cats/services/stores/ports/CommunityIssueStore.js';
-import type { ICommunityPrStore } from '../domains/cats/services/stores/ports/CommunityPrStore.js';
-import type { ITaskStore } from '../domains/cats/services/stores/ports/TaskStore.js';
+import type { ICommunityIssueStore } from '../domains/community/ports/CommunityIssueStore.js';
+import type { ICommunityPrStore } from '../domains/community/ports/CommunityPrStore.js';
+import type { CommunityTracking as ITaskStore } from '../domains/community/ports/CommunityTracking.js';
 import type { ICommunityObjectStore } from '../domains/community/CommunityObjectStore.js';
 import { buildCommunityDecisionQueue } from '../domains/community/community-decision-queue.js';
-import { resolveStrictUserId } from '../utils/request-identity.js';
+import type { CommunityRequestContext } from './community-request-context.js';
 import { buildQueueIssues, buildQueuePrItems } from './community-decision-queue-read-model.js';
 
 export interface CommunityDecisionFindingWaiver {
@@ -46,6 +46,7 @@ export interface CommunityDecisionQueueFindingStore {
 }
 
 export interface CommunityDecisionQueueRoutesOptions {
+  requestContext: CommunityRequestContext;
   communityIssueStore: ICommunityIssueStore;
   taskStore: ITaskStore;
   communityPrStore?: ICommunityPrStore;
@@ -63,6 +64,7 @@ export const communityDecisionQueueRoutes: FastifyPluginAsync<CommunityDecisionQ
   app,
   opts,
 ) => {
+  const resolveFindingMutationActor = (request: FastifyRequest) => opts.requestContext.caller()?.catId ?? opts.requestContext.userId(request);
   app.get('/api/community-decision-queue', async (request, reply) => {
     const { repo } = request.query as { repo?: string };
     if (!repo) {
@@ -187,13 +189,6 @@ export const communityDecisionQueueRoutes: FastifyPluginAsync<CommunityDecisionQ
     return { findings: all };
   });
 };
-
-function resolveFindingMutationActor(request: FastifyRequest): string | null {
-  const callbackAuth = (request as FastifyRequest & { callbackAuth?: { catId?: string } }).callbackAuth;
-  const callbackCatId = typeof callbackAuth?.catId === 'string' ? callbackAuth.catId.trim() : '';
-  if (callbackCatId) return callbackCatId;
-  return resolveStrictUserId(request);
-}
 
 function sameFindingWaiver(
   existing: CommunityDecisionFindingWaiver | null | undefined,

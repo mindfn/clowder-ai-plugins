@@ -1,4 +1,4 @@
-import type { RouteRecommendation } from '@cat-cafe/shared';
+import type { RouteRecommendation } from '../../model/index.js';
 
 export type CommunityDecisionQueueKind =
   | 'direction-decision'

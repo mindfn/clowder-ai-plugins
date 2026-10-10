@@ -4,7 +4,7 @@ import type {
   ExternalReviewAggregate,
   PendingExternalReviewVerdict,
   ReviewDeliveryOutcome,
-} from '@cat-cafe/shared';
+} from '../../../model/index.js';
 import type { ICommunityEventLog } from '../CommunityEventLog.js';
 import type { ICommunityObjectStore } from '../CommunityObjectStore.js';
 import type { ICommunityRepoConfigStore } from '../CommunityRepoConfigStore.js';
@@ -90,6 +90,11 @@ export interface ExternalReviewVerdictServiceOptions {
   readonly projector: ExternalReviewVerdictProjectorPort;
   readonly objectStore: Pick<ICommunityObjectStore, 'get'>;
   readonly fetchCurrentHead: (repoFullName: string, prNumber: number) => Promise<string>;
+  /** Host-owned neutral predicate contract; never locally reconstruct a digest
+   * or treat a provider observation as authority to complete a custody lease. */
+  readonly canonicalizeCompletionPredicate: (input: {
+    actionFamily: 'review'; subjectRef: string; predicate: { kind: 'review_delivered'; headSha: string };
+  }) => Promise<{ readonly digest: string }>;
   readonly preflightLease: (
     leaseId: string,
     generation: number,
@@ -104,6 +109,7 @@ export interface ExternalReviewVerdictServiceOptions {
     now: number;
   }) => Promise<{ outcome: string }>;
   readonly recordUserNudgeRequired?: () => void;
+  readonly recordVerdict?: () => void;
   readonly now?: () => number;
 }
 

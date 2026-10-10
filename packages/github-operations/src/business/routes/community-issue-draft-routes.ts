@@ -11,18 +11,22 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import type { ICommunityIssueDraftStore } from '../domains/cats/services/stores/ports/CommunityIssueDraftStore.js';
-import type { IFrustrationIssueStore } from '../domains/cats/services/stores/ports/FrustrationIssueStore.js';
+import type { ICommunityIssueDraftStore } from '../domains/community/ports/CommunityIssueDraftStore.js';
+import type { FrustrationIssue } from '../model/index.js';
 import type { IGitHubIssuePublisher } from '../domains/community/github/GitHubIssuePublisher.js';
 import { sanitize } from '../domains/community/issue-analysis/CommunityIssueSanitizer.js';
 import { createDraftFromFrustrationIssue } from '../domains/community/issue-analysis/FrustrationIssueSourceAdapter.js';
-import { resolveStrictUserId, resolveUserId } from '../utils/request-identity.js';
+import type { CommunityRequestContext } from './community-request-context.js';
 
 // ── Options ───────────────────────────────────────────────────
 
 export interface CommunityIssueDraftRoutesOptions {
   communityIssueDraftStore: ICommunityIssueDraftStore;
-  frustrationIssueStore: IFrustrationIssueStore;
+  frustrationIssueStore: {
+    getById(id: string): Promise<FrustrationIssue | null>;
+    setCommunityIssueDraftId(id: string, draftId: string): Promise<unknown>;
+  };
+  requestContext: CommunityRequestContext;
   publisher: IGitHubIssuePublisher;
   config: {
     defaultRepo: string;
@@ -72,6 +76,8 @@ const publishingDrafts = new Set<string>();
 
 export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRoutesOptions> = async (app, opts) => {
   const { communityIssueDraftStore, frustrationIssueStore, publisher, config } = opts;
+  const resolveUserId = opts.requestContext.userId.bind(opts.requestContext);
+  const resolveStrictUserId = resolveUserId;
 
   // ── GET /api/community-issue-drafts/config ──
   // Phase B: repo picker configuration for frontend dropdown.

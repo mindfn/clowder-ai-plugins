@@ -18,7 +18,7 @@
  *   closed           → closed
  */
 
-import type { CommunityEvent, CommunityObjectState } from '@cat-cafe/shared';
+import type { CommunityEvent, CommunityObjectState } from '../../model/index.js';
 import type { ICommunityEventLog } from './CommunityEventLog.js';
 import type { ICommunityObjectStore } from './CommunityObjectStore.js';
 import { CommunityProjector } from './community-projector.js';

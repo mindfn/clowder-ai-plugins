@@ -23,15 +23,13 @@ import {
   parseIssueSubjectKey,
   parsePrSubjectKey,
   validateIntakeChecklist,
-} from '@cat-cafe/shared';
+} from '../model/index.js';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { getRoster } from '../config/cat-config-loader.js';
-import type { VerifyResult } from '../domains/cats/services/agents/invocation/InvocationRegistry.js';
-import type { ICommunityIssueStore } from '../domains/cats/services/stores/ports/CommunityIssueStore.js';
-import type { ICommunityPrStore } from '../domains/cats/services/stores/ports/CommunityPrStore.js';
-import type { ITaskStore } from '../domains/cats/services/stores/ports/TaskStore.js';
-import type { IThreadStore } from '../domains/cats/services/stores/ports/ThreadStore.js';
+import type { ICommunityIssueStore } from '../domains/community/ports/CommunityIssueStore.js';
+import type { ICommunityPrStore } from '../domains/community/ports/CommunityPrStore.js';
+import type { CommunityTracking as ITaskStore } from '../domains/community/ports/CommunityTracking.js';
+import type { CommunityThreads } from '../domains/community/ports/CommunityThreads.js';
 import type { ICommunityEventLog } from '../domains/community/CommunityEventLog.js';
 import type { ICommunityObjectStore } from '../domains/community/CommunityObjectStore.js';
 import type { ICommunityRepoConfigStore } from '../domains/community/CommunityRepoConfigStore.js';
@@ -39,31 +37,20 @@ import { registerRoutingTracking } from '../domains/community/community-auto-tra
 import { computeClosureChecklist } from '../domains/community/community-closure-checklist.js';
 import { parseRouteRecommendation } from '../domains/community/community-route-recommendation.js';
 import { derivePrGroup } from '../domains/community/derivePrGroup.js';
-import { resolveGuardian } from '../domains/community/GuardianMatcher.js';
+import { resolveGuardian, type GuardianCatalog } from '../domains/community/GuardianMatcher.js';
 import { type GhIssueFull, mapGitHubIssue } from '../domains/community/github/GitHubIssueFetcher.js';
 import { type GhPrFull, type GhPrReview, mapGitHubPr } from '../domains/community/github/GitHubPrFetcher.js';
 import type { NarratorDriver } from '../domains/community/narrator/NarratorDriver.js';
 import { TriageOrchestrator } from '../domains/community/TriageOrchestrator.js';
-import type { SocketManager } from '../infrastructure/websocket/index.js';
-import { resolveUserId } from '../utils/request-identity.js';
-import {
-  type AgentKeyAuthRegistry,
-  registerCallbackAuthHook,
-  requireCallbackPrincipal,
-} from './callback-auth-prehandler.js';
+import type { CommunityRequestContext } from './community-request-context.js';
 import { type CommunityDecisionQueueFindingStore, communityDecisionQueueRoutes } from './community-decision-queue.js';
 
-interface CallbackAuthVerifier {
-  verify(invocationId: string, callbackToken: string): Promise<VerifyResult>;
-}
-
 export interface CommunityIssuesRoutesOptions {
+  requestContext: CommunityRequestContext;
+  guardianCatalog: () => Promise<GuardianCatalog>;
   communityIssueStore: ICommunityIssueStore;
   taskStore: ITaskStore;
-  socketManager: SocketManager;
-  threadStore?: Pick<IThreadStore, 'create' | 'get'>;
-  registry?: CallbackAuthVerifier;
-  agentKeyRegistry?: AgentKeyAuthRegistry;
+  threadStore?: CommunityThreads;
   fetchIssues?: (repo: string) => Promise<GhIssueFull[]>;
   communityPrStore?: ICommunityPrStore;
   fetchPrs?: (repo: string) => Promise<GhPrFull[]>;
@@ -119,11 +106,9 @@ const updateSchema = z
   });
 
 export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptions> = async (app, opts) => {
-  const { communityIssueStore, taskStore, socketManager } = opts;
-
-  if (opts.registry) {
-    registerCallbackAuthHook(app, opts.registry, { agentKeyRegistry: opts.agentKeyRegistry });
-  }
+  const { communityIssueStore, taskStore, requestContext } = opts;
+  const resolveUserId = requestContext.userId.bind(requestContext);
+  const requireCallbackPrincipal = requestContext.requireCaller.bind(requestContext);
 
   app.post('/api/community-issues', async (request, reply) => {
     const result = createSchema.safeParse(request.body);
@@ -402,11 +387,17 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
   });
 
   app.post('/api/community-issues/:id/triage-complete', async (request, reply) => {
+    const caller = requireCallbackPrincipal(request, reply);
+    if (!caller) return;
     const { id } = request.params as { id: string };
     const result = triageCompleteSchema.safeParse(request.body);
     if (!result.success) {
       reply.status(400);
       return { error: 'Invalid request body', details: result.error.issues };
+    }
+
+    if (result.data.catId !== caller.catId) {
+      return reply.code(403).send({ error: 'Body catId does not match authenticated principal' });
     }
 
     const issue = await communityIssueStore.get(id);
@@ -419,7 +410,8 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
       return { error: 'Issue not in triageable state', currentState: issue.state };
     }
 
-    const entry = { ...result.data, timestamp: Date.now() } as import('@cat-cafe/shared').TriageEntry;
+    await caller.assertCurrent();
+    const entry = { ...result.data, catId: caller.catId, timestamp: Date.now() } as import('../model/index.js').TriageEntry;
     const orchestrator = new TriageOrchestrator({
       communityIssueStore,
       threadStore: opts.threadStore,
@@ -458,7 +450,7 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
           }
           await registerRoutingTracking(routedEvent, opts.taskStore, {
             fetchCommentCursor: opts.fetchIssueCommentCursor,
-            userId: resolveUserId(request, { defaultUserId: 'system' }) ?? 'system',
+            userId: resolveUserId(request) ?? undefined,
           });
         }
       } catch {
@@ -495,7 +487,8 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
       return { error: 'Issue not pending decision', currentState: issue.state };
     }
 
-    const userId = resolveUserId(request, { defaultUserId: 'system' }) ?? 'system';
+    const userId = resolveUserId(request);
+    if (!userId) return reply.code(401).send({ error: 'Authenticated owner required' });
 
     // C3.1: routeRecommendation → effectiveThreadId mapping
     let effectiveThreadId = result.data.threadId ?? undefined;
@@ -702,7 +695,8 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
       reply.status(403);
       return { error: 'Author does not match authenticated principal' };
     }
-    const roster = getRoster();
+    const catalog = await opts.guardianCatalog();
+    const roster = catalog.roster;
     // Defense in depth: after the principal===author gate above, this rejects
     // only an authenticated principal whose catId is no longer in the roster.
     if (!roster[authorId]) {
@@ -731,6 +725,7 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
     const match = await resolveGuardian({
       author: createCatId(authorId),
       reviewer: createCatId(reviewerId),
+      catalog,
     });
 
     const checklist = DEFAULT_INTAKE_CHECKLIST.map((item) => ({
@@ -806,7 +801,7 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
       reply.status(403);
       return { error: 'Invalid signoff token' };
     }
-    const signoffRoster = getRoster();
+    const signoffRoster = (await opts.guardianCatalog()).roster;
     if (!signoffRoster[callerCatId]) {
       reply.status(400);
       return { error: `Cat '${callerCatId}' not found in roster` };
@@ -871,7 +866,8 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
   });
 
   app.post('/api/community-issues/:id/validate-route', async (request, reply) => {
-    if (!request.callbackAuth) {
+    const caller = requestContext.caller();
+    if (!caller) {
       reply.status(401);
       return { error: 'Callback authentication required' };
     }
@@ -893,7 +889,7 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
     }
 
     // Identity check: only the assigned cat can validate
-    const callerCatId = request.callbackAuth.catId as string;
+    const callerCatId = caller.catId;
     if (issue.assignedCatId !== callerCatId) {
       reply.status(403);
       return {
@@ -1134,7 +1130,8 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
   // (e.g. "issue:owner/repo#42" → "issue%3Aowner%2Frepo%2342").
 
   app.post('/api/community-issues/:subjectKey/await-external', async (request, reply) => {
-    if (!request.callbackAuth) {
+    const caller = requestContext.caller();
+    if (!caller) {
       reply.status(401);
       return { error: 'Callback authentication required' };
     }
@@ -1185,7 +1182,7 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
       // P1-B (R2): Ownership check — only the case owner can declare awaiting_external.
       // ownerThreadId is set when the case is routed (case.routed event).
       // null/undefined ownerThreadId (no owner assigned yet) → allow.
-      const callerThreadId = (request.callbackAuth as { threadId?: string }).threadId;
+      const callerThreadId = caller.threadId;
       if (proj.ownerThreadId != null && callerThreadId !== undefined && callerThreadId !== proj.ownerThreadId) {
         reply.status(403);
         return {
@@ -1197,7 +1194,7 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
 
     const body = (request.body ?? {}) as { reason?: string };
     const at = Date.now();
-    const callerCatId = (request.callbackAuth.catId as string | undefined) ?? 'unknown';
+    const callerCatId = caller.catId;
     const communityEvent: CommunityEvent = {
       sourceEventId: `await-external:${subjectKey}:${at}`,
       subjectKey,
@@ -1529,6 +1526,7 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
   });
 
   await app.register(communityDecisionQueueRoutes, {
+    requestContext,
     communityIssueStore,
     taskStore,
     communityPrStore: opts.communityPrStore,

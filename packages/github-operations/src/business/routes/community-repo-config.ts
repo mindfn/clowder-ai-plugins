@@ -12,16 +12,12 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import type { ICommunityRepoConfigStore } from '../domains/community/CommunityRepoConfigStore.js';
-import { requirePrivilegedRouteOwner } from '../utils/privileged-route-guard.js';
+import type { CommunityRequestContext } from './community-request-context.js';
 
 export interface CommunityRepoConfigRoutesOptions {
   repoConfigStore: ICommunityRepoConfigStore;
+  requestContext: CommunityRequestContext;
 }
-
-const COMMUNITY_REPO_CONFIG_GATE = {
-  surface: 'Community repo config routes',
-  ownerErrorMessage: 'Community repo config routes can only be accessed by the configured owner',
-};
 
 const repoConfigInputSchema = z.object({
   repo: z.string().min(1),
@@ -39,8 +35,7 @@ export const communityRepoConfigRoutes: FastifyPluginAsync<CommunityRepoConfigRo
 
   // GET /api/community-repo-configs — list all
   fastify.get('/api/community-repo-configs', async (req, reply) => {
-    const gate = requirePrivilegedRouteOwner(req, reply, COMMUNITY_REPO_CONFIG_GATE);
-    if (!gate.ok) return gate.response;
+    if (!opts.requestContext.requireOwner(reply)) return;
 
     const configs = await repoConfigStore.listAll();
     return reply.send(configs);
@@ -48,8 +43,7 @@ export const communityRepoConfigRoutes: FastifyPluginAsync<CommunityRepoConfigRo
 
   // POST /api/community-repo-configs — upsert by repo
   fastify.post('/api/community-repo-configs', async (req, reply) => {
-    const gate = requirePrivilegedRouteOwner(req, reply, COMMUNITY_REPO_CONFIG_GATE);
-    if (!gate.ok) return gate.response;
+    if (!opts.requestContext.requireOwner(reply)) return;
 
     const parsed = repoConfigInputSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid repo config', details: parsed.error.issues });
@@ -60,8 +54,7 @@ export const communityRepoConfigRoutes: FastifyPluginAsync<CommunityRepoConfigRo
 
   // DELETE /api/community-repo-configs/:repo — delete by repo
   fastify.delete<{ Params: { repo: string } }>('/api/community-repo-configs/:repo', async (req, reply) => {
-    const gate = requirePrivilegedRouteOwner(req, reply, COMMUNITY_REPO_CONFIG_GATE);
-    if (!gate.ok) return gate.response;
+    if (!opts.requestContext.requireOwner(reply)) return;
 
     const repo = decodeURIComponent(req.params.repo);
     const deleted = await repoConfigStore.deleteByRepo(repo);

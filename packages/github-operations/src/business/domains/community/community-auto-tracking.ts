@@ -13,9 +13,9 @@
  *   - Pure: zero direct IO outside injected parameters (no Redis, no HTTP)
  */
 
-import type { CatId, CommunityEvent } from '@cat-cafe/shared';
-import { createCatId } from '@cat-cafe/shared';
-import type { ITaskStore } from '../cats/services/stores/ports/TaskStore.js';
+import type { CatId, CommunityEvent } from '../../model/index.js';
+import { createCatId } from '../../model/index.js';
+import type { CommunityTracking as ITaskStore } from './ports/CommunityTracking.js';
 
 // ---------------------------------------------------------------------------
 // Public API

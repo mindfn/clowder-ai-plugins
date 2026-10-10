@@ -1,19 +1,20 @@
-import type { CatId, ReviewPolicy, Roster } from '@cat-cafe/shared';
-import { createCatId } from '@cat-cafe/shared';
-import { getDefaultCatId, getReviewPolicy, getRoster } from '../../config/cat-config-loader.js';
+import type { CatId, ReviewPolicy, Roster } from '../../model/index.js';
+import { createCatId } from '../../model/index.js';
+
+/** Deployment data is injected. The plugin cannot import the Host's catalog
+ * singleton or infer cat family/availability from a display name. */
+export interface GuardianCatalog {
+  readonly roster: Roster;
+  readonly defaultCatId: CatId;
+  readonly policy: ReviewPolicy;
+}
 
 export interface GuardianMatchOptions {
   author: CatId;
   reviewer: CatId;
   policy?: Partial<ReviewPolicy>;
   threadActivity?: Record<string, number>;
-  /**
-   * Roster override (test seam). Production callers omit this and fall back to
-   * the live `getRoster()`. Tests inject an explicit roster so guardian matching
-   * is hermetic to the global cat-config singleton + ambient `.cat-cafe` catalog
-   * artifacts other concurrent test files may leave behind (F211 candidates=0 flake).
-   */
-  roster?: Roster;
+  catalog: GuardianCatalog;
 }
 
 export interface GuardianMatchResult {
@@ -24,15 +25,14 @@ export interface GuardianMatchResult {
 }
 
 export async function resolveGuardian(options: GuardianMatchOptions): Promise<GuardianMatchResult> {
-  const roster = options.roster ?? getRoster();
-  const defaultPolicy = getReviewPolicy();
+  const { roster, defaultCatId, policy: defaultPolicy } = options.catalog;
   const policy: ReviewPolicy = { ...defaultPolicy, ...options.policy };
   const authorId = options.author as string;
   const reviewerId = options.reviewer as string;
   const authorEntry = roster[authorId];
 
   if (!authorEntry) {
-    return { guardian: getDefaultCatId(), isDegraded: false, candidates: [] };
+    return { guardian: defaultCatId, isDegraded: false, candidates: [] };
   }
 
   const eligible = Object.entries(roster).filter(
@@ -72,7 +72,7 @@ export async function resolveGuardian(options: GuardianMatchOptions): Promise<Gu
   }
 
   return {
-    guardian: getDefaultCatId(),
+    guardian: defaultCatId,
     isDegraded: true,
     degradeReason: 'No guardians available',
     candidates: allIds,

@@ -22,7 +22,7 @@ import {
   type RoleCapability,
   type RoleExecutor,
   type RoleResolver,
-} from '@cat-cafe/shared';
+} from '../../model/index.js';
 
 /**
  * Minimal roster shape this resolver needs: availability only. Structurally satisfied by the
