@@ -5,9 +5,48 @@ doc_kind: implementation-status
 created: 2026-10-08
 ---
 
-# W3 migration — in progress, not an installable candidate
+# W3 migration — package candidate verified, Host acceptance pending
 
-## Current operator180 composition (supersedes the historical checkpoint below)
+## Current source and artifact checkpoint
+
+The current accepted migration source is Host main
+`bb9f9f08ec574ee8888fbde9819ff95da96bb614`, under operator source
+`thread_mu8dg6h7l2x4ohsk#0001791597354169-000043-8e6a39d2` and task
+`0001791444624720-000204-90f02d10`. The historical rulings below describe earlier
+checkpoints; they do not override this source or the current implementation.
+
+Package source `5789dfa690e81735a5692923989b08346597a022` has an independently
+approved alpha.16 dependency closure (Codex verdict
+`0001791616947638-000088-9bd47bb9`). Its five-stage package gate passed 610/610
+tests with 440 committed source hashes. Contract beta.35 and SDK beta.19 are
+the reviewed local bytes; their registry coordinates do not imply publication.
+The self-contained archive has 5422 members, 136 installed dependency packages
+and no symlinks. Relocation, module startup, embedded HTTP create/read/restart,
+native/owner entry separation and stop were exercised with isolated Host ports.
+These are package checks, not a real Host installation or browser acceptance.
+
+The production module now includes the 33 Community HTTP method/path pairs,
+six native Community callbacks, native review-verdict submission, private
+freshness/completion verifiers and manual narrator delivery recovery. Native
+review intent is persisted before custody completion; background retries cannot
+borrow a stored principal. Exact success replay reauthorizes but cannot replace
+the first canonical verdict. CI batch adaptation from source `4f2b5644` is
+consumed by the real typed-wait poll, with per-PR cancellation/deadlines.
+
+Publisher association is explicitly **unavailable**. GitHub account identity,
+URL, review body and current HEAD do not prove which cat published an object.
+Completion therefore returns `insufficient:publisher_association_unavailable`
+and retains the pending submission. The paired Host contract requires this
+honest refusal when trusted evidence is missing; no successful live review
+settlement is claimed. Adding a publication-authority mechanism is not a silent
+substitute for migrating the existing source.
+
+Only manual narrator dispatch was wired in the fixed source. The copied automatic
+eligibility helper had no production caller; preserving it does not authorize
+new automatic wakes. Host identity/grant/lifecycle checks, source-link Redis CAS,
+actual installation and browser journeys remain separate acceptance work.
+
+## Historical operator180 composition
 
 The current source uses native tracking MCP → authenticated SDK action → the
 same active module. All typed predicates, baselines, renewal and outbox state
@@ -38,7 +77,7 @@ Stop aborts provider work and waits for cleanup. No new SDK action context, wait
 framework, caller protocol, task automation state or Host private imports are
 part of the intended runtime.
 
-## Current evidence
+## Historical evidence (superseded where the current checkpoint differs)
 
 - Real manifest and SDK carrier tests cover tracking registration, filtering,
   durable pending delivery, restart, terminal notification and stop cleanup.
@@ -90,7 +129,7 @@ part of the intended runtime.
 - Repository observations expose bounded pages of provider-only journal facts,
   including webhook-only subjects. They do not replace Host governance boards.
 
-## Remaining implementation and verification
+## Historical implementation and verification queue
 
 Current additional evidence: the owner-confirmed legacy issue metadata operation
 validates bounded raw snapshots before insert-only CAS. Concurrent imports,
@@ -132,10 +171,19 @@ shrinkwrap and fresh-consumer closure; no second SDK identity is generated here.
 
 | Source | Package evidence | Host install → enable → run evidence |
 | --- | --- | --- |
-| npm | Pending complete candidate; no npm publish authorized | Pending Host consumption |
-| Local directory | Pending clean built directory | Pending Host consumption |
-| Fixed Git repository/revision | Pending approved exact HEAD | Pending Host consumption |
-| Canonical/self-contained archive | Pending W3 closure | Does not substitute for any row above |
+| npm | Canonical alpha.16 bytes built; dependency registry publication not claimed | Pending Host consumption |
+| Local directory | Clean built package at approved source `5789dfa` | Pending real Host consumption |
+| Fixed Git repository/revision | Approved local source `5789dfa`; no remote push claimed | Pending real Host consumption |
+| Canonical/self-contained archive | Physical closure independently verified; SHA256 below | Does not substitute for any row above |
+
+Canonical alpha.16 SHA256:
+`06367cc7cc3928bc983565514dc6245cff07815f1ce2a03b6666eb30c99fa0ee`.
+Self-contained darwin/arm64 SHA256:
+`5313a41f29c1fae30f40783abbd42c157b2cc06c5fa5f14a12faf112d1bf9b50`.
+Local handoff evidence: `f202-handoff/w3-github/alpha16-closure-r1/committed.json`
+and `f202-handoff/w3-github/alpha16-packed-r4/artifact-descriptor.json` under the
+shared github-lab workspace. Later documentation-only commits do not change
+these archive bytes; implementation changes require a new candidate.
 
 Full C1 acceptance also requires generic bidirectional Host interfaces, business
 inside the SDK-consuming package, generic MCP/skill registration, and complete
