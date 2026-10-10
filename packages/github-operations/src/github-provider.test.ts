@@ -93,7 +93,7 @@ test('repository comment kind comes from the parent path, not an owner named pul
 
 test('native publisher uses a single gh POST and reconciles exact own issue content, never a forged marker alone', async () => {
   const draft: NativeIssueDraft = { id: 'a'.repeat(64), repo: 'example/project', title: 'Issue', bodyMarkdown: 'Public text',
-    marker: '353d5833-14ea-4aab-8040-333d80ec7de3', status: 'publishing', createdAt: 1 };
+    labels: ['bug', 'needs review'], marker: '353d5833-14ea-4aab-8040-333d80ec7de3', status: 'publishing', createdAt: 1 };
   const calls: string[][] = [];
   let duplicate = false;
   const provider = new GitHubProvider({ token: async () => 'fake-publish-token', log: { warn() {} }, execFileAsync: async (file, args) => {
@@ -101,6 +101,7 @@ test('native publisher uses a single gh POST and reconciles exact own issue cont
     if (args.includes('POST')) {
       assert.ok(args.includes('--hostname') && args.includes('github.com'), 'public issue transport must not inherit GH_HOST');
       assert.ok(args.includes(`body=${publicationBody(draft)}`));
+      assert.ok(args.includes('labels[]=bug') && args.includes('labels[]=needs review'));
       return { stdout: JSON.stringify({ number: 7, html_url: 'https://github.com/example/project/issues/7' }) };
     }
     if (args[1] === 'user') return { stdout: 'owner' };
@@ -261,4 +262,22 @@ test('real provider preserves billing-only infrastructure classification and ref
   assert.equal((await provider.read(target, new AbortController().signal)).ci, 'external_infrastructure');
   mixed = true;
   assert.equal((await provider.read(target, new AbortController().signal)).ci, 'fail');
+});
+
+test('public report verification reads the exact GitHub comment and rejects mismatched evidence', async () => {
+  const url = 'https://github.com/example/project/issues/7#issuecomment-123';
+  let response = { id: 123, html_url: url, issue_url: 'https://api.github.com/repos/example/project/issues/7', body: 'Public result' };
+  let reads = 0;
+  const provider = new GitHubProvider({ token: async () => 'isolated', log: { warn() {} }, execFileAsync: async (_file, args) => {
+    reads++; assert.equal(args[1], '/repos/example/project/issues/comments/123');
+    return { stdout: JSON.stringify(response) };
+  } });
+  const input = { repo: 'example/project', issueNumber: 7, url };
+  assert.equal(await provider.verifyPublicIssueComment(input), true);
+  for (const patch of [{ id: 124 }, { issue_url: 'https://api.github.com/repos/other/project/issues/7' }, { html_url: url + '4' }, { body: '' }]) {
+    const original = response; response = { ...response, ...patch };
+    assert.equal(await provider.verifyPublicIssueComment(input), false); response = original;
+  }
+  assert.equal(await provider.verifyPublicIssueComment({ ...input, url: 'https://attacker.test/example/project/issues/7#issuecomment-123' }), false);
+  assert.equal(reads, 5);
 });

@@ -114,7 +114,7 @@ export class SdkCommunityPrStore implements ICommunityPrStore {
 }
 
 const draftCreate = z.object({ sourceType: z.enum(['frustration_issue', 'cat_initiated']), sourceId: text, title: text, bodyMarkdown: z.string(), targetRepo: repo, labels: z.array(text), threadId: text, userId: text }).strict();
-const draftSchema = draftCreate.extend({ draftId: text, status: z.enum(['draft', 'published', 'cancelled']), githubIssueNumber: number.optional(), githubIssueUrl: z.string().url().optional(), createdAt: timestamp, publishedAt: timestamp.optional(), cancelledAt: timestamp.optional() }).strict().superRefine((draft, context) => {
+const draftSchema = draftCreate.extend({ draftId: text, status: z.enum(['draft', 'publishing', 'published', 'cancelled']), githubIssueNumber: number.optional(), githubIssueUrl: z.string().url().optional(), createdAt: timestamp, publishedAt: timestamp.optional(), cancelledAt: timestamp.optional() }).strict().superRefine((draft, context) => {
   const published = draft.githubIssueNumber !== undefined && draft.githubIssueUrl !== undefined && draft.publishedAt !== undefined;
   const hasPublication = draft.githubIssueNumber !== undefined || draft.githubIssueUrl !== undefined || draft.publishedAt !== undefined;
   if (draft.status === 'published' && (!published || draft.cancelledAt !== undefined)) context.addIssue({ code: 'custom', message: 'Published draft requires complete publication result' });
@@ -168,21 +168,33 @@ export class SdkCommunityIssueDraftStore implements ICommunityIssueDraftStore {
     const state = this.decode(entry.value, sourceHash);
     return state.activeId ? state.drafts[state.activeId]! : null;
   }
-  private async update(id: string, mutate: (draft: CommunityIssueDraft) => CommunityIssueDraft): Promise<CommunityIssueDraft> {
+  private async update(id: string, mutate: (draft: CommunityIssueDraft) => CommunityIssueDraft, allowed: readonly string[] = ['draft']): Promise<CommunityIssueDraft> {
     const sourceHash = this.sourceHash(id); const key = draftPrefix + sourceHash;
     for (let attempt = 0; attempt < 64; attempt++) {
       const entry = await this.storage.get(key); if (!entry) throw new Error(`Draft ${id} not found`);
       const state = this.decode(entry.value, sourceHash); const previous = state.drafts[id];
       if (!previous) throw new Error(`Draft ${id} not found`);
-      if (previous.status !== 'draft') throw new Error(`Draft ${id} is ${previous.status} (not draft)`);
+      if (!allowed.includes(previous.status)) throw new Error(`Draft ${id} is ${previous.status} (not draft)`);
       const draft = draftSchema.parse(mutate(previous));
       const next = { ...state, activeId: draft.status === 'cancelled' ? null : id, drafts: { ...state.drafts, [id]: draft } };
       if ((await this.storage.compareAndSet(key, entry.revision, next)).applied) return draft;
     }
     throw new Error('Draft changed concurrently');
   }
+  beginPublish(id: string, title: string, bodyMarkdown: string) {
+    return this.update(id, draft => {
+      if (draft.status !== 'draft' && (draft.title !== title || draft.bodyMarkdown !== bodyMarkdown)) throw new Error('Publication content is immutable');
+      return { ...draft, title, bodyMarkdown, status: draft.status === 'draft' ? 'publishing' : draft.status };
+    }, ['draft', 'publishing', 'published']);
+  }
   publish(input: PublishDraftInput) {
-    return this.update(input.draftId, draft => ({ ...draft, status: 'published', githubIssueNumber: input.githubIssueNumber, githubIssueUrl: input.githubIssueUrl, publishedAt: Date.now() }));
+    return this.update(input.draftId, draft => {
+      if (draft.status === 'published') {
+        if (draft.githubIssueNumber !== input.githubIssueNumber || draft.githubIssueUrl !== input.githubIssueUrl) throw new Error('Publication identity changed');
+        return draft;
+      }
+      return { ...draft, status: 'published', githubIssueNumber: input.githubIssueNumber, githubIssueUrl: input.githubIssueUrl, publishedAt: Date.now() };
+    }, ['publishing', 'published']);
   }
   cancel(id: string) { return this.update(id, draft => ({ ...draft, status: 'cancelled', cancelledAt: Date.now() })); }
   updateContent(id: string, title: string, bodyMarkdown: string) { return this.update(id, draft => ({ ...draft, title, bodyMarkdown })); }

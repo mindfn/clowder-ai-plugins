@@ -1,7 +1,7 @@
 /**
  * F235: Community Issue Draft Store — Port interface.
  *
- * Lifecycle: draft → published | cancelled (terminal, no further transitions).
+ * Lifecycle: draft → publishing → published; only an unstarted draft may be cancelled.
  * User-visible data → persistent by default (Iron Law #5, LL-048).
  */
 
@@ -27,7 +27,10 @@ export interface ICommunityIssueDraftStore {
   /** Get active (non-cancelled) draft by source ID. Returns null if no active draft. */
   getBySourceId(sourceId: string): Promise<CommunityIssueDraft | null>;
 
-  /** Mark as published with GitHub issue result. Throws if not draft (INV-1). */
+  /** Persist immutable content before any external publication. */
+  beginPublish(draftId: string, title: string, bodyMarkdown: string): Promise<CommunityIssueDraft>;
+
+  /** Record the durable journal result for a publishing draft; exact published replay is idempotent. */
   publish(input: PublishDraftInput): Promise<CommunityIssueDraft>;
 
   /** Mark as cancelled. Throws if not draft (INV-1). */

@@ -46,6 +46,7 @@ import type { CommunityRequestContext } from './community-request-context.js';
 import { type CommunityDecisionQueueFindingStore, communityDecisionQueueRoutes } from './community-decision-queue.js';
 
 export interface CommunityIssuesRoutesOptions {
+  verifyPublicIssueComment?: (input: { repo: string; issueNumber: number; url: string }) => Promise<boolean>;
   requestContext: CommunityRequestContext;
   guardianCatalog: () => Promise<GuardianCatalog>;
   communityIssueStore: ICommunityIssueStore;
@@ -986,8 +987,8 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
   // Appends case.reported event. Unlike dispatch (best-effort), closure
   // endpoints MUST fail visibly if event log or projector is absent.
   const reportSchema = z.object({
-    publicCommentUrl: z.string().min(1),
-    actor: z.string().min(1),
+    publicCommentUrl: z.string().url(),
+    actor: z.string().min(1).optional(),
   });
 
   // States where report/waive are not applicable (terminal states)
@@ -1003,6 +1004,12 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
       reply.status(404);
       return { error: 'Community issue not found' };
     }
+
+    const caller = requestContext.caller();
+    if (caller) {
+      if (item.assignedCatId !== caller.catId || item.assignedThreadId !== caller.threadId) return reply.code(403).send({ error: 'Only the assigned case owner in its thread may report' });
+    } else if (!requestContext.requireOwner(reply)) return;
+    const actor = caller?.catId ?? requestContext.userId();
 
     if (!opts.eventLog || !opts.projector) {
       reply.status(501);
@@ -1031,6 +1038,14 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
       reply.status(400);
       return { error: 'Invalid payload', details: parsed.error.issues };
     }
+    if (parsed.data.actor !== undefined && parsed.data.actor !== actor) return reply.code(403).send({ error: 'Body actor does not match authenticated principal' });
+    const url = new URL(parsed.data.publicCommentUrl);
+    if (url.origin !== 'https://github.com' || url.pathname.toLowerCase() !== `/${item.repo}/issues/${item.issueNumber}`.toLowerCase() || !/^#issuecomment-[1-9][0-9]*$/.test(url.hash) || url.search || url.username || url.password) return reply.code(400).send({ error: 'Public comment must belong to this issue' });
+    if (!opts.verifyPublicIssueComment) return reply.code(503).send({ error: 'Public comment verification unavailable' });
+    if (!await opts.verifyPublicIssueComment({ repo: item.repo, issueNumber: item.issueNumber, url: parsed.data.publicCommentUrl })) return reply.code(422).send({ error: 'Public comment could not be verified' });
+    await requestContext.assertCurrent();
+    const current = await communityIssueStore.get(id);
+    if (!current || (caller && (current.assignedCatId !== caller.catId || current.assignedThreadId !== caller.threadId))) return reply.code(403).send({ error: 'Case ownership changed during verification' });
     const at = Date.now();
     const communityEvent: CommunityEvent = {
       sourceEventId: `report:${id}:${at}`,
@@ -1039,7 +1054,7 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
       classification: 'state-changing',
       payload: {
         publicCommentUrl: parsed.data.publicCommentUrl,
-        actor: parsed.data.actor,
+        actor,
         reportedAt: at,
       },
       at,
@@ -1059,11 +1074,12 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
   // so that fixed→closed can proceed without a public comment.
   const waiveClosureSchema = z.object({
     reason: z.string().min(1),
-    actor: z.string().min(1),
+    actor: z.string().min(1).optional(),
     evidence: z.string().min(1),
   });
 
   app.post('/api/community-issues/:id/waive-closure', async (request, reply) => {
+    if (!requestContext.requireOwner(reply)) return;
     const { id } = request.params as { id: string };
     const item = await communityIssueStore.get(id);
     if (!item) {
@@ -1099,6 +1115,8 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
       reply.status(400);
       return { error: 'Invalid payload — reason, actor, and evidence are all required', details: parsed.error.issues };
     }
+    const actor = requestContext.userId();
+    if (parsed.data.actor !== undefined && parsed.data.actor !== actor) return reply.code(403).send({ error: 'Body actor does not match authenticated principal' });
     const at = Date.now();
     const communityEvent: CommunityEvent = {
       sourceEventId: `waive:${id}:${at}`,
@@ -1107,7 +1125,7 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
       classification: 'state-changing',
       payload: {
         reason: parsed.data.reason,
-        actor: parsed.data.actor,
+        actor,
         evidence: parsed.data.evidence,
         waivedAt: at,
       },

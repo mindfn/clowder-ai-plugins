@@ -15,7 +15,7 @@ import { generateId } from './ids.js';
  *   draft → cancelled   (user dismissed the preview)
  * Both published and cancelled are terminal.
  */
-export type CommunityIssueDraftStatus = 'draft' | 'published' | 'cancelled';
+export type CommunityIssueDraftStatus = 'draft' | 'publishing' | 'published' | 'cancelled';
 
 // ── Source Type ────────────────────────────────────────────────
 

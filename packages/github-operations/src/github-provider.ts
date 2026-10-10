@@ -52,8 +52,20 @@ export class GitHubProvider implements GitHubTrackingProvider, CommunityProvider
     // One invocation, no POST retries. The caller durably records the attempt
     // before reaching this transport and reconciles ambiguous results by GET.
     const value = JSON.parse((await executeGitHubRequest(['api', `/repos/${draft.repo}/issues`, '--hostname', 'github.com', '--method', 'POST',
-      '--raw-field', `title=${draft.title}`, '--raw-field', `body=${publicationBody(draft)}`], options)).stdout);
+      '--raw-field', `title=${draft.title}`, '--raw-field', `body=${publicationBody(draft)}`, ...(draft.labels ?? []).flatMap(label => ['--raw-field', `labels[]=${label}`])], options)).stdout);
     return { number: value.number, url: value.html_url };
+  }
+
+  async verifyPublicIssueComment(input: { repo: string; issueNumber: number; url: string }): Promise<boolean> {
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(input.repo) || !Number.isSafeInteger(input.issueNumber) || input.issueNumber < 1) return false;
+    const url = new URL(input.url);
+    const match = /^#issuecomment-([1-9][0-9]*)$/.exec(url.hash);
+    if (!match || url.origin !== 'https://github.com' || url.username || url.password || url.search || url.pathname.toLowerCase() !== `/${input.repo}/issues/${input.issueNumber}`.toLowerCase()) return false;
+    const options = await this.requestOptions(AbortSignal.timeout(30_000));
+    const value = JSON.parse((await executeGitHubRequest(['api', `/repos/${input.repo}/issues/comments/${match[1]}`, '--hostname', 'github.com'], options)).stdout);
+    return typeof value.html_url === 'string' && value.html_url.toLowerCase() === input.url.toLowerCase() &&
+      typeof value.issue_url === 'string' && value.issue_url.toLowerCase() === `https://api.github.com/repos/${input.repo}/issues/${input.issueNumber}`.toLowerCase() &&
+      String(value.id) === match[1] && typeof value.body === 'string' && value.body.trim().length > 0;
   }
 
   async find(draft: NativeIssueDraft, signal: AbortSignal): Promise<PublishedIssue | null> {

@@ -48,7 +48,7 @@ test('draft source reservation and record are atomic; cancelled history survives
   assert.equal((await restored.getBySourceId('source-1'))?.draftId, second.draftId);
   const race = await Promise.allSettled([
     a.cancel(second.draftId),
-    b.publish({ draftId: second.draftId, githubIssueNumber: 42, githubIssueUrl: 'https://github.com/org/repo/issues/42' }),
+    b.beginPublish(second.draftId, 'Draft', 'body'),
   ]);
   assert.equal(race.filter(r => r.status === 'fulfilled').length, 1);
   await assert.rejects(restored.updateContent(second.draftId, 'changed', 'body'), /not draft/);

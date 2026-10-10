@@ -32,7 +32,7 @@ export async function previewPublicIssue(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('preview input required');
   const input = value as Record<string, unknown>;
   if (Object.keys(input).some(key => !['title', 'bodyMarkdown'].includes(key))) throw new TypeError('unsupported preview field');
-  if (typeof input.title !== 'string' || !input.title.trim() || input.title.length > 256 ||
+  if (typeof input.title !== 'string' || !input.title.trim() || input.title.length > 500 ||
     typeof input.bodyMarkdown !== 'string' || input.bodyMarkdown.length > 65536) throw new TypeError('invalid preview content');
   const result = sanitize(input.title, input.bodyMarkdown);
   if (!result.passed) throw new Error('preview still contains forbidden patterns');

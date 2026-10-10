@@ -1,6 +1,7 @@
 import Fastify, { type InjectOptions, type LightMyRequestResponse } from 'fastify';
 import type { PluginActionContext, PluginStorageHost } from '@clowder-ai/plugin-sdk';
 import { z } from 'zod';
+import { NativeIssueDraftRuntime, type NativeIssuePublisher } from './native-issue-drafts.js';
 import { CommunityRequestContext } from './business/routes/community-request-context.js';
 import { communityIssueRoutes, type CommunityIssuesRoutesOptions } from './business/routes/community-issues.js';
 import { communityRepoConfigRoutes } from './business/routes/community-repo-config.js';
@@ -16,7 +17,7 @@ type OwnedStores = 'requestContext' | 'communityIssueStore' | 'communityPrStore'
 export interface CommunityHttpRouterOptions {
   readonly storage: PluginStorageHost;
   readonly issues: Omit<CommunityIssuesRoutesOptions, OwnedStores>;
-  readonly drafts: Omit<CommunityIssueDraftRoutesOptions, 'requestContext' | 'communityIssueDraftStore'>;
+  readonly drafts: Omit<CommunityIssueDraftRoutesOptions, 'requestContext' | 'communityIssueDraftStore' | 'publication'> & { publisher: NativeIssuePublisher };
 }
 
 const forwarded = z.object({
@@ -48,7 +49,7 @@ function response(value: LightMyRequestResponse) {
  * Dynamic Host forwarding and production module registration are independent
  * wiring requirements; constructing this router does not prove either. */
 export async function createCommunityHttpRouter(options: CommunityHttpRouterOptions) {
-  const app = Fastify();
+  const app = Fastify({ maxParamLength: 512 });
   const scope = new CommunityRequestContext(app);
   const storage = scope.mutationStorage(options.storage);
   const configs = new SdkCommunityRepoConfigStore(storage);
@@ -57,6 +58,12 @@ export async function createCommunityHttpRouter(options: CommunityHttpRouterOpti
   const issues = new SdkCommunityWorkflowIssueStore(storage);
   const prs = new SdkCommunityPrStore(storage);
   const drafts = new SdkCommunityIssueDraftStore(storage);
+  // Reuse the journal algorithm in a separate namespace: native draft UI
+  // cancellation must not mutate a Community publication behind its workflow.
+  const publication = new NativeIssueDraftRuntime({ storage, config: { get: async () => options.drafts.config.repoAllowlist.join(',') } }, {
+    create: async (draft, signal) => { await scope.assertCurrent(); return options.drafts.publisher.create(draft, signal); },
+    find: async (draft, signal) => { await scope.assertCurrent(); return options.drafts.publisher.find(draft, signal); },
+  }, 'community.workflow.publication.');
   const findings = new CommunityReconciliationFindingStore(storage);
   app.addHook('preHandler', async (_request, reply) => {
     if (!scope.userId()) return reply.code(401).send({ error: 'Host-authenticated Community request required' });
@@ -70,7 +77,11 @@ export async function createCommunityHttpRouter(options: CommunityHttpRouterOpti
   await app.register(communityRepoConfigRoutes, { requestContext: scope, repoConfigStore: configs });
   await app.register(communityIssueDraftRoutes, {
     ...options.drafts, requestContext: scope, communityIssueDraftStore: drafts,
-    publisher: { publish: async input => { await scope.assertCurrent(); return options.drafts.publisher.publish(input); } },
+    publication: { publish: async draft => {
+      const journal = await publication.create({ requestId: `community:${draft.draftId}`, repo: draft.targetRepo, title: draft.title, bodyMarkdown: draft.bodyMarkdown, labels: draft.labels });
+      const result = await publication.publish({ input: { draftId: journal.data.id } });
+      return result.data.issue ? { issue: result.data.issue } : {};
+    } },
   });
   await app.ready();
   return {
@@ -90,6 +101,6 @@ export async function createCommunityHttpRouter(options: CommunityHttpRouterOpti
       const url = `/api/community-issues/${encodeURIComponent(value.id)}/${nativeTargets[method]}`;
       return response(await scope.injectNative(caller, { method: 'POST', url, payload: value.payload }));
     },
-    async stop() { scope.stop(); await app.close(); },
+    async stop() { scope.stop(); await publication.stop(); await app.close(); },
   };
 }

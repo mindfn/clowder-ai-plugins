@@ -6,14 +6,14 @@
  * POST .../:draftId/publish                — user edits + publish to GitHub
  * POST .../:draftId/cancel                 — cancel draft
  *
- * All routes require user auth via X-Cat-Cafe-User.
+ * All routes require a Host-authenticated request context. Client headers are not authority.
  */
 
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import type { ICommunityIssueDraftStore } from '../domains/community/ports/CommunityIssueDraftStore.js';
 import type { FrustrationIssue } from '../model/index.js';
-import type { IGitHubIssuePublisher } from '../domains/community/github/GitHubIssuePublisher.js';
+import type { CommunityIssueDraft } from '../model/index.js';
 import { sanitize } from '../domains/community/issue-analysis/CommunityIssueSanitizer.js';
 import { createDraftFromFrustrationIssue } from '../domains/community/issue-analysis/FrustrationIssueSourceAdapter.js';
 import type { CommunityRequestContext } from './community-request-context.js';
@@ -27,7 +27,7 @@ export interface CommunityIssueDraftRoutesOptions {
     setCommunityIssueDraftId(id: string, draftId: string): Promise<unknown>;
   };
   requestContext: CommunityRequestContext;
-  publisher: IGitHubIssuePublisher;
+  publication: { publish(draft: CommunityIssueDraft): Promise<{ issue?: { number: number; url: string } }> };
   config: {
     defaultRepo: string;
     repoAllowlist: string[];
@@ -66,16 +66,10 @@ const genericCreateBodySchema = z.object({
   messageId: z.string().min(1).max(200).optional(),
 });
 
-// ── In-process publish debounce (Phase A: single-process guard against double-click /
-// two-tab / retry race conditions. NOT a distributed lock — adequate for alpha single-
-// process deployment. If scaled to multi-process, replace with store-level claim.) ──
-
-const publishingDrafts = new Set<string>();
-
 // ── Routes ────────────────────────────────────────────────────
 
 export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRoutesOptions> = async (app, opts) => {
-  const { communityIssueDraftStore, frustrationIssueStore, publisher, config } = opts;
+  const { communityIssueDraftStore, frustrationIssueStore, publication, config } = opts;
   const resolveUserId = opts.requestContext.userId.bind(opts.requestContext);
   const resolveStrictUserId = resolveUserId;
 
@@ -130,7 +124,7 @@ export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRo
     // this scoped sourceId, return it instead of throwing INV-3. This makes
     // retry-after-failed-publish safe (frontend does create→publish every submit).
     const existing = await communityIssueDraftStore.getBySourceId(scopedSourceId);
-    if (existing && existing.status === 'draft') {
+    if (existing && (existing.status === 'draft' || existing.status === 'publishing')) {
       return { draft: existing };
     }
     // Cloud P2-1 fix: if the draft was already published, return 409 with
@@ -297,98 +291,23 @@ export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRo
       reply.status(403);
       return { error: 'Not your draft' };
     }
-    if (draft.status !== 'draft') {
-      reply.status(409);
-      return { error: `Draft is ${draft.status}, cannot publish` };
-    }
-
-    // In-process debounce — prevent double-click/retry/two-tab duplicates.
-    // Guard BEFORE the irreversible GitHub API call so only one request proceeds.
-    if (publishingDrafts.has(draftId)) {
-      reply.status(409);
-      return { error: 'Publish already in progress for this draft' };
-    }
-    publishingDrafts.add(draftId);
-
+    if (draft.status === 'published') return { draft, githubIssueUrl: draft.githubIssueUrl };
+    if (draft.status === 'cancelled') return reply.code(409).send({ error: 'Draft cancelled' });
+    if (!config.repoAllowlist.includes(draft.targetRepo)) return reply.code(403).send({ error: 'Repository not allowed' });
+    const sanitized = sanitize(edits?.title ?? draft.title, edits?.bodyMarkdown ?? draft.bodyMarkdown);
+    if (!sanitized.passed) return reply.code(422).send({ error: 'Content contains forbidden patterns' });
     try {
-      // Apply user edits if provided
-      const finalTitle = edits?.title ?? draft.title;
-      const finalBody = edits?.bodyMarkdown ?? draft.bodyMarkdown;
-
-      // Re-sanitize (KD-4: defense in depth — user edits could re-introduce internal info)
-      const sanitized = sanitize(finalTitle, finalBody);
-
-      // Fail-closed: if sanitizer reports patterns survived redaction, reject (KD-4)
-      if (!sanitized.passed) {
-        reply.status(422);
-        return { error: 'Content contains forbidden patterns that could not be fully redacted' };
-      }
-
-      // Update draft content if user edited
-      if (edits?.title || edits?.bodyMarkdown) {
-        draft = await communityIssueDraftStore.updateContent(draftId, sanitized.title, sanitized.bodyMarkdown);
-      }
-
-      // Publish to GitHub (irreversible external side effect)
-      const result = await publisher.publish({
-        repo: draft.targetRepo,
-        title: sanitized.title,
-        body: sanitized.bodyMarkdown,
-        labels: draft.labels,
-      });
-
-      // R7-P1-4: Record GitHub result durably — if store.publish() fails after GitHub
-      // succeeds, return partial success with the GitHub URL so the user doesn't retry
-      // and create duplicates. The draft stays in 'draft' but the external issue exists.
-      try {
-        const published = await communityIssueDraftStore.publish({
-          draftId,
-          githubIssueNumber: result.issueNumber,
-          githubIssueUrl: result.issueUrl,
-        });
-        return { draft: published, githubIssueUrl: result.issueUrl };
-      } catch (storeErr: unknown) {
-        // GitHub issue was created but store write failed (e.g. Redis outage/restart).
-        // One-shot retry: if the failure was transient, this prevents the draft from
-        // staying in 'draft' status and allowing duplicate GitHub issues on retry.
-        const publishInput = {
-          draftId,
-          githubIssueNumber: result.issueNumber,
-          githubIssueUrl: result.issueUrl,
-        };
-        try {
-          const retried = await communityIssueDraftStore.publish(publishInput);
-          app.log.warn(`F235: store.publish() succeeded on retry for draft ${draftId}`);
-          return { draft: retried, githubIssueUrl: result.issueUrl };
-        } catch {
-          // Retry also failed — return partial success with the GitHub URL so UI
-          // shows the link. Draft stays in 'draft' (known Phase A limitation for
-          // persistent store outages; cross-session retry could create duplicates).
-          const storeMsg = storeErr instanceof Error ? storeErr.message : String(storeErr);
-          app.log.error(
-            `F235: GitHub issue created (#${result.issueNumber}) but store.publish() failed after retry: ${storeMsg}`,
-          );
-          return {
-            draft: {
-              ...draft,
-              status: 'published',
-              githubIssueNumber: result.issueNumber,
-              githubIssueUrl: result.issueUrl,
-            },
-            githubIssueUrl: result.issueUrl,
-            warning:
-              'GitHub issue created but local state update failed — issue may show as draft until next page load',
-          };
-        }
-      }
+      // This CAS freezes content and prevents cancellation or edits in another
+      // process before entering the durable publication journal.
+      draft = await communityIssueDraftStore.beginPublish(draftId, sanitized.title, sanitized.bodyMarkdown);
+      const result = await publication.publish(draft);
+      if (!result.issue) return reply.code(202).send({ draft, warning: 'Publication outcome uncertain. Retry reconciles the original issue without creating another.' });
+      const published = await communityIssueDraftStore.publish({ draftId, githubIssueNumber: result.issue.number, githubIssueUrl: result.issue.url });
+      return { draft: published, githubIssueUrl: result.issue.url };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!reply.sent) {
-        reply.status(502);
-      }
-      return { error: `GitHub publish failed: ${msg}` };
-    } finally {
-      publishingDrafts.delete(draftId);
+      // Preserve publishing on all failures. Never fabricate a persisted
+      // published response or roll back to an editable draft after a POST.
+      return reply.code(502).send({ error: err instanceof Error ? err.message : 'Publication failed; retry to reconcile' });
     }
   });
 
@@ -417,11 +336,6 @@ export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRo
     if (draft.userId !== userId) {
       reply.status(403);
       return { error: 'Not your draft' };
-    }
-    // R8-P1-2: Block cancel while publish is in-flight (prevents source-mapping race)
-    if (publishingDrafts.has(draftId)) {
-      reply.status(409);
-      return { error: 'Publish in progress for this draft, cannot cancel' };
     }
     if (draft.status !== 'draft') {
       reply.status(409);
