@@ -544,8 +544,8 @@
       "properties": {
         "type": { "const": "webhook" },
         "id": { "type": "string", "minLength": 1 },
-        "path": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$" },
-        "methods": { "type": "array", "items": { "type": "string", "enum": ["GET", "POST", "PUT", "DELETE"] }, "minItems": 1, "uniqueItems": true },
+        "path": { "type": "string", "pattern": "^(?!(?:config|test|enable|disable|actions|operations)(?:/|$))[A-Za-z0-9][A-Za-z0-9_-]*(/(?:[A-Za-z0-9][A-Za-z0-9_-]*|:[A-Za-z_][A-Za-z0-9_]*))*$" },
+        "methods": { "type": "array", "items": { "type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] }, "minItems": 1, "uniqueItems": true },
         "action": { "$ref": "#/$defs/CallbackAction" },
         "verificationSecretRef": { "type": "string", "minLength": 1 }
       },

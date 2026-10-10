@@ -252,6 +252,22 @@ export function validateManifest(value: unknown): ManifestValidationResult {
     }
 
     const contributions = manifest.contributions ?? [];
+    const webhooks = contributions.filter(contribution => contribution.type === 'webhook');
+    for (const [index, route] of webhooks.entries()) {
+      const segments = route.path.split('/');
+      const names = segments.filter(segment => segment.startsWith(':'));
+      if (new Set(names).size !== names.length) return semanticError(
+        `/contributions/${contributions.indexOf(route)}/path`, '#/$defs/WebhookContribution/uniqueParameters',
+        'uniqueParameters', 'webhook parameter names must be unique within a path');
+      for (const previous of webhooks.slice(0, index)) {
+        const other = previous.path.split('/');
+        const overlap = segments.length === other.length && segments.every((segment, i) =>
+          segment === other[i] || segment.startsWith(':') || other[i]!.startsWith(':'));
+        if (overlap && route.methods.some(method => previous.methods.includes(method))) return semanticError(
+          `/contributions/${contributions.indexOf(route)}/path`, '#/$defs/WebhookContribution/unambiguousRoutes',
+          'unambiguousRoutes', 'webhook paths must not overlap for a shared HTTP method');
+      }
+    }
     const contributionByKey = new Map<string, (typeof contributions)[number]>();
     for (const [index, contribution] of contributions.entries()) {
       const key = `${contribution.type}\0${contribution.id}`;

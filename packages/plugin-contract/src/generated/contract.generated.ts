@@ -274,7 +274,7 @@ export type WebhookContribution = {
   readonly type: 'webhook';
   readonly id: string;
   readonly path: string;
-  readonly methods: readonly ('GET' | 'POST' | 'PUT' | 'DELETE')[];
+  readonly methods: readonly ('GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE')[];
   readonly action: CallbackAction;
   readonly verificationSecretRef?: string;
 };
