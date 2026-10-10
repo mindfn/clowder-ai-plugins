@@ -67,7 +67,7 @@ The Host still selects the installation, binds each lease generation and commits
 completion. Current migrated review records lack an authenticated publisher
 association, so delivery verification returns `insufficient` even when the exact
 GitHub review exists. No successful review completion is claimed by this source
-checkpoint. The rebuilt archive and Host installation journey remain pending.
+checkpoint. The Host installation journey remains pending.
 
 The owner-confirmed legacy metadata copy operation accepts an isolated, bounded
 raw snapshot from the Host migration adapter. It only inserts missing issue
@@ -87,7 +87,7 @@ distribution work, not prerequisites for fresh local acceptance.
 Requested Host capabilities (from `plugin.yaml`): `schedule.register`,
 `plugin.config.read`, `secret.read`, `plugin.state.get`, `plugin.state.set`,
 `task.read`, `task.write`, `thread.listMetadata`, `thread.readContent`,
-`thread.write`, `messaging.send`, `custody.verify`, `deployment.read`,
+`thread.write`, `messaging.send`, `custody.invoke`, `custody.verify`, `deployment.read`,
 `frustration.read`, `frustration.link`. The last three are separate explicit L2
 grants; no grant is inferred from installing the plugin. `thread.readContent` is an
 explicit L2 grant required by the current Host's reliable thread point lookup;
@@ -105,7 +105,7 @@ again at the publication journal boundary. An empty list disables new drafts
 and publishing while durable drafts remain readable.
 
 This is source composition, not installed acceptance. Review settlement/publisher association, final
-alpha.16 shrinkwrap/archive and real Host identity/CAS/browser journeys remain
+real Host identity/CAS/browser journeys remain
 open. Owner HTTP does not mint a native caller for callback-only routes. The six
 Community callbacks are now separately declared in native MCP and use the Host
 second context. They cannot perform owner resolve or lease completion. Report
@@ -134,8 +134,10 @@ in-flight SDK sends and leaves uncertain outcomes for idempotent recovery.
 Briefings name the declared native `github_community_triage_complete` callback.
 The briefing is a request for triage, not authority for owner resolve, code
 changes or lease completion. This source checkpoint covers manual dispatch and
-recovery, not automatic narrator eligibility, installed Host messaging or a real
-cat response journey.
+recovery, not installed Host messaging or a real cat response journey. The fixed
+migration source (`bb9f9f08`) only wired manual dispatch: its automatic eligibility
+helper had no production caller. The package retains that pure helper and does
+not add automatic admission or wake historical cases.
 
 Native external-review submissions use `github_record_external_review_verdict`
 with the assigned exact HEAD and lease generation. The current Host invocation
@@ -158,3 +160,13 @@ again for each batch and per-PR CI read. Concurrent registration/cancellation is
 rechecked before consuming the batch; pending notifications can recover even when
 new batch facts are unavailable. These package regressions do not establish the
 upstream distributable gate or installed Host acceptance.
+
+### Artifact dependency closure
+
+The alpha.16 production shrinkwrap pins contract beta.35, SDK beta.19 and the
+embedded Fastify router with their transitive dependencies. Development archives
+use the exact reviewed local contract/SDK bytes; their registry coordinates do
+not claim those versions are published. A fresh consumer must resolve the packed
+module and its production dependencies without workspace links. Archive checks
+and isolated module fixtures do not replace real Host grant, identity, CAS or
+browser acceptance.
