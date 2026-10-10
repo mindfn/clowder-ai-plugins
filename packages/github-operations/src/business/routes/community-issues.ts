@@ -310,7 +310,9 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
     if (opts.fetchPrReviews && openPrs.length > 0) {
       for (let i = 0; i < openPrs.length; i += CONCURRENCY) {
         const batch = openPrs.slice(i, i + CONCURRENCY);
-        const results = await Promise.all(batch.map((p) => opts.fetchPrReviews!(repo, p.number).catch(() => [])));
+        // Unavailable reviews are not evidence of no reviews. Finish all reads
+        // before mutating the workflow so a failed sync retains prior truth.
+        const results = await Promise.all(batch.map((p) => opts.fetchPrReviews!(repo, p.number)));
         for (let j = 0; j < batch.length; j++) reviewsByNumber.set(batch[j].number, results[j]);
       }
     }

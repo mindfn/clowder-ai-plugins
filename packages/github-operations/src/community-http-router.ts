@@ -2,6 +2,7 @@ import Fastify, { type InjectOptions, type LightMyRequestResponse } from 'fastif
 import type { PluginActionContext, PluginStorageHost, PluginThreadHost } from '@clowder-ai/plugin-sdk';
 import { z } from 'zod';
 import { SdkCommunityCollectionStore } from './community-collection.js';
+import { CommunityRouteProvider, type CommunityRouteProviderOptions } from './community-route-provider.js';
 import { NativeIssueDraftRuntime, type NativeIssuePublisher } from './native-issue-drafts.js';
 import { CommunityRequestContext } from './business/routes/community-request-context.js';
 import { communityIssueRoutes, type CommunityIssuesRoutesOptions } from './business/routes/community-issues.js';
@@ -20,6 +21,7 @@ export interface CommunityHttpRouterOptions {
   readonly threads: Pick<PluginThreadHost, 'get' | 'ensureByKey'>;
   /** Share the active CommunityRuntime queue, never its unguarded stores. */
   readonly projectionOperations: CommunityProjectionOperations;
+  readonly provider?: Pick<CommunityRouteProviderOptions, 'token' | 'execFileAsync'>;
   readonly issues: Omit<CommunityIssuesRoutesOptions, OwnedStores | 'taskStore'> & { taskStore?: CommunityIssuesRoutesOptions['taskStore'] };
   readonly drafts: Omit<CommunityIssueDraftRoutesOptions, 'requestContext' | 'communityIssueDraftStore' | 'publication'> & { publisher: NativeIssuePublisher };
 }
@@ -57,6 +59,9 @@ export async function createCommunityHttpRouter(options: CommunityHttpRouterOpti
   const scope = new CommunityRequestContext(app);
   const storage = scope.mutationStorage(options.storage);
   const configs = new SdkCommunityRepoConfigStore(storage);
+  const reader = options.provider && new CommunityRouteProvider({ ...options.provider,
+    allowed: async repo => !!await configs.getByRepo(repo), assertCurrent: () => scope.assertCurrent(),
+  });
   const events = new SdkCommunityEventLog(storage);
   const objects = new SdkCommunityObjectStore(storage);
   const issues = new SdkCommunityWorkflowIssueStore(storage);
@@ -74,7 +79,13 @@ export async function createCommunityHttpRouter(options: CommunityHttpRouterOpti
     await scope.assertCurrent();
   });
   await app.register(communityIssueRoutes, {
-    ...options.issues, taskStore: options.issues.taskStore ?? new SdkCommunityCollectionStore(storage),
+    ...options.issues,
+    ...(reader ? {
+      fetchIssues: (repo: string) => reader.fetchIssues(repo), fetchPrs: (repo: string) => reader.fetchPrs(repo),
+      fetchPrReviews: (repo: string, number: number) => reader.fetchPrReviews(repo, number),
+      fetchIssueCommentCursor: (repo: string, number: number) => reader.fetchIssueCommentCursor(repo, number),
+    } : {}),
+    taskStore: options.issues.taskStore ?? new SdkCommunityCollectionStore(storage),
     requestContext: scope, threadStore: scope.threads(options.threads), communityIssueStore: issues, communityPrStore: prs,
     repoConfigStore: configs, eventLog: events, objectStore: objects,
     projector: new CommunityProjector(events, objects, options.projectionOperations), findingStore: findings,
@@ -106,6 +117,6 @@ export async function createCommunityHttpRouter(options: CommunityHttpRouterOpti
       const url = `/api/community-issues/${encodeURIComponent(value.id)}/${nativeTargets[method]}`;
       return response(await scope.injectNative(caller, { method: 'POST', url, payload: value.payload }));
     },
-    async stop() { scope.stop(); await publication.stop(); await app.close(); },
+    async stop() { scope.stop(); await Promise.all([publication.stop(), reader?.stop()]); await app.close(); },
   };
 }

@@ -4,7 +4,8 @@ import { memoryStorage } from '../test/memory-storage.js';
 import { createCommunityHttpRouter, type CommunityHttpRouterOptions } from './community-http-router.js';
 import { CommunityProjector, CommunityProjectionOperations } from './business/domains/community/community-projector.js';
 import { createCatId } from './business/model/index.js';
-import { SdkCommunityWorkflowIssueStore, SdkCommunityIssueDraftStore } from './business/domains/community/CommunityWorkflowStores.js';
+import { SdkCommunityWorkflowIssueStore, SdkCommunityIssueDraftStore, SdkCommunityPrStore } from './business/domains/community/CommunityWorkflowStores.js';
+import { SdkCommunityRepoConfigStore } from './business/domains/community/CommunityRepoConfigStore.js';
 import { NativeIssueDraftRuntime } from './native-issue-drafts.js';
 import { SdkCommunityEventLog } from './business/domains/community/CommunityEventLog.js';
 import { SdkCommunityObjectStore } from './business/domains/community/CommunityObjectStore.js';
@@ -27,6 +28,30 @@ function options(): CommunityHttpRouterOptions {
   };
 }
 const principal = { kind: 'owner', id: 'owner' } as const;
+
+test('real PR sync refuses failed review read without overwriting the existing workflow', async t => {
+  const deps = options(), store = new SdkCommunityPrStore(deps.storage), head = 'a'.repeat(40);
+  const before = (await store.create({ repo: 'org/repo', prNumber: 1, title: 'Existing', author: 'author', state: 'open', replyState: 'replied', headSha: head, draft: false }))!;
+  deps.issues.fetchPrs = async () => [{ number: 1, title: 'Changed', state: 'open', merged_at: null, user: 'author', head_sha: head, draft: false, labels: [], updated_at: '2026-10-01T00:00:00Z' }];
+  deps.issues.fetchPrReviews = async () => { throw new Error('provider review unavailable'); };
+  const router = await createCommunityHttpRouter(deps); t.after(() => router.stop());
+  const result = await router.forwardOwner({ principal, method: 'POST', path: 'github/community-issues/sync-prs', query: { repo: 'org/repo' } });
+  assert.equal(result.status, 500); assert.deepEqual(await store.get(before.id), before);
+});
+
+test('embedded HTTP sync uses configured production reader and the private repository policy', async t => {
+  const deps = options(); let reads = 0;
+  const router = await createCommunityHttpRouter({ ...deps, provider: {
+    token: async () => 'isolated-router-sync', execFileAsync: async () => { reads++; return { stdout: JSON.stringify({ number: 2, title: 'Fetched issue', state: 'open', labels: ['bug'], comments: 0, user: 'author', html_url: 'https://github.com/org/repo/issues/2', isPullRequest: false }) }; },
+  } });
+  t.after(() => router.stop());
+  const request = { principal, method: 'POST', path: 'github/community-issues/sync', query: { repo: 'org/repo' } };
+  assert.notEqual((await router.forwardOwner(request)).status, 200); assert.equal(reads, 0);
+  await new SdkCommunityRepoConfigStore(deps.storage).upsert({ repo: 'org/repo', guardThreadId: 'thread', guardCatId: 'cat' });
+  const result = await router.forwardOwner(request); assert.equal(result.status, 200); assert.equal(result.body.created, 1);
+  assert.equal((await new SdkCommunityWorkflowIssueStore(deps.storage).getByRepoAndNumber('org/repo', 2))?.title, 'Fetched issue');
+  assert.equal(reads, 1);
+});
 
 test('returned decision endpoint can be forwarded unchanged to its real package handler', async t => {
   const deps = options();
