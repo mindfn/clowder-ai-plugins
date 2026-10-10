@@ -10,6 +10,7 @@ import type { GitHubComment, GitHubReview, GitHubSnapshot, GitHubTarget, GitHubT
 import type { CommunityProvider, RepoSubject } from './community-runtime.js';
 import type { RepoIssueComment } from './business/infrastructure/connectors/github-repo-event/RepoCommentPollTaskSpec.js';
 import { publicationBody, type NativeIssueDraft, type NativeIssuePublisher, type PublishedIssue } from './native-issue-drafts.js';
+import { observeReviewDelivery, observeReviewHead, type GitHubReviewSubject } from './github-review-evidence.js';
 
 interface ApiComment {
   id: number; user: { login: string; type?: string }; body?: string;
@@ -46,6 +47,14 @@ export class GitHubProvider implements GitHubTrackingProvider, CommunityProvider
   }) {}
 
   selfLogin(): string | undefined { return this.login; }
+
+  async observeReviewHead(input: GitHubReviewSubject, signal: AbortSignal) {
+    return observeReviewHead(input, await this.requestOptions(AbortSignal.any([signal, AbortSignal.timeout(30_000)])));
+  }
+
+  async observeReviewDelivery(input: GitHubReviewSubject & { readonly url: string }, signal: AbortSignal) {
+    return observeReviewDelivery(input, await this.requestOptions(AbortSignal.any([signal, AbortSignal.timeout(30_000)])));
+  }
 
   async create(draft: NativeIssueDraft, signal: AbortSignal): Promise<PublishedIssue> {
     const options = await this.requestOptions(signal);
