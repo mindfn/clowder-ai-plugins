@@ -37,6 +37,55 @@ function freeze<T>(value: T): T {
 /** Snapshot JSON wire inputs so an adapter cannot mutate a caller's candidate. */
 function snapshot<T>(value: T): T { return freeze(structuredClone(value)); }
 
+/** Host-only context is not a wire object: reject hidden/accessor authority too. */
+function exactContextRecord(value: unknown, keys: readonly string[]): asserts value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' ||
+      (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) {
+    throw new TypeError('Invalid verifier context record');
+  }
+  const ownKeys = Reflect.ownKeys(value);
+  if (ownKeys.length !== keys.length || ownKeys.some(key => typeof key !== 'string' || !keys.includes(key)) ||
+      keys.some(key => !Object.getOwnPropertyDescriptor(value, key)?.hasOwnProperty('value'))) {
+    throw new TypeError('Unexpected verifier context fields');
+  }
+}
+
+function bindVerifierContext(phase: PluginPredicateVerifierContext['phase'], context: PluginPredicateVerifierContext): PluginPredicateVerifierContext {
+  exactContextRecord(context, ['phase', 'tenantScope', 'installationProjectRoot', 'binding', 'assignment', 'principal', 'signal', 'assertCurrent']);
+  if (context.phase !== phase || typeof context.assertCurrent !== 'function' || !(context.signal instanceof AbortSignal)) {
+    throw new TypeError('Host verifier context required');
+  }
+  const principalKeys = phase === 'completion' ? ['catId', 'threadId', 'userId', 'invocationId'] : ['catId', 'threadId', 'userId'];
+  exactContextRecord(context.principal, principalKeys);
+  if (Object.values(context.principal).some(value => typeof value !== 'string' || value.length === 0)) {
+    throw new TypeError('Invalid verifier context principal');
+  }
+  exactContextRecord(context.assignment, ['holderCatIds', 'holderThreadId']);
+  const { holderCatIds, holderThreadId } = context.assignment;
+  if (!Array.isArray(holderCatIds) || !holderCatIds.length ||
+      Array.from(holderCatIds).some(catId => typeof catId !== 'string' || !catId) ||
+      typeof holderThreadId !== 'string' || !holderThreadId) throw new TypeError('Invalid verifier context assignment');
+  exactContextRecord(context.binding, ['pluginInstanceId', 'packageDigest', 'featureId', 'contributionId', 'freshnessMethod',
+    'completionMethod', 'grantRevision', 'lifecycleRevision', 'tenantScope', 'installationProjectRoot']);
+  assertCustodyContract('PredicateProviderBinding', context.binding);
+  if (context.tenantScope !== context.binding.tenantScope || context.installationProjectRoot !== context.binding.installationProjectRoot ||
+      context.principal.userId !== context.tenantScope) throw new TypeError('Verifier context scope mismatch');
+
+  const binding = snapshot(context.binding);
+  const assignment = Object.freeze({ holderCatIds: Object.freeze(Array.from(holderCatIds)), holderThreadId });
+  const { catId, threadId, userId } = context.principal;
+  const checkCurrent = context.assertCurrent.bind(context);
+  // Discard return values and function properties from the Host callback.
+  const assertCurrent = async (): Promise<void> => { await checkCurrent(); };
+  if (context.phase === 'completion') {
+    return Object.freeze({ phase: 'completion', tenantScope: context.tenantScope, installationProjectRoot: context.installationProjectRoot,
+      binding, assignment, principal: Object.freeze({ catId, threadId, userId, invocationId: context.principal.invocationId }),
+      signal: context.signal, assertCurrent });
+  }
+  return Object.freeze({ phase: 'freshness', tenantScope: context.tenantScope, installationProjectRoot: context.installationProjectRoot,
+    binding, assignment, principal: Object.freeze({ catId, threadId, userId }), signal: context.signal, assertCurrent });
+}
+
 export function createCustodyClient(host: PluginCustodyHost | undefined, assertActive: () => void): PluginCustodyHost {
   return {
     async canonicalize(input) {
@@ -67,21 +116,13 @@ export function guardPredicateVerifier(
 ): PluginPredicateVerifier {
   return async (input, context) => {
     assertActive();
-    if (!context || context.phase !== phase || typeof context.assertCurrent !== 'function' || !context.signal) throw new TypeError('Host verifier context required');
-    assertCustodyContract('PredicateProviderBinding', context.binding);
-    if (context.tenantScope !== context.binding.tenantScope || context.installationProjectRoot !== context.binding.installationProjectRoot ||
-        context.principal.userId !== context.tenantScope ||
-        (phase === 'completion' && !('invocationId' in context.principal && context.principal.invocationId))) throw new TypeError('Verifier context scope mismatch');
+    const boundContext = bindVerifierContext(phase, context);
     const inputKind = phase === 'freshness' ? 'PredicateFreshnessInput' : 'PredicateCompletionInput';
     assertCustodyContract(inputKind, input);
     const request = snapshot(input);
-    const common = { ...context, binding: snapshot(context.binding), assignment: snapshot(context.assignment) };
-    const boundContext: PluginPredicateVerifierContext = context.phase === 'completion'
-      ? Object.freeze({ ...common, phase: 'completion', principal: snapshot(context.principal) })
-      : Object.freeze({ ...common, phase: 'freshness', principal: snapshot(context.principal) });
-    context.signal.throwIfAborted(); await context.assertCurrent(); assertActive();
+    boundContext.signal.throwIfAborted(); await boundContext.assertCurrent(); assertActive();
     const result = await handler(request, boundContext);
-    context.signal.throwIfAborted(); await context.assertCurrent(); assertActive();
+    boundContext.signal.throwIfAborted(); await boundContext.assertCurrent(); assertActive();
     assertCustodyContract(phase === 'freshness' ? 'PredicateFreshnessResult' : 'PredicateCompletionResult', result);
     if (result.status === 'verified') {
       if (result.freshnessKey !== request.predicate.freshnessKey) throw new TypeError('Verifier freshness mismatch');

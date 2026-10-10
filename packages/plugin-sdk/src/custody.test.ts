@@ -24,6 +24,69 @@ function moduleWith(handlers: Record<string, PluginPredicateVerifier>, m = manif
   return definePluginModule(candidate => definePlugin({ manifest: candidate, activate: { review: () => ({ actions, predicateVerifiers: handlers }) } })).create(m);
 }
 const host = {} as ModulePluginHostShape; // No unused Host service is replaced with successful behavior.
+test('verifier rejects extra authority fields before invoking handler', async t => {
+  for (const phase of ['freshness', 'completion'] as const) {
+    const mutations: Array<(ctx: any) => void> = [
+      ctx => { ctx.completeLease = async () => {}; },
+      ctx => { ctx.principal.completeLease = async () => {}; },
+      ctx => { ctx.assignment.delegate = 'other'; },
+      ctx => { Object.defineProperty(ctx, 'hidden', { value: () => {} }); },
+      ctx => { ctx[Symbol('authority')] = () => {}; },
+      ctx => { Object.setPrototypeOf(ctx.principal, { completeLease: () => {} }); },
+      ctx => { Object.defineProperty(ctx.principal, 'catId', { get() { throw new Error('must not evaluate getter'); } }); },
+      ctx => { ctx.binding.completeLease = () => {}; },
+      ctx => { ctx.assignment.holderCatIds = ['cat', () => {}]; },
+      ctx => { ctx.principal.catId = ''; },
+    ];
+    if (phase === 'freshness') mutations.push(ctx => { ctx.principal.invocationId = 'forbidden'; });
+    else mutations.push(ctx => { delete ctx.principal.invocationId; });
+    for (const [index, mutate] of mutations.entries()) await t.test(`${phase} invalid context ${index}`, async () => {
+      let calls = 0;
+      const ctx = context(phase); mutate(ctx);
+      const wrapped = guardPredicateVerifier(phase, async () => { calls++; return phase === 'freshness' ? freshResult : completeResult; }, () => {});
+      await assert.rejects(wrapped(phase === 'freshness' ? input : completion, ctx), /context/i);
+      assert.equal(calls, 0);
+    });
+  }
+});
+
+test('verifier receives an isolated phase-specific context snapshot', async () => {
+  for (const phase of ['freshness', 'completion'] as const) {
+    const ctx = context(phase);
+    const wrapped = guardPredicateVerifier(phase, async (_request, received) => {
+      assert.notEqual(received, ctx);
+      assert.deepEqual(Reflect.ownKeys(received).sort(), Reflect.ownKeys(ctx).sort());
+      assert.equal('invocationId' in received.principal, phase === 'completion');
+      assert.ok(Object.isFrozen(received));
+      assert.ok(Object.isFrozen(received.principal));
+      assert.ok(Object.isFrozen(received.assignment.holderCatIds));
+      (ctx.principal as any).catId = 'changed';
+      (ctx.assignment.holderCatIds as string[]).push('other');
+      assert.equal(received.principal.catId, 'cat');
+      assert.deepEqual(received.assignment.holderCatIds, ['cat']);
+      return phase === 'freshness' ? freshResult : completeResult;
+    }, () => {});
+    await wrapped(phase === 'freshness' ? input : completion, ctx);
+  }
+});
+
+test('verifier captures only the current-check callback and discards its return authority', async () => {
+  const ctx = context(); let checks = 0;
+  const check = Object.assign(async () => {
+    checks++;
+    (ctx as any).assertCurrent = async () => { throw new Error('replacement callback'); };
+    return { completeLease: () => {} };
+  }, { completeLease: () => {} });
+  (ctx as any).assertCurrent = check;
+  const wrapped = guardPredicateVerifier('freshness', async (_input, received) => {
+    assert.equal('completeLease' in received.assertCurrent, false);
+    assert.equal(await received.assertCurrent(), undefined);
+    return freshResult;
+  }, () => {});
+  await wrapped(input, ctx);
+  assert.equal(checks, 3);
+});
+
 test('module exposes only declared private verifiers and revokes them at stop', async () => {
   const active = await moduleWith({ fresh: async () => freshResult, complete: async () => completeResult }).start(host);
   assert.deepEqual(Object.keys(active.actions), []);
