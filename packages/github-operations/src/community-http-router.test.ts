@@ -13,7 +13,7 @@ import { CommunityReconciliationFindingStore } from './business/domains/communit
 function options(): CommunityHttpRouterOptions {
   return {
     storage: memoryStorage(),
-    threads: { list: async () => [], ensureByKey: async () => { throw new Error('unexpected thread creation'); } },
+    threads: { get: async () => null, ensureByKey: async () => { throw new Error('unexpected thread creation'); } },
     projectionOperations: new CommunityProjectionOperations(),
     issues: {
       guardianCatalog: async () => ({ roster: {}, defaultCatId: createCatId('guardian'), policy: { requireDifferentFamily: true, preferActiveInThread: true, preferLead: true, excludeUnavailable: true } }),
@@ -245,7 +245,7 @@ for (const explicitNewThread of [false, true]) test(`real resolve route retries 
   let creates = 0, lost = true;
   const bindings = new Map<string, string>();
   const deps: CommunityHttpRouterOptions = { ...options(), threads: {
-    list: async () => [],
+    get: async () => null,
     ensureByKey: async (key, { title }) => {
       if (!bindings.has(key)) bindings.set(key, `thread-${++creates}`);
       if (lost) { lost = false; throw new Error('Host response lost'); }

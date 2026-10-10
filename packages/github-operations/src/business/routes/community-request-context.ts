@@ -73,27 +73,16 @@ export class CommunityRequestContext {
   }
   /** SDK calls retain the Host's installation/grant filtering. The workflow's
    * historical userId argument is a consistency check, never an SDK identity. */
-  threads(host: Pick<PluginThreadHost, 'list' | 'ensureByKey'>): CommunityThreads {
+  threads(host: Pick<PluginThreadHost, 'get' | 'ensureByKey'>): CommunityThreads {
     return {
       get: async id => {
         if (!id || id.length > 500 || id.trim() !== id) throw new TypeError('Invalid thread id');
-        // Existence/title need metadata only. SDK get requires readContent;
-        // never widen the manifest grant just to validate an owner-visible target.
-        let before: { lastActiveAt: number; id: string } | undefined;
-        for (;;) {
-          await this.assertCurrent();
-          const page = await host.list({ limit: 50, ...(before ? { before } : {}) });
-          await this.assertCurrent();
-          const thread = page.find(item => item.id === id);
-          if (thread) return { id: thread.id, title: thread.title };
-          if (page.length < 50) return null;
-          const last = page[page.length - 1]!;
-          if (before && (last.lastActiveAt > before.lastActiveAt ||
-            (last.lastActiveAt === before.lastActiveAt && last.id <= before.id))) {
-            throw new Error('Host thread metadata cursor did not advance');
-          }
-          before = { lastActiveAt: last.lastActiveAt, id: last.id };
-        }
+        // A live metadata listing is not an existence check: activity may move
+        // the target across its cursor. Use the Host's authorized point lookup.
+        await this.assertCurrent();
+        const thread = await host.get(id);
+        await this.assertCurrent();
+        return thread ? { id: thread.id, title: thread.title } : null;
       },
       create: async (userId, title, caseId) => {
         await this.assertCurrent();
