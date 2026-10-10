@@ -1016,3 +1016,25 @@ test('production source route refuses unavailable Host port or disabled publishi
     assert.deepEqual(await f.runtimeHost.storage.list(), before);
   } finally { await disabled.stop(); }
 });
+
+test('declared native Community triage requires Host context and persists authenticated identity', async () => {
+  const f = host(), active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+  try {
+    const http = active.actions['github.community.http']!;
+    const request = { principal: { kind: 'owner', id: 'user-1' }, method: 'POST', path: 'github/community-issues', body: { repo: 'org/repo', issueNumber: 1, title: 'Proposal', issueType: 'feature' } };
+    const created = await http(request) as any, id = created.body.id;
+    await http({ ...request, method: 'PATCH', path: `github/community-issues/${id}`, body: { state: 'discussing' } });
+    const action = active.actions['github.community.triage-complete']; assert.equal(typeof action, 'function');
+    const payload = { catId: caller.catId, verdict: 'WELCOME', questions: ['Q1','Q2','Q3','Q4','Q5'].map(id => ({ id, result: 'PASS' })) };
+    await assert.rejects(async () => action!({ id, payload }), /native.*context/i);
+    await assert.rejects(async () => action!({ id, payload, principal: caller }, caller), /Unrecognized/);
+    assert.equal((await action!({ id, payload: { ...payload, catId: 'forged' } }, caller) as any).status, 403);
+    const before = await f.runtimeHost.storage.list();
+    await assert.rejects(async () => action!({ id, payload }, { ...caller, assertCurrent: async () => { throw new Error('stale-native'); } }), /stale-native/);
+    assert.deepEqual(await f.runtimeHost.storage.list(), before);
+    const accepted = await action!({ id, payload }, caller) as any;
+    assert.equal(accepted.status, 200); assert.equal(accepted.body.action, 'await-second-cat');
+    await active.stop();
+    await assert.rejects(async () => action!({ id, payload }, caller), /stopped/);
+  } finally { await active.stop(); }
+});

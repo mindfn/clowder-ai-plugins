@@ -201,6 +201,12 @@ contributions:
       - { method: github.typed-wait.register-pr }
       - { method: github.typed-wait.register-issue }
       - { method: github.typed-wait.unregister }
+      - { method: github.community.triage-complete }
+      - { method: github.community.request-guardian }
+      - { method: github.community.guardian-signoff }
+      - { method: github.community.validate-route }
+      - { method: github.community.report }
+      - { method: github.community.await-external }
   - type: webhook
     id: repository-events
     path: github/events

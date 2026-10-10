@@ -1,3 +1,4 @@
+import { communityNativeMethods } from './community-native-actions.js';
 import { createCommunityHttpRouter } from './community-http-router.js';
 import { createCatId } from './business/model/index.js';
 import { definePlugin, definePluginModule, type FeatureContext, type PluginModuleEntrypoint, type PluginActionContext } from '@clowder-ai/plugin-sdk';
@@ -77,6 +78,10 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   return {
     predicateVerifiers: reviewPredicates.predicateVerifiers,
     actions: {
+      ...Object.fromEntries(communityNativeMethods.map(method => [method, (input: unknown, caller?: PluginActionContext) => {
+        if (!caller) throw new Error('Host native action context required');
+        return http.invokeNative(method, input, caller);
+      }])),
       // Only the owner-authenticated Host HTTP forwarder may call this method.
       // It is deliberately absent from tools, MCP actions and operations.
       'github.community.http': (value: unknown, caller?: PluginActionContext) => {

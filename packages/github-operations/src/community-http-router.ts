@@ -1,3 +1,5 @@
+import { communityNativeTargets as nativeTargets, communityNativeInput as nativeInput, type CommunityNativeMethod } from './community-native-actions.js';
+export type { CommunityNativeMethod } from './community-native-actions.js';
 import Fastify, { type InjectOptions, type LightMyRequestResponse } from 'fastify';
 import type { PluginActionContext, PluginStorageHost, PluginThreadHost } from '@clowder-ai/plugin-sdk';
 import { z } from 'zod';
@@ -32,16 +34,6 @@ const forwarded = z.object({
   body: z.unknown().optional(),
   principal: z.object({ kind: z.literal('owner'), id: z.string().min(1) }).strict(),
 });
-const nativeTargets = {
-  'github.community.triage-complete': 'triage-complete',
-  'github.community.request-guardian': 'request-guardian',
-  'github.community.guardian-signoff': 'guardian-signoff',
-  'github.community.validate-route': 'validate-route',
-  'github.community.report': 'report',
-  'github.community.await-external': 'await-external',
-} as const;
-export type CommunityNativeMethod = keyof typeof nativeTargets;
-const nativeInput = z.object({ id: z.string().min(1).max(512), payload: z.record(z.unknown()) }).strict();
 
 function response(value: LightMyRequestResponse) {
   const json = String(value.headers['content-type'] ?? '').includes('application/json');
@@ -85,6 +77,7 @@ export async function createCommunityHttpRouter(options: CommunityHttpRouterOpti
   await app.register(communityIssueRoutes, {
     ...options.issues,
     ...(reader ? {
+      verifyPublicIssueComment: (input: { repo: string; issueNumber: number; url: string }) => reader.verifyPublicIssueComment(input),
       fetchIssues: (repo: string) => reader.fetchIssues(repo), fetchPrs: (repo: string) => reader.fetchPrs(repo),
       fetchPrReviews: (repo: string, number: number) => reader.fetchPrReviews(repo, number),
       fetchIssueCommentCursor: (repo: string, number: number) => reader.fetchIssueCommentCursor(repo, number),

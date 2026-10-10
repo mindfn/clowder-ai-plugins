@@ -1,3 +1,4 @@
+import { communityNativeMethods, communityNativeInput, type CommunityNativeMethod } from './community-native-actions.js';
 import { GITHUB_PR_WAIT_PREDICATE_LIMIT } from './business/model/index.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ModuleActionCallOptions } from '@clowder-ai/plugin-sdk';
@@ -5,6 +6,7 @@ import { registerPrTrackingInputSchema, registerIssueTrackingInputSchema, unregi
 
 /** The installed plugin owns these handlers. No callback URL or Host GitHub route. */
 export interface TrackingMcpHandlers {
+  community?(method: CommunityNativeMethod, input: unknown, call: ModuleActionCallOptions): Promise<unknown>;
   registerPr(input: unknown, call: ModuleActionCallOptions): Promise<unknown>;
   registerIssue(input: unknown, call: ModuleActionCallOptions): Promise<unknown>;
   unregister(input: unknown, call: ModuleActionCallOptions): Promise<unknown>;
@@ -21,6 +23,7 @@ export function createRemoteTrackingMcpServer(client: {
   invoke(method: string, input: unknown, call: ModuleActionCallOptions): Promise<unknown>;
 }): McpServer {
   return createTrackingMcpServer({
+    community: (method, input, call) => client.invoke(method, input, call),
     registerPr: (input, call) => client.invoke(TRACKING_ACTION_METHODS.registerPr, input, call),
     registerIssue: (input, call) => client.invoke(TRACKING_ACTION_METHODS.registerIssue, input, call),
     unregister: (input, call) => client.invoke(TRACKING_ACTION_METHODS.unregister, input, call),
@@ -57,5 +60,22 @@ export function createTrackingMcpServer(handlers: TrackingMcpHandlers): McpServe
       '(review feedback, CI/CD, conflict detection, issue comments) for this subject. ' +
       'Format: "pr:{owner/repo}#{num}" or "issue:{owner/repo}#{num}".',
     unregisterTrackingInputSchema, respond((input, call) => handlers.unregister(input, call)));
+  if (handlers.community) for (const method of communityNativeMethods) {
+    server.tool(method.replaceAll('.', '_').replaceAll('-', '_'),
+      `Submit Community ${method.slice('github.community.'.length)} through the authenticated native callback. ` +
+      'Use the existing case ID and callback business payload; await-external uses a canonical subject key instead. ' +
+      'Not for owner decisions, HTTP forwarding, lease completion or overriding another case owner. ' +
+      'The Host supplies current cat/thread/user/invocation separately; payload identity cannot grant authority. ' +
+      'Returns the route status/body; refusal is an error and must not be treated as success.',
+      communityNativeInput.shape, async (input, call) => {
+        try {
+          const result = await handlers.community!(method, input, call);
+          const failed = !!result && typeof result === 'object' && 'status' in result && typeof result.status === 'number' && result.status >= 400;
+          return { ...(failed ? { isError: true } : {}), content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+        } catch (error) {
+          return { isError: true, content: [{ type: 'text' as const, text: error instanceof Error ? error.message : 'Community callback failed' }] };
+        }
+      });
+  }
   return server;
 }

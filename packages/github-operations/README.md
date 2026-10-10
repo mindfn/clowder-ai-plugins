@@ -104,8 +104,11 @@ Publishing repositories are read from `publishRepositories` on each request and
 again at the publication journal boundary. An empty list disables new drafts
 and publishing while durable drafts remain readable.
 
-This is source composition, not installed acceptance. Native Community callback
-registration, narrator delivery, review settlement/publisher association, final
+This is source composition, not installed acceptance. Narrator delivery, review settlement/publisher association, final
 alpha.16 shrinkwrap/archive and real Host identity/CAS/browser journeys remain
-open. Owner HTTP does not mint a native caller for callback-only routes. Missing
+open. Owner HTTP does not mint a native caller for callback-only routes. The six
+Community callbacks are now separately declared in native MCP and use the Host
+second context. They cannot perform owner resolve or lease completion. Report
+checks the exact public issue comment through the bounded repository-authorized
+reader; this is issue closure evidence, not review publisher authentication. Missing
 Host source ports fail explicitly; no source or deployment catalog is fabricated.

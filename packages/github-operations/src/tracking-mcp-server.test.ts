@@ -52,3 +52,21 @@ test('native MCP forwards runtime metadata separately from validated tool argume
     assert.ok(calls[0]?.signal instanceof AbortSignal);
   } finally { await client.close(); await server.close(); }
 });
+
+test('remote Community MCP tools carry identity only in runtime metadata and mark route refusal', async () => {
+  const calls: any[] = [];
+  const server = createRemoteTrackingMcpServer({ invoke: async (method, input, call) => {
+    calls.push({ method, input, meta: call._meta }); return { status: 403, body: { error: 'owner mismatch' } };
+  } });
+  const client = new Client({ name: 'community-native', version: '1' });
+  const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(a); await client.connect(b);
+  try {
+    const tools = (await client.listTools()).tools;
+    assert.equal(tools.length, 9);
+    const input = { id: 'issue:org/repo#1', payload: { reason: 'await provider' } }, meta = { threadId: 'real-thread' };
+    const result = await client.callTool({ name: 'github_community_await_external', arguments: input, _meta: meta });
+    assert.equal(result.isError, true);
+    assert.deepEqual(calls, [{ method: 'github.community.await-external', input, meta }]);
+    assert.equal(tools.some(t => /http|resolve$/.test(t.name)), false);
+  } finally { await client.close(); await server.close(); }
+});

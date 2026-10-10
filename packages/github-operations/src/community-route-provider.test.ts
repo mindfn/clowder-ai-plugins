@@ -87,3 +87,34 @@ test('stop joins a provider read and rejects its late result', async () => {
   await new Promise(resolve => setImmediate(resolve)); assert.equal(stopped, false);
   release(); await Promise.all([pending, stop]);
 });
+
+test('exact public comment verification binds object, parent and content under live repository policy', async () => {
+  let allowed = true, calls = 0, credentials = 0;
+  const input = { repo: 'org/repo', issueNumber: 1, url: 'https://github.com/org/repo/issues/1#issuecomment-42' };
+  let value = { id: 42, html_url: input.url, issue_url: 'https://api.github.com/repos/org/repo/issues/1', body: 'Published reply' };
+  const provider = new CommunityRouteProvider({ allowed: async () => allowed, assertCurrent: async () => {}, token: async () => { credentials++; return 'isolated-comment'; },
+    execFileAsync: async (_file, args) => { calls++; assert.equal(args[1], 'https://api.github.com/repos/org/repo/issues/comments/42'); return { stdout: JSON.stringify(value) }; } });
+  try {
+    assert.equal(await provider.verifyPublicIssueComment({ ...input, url: 'https://github.com/other/repo/issues/1#issuecomment-42' }), false);
+    assert.equal(credentials, 0); assert.equal(calls, 0);
+    assert.equal(await provider.verifyPublicIssueComment(input), true);
+    value = { ...value, issue_url: 'https://api.github.com/repos/org/repo/issues/2' };
+    assert.equal(await provider.verifyPublicIssueComment(input), false);
+    allowed = false; await assert.rejects(provider.verifyPublicIssueComment(input), /not configured/); assert.equal(calls, 2);
+  } finally { await provider.stop(); }
+});
+test('public comment read rejects revoked policy and stop joins the in-flight request', async () => {
+  let allowed = true, started!: () => void, release!: () => void;
+  const entered = new Promise<void>(r => { started = r; }), gate = new Promise<void>(r => { release = r; });
+  const input = { repo: 'org/repo', issueNumber: 1, url: 'https://github.com/org/repo/issues/1#issuecomment-42' };
+  const value = { id: 42, html_url: input.url, issue_url: 'https://api.github.com/repos/org/repo/issues/1', body: 'Reply' };
+  const revoked = new CommunityRouteProvider({ allowed: async () => allowed, assertCurrent: async () => {}, token: async () => 'isolated-revocation', execFileAsync: async () => { allowed = false; return { stdout: JSON.stringify(value) }; } });
+  await assert.rejects(revoked.verifyPublicIssueComment(input), /policy changed/); await revoked.stop();
+  const stopped = new CommunityRouteProvider({ allowed: async () => true, assertCurrent: async () => {}, token: async () => 'isolated-stop', execFileAsync: async (_file, _args, options) => {
+    started(); await gate; assert.equal(options.signal!.aborted, true); return { stdout: JSON.stringify(value) };
+  } });
+  const pending = assert.rejects(stopped.verifyPublicIssueComment(input)); await entered;
+  let joined = false; const stop = stopped.stop().then(() => { joined = true; });
+  await new Promise(r => setImmediate(r)); assert.equal(joined, false);
+  release(); await Promise.all([pending, stop]);
+});

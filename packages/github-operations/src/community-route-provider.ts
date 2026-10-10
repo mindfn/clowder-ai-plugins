@@ -34,13 +34,13 @@ export class CommunityRouteProvider {
   private async current(signal: AbortSignal): Promise<void> {
     signal.throwIfAborted(); await awaitGitHubCaller(this.options.assertCurrent(), signal); signal.throwIfAborted();
   }
-  private run<T>(repository: string, path: string, jq: string, decode: (row: unknown, repo: string) => T | null): Promise<T[]> {
-    const pending = this.read(repository, path, jq, decode);
+  private run<T>(repository: string, path: string, jq: string, decode: (row: unknown, repo: string) => T | null, single = false): Promise<T[]> {
+    const pending = this.read(repository, path, jq, decode, single);
     this.pending.add(pending);
     void pending.finally(() => this.pending.delete(pending)).catch(() => {});
     return pending;
   }
-  private async read<T>(repository: string, path: string, jq: string, decode: (row: unknown, repo: string) => T | null): Promise<T[]> {
+  private async read<T>(repository: string, path: string, jq: string, decode: (row: unknown, repo: string) => T | null, single = false): Promise<T[]> {
     const repo = this.repo(repository), signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(60_000)]);
     await this.current(signal);
     if (!await awaitGitHubCaller(this.options.allowed(repo), signal)) throw new Error('Repository is not configured for Community operations');
@@ -49,13 +49,14 @@ export class CommunityRouteProvider {
     await this.current(signal);
     const all: T[] = [];
     for (let page = 1; page <= 100; page++) {
-      const query = path.includes('?') ? '&' : '?';
-      const { stdout } = await executeGitHubRequest(['api', `https://api.github.com/repos/${repo}/${path}${query}per_page=100&page=${page}`, '--hostname', 'github.com', '--method', 'GET', '--jq', jq], {
+      const query = single ? '' : `${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`;
+      const { stdout } = await executeGitHubRequest(['api', `https://api.github.com/repos/${repo}/${path}${query}`, '--hostname', 'github.com', '--method', 'GET', '--jq', jq], {
         ghToken, signal, ...(this.options.execFileAsync ? { execFileAsync: this.options.execFileAsync } : {}),
       });
       await this.current(signal);
       if (Buffer.byteLength(stdout) > 2 * 1024 * 1024) throw new Error('Community provider page exceeds limit');
       const rows: unknown[] = stdout.trim() ? stdout.trim().split('\n').map(line => JSON.parse(line)) : [];
+      if (single && rows.length !== 1) throw new Error('Expected one Community provider object');
       if (rows.length > 100) throw new Error('Community provider page exceeds row limit');
       for (const row of rows) { const item = decode(row, repo); if (item !== null) all.push(item); }
       // Revoke continuation as well as results when policy changes during any page.
@@ -82,6 +83,20 @@ export class CommunityRouteProvider {
       if (row && typeof row === 'object' && 'state' in row && row.state === 'PENDING') return null;
       const { submitted_at: _submitted, ...value } = review.parse(row); return value;
     });
+  }
+  async verifyPublicIssueComment(input: { repo: string; issueNumber: number; url: string }): Promise<boolean> {
+    const repo = this.repo(input.repo); number.parse(input.issueNumber);
+    let url: URL;
+    try { url = new URL(input.url); } catch { return false; }
+    const match = /^#issuecomment-([1-9][0-9]*)$/.exec(url.hash);
+    if (!match || url.origin !== 'https://github.com' || url.username || url.password || url.search || url.pathname.toLowerCase() !== `/${repo}/issues/${input.issueNumber}`) return false;
+    const id = number.parse(Number(match[1]));
+    const result = await this.run(repo, `issues/comments/${id}`, '.', row => {
+      const value = z.object({ id: number, html_url: z.string().url(), issue_url: z.string().url(), body: z.string() }).parse(row);
+      return value.id === id && value.html_url.toLowerCase() === input.url.toLowerCase() &&
+        value.issue_url.toLowerCase() === `https://api.github.com/repos/${repo}/issues/${input.issueNumber}` && value.body.trim().length > 0;
+    }, true);
+    return result[0] === true;
   }
   async fetchIssueCommentCursor(repo: string, issueNumber: number): Promise<number> {
     number.parse(issueNumber);

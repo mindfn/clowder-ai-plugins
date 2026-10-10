@@ -85,3 +85,27 @@ If an operation fails, retain its error and inspect current plugin/registration
 state. Do not claim a successful notification, connection or installation from
 declarations alone. npm, local-directory and pinned-Git installation evidence are
 separate from archive integrity evidence.
+
+
+## Community callbacks
+
+The installed MCP also provides six authenticated Community callbacks:
+`github_community_triage_complete`, `github_community_request_guardian`,
+`github_community_guardian_signoff`, `github_community_validate_route`,
+`github_community_report`, and `github_community_await_external`.
+Each takes `{id, payload}`. `id` is the internal case ID except await-external,
+which takes the canonical `issue:owner/repo#number` or `pr:owner/repo#number`
+subject key. Pass IDs literally, without URL encoding. The Host supplies current
+cat/thread/user/invocation identity separately. A payload cannot establish that
+identity or replace it. Treat error statuses as refusal, not completion.
+
+- Triage payload: your `catId`, `verdict` (WELCOME/NEEDS-DISCUSSION/POLITELY-DECLINE), and exactly five `questions` Q1–Q5 with result PASS/WARN/FAIL/UNKNOWN. Optional narrative, evidenceRefs and routeRecommendation retain the existing Community triage schema.
+- Request guardian: `author` and `reviewer` cat IDs; author must match your authenticated caller.
+- Guardian signoff: the assigned guardian's `signoffToken`, `approved`, and the existing intake `checklist`; this does not grant merge authority.
+- Validate route: `decision` accept/reject and optional `reason`, for the assigned cat.
+- Report: `publicCommentUrl` for the same issue. The package checks the provider object and current assignment before recording it.
+- Await external: optional `reason`, within the routed case's authenticated ownership scope. This does not create a Host action lease or settle one.
+
+Owner decisions remain in Console. Do not invoke generic HTTP forwarding, supply
+callback credentials in payloads, or treat a public-comment observation as a
+verified external review publication.

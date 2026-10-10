@@ -428,3 +428,23 @@ test('publication beginning during link returns the durable recovery ID without 
   assert.equal(result.status, 409); assert.equal(result.body.draft.status, 'publishing');
   assert.equal(result.body.draft.draftId, f.source.communityIssueDraftId); assert.equal(f.writes(), 1);
 });
+
+test('native report reaches the bounded provider reader and records only verified issue evidence', async t => {
+  const deps = options(); let calls = 0;
+  const url = 'https://github.com/org/repo/issues/1#issuecomment-42';
+  const provider: CommunityHttpRouterOptions['provider'] = { token: async () => 'isolated-native-report', execFileAsync: async (_file, args) => {
+    calls++; assert.equal(args[1], 'https://api.github.com/repos/org/repo/issues/comments/42');
+    return { stdout: JSON.stringify({ id: 42, html_url: url, issue_url: 'https://api.github.com/repos/org/repo/issues/1', body: 'Fixed and released' }) };
+  } };
+  Object.assign(deps, { provider });
+  await new SdkCommunityRepoConfigStore(deps.storage).upsert({ repo: 'org/repo', guardThreadId: 'thread', guardCatId: 'assigned' });
+  const store = new SdkCommunityWorkflowIssueStore(deps.storage);
+  const issue = (await store.create({ repo: 'org/repo', issueNumber: 1, issueType: 'bug', title: 'Bug' }))!;
+  await store.update(issue.id, { assignedCatId: 'assigned', assignedThreadId: 'thread', state: 'accepted' });
+  await new SdkCommunityObjectStore(deps.storage).save({ repo: 'org/repo', type: 'issue', number: 1, subjectKey: 'issue:org/repo#1', state: 'fixed', ownerThreadId: 'thread', ownerRole: 'case-owner', nextOwner: 'role', lastExternalActivityAt: null, lastPublicCommentAt: null, linkedIssues: [], linkedPrs: [], closureWaiver: null, issueFixEvidence: null, externalReview: null, appliedEventCount: 0, lastRejectedEvent: null, deliveryCursor: null, createdAt: 1, updatedAt: 1 });
+  const router = await createCommunityHttpRouter(deps); t.after(() => router.stop());
+  const caller = { catId: 'assigned', userId: 'owner', threadId: 'thread', invocationId: 'inv', assertCurrent: async () => {} };
+  const result = await router.invokeNative('github.community.report', { id: issue.id, payload: { publicCommentUrl: url } }, caller);
+  assert.equal(result.status, 200); assert.equal(calls, 1);
+  assert.equal((await new SdkCommunityObjectStore(deps.storage).get('issue:org/repo#1'))?.state, 'reported');
+});
