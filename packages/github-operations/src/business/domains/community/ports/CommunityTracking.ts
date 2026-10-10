@@ -10,7 +10,7 @@ export interface CommunityTracking {
   upsertBySubject(input: {
     kind: 'pr_tracking' | 'issue_tracking'; subjectKey: string; threadId: string;
     ownerCatId: string; title: string; why: string; createdBy: string;
-    userId?: string; automationState?: AutomationState;
+    userId?: string; automationState?: AutomationState; routeSourceEventId?: string;
   }): Promise<TaskItem>;
   delete(id: string): Promise<boolean>;
 }

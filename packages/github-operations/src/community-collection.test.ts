@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { SdkCommunityEventLog } from './business/domains/community/CommunityEventLog.js';
 import { memoryStorage } from '../test/memory-storage.js';
 import { CommunityCollectionRuntime, SdkCommunityCollectionStore } from './community-collection.js';
 import { registerRoutingTracking } from './business/domains/community/community-auto-tracking.js';
@@ -9,6 +10,7 @@ const route = { kind: 'case.routed', subjectKey: 'issue:org/repo#1', sourceEvent
 const snapshot: GitHubSnapshot = { state: 'open', commentsComplete: true, comments: [{ id: 11, author: 'someone', body: 'hello', commentType: 'conversation' }], reviews: [] };
 async function fixture() {
   const storage = memoryStorage(), store = new SdkCommunityCollectionStore(storage);
+  await new SdkCommunityEventLog(storage).append(route);
   await registerRoutingTracking(route, store, { userId: 'owner', fetchCommentCursor: async () => 10 });
   let fail = false, called = 0; const cursors: unknown[] = [];
   const runtime = new CommunityCollectionRuntime({ store, allowed: async () => true,
@@ -44,7 +46,7 @@ test('cancel while provider is reading suppresses projection and retains a durab
     provider: { read: async () => { await f.store.delete((await f.store.getBySubject(route.subjectKey))!.id); return snapshot; } },
     collect: async () => { collected = true; }, observe: async () => {} });
   await runtime.poll('issue'); assert.equal(collected, false); assert.equal(await f.store.getBySubject(route.subjectKey), null);
-  assert.equal(Object.keys(await f.storage.list()).length, 1, 'cancel never erases history');
+  assert.equal(Object.keys(await f.storage.list()).filter(key => key.startsWith('community.collection.v1.')).length, 1, 'cancel never erases history');
   assert.equal((await f.store.listByKind('issue_tracking'))[0]?.status, 'done');
   await runtime.stop(); await f.runtime.stop();
 });
@@ -79,7 +81,9 @@ test('rerouting during provider IO invalidates old collection and preserves curs
   const f = await fixture(); let collected = false;
   const runtime = new CommunityCollectionRuntime({ store: f.store, allowed: async () => true,
     provider: { read: async () => {
-      await registerRoutingTracking({ ...route, payload: { ownerThreadId: 'new-thread', catId: 'new-cat' } }, f.store);
+      const reroute = { ...route, sourceEventId: 'route:2', payload: { ownerThreadId: 'new-thread', catId: 'new-cat' } };
+      await new SdkCommunityEventLog(f.storage).append(reroute);
+      await registerRoutingTracking(reroute, f.store);
       return snapshot;
     } }, collect: async () => { collected = true; }, observe: async () => {} });
   await runtime.poll('issue'); assert.equal(collected, false);

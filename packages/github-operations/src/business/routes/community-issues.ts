@@ -427,11 +427,12 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
       try {
         const subjectKey = `issue:${issue.repo}#${issue.issueNumber}`;
         const routedEvent: CommunityEvent = {
-          sourceEventId: `routed:${id}:${triageResult.threadId}`,
+          sourceEventId: `routed:${id}:${randomUUID()}`,
           subjectKey,
           kind: 'case.routed',
           classification: 'state-changing',
           payload: {
+            userId: resolveUserId(request),
             ownerThreadId: triageResult.threadId,
             catId: triageResult.targetCatId,
             ownerRole: triageResult.targetCatId,
@@ -553,16 +554,18 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
       resolvedThreadId = (await communityIssueStore.get(id))?.assignedThreadId ?? undefined;
     }
 
-    // F168 Phase B Task 5: emit case.routed event + auto-register tracking (best-effort)
+    // Commit a distinct route intent, then attempt its materialized collection.
+    // The schedule reconciles committed journal intents if this hint fails.
     if (result.data.decision === 'accepted' && opts.eventLog && resolvedThreadId && result.data.catId) {
       try {
         const subjectKey = `issue:${issue.repo}#${issue.issueNumber}`;
         const routedEvent: CommunityEvent = {
-          sourceEventId: `routed:${id}:${resolvedThreadId}`,
+          sourceEventId: `routed:${id}:${randomUUID()}`,
           subjectKey,
           kind: 'case.routed',
           classification: 'state-changing',
           payload: {
+            userId,
             ownerThreadId: resolvedThreadId,
             catId: result.data.catId,
             // Cloud R7 P2: ownerRole must be the assigned cat (catId), not the feature ID.
@@ -588,7 +591,7 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
               // best-effort — projector failure does not block tracking registration
             }
           }
-          // Auto-register tracking task — fires only on first ingest (appended:true)
+          // Eager materialization; the production collector recovers from the journal.
           // Cloud R2 P2: pass fetchIssueCommentCursor to seed the initial cursor
           // Cloud R13 P1: pass userId so the poller can deliver notifications to the right user
           await registerRoutingTracking(routedEvent, opts.taskStore, {

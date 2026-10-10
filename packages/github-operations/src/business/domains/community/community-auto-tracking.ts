@@ -1,16 +1,9 @@
 /**
- * Community auto-tracking registration (F168 Phase B — Task 5)
- *
- * When a `case.routed` event is appended to the community event log (appended:true),
- * this module automatically registers an issue_tracking or pr_tracking task in the
- * TaskStore so that subsequent GitHub activity (comments, labels, reviews) is picked
- * up by the polling schedulers without requiring manual MCP-tool invocation.
- *
- * Design constraints:
- *   - Called ONLY on ingest success (appended:true) — never from projector.apply()
- *   - Rebuild replays with same sourceEventId → dedup → appended:false → NOT called
- *   - Idempotent: upsertBySubject no-ops if the subjectKey already has a tracking task
- *   - Pure: zero direct IO outside injected parameters (no Redis, no HTTP)
+ * Request-side collection registration hint after a committed case.routed.
+ * The production SDK store reconciles from the latest private journal route;
+ * it does not trust this event's ownership on replay. Its schedule also scans
+ * committed routes, so a failed hint cannot strand durable collection intent.
+ * This is provider collection only, never Host Task/native wait authority.
  */
 
 import type { CatId, CommunityEvent } from '../../model/index.js';
@@ -48,8 +41,8 @@ export interface RegisterRoutingTrackingOpts {
 
 /**
  * Register issue_tracking or pr_tracking when a case is routed.
- * Must be called from the ingest layer with `appended:true` guard, not from
- * the projector (which must remain side-effect-free for rebuild safety).
+ * Called by ingest, not by the projector. Recovery is journal-driven in the
+ * SDK collection store; old hints cannot reactivate a cancelled route generation.
  *
  * @param event  The case.routed CommunityEvent (other kinds are silently ignored)
  * @param taskStore  TaskStore to register the tracking task in
@@ -117,6 +110,7 @@ export async function registerRoutingTracking(
   await taskStore.upsertBySubject({
     kind,
     subjectKey: event.subjectKey,
+    routeSourceEventId: event.sourceEventId,
     threadId,
     ownerCatId: catIdBranded,
     title,

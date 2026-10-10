@@ -956,8 +956,10 @@ test('production schedule collects routed cases without a native registration or
   } }) }).create(manifest).start(f.runtimeHost);
   await active.actions['github.repository.register']!({ repo: 'example/project', guardThreadId: 'thread-1', guardCatId: 'cat-1' });
   const store = new SdkCommunityCollectionStore(f.runtimeHost.storage);
-  await registerRoutingTracking({ kind: 'case.routed', subjectKey: 'issue:example/project#12', sourceEventId: 'route:production', classification: 'state-changing', at: 1,
-    payload: { ownerThreadId: 'thread-1', catId: 'cat-1' } }, store);
+  const route = { kind: 'case.routed', subjectKey: 'issue:example/project#12', sourceEventId: 'route:production', classification: 'state-changing', at: 1,
+    payload: { ownerThreadId: 'thread-1', catId: 'cat-1' } } as const;
+  await new SdkCommunityEventLog(f.runtimeHost.storage).append(route);
+  await registerRoutingTracking(route, store);
   await active.actions['github.issue-tracking']!({});
   assert.equal(reads, 1);
   const events = await new SdkCommunityEventLog(f.runtimeHost.storage).read('issue:example/project#12');
