@@ -920,3 +920,29 @@ test('tracking logs facts before delivery, rejects stale inline feedback, and re
   assert.equal(eventValues.length, 2, 'fresh comment and terminal lifecycle are durable, stale inline is absent');
   await active.stop();
 });
+
+test('production module declares private review verifier role without exposing business action authority', async () => {
+  const f = host();
+  const declared = manifest.contributions.find((row: { type: string }) => row.type === 'terminal-predicate-provider');
+  assert.ok(declared, 'real install manifest must declare the private provider');
+  assert.ok(manifest.features[0].capabilities.includes('custody.verify'));
+  assert.equal(validateManifest(manifest).valid, true);
+  const active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+  assert.deepEqual(Object.keys(active.predicateVerifiers ?? {}).sort(), [declared.freshnessMethod, declared.completionMethod].sort());
+  assert.equal(active.actions[declared.freshnessMethod], undefined);
+  assert.equal(active.actions[declared.completionMethod], undefined);
+  const headSha = 'a'.repeat(40);
+  const request = { actionFamily: 'review', subjectRef: 'pr:example/project#12', predicate: { kind: 'review_delivered',
+    subjectRef: 'pr:example/project#12', identityKey: 'identity', freshnessKey: 'head:' + headSha, digest: 'b'.repeat(64), headSha } } as const;
+  const ctx = { phase: 'freshness', tenantScope: 'owner', installationProjectRoot: '/project',
+    binding: { pluginInstanceId: 'instance', packageDigest: 'package', featureId: 'github-collaboration', contributionId: declared.id,
+      freshnessMethod: declared.freshnessMethod, completionMethod: declared.completionMethod, grantRevision: 1, lifecycleRevision: 1,
+      tenantScope: 'owner', installationProjectRoot: '/project' },
+    assignment: { holderCatIds: ['cat-1'], holderThreadId: 'thread-1' }, principal: { catId: 'author', threadId: 'source', userId: 'owner' },
+    signal: new AbortController().signal, assertCurrent: async () => {} } as const;
+  const before = await f.runtimeHost.storage.list();
+  assert.deepEqual(await active.predicateVerifiers![declared.freshnessMethod]!(request, ctx), { status: 'insufficient', reason: 'repository_not_enabled' });
+  assert.deepEqual(await f.runtimeHost.storage.list(), before);
+  await active.stop();
+  await assert.rejects(active.predicateVerifiers![declared.freshnessMethod]!(request, ctx));
+});

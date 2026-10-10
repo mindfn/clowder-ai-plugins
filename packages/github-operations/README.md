@@ -60,6 +60,15 @@ neutral generation/outcome through `tasks.setWait`. A failed projection retains
 the outbox. The Host supplies instance and invocation identity and consumes that
 projection for continuation; the plugin cannot supply authority fields.
 
+The private review predicate provider requires the owner-visible L2
+`custody.verify` grant. It checks the assigned reviewer against private state and
+reads the current open PR HEAD; its methods are not tools or ordinary actions.
+The Host still selects the installation, binds each lease generation and commits
+completion. Current migrated review records lack an authenticated publisher
+association, so delivery verification returns `insufficient` even when the exact
+GitHub review exists. No successful review completion is claimed by this source
+checkpoint. The rebuilt archive and Host installation journey remain pending.
+
 The owner-confirmed legacy metadata copy operation accepts an isolated, bounded
 raw snapshot from the Host migration adapter. It only inserts missing issue
 metadata; existing records, Host assignments/signoff/routes/drafts and tracking
@@ -77,4 +86,7 @@ distribution work, not prerequisites for fresh local acceptance.
 
 Requested Host capabilities (from `plugin.yaml`): `schedule.register`,
 `plugin.config.read`, `secret.read`, `plugin.state.get`, `plugin.state.set`,
-`task.read`, `task.write`, `thread.listMetadata`, `thread.write`, `messaging.send`.
+`task.read`, `task.write`, `thread.listMetadata`, `thread.readContent`,
+`thread.write`, `messaging.send`, `custody.verify`. `thread.readContent` is an
+explicit L2 grant required by the current Host's reliable thread point lookup;
+installation must display and obtain it rather than infer consent.

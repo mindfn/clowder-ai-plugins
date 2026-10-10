@@ -10,6 +10,7 @@ import { NativeIssueDraftRuntime, type NativeIssuePublisher } from './native-iss
 import { PrProviderIndex, type PrIndexProvider } from './pr-provider-index.js';
 import { GitHubPrIndexProvider } from './pr-index-provider.js';
 import { ReviewTriggerReader } from './review-trigger-observation.js';
+import { CommunityReviewPredicateRuntime } from './community-review-verifier.js';
 
 interface Provider extends GitHubTrackingProvider { selfLogin(): string | undefined }
 export interface GitHubPluginOptions {
@@ -34,6 +35,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   const prIndex = new PrProviderIndex(context.storage, options.createPrIndexProvider?.(context) ?? new GitHubPrIndexProvider({ token: () => context.secrets.get('token') }));
   const drafts = new NativeIssueDraftRuntime(context, options.createIssuePublisher?.(context) ?? transport);
   const community = new CommunityRuntime(context, options.createCommunityProvider?.(context) ?? transport);
+  const reviewPredicates = new CommunityReviewPredicateRuntime({ objectStore: community.objects, repoConfigStore: community.configs, provider: transport });
   const tracking = new TypedWaitRuntime({
     context, provider,
     ...(options.now ? { now: options.now } : {}),
@@ -47,6 +49,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
     return { data: { completed: true } };
   };
   return {
+    predicateVerifiers: reviewPredicates.predicateVerifiers,
     actions: {
       // Pure provider observation; registration consumes it inside this module.
       'github.review-trigger.observe': (value: unknown) => reviewTriggers.observe(value),
@@ -87,7 +90,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.draft.cancel': (value: unknown) => drafts.cancel(value),
       'github.triage.recommend': recommendTriage,
     },
-    dispose: async () => { await Promise.all([tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
+    dispose: async () => { reviewPredicates.stop(); await Promise.all([tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
   };
 }
 
