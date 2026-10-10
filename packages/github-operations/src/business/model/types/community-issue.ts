@@ -13,7 +13,16 @@ export type ReplyState = 'unreplied' | 'replied';
 export type ConsensusState = 'discussing' | 'consensus-reached' | 'stalled';
 export type PrBoardGroup = 'in-review' | 're-review-needed' | 'has-conflict' | 'completed';
 
+export interface CommunityNarratorIntent {
+  readonly sourceEventId: string;
+  readonly threadId: string;
+  readonly catId: string;
+  readonly briefing: string;
+}
+
 export interface CommunityIssueItem {
+  /** Frozen owner-configured dispatch intent; committed with the workflow transition. */
+  readonly narratorDelivery?: CommunityNarratorIntent | null;
   readonly id: string;
   readonly repo: string;
   readonly issueNumber: number;
@@ -180,6 +189,7 @@ export function validateIntakeChecklist(checklist: readonly IntakeChecklistItem[
 }
 
 export interface UpdateCommunityIssueInput {
+  readonly narratorDelivery?: CommunityNarratorIntent | null;
   readonly state?: IssueState;
   readonly replyState?: ReplyState;
   readonly consensusState?: ConsensusState;

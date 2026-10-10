@@ -141,7 +141,7 @@ export class NarratorDriver {
  * The briefing is self-contained so the narrator needs no additional MCP calls just to
  * understand WHAT to triage — it can spend its MCP budget on EVIDENCE search.
  */
-function buildNarratorBriefing(params: {
+export function buildNarratorBriefing(params: {
   caseId: string;
   subjectKey: string;
   sourceEventId: string;
@@ -160,7 +160,7 @@ Context: ${briefingContext}
 2. 用一句话说清楚这个 issue 在说什么（narrative 字段）
 3. 给出路由建议（routeRecommendation: existing-thread / new-thread / decline）
 4. 推荐谁接（recommendedOwnerRole，默认 case-owner）
-5. 调 POST /api/community-issues/${caseId}/triage-complete 提交 TriageEntry
+5. 调 github_community_triage_complete，参数 {"id":"${caseId}","payload":<下列对象>} 提交 TriageEntry
 
 提交 payload 格式（JSON body，所有字段必填除非标注 optional）：
 {

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { PluginStorageHost } from '@clowder-ai/plugin-sdk';
 import { z } from 'zod';
+import { narratorDeliverySchema } from './narrator/SdkNarratorDelivery.js';
 import type { CommunityIssueItem, CreateCommunityIssueInput, UpdateCommunityIssueInput, CommunityIssueDraft, CreateCommunityIssueDraftInput } from '../../model/index.js';
 import type { ICommunityIssueStore } from './ports/CommunityIssueStore.js';
 import type { CommunityPrItem, CreateCommunityPrInput, UpdateCommunityPrInput, ICommunityPrStore } from './ports/CommunityPrStore.js';
@@ -15,6 +16,7 @@ const subjectId = (kind: string, repository: string, n: number) => hash(`${kind}
 const issueCreate = z.object({ repo, issueNumber: number, issueType: z.enum(['bug', 'feature', 'enhancement', 'question']), title: text }).strict();
 const checklist = z.object({ id: text, label: text, required: z.boolean(), evidence: z.string().optional(), verifiedAt: timestamp.optional(), verifiedBy: text.optional() }).strict();
 const issueMutable = z.object({
+  narratorDelivery: narratorDeliverySchema.nullable().optional(),
   issueType: issueCreate.shape.issueType, title: text,
   state: z.enum(['unreplied', 'discussing', 'pending-decision', 'accepted', 'declined', 'closed']),
   replyState: z.enum(['unreplied', 'replied']), consensusState: z.enum(['discussing', 'consensus-reached', 'stalled']).optional(),
@@ -53,12 +55,13 @@ class SubjectRecords<T extends { id: string; repo: string; updatedAt: number }> 
     }).sort((a, b) => b.updatedAt - a.updatedAt);
   }
   async listByRepo(repository: string): Promise<T[]> { return (await this.listAll()).filter(item => item.repo === repository.toLowerCase()); }
-  async update(id: string, patch: Partial<T>): Promise<T | null> {
+  async update(id: string, patch: Partial<T>, accepts: (previous: T) => boolean = () => true): Promise<T | null> {
     for (let attempt = 0; attempt < 64; attempt++) {
       const entry = await this.storage.get(this.prefix + id);
       if (!entry) return null;
       const previous = this.decode(entry.value);
       if (previous.id !== id) throw new Error('Community record identity mismatch');
+      if (!accepts(previous)) return null;
       const updated = this.decode({ ...previous, ...patch, updatedAt: Date.now() });
       if ((await this.storage.compareAndSet(this.prefix + id, entry.revision, updated)).applied) return updated;
     }
@@ -88,7 +91,7 @@ export class SdkCommunityWorkflowIssueStore implements ICommunityIssueStore {
   getByRepoAndNumber(repository: string, n: number) { return this.get(subjectId('issue', repository, n)); }
   listAll() { return this.records.listAll(); }
   listByRepo(repository: string) { return this.records.listByRepo(repository); }
-  async update(id: string, input: UpdateCommunityIssueInput) { return this.records.update(id, issueMutable.partial().parse(input)); }
+  async update(id: string, input: UpdateCommunityIssueInput, expectedState?: CommunityIssueItem['state']) { return this.records.update(id, issueMutable.partial().parse(input), previous => expectedState === undefined || previous.state === expectedState); }
   delete(id: string) { return this.records.delete(id); }
 }
 

@@ -1038,3 +1038,156 @@ test('declared native Community triage requires Host context and persists authen
     await assert.rejects(async () => action!({ id, payload }, caller), /stopped/);
   } finally { await active.stop(); }
 });
+
+test('production narrator intent survives outbox failure and recovers the same configured target', async () => {
+  const f = host();
+  f.runtimeHost.config.get = async key => ({ narratorCatId: 'cat-1', narratorThreadId: 'thread-1' })[key as 'narratorCatId'];
+  Object.assign(f.runtimeHost, { deployment: { getCatalog: async () => ({ roster: { 'cat-1': { family: 'maine-coon', available: true, lead: true } }, defaultCatId: 'cat-1', policy: { requireDifferentFamily: false, preferActiveInThread: true, preferLead: false, excludeUnavailable: true } }) } });
+  const cas = f.runtimeHost.storage.compareAndSet; let fail = true;
+  f.runtimeHost.storage.compareAndSet = async (key, revision, value) => {
+    if (fail && key.startsWith('community.narrator.delivery.')) throw new Error('outbox unavailable');
+    return cas(key, revision, value);
+  };
+  const module = createGitHubPluginModule();
+  let active = await module.create(manifest).start(f.runtimeHost);
+  const http = (path: string, body?: unknown) => active.actions['github.community.http']!({ method: 'POST', path: 'github/'+path, principal: { kind: 'owner', id: 'user-1' }, ...(body ? { body } : {}) }) as Promise<any>;
+  const created = await http('community-issues', { repo: 'org/repo', issueNumber: 991, title: 'Narrator case', issueType: 'feature' });
+  const id = created.body.id;
+  assert.equal((await http(`community-issues/${id}/dispatch`)).status, 200);
+  await active.actions['github.community-reconciler']!({});
+  assert.equal(f.deliveries.length, 0);
+  await active.stop(); fail = false;
+  active = await module.create(manifest).start(f.runtimeHost);
+  await active.actions['github.community-reconciler']!({});
+  assert.equal(f.deliveries.length, 1);
+  const message = f.deliveries[0] as any;
+  assert.equal(message.threadId, 'thread-1'); assert.equal(message.wake.catId, 'cat-1');
+  assert.match(JSON.stringify(message), /github_community_triage_complete/);
+  assert.doesNotMatch(JSON.stringify(message), /POST \/api\/community/);
+  await active.actions['github.community-reconciler']!({});
+  assert.equal(f.deliveries.length, 1);
+  await active.stop();
+});
+
+function narratorHost() {
+  const f = host(); const config: Record<string, unknown> = { narratorCatId: 'cat-1', narratorThreadId: 'thread-1' };
+  f.runtimeHost.config.get = async key => config[key];
+  const catalog = { roster: { 'cat-1': { family: 'maine-coon', available: true, lead: true } }, defaultCatId: 'cat-1', policy: { requireDifferentFamily: false, preferActiveInThread: true, preferLead: false, excludeUnavailable: true } };
+  Object.assign(f.runtimeHost, { deployment: { getCatalog: async () => catalog } });
+  return { ...f, config, catalog };
+}
+async function narratorCase(active: Awaited<ReturnType<ReturnType<ReturnType<typeof createGitHubPluginModule>['create']>['start']>>) {
+  const request = (method: string, path: string, body?: unknown) => active.actions['github.community.http']!({ method, path: 'github/'+path, principal: { kind: 'owner', id: 'user-1' }, ...(body ? { body } : {}) }) as Promise<any>;
+  const created = await request('POST', 'community-issues', { repo: 'org/repo', issueNumber: 992, title: 'Narrator recovery', issueType: 'feature' });
+  return { request, id: created.body.id as string };
+}
+
+test('narrator disabled dispatch stays inert after enabling; unavailable target refuses dispatch before state write', async () => {
+  const f = narratorHost(); f.config.narratorCatId = ''; f.config.narratorThreadId = '';
+  const active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+  try {
+    const { request, id } = await narratorCase(active);
+    assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 200);
+    f.config.narratorCatId = 'cat-1'; f.config.narratorThreadId = 'thread-1';
+    await active.actions['github.narrator.retry']!({}); assert.equal(f.deliveries.length, 0);
+    await request('PATCH', `community-issues/${id}`, { state: 'unreplied' });
+    f.catalog.roster['cat-1'].available = false;
+    assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 500);
+    assert.equal((await request('GET', `community-issues/${id}`)).body.state, 'unreplied');
+  } finally { await active.stop(); }
+});
+
+test('narrator workflow failure preserves dispatch retry; configuration change cannot redirect pending intent', async () => {
+  const f = narratorHost(); const active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+  try {
+    const { request, id } = await narratorCase(active);
+    const cas = f.runtimeHost.storage.compareAndSet;
+    f.runtimeHost.storage.compareAndSet = async (key, revision, value) => { if (key.startsWith('community.workflow.issue.')) throw new Error('workflow offline'); return cas(key, revision, value); };
+    assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 500);
+    assert.equal((await request('GET', `community-issues/${id}`)).body.state, 'unreplied');
+    f.runtimeHost.storage.compareAndSet = cas;
+    assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 200);
+    f.config.narratorThreadId = 'other-thread';
+    const paused = await active.actions['github.narrator.retry']!({}) as any;
+    assert.equal(paused.data.deliveries[0].status, 'pending'); assert.match(paused.data.deliveries[0].reason, /configuration changed/);
+    assert.equal(f.deliveries.length, 0);
+    f.config.narratorThreadId = 'thread-1';
+    await active.actions['github.narrator.retry']!({});
+    assert.equal(f.deliveries.length, 1);
+    const state = await active.actions['github.narrator.status']!({}) as any;
+    assert.equal(state.data.deliveries[0].status, 'delivered');
+  } finally { await active.stop(); }
+});
+
+test('narrator does not reopen dispatch or wake a case closed during target validation', async () => {
+  const f = narratorHost(); const active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+  try {
+    const { request, id } = await narratorCase(active);
+    const get = f.runtimeHost.threads.get;
+    f.runtimeHost.threads.get = async value => { await request('PATCH', `community-issues/${id}`, { state: 'closed' }); return get(value); };
+    assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 409);
+    assert.equal((await request('GET', `community-issues/${id}`)).body.state, 'closed');
+    f.runtimeHost.threads.get = get;
+    await request('PATCH', `community-issues/${id}`, { state: 'unreplied' });
+    assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 200);
+    f.runtimeHost.threads.get = async value => { await request('PATCH', `community-issues/${id}`, { state: 'closed' }); return get(value); };
+    await active.actions['github.narrator.retry']!({}); assert.equal(f.deliveries.length, 0);
+  } finally { await active.stop(); }
+});
+
+test('narrator stop joins an unknown send; restart uses the same Host message key', async () => {
+  const f = narratorHost(); const rows = new Map<string, { messageId: string; threadId: string }>();
+  let entered!: () => void, finish!: () => void; const started = new Promise<void>(r => { entered = r; }); let pause = true;
+  f.runtimeHost.messaging.send = async input => {
+    const key = input.idempotencyKey!;
+    if (!rows.has(key)) rows.set(key, { messageId: 'narrator-message', threadId: input.threadId });
+    if (pause) { entered(); await new Promise<void>(r => { finish = r; }); }
+    return rows.get(key)!;
+  };
+  const module = createGitHubPluginModule(); let active = await module.create(manifest).start(f.runtimeHost);
+  const { request, id } = await narratorCase(active);
+  assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 200);
+  const sending = assert.rejects(async () => active.actions['github.narrator.retry']!({}), /stopped|active/i);
+  await started; let stopped = false; const stop = Promise.resolve(active.stop()).then(() => { stopped = true; });
+  await new Promise(r => setImmediate(r)); assert.equal(stopped, false);
+  finish(); await Promise.all([sending, stop]); pause = false;
+  active = await module.create(manifest).start(f.runtimeHost);
+  try {
+    await active.actions['github.narrator.retry']!({}); assert.equal(rows.size, 1);
+    assert.equal((await active.actions['github.narrator.status']!({}) as any).data.deliveries[0].status, 'delivered');
+  } finally { await active.stop(); }
+});
+
+test('narrator committed workflow with lost CAS reply recovers without a journal or duplicate dispatch', async () => {
+  const f = narratorHost(); const active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+  try {
+    const { request, id } = await narratorCase(active); const cas = f.runtimeHost.storage.compareAndSet; let lose = true;
+    f.runtimeHost.storage.compareAndSet = async (key, revision, value) => {
+      const result = await cas(key, revision, value);
+      if (lose && key.startsWith('community.workflow.issue.') && (value as any).narratorDelivery) { lose = false; throw new Error('CAS response lost'); }
+      return result;
+    };
+    assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 500);
+    const item = (await request('GET', `community-issues/${id}`)).body;
+    assert.equal(item.state, 'discussing'); assert.ok(item.narratorDelivery.sourceEventId);
+    assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 409);
+    await active.actions['github.narrator.retry']!({}); await active.actions['github.narrator.retry']!({});
+    assert.equal(f.deliveries.length, 1);
+  } finally { await active.stop(); }
+});
+
+test('concurrent narrator dispatch admits one workflow intent and configuration revocation during validation sends nothing', async () => {
+  const f = narratorHost(); const active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+  try {
+    const { request, id } = await narratorCase(active);
+    const result = await Promise.all([request('POST', `community-issues/${id}/dispatch`), request('POST', `community-issues/${id}/dispatch`)]);
+    assert.deepEqual(result.map(r => r.status).sort(), [200, 409]);
+    const get = f.runtimeHost.threads.get;
+    f.runtimeHost.threads.get = async id => { f.config.narratorCatId = ''; f.config.narratorThreadId = ''; return get(id); };
+    const retry = await active.actions['github.narrator.retry']!({}) as any;
+    assert.equal(retry.data.deliveries.length, 1); assert.equal(retry.data.deliveries[0].status, 'pending');
+    assert.equal(f.deliveries.length, 0);
+    f.runtimeHost.threads.get = get; f.config.narratorCatId = 'cat-1'; f.config.narratorThreadId = 'thread-1';
+    await active.actions['github.narrator.retry']!({}); assert.equal(f.deliveries.length, 1);
+  } finally { await active.stop(); }
+});

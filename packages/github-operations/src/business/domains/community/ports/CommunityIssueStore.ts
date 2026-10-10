@@ -11,6 +11,6 @@ export interface ICommunityIssueStore {
   getByRepoAndNumber(repo: string, issueNumber: number): Promise<CommunityIssueItem | null>;
   listByRepo(repo: string): Promise<CommunityIssueItem[]>;
   listAll(): Promise<CommunityIssueItem[]>;
-  update(id: string, input: UpdateCommunityIssueInput): Promise<CommunityIssueItem | null>;
+  update(id: string, input: UpdateCommunityIssueInput, expectedState?: CommunityIssueItem['state']): Promise<CommunityIssueItem | null>;
   delete(id: string): Promise<boolean>;
 }

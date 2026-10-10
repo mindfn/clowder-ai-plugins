@@ -40,6 +40,8 @@ import { derivePrGroup } from '../domains/community/derivePrGroup.js';
 import { resolveGuardian, type GuardianCatalog } from '../domains/community/GuardianMatcher.js';
 import { type GhIssueFull, mapGitHubIssue } from '../domains/community/github/GitHubIssueFetcher.js';
 import { type GhPrFull, type GhPrReview, mapGitHubPr } from '../domains/community/github/GitHubPrFetcher.js';
+import type { NarratorDeliveryDraft } from '../domains/community/narrator/SdkNarratorDelivery.js';
+import type { NarratorSpawnParams } from '../domains/community/narrator/NarratorDriver.js';
 import type { NarratorDriver } from '../domains/community/narrator/NarratorDriver.js';
 import { TriageOrchestrator } from '../domains/community/TriageOrchestrator.js';
 import type { CommunityRequestContext } from './community-request-context.js';
@@ -68,6 +70,8 @@ export interface CommunityIssuesRoutesOptions {
   // F168 Phase C C2.2: narrator spawn driver (optional; fire-and-forget after case.triaged)
   // Inject NarratorDriver constructed in index.ts with the shared wakeCat + RoleResolver.
   narratorDriver?: NarratorDriver;
+  /** Production: freeze the exact owner-configured delivery in the same workflow CAS as dispatch. */
+  narrator?: { prepare(input: NarratorSpawnParams): Promise<NarratorDeliveryDraft | null> };
   // F168 Phase D D3/D4: reconciliation finding store for read model
   // D-PR2 AC line 305: return open/acknowledged/waived/resolved findings for D-PR3 UX
   findingStore?: CommunityDecisionQueueFindingStore;
@@ -186,31 +190,29 @@ export const communityIssueRoutes: FastifyPluginAsync<CommunityIssuesRoutesOptio
       return { error: 'Issue already dispatched or assigned' };
     }
     const { threadId } = (request.body ?? {}) as { threadId?: string };
-    const updated = await communityIssueStore.update(id, {
-      state: 'discussing',
-      ...(threadId && { assignedThreadId: threadId }),
-    });
-
-    // F168 Phase A: emit case.triaged event (best-effort — never blocks dispatch)
     const subjectKey = `issue:${item.repo}#${item.issueNumber}`;
-    const dispatchSourceEventId = `dispatch:${id}:${Date.now()}`;
-
+    const dispatchSourceEventId = `dispatch:${id}:${randomUUID()}`;
+    const params = { caseId: id, subjectKey, sourceEventId: dispatchSourceEventId,
+      briefingContext: `${item.title} [${item.issueType}] (${item.repo}#${item.issueNumber})` };
+    const delivery = opts.narrator ? await opts.narrator.prepare(params) : null;
+    const communityEvent: CommunityEvent = {
+      sourceEventId: dispatchSourceEventId, subjectKey, kind: 'case.triaged', classification: 'state-changing',
+      payload: { threadId: threadId ?? null, dispatchedAt: Date.now() }, at: Date.now(),
+    };
+    // Never commit discussing without its recoverable intent. A concurrent
+    // terminal transition wins the CAS guard and leaves no narrator delivery.
+    const updated = await communityIssueStore.update(id, {
+      state: 'discussing', ...(threadId && { assignedThreadId: threadId }),
+      ...(opts.narrator && { narratorDelivery: delivery }),
+    }, 'unreplied');
+    if (!updated) { reply.status(409); return { error: 'Issue changed during dispatch' }; }
     if (opts.eventLog) {
       try {
-        const communityEvent: CommunityEvent = {
-          sourceEventId: dispatchSourceEventId,
-          subjectKey,
-          kind: 'case.triaged',
-          classification: 'state-changing',
-          payload: { threadId: threadId ?? null, dispatchedAt: Date.now() },
-          at: Date.now(),
-        };
         const { appended } = await opts.eventLog.append(communityEvent);
-        if (appended && opts.projector) {
-          await opts.projector.apply(communityEvent);
-        }
-      } catch {
-        // Best-effort — event log failure never blocks dispatch
+        if (appended && opts.projector) await opts.projector.apply(communityEvent);
+      } catch (error) {
+        // The workflow and narrator intent are already committed. Projection repair is separate.
+        request.log.error({ error, subjectKey }, 'Community dispatch projection pending');
       }
     }
 

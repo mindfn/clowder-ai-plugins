@@ -104,7 +104,7 @@ Publishing repositories are read from `publishRepositories` on each request and
 again at the publication journal boundary. An empty list disables new drafts
 and publishing while durable drafts remain readable.
 
-This is source composition, not installed acceptance. Narrator delivery, review settlement/publisher association, final
+This is source composition, not installed acceptance. Review settlement/publisher association, final
 alpha.16 shrinkwrap/archive and real Host identity/CAS/browser journeys remain
 open. Owner HTTP does not mint a native caller for callback-only routes. The six
 Community callbacks are now separately declared in native MCP and use the Host
@@ -112,3 +112,27 @@ second context. They cannot perform owner resolve or lease completion. Report
 checks the exact public issue comment through the bounded repository-authorized
 reader; this is issue closure evidence, not review publisher authentication. Missing
 Host source ports fail explicitly; no source or deployment catalog is fabricated.
+
+### Community narrator
+
+Set both `narratorCatId` and `narratorThreadId` in plugin settings to opt into
+manual dispatch triage. The cat must be available in the Host deployment catalog
+and the thread must be accessible through the granted thread read capability.
+The Host owns the cat's model and execution policy; the plugin does not import
+roster roles, invent a model, or mint a native invocation.
+
+Dispatch commits `discussing` and the frozen target/briefing in one private CAS.
+The existing Community reconciler schedule materializes the durable message
+outbox; Settings also exposes delivery status and retry. Failed outbox writes,
+lost replies and module recreation retain the same source/idempotency key.
+Changing either target setting pauses existing delivery, never redirects it;
+restore the original settings and retry to resume. Empty settings disable new
+intents; enabling later does not wake historical or disabled dispatches. Closed
+or otherwise non-discussing cases do not admit new narrator sends. Stop joins
+in-flight SDK sends and leaves uncertain outcomes for idempotent recovery.
+
+Briefings name the declared native `github_community_triage_complete` callback.
+The briefing is a request for triage, not authority for owner resolve, code
+changes or lease completion. This source checkpoint covers manual dispatch and
+recovery, not automatic narrator eligibility, installed Host messaging or a real
+cat response journey.

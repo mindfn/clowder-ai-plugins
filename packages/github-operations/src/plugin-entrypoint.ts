@@ -1,3 +1,4 @@
+import { CommunityNarratorRuntime } from './community-narrator.js';
 import { communityNativeMethods } from './community-native-actions.js';
 import { createCommunityHttpRouter } from './community-http-router.js';
 import { createCatId } from './business/model/index.js';
@@ -40,6 +41,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   const publisher = options.createIssuePublisher?.(context) ?? transport;
   const drafts = new NativeIssueDraftRuntime(context, publisher);
   const community = new CommunityRuntime(context, options.createCommunityProvider?.(context) ?? transport);
+  const narrator = new CommunityNarratorRuntime(context);
   const reviewPredicates = new CommunityReviewPredicateRuntime({ objectStore: community.objects, repoConfigStore: community.configs, provider: transport });
   const collection = new CommunityCollectionRuntime({ store: new SdkCommunityCollectionStore(context.storage), provider,
     allowed: async repo => !!await community.configs.getByRepo(repo),
@@ -57,7 +59,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   const http = await createCommunityHttpRouter({
     storage: context.storage, threads: context.threads, projectionOperations: community.projectionOperations,
     provider: { token: () => context.secrets.get('token') },
-    issues: { guardianCatalog: async () => {
+    issues: { narrator, guardianCatalog: async () => {
       const catalog = await context.deployment.getCatalog();
       return { roster: catalog.roster, defaultCatId: createCatId(catalog.defaultCatId), policy: catalog.policy };
     } },
@@ -84,6 +86,14 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       }])),
       // Only the owner-authenticated Host HTTP forwarder may call this method.
       // It is deliberately absent from tools, MCP actions and operations.
+      'github.narrator.status': async (_value: unknown, caller?: PluginActionContext) => {
+        if (caller) throw new Error('Narrator settings require owner operation');
+        return { data: { deliveries: await narrator.status() } };
+      },
+      'github.narrator.retry': async (_value: unknown, caller?: PluginActionContext) => {
+        if (caller) throw new Error('Narrator settings require owner operation');
+        return { data: { deliveries: await narrator.reconcile() } };
+      },
       'github.community.http': (value: unknown, caller?: PluginActionContext) => {
         if (caller) throw new Error('Community owner HTTP cannot be invoked as a native action');
         return http.forwardOwner(value);
@@ -101,7 +111,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.issue-tracking': () => poll('issue'),
       'github.repo-scan': async () => { await community.run('repo-scan'); return { data: { completed: true } }; },
       'github.repo-comment-poll': async () => { await community.run('repo-comment-poll'); return { data: { completed: true } }; },
-      'github.community-reconciler': async () => { await community.run('community-reconciler'); return { data: { completed: true } }; },
+      'github.community-reconciler': async () => { await community.run('community-reconciler'); const narratorDeliveries = await narrator.reconcile(); return { data: { completed: true, narratorDeliveries } }; },
       'github.repository.register': async (value: unknown) => ({ data: await community.register(repoInput(value, true) as unknown as UpsertRepoConfigInput) }),
       'github.repository.unregister': async (value: unknown) => ({ data: { removed: await community.unregister(repoInput(value, false).repo as string) } }),
       'github.repository.list': async () => ({ data: { repositories: await community.configs.listAll(), pullRequestRepositories: await prIndex.repositories() } }),
@@ -127,7 +137,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.draft.cancel': (value: unknown) => drafts.cancel(value),
       'github.triage.recommend': recommendTriage,
     },
-    dispose: async () => { reviewPredicates.stop(); await Promise.all([http.stop(), collection.stop(), tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
+    dispose: async () => { reviewPredicates.stop(); await Promise.all([narrator.stop(), http.stop(), collection.stop(), tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
   };
 }
 

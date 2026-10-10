@@ -54,6 +54,31 @@ configuration:
         render: button
         confirm: Copy the supplied legacy issue metadata? Existing records and all Host governance data will be preserved. This does not start tracking.
         action: { method: github.legacy-issues.import }
+  - key: narratorCatId
+    label: Community narrator cat
+    description: Explicit deployment cat ID for manual Community triage. Set together with the narrator thread; leave both empty to disable new narrator requests.
+    kind: string
+    required: false
+  - key: narratorThreadId
+    label: Community narrator thread
+    description: Existing accessible thread for triage briefings. Pending deliveries retain their original target and pause if either setting changes.
+    kind: string
+    required: false
+  - key: narratorDeliveries
+    label: Community narrator deliveries
+    description: Inspect durable dispatches or retry pending delivery. Restore the original target settings to resume paused delivery; changing settings never redirects an existing briefing.
+    kind: operation
+    required: false
+    actions:
+      - id: status
+        label: Delivery status
+        render: status
+        action: { method: github.narrator.status }
+      - id: retry
+        label: Retry pending deliveries
+        render: button
+        action: { method: github.narrator.retry }
+        next: status
   - key: publishRepositories
     label: Repositories allowed for public issue drafts
     description: Comma-separated owner/repository names. Empty disables issue publishing.
