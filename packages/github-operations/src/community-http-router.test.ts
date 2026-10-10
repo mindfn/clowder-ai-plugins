@@ -386,3 +386,45 @@ test('embedded source call retains the separate Host owner async context', async
   const router = await createCommunityHttpRouter(f.deps); t.after(() => router.stop());
   assert.equal((await owner.run('host-owner', () => router.forwardOwner(f.request))).status, 200);
 });
+
+for (const changedSource of [false, true]) for (const status of ['publishing', 'published'] as const) test(`linked ${status} source draft survives router restart as read-only recovery (source changed: ${changedSource})`, async t => {
+  const f = sourceFixture(); let router = await createCommunityHttpRouter(f.deps); t.after(() => router.stop());
+  const created = await router.forwardOwner(f.request); assert.equal(created.status, 200);
+  const store = new SdkCommunityIssueDraftStore(f.deps.storage), draft = created.body.draft;
+  await store.beginPublish(draft.draftId, draft.title, draft.bodyMarkdown);
+  if (status === 'published') await store.publish({ draftId: draft.draftId, githubIssueNumber: 42, githubIssueUrl: 'https://github.com/org/repo/issues/42' });
+  const before = await store.getById(draft.draftId), writes = f.writes();
+  await router.stop(); router = await createCommunityHttpRouter(f.deps);
+  let privateWrites = 0; const cas = f.deps.storage.compareAndSet;
+  f.deps.storage.compareAndSet = async (...args) => { privateWrites++; return cas(...args); };
+  if (changedSource) f.source.sourceRevision = 'source-r2';
+  const recovered = await router.forwardOwner(f.request);
+  assert.equal(recovered.status, 409); assert.deepEqual(recovered.body.draft, before);
+  assert.equal(f.source.communityIssueDraftId, draft.draftId); assert.equal(f.writes(), writes);
+  assert.equal(privateWrites, 0); assert.deepEqual(await store.getBySourceId(f.source.issueId), before);
+});
+for (const mismatch of ['link', 'user', 'thread'] as const) test(`publication recovery refuses ${mismatch} mismatch without returning a draft`, async t => {
+  const f = sourceFixture(), router = await createCommunityHttpRouter(f.deps); t.after(() => router.stop());
+  const created = await router.forwardOwner(f.request), draft = created.body.draft;
+  const store = new SdkCommunityIssueDraftStore(f.deps.storage);
+  await store.beginPublish(draft.draftId, draft.title, draft.bodyMarkdown);
+  if (mismatch === 'link') f.source.communityIssueDraftId = null;
+  if (mismatch === 'user') f.source.userId = 'other';
+  if (mismatch === 'thread') f.source.threadId = 'other';
+  const recovered = await router.forwardOwner(f.request);
+  assert.equal(recovered.status, mismatch === 'user' ? 403 : 409);
+  assert.equal(recovered.body.draft, undefined); assert.equal(f.writes(), 1);
+});
+
+test('publication beginning during link returns the durable recovery ID without another link', async t => {
+  const f = sourceFixture(), store = new SdkCommunityIssueDraftStore(f.deps.storage), link = f.port.linkDraft;
+  f.port.linkDraft = async input => {
+    const result = await link(input), draft = await store.getById(input.draftId); assert.ok(draft);
+    await store.beginPublish(draft.draftId, draft.title, draft.bodyMarkdown);
+    return result;
+  };
+  const router = await createCommunityHttpRouter(f.deps); t.after(() => router.stop());
+  const result = await router.forwardOwner(f.request);
+  assert.equal(result.status, 409); assert.equal(result.body.draft.status, 'publishing');
+  assert.equal(result.body.draft.draftId, f.source.communityIssueDraftId); assert.equal(f.writes(), 1);
+});
