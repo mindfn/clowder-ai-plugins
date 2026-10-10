@@ -10,7 +10,7 @@ for (const name of [
   'community-closure-checklist', 'community-decision-queue',
   'community-decision-queue-closure', 'community-decision-queue-types',
   'community-route-recommendation', 'community-bootstrap', 'community-auto-tracking',
-  'narrator/NarratorDriver', 'narrator/RedisNarratorDedupStore',
+  'narrator/NarratorDriver',
 ]) {
   test(`whole Community migration accounts for ${name} without claiming installed replacement`, async () => {
     for (const directory of ['src', 'dist']) {
@@ -33,5 +33,13 @@ test('default package does not ship the legacy automatic rebase/push executor', 
 test('package does not restore the old Host admission coverage helper', async () => {
   for (const directory of ['src', 'dist']) {
     await assert.rejects(access(new URL(`../${directory}/business/infrastructure/github/pr-review-event-wait-coverage.${directory === 'src' ? 'ts' : 'js'}`, import.meta.url)), { code: 'ENOENT' });
+  }
+});
+
+test('narrator production source uses SDK persistence rather than a private Redis client', async () => {
+  for (const directory of ['src', 'dist']) {
+    const extension = directory === 'src' ? 'ts' : 'js';
+    await access(new URL(`../${directory}/business/domains/community/narrator/SdkNarratorDelivery.${extension}`, import.meta.url));
+    await assert.rejects(access(new URL(`../${directory}/business/domains/community/narrator/RedisNarratorDedupStore.${extension}`, import.meta.url)), { code: 'ENOENT' });
   }
 });
