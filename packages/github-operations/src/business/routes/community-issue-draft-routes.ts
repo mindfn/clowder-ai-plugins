@@ -2,9 +2,9 @@
  * F235: Community Issue Draft API routes.
  *
  * POST .../from-frustration-issue/:issueId — create draft from confirmed issue
- * GET  .../:draftId                        — get draft status + content
- * POST .../:draftId/publish                — user edits + publish to GitHub
- * POST .../:draftId/cancel                 — cancel draft
+ * GET  .../by-id/:draftId                        — get draft status + content
+ * POST .../by-id/:draftId/publish                — user edits + publish to GitHub
+ * POST .../by-id/:draftId/cancel                 — cancel draft
  *
  * All routes require a Host-authenticated request context. Client headers are not authority.
  */
@@ -75,7 +75,7 @@ export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRo
 
   // ── GET /api/community-issue-drafts/config ──
   // Phase B: repo picker configuration for frontend dropdown.
-  // Must be registered BEFORE /:draftId to avoid route param collision.
+  // Static config and by-id draft routes occupy disjoint path namespaces.
 
   app.get('/api/community-issue-drafts/config', async (request, reply) => {
     const userId = resolveUserId(request);
@@ -228,9 +228,9 @@ export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRo
     }
   });
 
-  // ── GET /api/community-issue-drafts/:draftId ──
+  // ── GET /api/community-issue-drafts/by-id/:draftId ──
 
-  app.get('/api/community-issue-drafts/:draftId', async (request, reply) => {
+  app.get('/api/community-issue-drafts/by-id/:draftId', async (request, reply) => {
     const userId = resolveUserId(request);
     if (!userId) {
       reply.status(401);
@@ -256,9 +256,9 @@ export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRo
     return { draft };
   });
 
-  // ── POST /api/community-issue-drafts/:draftId/publish ──
+  // ── POST /api/community-issue-drafts/by-id/:draftId/publish ──
 
-  app.post('/api/community-issue-drafts/:draftId/publish', async (request, reply) => {
+  app.post('/api/community-issue-drafts/by-id/:draftId/publish', async (request, reply) => {
     // R8-P1-1: strict identity — publish is an external side effect, no default-user
     const userId = resolveStrictUserId(request);
     if (!userId) {
@@ -311,9 +311,9 @@ export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRo
     }
   });
 
-  // ── POST /api/community-issue-drafts/:draftId/cancel ──
+  // ── POST /api/community-issue-drafts/by-id/:draftId/cancel ──
 
-  app.post('/api/community-issue-drafts/:draftId/cancel', async (request, reply) => {
+  app.post('/api/community-issue-drafts/by-id/:draftId/cancel', async (request, reply) => {
     // R8-P1-1 audit: strict identity for all mutations
     const userId = resolveStrictUserId(request);
     if (!userId) {

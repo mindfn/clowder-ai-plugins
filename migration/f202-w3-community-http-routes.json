@@ -3,7 +3,7 @@
   "sourceRevision": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
   "status": "route_inventory_not_installed_contract",
   "handler": "github.community.http",
-  "hostForwardingGap": "Existing forwarding only matches fixed paths; parameter matching is not yet supported. No declaration or UI connectivity is claimed.",
+  "hostForwardingGap": "Requires beta.33 dynamic/PATCH contract and matching Host forwarding. Inventory is not a production manifest or installed UI claim.",
   "identity": "Host owner principal for HTTP; native action context is supplied separately and is not accepted from body or headers.",
   "routes": [
     {
@@ -185,26 +185,29 @@
     {
       "method": "GET",
       "sourcePath": "/api/community-issue-drafts/:draftId",
-      "pluginPath": "github/community-issue-drafts/:draftId",
+      "pluginPath": "github/community-issue-drafts/by-id/:draftId",
       "dynamic": true,
       "sourceFile": "packages/api/src/routes/community-issue-draft-routes.ts",
-      "sourceLine": 233
+      "sourceLine": 233,
+      "adaptation": "Disjoint by-id namespace avoids overlap with config and from-frustration-issue. Console must target this pluginPath; sourcePath is historical only."
     },
     {
       "method": "POST",
       "sourcePath": "/api/community-issue-drafts/:draftId/publish",
-      "pluginPath": "github/community-issue-drafts/:draftId/publish",
+      "pluginPath": "github/community-issue-drafts/by-id/:draftId/publish",
       "dynamic": true,
       "sourceFile": "packages/api/src/routes/community-issue-draft-routes.ts",
-      "sourceLine": 261
+      "sourceLine": 261,
+      "adaptation": "Disjoint by-id namespace avoids overlap with config and from-frustration-issue. Console must target this pluginPath; sourcePath is historical only."
     },
     {
       "method": "POST",
       "sourcePath": "/api/community-issue-drafts/:draftId/cancel",
-      "pluginPath": "github/community-issue-drafts/:draftId/cancel",
+      "pluginPath": "github/community-issue-drafts/by-id/:draftId/cancel",
       "dynamic": true,
       "sourceFile": "packages/api/src/routes/community-issue-draft-routes.ts",
-      "sourceLine": 391
+      "sourceLine": 391,
+      "adaptation": "Disjoint by-id namespace avoids overlap with config and from-frustration-issue. Console must target this pluginPath; sourcePath is historical only."
     },
     {
       "method": "GET",

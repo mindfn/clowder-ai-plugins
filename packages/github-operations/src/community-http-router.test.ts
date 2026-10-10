@@ -36,14 +36,18 @@ for (const journal of [false, true]) test(`publication recovers after ${journal 
     return cas(key, rev, value);
   };
   let router = await createCommunityHttpRouter(deps); t.after(() => router.stop());
-  const request = { principal, method: 'POST', path: `github/community-issue-drafts/${draft.draftId}/publish`, body: {} };
+  const read = await router.forwardOwner({ principal, method: 'GET', path: `github/community-issue-drafts/by-id/${draft.draftId}` });
+  assert.equal(read.status, 200);
+  assert.equal(read.body.draft.draftId, draft.draftId);
+  assert.equal((await router.forwardOwner({ principal, method: 'GET', path: 'github/community-issue-drafts/config' })).status, 200);
+  const request = { principal, method: 'POST', path: `github/community-issue-drafts/by-id/${draft.draftId}/publish`, body: {} };
   const first = await router.forwardOwner(request);
   assert.equal(first.status, 502); assert.equal(creates, 1);
   assert.equal((await store.getById(draft.draftId))?.status, 'publishing');
   const native = new NativeIssueDraftRuntime({ storage: deps.storage, config: { get: async () => 'org/repo' } }, deps.drafts.publisher);
   assert.deepEqual((await native.list()).data.rows, [], 'Community publication is not a separately cancellable native UI draft');
   await native.stop();
-  assert.equal((await router.forwardOwner({ ...request, path: `github/community-issue-drafts/${draft.draftId}/cancel` })).status, 409);
+  assert.equal((await router.forwardOwner({ ...request, path: `github/community-issue-drafts/by-id/${draft.draftId}/cancel` })).status, 409);
   assert.equal((await router.forwardOwner({ ...request, body: { title: 'Changed' } })).status, 502);
   assert.equal(creates, 1);
   await router.stop(); fail = false;
@@ -65,7 +69,7 @@ test('concurrent routers freeze one publication and reconcile uncertain results 
   const draft = await store.create({ sourceType: 'cat_initiated', sourceId: 'source', title: 'Issue', bodyMarkdown: 'Public', targetRepo: 'org/repo', labels: [], threadId: 'thread', userId: 'owner' });
   const a = await createCommunityHttpRouter(deps), b = await createCommunityHttpRouter(deps);
   t.after(async () => { release(); await a.stop(); await b.stop(); });
-  const request = { principal, method: 'POST', path: `github/community-issue-drafts/${draft.draftId}/publish`, body: {} };
+  const request = { principal, method: 'POST', path: `github/community-issue-drafts/by-id/${draft.draftId}/publish`, body: {} };
   const pending = a.forwardOwner(request); await creating;
   assert.equal((await b.forwardOwner(request)).status, 202);
   await assert.rejects(store.cancel(draft.draftId), /not draft/);
@@ -86,7 +90,7 @@ test('stop during a successful external POST leaves recoverable publishing state
   const store = new SdkCommunityIssueDraftStore(deps.storage);
   const draft = await store.create({ sourceType: 'cat_initiated', sourceId: 'source', title: 'Issue', bodyMarkdown: 'Public', targetRepo: 'org/repo', labels: [], threadId: 'thread', userId: 'owner' });
   let router = await createCommunityHttpRouter(deps); t.after(() => router.stop());
-  const request = { principal, method: 'POST', path: `github/community-issue-drafts/${draft.draftId}/publish`, body: {} };
+  const request = { principal, method: 'POST', path: `github/community-issue-drafts/by-id/${draft.draftId}/publish`, body: {} };
   const pending = router.forwardOwner(request); await started;
   const stopping = router.stop(); release();
   assert.equal((await pending).status, 502); await stopping;
