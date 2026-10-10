@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "sourceRevision": "bb9f9f08ec574ee8888fbde9819ff95da96bb614",
-  "status": "route_inventory_not_installed_contract",
+  "status": "production_manifest_declared_installed_unverified",
   "handler": "github.community.http",
-  "hostForwardingGap": "Requires beta.33 dynamic/PATCH contract and matching Host forwarding. Inventory is not a production manifest or installed UI claim.",
+  "hostForwardingGap": "Production manifest declares all 33 methods using beta.35. Host matching and owner authorization remain independently implemented; exact packed alpha.16 admission and installed UI acceptance are pending.",
   "identity": "Host owner principal for HTTP; native action context is supplied separately and is not accepted from body or headers.",
   "routes": [
     {

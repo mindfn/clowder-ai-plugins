@@ -87,6 +87,25 @@ distribution work, not prerequisites for fresh local acceptance.
 Requested Host capabilities (from `plugin.yaml`): `schedule.register`,
 `plugin.config.read`, `secret.read`, `plugin.state.get`, `plugin.state.set`,
 `task.read`, `task.write`, `thread.listMetadata`, `thread.readContent`,
-`thread.write`, `messaging.send`, `custody.verify`. `thread.readContent` is an
+`thread.write`, `messaging.send`, `custody.verify`, `deployment.read`,
+`frustration.read`, `frustration.link`. The last three are separate explicit L2
+grants; no grant is inferred from installing the plugin. `thread.readContent` is an
 explicit L2 grant required by the current Host's reliable thread point lookup;
 installation must display and obtain it rather than infer consent.
+
+
+### Community HTTP composition
+
+The source module now activates the embedded Community router with 33 method/path
+pairs in 29 owner-only webhook declarations. The dispatcher is not a tool, MCP
+action or Settings operation; native-context calls to it are rejected. It shares
+the collector's projection queue and uses guarded SDK thread/source ports.
+Publishing repositories are read from `publishRepositories` on each request and
+again at the publication journal boundary. An empty list disables new drafts
+and publishing while durable drafts remain readable.
+
+This is source composition, not installed acceptance. Native Community callback
+registration, narrator delivery, review settlement/publisher association, final
+alpha.16 shrinkwrap/archive and real Host identity/CAS/browser journeys remain
+open. Owner HTTP does not mint a native caller for callback-only routes. Missing
+Host source ports fail explicitly; no source or deployment catalog is fabricated.

@@ -69,7 +69,11 @@ export async function createCommunityHttpRouter(options: CommunityHttpRouterOpti
   const drafts = new SdkCommunityIssueDraftStore(storage);
   // Reuse the journal algorithm in a separate namespace: native draft UI
   // cancellation must not mutate a Community publication behind its workflow.
-  const publication = new NativeIssueDraftRuntime({ storage, config: { get: async () => options.drafts.config.repoAllowlist.join(',') } }, {
+  const publication = new NativeIssueDraftRuntime({ storage, config: { get: async () => {
+    await scope.assertCurrent();
+    const config = typeof options.drafts.config === 'function' ? await options.drafts.config() : options.drafts.config;
+    await scope.assertCurrent(); return config.repoAllowlist.join(',');
+  } } }, {
     create: async (draft, signal) => { await scope.assertCurrent(); return options.drafts.publisher.create(draft, signal); },
     find: async (draft, signal) => { await scope.assertCurrent(); return options.drafts.publisher.find(draft, signal); },
   }, 'community.workflow.publication.');

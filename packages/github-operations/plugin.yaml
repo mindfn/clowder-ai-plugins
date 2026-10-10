@@ -335,11 +335,185 @@ contributions:
     subjectNamespace: pr
     freshnessMethod: github.review.verify-freshness
     completionMethod: github.review.verify-completion
+  - type: webhook
+    id: community-http-01
+    path: github/community-issues
+    methods: [POST, GET]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-02
+    path: github/community-issues/:id
+    methods: [GET, PATCH, DELETE]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-03
+    path: github/community-issues/:id/dispatch
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-04
+    path: github/community-issues/sync
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-05
+    path: github/community-issues/sync-prs
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-06
+    path: github/community-issues/:id/triage-complete
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-07
+    path: github/community-issues/:id/resolve
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-08
+    path: github/community-issues/:id/request-guardian
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-09
+    path: github/community-issues/:id/guardian-signoff
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-10
+    path: github/community-issues/:id/guardian-status
+    methods: [GET]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-11
+    path: github/community-issues/:id/validate-route
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-12
+    path: github/community-issues/:id/report
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-13
+    path: github/community-issues/:id/waive-closure
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-14
+    path: github/community-issues/:subjectKey/await-external
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-15
+    path: github/community-repos
+    methods: [GET]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-16
+    path: github/community-board
+    methods: [GET]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-17
+    path: github/community-issue-drafts/config
+    methods: [GET]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-18
+    path: github/community-issue-drafts
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-19
+    path: github/community-issue-drafts/from-frustration-issue/:issueId
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-20
+    path: github/community-issue-drafts/by-id/:draftId
+    methods: [GET]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-21
+    path: github/community-issue-drafts/by-id/:draftId/publish
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-22
+    path: github/community-issue-drafts/by-id/:draftId/cancel
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-23
+    path: github/community-decision-queue
+    methods: [GET]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-24
+    path: github/community-findings/:findingId/acknowledge
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-25
+    path: github/community-findings/:findingId/resolve
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-26
+    path: github/community-findings/:findingId/waive
+    methods: [POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-27
+    path: github/community-findings
+    methods: [GET]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-28
+    path: github/community-repo-configs
+    methods: [GET, POST]
+    action: { method: github.community.http }
+  - type: webhook
+    id: community-http-29
+    path: github/community-repo-configs/:repo
+    methods: [DELETE]
+    action: { method: github.community.http }
 features:
   - id: github-collaboration
     name: GitHub collaboration operations
     resources: []
     contributions:
+      - { type: webhook, id: community-http-01 }
+      - { type: webhook, id: community-http-02 }
+      - { type: webhook, id: community-http-03 }
+      - { type: webhook, id: community-http-04 }
+      - { type: webhook, id: community-http-05 }
+      - { type: webhook, id: community-http-06 }
+      - { type: webhook, id: community-http-07 }
+      - { type: webhook, id: community-http-08 }
+      - { type: webhook, id: community-http-09 }
+      - { type: webhook, id: community-http-10 }
+      - { type: webhook, id: community-http-11 }
+      - { type: webhook, id: community-http-12 }
+      - { type: webhook, id: community-http-13 }
+      - { type: webhook, id: community-http-14 }
+      - { type: webhook, id: community-http-15 }
+      - { type: webhook, id: community-http-16 }
+      - { type: webhook, id: community-http-17 }
+      - { type: webhook, id: community-http-18 }
+      - { type: webhook, id: community-http-19 }
+      - { type: webhook, id: community-http-20 }
+      - { type: webhook, id: community-http-21 }
+      - { type: webhook, id: community-http-22 }
+      - { type: webhook, id: community-http-23 }
+      - { type: webhook, id: community-http-24 }
+      - { type: webhook, id: community-http-25 }
+      - { type: webhook, id: community-http-26 }
+      - { type: webhook, id: community-http-27 }
+      - { type: webhook, id: community-http-28 }
+      - { type: webhook, id: community-http-29 }
       - { type: terminal-predicate-provider, id: review-predicate }
       - { type: tool, id: refresh-pull-requests }
       - { type: tool, id: observe-review-trigger }
@@ -365,7 +539,7 @@ features:
       - { type: schedule, id: issue-tracking }
       - { type: schedule, id: repo-comment-poll }
       - { type: schedule, id: community-reconciler }
-    capabilities: [schedule.register, plugin.config.read, secret.read, plugin.state.get, plugin.state.set, task.read, task.write, thread.listMetadata, thread.readContent, thread.write, messaging.send, custody.verify]
+    capabilities: [schedule.register, plugin.config.read, secret.read, plugin.state.get, plugin.state.set, task.read, task.write, thread.listMetadata, thread.readContent, thread.write, messaging.send, custody.verify, deployment.read, frustration.read, frustration.link]
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js

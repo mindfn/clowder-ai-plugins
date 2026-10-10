@@ -4,7 +4,7 @@ import { createCatId } from '../../model/index.js';
 /** Deployment data is injected. The plugin cannot import the Host's catalog
  * singleton or infer cat family/availability from a display name. */
 export interface GuardianCatalog {
-  readonly roster: Roster;
+  readonly roster: Readonly<Record<string, Pick<Roster[string], 'family' | 'available' | 'lead'>>>;
   readonly defaultCatId: CatId;
   readonly policy: ReviewPolicy;
 }
@@ -43,7 +43,7 @@ export async function resolveGuardian(options: GuardianMatchOptions): Promise<Gu
   const sameFamily = eligible.filter(([_, e]) => e.family === authorEntry.family);
   const activity = options.threadActivity ?? {};
 
-  const sort = (arr: Array<[string, Roster[string]]>) =>
+  const sort = (arr: Array<[string, GuardianCatalog['roster'][string]]>) =>
     [...arr].sort((a, b) => {
       const actDiff = (activity[b[0]] ?? 0) - (activity[a[0]] ?? 0);
       if (actDiff !== 0) return actDiff;

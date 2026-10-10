@@ -20,15 +20,17 @@ import type { CommunityRequestContext } from './community-request-context.js';
 
 // ── Options ───────────────────────────────────────────────────
 
+export interface CommunityDraftConfig {
+  defaultRepo: string;
+  repoAllowlist: string[];
+}
+
 export interface CommunityIssueDraftRoutesOptions {
   communityIssueDraftStore: ICommunityIssueDraftStore;
   frustration: PluginFrustrationHost;
   requestContext: CommunityRequestContext;
   publication: { publish(draft: CommunityIssueDraft): Promise<{ issue?: { number: number; url: string } }> };
-  config: {
-    defaultRepo: string;
-    repoAllowlist: string[];
-  };
+  config: CommunityDraftConfig | (() => Promise<CommunityDraftConfig>);
 }
 
 // ── Schemas ───────────────────────────────────────────────────
@@ -66,7 +68,13 @@ const genericCreateBodySchema = z.object({
 // ── Routes ────────────────────────────────────────────────────
 
 export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRoutesOptions> = async (app, opts) => {
-  const { communityIssueDraftStore, frustration, publication, config } = opts;
+  const { communityIssueDraftStore, frustration, publication } = opts;
+  const currentConfig = async () => {
+    await opts.requestContext.assertCurrent();
+    const value = typeof opts.config === 'function' ? await opts.config() : opts.config;
+    await opts.requestContext.assertCurrent();
+    return value;
+  };
   const resolveUserId = opts.requestContext.userId.bind(opts.requestContext);
   const resolveStrictUserId = resolveUserId;
 
@@ -80,6 +88,7 @@ export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRo
       reply.status(401);
       return { error: 'Not authenticated' };
     }
+    const config = await currentConfig();
     return {
       defaultRepo: config.defaultRepo,
       repos: config.repoAllowlist,
@@ -103,6 +112,7 @@ export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRo
     }
 
     const { sourceType, sourceId, title, bodyMarkdown, labels, threadId, messageId } = bodyParse.data;
+    const config = await currentConfig();
     const targetRepo = bodyParse.data.targetRepo ?? config.defaultRepo;
 
     // INV-B2: repo must be in allowlist (server-side enforcement)
@@ -190,7 +200,7 @@ export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRo
     if (!opts.requestContext.requireOwner(reply)) return;
     try {
       const draft = await recoverFrustrationDraft(issueId, userId, {
-        source: frustration, drafts: communityIssueDraftStore, config,
+        source: frustration, drafts: communityIssueDraftStore, config: await currentConfig(),
         assertCurrent: () => opts.requestContext.assertCurrent(),
       });
       return { draft };
@@ -265,6 +275,7 @@ export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRo
     }
     if (draft.status === 'published') return { draft, githubIssueUrl: draft.githubIssueUrl };
     if (draft.status === 'cancelled') return reply.code(409).send({ error: 'Draft cancelled' });
+    const config = await currentConfig();
     if (!config.repoAllowlist.includes(draft.targetRepo)) return reply.code(403).send({ error: 'Repository not allowed' });
     const sanitized = sanitize(edits?.title ?? draft.title, edits?.bodyMarkdown ?? draft.bodyMarkdown);
     if (!sanitized.passed) return reply.code(422).send({ error: 'Content contains forbidden patterns' });

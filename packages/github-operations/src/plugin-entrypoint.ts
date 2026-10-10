@@ -1,3 +1,5 @@
+import { createCommunityHttpRouter } from './community-http-router.js';
+import { createCatId } from './business/model/index.js';
 import { definePlugin, definePluginModule, type FeatureContext, type PluginModuleEntrypoint, type PluginActionContext } from '@clowder-ai/plugin-sdk';
 import { GitHubProvider } from './github-provider.js';
 import type { GitHubTrackingProvider } from './tracking-runtime.js';
@@ -34,7 +36,8 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
     token: () => context.secrets.get('token'),
   });
   const prIndex = new PrProviderIndex(context.storage, options.createPrIndexProvider?.(context) ?? new GitHubPrIndexProvider({ token: () => context.secrets.get('token') }));
-  const drafts = new NativeIssueDraftRuntime(context, options.createIssuePublisher?.(context) ?? transport);
+  const publisher = options.createIssuePublisher?.(context) ?? transport;
+  const drafts = new NativeIssueDraftRuntime(context, publisher);
   const community = new CommunityRuntime(context, options.createCommunityProvider?.(context) ?? transport);
   const reviewPredicates = new CommunityReviewPredicateRuntime({ objectStore: community.objects, repoConfigStore: community.configs, provider: transport });
   const collection = new CommunityCollectionRuntime({ store: new SdkCommunityCollectionStore(context.storage), provider,
@@ -50,6 +53,21 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
     observe: (target, snapshot) => community.observeTracking(target, snapshot),
   });
   await tracking.recover();
+  const http = await createCommunityHttpRouter({
+    storage: context.storage, threads: context.threads, projectionOperations: community.projectionOperations,
+    provider: { token: () => context.secrets.get('token') },
+    issues: { guardianCatalog: async () => {
+      const catalog = await context.deployment.getCatalog();
+      return { roster: catalog.roster, defaultCatId: createCatId(catalog.defaultCatId), policy: catalog.policy };
+    } },
+    drafts: { frustration: context.frustration, publisher, config: async () => {
+      const value = await context.config.get('publishRepositories');
+      if (value !== undefined && typeof value !== 'string') throw new TypeError('Invalid publish repository configuration');
+      const repos = [...new Set((value ?? '').split(/[\s,]+/).filter(Boolean).map(repo => repo.toLowerCase()))];
+      if (repos.some(repo => !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo))) throw new TypeError('Invalid publish repository configuration');
+      return { defaultRepo: repos[0] ?? '', repoAllowlist: repos };
+    } },
+  });
   const poll = async (kind: 'pr' | 'issue') => {
     // Admit both module-owned streams before awaiting either: shutdown must
     // never resume a completed native tick into a newly started collector.
@@ -59,6 +77,12 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   return {
     predicateVerifiers: reviewPredicates.predicateVerifiers,
     actions: {
+      // Only the owner-authenticated Host HTTP forwarder may call this method.
+      // It is deliberately absent from tools, MCP actions and operations.
+      'github.community.http': (value: unknown, caller?: PluginActionContext) => {
+        if (caller) throw new Error('Community owner HTTP cannot be invoked as a native action');
+        return http.forwardOwner(value);
+      },
       // Pure provider observation; registration consumes it inside this module.
       'github.review-trigger.observe': (value: unknown) => reviewTriggers.observe(value),
       'github.webhook': (value: unknown) => community.webhook(value),
@@ -98,7 +122,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.draft.cancel': (value: unknown) => drafts.cancel(value),
       'github.triage.recommend': recommendTriage,
     },
-    dispose: async () => { reviewPredicates.stop(); await Promise.all([collection.stop(), tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
+    dispose: async () => { reviewPredicates.stop(); await Promise.all([http.stop(), collection.stop(), tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
   };
 }
 

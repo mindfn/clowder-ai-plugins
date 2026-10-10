@@ -38,6 +38,7 @@ export async function recoverFrustrationDraft(issueId: string, userId: string, o
     if (!previous || !sameSource(previous, source) || previous.status !== 'cancelled') throw new FrustrationDraftError(409, 'Source link does not name a cancelled predecessor');
   }
   if (!draft) {
+    if (!options.config.defaultRepo || !options.config.repoAllowlist.includes(options.config.defaultRepo)) throw new FrustrationDraftError(403, 'No allowed repository for source drafts');
     await assertCurrent();
     try { draft = await createDraftFromFrustrationIssue(source, { draftStore: drafts, config: options.config }); }
     catch (error) {

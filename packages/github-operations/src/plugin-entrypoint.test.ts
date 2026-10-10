@@ -968,3 +968,51 @@ test('production schedule collects routed cases without a native registration or
   assert.equal(f.deliveries.length, 0, 'collection does not fabricate owner invocation or native wait notification');
   await active.stop();
 });
+
+test('production Community HTTP uses current publish configuration and durable source recovery', async () => {
+  const f = host(); let config = 'example/project'; let links = 0;
+  f.runtimeHost.config.get = async key => key === 'publishRepositories' ? config : undefined;
+  const source = { issueId: 'source-1', userId: 'user-1', threadId: 'thread-1', status: 'confirmed' as const,
+    signalType: 'user_report' as const, signalDetail: {}, recentMessageCount: 2, communityIssueDraftId: null as string | null, sourceRevision: 'r1' };
+  Object.assign(f.runtimeHost, { frustration: { getSource: async () => structuredClone(source), linkDraft: async (input: import('@clowder-ai/plugin-contract').FrustrationLinkDraftInput) => {
+    links++; source.communityIssueDraftId = input.draftId;
+    return { outcome: 'linked', draftId: input.draftId, sourceRevision: input.sourceRevision };
+  } } });
+  let active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+  const request = (path: string, method = 'GET') => ({ principal: { kind: 'owner', id: 'user-1' }, method, path: `github/${path}` });
+  try {
+    const http = active.actions['github.community.http']; assert.equal(typeof http, 'function');
+    assert.equal((await http!(request('community-issue-drafts/config')) as any).body.defaultRepo, 'example/project');
+    const created = await http!(request('community-issue-drafts/from-frustration-issue/source-1', 'POST')) as any;
+    assert.equal(created.status, 200); assert.equal(links, 1);
+    config = '';
+    assert.deepEqual((await http!(request('community-issue-drafts/config')) as any).body.repos, []);
+    const denied = await http!(request(`community-issue-drafts/by-id/${created.body.draft.draftId}/publish`, 'POST')) as any;
+    assert.equal(denied.status, 403);
+    await assert.rejects(async () => http!(request('community-issue-drafts/config'), caller), /native|owner/i);
+    await active.stop();
+    await assert.rejects(async () => http!(request('community-issue-drafts/config')), /stopped|disposed/);
+    active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+    const restored = await active.actions['github.community.http']!(request(`community-issue-drafts/by-id/${created.body.draft.draftId}`)) as any;
+    assert.equal(restored.body.draft.draftId, created.body.draft.draftId);
+  } finally { await active.stop(); }
+});
+
+test('production source route refuses unavailable Host port or disabled publishing without creating drafts', async () => {
+  const f = host(), active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+  const request = { principal: { kind: 'owner', id: 'user-1' }, method: 'POST', path: 'github/community-issue-drafts/from-frustration-issue/source-1' };
+  try {
+    const before = await f.runtimeHost.storage.list();
+    const unavailable = await active.actions['github.community.http']!(request) as any;
+    assert.equal(unavailable.status, 500); assert.match(unavailable.body.message, /unavailable/);
+    assert.deepEqual(await f.runtimeHost.storage.list(), before);
+  } finally { await active.stop(); }
+  Object.assign(f.runtimeHost, { frustration: { getSource: async () => ({ issueId: 'source-1', userId: 'user-1', threadId: 'thread-1', status: 'confirmed', signalType: 'user_report', signalDetail: {}, recentMessageCount: 0, communityIssueDraftId: null, sourceRevision: 'r1' }),
+    linkDraft: async () => { throw new Error('must not link'); } } });
+  const disabled = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
+  try {
+    const before = await f.runtimeHost.storage.list();
+    assert.equal((await disabled.actions['github.community.http']!(request) as any).status, 403);
+    assert.deepEqual(await f.runtimeHost.storage.list(), before);
+  } finally { await disabled.stop(); }
+});
