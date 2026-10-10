@@ -83,8 +83,9 @@ export class ExternalReviewVerdictService {
         'A different verdict submission already awaits canonical verification for this HEAD generation',
       );
     }
-    if (verificationReason) {
-      return recordPendingExternalReviewVerdict({
+    if (verificationReason || (delivery.kind === 'delivered' && actionLease &&
+      !(aggregate.delivery?.kind === 'delivered' && actionLease.reason === 'verified_success'))) {
+      const pending = await recordPendingExternalReviewVerdict({
         eventLog: this.opts.eventLog,
         projector: this.opts.projector,
         objectStore: this.opts.objectStore,
@@ -95,10 +96,11 @@ export class ExternalReviewVerdictService {
         submission: input,
         delivery,
         actionLease: actionLease ? { leaseId: actionLease.leaseId, generation: actionLease.generation } : null,
-        verificationReason,
+        verificationReason: verificationReason ?? 'custody_verification_pending',
         submissionFingerprint,
         recordedAt,
       });
+      if (verificationReason) return pending;
     }
 
     return this.recordCanonicalVerdict({
@@ -138,51 +140,9 @@ export class ExternalReviewVerdictService {
       return { kind: 'waiting', reason: readiness.kind === 'wait' ? readiness.reason : 'head_not_ready' };
     }
 
-    const completionPredicate = await this.opts.canonicalizeCompletionPredicate({
-      actionFamily: 'review',
-      subjectRef: subjectKey,
-      predicate: { kind: 'review_delivered', headSha: pending.headSha },
-    });
-    let actionLease: PreflightedActionLease | null;
-    try {
-      actionLease = await this.preflightActionLease(
-        aggregate,
-        pending.actionLeaseRef ?? undefined,
-        pending.principal.catId,
-        completionPredicate.digest,
-      );
-    } catch (error) {
-      if (
-        error instanceof ExternalReviewVerdictError &&
-        (error.code === 'action_lease_required' ||
-          error.code === 'action_lease_mismatch' ||
-          error.code === 'stale_action_lease')
-      ) {
-        return { kind: 'waiting', reason: error.code };
-      }
-      throw error;
-    }
-    if (actionLease?.reason === 'verified_success' && pending.delivery.kind === 'pending_delivery') {
-      throw new ExternalReviewVerdictError(
-        'delivery_regression',
-        'A custody-verified current-HEAD verdict cannot return to pending_delivery',
-      );
-    }
-
-    const result = await this.recordCanonicalVerdict({
-      subjectKey,
-      currentHeadSha: pending.headSha,
-      headGeneration: pending.headGeneration,
-      verdict: pending.verdict,
-      summary: pending.summary,
-      userNudgeRequired: pending.userNudgeRequired,
-      delivery: pending.delivery,
-      principal: pending.principal,
-      actionLease,
-      submissionFingerprint: pending.fingerprint,
-      recordedAt: this.now(),
-    });
-    return { kind: 'settled', result };
+    // A durable principal is provenance, never a new native invocation. The
+    // installed consumer retries record() under a live Host second context.
+    return { kind: 'waiting', reason: 'native_submission_required' };
   }
 
   private async recordCanonicalVerdict(input: {
@@ -219,6 +179,15 @@ export class ExternalReviewVerdictService {
         evidenceRefs: [`github:${delivery.githubUrl}`],
         now: recordedAt,
       });
+      if (completion.outcome === 'insufficient') {
+        const pending = (await this.opts.objectStore.get(subjectKey))?.externalReview?.pendingVerdict;
+        if (!pending || pending.fingerprint !== submissionFingerprint) {
+          throw new ExternalReviewVerdictError('projection_unavailable', 'Completion submission is no longer current');
+        }
+        return { subjectKey, headSha: currentHeadSha, verdict, delivery: pending.delivery,
+          lifecycle: 'pending_verification', verification: { status: 'pending',
+            reason: 'custody_verification_pending', submittedAt: pending.submittedAt } };
+      }
       if (completion.outcome !== 'committed') {
         throw new ExternalReviewVerdictError(
           'stale_action_lease',
@@ -239,6 +208,8 @@ export class ExternalReviewVerdictService {
         summary,
         userNudgeRequired,
         delivery,
+        principal,
+        actionLeaseRef: actionLease ? { leaseId: actionLease.leaseId, generation: actionLease.generation } : null,
       },
       at: recordedAt,
     };

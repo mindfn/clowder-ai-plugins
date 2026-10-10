@@ -136,3 +136,15 @@ The briefing is a request for triage, not authority for owner resolve, code
 changes or lease completion. This source checkpoint covers manual dispatch and
 recovery, not automatic narrator eligibility, installed Host messaging or a real
 cat response journey.
+
+Native external-review submissions use `github_record_external_review_verdict`
+with the assigned exact HEAD and lease generation. The current Host invocation
+supplies identity; the tool does not publish a review or accept identity/time
+fields. A delivered candidate is saved before the Host independently verifies
+completion. `pending_verification` means the submission is durable, **not** that
+review delivery or lease completion succeeded. Retry the identical submission
+under a fresh native invocation after the missing verification becomes available;
+background schedules never borrow the stored reviewer identity. The current
+publisher association is unavailable, so matching GitHub objects alone remain
+insufficient. This source integration requires the explicit `custody.invoke`
+grant and is not an installed-acceptance claim.

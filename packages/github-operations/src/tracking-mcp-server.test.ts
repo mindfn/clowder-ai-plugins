@@ -62,11 +62,25 @@ test('remote Community MCP tools carry identity only in runtime metadata and mar
   const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(a); await client.connect(b);
   try {
     const tools = (await client.listTools()).tools;
-    assert.equal(tools.length, 9);
+    assert.equal(tools.length, 10);
     const input = { id: 'issue:org/repo#1', payload: { reason: 'await provider' } }, meta = { threadId: 'real-thread' };
     const result = await client.callTool({ name: 'github_community_await_external', arguments: input, _meta: meta });
     assert.equal(result.isError, true);
     assert.deepEqual(calls, [{ method: 'github.community.await-external', input, meta }]);
     assert.equal(tools.some(t => /http|resolve$/.test(t.name)), false);
   } finally { await client.close(); await server.close(); }
+});
+
+test('external review verdict MCP transports business submission separately from native metadata', async () => {
+  const calls: any[] = [];
+  const server=createRemoteTrackingMcpServer({invoke:async(method,input,call)=>{calls.push({method,input,meta:call._meta});return {data:{lifecycle:'pending_verification'}};}});
+  const client=new Client({name:'verdict-native',version:'1'});const [a,b]=InMemoryTransport.createLinkedPair();await server.connect(a);await client.connect(b);
+  try {
+    const input={repoFullName:'org/repo',prNumber:1,reviewedHeadSha:'a'.repeat(40),verdict:'approved',summary:'Review',delivery:{kind:'delivered',githubUrl:'https://github.com/org/repo/pull/1#pullrequestreview-1'},actionLeaseRef:{leaseId:'lease',generation:1}};
+    const result=await client.callTool({name:'github_record_external_review_verdict',arguments:input,_meta:{threadId:'authenticated-transport'}});
+    assert.equal(result.isError,undefined);assert.deepEqual(calls,[{method:'github.review.record-verdict',input,meta:{threadId:'authenticated-transport'}}]);
+    assert.match(JSON.stringify(result),/pending_verification/);
+    const invalid=await client.callTool({name:'github_record_external_review_verdict',arguments:{...input,actionLeaseRef:{leaseId:'lease',generation:0}}});
+    assert.equal(invalid.isError,true);assert.equal(calls.length,1);
+  } finally {await client.close();await server.close();}
 });

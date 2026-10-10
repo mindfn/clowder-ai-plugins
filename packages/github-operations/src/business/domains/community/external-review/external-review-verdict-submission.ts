@@ -10,6 +10,7 @@ import type { ICommunityObjectStore } from '../CommunityObjectStore.js';
 import type { ICommunityRepoConfigStore } from '../CommunityRepoConfigStore.js';
 import {
   currentVerdictSubmissionEpoch,
+  isReadyForVerdict,
   decideExternalReviewReadiness,
   externalReviewVerdictAuthorizationFailure,
   PENDING_VERIFICATION_REASONS,
@@ -306,6 +307,7 @@ async function applyAndVerifyPending(
 function currentPendingVerificationReason(
   aggregate: ExternalReviewAggregate,
 ): PendingExternalReviewVerdict['verificationReason'] {
+  if (isReadyForVerdict(aggregate)) return 'custody_verification_pending';
   const readiness = decideExternalReviewReadiness(aggregate);
   if (
     readiness.kind !== 'wait' ||

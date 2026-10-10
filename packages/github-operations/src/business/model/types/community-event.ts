@@ -201,7 +201,7 @@ export interface PendingExternalReviewVerdict {
   readonly delivery: ReviewDeliveryOutcome;
   readonly principal: { readonly catId: string; readonly threadId: string };
   readonly actionLeaseRef: { readonly leaseId: string; readonly generation: number } | null;
-  readonly verificationReason: 'ci_not_observed' | 'ci_pending' | 'cloud_review_required' | 'cloud_review_running';
+  readonly verificationReason: 'ci_not_observed' | 'ci_pending' | 'cloud_review_required' | 'cloud_review_running' | 'custody_verification_pending';
   readonly submittedAt: number;
 }
 

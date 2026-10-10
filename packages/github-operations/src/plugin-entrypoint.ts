@@ -1,3 +1,4 @@
+import { CommunityReviewVerdictRuntime, REVIEW_VERDICT_METHOD } from './community-review-verdict.js';
 import { CommunityNarratorRuntime } from './community-narrator.js';
 import { communityNativeMethods } from './community-native-actions.js';
 import { createCommunityHttpRouter } from './community-http-router.js';
@@ -20,6 +21,7 @@ import { CommunityCollectionRuntime, SdkCommunityCollectionStore } from './commu
 interface Provider extends GitHubTrackingProvider { selfLogin(): string | undefined }
 export interface GitHubPluginOptions {
   readonly now?: () => number;
+  readonly createReviewEvidenceProvider?: (context: FeatureContext) => Pick<GitHubProvider, 'observeReviewHead' | 'observeReviewDelivery'>;
   /** Test the real carrier with an isolated provider; production uses the migrated gh transport. */
   readonly createProvider?: (context: FeatureContext) => Provider;
   readonly createCommunityProvider?: (context: FeatureContext) => CommunityProvider;
@@ -42,7 +44,9 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   const drafts = new NativeIssueDraftRuntime(context, publisher);
   const community = new CommunityRuntime(context, options.createCommunityProvider?.(context) ?? transport);
   const narrator = new CommunityNarratorRuntime(context);
-  const reviewPredicates = new CommunityReviewPredicateRuntime({ objectStore: community.objects, repoConfigStore: community.configs, provider: transport });
+  const reviewEvidence = options.createReviewEvidenceProvider?.(context) ?? transport;
+  const reviewVerdicts = new CommunityReviewVerdictRuntime({ storage: context.storage, custody: context.custody, provider: reviewEvidence, projectionOperations: community.projectionOperations });
+  const reviewPredicates = new CommunityReviewPredicateRuntime({ objectStore: community.objects, repoConfigStore: community.configs, provider: reviewEvidence });
   const collection = new CommunityCollectionRuntime({ store: new SdkCommunityCollectionStore(context.storage), provider,
     allowed: async repo => !!await community.configs.getByRepo(repo),
     collect: (target, snapshot) => community.collectTracking(target, snapshot),
@@ -80,6 +84,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   return {
     predicateVerifiers: reviewPredicates.predicateVerifiers,
     actions: {
+      [REVIEW_VERDICT_METHOD]: (input: unknown, caller?: PluginActionContext) => reviewVerdicts.record(input, caller),
       ...Object.fromEntries(communityNativeMethods.map(method => [method, (input: unknown, caller?: PluginActionContext) => {
         if (!caller) throw new Error('Host native action context required');
         return http.invokeNative(method, input, caller);
@@ -137,7 +142,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.draft.cancel': (value: unknown) => drafts.cancel(value),
       'github.triage.recommend': recommendTriage,
     },
-    dispose: async () => { reviewPredicates.stop(); await Promise.all([narrator.stop(), http.stop(), collection.stop(), tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
+    dispose: async () => { reviewPredicates.stop(); await Promise.all([reviewVerdicts.stop(), narrator.stop(), http.stop(), collection.stop(), tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
   };
 }
 

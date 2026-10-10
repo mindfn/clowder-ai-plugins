@@ -1,3 +1,4 @@
+import { REVIEW_VERDICT_METHOD, reviewVerdictInput } from './community-review-verdict.js';
 import { communityNativeMethods, communityNativeInput, type CommunityNativeMethod } from './community-native-actions.js';
 import { GITHUB_PR_WAIT_PREDICATE_LIMIT } from './business/model/index.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -6,6 +7,7 @@ import { registerPrTrackingInputSchema, registerIssueTrackingInputSchema, unregi
 
 /** The installed plugin owns these handlers. No callback URL or Host GitHub route. */
 export interface TrackingMcpHandlers {
+  reviewVerdict?(input: unknown, call: ModuleActionCallOptions): Promise<unknown>;
   community?(method: CommunityNativeMethod, input: unknown, call: ModuleActionCallOptions): Promise<unknown>;
   registerPr(input: unknown, call: ModuleActionCallOptions): Promise<unknown>;
   registerIssue(input: unknown, call: ModuleActionCallOptions): Promise<unknown>;
@@ -23,6 +25,7 @@ export function createRemoteTrackingMcpServer(client: {
   invoke(method: string, input: unknown, call: ModuleActionCallOptions): Promise<unknown>;
 }): McpServer {
   return createTrackingMcpServer({
+    reviewVerdict: (input, call) => client.invoke(REVIEW_VERDICT_METHOD, input, call),
     community: (method, input, call) => client.invoke(method, input, call),
     registerPr: (input, call) => client.invoke(TRACKING_ACTION_METHODS.registerPr, input, call),
     registerIssue: (input, call) => client.invoke(TRACKING_ACTION_METHODS.registerIssue, input, call),
@@ -60,6 +63,13 @@ export function createTrackingMcpServer(handlers: TrackingMcpHandlers): McpServe
       '(review feedback, CI/CD, conflict detection, issue comments) for this subject. ' +
       'Format: "pr:{owner/repo}#{num}" or "issue:{owner/repo}#{num}".',
     unregisterTrackingInputSchema, respond((input, call) => handlers.unregister(input, call)));
+  if (handlers.reviewVerdict) server.tool('github_record_external_review_verdict',
+    'Submit a verdict for the assigned exact PR HEAD under the current native invocation and action lease. ' +
+    'Use the exact lease generation and review/comment URL, or an explicit pending_delivery reason. ' +
+    'Persists the submission before Host completion verification. pending_verification is NOT review completion; ' +
+    'retry the same submission from a fresh authenticated invocation after the missing evidence is available. ' +
+    'No caller identity, timestamp or verifier selection is accepted. Does not publish to GitHub.',
+    reviewVerdictInput.shape, respond((input, call) => handlers.reviewVerdict!(input, call)));
   if (handlers.community) for (const method of communityNativeMethods) {
     server.tool(method.replaceAll('.', '_').replaceAll('-', '_'),
       `Submit Community ${method.slice('github.community.'.length)} through the authenticated native callback. ` +

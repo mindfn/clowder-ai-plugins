@@ -64,6 +64,7 @@ export const PENDING_VERIFICATION_REASONS: ReadonlySet<PendingExternalReviewVerd
   'ci_pending',
   'cloud_review_required',
   'cloud_review_running',
+  'custody_verification_pending',
 ]);
 
 function decideCloudReadiness(
@@ -437,6 +438,16 @@ function applyVerdictRecorded(
   state: ExternalReviewAggregate,
   event: ExternalReviewAggregateEvent,
 ): ExternalReviewApplyResult {
+  // New submissions carry their original authority coordinates through replay.
+  // Historical pre-migration events without these fields retain their format.
+  if ('principal' in event.payload) {
+    const principal = event.payload.principal as { catId?: unknown; threadId?: unknown } | null;
+    const lease = event.payload.actionLeaseRef as { leaseId: string; generation: number } | null;
+    if (!principal || typeof principal.catId !== 'string' || typeof principal.threadId !== 'string' ||
+      externalReviewVerdictAuthorizationFailure(state, { catId: principal.catId, threadId: principal.threadId }, lease)) {
+      return { ok: false, reason: 'invalid_payload' };
+    }
+  }
   const headSha = readHeadSha(event.payload);
   if (!headSha) return { ok: false, reason: 'invalid_payload' };
   const generation = eventHeadGeneration(state, event.payload);
@@ -553,11 +564,14 @@ function applyVerdictSubmitted(
     return { ok: false, reason: 'stale_head' };
   }
   if (state.mode !== 'maintainer_review') return { ok: false, reason: 'observe_only' };
+  const authorization = externalReviewVerdictAuthorizationFailure(state, pending.principal, pending.actionLeaseRef);
+  if (authorization) return { ok: false, reason: 'invalid_payload' };
   const readiness = decideExternalReviewReadiness(state);
-  if (
+  const custodySubmission = pending.verificationReason === 'custody_verification_pending' &&
+    pending.delivery.kind === 'delivered' && !!pending.actionLeaseRef && isReadyForVerdict(state);
+  if (!custodySubmission && (pending.verificationReason === 'custody_verification_pending' ||
     readiness.kind !== 'wait' ||
-    !PENDING_VERIFICATION_REASONS.has(readiness.reason as PendingExternalReviewVerdict['verificationReason'])
-  ) {
+    !PENDING_VERIFICATION_REASONS.has(readiness.reason as PendingExternalReviewVerdict['verificationReason']))) {
     return { ok: false, reason: 'head_not_ready' };
   }
   if (state.pendingVerdict) {

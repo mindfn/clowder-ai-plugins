@@ -603,7 +603,8 @@ test('real builtin projects provider HEAD and CI without accepting or writing a 
   const events = await new SdkCommunityEventLog(f.runtimeHost.storage).read('pr:example/project#12');
   assert.equal(events.filter(event => event.kind === 'case.ci_observed').length, 2);
   assert.equal(events.some(event => event.kind === 'case.review_verdict_recorded' || event.kind === 'case.review_verdict_submitted'), false);
-  assert.equal(Object.keys(active.actions).some(method => /verdict|lease|admission/.test(method)), false);
+  assert.deepEqual(Object.keys(active.actions).filter(method => /verdict|lease|admission/.test(method)), ['github.review.record-verdict']);
+  await assert.rejects(async () => active.actions['github.review.record-verdict']!({}), /native action context/);
   assert.equal(f.deliveries.length, 1, 'ordinary CI notification uses existing SDK messaging exactly once');
   snapshot = { ...snapshot, ci: 'pending' };
   await active.actions['github.pr-tracking']!({});
@@ -1208,4 +1209,45 @@ test('hostile issue title stays data through owner dispatch, durable intent and 
     assert.equal(f.deliveries.length, 1);
     assert.equal((f.deliveries[0] as any).payload.elements[0].payload.text, text);
   } finally { await active.stop(); }
+});
+
+test('production native verdict uses SDK custody and private completion verifier without inventing publisher authority', async () => {
+  const f = host(), head = 'a'.repeat(40), subjectKey = 'pr:example/project#12'; const calls: unknown[] = [];
+  const source = new SdkCommunityEventLog(f.runtimeHost.storage);
+  for (const [i, [kind,payload]] of ([
+    ['case.external_review_assigned', { mode:'maintainer_review',cloudPolicy:'optional',reviewerCatId:caller.catId,reviewerThreadId:caller.threadId,actionLeaseRef:{leaseId:'lease',generation:1} }],
+    ['case.head_observed',{headSha:head}], ['case.ci_observed',{headSha:head,status:'pass'}], ['case.review_ready',{headSha:head}],
+  ] as const).entries()) await source.append({sourceEventId:'verdict-seed-'+i,subjectKey,kind,payload,classification:'informational',at:i+1});
+  const { CommunityProjector, CommunityProjectionOperations } = await import('./business/domains/community/community-projector.js');
+  await new CommunityProjector(source,new SdkCommunityObjectStore(f.runtimeHost.storage),new CommunityProjectionOperations()).rebuild(subjectKey);
+  const url='https://github.com/example/project/pull/12#pullrequestreview-80';
+  const module=createGitHubPluginModule({createReviewEvidenceProvider:()=>({
+    observeReviewHead:async()=>({repo:'example/project',prNumber:12,headSha:head,state:'open'}),
+    observeReviewDelivery:async()=>({head:{repo:'example/project',prNumber:12,headSha:head,state:'open'},delivery:{kind:'review',id:80,url,authorLogin:'publisher',body:'Review',publishedAt:'2026-10-10T00:00:00Z',commitSha:head,state:'APPROVED'}}),
+  })});
+  let active: Awaited<ReturnType<ReturnType<typeof module.create>['start']>>;
+  Object.assign(f.runtimeHost,{custody:{canonicalize:async()=>({digest:'b'.repeat(64)}),
+    preflight:async()=>({ok:true,reason:'active'}),complete:async(value:any)=>{
+      calls.push(value);
+      const result=await active.predicateVerifiers!['github.review.verify-completion']!({actionFamily:'review',subjectRef:subjectKey,
+        predicate:{kind:'review_delivered',subjectRef:subjectKey,headSha:head,identityKey:'identity',freshnessKey:'head:'+head,digest:'b'.repeat(64)},...value},
+        {phase:'completion',tenantScope:caller.userId,installationProjectRoot:'/isolated',
+          binding:{pluginInstanceId:'instance',packageDigest:'bytes',featureId:'github-collaboration',contributionId:'review-predicate',freshnessMethod:'github.review.verify-freshness',completionMethod:'github.review.verify-completion',grantRevision:1,lifecycleRevision:1,tenantScope:caller.userId,installationProjectRoot:'/isolated'},
+          principal:{catId:caller.catId,threadId:caller.threadId,userId:caller.userId,invocationId:caller.invocationId},
+          assignment:{holderCatIds:[caller.catId],holderThreadId:caller.threadId},signal:new AbortController().signal,assertCurrent:async()=>{}});
+      assert.deepEqual(result,{status:'insufficient',reason:'publisher_association_unavailable'});
+      return {outcome:'insufficient',reason:result.reason};
+    }}});
+  active=await module.create(manifest).start(f.runtimeHost);
+  try {
+    await active.actions['github.repository.register']!({repo:'example/project',guardThreadId:caller.threadId,guardCatId:caller.catId,reviewMode:'maintainer_review',cloudReviewPolicy:'optional'});
+    const action=active.actions['github.review.record-verdict']!;
+    const input={repoFullName:'example/project',prNumber:12,reviewedHeadSha:head,verdict:'approved',summary:'Reviewed',delivery:{kind:'delivered',githubUrl:url},actionLeaseRef:{leaseId:'lease',generation:1}};
+    await assert.rejects(async()=>action(input),/native action/);
+    const result=await action(input,caller) as any;
+    assert.equal(result.data.lifecycle,'pending_verification'); assert.equal(calls.length,1);
+    assert.deepEqual(calls[0],{leaseId:'lease',generation:1,evidenceRefs:['github:'+url]});
+    assert.ok(manifest.features[0].capabilities.includes('custody.invoke'));
+    assert.equal((await source.read(subjectKey)).some(e=>e.kind==='case.review_verdict_recorded'),false);
+  } finally {await active.stop();}
 });
