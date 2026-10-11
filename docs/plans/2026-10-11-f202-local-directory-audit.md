@@ -24,12 +24,66 @@ Observed package source is clean `87ba2b849adcf091b53caa93f1abc25170096038`; thi
 an audit/metadata/guard/README correction, not a new runtime generation. Independent package verdict042 still
 applies only to87ba2b8. Contract beta.36, SDK beta.20 and Collective alpha.2 archive bytes from045 remain unchanged.
 Frozen W3 is5dd199e, connectors2878c98; no W3 source, archive or dependency pin was modified.
-Host observed HEAD2bb09b1c4bda871867ffbcd1c0972c5458fd0a6a has active package/shared/lock/vendor WIP. It is not
+The original pre-build audit observed Host HEAD2bb09b1c4bda871867ffbcd1c0972c5458fd0a6a has active package/shared/lock/vendor WIP. It is not
 clean or a successful independent-build checkpoint. Host owner100 reports build stopped at Manager browser-service
 capability projection. Source `PluginManagerContent.tsx` has Git and archive buttons; local-directory exists in
 `plugin-manager-routes.ts:101` but no directory-select UI is present at this snapshot.
 
-## Package directory, Host cleanup and actual directory journey
+## Build continuation after review118
+
+The six-file audit at `dde3848c7da6790ba797dca3f90a2499e708992b` was independently
+approved by reviewer118. The table below remains its pre-build observation, not the
+latest physical readiness. Current post-build observations are in
+[f202-c1-build-readiness.json](../../migration/f202-c1-build-readiness.json).
+
+In the same writer checkout, frozen-lockfile/offline/ignore-scripts installation and
+14 package builds succeeded: seven connectors, enterprise-workflow, Personal Chrome,
+video-analysis, video-generation, wechat-visible-reader, weixin-mp and Xiangqi. GenOffice
+alpha.2 separately completed fresh locked-source renderer/semantic-worker build,
+typecheck, package tests14/14, semantic-artifact tests6/6, prepack and actual pack71 members.
+No package source, manifest, dependency pin, lockfile or W3 bytes changed in these builds.
+
+17 of18 canonical YAML packages now have all declared executable entries and direct
+dependencies physically present here. **Only6 also match their exact direct pins.**
+The seven connectors still declare SDK beta.15; enterprise-workflow, Chrome, reader and
+MP declare beta.12. Their frozen workspace lock resolves `link:../plugin-sdk`, now beta.20.
+All11 builds therefore compile against that workspace SDK; they are not old-pin consumer
+proof. Preserve the original beta.15 connector checkout for its accepted graph. GitHub
+here remains cold and declares35/19 while workspace support source is36/20; use the frozen
+5dd199e W3 checkout and its exact artifact for current W3 evidence. Final coordinated
+consumer-pin synchronization and actual installed closure remain aggregate work. Do not
+silently substitute registry copies or mutate the frozen W3 checkout to manufacture parity.
+
+GenOffice canonical archive SHA256 is
+`0e158faca54097f08388c9b32ba6105d766f3c4d300eab5caac85bdcdf8ba914` (19,200,079
+expanded package bytes,71 members). Its empty isolated consumer passed actual root import,
+manifest and surface/worker SRI, inspect, tracked-change, deterministic replay, reread,
+comment and hostile rejection. That consumer contains846 regular files /21,445,116 bytes,
+with seven exact dependency versions and registry SRI matching the writer lock. Important
+limit: the canonical archive embeds no dependency lock. R1 mirror URL failed the strict
+source check; R2 unpinned npm resolution selected fast-uri3.1.8 instead of locked3.1.3 and
+failed. R3 explicitly pins the isolated consumer from the writer's beta.15 snapshot. This
+proves the tested physical consumer, not that arbitrary installs preserve that closure.
+The archive is not a raw-directory/UI/Host acceptance substitute. Evidence scripts,
+logs, failed attempts and the successful consumer lock are bound in the machine report.
+
+Host owner125 reports directory UI90/90, zero skips and web typecheck; beta36 Manager
+kind separately has build plus141/141. These are stage facts from its owner, not an
+independent rerun here or actual directory-install journey. Host remains2bb09b1c plus WIP.
+The exact Host [diagnosis](</Users/lang/workspace/github-lab/f202-handoff/host-directory-preparation-2026-10-11/diagnosis.md>)
+was read: accepted W3 closure already has4574 regular files, above4096; Feishu's literal
+runtime distribution census exceeds32MiB before positive globs. Selecting distribution
+members and removing development dependencies alone is not proof that original budgets
+fit. A bounded, reviewed resource policy and exact Node closure remain Host implementation
+work; no quota exemption, filename-based deletion or registry replacement is approved here.
+
+Meeting still lacks canonical YAML and the owned-records/MCP/send redesign. Chrome's
+current generic setup/OS authority journey, GenOffice's post-cleanup real Host worker path,
+public specialization cleanup and all actual directory journeys remain open. Video-generation
+builds existing source only; separate safety Task2134 is not absorbed. This continuation
+closes build absence for the named outputs; it does not close C1, release or operator acceptance.
+
+## Reviewed pre-build directory snapshot
 
 R = `/Users/lang/workspace/github-lab/clowder-ai-plugins-collective-sol/packages/`.
 P = `/Users/lang/workspace/github-lab/clowder-ai-plugins-connector-parity-sol/packages/` at2878c98.
@@ -87,8 +141,9 @@ Exact Host seam returned to its owner: `copyLocalDirectory` / `copyPackageMember
 (local-package-admission.ts:171–226), before installation grants/digest publication. The operator-selected repository
 package path needs a generic, bounded source-preparation/materialization step consuming declared built distribution
 members plus locked runtime closure, or an existing equivalent surface proved against the real caller. Keep source
-label/digest, repeated preview/confirmation fences, hostile member/symlink validation and limits; do not run arbitrary
-package build scripts in Host, relax quotas, special-case a package id, or turn this into operator tarball labor.
+label/digest, repeated preview/confirmation fences, hostile member/symlink validation and an explicit bounded
+resource policy; do not run arbitrary package build scripts in Host, silently relax quotas, special-case a
+package id, or turn this into operator tarball labor. Current policy differences are recorded above.
 Package build/dependency/asset work remains with the original package writer; generic directory UI/admission remains
 with Astra's original Host chain. This is an exact seam for pairing, not an invented implementation signature.
 

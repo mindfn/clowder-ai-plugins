@@ -740,6 +740,16 @@
     "operatorSource": "thread_mu8dg6h7l2x4ohsk#0001791692969613-000094-97be6e64",
     "operatorC1Reminder": "thread_mu8dg6h7l2x4ohsk#0001791692987237-000096-6f26606d",
     "audit": "migration/f202-c1-local-directory-audit.json",
+    "buildReadinessReport": "migration/f202-c1-build-readiness.json",
+    "currentBuildReadiness": {
+      "canonicalYaml": 18,
+      "entrypointsAndDirectDependenciesPresent": 17,
+      "exactDirectPinPresent": 6,
+      "sdkWorkspacePinMismatches": 11,
+      "freshBuilds": 15,
+      "actualRepositoryDirectoryUiAccepted": false,
+      "c1Complete": false
+    },
     "observedPackageSourceHead": "87ba2b849adcf091b53caa93f1abc25170096038",
     "packageCount": 23,
     "canonicalYamlCount": 18,
