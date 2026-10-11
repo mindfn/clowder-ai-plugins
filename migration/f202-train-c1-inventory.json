@@ -47,14 +47,16 @@
       "releaseAdmission": false,
       "fullInstalledAcceptance": false,
       "workSubject": "task:0001789822127811-001843-1c2133b0",
-      "acceptedSource": "thread_mrkn6povq4zzgh45#0001791628175747-000344-6c7e88b4",
+      "acceptedSource": "thread_mrkn6povq4zzgh45#0001791648108201-000024-fa27c93e",
       "businessSourceCommit": "ca5b831b48c165ea10c7389fe3eb4ba03d3e01e7",
       "contractClosure": "plugin.yaml contractVersion 0.1.0; local contract 0.1.0-beta.36 adds generic browser-service wire and SDK owner-operation pairing; no domain public exports",
       "sdkClosure": "exact local SDK 0.2.0-beta.20 with contract 0.1.0-beta.36; both workspace links retained; W3 version synchronization remains a later coordinated step",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
-      "runtimeClosure": "builtin dist/plugin-entrypoint.js; Host binding before start; zero package listeners; local durable attempt/recovery and owner-row fixtures verified; actual Host transport/Manager pairing remains open",
+      "runtimeClosure": "reviewed alpha.2 at87ba2b8 with before-start Host binding, zero package listener and durable recovery; actual Host2bb09b1c WIP surface and Manager/browser/31 controls remain unaccepted",
       "catalogClosure": "not cataloged or released; private implementation checkpoint; original1843 still owns final catalog/release closure",
-      "freshConsumerClosure": "physical empty-consumer local-directory install/import and lifecycle with fixture Host binding; frozen Host93fee434 predates the new transport, so actual Host/Settings/C2/21 journeys remain open"
+      "freshConsumerClosure": "physical empty-consumer local-directory install/import and lifecycle with fixture Host binding; frozen Host93fee434 predates the new transport, so actual Host/Settings/C2/21 journeys remain open",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim",
+      "packageReview": "local-review:0001791651700126-000042-bc2c352f:approved"
     },
     {
       "directory": "companion",
@@ -66,7 +68,8 @@
       "yamlClosure": "packages/companion/plugin.yaml is canonical; manifest.json must remain mechanically identical",
       "runtimeClosure": "builtin desktop-window surface is packed and integrity-bound",
       "catalogClosure": "listed as official.companion",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey"
+      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "connector-dingtalk",
@@ -74,11 +77,12 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "@clowder-ai/plugin-sdk 0.1.0-beta.12 carrier-neutral module",
+      "sdkClosure": "package.json declares 0.2.0-beta.15; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin dist/plugin-entrypoint.js implemented; package lifecycle and provider mapping tests pass",
       "catalogClosure": "listed as official.connector.dingtalk with exact-toolchain pack coordinates",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey"
+      "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "connector-feishu",
@@ -86,11 +90,12 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "@clowder-ai/plugin-sdk 0.1.0-beta.12 module with guarded default export",
+      "sdkClosure": "package.json declares 0.2.0-beta.15; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin dist/plugin-entrypoint.js implemented; package lifecycle and provider mapping tests pass",
       "catalogClosure": "listed as official.connector.feishu with exact-toolchain pack coordinates",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey"
+      "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "connector-telegram",
@@ -98,11 +103,12 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "@clowder-ai/plugin-sdk 0.1.0-beta.12 carrier-neutral module",
+      "sdkClosure": "package.json declares 0.2.0-beta.15; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin dist/plugin-entrypoint.js implemented; package lifecycle and provider mapping tests pass",
       "catalogClosure": "listed as official.connector.telegram with exact-toolchain pack coordinates",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey"
+      "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "connector-wecom-agent",
@@ -110,11 +116,12 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "@clowder-ai/plugin-sdk 0.1.0-beta.12 module with guarded default export",
+      "sdkClosure": "package.json declares 0.2.0-beta.15; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin dist/plugin-entrypoint.js implemented; package lifecycle and provider mapping tests pass",
       "catalogClosure": "listed as official.connector.wecom-agent with exact-toolchain pack coordinates",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey"
+      "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "connector-wecom-bot",
@@ -122,11 +129,12 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "@clowder-ai/plugin-sdk 0.1.0-beta.12 module with guarded default export",
+      "sdkClosure": "package.json declares 0.2.0-beta.15; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin dist/plugin-entrypoint.js implemented; package lifecycle and provider mapping tests pass",
       "catalogClosure": "listed as official.connector.wecom-bot with exact-toolchain pack coordinates",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey"
+      "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "connector-weixin",
@@ -134,11 +142,12 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "@clowder-ai/plugin-sdk 0.1.0-beta.12 module with guarded default export",
+      "sdkClosure": "package.json declares 0.2.0-beta.15; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin dist/plugin-entrypoint.js implemented with Host-owned provider-session state; package lifecycle and provider mapping tests pass",
       "catalogClosure": "listed as official.connector.weixin with exact-toolchain pack coordinates",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey"
+      "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "connector-xiaoyi",
@@ -146,11 +155,12 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "@clowder-ai/plugin-sdk 0.1.0-beta.12 module with guarded default export",
+      "sdkClosure": "package.json declares 0.2.0-beta.15; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin dist/plugin-entrypoint.js implemented; package lifecycle and provider mapping tests pass",
       "catalogClosure": "listed as official.connector.xiaoyi with exact-toolchain pack coordinates",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey"
+      "freshConsumerClosure": "covered by repository fresh-consumer install/default-export journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "enterprise-workflow",
@@ -158,11 +168,12 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "direct @clowder-ai/plugin-sdk 0.2.0-beta.2 dependency exposes the Host-loadable module entrypoint",
+      "sdkClosure": "package.json declares 0.2.0-beta.12; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin module entrypoint exposes two Host-governed direct tools backed by locally configured CLI paths",
       "catalogClosure": "listed as official.enterprise-workflow",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey"
+      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "genoffice-docx",
@@ -174,7 +185,8 @@
       "yamlClosure": "plugin.yaml is canonical; manifest.json is a generated package export",
       "runtimeClosure": "builtin renderer/materializer members are packed and integrity-bound",
       "catalogClosure": "listed as dev.clowder.genoffice-docx",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/materialization journey"
+      "freshConsumerClosure": "alpha.1 historical extracted-directory/worker journey does not cover current alpha.2; current checkout lacks renderer/semantic worker/dist and direct contract dependency; rebuild exact source-lock outputs and repeat generic materializer/current directory journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "github-operations",
@@ -182,11 +194,12 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "beta.12 existing activation/stop/storage/thread/message interfaces; W3 implementation in progress",
+      "sdkClosure": "package.json declares 0.2.0-beta.19; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
-      "runtimeClosure": "builtin seven-schedule, tracking, repository, observations and signed-webhook carrier tests pass; whole-package typecheck/build green, complete business parity pending; no stdio action claim",
+      "runtimeClosure": "reviewed builtin alpha.16 at frozen5dd199e; installed r6 and source360/browser369 are scoped receipts; current raw repository directory and Host successor integration remain unaccepted",
       "catalogClosure": "required; pending deterministic catalog generation",
-      "freshConsumerClosure": "required; pending aggregate install/import plus separate Host npm/local-directory/fixed-Git install-enable-run evidence"
+      "freshConsumerClosure": "W3 r6 actual archive admission and r8 real UI upload are historical scoped passes, not selection of the raw plugin repository directory; current audit records missing aggregate-WT builds and raw-directory size refusal",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "video-analysis",
@@ -198,7 +211,8 @@
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin MCP package is published and accepted",
       "catalogClosure": "listed as dev.clowder.video-analysis",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey"
+      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "video-generation",
@@ -210,7 +224,8 @@
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin MCP runtime and protocol members are packed",
       "catalogClosure": "listed as dev.clowder.video-generation",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey"
+      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "wechat-visible-reader",
@@ -218,11 +233,12 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "direct @clowder-ai/plugin-sdk 0.2.0-beta.2 dependency exposes the Host-loadable module entrypoint",
+      "sdkClosure": "package.json declares 0.2.0-beta.12; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin limb/native members and module entrypoint are packed; S9 limb envelope and arm operation are package-owned",
       "catalogClosure": "listed as official.wechat-visible-reader",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey"
+      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "weixin-mp",
@@ -230,11 +246,12 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "direct @clowder-ai/plugin-sdk 0.2.0-beta.2 dependency exposes the Host-loadable module entrypoint",
+      "sdkClosure": "package.json declares 0.2.0-beta.12; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin module entrypoint exposes six limb handlers through the frozen { params, invocation? } action envelope plus a Manager test action",
       "catalogClosure": "listed as official.weixin-mp",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey"
+      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "xiangqi",
@@ -246,49 +263,63 @@
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "packed tarball carries the hosted board/game runtime, web assets, and MCP entrypoint, verified by the staged npm ci and import journey",
       "catalogClosure": "not yet listed in catalog/catalog.json (landed upstream via PR #65)",
-      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey"
+      "freshConsumerClosure": "covered by repository fresh-consumer install/import journey",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "feishu-meeting-intake",
       "packageName": "@clowder-ai/feishu-meeting-intake",
       "classification": "retained-external-baseline-specialized-host-wiring",
       "managerInstallable": false,
-      "boundary": "published standalone intake package with legacy manifest.json; retained Host intake wiring, not a Manager plugin.yaml source"
+      "boundary": "alpha.10 legacy manifest.json and events.publish/broker stdio baseline; no canonical plugin.yaml, no C1-owned-records/MCP/send redesign yet; retained classification is not a C1 completion exemption",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "personal-chrome-companion",
       "packageName": "@clowder-ai/personal-chrome-companion",
-      "classification": "retained-external-baseline-specialized-host-wiring",
-      "managerInstallable": false,
-      "boundary": "review-only Chrome/native-messaging payload; Host retains installer, pairing, Settings, and receipt authority"
+      "classification": "manager-installable-official-public",
+      "managerInstallable": true,
+      "boundary": "Browser payload/setup business is package-owned; existing rejected Chrome-specific Host service/card cannot certify the generic replacement",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim",
+      "fullInstalledAcceptance": false,
+      "contractClosure": "canonical plugin.yaml contractVersion0.1.0; source alpha.3 is a Manager candidate, not a legacy manifest-only baseline",
+      "sdkClosure": "exact SDK0.2.0-beta.12 dependency; no implicit beta.20 upgrade",
+      "yamlClosure": "plugin.yaml is sole manifest truth",
+      "runtimeClosure": "builtin dist/plugin-entrypoint.js declared; raw aggregate checkout lacks built entry and SDK dependency; package archive tests do not prove generic maintenance/OS authority or real Chrome connection",
+      "catalogClosure": "official.companion.personal-chrome is present in repository catalog; not a registry/publication/connected acceptance claim",
+      "freshConsumerClosure": "historical exact Batch9 archive closure/setup evidence; current repository-directory UI and generic Host setup/pairing remain open"
     },
     {
       "directory": "stackchan",
       "packageName": "@clowder-ai/stackchan",
       "classification": "retained-external-baseline-specialized-host-wiring",
       "managerInstallable": false,
-      "boundary": "physical-limb package deferred to C2 front-end contribution surfaces; no canonical plugin.yaml in C1"
+      "boundary": "physical-limb package deferred to C2 front-end contribution surfaces; no canonical plugin.yaml in C1",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "plugin-contract",
       "packageName": "@clowder-ai/plugin-contract",
       "classification": "non-installable-library-or-fixture",
       "managerInstallable": false,
-      "boundary": "public protocol/schema library, not a plugin artifact"
+      "boundary": "public protocol/schema library, not a plugin artifact",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "plugin-sdk",
       "packageName": "@clowder-ai/plugin-sdk",
       "classification": "non-installable-library-or-fixture",
       "managerInstallable": false,
-      "boundary": "public author/runtime SDK, not a plugin artifact"
+      "boundary": "public author/runtime SDK, not a plugin artifact",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
     {
       "directory": "loopback-fixture-plugin",
       "packageName": "@clowder-ai/loopback-fixture-plugin",
       "classification": "non-installable-library-or-fixture",
       "managerInstallable": false,
-      "boundary": "private loopback SDK fixture; manifest.json is test input only"
+      "boundary": "private loopback SDK fixture; manifest.json is test input only",
+      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     }
   ],
   "legacyArtifacts": [
@@ -564,13 +595,18 @@
       "targetPackage": "@clowder-ai/github-operations",
       "catalogPluginId": "official.github-operations",
       "runtimeRequirements": ["builtin activation/stop/disposer", "schedule contributions", "SDK storage", "SDK thread bindings", "messaging.send with optional wake", "generic tool/skill/webhook registration"],
-      "implementationStatus": "port-declared, implementation-pending-in-plugins",
+      "implementationStatus": "reviewed-alpha16-package-delivered-current-directory-host-pairing-open",
       "implementationProgress": {
-        "stage": "W3 SDK builtin business implementation in progress; frozen pending checkpoint remains until catalog and full parity close",
-        "packageVerification": "provider read model and native draft owner operation integrated; 245/245, source/test typechecks and clean build; isolated partial-success/restart/concurrency/stop and gh transport tests; prior exact6dba6b3 checkpoint passed29/29; later source changes require their own gate",
-        "remaining": ["complete Community source parity and legacy state disposition/copy verification", "fresh-consumer and catalog/artifact closure", "full gate and independent review", "Host npm/local-directory/fixed-Git install-enable-run"]
+        "stage": "frozen W3 source5dd199e / exact self archive5b95650c delivered; package-side writer remains frozen",
+        "packageVerification": "original alpha.16 review171, installed r6, neutral source360 and real UI upload/browser369 retain scoped facts; not current raw-directory acceptance",
+        "remaining": [
+          "current source-directory build/dependency preparation and exact Host successor install",
+          "generic directory UI selecting repository package path, configure/enable/use/disable/restart",
+          "full C1 no-double-run/current Host proof; operator acceptance and soak remain open"
+        ]
       },
-      "rollback": "Disable package schedules before restoring Core factories against unchanged Host schedule state."
+      "rollback": "Disable package schedules before restoring Core factories against unchanged Host schedule state.",
+      "catalogAdmission": "pending-final-catalog-generation"
     },
     {
       "id": "video-gen",
@@ -699,5 +735,17 @@
       "sourceRoots": ["scripts/services/llm-postprocess-*"],
       "reason": "Managed model service lifecycle belongs to Train C2."
     }
-  ]
+  ],
+  "localDirectoryAcceptance": {
+    "operatorSource": "thread_mu8dg6h7l2x4ohsk#0001791692969613-000094-97be6e64",
+    "operatorC1Reminder": "thread_mu8dg6h7l2x4ohsk#0001791692987237-000096-6f26606d",
+    "audit": "migration/f202-c1-local-directory-audit.json",
+    "observedPackageSourceHead": "87ba2b849adcf091b53caa93f1abc25170096038",
+    "packageCount": 23,
+    "canonicalYamlCount": 18,
+    "directoryUiJourneyAccepted": false,
+    "rawBuiltDirectoryRefusalCount": 9,
+    "status": "not ready for operator acceptance; source/build/dependency/Host cleanup/install journey remain separate facts",
+    "distributionBoundary": "local directory acceptance proceeds before npm/public release; old archives and old-version green do not substitute"
+  }
 }

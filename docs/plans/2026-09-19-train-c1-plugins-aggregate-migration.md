@@ -145,6 +145,19 @@ the ordinary-text negative path.
 7. Run the aggregate quality gate and obtain independent cross-individual review on the exact HEAD. Leave
    the PR unmerged and unpublished until maintainer authority acts.
 
+## Current local-directory reconciliation — 2026-10-11 UTC
+
+Operator Host094/096 and original aggregate coordination100 require direct selection of plugin repository
+directories in a worktree. The current23-package, build/dependency/Host-deletion/directory-journey ledger is
+[the local-directory audit](./2026-10-11-f202-local-directory-audit.md), with
+[machine observations](../../migration/f202-c1-local-directory-audit.json).
+It supersedes old W3/W4 implementation/browser status cells below for current progress. Reviewed Collective87ba2b8
+and frozen W35dd199e are delivered package checkpoints, not current raw-directory or C1 acceptance. The actual
+Host admission refuses9 built raw source directories before grant/inventory because it copies development dependency
+trees beyond32MiB. Host directory UI/build and package build/closure/redesign gaps remain separate original-owner work.
+Local acceptance precedes publication; old archive or old-version green is not its substitute. No W3 pin or runtime
+changed in this audit.
+
 ## Implementation checkpoint
 
 > **Current as of 2026-09-26. If you are picking this up without having followed the thread, read this

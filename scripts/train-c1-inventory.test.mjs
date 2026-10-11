@@ -209,26 +209,26 @@ test('every migration entry carries preservation and rollback truth', () => {
   }
 });
 
-test('GitHub Operations remains an explicit package implementation checkpoint', () => {
+test('GitHub Operations keeps reviewed implementation separate from catalog and directory acceptance', () => {
   const github = inventory.entries.find(entry => entry.id === 'github');
   assert.ok(github, 'GitHub Operations must remain in the frozen inventory');
   assert.equal(
     github.implementationStatus,
-    'port-declared, implementation-pending-in-plugins',
+    'reviewed-alpha16-package-delivered-current-directory-host-pairing-open',
   );
+  assert.equal(github.catalogAdmission, 'pending-final-catalog-generation');
+  assert.equal(inventory.localDirectoryAcceptance.directoryUiJourneyAccepted, false);
 });
 
 test('every migration target is a package-owned, cataloged artifact', async () => {
   const catalogIds = new Set(catalog.plugins.map(entry => entry.pluginId));
 
   const migrationEntries = inventory.entries.filter(candidate => candidate.disposition === 'migrate');
-  // The frozen C1 plan pins GitHub Operations as the single implementation-pending
-  // checkpoint: its catalog entry lands together with its schedule/event
-  // implementation. Every other migration target must already be cataloged, and
-  // the moment github's implementationStatus flips this gate requires its
-  // catalog row — the exemption is pinned to exactly one entry, not open-ended.
+  // The reviewed W3 implementation has landed locally, while its final catalog
+  // row remains pending. Keep that separate disposition pinned to exactly one
+  // entry; source review must not silently exempt other migration artifacts.
   const pendingCheckpointIds = migrationEntries
-    .filter(candidate => candidate.implementationStatus === 'port-declared, implementation-pending-in-plugins')
+    .filter(candidate => candidate.catalogAdmission === 'pending-final-catalog-generation')
     .map(candidate => candidate.id);
   assert.deepEqual(pendingCheckpointIds, ['github']);
 

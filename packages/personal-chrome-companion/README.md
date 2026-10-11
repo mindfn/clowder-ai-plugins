@@ -15,6 +15,17 @@ and grants it to the feature through the `data.directory` capability.
 
 ## Module plugin surface
 
+Installation requests two declared capabilities:
+
+- `data.directory` supplies only this installation's private project data directory.
+- `cloud.conversation.host` exposes the declared conversation-host contribution;
+  it does not authorize a conversation or grant OS browser registration.
+
+For the C1 local-directory checkpoint, the generic Host setup and directory-selection
+journey remain unverified. Prior archive/setup-runner checks do not establish those
+Host flows. The setup sequence below describes the intended paired integration;
+the retired Chrome-specific Host service/card is not its acceptance evidence.
+
 The `personal-chrome-host` feature owns one `cloud-conversation-host`
 contribution (`provider: chatgpt`). Its three conversation methods use the
 package's native-host socket client and the helper's v2 protocol:
