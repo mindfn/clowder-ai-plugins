@@ -4,12 +4,15 @@ topics: [plugins, meeting-intake, migration, lifecycle, authority]
 doc_kind: implementation-plan
 created: 2026-10-11
 architecture-cell: plugin
+tips_exempt: Internal unactivated source foundation; no new user-invocable capability is delivered by this checkpoint.
 ---
 
 # Meeting intake: owned records, SDK notification and installed MCP
 
-Status: source-grounded candidate for the next original Task1843 work unit. No new
-runtime, SDK export, setup lane, package release or installed acceptance is claimed.
+Status: original Task1843 implementation in progress. Host150 paired the existing
+control-only activation; a private owned-record/notification foundation is implemented
+for source review. No activated redesign, SDK export, setup lane, package release or
+installed acceptance is claimed.
 The author remains the sole package writer. Host implementation remains its existing owner.
 
 ## Accepted goal and applicable source
@@ -90,7 +93,7 @@ clear pending state on failure. Destination changes cannot silently retarget an
 uncertain send. Revoke/disable fences ongoing reads and effects, and never erases
 records or authorization history.
 
-## Pairing seam that must be resolved before activation implementation
+## Control lifecycle paired at Host150
 
 Real current Host `InstalledPluginOperations.resolve` accepts only an installed,
 **enabled + healthy** instance. Its commit fence repeats that condition; module
@@ -105,15 +108,27 @@ writes. The proposed pre-enable journey's expected200 assertion fails. This is a
 of authenticated owner identity, installed resources or real device authorization.
 Evidence and exact source hashes are in the linked receipt below.
 
-Host owner must pair the existing generic control/activation lifecycle. Package
-start must not start polling/login or adopt global credentials merely to make the
-Manager guard green. Nor may the package mark an unauthenticated collector running.
-A control-only activation, if the existing neutral lifecycle supports it, must
-separately and honestly expose auth/config/collection intent/live status and require
-fresh authorization plus explicit source intent before collection. If no such
-existing lifecycle is sound, return the exact neutral setup seam for a jointly
-frozen amendment; do not add a Feishu exception, weaken the current action guard,
-use ambient owner/native context, or launch an untracked setup process.
+Host150 (`thread_mrkn6povq4zzgh45#0001791696318597-000150-bb0e6c23`)
+resolved the candidate incompatibility: normal explicit module enable starts only
+the control plane. `start(host)` returns actions and stop without login, collection
+or provider effects. Healthy means callable control module, not authenticated or
+collecting. Keep disabled409 and the exact owner-operation third context, native
+second context, lifecycle/currentness/grant fences. No pre-enable exception or new
+setup/job API is introduced. Auth, persisted `collectionIntent` (default disabled),
+and actual live collector are separate truths; successful login cannot enable
+collection. Each collection/read/send entry must check current authorization.
+
+The existing owner operation expires after 30 seconds or return. It cannot lend its
+authority to a detached login process. Host160's source adjudication
+(`thread_mrkn6povq4zzgh45#0001791696831186-000160-9de71aaf`) shows that
+CLI1.0.85 cancellation does not bind the in-flight token POST, and credentials/profile
+can be written before success output. Scope cache survives explicit cancellation;
+cache/exit/stdout alone cannot establish not_started. Isolated HOME does not isolate
+the Darwin OS Keychain master-key service. Before real login, prove a private
+credential backend and identity-owned process-tree cleanup with controlled fixtures.
+Restart or interruption remains unknown until a fresh owner reconciles existing
+account/app/scope/attempt evidence; never blindly repeat token exchange. The corrected
+source analysis does not justify a cross-request job or longer owner lifetime.
 
 ## Retained consumers: classify, do not recreate obsolete business
 
@@ -164,9 +179,39 @@ The old callback read/tool must not remain a second successful resource authorit
 Relevant existing commands: `pnpm --filter @clowder-ai/feishu-meeting-intake typecheck`,
 `pnpm --filter @clowder-ai/feishu-meeting-intake test`,
 `pnpm --filter @clowder-ai/feishu-meeting-intake build`,
-`pnpm test:train-c1-inventory`, `git diff --check`. The new behavior probes will be
-implemented under TDD after pairing; none of those package commands is claimed run
-on a redesign here. Full operator acceptance/soak/release/C1 remain open.
+`pnpm test:train-c1-inventory`, `git diff --check`.
+Full operator acceptance/soak/release/C1 remain open.
+
+## Current source checkpoint: private record/notification foundation
+
+`src/record-delivery.ts` retains metadata and canonical source/revision after delivery.
+It uses a Host-provided private instance directory, 16KiB regular private record
+files, fsync plus atomic rename, bounded-page memory and no TTL/delete operation.
+Before entering an injected SDK-compatible sender it durably marks `unknown`; an
+explicit fresh retry reuses the exact stored thread/key/body. A matching receipt is
+committed only after currentness is checked again. The stable key hashes JSON-framed
+opaque instance identity and canonical source handle, preserving Unicode identity.
+Concurrent reopened handles serialize within one process. Source metadata cannot
+retarget the notification or replace Host identity.
+
+This module is internal and has **no activated caller or public root export**.
+Its scope object is an internal fence supplied by the eventual module caller, not
+new authority. Reads require that caller's authorization; each sender call requires
+current target/grants through the SDK/Host. The Host owns the single active writer
+and private directory; no cross-process lock or hostile ancestor-directory custody
+is claimed. Keyset pages are live, not a snapshot; page memory is bounded while
+directory scan cost still grows with retained record count.
+
+Source tests exercise retention, loss of send response, immutable intent, restart,
+same-process overlap, revocation before commit/after acceptance, hostile persisted
+bytes/symlinks, receipt mismatch, bounded pages and opaque identifiers. These are
+injected-sender/isolated filesystem proofs, not authenticated Host sends, full disk
+failure, source cursor+record atomicity, process shutdown, login, MCP or installation.
+The old runtime still publishes broker events; its alpha.10 manifest and exact
+contract9/SDK5 dependencies are unchanged. Integration must connect discovery/cursor,
+source intent/current grants, SDK messaging and native reads before this can replace
+that runtime. This checkpoint is a source-review boundary within work unit2, not
+a partial product delivery or completion of the redesign.
 
 Architecture cell: plugin. Map delta: candidate authority inversion from historical
 F292 Host source/intake custody to package record/read custody; requires exact Host
