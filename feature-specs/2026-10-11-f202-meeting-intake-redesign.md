@@ -86,7 +86,8 @@ not frozen by this proposal.
 Notifications use feature `messaging.send` and one Host-selected/granted destination,
 not a source-selected target. Record and stable notification intent are persisted
 before send; receipt is persisted after send. The 200-character MessageDraft key is
-a fixed-length hash of instance + canonical source identity/revision, not the older
+a fixed-length hash of instance + canonical source identity/revision + normalized
+metadata + target + rendered body, not the older
 signal key (which may exceed that limit). Response loss must reuse the exact target,
 key and payload through Host dedupe; it must not create a second source record or
 clear pending state on failure. Destination changes cannot silently retarget an
@@ -190,9 +191,33 @@ files, fsync plus atomic rename, bounded-page memory and no TTL/delete operation
 Before entering an injected SDK-compatible sender it durably marks `unknown`; an
 explicit fresh retry reuses the exact stored thread/key/body. A matching receipt is
 committed only after currentness is checked again. The stable key hashes JSON-framed
-opaque instance identity and canonical source handle, preserving Unicode identity.
+opaque instance identity, canonical source handle, metadata, target and rendered body,
+preserving Unicode identity.
 Concurrent reopened handles serialize within one process. Source metadata cannot
 retarget the notification or replace Host identity.
+
+Review171 exposed two real test blind spots: mutable persisted intent could certify
+itself, and a provider title could introduce template lines. The v2 storage envelope
+now separates immutable intent from mutable settlement. A private independently
+stored 32-byte integrity key authenticates the complete intent with HMAC-SHA256;
+another domain authenticates state/receipt together with that intent tag. Recovery
+verifies both bindings before interpreting the projection. The key is published
+exclusively as a read-only 0400 file after file fsync, then directory fsync; records
+are not committed before it. Target, body, source metadata, public key and settlement
+cannot be rewritten or transplanted while retaining valid bindings.
+
+The integrity key must be retained with the records. Missing/malformed keys and
+unbound legacy records fail closed as recovery required; they are never silently
+resealed, migrated or deleted. These bindings do not prevent rollback of a previously
+authentic snapshot or compromise of the private directory and key. They do not grant
+authorization, establish provider truth or replace current destination/grant checks.
+The eventual caller must enforce those checks when recovering a send.
+
+Provider titles remain original source metadata in the record. Notification text
+cleans control/Unicode line separators and bidirectional formatting, bounds the title
+to 512 characters and JSON-encodes it on one explicitly untrusted data line. No raw
+provider title can add a SYSTEM, mention or tool-command template line; this framing
+does not claim that a model cannot misinterpret quoted data.
 
 This module is internal and has **no activated caller or public root export**.
 Its scope object is an internal fence supplied by the eventual module caller, not
