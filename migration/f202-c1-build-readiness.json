@@ -3,7 +3,7 @@
   "subject": "F202:C1:aggregate-local-directory-acceptance",
   "workSubject": "task:0001789822127811-001843-1c2133b0",
   "acceptedSource": "thread_mu8dg6h7l2x4ohsk#0001791692969613-000094-97be6e64",
-  "sourceHead": "dde3848c7da6790ba797dca3f90a2499e708992b",
+  "sourceHead": "0428276f82fbe5a292f96f552d5bb27ce09d1fb7",
   "runtimeSourceChangedByBuild": false,
   "dependencyInstallPolicy": "frozen-lockfile offline ignore-scripts; no pin or lockfile mutation",
   "records": [
@@ -731,6 +731,10 @@
         {
           "path": "dist/plugin-entrypoint.js",
           "present": false
+        },
+        {
+          "path": "dist/mcp-entrypoint.js",
+          "present": false
         }
       ],
       "dependencies": [
@@ -762,7 +766,8 @@
       ],
       "missingEntrypoints": [
         "./dist/index.js",
-        "dist/plugin-entrypoint.js"
+        "dist/plugin-entrypoint.js",
+        "dist/mcp-entrypoint.js"
       ],
       "missingDirectDependencies": [
         "@clowder-ai/plugin-contract",
@@ -1649,6 +1654,14 @@
     {
       "path": "/Users/lang/workspace/github-lab/f202-handoff/aggregate-directory-audit-2026-10-11/build-readiness/build-results.json",
       "sha256": "c543dda4aeec95ca9eb3ae024cf1bb2e59f5ac0c3fe928a645ddd3cebd5389db"
+    },
+    {
+      "path": "/Users/lang/workspace/github-lab/f202-handoff/aggregate-directory-audit-2026-10-11/build-readiness/capture.mjs",
+      "sha256": "3fdbb99c7f7a4caabf5b263e41e16fdf9f376d8f4e718aa639a7070d6e56ba67"
+    },
+    {
+      "path": "/Users/lang/workspace/github-lab/f202-handoff/aggregate-directory-audit-2026-10-11/build-readiness/entrypoint-guard-red.log",
+      "sha256": "a7731e6b43d2e7c11a1177e4cee0f175c893de9adb4d4d0f76ec0f09df4a2b68"
     }
   ],
   "rawDirectoryAdmissionRedStillOpen": true,

@@ -308,3 +308,31 @@ test('installable package README discloses every capability declared across all 
     }
   }
 });
+
+test('build readiness includes every manifest entrypoint, including nested runtime contributions', async () => {
+  const report = JSON.parse(await readFile(
+    new URL('../migration/f202-c1-build-readiness.json', import.meta.url), 'utf8',
+  ));
+  // Independent manifest oracle: walk every literal entrypoint declaration;
+  // do not reuse the capture producer's selected contribution fields.
+  function declaredEntrypoints(value) {
+    if (value === null || typeof value !== 'object') return [];
+    return Object.entries(value).flatMap(([key, item]) => (
+      key === 'entrypoint' && typeof item === 'string'
+        ? [item.replace(/^\.\//u, '')]
+        : declaredEntrypoints(item)
+    ));
+  }
+  for (const record of report.records.filter(item => item.canonicalYamlPresent)) {
+    const manifest = parse(await readFile(
+      new URL(`../packages/${record.directory}/plugin.yaml`, import.meta.url), 'utf8',
+    ));
+    const entries = new Map(record.entries.map(entry => [entry.path.replace(/^\.\//u, ''), entry]));
+    const missing = new Set(record.missingEntrypoints.map(path => path.replace(/^\.\//u, '')));
+    for (const path of new Set(declaredEntrypoints(manifest))) {
+      assert.ok(entries.has(path), `${record.directory}: omitted manifest entrypoint ${path}`);
+      assert.equal(missing.has(path), !entries.get(path).present,
+        `${record.directory}: missingEntrypoints disagrees for ${path}`);
+    }
+  }
+});

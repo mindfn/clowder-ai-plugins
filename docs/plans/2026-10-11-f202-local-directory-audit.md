@@ -83,6 +83,16 @@ public specialization cleanup and all actual directory journeys remain open. Vid
 builds existing source only; separate safety Task2134 is not absorbed. This continuation
 closes build absence for the named outputs; it does not close C1, release or operator acceptance.
 
+Reviewer132 found one P2 in the first continuation capture: contribution runtime
+entrypoints were omitted, hiding GitHub's third missing `dist/mcp-entrypoint.js`.
+The producer now collects those declarations and regenerates the report; it is
+SHA-bound in the report alongside the original RED. An independent recursive
+manifest oracle (not imported from the producer) covers all18 YAML packages.
+The guard changed from9 pass/1 fail to10/10 pass; deliberate removal of the GitHub
+MCP entry or GenOffice worker entry also fails. GitHub still has three missing
+entries here, and the aggregate17/6/11/15 counts and all runtime/pin boundaries
+are unchanged. This repairs evidence completeness, not either missing runtime.
+
 ## Reviewed pre-build directory snapshot
 
 R = `/Users/lang/workspace/github-lab/clowder-ai-plugins-collective-sol/packages/`.
