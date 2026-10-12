@@ -71,8 +71,8 @@ test('module exposes two frozen limb handlers and three arm operations without t
     'wechat-visible-reader:status',
   ].sort());
 
-  assert.throws(
-    () => active.actions['wechat-visible-reader:read_visible_conversation']!({ maxBlocks: 1 }),
+  await assert.rejects(
+    async () => active.actions['wechat-visible-reader:read_visible_conversation']!({ maxBlocks: 1 }),
     /must contain params/,
   );
   const visible = active.actions['wechat-visible-reader:read_visible_conversation']!;
