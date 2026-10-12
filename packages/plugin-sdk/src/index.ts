@@ -226,3 +226,5 @@ export * from './frustration.js';
 export * from './browser-services.js';
 
 export * from './participant-roster.js';
+
+export * from './source-facts.js';

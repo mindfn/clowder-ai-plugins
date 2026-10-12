@@ -80,3 +80,5 @@ export * from './owner-threads.js';
 export { validateBrowserServiceRequest, validateBrowserServiceResponse, validateBrowserServiceDispatchResult, canonicalBrowserServiceBody } from './browser-service-wire.js';
 
 export * from './participant-roster.js';
+
+export * from './source-facts.js';

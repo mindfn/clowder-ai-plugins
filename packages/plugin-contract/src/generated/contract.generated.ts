@@ -18,6 +18,33 @@ export type PackageIcon = {
 };
 export type PluginIcon = 'github' | PackageIcon;
 
+export type PluginSourceFact = {
+  readonly id: string;
+  readonly userId: string;
+  readonly threadId: string;
+  readonly catId: string | null;
+  readonly content: string;
+  readonly source: {
+    readonly connector: string;
+    readonly meta?: Readonly<Record<string, unknown>>;
+  };
+  readonly extra: {
+    readonly pluginMessage: {
+      readonly instanceId: string;
+    };
+  };
+};
+export type PluginSourceFactsReadInput = {
+  readonly messageRef: string;
+};
+export type PluginNativeContext = {
+  readonly userId: string;
+  readonly threadId: string;
+  readonly catId: string;
+  readonly invocationId: string;
+  readonly originTriggerMessageId: string;
+  readonly source: PluginSourceFact;
+};
 export type FrustrationSourceId = string;
 export type FrustrationSource = {
   readonly issueId: string;

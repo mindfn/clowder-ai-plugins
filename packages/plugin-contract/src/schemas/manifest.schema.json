@@ -18,6 +18,121 @@
   },
 
   "$defs": {
+    "PluginSourceFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "userId",
+        "threadId",
+        "catId",
+        "content",
+        "source",
+        "extra"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "catId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content": {
+          "type": "string"
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "connector"
+          ],
+          "properties": {
+            "connector": {
+              "type": "string"
+            },
+            "meta": {
+              "type": "object",
+              "additionalProperties": {}
+            }
+          }
+        },
+        "extra": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pluginMessage"
+          ],
+          "properties": {
+            "pluginMessage": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "instanceId"
+              ],
+              "properties": {
+                "instanceId": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "PluginSourceFactsReadInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messageRef"
+      ],
+      "properties": {
+        "messageRef": {
+          "type": "string",
+          "pattern": "^message:\\S{1,500}$"
+        }
+      }
+    },
+    "PluginNativeContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "userId",
+        "threadId",
+        "catId",
+        "invocationId",
+        "originTriggerMessageId",
+        "source"
+      ],
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "catId": {
+          "type": "string"
+        },
+        "invocationId": {
+          "type": "string"
+        },
+        "originTriggerMessageId": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/PluginSourceFact"
+        }
+      }
+    },
     "FrustrationSourceId": {
       "type": "string",
       "minLength": 1,

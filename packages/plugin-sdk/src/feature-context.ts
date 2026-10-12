@@ -1,3 +1,4 @@
+import { createSourceFactsClient, createNativeContextClient, type PluginSourceFactsHost, type PluginNativeContextHost } from './source-facts.js';
 import { createParticipantRosterClient, type PluginParticipantRosterHost } from './participant-roster.js';
 import type { BrowserServiceHost, PluginHostActionContext } from './browser-services.js';
 import { createFrustrationClient, type PluginFrustrationHost } from './frustration.js';
@@ -64,6 +65,11 @@ export interface HostContributionReceipt {
 export type PluginLogLevel = ModulePluginLogLevel;
 
 export interface FeatureHostAdapter {
+  /** Exact authenticated source subset; absent on older carriers. */
+  readonly sourceFacts?: PluginSourceFactsHost;
+  /** Verified native invocation only; no body identity or Work binding. */
+  readonly nativeContext?: PluginNativeContextHost;
+  /** Current owner or same-owner verified native invocation; absent on older carriers. */
   readonly participantRoster?: PluginParticipantRosterHost;
   readonly ownerThreads?: PluginOwnerThreadHost;
   readonly browserServices?: BrowserServiceHost;
@@ -141,6 +147,10 @@ export interface ContributionRegistrar<T extends StaticContribution> {
 }
 
 export interface FeatureContext {
+  /** Exact authenticated source subset; absent on older carriers. */
+  readonly sourceFacts?: PluginSourceFactsHost;
+  /** Verified native invocation only; no body identity or Work binding. */
+  readonly nativeContext?: PluginNativeContextHost;
   /** Current owner or same-owner verified native invocation; absent on older carriers. */
   readonly participantRoster?: PluginParticipantRosterHost;
   /** Strict authenticated owner webhook calls only; absent on older carriers. */
@@ -406,6 +416,12 @@ export function createFeatureContextSession(
     listBindings: () => runWhileActive(() => adapter.threads.listBindings()),
     ensureSystemThread: () => runWhileActive(() => adapter.threads.ensureSystemThread()),
   };
+  const assertContentAccess = () => {
+    assertActive();
+    if (!binding.grantedCapabilities.includes('thread.readContent')) throw new FeaturePermissionError('thread.readContent not granted');
+  };
+  const sourceFacts = adapter.sourceFacts === undefined ? undefined : createSourceFactsClient(adapter.sourceFacts, assertContentAccess);
+  const nativeContext = adapter.nativeContext === undefined ? undefined : createNativeContextClient(adapter.nativeContext, assertContentAccess);
   const participantRoster = adapter.participantRoster === undefined ? undefined : createParticipantRosterClient(adapter.participantRoster, assertActive);
   const ownerThreads = adapter.ownerThreads === undefined ? undefined : createOwnerThreadClient(adapter.ownerThreads, capability => {
     assertActive();
@@ -465,6 +481,8 @@ export function createFeatureContextSession(
     }),
   } : undefined;
   const context: FeatureContext = {
+    ...(sourceFacts ? { sourceFacts } : {}),
+    ...(nativeContext ? { nativeContext } : {}),
     ...(participantRoster ? { participantRoster } : {}),
     ...(ownerThreads ? { ownerThreads } : {}),
     ...(browserServices ? { browserServices } : {}),
