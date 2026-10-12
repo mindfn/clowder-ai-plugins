@@ -20,6 +20,20 @@ const caller = (lane: 'browser' | 'local'): BrowserServiceDispatchContext => ({ 
 async function get(active: PluginModuleActivationShape, path: string, query = '') {
   return await active.actions['collective.http.dispatch']!({ request: { version: 1, method: 'GET', path, rawQuery: query, headers: [], rawBodyBase64: '' } }, undefined, caller('browser')) as { status: number; bodyBase64: string };
 }
+test('Service status is a clickable one-shot operation whose handler returns a status result', async () => {
+  const action = manifest.configuration.find((field: { key: string }) => field.key === 'service').actions.find((item: { id: string }) => item.id === 'status');
+  assert.equal(action.render, 'button');
+  assert.equal(action.action.method, 'collective.service.status');
+  const directory = await mkdtemp(join(tmpdir(), 'collective-status-operation-'));
+  const plugin = entrypoint.create(manifest);
+  const active = await plugin.start(host(directory));
+  try {
+    const result = await active.actions[action.action.method]!({}) as { render: string; data: { state: string; url: string } };
+    assert.equal(result.render, 'status');
+    assert.equal(result.data.state, 'running');
+    assert.equal(result.data.url, 'http://127.0.0.1:5271');
+  } finally { await active.stop(); await rm(directory, { recursive: true, force: true }); }
+});
 test('module uses an owned binding with zero listeners; disable revokes handlers and re-enable preserves service identity', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'collective-module-binding-'));
   const original = Server.prototype.listen; let attempts = 0;

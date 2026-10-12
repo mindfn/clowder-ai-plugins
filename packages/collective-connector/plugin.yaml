@@ -14,7 +14,7 @@ configuration:
     actions:
       - id: status
         label: Service status
-        render: status
+        render: button
         action:
           method: collective.service.status
   - key: recovery
