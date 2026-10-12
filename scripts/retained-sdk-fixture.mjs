@@ -40,5 +40,5 @@ export async function readRetainedSdkClosure(version = '0.2.0-beta.12') {
 }
 
 export async function readRetainedSdkClosures() {
-  return Promise.all(['0.2.0-beta.12', '0.2.0-beta.15'].map(readRetainedSdkClosure));
+  return Promise.all(['0.2.0-beta.12', '0.2.0-beta.15', '0.2.0-beta.19'].map(readRetainedSdkClosure));
 }
