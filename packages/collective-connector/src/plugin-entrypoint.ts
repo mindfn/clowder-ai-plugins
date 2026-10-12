@@ -6,6 +6,7 @@ import { BROWSER_SERVICE_LIMITS, type BrowserServiceContribution } from '@clowde
 import { createNodeHttpAdapter } from './node-http-adapter.js';
 import { createLocalServiceTransport } from './local-service-transport.js';
 import { createRecoveryActions } from './recovery-actions.js';
+import { createOwnerControlHttp, type CollectiveLocalServiceStatus } from './owner-control-http.js';
 import { CollectiveConnector } from './business/connector/connector.js';
 import { GitHubAppManifestSetup } from './business/service/github-app-manifest-setup.js';
 import { ConfigurableGitHubHumanAuthProvider } from './business/service/github-human-auth-provider.js';
@@ -75,9 +76,27 @@ async function activateService(context: FeatureContext, declaration: BrowserServ
   const contribution = declaration;
   const dispatch = createNodeHttpAdapter({ store: opened.store, allowedHostOrigins, bootstrapLinkPath, githubAppSetup }, binding, contribution);
   let stopped = false;
+  const localServiceStatus = (): CollectiveLocalServiceStatus => {
+    const metadata = opened.store.getMetadata();
+    return { state: metadata.onboardingComplete ? 'ready' : 'setup_required', serviceUrl: binding.origin, dataDirectory,
+      serviceInstanceId: metadata.serviceInstanceId, bootstrapNeeded: metadata.bootstrapNeeded,
+      ...(!metadata.onboardingComplete ? { setupStep: provider.readiness.ready ? 'owner_setup' as const : 'github_app' as const } : {}) };
+  };
+  const ownerControl = createOwnerControlHttp({ connector, binding,
+    assertActive() { if (stopped) throw new Error('Collective module is stopped'); void context.dataDirectory; },
+    status: localServiceStatus,
+    async launch() {
+      const service = localServiceStatus();
+      // Bootstrap is delivered only through the Host-authenticated control lane, never public status.
+      const launchUrl = service.bootstrapNeeded
+        ? binding.origin + '#bootstrap=' + encodeURIComponent(await readBootstrapSecret(bootstrapSecretPath)) : binding.origin;
+      return { service, launchUrl };
+    },
+  });
   return {
     actions: {
       ...createRecoveryActions(connector, binding),
+      'collective.control.http': ownerControl,
       'collective.http.dispatch': async (input, native, caller) => {
         if (stopped || caller?.kind !== 'http') throw new Error('Collective HTTP context is required');
         return dispatch(input, native, caller);

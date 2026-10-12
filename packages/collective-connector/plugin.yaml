@@ -54,6 +54,28 @@ features:
     contributions:
       - type: browser-service
         id: collective-client-api
+      - type: webhook
+        id: collective-owner-10
+      - type: webhook
+        id: collective-owner-11
+      - type: webhook
+        id: collective-owner-12
+      - type: webhook
+        id: collective-owner-13
+      - type: webhook
+        id: collective-owner-18
+      - type: webhook
+        id: collective-owner-19
+      - type: webhook
+        id: collective-owner-20
+      - type: webhook
+        id: collective-owner-22
+      - type: webhook
+        id: collective-owner-23
+      - type: webhook
+        id: collective-owner-24
+      - type: webhook
+        id: collective-owner-31
     capabilities:
       - data.directory
 runtime:
@@ -269,3 +291,58 @@ contributions:
           httpOnly: true
           sameSite: Strict
           maxAgeSeconds: 300
+  - type: webhook
+    id: collective-owner-10
+    path: connections
+    methods: [GET]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-owner-11
+    path: connections/:connectionId/inbox
+    methods: [GET]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-owner-12
+    path: connections/:connectionId/listening
+    methods: [GET]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-owner-13
+    path: connections/:connectionId/listening
+    methods: [POST]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-owner-18
+    path: connections/:connectionId/reconnect
+    methods: [POST]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-owner-19
+    path: connections/:connectionId/revoke
+    methods: [POST]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-owner-20
+    path: connections/:connectionId/route
+    methods: [GET]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-owner-22
+    path: connections/:connectionId/work-policy
+    methods: [GET]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-owner-23
+    path: connections/:connectionId/work-policy/adopt
+    methods: [POST]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-owner-24
+    path: connections/:connectionId/work-policy/revoke
+    methods: [POST]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-owner-31
+    path: service/provision
+    methods: [POST]
+    action: { method: collective.control.http }

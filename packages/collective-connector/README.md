@@ -21,9 +21,31 @@ Task/custody/principal decisions remain in the Host.
 
 Client assets remain in the Host/C2 boundary. Asset paths cannot enter the declared business transport;
 `clientBuildId` is a retained protocol label distinct from the actual asset digest. The private bootstrap URL is a backend handshake coordinate;
-it is not a working owner onboarding UI. Settings launch/HTTP forwarding, connector invocation and all
-21 browser journeys are still open in aggregate task1843. This package remains `private: true` while that
+it is not a working owner onboarding UI. Settings install/enable/status and the current owner-local Service binding have paired Host evidence.
+The authenticated owner HTTP adapter now restores the retained launch/status and existing connector
+controls below; remaining authority-dependent controls and native invocation are still open in aggregate task1843. This package remains `private: true` while that
 work continues; this checkpoint makes no catalog, installed Settings, publication, or whole-C1 claim.
+
+## Owner control HTTP
+
+The existing Host authenticated webhook lane calls `collective.control.http`; it is distinct from the
+browser-service action and native MCP identity. Declarations use the actual `official.collective-connector`
+ID. The old root GET becomes `/api/plugins/official.collective-connector/connections`; individual
+connection resources use `connections/:connectionId/...`. No anonymous verification secret is declared.
+
+This checkpoint declares eleven existing owner method/path pairs: connections GET; service/provision
+POST; inbox/route GET; reconnect/revoke POST; listening GET/POST; and work-policy GET/adopt/revoke.
+They call the moved connector algorithms. Listening/policy/route preserve local owner checks and
+original request schemas. Unknown local sync/revoke outcomes remain visible 409 recovery states;
+ordinary reconnect does not replay or clear a hold. Provision returns the existing `{service,launchUrl}`
+shape from the current Host binding and persistent metadata, without starting a second listener.
+Only this authenticated launch response contains an unclaimed private bootstrap fragment; public
+Service status and connections metadata never do. Claiming bootstrap alone is still setup-required.
+
+The remaining eleven owner pairs and nine native methods depend on the precise Host roster/source/
+Task-admission/prepared-artifact facts being paired in task1843. They are not declared as working actions.
+Host owns authentication and those durable facts; the package parses its own participation/Work rules.
+Actual retained page and installed use must be validated with a matching Host caller candidate.
 
 ## Binding and recovery
 
@@ -80,6 +102,7 @@ temporary data and a fixture Host binding; it asserts zero package listener atte
 contract `0.1.0-beta.36` and SDK `0.2.0-beta.20` archives resolve unpublished versions. This proves
 physical closure and module behavior, not actual Host or browser acceptance. Host `93fee434` predates
 this transport and owner-operation surface; its old pairing probe is not a green acceptance target.
-Actual Host implementation, Manager route/lifetime pairing, retained Client iframe/popup journeys,
-the remaining 31 native controls and authority mapping, bootstrap expiry/recovery (N2), protocol/build
-parity (N5), all 21 browser journeys, human acceptance and soak remain open. Publication is not admitted.
+Matching Host retained Client launch/iframe and normal stop/restart journeys, the remaining owner/native
+controls and authority mapping, and the original finite C1 installation/use acceptance remain open.
+The existing maintainer local acceptance is the original combined testing/publication finish line; this
+package does not add a second operator acceptance or soak gate. Publication is not admitted.
