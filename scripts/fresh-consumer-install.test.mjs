@@ -436,7 +436,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       join(consumer, 'node_modules/@clowder-ai/feishu-meeting-intake/dist/entrypoint.js'),
       'utf8',
     );
-    assert.equal(companionPackage.version, '0.1.0-alpha.3');
+    assert.equal(companionPackage.version, '0.1.0-alpha.4');
     assert.equal(companionPackage.private, undefined);
     assert.equal(companionPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12');
     assert.doesNotMatch(JSON.stringify(companionPackage), /"workspace:/u);
