@@ -90,8 +90,12 @@ function makeAdapter() {
       upsertBySubject: () => notImplemented(),
       update: () => notImplemented(),
       updateIfThreadId: () => notImplemented(),
+      setWait: () => notImplemented(),
     },
     threads: {
+      list: () => notImplemented(),
+      readMessages: () => notImplemented(),
+      getCats: () => notImplemented(),
       get: () => notImplemented(),
       create: () => notImplemented(),
       update: () => notImplemented(),
