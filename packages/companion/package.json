@@ -21,7 +21,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --test test/*.test.mjs",
-    "test:browser": "pnpm build && node --test test/panel-layout.browser.mjs",
+    "test:browser": "pnpm build && node --test test/*.browser.mjs",
     "typecheck": "node scripts/check.mjs",
     "lint": "node scripts/check.mjs",
     "prepack": "pnpm build"
