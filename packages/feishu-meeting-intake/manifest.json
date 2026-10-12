@@ -1,6 +1,6 @@
 {
   "pluginId": "official.feishu-meeting-intake",
-  "version": "0.1.0-alpha.10",
+  "version": "0.1.0-alpha.11",
   "contractVersion": "0.1.0",
   "name": "Feishu Meeting Intake",
   "features": [
@@ -13,7 +13,9 @@
           "id": "feishu.meeting_artifact.generated.v1"
         }
       ],
-      "capabilities": ["events.publish"]
+      "capabilities": [
+        "events.publish"
+      ]
     }
   ],
   "signals": {
