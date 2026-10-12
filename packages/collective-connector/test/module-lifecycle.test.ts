@@ -20,7 +20,7 @@ const caller = (lane: 'browser' | 'local'): BrowserServiceDispatchContext => ({ 
 async function get(active: PluginModuleActivationShape, path: string, query = '') {
   return await active.actions['collective.http.dispatch']!({ request: { version: 1, method: 'GET', path, rawQuery: query, headers: [], rawBodyBase64: '' } }, undefined, caller('browser')) as { status: number; bodyBase64: string };
 }
-test('Service status is a clickable one-shot operation whose handler returns a status result', async () => {
+test('Service status is clickable and returns visible, honest setup status with structured data', async () => {
   const action = manifest.configuration.find((field: { key: string }) => field.key === 'service').actions.find((item: { id: string }) => item.id === 'status');
   assert.equal(action.render, 'button');
   assert.equal(action.action.method, 'collective.service.status');
@@ -28,10 +28,25 @@ test('Service status is a clickable one-shot operation whose handler returns a s
   const plugin = entrypoint.create(manifest);
   const active = await plugin.start(host(directory));
   try {
-    const result = await active.actions[action.action.method]!({}) as { render: string; data: { state: string; url: string } };
+    const result = await active.actions[action.action.method]!({}) as { render: string; label: string; data: { state: string; url: string; bootstrapNeeded: boolean; onboardingComplete: boolean } };
     assert.equal(result.render, 'status');
     assert.equal(result.data.state, 'running');
     assert.equal(result.data.url, 'http://127.0.0.1:5271');
+    assert.equal(result.data.bootstrapNeeded, true);
+    assert.equal(result.data.onboardingComplete, false);
+    assert.equal(result.label, 'Collective service running · owner bootstrap required · http://127.0.0.1:5271');
+    const secret = (await readFile(join(directory, 'service', 'owner-bootstrap.secret'), 'utf8')).trim();
+    const bootstrapped = await active.actions['collective.http.dispatch']!({ request: {
+      version: 1, method: 'POST', path: '/api/bootstrap', rawQuery: '',
+      headers: [{ name: 'origin', value: 'http://127.0.0.1:5271' }, { name: 'content-type', value: 'application/json' }],
+      rawBodyBase64: Buffer.from(JSON.stringify({ secret, displayName: 'Fixture owner' })).toString('base64'),
+    } }, undefined, caller('browser')) as { status: number };
+    assert.equal(bootstrapped.status, 201);
+    const pending = await active.actions[action.action.method]!({}) as typeof result;
+    assert.equal(pending.data.bootstrapNeeded, false);
+    assert.equal(pending.data.onboardingComplete, false);
+    assert.equal(pending.label, 'Collective service running · onboarding pending · http://127.0.0.1:5271');
+    assert.equal(pending.label.includes(secret), false);
   } finally { await active.stop(); await rm(directory, { recursive: true, force: true }); }
 });
 test('module uses an owned binding with zero listeners; disable revokes handlers and re-enable preserves service identity', async () => {

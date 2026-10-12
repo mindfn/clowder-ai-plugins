@@ -86,7 +86,11 @@ async function activateService(context: FeatureContext, declaration: BrowserServ
         if (stopped) throw new Error('Collective module is stopped');
         // Access is revoked by the same SDK session on disable.
         void context.dataDirectory;
-        return { render: 'status', data: { state: 'running', url: binding.origin, ...opened.store.getMetadata(), connections: await connector.listConnections() } };
+        const metadata = opened.store.getMetadata();
+        const setupState = metadata.bootstrapNeeded ? 'owner bootstrap required'
+          : metadata.onboardingComplete ? 'onboarding complete' : 'onboarding pending';
+        return { render: 'status', label: `Collective service running · ${setupState} · ${binding.origin}`,
+          data: { state: 'running', url: binding.origin, ...metadata, connections: await connector.listConnections() } };
       },
     },
     async dispose() {
