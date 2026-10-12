@@ -2,14 +2,15 @@ import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
   type ChannelHostRoute,
-  type CollectiveConnector,
   type DesiredParticipation,
   defaultDesiredParticipation,
   type HostRouteConfig,
   type ObservedCatEligibility,
-} from '@cat-cafe/collective-connector';
-import type { CatId } from '@cat-cafe/shared';
-import { collectiveAvatarRoots, publicCollectiveAvatar } from './collective-public-avatar.js';
+} from './business/connector/host-route-state.js';
+import type { CollectiveConnector } from './business/connector/connector.js';
+import type { PluginOwnerThreadHost, PluginParticipantRosterHost } from '@clowder-ai/plugin-sdk';
+import { registeredCollectiveCats } from './entry-control.js';
+type CatId = string;
 
 export interface ParticipationCat {
   readonly id: string;
@@ -138,14 +139,13 @@ function profileFingerprint(cat: ParticipationCat) {
 }
 
 async function collectPublicProfiles(cats: readonly ParticipationCat[]) {
-  const roots = collectiveAvatarRoots();
   return sortRecord(
     Object.fromEntries(
       await Promise.all(
         cats
           .filter((cat) => cat.supported)
           .map(async (cat) => {
-            const avatarDataUrl = await publicCollectiveAvatar(cat.avatar, roots);
+            const avatarDataUrl = await publicCollectiveAvatar(cat.avatar);
             const description = cat.roleDescription?.trim().slice(0, 120);
             return [
               cat.id,
@@ -278,4 +278,65 @@ function sortRecord<Value>(record: Record<string, Value>): Record<string, Value>
 
 function conflict() {
   return Object.assign(new Error('Collective participation changed'), { code: 'PARTICIPATION_REVISION_CONFLICT' });
+}
+
+/** Host roster supplies the already-authorized bounded thumbnail, never local avatar roots.
+ * Invalid direct-core inputs retain the original omitted-avatar behavior without filesystem reads. */
+async function publicCollectiveAvatar(value: string | undefined): Promise<string | undefined> {
+  return value && value.length <= 1_200 && value.trim() === value && /^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/.test(value) ? value : undefined;
+}
+
+/** Staged original owner reconciliation. Owner identity/currentness must come from the
+ * surrounding authenticated owner webhook, not its body. No native authority is inferred here. */
+export function createCollectiveParticipationCaller(options: {
+  readonly ownerUserId: string;
+  readonly contributionId: string;
+  readonly participantRoster: PluginParticipantRosterHost;
+  readonly ownerThreads: PluginOwnerThreadHost;
+  readonly connector: Pick<CollectiveConnector, 'setHostRoute' | 'publishParticipation'>;
+  readonly assertCurrent: () => Promise<void>;
+}) {
+  return Object.freeze({
+    async reconcile(input: Omit<ReconcileOptions, 'ownerUserId' | 'connector' | 'threads' | 'cats'>) {
+      await options.assertCurrent();
+      const rows = await options.participantRoster.listForNativeContribution({ contributionId: options.contributionId });
+      const support = new Map(rows.map(row => [row.catId, row.supported]));
+      const cats = registeredCollectiveCats(rows.map(({ catId, supported: _supported, ...row }) => ({ ...row, id: catId })),
+        catId => support.get(catId) === true);
+      await options.assertCurrent();
+      return reconcileParticipation({ ...input, ownerUserId: options.ownerUserId, cats,
+        threads: {
+          get: id => options.ownerThreads.get(id),
+          async create(userId, title) {
+            if (userId !== options.ownerUserId || title === undefined) throw new TypeError('Authenticated owner thread input is required');
+            const value = await options.ownerThreads.create({ title });
+            if (value.createdBy !== options.ownerUserId) throw new TypeError('Owner thread projection mismatch');
+            return value;
+          },
+          async addParticipants(threadId, catIds) {
+            // The original roster admits100 cats; actual ownerThreads input permits50.
+            // Split only this Host edge; no retry or rollback of already applied batches.
+            for (let offset = 0; offset < catIds.length; offset += 50) {
+              await options.assertCurrent();
+              await options.ownerThreads.addParticipants({ threadId, catIds: catIds.slice(offset, offset + 50) });
+            }
+          },
+        },
+        connector: {
+          async setHostRoute(id, route, revision) {
+            await options.assertCurrent();
+            const value = await options.connector.setHostRoute(id, route, revision);
+            await options.assertCurrent();
+            return value;
+          },
+          async publishParticipation(id) {
+            await options.assertCurrent();
+            const value = await options.connector.publishParticipation(id);
+            await options.assertCurrent();
+            return value;
+          },
+        },
+      });
+    },
+  });
 }
