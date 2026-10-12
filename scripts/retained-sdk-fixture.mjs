@@ -14,6 +14,9 @@ export async function readRetainedSdkClosure(version = '0.2.0-beta.12') {
   ] : version === '0.2.0-beta.15' ? [
     ['plugin-sdk', '0.2.0-beta.15', 78680, '60912dfbd6911794b84a303c409215524bfe3629c34c41e1564255aa106cd04f'],
     ['plugin-contract', '0.1.0-beta.30', 229585, '55379eb6d73d690bef91224e6a0684c7ba8938a88c4b63c41e241e3fd3344dd3'],
+  ] : version === '0.2.0-beta.19' ? [
+    ['plugin-sdk', '0.2.0-beta.19', 89121, 'c2c9cda352dd4cdbe2c2754af57b3baca241ed4a3bc4d2fa0a7454d8a9ac2eef'],
+    ['plugin-contract', '0.1.0-beta.35', 236754, 'ca269fb629462d61fce33594de2908aa3c5474d788f9664b0cdb52784002e5f1'],
   ] : undefined;
   assert.ok(rows, `unknown retained SDK version: ${version}`);
   for (const [name, version, size, sha256] of rows) {

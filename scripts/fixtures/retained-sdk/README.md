@@ -51,3 +51,21 @@ not new releases. Evidence: `f202-handoff/w3-github/integrated-c4316f3-alpha6/ca
 The fixture loader checks bytes, versions, SDK dependency and derived SRI
 against each retained consumer. It does not allow arbitrary old versions or
 replace their bytes with the current workspace packages.
+
+## GitHub retained SDK beta.19 / contract beta.35
+
+GitHub alpha.16 retains its independently accepted 35/19 dependency graph; the
+aggregate workspace support source has advanced to36/20. These immutable fixture
+bytes come from the frozen neutral candidate `b47b0b773c2b79fc4c45c0b29141de7c02158c17`,
+which is an ancestor of W3 `5dd199e`. The original descriptor is
+`f202-handoff/w3-github/neutral-beta35-sdk19-r1/artifact-descriptor.json`. Both
+original archive SRIs independently match GitHub's unchanged production shrinkwrap.
+
+- SDK beta.19: 89121 bytes, SHA256 `c2c9cda352dd4cdbe2c2754af57b3baca241ed4a3bc4d2fa0a7454d8a9ac2eef`.
+- Contract beta.35: 236754 bytes, SHA256 `ca269fb629462d61fce33594de2908aa3c5474d788f9664b0cdb52784002e5f1`.
+
+The version-specific loader verifies original bytes, declared version, SDK-to-contract
+edge and derived SRI before the GitHub artifact guard accepts this retained graph.
+The guard still rejects an unrecognized identity or changed integrity. These are
+test inputs, not publication, a rewritten production pin or a current directory
+installation proof. Existing beta.12/beta.15 fixtures remain unchanged.

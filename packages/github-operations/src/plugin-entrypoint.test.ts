@@ -15,6 +15,9 @@ import { legacyHistoryBytes } from './legacy-provider-history.js';
 import { ReviewTriggerReader } from './review-trigger-observation.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
+function stoppedModule(error: unknown): boolean {
+  return error instanceof Error && (error.name === 'FeatureContextRevokedError' || /stopped|disposed/.test(error.message));
+}
 const target = { kind: 'pr', repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
 const caller: PluginActionContext = { catId: 'cat-1', threadId: 'thread-1', userId: 'user-1',
   invocationId: 'invocation-1', source: { kind: 'primary', sourceMessageId: 'source-1' }, assertCurrent: async () => {} };
@@ -108,7 +111,7 @@ test('declared review trigger observation stays read-only and module stop joins 
   assert.equal(aborted, true); assert.equal(stopped, false);
   finish(); await Promise.all([query, stop]);
   assert.deepEqual(await f.runtimeHost.storage.list(), before); assert.equal(f.deliveries.length, 0);
-  await assert.rejects(async () => action!(input), /stopped/);
+  await assert.rejects(async () => action!(input), stoppedModule);
 });
 
 test('declared exact-trigger tool returns the bounded observation without storage or notification writes', async () => {
@@ -789,7 +792,9 @@ test('builtin stop awaits in-flight provider cleanup and prevents a late notific
   }) });
   const active = await module.create(manifest).start(f.runtimeHost);
   await active.actions['github.typed-wait.register-pr']!(prInput, caller);
-  const poll = active.actions['github.pr-tracking']!({});
+  const poll = Promise.resolve(active.actions['github.pr-tracking']!({})).catch((error: unknown) => {
+    assert.equal(error instanceof Error && error.name === 'FeatureContextRevokedError', true);
+  });
   await started;
   let stopped = false;
   const stop = Promise.resolve(active.stop()).then(() => { stopped = true; });
@@ -992,7 +997,7 @@ test('production Community HTTP uses current publish configuration and durable s
     assert.equal(denied.status, 403);
     await assert.rejects(async () => http!(request('community-issue-drafts/config'), caller), /native|owner/i);
     await active.stop();
-    await assert.rejects(async () => http!(request('community-issue-drafts/config')), /stopped|disposed/);
+    await assert.rejects(async () => http!(request('community-issue-drafts/config')), stoppedModule);
     active = await createGitHubPluginModule().create(manifest).start(f.runtimeHost);
     const restored = await active.actions['github.community.http']!(request(`community-issue-drafts/by-id/${created.body.draft.draftId}`)) as any;
     assert.equal(restored.body.draft.draftId, created.body.draft.draftId);
@@ -1036,7 +1041,7 @@ test('declared native Community triage requires Host context and persists authen
     const accepted = await action!({ id, payload }, caller) as any;
     assert.equal(accepted.status, 200); assert.equal(accepted.body.action, 'await-second-cat');
     await active.stop();
-    await assert.rejects(async () => action!({ id, payload }, caller), /stopped/);
+    await assert.rejects(async () => action!({ id, payload }, caller), stoppedModule);
   } finally { await active.stop(); }
 });
 
