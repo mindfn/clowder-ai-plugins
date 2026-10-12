@@ -42,7 +42,8 @@ Unknown revoke keeps its credential and revoking state; a 401 or a message menti
 does not prove success. Confirmed recovery uses exact same-instance persisted evidence; event dedup
 alone does not certify Work result/progress effects. Remote fetch/recovery retains the source behavior.
 
-The module reads only SDK configuration and its authorized data directory. The former ambient CLI is
+The module uses its authorized data directory and the Host browser-service binding; it does not read
+SDK configuration. The declared Settings operations are actions, not configuration values. The former ambient CLI is
 retired. Existing domain persistence and authentication transitions are retained. Unclaimed credential
 expiry still follows the source service's 24-hour bootstrap policy. No old user state is imported.
 
@@ -56,7 +57,6 @@ Connector/service internals and domain declarations remain private implementatio
 
 ## Install permissions
 
-- `plugin.config.read`: read only the configuration supplied by the Host for this instance.
 - `data.directory`: persist Collective business state and private credentials in the Host-authorized
   package directory. Stop preserves that state; the package never falls back to another directory.
 

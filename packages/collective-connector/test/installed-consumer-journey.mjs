@@ -48,7 +48,7 @@ await assert.rejects(stat(join(packageRoot, 'dist/business/service/cli.js')), { 
 const directory = await mkdtemp(join(tmpdir(), 'installed-collective-data-'));
 const host = {
   dataDirectory: directory,
-  config: { async get() {} },
+  config: { async get() { throw new Error('Collective has no configuration-read authority'); } },
   secrets: { async get() { return undefined; } },
   storage: {}, tasks: {}, threads: {}, media: {}, messaging: {}, log() {},
   browserServices: {

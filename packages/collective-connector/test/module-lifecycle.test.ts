@@ -9,7 +9,7 @@ import { parse } from 'yaml';
 import entrypoint from '../src/plugin-entrypoint.js';
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
 function host(directory: string | undefined): ModulePluginHostShape {
-  return { dataDirectory: directory, config: { async get() {} }, secrets: { async get() { return undefined; } },
+  return { dataDirectory: directory, config: { async get() { throw new Error('Collective has no configuration-read authority'); } }, secrets: { async get() { return undefined; } },
     storage: {} as never, tasks: {} as never, threads: {} as never, media: {} as never, messaging: {} as never, log() {},
     browserServices: { async getBinding(id) { return { contributionId: id, origin: 'http://127.0.0.1:5271', parentOrigin: 'http://localhost:5172',
       clientBuildId: 'collective-client-v2', assetDigest: 'a'.repeat(64), limits: BROWSER_SERVICE_LIMITS, async assertCurrent() {} }; },

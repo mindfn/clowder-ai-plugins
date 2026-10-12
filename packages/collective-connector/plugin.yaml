@@ -55,7 +55,6 @@ features:
       - type: browser-service
         id: collective-client-api
     capabilities:
-      - plugin.config.read
       - data.directory
 runtime:
   transport: builtin

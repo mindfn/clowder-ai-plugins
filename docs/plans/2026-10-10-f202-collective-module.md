@@ -63,19 +63,23 @@ and replace retained Client-only expectations with explicit C2-unavailable behav
 ## Lifecycle and recovery contract
 
 `plugin.yaml` declares a builtin module, canonical default `create()` entrypoint, one backend feature,
-`plugin.config.read` and `data.directory`, and a generic status action. Settings config supplies service
-port/origins/public URL. The module receives its directory only from SDK authority. It binds loopback;
-invalid configuration and reserved3001/3002 reject before service-state creation.
+only `data.directory`, and status/recovery operations. The transport adaptation at87ba2b8 removed
+all configuration reads and service port/origins/public-URL overrides. Settings operation declarations
+do not supply configuration values. The module receives its directory only from SDK authority and
+uses the Host browser-service binding for origin, protocol/build identity and limits. Invalid bindings
+and reserved3001/3002 reject before service-state creation. The obsolete `plugin.config.read` request
+is removed under the actual-caller/minimal-grant pairing in Host076/078; Host owns its policy separately.
 
-Activation owns the listener until returning a disposer. A later bootstrap-link failure closes that
-listener before rejecting and publishes no actions. Stop/disable revoke actions and close the listener;
-SDK stop is idempotent. Re-enable opens the same service identity/state. No Host principal or Task identity
+The Host owns the loopback listener and Client assets; the package opens no listener. Activation
+validates the binding before publishing actions; bootstrap-link failure publishes no actions and
+acquires no package listener. Stop/disable revoke actions; SDK stop is idempotent. Re-enable opens
+the same service identity/state. No Host principal or Task identity
 is fabricated; service/human/Collective identities are the original business domain's persisted identities.
 
 The initial bootstrap factory escrows its one unclaimed credential in a0600 private file and fsyncs it
 before state creation. Existing store defaults and authentication transitions are unchanged. A failed
 start can retry with the same service identity and credential; it does not rotate or reopen a consumed
-owner bootstrap. The link is atomically replaced for the actual listener/public URL, and the private
+owner bootstrap. The link is atomically replaced for the Host-bound origin, and the private
 credential is removed on stop or startup after consumption. Status never returns the credential.
 Expiration follows the original domain policy; this checkpoint does not introduce an owner reset API.
 
