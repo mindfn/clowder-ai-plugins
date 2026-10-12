@@ -1,6 +1,7 @@
 import type { BrowserServiceHost, PluginHostActionContext } from './browser-services.js';
 import { createFrustrationClient, type PluginFrustrationHost } from './frustration.js';
 import { createDeploymentClient, type PluginDeploymentHost } from './deployment.js';
+import { createOwnerThreadClient, type PluginOwnerThreadHost } from './owner-threads.js';
 import { createCustodyClient, guardPredicateVerifier, type PluginCustodyHost, type PluginPredicateVerifier } from './custody.js';
 import {
   validateManifest,
@@ -62,6 +63,7 @@ export interface HostContributionReceipt {
 export type PluginLogLevel = ModulePluginLogLevel;
 
 export interface FeatureHostAdapter {
+  readonly ownerThreads?: PluginOwnerThreadHost;
   readonly browserServices?: BrowserServiceHost;
   readonly frustration?: PluginFrustrationHost;
   readonly deployment?: PluginDeploymentHost;
@@ -137,6 +139,8 @@ export interface ContributionRegistrar<T extends StaticContribution> {
 }
 
 export interface FeatureContext {
+  /** Strict authenticated owner webhook calls only; absent on older carriers. */
+  readonly ownerThreads?: PluginOwnerThreadHost;
   readonly browserServices?: BrowserServiceHost;
   readonly frustration: PluginFrustrationHost;
   readonly deployment: PluginDeploymentHost;
@@ -398,6 +402,10 @@ export function createFeatureContextSession(
     listBindings: () => runWhileActive(() => adapter.threads.listBindings()),
     ensureSystemThread: () => runWhileActive(() => adapter.threads.ensureSystemThread()),
   };
+  const ownerThreads = adapter.ownerThreads === undefined ? undefined : createOwnerThreadClient(adapter.ownerThreads, capability => {
+    assertActive();
+    if (!binding.grantedCapabilities.includes(capability)) throw new FeaturePermissionError(`${capability} not granted`);
+  });
   const sendMessage = (threadId: string, input: PluginMessagingDraft) =>
     runWhileActive(() => adapter.sendMessage(binding, threadId, input));
   const subscribeMessage = (
@@ -452,6 +460,7 @@ export function createFeatureContextSession(
     }),
   } : undefined;
   const context: FeatureContext = {
+    ...(ownerThreads ? { ownerThreads } : {}),
     ...(browserServices ? { browserServices } : {}),
     featureId: binding.featureId,
     config: { get: readConfig },

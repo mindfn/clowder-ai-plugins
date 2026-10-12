@@ -94,6 +94,7 @@ function declaredContributionAdapter(
       .map((contribution) => [`${contribution.type}:${contribution.id}`, canonicalJson(contribution)] as const),
   );
   return {
+    ownerThreads: host.ownerThreads,
     browserServices: host.browserServices,
     readConfig: (_binding, key) => host.config.get(key),
     readSecret: (_binding, key) => host.secrets.get(key),

@@ -205,6 +205,72 @@
         }
       ]
     },
+    "PluginOwnerThread": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "createdBy",
+        "participants"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^\\S(?:[\\s\\S]*\\S)?$",
+          "maxLength": 500
+        },
+        "createdBy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "PluginOwnerThreadCreateInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^\\S(?:[\\s\\S]*\\S)?$",
+          "maxLength": 200
+        }
+      }
+    },
+    "PluginOwnerThreadAddParticipantsInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "threadId",
+        "catIds"
+      ],
+      "properties": {
+        "threadId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^\\S(?:[\\s\\S]*\\S)?$",
+          "maxLength": 500
+        },
+        "catIds": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "DeploymentCatalog": {
       "type": "object",
       "additionalProperties": false,

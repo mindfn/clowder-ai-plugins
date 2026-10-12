@@ -225,6 +225,8 @@ export interface PluginMessagingHost {
 
 /** Structural mirror of the Host-owned in-process module surface. */
 export interface ModulePluginHostShape {
+  /** Optional on older carriers; present only as the complete strict owner port. */
+  readonly ownerThreads?: import('./owner-threads.js').PluginOwnerThreadHost;
   readonly browserServices?: import('./browser-services.js').BrowserServiceHost;
   readonly frustration?: import('./frustration.js').PluginFrustrationHost;
   readonly deployment?: import('./deployment.js').PluginDeploymentHost;

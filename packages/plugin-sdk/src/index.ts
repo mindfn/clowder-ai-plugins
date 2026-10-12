@@ -219,6 +219,7 @@ export { createModuleActionClient, type ModuleActionCallOptions,
 export * from './custody.js';
 
 export * from './deployment.js';
+export * from './owner-threads.js';
 
 export * from './frustration.js';
 

@@ -50,6 +50,18 @@ export type FrustrationLinkDraftResult = {
 } | {
   readonly outcome: 'missing' | 'not_confirmed' | 'stale_source' | 'conflict';
 };
+export type PluginOwnerThread = {
+  readonly id: string;
+  readonly createdBy: string;
+  readonly participants: readonly string[];
+};
+export type PluginOwnerThreadCreateInput = {
+  readonly title: string;
+};
+export type PluginOwnerThreadAddParticipantsInput = {
+  readonly threadId: string;
+  readonly catIds: readonly string[];
+};
 export type DeploymentCatalog = {
   readonly roster: Readonly<Record<string, {
     readonly family: string;

@@ -76,4 +76,5 @@ export * from "./custody.js";
 export * from './deployment.js';
 
 export * from './frustration.js';
+export * from './owner-threads.js';
 export { validateBrowserServiceRequest, validateBrowserServiceResponse, validateBrowserServiceDispatchResult, canonicalBrowserServiceBody } from './browser-service-wire.js';

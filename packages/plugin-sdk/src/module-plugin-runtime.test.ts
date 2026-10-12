@@ -3,12 +3,109 @@ import test from 'node:test';
 
 import {
   definePlugin,
+  FeatureContextRevokedError,
   FeaturePermissionError,
   type FeatureContext,
 } from './feature-context.js';
 import { definePluginModule } from './module-plugin.js';
 import type { ModulePluginHostShape } from './module-host.js';
 import { operationRowAction, rowsResult } from './operation-results.js';
+
+async function ownerThreadFixture(port: unknown, capabilities = ['thread.listMetadata', 'thread.write']) {
+  let context!: FeatureContext;
+  const candidate = manifest();
+  candidate.features[0]!.capabilities = capabilities as never;
+  const entrypoint = definePluginModule(input => definePlugin({ manifest: input, activate: {
+    'feature-1': value => {
+      context = value;
+      return { actions: { 'fixture.outbound': () => undefined, 'fixture.echo': () => undefined } };
+    },
+  } }));
+  const runtimeHost = { ...host([]), ...(port === undefined ? {} : { ownerThreads: port }) } as ModulePluginHostShape;
+  const activation = await entrypoint.create(candidate).start(runtimeHost);
+  return { context, activation };
+}
+
+function ownerThreadPort() {
+  const calls: unknown[] = [];
+  const projection = { id: 'owner-thread', createdBy: 'local-owner', participants: ['cat-1'] };
+  const port = {
+    async get(id: string) { calls.push(['get', id]); return id === 'missing' ? null : projection; },
+    async create(input: unknown) { calls.push(['create', input]); return projection; },
+    async addParticipants(input: unknown) { calls.push(['addParticipants', input]); return projection; },
+  };
+  return { port, calls, projection };
+}
+
+test('module ownerThreads carries all three exact methods and immutable owner projections', async () => {
+  const { port, calls, projection } = ownerThreadPort();
+  const { context, activation } = await ownerThreadFixture(port);
+  assert.ok(context.ownerThreads, 'the exact Host owner thread port must reach FeatureContext');
+  assert.equal(await context.ownerThreads.get('missing'), null);
+  const result = await context.ownerThreads.get('owner-thread');
+  assert.deepEqual(result, projection);
+  assert.ok(Object.isFrozen(result));
+  assert.ok(Object.isFrozen(result!.participants));
+  projection.participants.push('late-mutation');
+  assert.deepEqual(result!.participants, ['cat-1']);
+  await context.ownerThreads.create({ title: 'Owner thread' });
+  await context.ownerThreads.addParticipants({ threadId: 'owner-thread', catIds: [] });
+  assert.deepEqual(calls, [['get', 'missing'], ['get', 'owner-thread'], ['create', { title: 'Owner thread' }],
+    ['addParticipants', { threadId: 'owner-thread', catIds: [] }]]);
+  await activation.stop();
+});
+
+test('ownerThreads remains absent on older carriers instead of using accessible threads', async () => {
+  const { context, activation } = await ownerThreadFixture(undefined);
+  assert.equal(context.ownerThreads, undefined);
+  await activation.stop();
+});
+
+test('ownerThreads checks read and write grants before calling the Host', async () => {
+  const { port, calls } = ownerThreadPort();
+  const { context, activation } = await ownerThreadFixture(port, []);
+  assert.ok(context.ownerThreads);
+  await assert.rejects(() => context.ownerThreads!.get('owner-thread'), /thread.listMetadata/);
+  await assert.rejects(() => context.ownerThreads!.create({ title: 'Owner thread' }), /thread.write/);
+  await assert.rejects(() => context.ownerThreads!.addParticipants({ threadId: 'owner-thread', catIds: [] }), /thread.write/);
+  assert.deepEqual(calls, []);
+  await activation.stop();
+});
+
+test('ownerThreads refuses use after stop and a late response after revocation', async () => {
+  const { port, calls, projection } = ownerThreadPort();
+  let finish!: (value: typeof projection) => void;
+  port.get = async id => { calls.push(['get', id]); return new Promise<typeof projection>(resolve => { finish = resolve; }); };
+  const { context, activation } = await ownerThreadFixture(port);
+  assert.ok(context.ownerThreads);
+  const pending = context.ownerThreads.get('owner-thread');
+  await activation.stop();
+  finish(projection);
+  await assert.rejects(pending, FeatureContextRevokedError);
+  await assert.rejects(() => context.ownerThreads!.create({ title: 'Owner thread' }), FeatureContextRevokedError);
+  assert.deepEqual(calls, [['get', 'owner-thread']]);
+});
+
+test('ownerThreads preserves Host owner rejection and never retries an ambiguous create', async () => {
+  const { port, calls } = ownerThreadPort();
+  const refusal = new Error('A current authenticated owner request is required for owner threads');
+  port.create = async input => { calls.push(['create', input]); throw refusal; };
+  const { context, activation } = await ownerThreadFixture(port);
+  assert.ok(context.ownerThreads);
+  await assert.rejects(() => context.ownerThreads!.create({ title: 'Owner thread' }), error => error === refusal);
+  assert.deepEqual(calls, [['create', { title: 'Owner thread' }]]);
+  await activation.stop();
+});
+
+test('ownerThreads rejects a partial carrier and an invalid owner projection', async () => {
+  await assert.rejects(ownerThreadFixture({ get: async () => null }), /owner thread port/);
+  const { port, projection } = ownerThreadPort();
+  port.get = async () => ({ ...projection, secret: 'must-not-be-projected' });
+  const { context, activation } = await ownerThreadFixture(port);
+  assert.ok(context.ownerThreads);
+  await assert.rejects(() => context.ownerThreads!.get('owner-thread'), /PluginOwnerThread/);
+  await activation.stop();
+});
 
 function manifest() {
   return {
