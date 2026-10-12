@@ -57,6 +57,8 @@ Host Broker ─────┐
 
 ## 当前阶段
 
+仓内源码目录交付前的保留 SDK 版本准备见 [C1 本地目录准备](migration/2026-10-12-f202-local-directory-preparation.md)。目录准备、Host 安装和实际使用分别取证。
+
 `packages/plugin-contract` 是机器契约真相源；`packages/plugin-sdk` 已落地 schema-neutral standalone stdio runtime，并开放 Host-bound `events.publish`。`packages/feishu-meeting-intake` 是 C-2 的首个官方纵切：只发布有界 meeting metadata + opaque source handle，durable outbox/cursor 负责断线恢复，长期飞书凭据仍由 Host 注入的 gateway 保管。Host Broker、Needs Me 与用户数据仍属于内核仓。
 
 ## 插件类型（capability contributions）

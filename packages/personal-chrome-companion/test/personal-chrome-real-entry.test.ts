@@ -61,18 +61,9 @@ function makeHost(dataDirectory: string): ModulePluginHostShape {
     id: 'task-1', kind: 'work', threadId: 'thread-1', subjectKey: 'fixture:1', title: 'Fixture task',
     ownerCatId: null, status: 'todo', why: '', createdBy: 'system', createdAt: 1, updatedAt: 1,
   } as const;
-  return {
-    dataDirectory,
-    config: { get: async (_key: string) => undefined },
-    secrets: { get: async (_key: string) => undefined },
-    storage: {
-      get: async (_key: string) => undefined,
-      list: async () => ({}),
-      set: async (_key: string, _value: unknown) => ({ revision: 1 }),
-      compareAndSet: async (_key: string, _expectedRevision: number | null, _value: unknown) =>
-        ({ applied: true, revision: 1 }),
-      delete: async (_key: string, _expectedRevision?: number) => ({ deleted: true, revision: 1 }),
-    },
+  // Retained beta.12 and the workspace SDK share these services. Structural
+  // assignment checks required methods without rejecting newer fixture fields.
+  const services = {
     tasks: {
       get: async () => task,
       listByThread: async () => [task],
@@ -99,6 +90,20 @@ function makeHost(dataDirectory: string): ModulePluginHostShape {
       listBindings: async () => [],
       ensureSystemThread: async () => ({ id: 'system-thread', deepLinkUrl: 'https://owner.example/thread/system-thread', title: 'System', createdAt: 1, lastActiveAt: 1, preferredCats: [], featureRefs: [] }),
     },
+  };
+  return {
+    dataDirectory,
+    config: { get: async (_key: string) => undefined },
+    secrets: { get: async (_key: string) => undefined },
+    storage: {
+      get: async (_key: string) => undefined,
+      list: async () => ({}),
+      set: async (_key: string, _value: unknown) => ({ revision: 1 }),
+      compareAndSet: async (_key: string, _expectedRevision: number | null, _value: unknown) =>
+        ({ applied: true, revision: 1 }),
+      delete: async (_key: string, _expectedRevision?: number) => ({ deleted: true, revision: 1 }),
+    },
+    ...services,
     messaging: {
       send: async () => ({ messageId: 'message-1', threadId: 'thread-1' }),
       subscribe: async () => undefined,

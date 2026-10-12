@@ -71,16 +71,9 @@ function notImplemented(): never {
 function makeAdapter() {
   const registrations: unknown[] = [];
   const disposals: unknown[] = [];
-  const adapter: FeatureHostAdapter = {
-    readConfig: () => notImplemented(),
-    readSecret: () => notImplemented(),
-    storage: {
-      get: () => notImplemented(),
-      list: () => notImplemented(),
-      set: () => notImplemented(),
-      compareAndSet: () => notImplemented(),
-      delete: () => notImplemented(),
-    },
+  // Retained beta.12 and the workspace SDK share these services. Structural
+  // assignment checks required methods without rejecting newer fixture fields.
+  const services = {
     tasks: {
       get: () => notImplemented(),
       listByThread: () => notImplemented(),
@@ -106,6 +99,18 @@ function makeAdapter() {
       listBindings: () => notImplemented(),
       ensureSystemThread: () => notImplemented(),
     },
+  };
+  const adapter: FeatureHostAdapter = {
+    readConfig: () => notImplemented(),
+    readSecret: () => notImplemented(),
+    storage: {
+      get: () => notImplemented(),
+      list: () => notImplemented(),
+      set: () => notImplemented(),
+      compareAndSet: () => notImplemented(),
+      delete: () => notImplemented(),
+    },
+    ...services,
     registerContribution: async (_binding, contribution) => {
       registrations.push(contribution);
       return { registrationId: 'test-registration', registryRevision: 0 };
