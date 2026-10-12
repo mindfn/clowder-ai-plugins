@@ -264,8 +264,8 @@
             "packageName": "@clowder-ai/companion",
             "version": "0.1.0-alpha.26",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/companion/-/companion-0.1.0-alpha.26.tgz",
-            "integrity": "sha512-TCxPcKpG37WbAHfJVGp1LTXfjkQIX5xo+FB8q8km6ehD6MWZKjzo/19DNuHkZTXCXn2e0AH+DzpkwyqNIXFVEQ==",
-            "shasum": "53f4e61deecf21ad76bf73b7a1d4d789b24f1c8d",
+            "integrity": "sha512-+lSizMk6mPpnILplqubo8GmJLaxHHtr6/BLsuCSutwk7nBWUWX9ygphaUvOxds+0Z0e8L4Ey0Ow+UMUpfYA2iQ==",
+            "shasum": "60feaea27e703005d4905bf22abd634d2d6f149e",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/companion"
@@ -283,6 +283,23 @@
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/companion/-/companion-0.1.0-alpha.25.tgz",
             "integrity": "sha512-YaLGFtalBPD/Mgy7pZEjEnaTNJ0ef+7y1SNWU46La2insiUws5PUNTyWw9sInxtSgRbgx33ifuQigwgjVH4fzQ==",
             "shasum": "62b7cd1b6784619a18561b869f98a0d5f865726d",
+            "provenance": {
+              "repository": "https://github.com/zts212653/clowder-ai-plugins",
+              "sourceDirectory": "packages/companion"
+            }
+          }
+        },
+        {
+          "version": "0.1.0-alpha.23",
+          "contractVersion": "0.1.0",
+          "manifestPath": "plugin.yaml",
+          "artifact": {
+            "kind": "npm",
+            "packageName": "@clowder-ai/companion",
+            "version": "0.1.0-alpha.23",
+            "tarballUrl": "https://registry.npmjs.org/@clowder-ai/companion/-/companion-0.1.0-alpha.23.tgz",
+            "integrity": "sha512-uJimgsfGi9p6DROxQYFlB3CYj3mwkmTqHJzaR/NkGslLqE5LgXjJ6FLkORr0DEPnJjNoALyk2DDkhQ+Cg0XkTw==",
+            "shasum": "5f5aaa9e51ef864db131b7af96450e4848c6652c",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/companion"

@@ -669,7 +669,7 @@ export type DesktopWindowContribution = {
     readonly entrypoint: PackageRelativePath & `${string}.html`;
     readonly integrity: string;
   };
-  readonly bridgeVersion: '1.0.0' | '1.1.0' | '1.2.0' | '1.3.0';
+  readonly bridgeVersion: '1.0.0' | '1.1.0' | '1.2.0' | '1.3.0' | '1.4.0';
   readonly presentation: {
     readonly width: number;
     readonly height: number;
@@ -1458,6 +1458,14 @@ export type DocxMaterializationResponse = {
 export type CompanionSelectionId = string;
 export type CompanionCallId = string;
 export type CompanionClientMessageId = string;
+export type CompanionCorrelatableId = string;
+export type CompanionPresentationReference = {
+  readonly kind: 'message';
+  readonly messageId: CompanionCorrelatableId;
+} | {
+  readonly kind: 'native-item';
+  readonly nativeItemId: CompanionCorrelatableId;
+};
 export type CompanionScreenFrame = {
   readonly image: string;
   readonly width: number;
@@ -1509,6 +1517,12 @@ export type CompanionCommand = {
   readonly kind: 'screen.close';
 } | {
   readonly kind: 'conversation.open';
+} | {
+  readonly kind: 'presentation.observe';
+  readonly event: 'first_text_visible';
+  readonly observedAt: number;
+  readonly callId: CompanionCallId;
+  readonly reference: CompanionPresentationReference;
 } | {
   readonly kind: 'decisions.read';
   readonly offset: number;
@@ -1826,7 +1840,7 @@ export type CompanionTranscriptVoiceSource = {
   readonly kind: 'voice';
   readonly nativeThreadId: string;
   readonly realtimeSessionId: string;
-  readonly nativeItemId: string;
+  readonly nativeItemId: CompanionCorrelatableId;
   readonly nativeTurnId?: string;
 };
 export type CompanionTranscriptTypedSource = {
@@ -1835,12 +1849,12 @@ export type CompanionTranscriptTypedSource = {
   readonly callId: CompanionCallId;
 };
 export type CompanionTranscriptRow = {
-  readonly messageId: string;
+  readonly messageId: CompanionCorrelatableId;
   readonly role: 'user' | 'assistant';
   readonly text: string;
   readonly source: CompanionTranscriptVoiceSource;
 } | {
-  readonly messageId: string;
+  readonly messageId: CompanionCorrelatableId;
   readonly role: 'user';
   readonly text: string;
   readonly source: CompanionTranscriptTypedSource;
@@ -1849,7 +1863,7 @@ export type CompanionDeliveryReceipt = {
   readonly kind: 'delivery';
   readonly delivery: 'accepted';
   readonly clientMessageId: CompanionClientMessageId;
-  readonly messageId: string;
+  readonly messageId: CompanionCorrelatableId;
   readonly callId: CompanionCallId | null;
 } | {
   readonly kind: 'delivery';
@@ -1915,7 +1929,7 @@ export type CompanionEvent = {
   readonly text: string;
   readonly callId: CompanionCallId;
   readonly turnId?: string;
-  readonly itemId?: string;
+  readonly itemId?: CompanionCorrelatableId;
 } | {
   readonly kind: 'audio';
   readonly type: 'turn-done';
