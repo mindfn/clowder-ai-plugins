@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { lstat, mkdir, readFile, readlink, realpath, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse, stringify } from 'yaml';
 import { readRetainedSdkClosure } from './retained-sdk-fixture.mjs';
@@ -12,12 +12,31 @@ const namespace = '.clowder-local-directory';
 const retained = new Set(['0.2.0-beta.12', '0.2.0-beta.15', '0.2.0-beta.19']);
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 async function optionalStat(path) { try { return await lstat(path); } catch(e) { if(e.code==='ENOENT') return undefined; throw e; } }
-async function atomic(path, value) {
+// Every generated destination is below the selected package. Existing parents
+// must be real directories, including ignored cache and node_modules components.
+async function directoryChain(root, path, create = false) {
+  const suffix = relative(root, resolve(path));
+  assert.ok(!isAbsolute(suffix) && suffix !== '..' && !suffix.startsWith('..' + sep), 'source write path escapes selected package');
+  let cursor = root;
+  for (const part of ['', ...suffix.split(sep).filter(Boolean)]) {
+    if (part) cursor = join(cursor, part);
+    let info = await optionalStat(cursor);
+    if (!info) {
+      if (!create) return;
+      await mkdir(cursor);
+      info = await lstat(cursor);
+    }
+    assert.ok(info.isDirectory() && !info.isSymbolicLink(), 'source write path must contain real directories: ' + cursor);
+    assert.equal(await realpath(cursor), cursor, 'source write path has a noncanonical parent');
+  }
+}
+async function atomic(root, path, value) {
+  await directoryChain(root, dirname(path));
   const temp = path + '.' + randomUUID() + '.tmp';
   try { await writeFile(temp, value, {flag:'wx'}); await rename(temp, path); } finally { await rm(temp, {force:true}); }
 }
-async function link(target, destination) {
-  await mkdir(dirname(destination), {recursive:true});
+async function link(root, target, destination) {
+  await directoryChain(root, dirname(destination), true);
   const info = await optionalStat(destination);
   if(info && !info.isSymbolicLink()) throw new Error('Refusing to replace a non-link dependency: '+destination);
   const value = relative(dirname(destination), target);
@@ -37,15 +56,16 @@ async function files(root) {
   }
   await visit(root);return rows;
 }
-async function archivePackage(destination, name, version, integrity) {
+async function archivePackage(root, destination, name, version, integrity) {
   const archive=join(repository,'scripts/fixtures/retained-sdk',`clowder-ai-${name}-${version}.tgz`);
   const bytes=await readFile(archive);
   assert.equal('sha512-'+createHash('sha512').update(bytes).digest('base64'),integrity);
   const marker=join(destination,'.source-bytes.json');
-  await mkdir(dirname(destination),{recursive:true});
+  await directoryChain(root, destination);
+  await directoryChain(root, dirname(destination), true);
   const temporary=destination+'.'+randomUUID()+'.tmp';
   try {
-    await mkdir(temporary);
+    await directoryChain(root, temporary, true);
     // Only the six immutable, hash-checked archives from retained-sdk-fixture are accepted.
     // This is source preparation, not an arbitrary archive installer or registry override.
     const names=execFileSync('tar',['-tzf',archive],{encoding:'utf8'}).trim().split('\n');
@@ -90,6 +110,11 @@ export async function prepareRetainedDirectoryGraph(directory, workspaceRoot=rep
   }
   const sdkDir=join(directory,namespace,'dependencies','plugin-sdk-'+verified.sdk.version);
   const contractDir=join(directory,namespace,'dependencies','plugin-contract-'+verified.contract.version);
+  // Preflight all existing write parents before creating even a cache staging file.
+  for (const parent of [sdkDir, contractDir, join(directory, 'node_modules/@clowder-ai'),
+    join(sdkDir, 'node_modules/@clowder-ai'), join(contractDir, 'node_modules')]) {
+    await directoryChain(directory, parent);
+  }
   // Validate existing root aliases before preparing anything; no user-owned physical tree is removed.
   for(const [name,target] of [['plugin-sdk',sdkDir],...(pkg.dependencies['@clowder-ai/plugin-contract']?[['plugin-contract',contractDir]]:[])]) {
     const alias=join(directory,'node_modules/@clowder-ai',name), info=await optionalStat(alias);
@@ -99,8 +124,8 @@ export async function prepareRetainedDirectoryGraph(directory, workspaceRoot=rep
       assert.ok(observed===current||observed===target,'unexpected runtime dependency alias');
     }
   }
-  const sdk=await archivePackage(sdkDir,'plugin-sdk',verified.sdk.version,verified.sdk.integrity);
-  const contract=await archivePackage(contractDir,'plugin-contract',verified.contract.version,verified.contract.integrity);
+  const sdk=await archivePackage(directory, sdkDir,'plugin-sdk',verified.sdk.version,verified.sdk.integrity);
+  const contract=await archivePackage(directory, contractDir,'plugin-contract',verified.contract.version,verified.contract.integrity);
   const rootContractImporter=rootLock.importers['packages/plugin-contract'];assert.ok(rootContractImporter);
   const contractEdges={};
   for(const [name,requested] of Object.entries(contract.dependencies??{})) {
@@ -110,9 +135,9 @@ export async function prepareRetainedDirectoryGraph(directory, workspaceRoot=rep
     assert.equal(observed.name,name);assert.equal(edge.version.split('(')[0],observed.version,'root dependency lock/physical version disagree');
     // The unchanged contract range, not a substituted SDK or fake registry identity, is the specifier.
     contractEdges[name]={specifier:requested,version:edge.version};
-    await link(physical,join(contractDir,'node_modules',name));
+    await link(directory, physical,join(contractDir,'node_modules',name));
   }
-  await link(contractDir,join(sdkDir,'node_modules/@clowder-ai/plugin-contract'));
+  await link(directory, contractDir,join(sdkDir,'node_modules/@clowder-ai/plugin-contract'));
   const dependencies={...sourceImporter.dependencies};
   dependencies['@clowder-ai/plugin-sdk']={specifier:version,version:'link:'+relative(directory,sdkDir)};
   if(pkg.dependencies['@clowder-ai/plugin-contract']) dependencies['@clowder-ai/plugin-contract']={specifier:verified.contract.version,version:'link:'+relative(directory,contractDir)};
@@ -122,9 +147,9 @@ export async function prepareRetainedDirectoryGraph(directory, workspaceRoot=rep
   };
   // The root and immutable consumer shrinkwrap are never rewritten; only this prepared directory's aliases/lock change.
   assert.deepEqual(await readFile(packagePath),packageBytes);assert.deepEqual(await readFile(join(workspaceRoot,'pnpm-lock.yaml')),rootLockBytes);
-  await link(sdkDir,join(directory,'node_modules/@clowder-ai/plugin-sdk'));
-  if(pkg.dependencies['@clowder-ai/plugin-contract']) await link(contractDir,join(directory,'node_modules/@clowder-ai/plugin-contract'));
-  await atomic(lockPath,stringify(localLock));
+  await link(directory, sdkDir,join(directory,'node_modules/@clowder-ai/plugin-sdk'));
+  if(pkg.dependencies['@clowder-ai/plugin-contract']) await link(directory, contractDir,join(directory,'node_modules/@clowder-ai/plugin-contract'));
+  await atomic(directory, lockPath,stringify(localLock));
   return {directory:relative(workspaceRoot,directory),status:'prepared',sdk:verified.sdk.version,contract:verified.contract.version,sourceLock:lockPath,
     sourceLockSha256:sha(await readFile(lockPath)),packageJsonSha256:sha(packageBytes),registryPublication:false};
 }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, readlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, readlink, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
@@ -72,4 +72,94 @@ test('legacy beta.12 and direct GitHub beta.19/35 keep separate authenticated co
    assert.deepEqual(JSON.parse(await readFile(join(directory,'package.json'))),pkg);
   }finally{await rm(root,{recursive:true,force:true});}
  }
+});
+
+test('refuses generated write parent .clowder-local-directory without touching its target',async()=>{
+ const {root,directory}=await fixture(),outside=await mkdtemp(join(tmpdir(),'clowder-escape-'));
+ try {
+  const parent=join(directory,'.clowder-local-directory');await mkdir(join(parent,'..'),{recursive:true});await rm(parent,{recursive:true,force:true});await symlink(outside,parent,'dir');
+  const lockBefore=await readFile(join(root,'pnpm-lock.yaml'));
+  await assert.rejects(()=>prepareRetainedDirectoryGraph(directory,root),/source write path/);
+  assert.deepEqual(await readdir(outside),[]);assert.deepEqual(await readFile(join(root,'pnpm-lock.yaml')),lockBefore);
+  assert.equal(await readlink(parent),outside,'reject without replacing or deleting the link');
+ }finally{await rm(root,{recursive:true,force:true});await rm(outside,{recursive:true,force:true});}
+});
+
+test('refuses generated write parent .clowder-local-directory/dependencies without touching its target',async()=>{
+ const {root,directory}=await fixture(),outside=await mkdtemp(join(tmpdir(),'clowder-escape-'));
+ try {
+  const parent=join(directory,'.clowder-local-directory/dependencies');await mkdir(join(parent,'..'),{recursive:true});await rm(parent,{recursive:true,force:true});await symlink(outside,parent,'dir');
+  const lockBefore=await readFile(join(root,'pnpm-lock.yaml'));
+  await assert.rejects(()=>prepareRetainedDirectoryGraph(directory,root),/source write path/);
+  assert.deepEqual(await readdir(outside),[]);assert.deepEqual(await readFile(join(root,'pnpm-lock.yaml')),lockBefore);
+  assert.equal(await readlink(parent),outside,'reject without replacing or deleting the link');
+ }finally{await rm(root,{recursive:true,force:true});await rm(outside,{recursive:true,force:true});}
+});
+
+test('refuses generated write parent node_modules without touching its target',async()=>{
+ const {root,directory}=await fixture(),outside=await mkdtemp(join(tmpdir(),'clowder-escape-'));
+ try {
+  const parent=join(directory,'node_modules');await mkdir(join(parent,'..'),{recursive:true});await rm(parent,{recursive:true,force:true});await symlink(outside,parent,'dir');
+  const lockBefore=await readFile(join(root,'pnpm-lock.yaml'));
+  await assert.rejects(()=>prepareRetainedDirectoryGraph(directory,root),/source write path/);
+  assert.deepEqual(await readdir(outside),[]);assert.deepEqual(await readFile(join(root,'pnpm-lock.yaml')),lockBefore);
+  assert.equal(await readlink(parent),outside,'reject without replacing or deleting the link');
+ }finally{await rm(root,{recursive:true,force:true});await rm(outside,{recursive:true,force:true});}
+});
+
+test('refuses generated write parent node_modules/@clowder-ai without touching its target',async()=>{
+ const {root,directory}=await fixture(),outside=await mkdtemp(join(tmpdir(),'clowder-escape-'));
+ try {
+  const parent=join(directory,'node_modules/@clowder-ai');await mkdir(join(parent,'..'),{recursive:true});await rm(parent,{recursive:true,force:true});await symlink(outside,parent,'dir');
+  const lockBefore=await readFile(join(root,'pnpm-lock.yaml'));
+  await assert.rejects(()=>prepareRetainedDirectoryGraph(directory,root),/source write path/);
+  assert.deepEqual(await readdir(outside),[]);assert.deepEqual(await readFile(join(root,'pnpm-lock.yaml')),lockBefore);
+  assert.equal(await readlink(parent),outside,'reject without replacing or deleting the link');
+ }finally{await rm(root,{recursive:true,force:true});await rm(outside,{recursive:true,force:true});}
+});
+
+test('refuses symlink archive destination plugin-sdk-0.2.0-beta.15 before writing',async()=>{
+ const {root,directory}=await fixture(),outside=await mkdtemp(join(tmpdir(),'clowder-archive-escape-'));
+ try {
+  const target=join(directory,'.clowder-local-directory/dependencies/plugin-sdk-0.2.0-beta.15');await mkdir(join(target,'..'),{recursive:true});await symlink(outside,target,'dir');
+  await assert.rejects(()=>prepareRetainedDirectoryGraph(directory,root),/source write path/);assert.deepEqual(await readdir(outside),[]);assert.equal(await readlink(target),outside);
+ }finally{await rm(root,{recursive:true,force:true});await rm(outside,{recursive:true,force:true});}
+});
+
+test('refuses symlink archive destination plugin-contract-0.1.0-beta.30 before writing',async()=>{
+ const {root,directory}=await fixture(),outside=await mkdtemp(join(tmpdir(),'clowder-archive-escape-'));
+ try {
+  const target=join(directory,'.clowder-local-directory/dependencies/plugin-contract-0.1.0-beta.30');await mkdir(join(target,'..'),{recursive:true});await symlink(outside,target,'dir');
+  await assert.rejects(()=>prepareRetainedDirectoryGraph(directory,root),/source write path/);assert.deepEqual(await readdir(outside),[]);assert.equal(await readlink(target),outside);
+ }finally{await rm(root,{recursive:true,force:true});await rm(outside,{recursive:true,force:true});}
+});
+
+test('refuses existing cache runtime parent plugin-sdk-0.2.0-beta.15/node_modules/@clowder-ai before writing',async()=>{
+ const {root,directory}=await fixture(),outside=await mkdtemp(join(tmpdir(),'clowder-runtime-escape-'));
+ try {
+  await prepareRetainedDirectoryGraph(directory,root);const target=join(directory,'.clowder-local-directory/dependencies/plugin-sdk-0.2.0-beta.15/node_modules/@clowder-ai');
+  await rm(target,{recursive:true,force:true});await symlink(outside,target,'dir');
+  const lockBefore=await readFile(join(directory,'pnpm-lock.yaml'));
+  await assert.rejects(()=>prepareRetainedDirectoryGraph(directory,root),/source write path/);assert.deepEqual(await readdir(outside),[]);assert.equal(await readlink(target),outside);
+  assert.deepEqual(await readFile(join(directory,'pnpm-lock.yaml')),lockBefore);
+ }finally{await rm(root,{recursive:true,force:true});await rm(outside,{recursive:true,force:true});}
+});
+
+test('refuses existing cache runtime parent plugin-contract-0.1.0-beta.30/node_modules before writing',async()=>{
+ const {root,directory}=await fixture(),outside=await mkdtemp(join(tmpdir(),'clowder-runtime-escape-'));
+ try {
+  await prepareRetainedDirectoryGraph(directory,root);const target=join(directory,'.clowder-local-directory/dependencies/plugin-contract-0.1.0-beta.30/node_modules');
+  await rm(target,{recursive:true,force:true});await symlink(outside,target,'dir');
+  const lockBefore=await readFile(join(directory,'pnpm-lock.yaml'));
+  await assert.rejects(()=>prepareRetainedDirectoryGraph(directory,root),/source write path/);assert.deepEqual(await readdir(outside),[]);assert.equal(await readlink(target),outside);
+  assert.deepEqual(await readFile(join(directory,'pnpm-lock.yaml')),lockBefore);
+ }finally{await rm(root,{recursive:true,force:true});await rm(outside,{recursive:true,force:true});}
+});
+
+test('refuses non-directory archive destination without replacing its bytes',async()=>{
+ const {root,directory}=await fixture();
+ try {
+  const target=join(directory,'.clowder-local-directory/dependencies/plugin-sdk-0.2.0-beta.15');await mkdir(join(target,'..'),{recursive:true});await writeFile(target,'independent file');
+  await assert.rejects(()=>prepareRetainedDirectoryGraph(directory,root),/source write path/);assert.equal(await readFile(target,'utf8'),'independent file');
+ }finally{await rm(root,{recursive:true,force:true});}
 });
