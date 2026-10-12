@@ -224,3 +224,5 @@ export * from './owner-threads.js';
 export * from './frustration.js';
 
 export * from './browser-services.js';
+
+export * from './participant-roster.js';

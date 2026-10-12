@@ -1,3 +1,4 @@
+import { createParticipantRosterClient, type PluginParticipantRosterHost } from './participant-roster.js';
 import type { BrowserServiceHost, PluginHostActionContext } from './browser-services.js';
 import { createFrustrationClient, type PluginFrustrationHost } from './frustration.js';
 import { createDeploymentClient, type PluginDeploymentHost } from './deployment.js';
@@ -63,6 +64,7 @@ export interface HostContributionReceipt {
 export type PluginLogLevel = ModulePluginLogLevel;
 
 export interface FeatureHostAdapter {
+  readonly participantRoster?: PluginParticipantRosterHost;
   readonly ownerThreads?: PluginOwnerThreadHost;
   readonly browserServices?: BrowserServiceHost;
   readonly frustration?: PluginFrustrationHost;
@@ -139,6 +141,8 @@ export interface ContributionRegistrar<T extends StaticContribution> {
 }
 
 export interface FeatureContext {
+  /** Current owner or same-owner verified native invocation; absent on older carriers. */
+  readonly participantRoster?: PluginParticipantRosterHost;
   /** Strict authenticated owner webhook calls only; absent on older carriers. */
   readonly ownerThreads?: PluginOwnerThreadHost;
   readonly browserServices?: BrowserServiceHost;
@@ -402,6 +406,7 @@ export function createFeatureContextSession(
     listBindings: () => runWhileActive(() => adapter.threads.listBindings()),
     ensureSystemThread: () => runWhileActive(() => adapter.threads.ensureSystemThread()),
   };
+  const participantRoster = adapter.participantRoster === undefined ? undefined : createParticipantRosterClient(adapter.participantRoster, assertActive);
   const ownerThreads = adapter.ownerThreads === undefined ? undefined : createOwnerThreadClient(adapter.ownerThreads, capability => {
     assertActive();
     if (!binding.grantedCapabilities.includes(capability)) throw new FeaturePermissionError(`${capability} not granted`);
@@ -460,6 +465,7 @@ export function createFeatureContextSession(
     }),
   } : undefined;
   const context: FeatureContext = {
+    ...(participantRoster ? { participantRoster } : {}),
     ...(ownerThreads ? { ownerThreads } : {}),
     ...(browserServices ? { browserServices } : {}),
     featureId: binding.featureId,

@@ -205,6 +205,58 @@
         }
       ]
     },
+    "PluginParticipant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catId",
+        "displayName",
+        "defaultModel",
+        "supported"
+      ],
+      "properties": {
+        "catId": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "variantLabel": {
+          "type": "string"
+        },
+        "defaultModel": {
+          "type": "string"
+        },
+        "roleDescription": {
+          "type": "string"
+        },
+        "avatar": {
+          "type": "string",
+          "maxLength": 1200,
+          "pattern": "^data:image/webp;base64,[A-Za-z0-9+/]+=*$"
+        },
+        "supported": {
+          "type": "boolean"
+        }
+      }
+    },
+    "PluginParticipantRosterInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contributionId"
+      ],
+      "properties": {
+        "contributionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
     "PluginOwnerThread": {
       "type": "object",
       "additionalProperties": false,

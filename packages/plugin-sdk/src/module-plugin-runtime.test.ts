@@ -107,6 +107,78 @@ test('ownerThreads rejects a partial carrier and an invalid owner projection', a
   await activation.stop();
 });
 
+async function participantRosterFixture(port: unknown) {
+  let context!: FeatureContext;
+  const entrypoint = definePluginModule(input => definePlugin({ manifest: input, activate: {
+    'feature-1': value => { context = value; return { actions: { 'fixture.outbound': () => undefined, 'fixture.echo': () => undefined } }; },
+  } }));
+  const runtimeHost = { ...host([]), ...(port === undefined ? {} : { participantRoster: port }) } as ModulePluginHostShape;
+  const activation = await entrypoint.create(manifest()).start(runtimeHost);
+  return { context, activation };
+}
+
+test('participantRoster transports the declared contribution only and freezes honest public rows', async () => {
+  const calls: unknown[] = [];
+  const row = { catId: 'cat', displayName: 'Cat', defaultModel: 'model', nickname: 'Kit', supported: false };
+  const { context, activation } = await participantRosterFixture({ async listForNativeContribution(input: unknown) { calls.push(input); return [row]; } });
+  assert.ok(context.participantRoster);
+  const rows = await context.participantRoster.listForNativeContribution({ contributionId: 'native' });
+  assert.deepEqual(calls, [{ contributionId: 'native' }]);
+  assert.deepEqual(rows, [row]); assert.equal(rows[0]!.supported, false);
+  assert.ok(Object.isFrozen(rows)); assert.ok(Object.isFrozen(rows[0]));
+  row.displayName = 'Changed'; assert.equal(rows[0]!.displayName, 'Cat');
+  await activation.stop();
+});
+
+test('participantRoster stays absent on older carriers and rejects partial supplied carriers', async () => {
+  const { context, activation } = await participantRosterFixture(undefined);
+  assert.equal(context.participantRoster, undefined); await activation.stop();
+  await assert.rejects(participantRosterFixture({}), /participant roster port/);
+});
+
+test('participantRoster rejects forged authority and UTF16 or trim-invalid contribution IDs before Host calls', async () => {
+  let calls = 0;
+  const { context, activation } = await participantRosterFixture({ async listForNativeContribution() { calls++; return []; } });
+  assert.ok(context.participantRoster);
+  for (const input of [{ contributionId: '' }, { contributionId: 'native\n' }, { contributionId: '😀'.repeat(129) },
+    { contributionId: 'native', instanceId: 'forged' }, { contributionId: 'native', methods: ['fake'] }]) {
+    await assert.rejects(() => context.participantRoster!.listForNativeContribution(input), TypeError);
+  }
+  assert.equal(calls, 0); await activation.stop();
+});
+
+test('participantRoster preserves Host refusal without retry or available/catalog fallback', async () => {
+  const refusal = new Error('DELIVERY_REJECTED'); let calls = 0;
+  const { context, activation } = await participantRosterFixture({ async listForNativeContribution() { calls++; throw refusal; } });
+  assert.ok(context.participantRoster);
+  await assert.rejects(() => context.participantRoster!.listForNativeContribution({ contributionId: 'native' }), error => error === refusal);
+  assert.equal(calls, 1); await activation.stop();
+});
+
+test('participantRoster rejects late results and use after stop', async () => {
+  let finish!: (rows: never[]) => void; let calls = 0;
+  const { context, activation } = await participantRosterFixture({ async listForNativeContribution() { calls++; return new Promise<never[]>(resolve => { finish = resolve; }); } });
+  assert.ok(context.participantRoster);
+  const pending = context.participantRoster.listForNativeContribution({ contributionId: 'native' });
+  await activation.stop(); finish([]);
+  await assert.rejects(pending, FeatureContextRevokedError);
+  await assert.rejects(() => context.participantRoster!.listForNativeContribution({ contributionId: 'native' }), FeatureContextRevokedError);
+  assert.equal(calls, 1);
+});
+
+test('participantRoster rejects private/available/eligible fields and nonportable avatars in Host projections', async () => {
+  const row = { catId: 'cat', displayName: 'Cat', defaultModel: 'model', supported: false };
+  let result: unknown = [];
+  const { context, activation } = await participantRosterFixture({ async listForNativeContribution() { return result; } });
+  assert.ok(context.participantRoster);
+  for (const invalid of [{ ...row, eligible: true }, { ...row, available: true }, { ...row, account: 'private' },
+    { ...row, avatar: '/Users/private/avatar.webp' }, { ...row, supported: 'true' }, { catId: 'cat' }]) {
+    result = [invalid];
+    await assert.rejects(() => context.participantRoster!.listForNativeContribution({ contributionId: 'native' }), /PluginParticipant/);
+  }
+  await activation.stop();
+});
+
 function manifest() {
   return {
     pluginId: 'dev.clowder.module-fixture',

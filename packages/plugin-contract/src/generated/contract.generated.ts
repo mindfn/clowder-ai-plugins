@@ -50,6 +50,19 @@ export type FrustrationLinkDraftResult = {
 } | {
   readonly outcome: 'missing' | 'not_confirmed' | 'stale_source' | 'conflict';
 };
+export type PluginParticipant = {
+  readonly catId: string;
+  readonly displayName: string;
+  readonly nickname?: string;
+  readonly variantLabel?: string;
+  readonly defaultModel: string;
+  readonly roleDescription?: string;
+  readonly avatar?: string;
+  readonly supported: boolean;
+};
+export type PluginParticipantRosterInput = {
+  readonly contributionId: string;
+};
 export type PluginOwnerThread = {
   readonly id: string;
   readonly createdBy: string;
