@@ -288,12 +288,23 @@ test('packed public packages install and import in a fresh npm consumer', async 
       assert.equal(lock.packages['node_modules/@clowder-ai/plugin-sdk'].integrity, retained15.sdk.integrity);
       assert.equal(lock.packages['node_modules/@clowder-ai/plugin-contract'].integrity, retained15.contract.integrity);
     }
+    const retained19 = await readRetainedSdkClosure('0.2.0-beta.19');
+    const retainedSdk19 = new URL('./fixtures/retained-sdk/clowder-ai-plugin-sdk-0.2.0-beta.19.tgz', import.meta.url).href;
+    const retainedContract35 = new URL('./fixtures/retained-sdk/clowder-ai-plugin-contract-0.1.0-beta.35.tgz', import.meta.url).href;
+    const githubLock = JSON.parse(await readFile(join(repoRoot, 'packages/github-operations/npm-shrinkwrap.json'), 'utf8'));
+    assert.equal(githubLock.packages['node_modules/@clowder-ai/plugin-sdk'].integrity, retained19.sdk.integrity);
+    assert.equal(githubLock.packages['node_modules/@clowder-ai/plugin-contract'].integrity, retained19.contract.integrity);
     await writeFile(join(consumer, 'package.json'), JSON.stringify({
       private: true,
       // Scope both override edges by version. An unqualified contract override
-      // can be placed beneath the hoisted current SDK by npm, making beta.16
-      // resolve beta.29 despite its declared beta.32 dependency.
+      // can be placed beneath the hoisted current SDK by npm, making it load
+      // a retained contract instead of its declared current dependency.
       overrides: Object.fromEntries([
+        ['@clowder-ai/github-operations', {
+          '@clowder-ai/plugin-contract@0.1.0-beta.35': retainedContract35,
+          '@clowder-ai/plugin-sdk@0.2.0-beta.19': { '.': retainedSdk19,
+            '@clowder-ai/plugin-contract@0.1.0-beta.35': retainedContract35 },
+        }],
         ...connectorPackages.map(({ name }) => [name, { '@clowder-ai/plugin-sdk@0.2.0-beta.15': { '.': retainedSdk15,
           '@clowder-ai/plugin-contract@0.1.0-beta.30': retainedContract30 } }]),
         ...['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow'].map(name => [
@@ -400,9 +411,12 @@ test('packed public packages install and import in a fresh npm consumer', async 
         'utf8',
       ),
     );
-    assert.equal(contractPackage.version, '0.1.0-beta.32');
-    assert.equal(sdkPackage.version, '0.2.0-beta.16');
-    assert.equal(sdkPackage.dependencies['@clowder-ai/plugin-contract'], '0.1.0-beta.32');
+    const sourceContract = JSON.parse(await readFile(join(repoRoot, 'packages/plugin-contract/package.json'), 'utf8'));
+    const sourceSdk = JSON.parse(await readFile(join(repoRoot, 'packages/plugin-sdk/package.json'), 'utf8'));
+    assert.equal(sourceSdk.dependencies['@clowder-ai/plugin-contract'], sourceContract.version);
+    assert.equal(contractPackage.version, sourceContract.version);
+    assert.equal(sdkPackage.version, sourceSdk.version);
+    assert.equal(sdkPackage.dependencies['@clowder-ai/plugin-contract'], sourceContract.version);
     assert.equal(
       feishuPackage.dependencies['@clowder-ai/plugin-contract'],
       '0.1.0-beta.9',
@@ -453,7 +467,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
     for (const [directory, expected] of [
       ...['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow'].map(name => [name, '0.2.0-beta.12']),
       ...connectorPackages.map(({ name }) => [name.slice('@clowder-ai/'.length), '0.2.0-beta.15']),
-      ['github-operations', '0.2.0-beta.16'],
+      ['github-operations', '0.2.0-beta.19'],
     ]) {
       const installedRoot = join(consumer, 'node_modules/@clowder-ai', directory);
       const resolvedUrl = run(process.execPath, ['--input-type=module', '--eval',
@@ -465,7 +479,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
         "console.log(import.meta.resolve('@clowder-ai/plugin-contract'));"], resolvedSdkRoot).trim();
       const resolvedContract = JSON.parse(await readFile(join(dirname(dirname(fileURLToPath(resolvedContractUrl))), 'package.json'), 'utf8'));
       const expectedContract = { '0.2.0-beta.12': '0.1.0-beta.29', '0.2.0-beta.15': '0.1.0-beta.30',
-        '0.2.0-beta.16': '0.1.0-beta.32' }[expected];
+        '0.2.0-beta.19': '0.1.0-beta.35' }[expected];
       assert.equal(resolvedContract.version, expectedContract,
         `${directory} SDK must load its declared contract identity`);
     }
