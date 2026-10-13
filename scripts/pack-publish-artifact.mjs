@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  copyFile,
   lstat,
   mkdir,
   mkdtemp,
@@ -10,12 +11,13 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assertProductionDependencyClosure } from './catalog-package-shrinkwrap.mjs';
 import { normalizeBundledPublishGzip } from './canonical-publish-gzip.mjs';
 import { assertArchiveBins } from './package-bins.mjs';
+import { materializeLockedDependencies } from './materialize-locked-dependencies.mjs';
 
 const repoRoot = fileURLToPath(new URL('../', import.meta.url));
 
@@ -150,17 +152,31 @@ async function main() {
     const sourceRoot = join(temporaryRoot, 'source');
     await mkdir(sourceRoot);
     const deploymentRoot = join(temporaryRoot, 'deployment');
-    // pack's linker option does not reconstruct a workspace's existing linked
-    // tree. Deploy first: otherwise bundled packages lose indirect dependencies
-    // that live beside their targets in pnpm's virtual store (MCP schema codec).
-    // This isolated production deployment uses the frozen local cache, never
-    // rewrites package declarations or the checkout's node_modules/pins.
-    run('pnpm', ['--config.ignore-scripts=true', '--config.node-linker=hoisted',
-      '--offline', '--filter', packageJson.name, 'deploy', '--prod', deploymentRoot], repoRoot);
-    const deployedManifest = JSON.parse(await readFile(join(deploymentRoot, 'package.json'), 'utf8'));
-    if (JSON.stringify(Object.entries(deployedManifest.dependencies).sort()) !== JSON.stringify(Object.entries(packageJson.dependencies).sort()))
-      throw new Error('production deployment changed declared runtime dependency identities');
-    await writeFile(join(deploymentRoot, 'package.json'), await readFile(join(packageRoot, 'package.json')));
+    const ownMembers = new Map();
+    async function copyPublishPackage(source, target) {
+      let members = ownMembers.get(source);
+      if (!members) {
+        const [ownArtifact] = JSON.parse(runNpm(
+          ['pack', '--json', '--ignore-scripts', '--dry-run', source], repoRoot,
+        ));
+        // Only own publish members: npm's walk of the checkout's bundled links
+        // can report indirect files outside the source package. The frozen lock
+        // graph supplies those dependencies independently, as physical files.
+        members = ownArtifact.files.map(file => file.path).filter(path =>
+          !path.startsWith('node_modules/') && isContained(source, resolve(source, path)));
+        ownMembers.set(source, members);
+      }
+      for (const member of members) {
+        const from = join(source, member);
+        if (!(await lstat(from)).isFile()) throw new Error(`non-regular own publish member: ${member}`);
+        const to = join(target, member);
+        await mkdir(dirname(to), { recursive: true });
+        await copyFile(from, to);
+      }
+    }
+    await copyPublishPackage(packageRoot, deploymentRoot);
+    await materializeLockedDependencies({ repoRoot, packageRoot, destination: deploymentRoot,
+      copyPublishPackage });
     const pnpmOutput = run(
       'pnpm',
       [
