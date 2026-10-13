@@ -183,7 +183,9 @@ test('actual owner GET consumes real Queue phases and per-target witnesses witho
       expect(r.status).toBe(200); return r.body.requests[0]!.execution?.stage; };
     expect(await stage()).toBe('queued');
     queue.status = 'processing'; queue.seenByCatIds = ['codex-sol']; expect(await stage()).toBe('started');
-    queue.status = 'terminal'; queue.failedByCatIds = ['codex-sol']; expect(await stage()).toBe('failed');
+    queue.status = 'terminal'; expect(await stage()).toBeUndefined();
+    queue.seenByCatIds = []; expect(await stage()).toBeUndefined();
+    queue.failedByCatIds = ['codex-sol']; expect(await stage()).toBe('failed');
     queue.handledByCatIds = ['codex-sol']; expect(await stage()).toBe('ended');
     queue.allTargetCats = ['foreign-cat']; expect(await stage()).toBeUndefined();
     f.setProgress(undefined); expect(await stage()).toBeUndefined();
@@ -196,12 +198,13 @@ if (process.env.C1_SOURCE_PROGRESS_HOST_ROOT) test('real compiled Queue and owne
   const base = process.env.C1_SOURCE_PROGRESS_HOST_ROOT!;
   const { MessageStore } = await import(`${base}/domains/cats/services/stores/ports/MessageStore.js`);
   const { createInitialQueuedMessageCustody } = await import(`${base}/domains/cats/services/agents/invocation/QueuedMessageCustodyCoordinator.js`);
+  const { settleQueueCustodyWithdrawal } = await import(`${base}/domains/cats/services/stores/ports/queued-message-custody.js`);
   const { createPluginSourceFactsHost } = await import(`${base}/domains/plugin/host-surface/plugin-source-facts-host.js`);
   const { withPluginOwnerRequest, withPluginOwnerWebhook } = await import(`${base}/domains/plugin/carrier/plugin-owner-request-context.js`);
   const owner = (operation: () => unknown) => withPluginOwnerRequest({ pluginId: 'official.collective-connector',
     contributionId: 'owner-view', userId: 'local-owner', operation: 'read', signal: new AbortController().signal },
     () => withPluginOwnerWebhook('official.collective-connector', 'owner-view', 'fixture', false, () => {}, operation));
-  for (const stage of ['queued', 'started', 'failed', 'ended']) {
+  for (const stage of ['queued', 'started', 'failed', 'ended', 'withdrawn', 'withdrawn-seen']) {
     let bodyReads = 0;
     const f = await setup(undefined, async (fixture, current) => {
       const store = new MessageStore();
@@ -213,7 +216,7 @@ if (process.env.C1_SOURCE_PROGRESS_HOST_ROOT) test('real compiled Queue and owne
         mentions: ['codex-sol'], timestamp: 1000, deliveryStatus: 'queued', queueCustody: custody,
         source: { connector: 'collective', meta: { participation: fixture.source } },
         extra: { pluginMessage: { instanceId: 'fixture', revision: 1 } } });
-      if (stage !== 'queued') {
+      if (stage !== 'queued' && stage !== 'withdrawn') {
         const before = store.getById(message.id).queueCustody;
         const next = { ...before, revision: before.revision + 1, status: 'processing', updatedAt: 2000,
           seenByCatIds: ['codex-sol'], bodyExposures: [{ targetCatId: 'codex-sol', invocationId: 'private-child', seenAt: 1100 }],
@@ -225,6 +228,13 @@ if (process.env.C1_SOURCE_PROGRESS_HOST_ROOT) test('real compiled Queue and owne
         expect(store.transitionQueueCustody(message.id, { expectedRevision: before.revision, next,
           ...(stage === 'ended' ? { deliveredAt: 2000 } : {}) }).kind).toBe('updated');
       }
+      if (stage.startsWith('withdrawn')) {
+        const before = store.getById(message.id).queueCustody;
+        const next = settleQueueCustodyWithdrawal(before, ['codex-sol'], 3000);
+        expect(next.status).toBe('terminal');
+        expect(next.withdrawnByCatIds).toEqual(['codex-sol']);
+        expect(store.transitionQueueCustody(message.id, { expectedRevision: before.revision, next, deliveredAt: 3000 }).kind).toBe('updated');
+      }
       const host = createPluginSourceFactsHost({ pluginInstanceId: 'fixture', ownerUserId: 'local-owner',
         messageStore: { async getById(id: string) { return structuredClone(store.getById(id)); } },
         threadStore: { async get() { return { id: 'channel', createdBy: 'local-owner' }; } }, assertCurrent: current });
@@ -233,7 +243,8 @@ if (process.env.C1_SOURCE_PROGRESS_HOST_ROOT) test('real compiled Queue and owne
     try {
       const result = await owner(() => f.invoke()) as { status: number; body: { requests: { execution: { stage: string } }[] } };
       expect(result.status, JSON.stringify(result)).toBe(200);
-      expect(result.body.requests[0]!.execution).toEqual({ stage });
+      if (stage.startsWith('withdrawn')) expect(result.body.requests[0]).not.toHaveProperty('execution');
+      else expect(result.body.requests[0]!.execution).toEqual({ stage });
       expect(JSON.stringify(result.body.requests)).not.toContain('private-child');
       expect(JSON.stringify(result.body.requests)).not.toContain('private queued body');
       expect(bodyReads).toBe(0);

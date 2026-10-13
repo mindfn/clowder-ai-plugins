@@ -7,10 +7,11 @@ type InboxItem = Awaited<ReturnType<CollectiveConnector['listInbox']>>[number];
 type OwnerThread = Awaited<ReturnType<IThreadStore['list']>>[number];
 type Stage = 'queued' | 'started' | 'ended' | 'failed';
 
-function stageFor(custody: QueuedMessageCustody, catId: string): Stage {
+function stageFor(custody: QueuedMessageCustody, catId: string): Stage | undefined {
   if ((custody.targetOutcomeByCatId && Object.hasOwn(custody.targetOutcomeByCatId, catId)) ||
     custody.handledByCatIds.some((id) => id === catId)) return 'ended';
   if (custody.failedByCatIds.some((id) => id === catId)) return 'failed';
+  if (custody.status === 'terminal') return undefined;
   if (
     custody.seenByCatIds.some((id) => id === catId) ||
     custody.bodyExposures?.some((exposure) => exposure.targetCatId === catId)
@@ -48,5 +49,6 @@ export async function ownerRequestExecution(
     !custody.allTargetCats.some((id) => id === recipient.agentId)
   )
     return undefined;
-  return { stage: stageFor(custody, recipient.agentId) };
+  const stage = stageFor(custody, recipient.agentId);
+  return stage === undefined ? undefined : { stage };
 }
