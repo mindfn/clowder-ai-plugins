@@ -1,7 +1,8 @@
-import type { CollectiveConnector } from '@cat-cafe/collective-connector';
-import { type CollectiveSourceIdentity, type CollectiveWorkMatter, collectiveWorkMatterSchema } from '@cat-cafe/shared';
-import type { InvocationRecord } from '../../../cats/services/agents/invocation/InvocationRegistry.js';
-import { collectiveContextError, opaqueRef, verifyRef } from '../collective-context-refs.js';
+import type { CollectiveConnector } from './business/connector/connector.js';
+import { type CollectiveSourceIdentity, type CollectiveWorkMatter, collectiveWorkMatterSchema } from './business/contracts/index.js';
+import type { CollectiveContextReferences, CollectiveReferenceIdentity } from './collective-context-refs.js';
+type InvocationIdentity = CollectiveReferenceIdentity & { readonly catId: string };
+import { collectiveContextError } from './collective-context-refs.js';
 
 export interface CollectiveContinueWorkInput {
   readonly workRef: string;
@@ -27,39 +28,41 @@ function workCoordinates(matter: CollectiveWorkMatter) {
   const { workId, revision, executionRevision, resultEventId, resultRevision } = matter;
   return coordinatesSchema.parse({ workId, revision, executionRevision, resultEventId, resultRevision });
 }
-function encodeWorkRef(auth: InvocationRecord, sourceRef: string, matter: CollectiveWorkMatter) {
+function encodeWorkRef(refs: CollectiveContextReferences, auth: InvocationIdentity, sourceRef: string, matter: CollectiveWorkMatter) {
   const payload = Buffer.from(JSON.stringify(workCoordinates(matter))).toString('base64url');
-  return `${payload}.${opaqueRef(auth, `work:${payload}`, sourceRef)}`;
+  return `${payload}.${refs.opaqueRef(auth, `work:${payload}`, sourceRef)}`;
 }
-function decodeWorkRef(auth: InvocationRecord, sourceRef: string, workRef: string) {
+function decodeWorkRef(refs: CollectiveContextReferences, auth: InvocationIdentity, sourceRef: string, workRef: string) {
   if (workRef.length > 2000) throw collectiveContextError('RETURN_REF_INVALID', 'Invalid Work reference');
   const parts = workRef.split('.');
   if (parts.length !== 2 || !parts[0] || !parts[1])
     throw collectiveContextError('RETURN_REF_INVALID', 'Invalid Work reference');
-  verifyRef(auth, parts[1], `work:${parts[0]}`, sourceRef);
+  refs.verifyRef(auth, parts[1], `work:${parts[0]}`, sourceRef);
   return coordinatesSchema.parse(JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8')));
 }
 
 /** Only bounded public candidates enter the model. The reference is bound to this source and invocation. */
 export async function currentWorkSourceContext(
   connector: Pick<CollectiveConnector, 'readWorkSourceContext'>,
-  auth: InvocationRecord,
+  refs: CollectiveContextReferences,
+  auth: InvocationIdentity,
   binding: SourceBinding,
 ) {
   const current = await connector.readWorkSourceContext(binding.source);
   return {
     ...current,
-    matters: current.matters.map((matter) => ({ ...matter, workRef: encodeWorkRef(auth, binding.sourceRef, matter) })),
+    matters: current.matters.map((matter) => ({ ...matter, workRef: encodeWorkRef(refs, auth, binding.sourceRef, matter) })),
   };
 }
 
 export async function continueWorkFromSource(
   connector: CollectiveConnector,
-  auth: InvocationRecord,
+  refs: CollectiveContextReferences,
+  auth: InvocationIdentity,
   binding: SourceBinding,
   input: CollectiveContinueWorkInput,
 ) {
-  const expected = decodeWorkRef(auth, binding.sourceRef, input.workRef);
+  const expected = decodeWorkRef(refs, auth, binding.sourceRef, input.workRef);
   const current = await connector.readWorkSourceContext(binding.source);
   const matter = current.matters.find((candidate) => candidate.workId === expected.workId);
   if (!matter || JSON.stringify(workCoordinates(matter)) !== JSON.stringify(expected))
