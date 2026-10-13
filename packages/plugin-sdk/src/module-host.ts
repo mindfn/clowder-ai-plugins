@@ -251,6 +251,7 @@ export interface ModulePluginHostShape {
 }
 
 export interface PluginModuleActivationShape {
+  readonly publicInvocationVerifier?: import('./public-invocation-verifier.js').PluginPublicInvocationVerifier;
   readonly predicateVerifiers?: Readonly<Record<string, import('./custody.js').PluginPredicateVerifier>>;
   readonly actions: Readonly<Record<string, import('./feature-context.js').PluginActionHandler>>;
   stop(): void | Promise<void>;

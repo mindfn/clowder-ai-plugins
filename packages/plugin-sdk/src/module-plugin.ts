@@ -177,6 +177,7 @@ async function startDefinedPluginModule(
   const active: ActivePluginFeature[] = [];
   const actions: Record<string, PluginActionHandler> = {};
   const predicateVerifiers: Record<string, import('./custody.js').PluginPredicateVerifier> = {};
+  let publicInvocationVerifier: import('./public-invocation-verifier.js').PluginPublicInvocationVerifier | undefined;
   const globalMethods = globalActionMethods(plugin.manifest);
   try {
     for (const feature of plugin.manifest.features) {
@@ -199,6 +200,10 @@ async function startDefinedPluginModule(
         allowLimbHandlers: contributions.some((contribution) => contribution.type === 'limb'),
       });
       active.push(activated);
+      if (activated.publicInvocationVerifier !== undefined) {
+        if (publicInvocationVerifier !== undefined) throw new TypeError('Public verifier is exposed by multiple plugin features');
+        publicInvocationVerifier = activated.publicInvocationVerifier;
+      }
       Object.assign(predicateVerifiers, activated.predicateVerifiers);
       const presentationMethods = new Set(
         contributions
@@ -239,6 +244,7 @@ async function startDefinedPluginModule(
   let stopPromise: Promise<void> | undefined;
   return Object.freeze({
     actions: Object.freeze({ ...actions }),
+    ...(publicInvocationVerifier === undefined ? {} : { publicInvocationVerifier }),
     predicateVerifiers: Object.freeze({ ...predicateVerifiers }),
     stop: () => {
       stopPromise ??= settleModuleFeatures(active, sessions);

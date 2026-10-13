@@ -1,3 +1,4 @@
+import { capturePublicInvocationVerifier, guardPublicInvocationVerifier, PUBLIC_INVOCATION_VERIFIER_METHOD, type PluginPublicInvocationVerifier } from './public-invocation-verifier.js';
 import { createSourceFactsClient, createNativeContextClient, type PluginSourceFactsHost, type PluginNativeContextHost } from './source-facts.js';
 import { createParticipantRosterClient, type PluginParticipantRosterHost } from './participant-roster.js';
 import type { BrowserServiceHost, PluginHostActionContext } from './browser-services.js';
@@ -554,6 +555,7 @@ export function createFeatureContextSession(
 export type PluginActionHandler = (input: unknown, context?: import('./module-action-client.js').PluginActionContext, hostContext?: PluginHostActionContext) => unknown | Promise<unknown>;
 
 export interface FeatureActivation {
+  readonly publicInvocationVerifier?: PluginPublicInvocationVerifier;
   readonly predicateVerifiers?: Readonly<Record<string, PluginPredicateVerifier>>;
   readonly actions?: Readonly<Record<string, PluginActionHandler>>;
   dispose?(): void | Promise<void>;
@@ -574,6 +576,7 @@ export interface DefinedPlugin {
 }
 
 export interface ActivePluginFeature {
+  readonly publicInvocationVerifier?: PluginPublicInvocationVerifier;
   readonly predicateVerifiers: Readonly<Record<string, PluginPredicateVerifier>>;
   readonly actions: Readonly<Record<string, PluginActionHandler>>;
   dispose(): Promise<void>;
@@ -647,6 +650,14 @@ export async function activateDefinedFeature(
   const disposeActivation = activation.dispose ?? (() => undefined);
   const rawActions = Object.freeze({ ...(activation.actions ?? {}) });
   const actions = rawActions;
+  let publicVerifier: PluginPublicInvocationVerifier | undefined;
+  try {
+    if (Object.hasOwn(actions, PUBLIC_INVOCATION_VERIFIER_METHOD) || plugin.manifest.contributions?.some(
+      contribution => contribution.type === 'mcp' && contribution.actions?.some(action => action.method === PUBLIC_INVOCATION_VERIFIER_METHOD),
+    )) throw new TypeError('Public verifier cannot be an ordinary action');
+    publicVerifier = capturePublicInvocationVerifier(activation);
+  } catch (error) { await Promise.resolve(disposeActivation()).catch(() => undefined); throw error; }
+
   const requiredMethods = featureActionMethods(plugin.manifest, featureId);
   const allowedMethods = new Set(requiredMethods);
   for (const method of options.additionalMethods ?? []) allowedMethods.add(method);
@@ -663,6 +674,9 @@ export async function activateDefinedFeature(
     throw new TypeError(`declared action ${missing} has no handler for feature ${featureId}`);
   }
   let disposed = false;
+  const verifierLifetime = new AbortController();
+  const publicInvocationVerifier = publicVerifier === undefined ? undefined : guardPublicInvocationVerifier(publicVerifier,
+    verifierLifetime.signal, () => { if (disposed) throw new FeatureContextRevokedError(); });
   const declared = (plugin.manifest.contributions ?? []).filter(c => c.type === 'terminal-predicate-provider' &&
     plugin.manifest.features.find(f => f.id === featureId)?.contributions?.some(r => r.type === c.type && r.id === c.id));
   const expected = new Map<string, 'freshness' | 'completion'>();
@@ -710,8 +724,10 @@ export async function activateDefinedFeature(
   return Object.freeze({
     actions: guardedActions,
     predicateVerifiers,
+    ...(publicInvocationVerifier === undefined ? {} : { publicInvocationVerifier }),
     dispose: () => {
       disposed = true;
+      verifierLifetime.abort(new FeatureContextRevokedError());
       disposePromise ??= Promise.resolve().then(() => disposeActivation());
       return disposePromise;
     },

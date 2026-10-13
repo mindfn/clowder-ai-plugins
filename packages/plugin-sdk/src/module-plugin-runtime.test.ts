@@ -812,3 +812,128 @@ test('limb handlers pass through while duplicate callback and limb names fail cl
     /action handler limb\.execute is exposed by multiple plugin features/i,
   );
 });
+
+type PublicSlot = (input: unknown, context: { readonly signal: AbortSignal; assertCurrent(): Promise<void> }) => Promise<Readonly<{ current: true }>>;
+const publicInput = () => ({ authority: { ref: 'public:source-1', revision: 'source-revision-1' },
+  source: { messageRef: 'message:source-1' }, targetCatId: 'cat-1', native: { contributionId: 'native-1', methods: ['native.read'] } });
+const publicCall = () => ({ signal: new AbortController().signal, async assertCurrent() {} });
+async function publicSlotFixture(raw: object, candidate = manifest()) {
+  const entrypoint = definePluginModule(input => definePlugin({ manifest: input, activate: {
+    'feature-1': () => raw as never,
+  } }));
+  return entrypoint.create(candidate).start(host([]));
+}
+function publicActivation(slot?: unknown) {
+  return { actions: { 'fixture.outbound': () => undefined, 'fixture.echo': () => undefined },
+    ...(slot === undefined ? {} : { publicInvocationVerifier: slot }) };
+}
+function slotOf(activation: object): PublicSlot {
+  const descriptor = Object.getOwnPropertyDescriptor(activation, 'publicInvocationVerifier');
+  assert.equal(typeof descriptor?.value, 'function', 'Feature → module must preserve its private verifier slot');
+  return descriptor!.value as PublicSlot;
+}
+
+test('public verifier slot traverses Feature and module with exact isolated ABI', async () => {
+  let captured!: Parameters<PublicSlot>[1]; let received: unknown; let calls = 0;
+  const activation = await publicSlotFixture(publicActivation(async (input: unknown, context: Parameters<PublicSlot>[1]) => {
+    calls++; received = input; captured = context;
+    assert.deepEqual(Object.keys(context).sort(), ['assertCurrent', 'signal']);
+    await context.assertCurrent(); return { current: true };
+  }));
+  const input = publicInput(); const result = await slotOf(activation)(input, publicCall());
+  assert.deepEqual(received, input); assert.notEqual(received, input);
+  assert.ok(Object.isFrozen(received)); assert.ok(Object.isFrozen((received as typeof input).native.methods));
+  assert.deepEqual(result, { current: true }); assert.ok(Object.isFrozen(result)); assert.equal(calls, 1);
+  assert.equal(activation.actions['host.public-invocation.assert-current'], undefined);
+  await assert.rejects(captured.assertCurrent(), /expired/);
+  await activation.stop(); await assert.rejects(slotOf(activation)(input, publicCall()), /revoked|stopped/);
+});
+
+test('public verifier remains absent for older activators', async () => {
+  const activation = await publicSlotFixture(publicActivation());
+  assert.equal(Object.hasOwn(activation, 'publicInvocationVerifier'), false); await activation.stop();
+});
+
+test('public verifier rejects inherited/accessor/non-function slots without invoking getters', async () => {
+  let gets = 0; let disposals = 0;
+  for (const malformed of [Object.assign(Object.create({ publicInvocationVerifier: () => ({ current: true }) }), publicActivation()),
+    Object.defineProperty(publicActivation(), 'publicInvocationVerifier', { get() { gets++; return () => ({ current: true }); } }),
+    publicActivation(true)]) {
+    Object.assign(malformed, { dispose() { disposals++; } });
+    await assert.rejects(publicSlotFixture(malformed), /own data function/);
+  }
+  assert.equal(gets, 0); assert.equal(disposals, 3);
+});
+
+test('public verifier rejects invalid snapshots and context identity fields before calling business', async () => {
+  let calls = 0;
+  const activation = await publicSlotFixture(publicActivation(() => { calls++; return { current: true }; }));
+  const slot = slotOf(activation);
+  for (const input of [{ ...publicInput(), userId: 'owner' }, { ...publicInput(), authority: { ref: 'x', revision: 1 } },
+    { ...publicInput(), native: { contributionId: 'native-1', methods: ['b', 'a'] } },
+    { ...publicInput(), native: { contributionId: 'native-1', methods: ['a', 'a'] } },
+    { ...publicInput(), source: { messageRef: 'message:bad\n' } }]) await assert.rejects(slot(input, publicCall()), TypeError);
+  await assert.rejects(slot(publicInput(), { ...publicCall(), userId: 'owner' } as never), TypeError);
+  assert.equal(calls, 0); await activation.stop();
+});
+
+test('public verifier requires strictly current true and preserves Host refusals without retry', async () => {
+  for (const result of [false, { current: false }, { current: true, authority: 'widened' },
+    Object.defineProperty({}, 'current', { enumerable: true, get() { throw new Error('must not read getter'); } })]) {
+    const activation = await publicSlotFixture(publicActivation(() => result));
+    await assert.rejects(slotOf(activation)(publicInput(), publicCall()), TypeError); await activation.stop();
+  }
+  let calls = 0; const refused = new Error('authority revoked');
+  const activation = await publicSlotFixture(publicActivation(() => { calls++; return { current: true }; }));
+  await assert.rejects(slotOf(activation)(publicInput(), { signal: publicCall().signal, async assertCurrent() { throw refused; } }), error => error === refused);
+  assert.equal(calls, 0); await activation.stop();
+});
+
+test('public verifier abort and stop reject pending or late results', async () => {
+  for (const reason of ['abort', 'stop']) {
+    let finish!: (value: { current: true }) => void; const controller = new AbortController();
+    const activation = await publicSlotFixture(publicActivation(() => new Promise(resolve => { finish = resolve; })));
+    const pending = slotOf(activation)(publicInput(), { signal: controller.signal, async assertCurrent() {} });
+    const rejected = assert.rejects(pending); await new Promise(resolve => setImmediate(resolve));
+    if (reason === 'abort') controller.abort(new Error('caller cancelled')); else await activation.stop();
+    await rejected; finish({ current: true }); await activation.stop();
+  }
+});
+
+test('public verifier cannot occupy ordinary action or MCP method', async () => {
+  const raw = publicActivation(() => ({ current: true }));
+  raw.actions['host.public-invocation.assert-current' as keyof typeof raw.actions] = () => undefined;
+  await assert.rejects(publicSlotFixture(raw), /declared|ordinary action/);
+  const candidate = manifest();
+  candidate.contributions.push({ type: 'mcp', id: 'native', runtime: { transport: 'stdio', entrypoint: 'native.js' },
+    actions: [{ method: 'host.public-invocation.assert-current' }] } as never);
+  candidate.features[0]!.contributions.push({ type: 'mcp', id: 'native' } as never);
+  await assert.rejects(publicSlotFixture(publicActivation(), candidate), /ordinary action/);
+});
+
+test('public verifier snapshots before Host awaits and preserves business refusal once', async () => {
+  let release!: () => void; let first = true; let seen: unknown; let calls = 0;
+  const activation = await publicSlotFixture(publicActivation((input: unknown) => { calls++; seen = input; return { current: true }; }));
+  const input = publicInput();
+  const pending = slotOf(activation)(input, { signal: publicCall().signal, async assertCurrent() {
+    if (first) { first = false; await new Promise<void>(resolve => { release = resolve; }); }
+  } });
+  input.authority.revision = 'changed'; input.native.methods.push('native.write'); release();
+  await pending; assert.deepEqual(seen, publicInput()); assert.equal(calls, 1); await activation.stop();
+  const refusal = new Error('Service participation revoked');
+  const denied = await publicSlotFixture(publicActivation(() => { calls++; throw refusal; }));
+  await assert.rejects(slotOf(denied)(publicInput(), publicCall()), error => error === refusal);
+  assert.equal(calls, 2); await denied.stop();
+});
+
+test('public verifier duplicates reject startup and dispose both feature owners', async () => {
+  const candidate = manifest();
+  candidate.features.push({ id: 'feature-2', name: 'Other', resources: [], contributions: [], capabilities: [] });
+  let disposals = 0;
+  const entrypoint = definePluginModule(input => definePlugin({ manifest: input, activate: {
+    'feature-1': () => ({ ...publicActivation(() => ({ current: true })), dispose() { disposals++; } }) as never,
+    'feature-2': () => ({ publicInvocationVerifier: () => ({ current: true as const }), dispose() { disposals++; } }),
+  } }));
+  await assert.rejects(entrypoint.create(candidate).start(host([])), /multiple plugin features/);
+  assert.equal(disposals, 2);
+});

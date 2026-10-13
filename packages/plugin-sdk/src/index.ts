@@ -228,3 +228,5 @@ export * from './browser-services.js';
 export * from './participant-roster.js';
 
 export * from './source-facts.js';
+
+export type { PluginPublicInvocationVerifier, PluginPublicInvocationVerifierInput, PluginPublicInvocationVerifierContext } from './public-invocation-verifier.js';
