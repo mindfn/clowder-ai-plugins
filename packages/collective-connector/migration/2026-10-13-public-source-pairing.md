@@ -26,6 +26,9 @@ only at imports and its source type. Metadata, sender, idempotency, attention se
 Host `PluginOwnerOperationContext`; these fields are never native tool body inputs.
 
 1. Read the retained inbox event; require an ordinary exact agent recipient and current Service participation.
+   Preserve the original local-echo preflight: a same-connection Agent event without a Work acceptance/execution
+   notice returns `local_echo` before the routing attempt, Host Message or Queue admission. The persistent
+   binding reader/writer rejects that same event, so retained echo cannot become an executable source.
 2. Check the strict owner thread and target membership. Begin the existing inbox routing attempt.
 3. Revalidate Service permission and the materialized destination after asynchronous checks, then
    `messaging.send` with the original metadata, sender and idempotency key, `identity: collective`, observation provenance, and **no wake**.

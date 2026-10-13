@@ -1,5 +1,8 @@
 import { expect, it } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { fixture } from './communication-work-custody.fixture.js';
+import { isCollectiveLocalEcho } from '../public-source-custody.js';
 import type { PluginActionContext, PluginNativeContext, PluginSourceFact, PluginOwnerOperationContext } from '@clowder-ai/plugin-sdk';
 
 async function setup() {
@@ -36,6 +39,7 @@ it('persists source without wake, commits the inbox binding, then enqueues one d
   const f = await setup(); try {
     const receipt = await f.admit();
     expect(receipt).toEqual({ messageRef: 'message:host-source', entryId: 'queue-entry', status: 'queued' });
+    if ('kind' in receipt) throw new Error('Expected Queue receipt for non-echo source');
     expect(f.calls.map((call: any) => call[0])).toEqual(['thread', 'send', 'enqueue']);
     const draft = (f.calls[1] as any)[2]; expect(draft.wake).toBeUndefined();
     expect(draft.meta.participation).toEqual(f.source);
@@ -116,5 +120,49 @@ it('a late admission result after owner stop is refused without pretending to un
     await expect(f.admit()).rejects.toThrow('Caller expired');
     expect(f.connector.readCurrentPublicSource('message:host-source').source).toEqual(f.source);
     expect(f.calls.filter((call: any) => call[0] === 'enqueue')).toHaveLength(1);
+  } finally { await f.close(); }
+});
+
+it('returns local_echo for a real same-connection Agent publication before routing, Host send or Queue admission', async () => {
+  const f = await setup(); try {
+    const state = JSON.parse(await readFile(join(f.root, 'connector', 'collective-connector.json'), 'utf8'));
+    const event = await f.store.postAgentMessage(state.connections[f.connection.connectionId].endpointCredential, {
+      serviceInstanceId: f.connection.serviceInstanceId, collectiveId: f.connection.collectiveId,
+      connectionId: f.connection.connectionId, clientEventId: 'same-connection-echo', agent: f.agent,
+      location: f.source.location, recipient: { kind: 'agent', humanId: f.serviceOwner.human.humanId,
+        connectionId: f.connection.connectionId, agentId: f.source.catId, participationRevision: 1 },
+      replyToEventId: f.source.eventId, body: 'My own public Agent message',
+    });
+    expect(event.actor.kind).toBe('agent');
+    if (event.actor.kind !== 'agent') throw new Error('Expected Agent publication');
+    expect(event.actor.provenance.connectionId).toBe(f.connection.connectionId);
+    await f.connector.sync(f.connection.connectionId);
+    const before = (await f.connector.listInbox(f.connection.connectionId)).find(item => item.event.eventId === event.eventId);
+    expect(await f.sourceCaller.admitAgentEvent(f.connection.connectionId, event.eventId, f.owner)).toEqual({ kind: 'local_echo' });
+    expect(f.calls).toEqual([]);
+    expect((await f.connector.listInbox(f.connection.connectionId)).find(item => item.event.eventId === event.eventId)).toEqual(before);
+    // Even a caller that bypasses the bridge cannot turn this retained echo into a verifier source.
+    await f.connector.beginInboxRouting(f.connection.connectionId, event.eventId, 1);
+    await expect(f.connector.recordPublicSource({ connectionId: f.connection.connectionId, eventId: event.eventId,
+      pluginInstanceId: 'installed-instance', ownerUserId: 'local-owner', threadId: 'channel', messageRef: 'message:echo',
+      native: { contributionId: 'collective-native', methods: ['collective.context.current'] } })).rejects.toMatchObject({ code: 'PUBLIC_SOURCE_LOCAL_ECHO' });
+    expect((await f.connector.listInbox(f.connection.connectionId)).find(item => item.event.eventId === event.eventId)?.publicSource).toBeUndefined();
+  } finally { await f.close(); }
+});
+
+it('does not classify a real same-connection Work acceptance notice as local echo or admit it through the ordinary consumer', async () => {
+  const f = await setup(); try {
+    await f.connector.adoptWorkPolicy(f.connection.connectionId, 'local-owner', f.policy.revision);
+    await f.connector.acceptWork(f.source, f.agent, f.input);
+    await f.connector.sync(f.connection.connectionId);
+    const item = (await f.connector.listInbox(f.connection.connectionId)).find(item => item.event.workAcceptanceNotice);
+    expect(item).toBeDefined();
+    if (!item) throw new Error('Expected real Work acceptance notice');
+    expect(item.event.actor.kind).toBe('agent');
+    expect(isCollectiveLocalEcho(item.event, f.connection.connectionId)).toBe(false);
+    await expect(f.sourceCaller.admitAgentEvent(f.connection.connectionId, item.event.eventId, f.owner))
+      .rejects.toMatchObject({ code: 'PUBLIC_SOURCE_UNAVAILABLE' });
+    expect(f.calls).toEqual([]);
+    expect((await f.connector.listInbox(f.connection.connectionId)).find(candidate => candidate.event.eventId === item.event.eventId)?.publicSource).toBeUndefined();
   } finally { await f.close(); }
 });

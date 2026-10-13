@@ -4,6 +4,7 @@ import type { FeatureContext, PluginActionContext, PluginNativeContextHost, Plug
 import type { CollectiveConnector } from './business/connector/connector.js';
 import { collectiveEventSourceIdentity } from './business/contracts/index.js';
 import { resolveMaterializedParticipation, participationError } from './business/connector/participation-custody.js';
+import { isCollectiveLocalEcho } from './business/connector/public-source-custody.js';
 import { collectiveSource, ingressIdempotencyKey } from './collective-ingress-routing.js';
 
 interface PublicSourceCallerOptions {
@@ -51,6 +52,10 @@ export function createCollectivePublicSourceCaller(options: PublicSourceCallerOp
       if (!route || route.localOwnerUserId !== owner.userId) throw changed();
       const item = (await options.connector.listInbox(connectionId)).find(item => item.event.eventId === eventId);
       if (!item) throw changed();
+      if (isCollectiveLocalEcho(item.event, connectionId)) {
+        await current();
+        return Object.freeze({ kind: 'local_echo' as const });
+      }
       const source = collectiveEventSourceIdentity(item.event);
       if (!source || source.connectionId !== connectionId || item.event.target.kind !== 'agent' ||
         item.event.workRequest || item.event.workAcceptanceNotice || item.event.workExecutionNotice || item.event.workRevisionNotice)

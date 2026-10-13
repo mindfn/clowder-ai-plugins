@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
-import { collectiveEventSourceIdentity, collectiveSourceIdentitySchema } from '../contracts/index.js';
+import { collectiveEventSourceIdentity, collectiveSourceIdentitySchema, type CollectiveEventEnvelope } from '../contracts/index.js';
 import { requireParticipation, participationError } from './participation-custody.js';
 import type { ConnectorPersistence } from './persistence.js';
 import type { ConnectorInboxItem, ConnectorState } from './state.js';
@@ -31,7 +31,16 @@ export interface RecordPublicSourceInput {
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const denied = () => participationError('PUBLIC_SOURCE_CHANGED', 'Exact public source binding is no longer current');
 
-function sourceOf(item: ConnectorInboxItem) {
+/** Original dispatcher preflight: ordinary Agent echo never requests another invocation.
+ * Work acceptance/execution notices keep their independent original consumer. */
+export function isCollectiveLocalEcho(event: CollectiveEventEnvelope, connectionId: string): boolean {
+  return event.actor.kind === 'agent' && event.actor.provenance.connectionId === connectionId &&
+    !event.workAcceptanceNotice && !event.workExecutionNotice;
+}
+
+function sourceOf(item: ConnectorInboxItem, connectionId: string) {
+  if (isCollectiveLocalEcho(item.event, connectionId))
+    throw participationError('PUBLIC_SOURCE_LOCAL_ECHO', 'Local Agent echo cannot become an executable public source');
   // Purpose-winner, private Work and channel-attention selection are separate original consumers.
   // This slice pairs only the ordinary exact-agent ingress; none can borrow this binding.
   if (item.event.workRequest || item.event.workAcceptanceNotice || item.event.workExecutionNotice || item.event.workRevisionNotice)
@@ -43,7 +52,7 @@ function sourceOf(item: ConnectorInboxItem) {
 }
 
 function makeBinding(state: ConnectorState, item: ConnectorInboxItem, input: RecordPublicSourceInput): CollectivePublicSourceBinding {
-  const source = sourceOf(item), { connection, route, binding } = requireParticipation(state, source);
+  const source = sourceOf(item, input.connectionId), { connection, route, binding } = requireParticipation(state, source);
   if (source.connectionId !== input.connectionId || connection.authorizedHumanId !==
     (item.event.target.kind === 'agent' ? item.event.target.humanId : undefined) ||
     route.localOwnerUserId !== input.ownerUserId || binding.threadId !== input.threadId) throw denied();
