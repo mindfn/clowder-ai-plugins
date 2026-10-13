@@ -2,7 +2,7 @@ import type { FeatureContext } from '@clowder-ai/plugin-sdk';
 import type { CollectiveConnector } from './business/connector/connector.js';
 import { registeredCollectiveCats } from './entry-control.js';
 import { collectiveOwnerParticipationView } from './owner-participation-view.js';
-import type { OwnerViewMessage, OwnerViewTask, OwnerViewThread } from './owner-participation-host-types.js';
+import type { OwnerViewMessage, OwnerViewThread } from './owner-participation-host-types.js';
 import { COLLECTIVE_NATIVE_ID } from './public-native-methods.js';
 
 /** Adapt the original owner view to existing Host read ports. No Task effects or synthetic queue truth. */
@@ -42,8 +42,7 @@ export function createCollectiveOwnerView(context: FeatureContext, connector: Pi
       } },
       tasks: { async listByKind(kind) {
         await current(); const tasks = await context.tasks.listByKind(kind); await current();
-        // Current Host + SDK runtime preserve TaskItem fields; the stable TS surface is minimal.
-        return tasks as unknown as readonly OwnerViewTask[];
+        return tasks;
       } },
       messages: { async getById(id) {
         await current();

@@ -1,13 +1,13 @@
 import { expect, test } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { parse } from 'yaml';
-import { BROWSER_SERVICE_LIMITS, type ModulePluginHostShape } from '@clowder-ai/plugin-sdk';
+import { BROWSER_SERVICE_LIMITS, type PluginTaskReadItem, type ModulePluginHostShape } from '@clowder-ai/plugin-sdk';
 import entrypoint from '../../../plugin-entrypoint.js';
 import { fixture } from './communication-work-custody.fixture.js';
 import { ownerRequestExecution } from '../../../collective-owner-request-progress.js';
 
 const manifest = parse(await readFile(new URL('../../../../plugin.yaml', import.meta.url), 'utf8'));
-async function setup() {
+async function setup(taskHost?: ModulePluginHostShape['tasks']) {
   const f = await fixture(); let stale = false, reads = 0;
   await f.connector.sync(f.connection.connectionId);
   const route = (await f.connector.getHostRoute(f.connection.connectionId))!;
@@ -17,13 +17,22 @@ async function setup() {
   const rows = [{ id: 'channel', title: 'Owner channel', createdBy: 'local-owner', participants: ['codex-sol'] },
     { id: 'foreign', title: 'Foreign private', createdBy: 'foreign-owner', participants: ['codex-sol'] }];
   const current = async () => { if (stale) throw new Error('Owner view expired'); };
-  const tasks = [{ id: 'owned-task', title: 'Original entrusted work', threadId: 'channel', status: 'doing', userId: 'local-owner',
-    entrustedWork: { revision: 3, closure: { state: 'open' }, admission: { sourceRefs: ['message:view-source'] } } },
-    { id: 'foreign-task', title: 'Foreign work', userId: 'foreign-owner', entrustedWork: { admission: { sourceRefs: ['message:view-source'] } } },
-    { id: 'unrelated-task', title: 'Unrelated work', userId: 'local-owner', entrustedWork: { admission: { sourceRefs: ['message:other'] } } }];
-  const host = { dataDirectory: f.root, config: { async get() {} }, secrets: { async get() {} }, storage: {}, media: {}, messaging: {}, log() {},
-    tasks: { async listByKind(kind: string) { await current(); expect(kind).toBe('work'); reads++; return tasks; } },
-    threads: { async list(options: { limit?: number; before?: { lastActiveAt: number; id: string } } = {}) {
+  const unused = async (): Promise<never> => { throw new Error('Read must not invoke an unrelated Host port'); };
+  const base: PluginTaskReadItem = { id: 'owned-task', title: 'Original entrusted work', threadId: 'channel',
+    kind: 'work', subjectKey: null, status: 'doing', ownerCatId: null, why: '', createdBy: 'local-owner',
+    createdAt: 1, updatedAt: 1, userId: 'local-owner',
+    entrustedWork: { revision: 3, closure: { state: 'open' }, admission: { sourceRefs: ['message:view-source'] } } };
+  const tasks: PluginTaskReadItem[] = [base, { ...base, id: 'foreign-task', userId: 'foreign-owner' },
+    { ...base, id: 'unrelated-task', entrustedWork: { ...base.entrustedWork!, admission: { sourceRefs: ['message:other'] } } },
+    { ...base, id: 'legacy-unowned-task', userId: null }];
+  const host: ModulePluginHostShape = { dataDirectory: f.root, config: { async get() {} }, secrets: { async get() { return undefined; } }, storage: { get: unused, list: unused, set: unused, compareAndSet: unused, delete: unused },
+    media: { read: unused }, messaging: { send: unused, subscribe: unused, unsubscribe: unused }, log() {},
+    tasks: taskHost ?? { get: unused, listByThread: unused, getBySubject: unused, create: unused, upsertBySubject: unused,
+      update: unused, updateIfThreadId: unused, setWait: unused,
+      async listByKind(kind) { await current(); expect(kind).toBe('work'); reads++; return tasks; } },
+    threads: { get: unused, readMessages: unused, getCats: unused, create: unused, update: unused, findByKey: unused,
+      ensureByKey: unused, bind: unused, unbind: unused, listBindings: unused, ensureSystemThread: unused,
+      async list(options: { limit?: number; before?: { lastActiveAt: number; id: string } } = {}) {
       await current(); return rows.map((r, i) => ({ ...r, deepLinkUrl: '/thread/' + r.id, createdAt: 1,
         lastActiveAt: rows.length - i, preferredCats: [], featureRefs: [] }))
         .filter(r => !options.before || r.lastActiveAt < options.before.lastActiveAt ||
@@ -38,7 +47,7 @@ async function setup() {
     nativeContext: { async current() { throw new Error('Owner GET must not borrow native identity'); } },
     browserServices: { async getBinding(id: string) { return { contributionId: id, origin: 'http://127.0.0.1:5271', parentOrigin: 'http://localhost:5172',
       clientBuildId: 'collective-client-v2', assetDigest: 'a'.repeat(64), limits: BROWSER_SERVICE_LIMITS, assertCurrent: current }; },
-      async dispatchLocal() { throw new Error('Unused'); } } } as unknown as ModulePluginHostShape;
+      async dispatchLocal() { throw new Error('Unused'); } } };
   const active = await entrypoint.create(manifest).start(host);
   return { ...f, active, tasks, rows, get reads() { return reads; }, expire() { stale = true; },
     invoke(owner = 'local-owner', native?: unknown) { return active.actions['collective.control.http']!({ request: { method: 'GET',
@@ -106,5 +115,45 @@ test('original progress stages require the exact owner/source/cat/connection and
     message.queueCustody.executionScope = 'ordinary'; expect(await read()).toBeUndefined();
     message.queueCustody.executionScope = 'collective-participation';
     expect(await ownerRequestExecution(request, thread, { async getById() { return message; } }, 'local-owner', 'another-connection')).toBeUndefined();
+  } finally { await f.close(); }
+});
+
+
+test('an absent stable Task owner projection fails visibly instead of returning an empty owner view', async () => {
+  const f = await setup(); try {
+    const legacy = { ...f.tasks[0]! };
+    Reflect.deleteProperty(legacy, 'userId');
+    f.tasks[0] = legacy;
+    const response = await f.invoke() as { status: number; body: { error?: string } };
+    expect(response.status).toBe(409);
+    expect(JSON.stringify(response.body)).toMatch(/Task read.*userId/);
+  } finally { await f.close(); }
+});
+
+// Cross-repository acceptance explicitly supplies the reviewed compiled Host module.
+// Ordinary package tests exercise the same declared projection using the typed fixture above.
+if (process.env.C1_TASK_READ_HOST_MODULE) test('compiled Host four read ports cross the SDK and preserve the original owner Task summary', async () => {
+  const { createPluginTaskHost } = await import(process.env.C1_TASK_READ_HOST_MODULE!);
+  const base: PluginTaskReadItem = { id: 'actual-host-task', title: 'Original entrusted work', threadId: 'channel', kind: 'work',
+    subjectKey: 'work:fixture', status: 'doing', ownerCatId: null, why: '', createdBy: 'local-owner', createdAt: 1,
+    updatedAt: 1, userId: 'local-owner', entrustedWork: { revision: 3, closure: { state: 'open' },
+      admission: { sourceRefs: ['message:view-source'] } } };
+  const raw = { ...base, privateHostField: 'not-visible', entrustedWork: { ...base.entrustedWork!,
+    admission: { ...base.entrustedWork!.admission, ownerReceipt: 'not-authority' }, execution: { grant: 'not-visible' } } };
+  const legacy = { ...base, id: 'legacy-unowned' };
+  Reflect.deleteProperty(legacy, 'userId'); Reflect.deleteProperty(legacy, 'entrustedWork');
+  const taskHost: ModulePluginHostShape['tasks'] = createPluginTaskHost({ pluginId: 'official.collective-connector',
+    effectiveGrants: ['task.read'], taskStore: { async get() { return raw; }, async getBySubject() { return raw; },
+      async listByThread() { return [raw, legacy]; }, async listByKind() { return [raw, legacy]; } } });
+  const results = [await taskHost.get(raw.id), await taskHost.getBySubject('work:fixture'),
+    ...(await taskHost.listByThread('channel')), ...(await taskHost.listByKind('work'))];
+  for (const result of results.filter(row => row?.id === raw.id)) expect(result).toEqual(base);
+  for (const result of results.filter(row => row?.id === legacy.id)) expect(result!.userId).toBeNull();
+  await expect(taskHost.update(raw.id, { status: 'done' })).rejects.toThrow(/task.write/);
+  const f = await setup(taskHost); try {
+    const response = await f.invoke() as { status: number; body: { tasks: unknown[] } };
+    expect(response.status, JSON.stringify(response)).toBe(200);
+    expect(response.body.tasks).toEqual([{ id: raw.id, title: raw.title, threadId: 'channel', status: 'doing',
+      revision: 3, closure: 'open', sourceRefs: ['message:view-source'] }]);
   } finally { await f.close(); }
 });

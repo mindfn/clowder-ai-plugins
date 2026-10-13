@@ -1,3 +1,4 @@
+import { projectTaskRead, projectTaskReadList } from './task-read.js';
 import { capturePublicInvocationVerifier, guardPublicInvocationVerifier, PUBLIC_INVOCATION_VERIFIER_METHOD, type PluginPublicInvocationVerifier } from './public-invocation-verifier.js';
 import { createSourceFactsClient, createNativeContextClient, type PluginSourceFactsHost, type PluginNativeContextHost } from './source-facts.js';
 import { createParticipantRosterClient, type PluginParticipantRosterHost } from './participant-roster.js';
@@ -385,10 +386,10 @@ export function createFeatureContextSession(
   };
   const tasks: PluginTaskHost = {
     setWait: (taskId, input) => runWhileActive(() => adapter.tasks.setWait(taskId, input)),
-    get: (taskId) => runWhileActive(() => adapter.tasks.get(taskId)),
-    listByThread: (threadId) => runWhileActive(() => adapter.tasks.listByThread(threadId)),
-    listByKind: (kind) => runWhileActive(() => adapter.tasks.listByKind(kind)),
-    getBySubject: (subjectKey) => runWhileActive(() => adapter.tasks.getBySubject(subjectKey)),
+    get: (taskId) => runWhileActive(async () => projectTaskRead(await adapter.tasks.get(taskId))),
+    listByThread: (threadId) => runWhileActive(async () => projectTaskReadList(await adapter.tasks.listByThread(threadId))),
+    listByKind: (kind) => runWhileActive(async () => projectTaskReadList(await adapter.tasks.listByKind(kind))),
+    getBySubject: (subjectKey) => runWhileActive(async () => projectTaskRead(await adapter.tasks.getBySubject(subjectKey))),
     create: (input) => runWhileActive(() => adapter.tasks.create(input)),
     upsertBySubject: (input) => runWhileActive(() => adapter.tasks.upsertBySubject(input)),
     update: (taskId, input) => runWhileActive(() => adapter.tasks.update(taskId, input)),

@@ -173,3 +173,9 @@ port. It omits unavailable progress rather than inferring it from Task status or
 specific Host fact pairing remains original migration work; no new carrier or private authority is
 introduced. Complete retained request/Task actions, private/progress returns and real owner browser
 journeys remain open.
+
+
+The retained participation GET consumes the SDK's declared `PluginTaskReadItem` through existing
+`task.read` ports. Owner/source filtering uses explicit `userId` and the bounded entrusted Work
+summary; a Host missing that projection fails the read visibly. It does not grant Task writes,
+admission or execution, and unavailable Queue progress facts remain unavailable.

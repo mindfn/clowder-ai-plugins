@@ -235,7 +235,7 @@ function host(
 ) {
   const task = {
     id: 'task-1', kind: 'work', threadId: 'thread-1', subjectKey: 'fixture:1', title: 'Fixture task',
-    ownerCatId: null, status: 'todo', why: '', createdBy: 'system', createdAt: 1, updatedAt: 1,
+    ownerCatId: null, status: 'todo', why: '', createdBy: 'system', createdAt: 1, updatedAt: 1, userId: null,
   } as const;
   return {
     config: { get: async (key: string) => key === 'mode' ? 'safe' : undefined },
@@ -957,4 +957,65 @@ test('native second context keeps authenticated owner/policy and exact origin se
     assert.equal(await active.actions['fixture.echo']!({ ownerAuthProvenance: 'strict' }), undefined);
     assert.equal(seen, undefined, 'business input cannot populate native authority');
   } finally { await active.stop(); }
+});
+
+
+async function taskReadFixture(task: unknown) {
+  let context!: FeatureContext;
+  const runtimeHost = host([]);
+  for (const name of ['get', 'getBySubject'] as const) runtimeHost.tasks[name] = async () => task as never;
+  for (const name of ['listByThread', 'listByKind'] as const) runtimeHost.tasks[name] = async () => [task] as never;
+  const entrypoint = definePluginModule(input => definePlugin({ manifest: input, activate: {
+    'feature-1': value => { context = value; return { actions: {
+      'fixture.outbound': () => undefined, 'fixture.echo': () => undefined,
+    } }; },
+  } }));
+  const activation = await entrypoint.create(manifest()).start(runtimeHost);
+  return { context, activation };
+}
+
+const taskReadBase = { id: 'read-task', kind: 'work', threadId: 'thread-1', subjectKey: null,
+  title: 'Owner task', ownerCatId: null, status: 'doing', why: '', createdBy: 'owner', createdAt: 1, updatedAt: 1 } as const;
+
+test('all four Task reads preserve the declared owner and bounded Work summary without authority fields', async () => {
+  const task = { ...taskReadBase, userId: 'local-owner', secret: 'host-only', entrustedWork: {
+    revision: 3, closure: { state: 'open', privateResult: 'host-only' },
+    admission: { sourceRefs: ['message:source'], grant: 'host-only' }, execution: { seal: 'host-only' },
+  } };
+  const { context, activation } = await taskReadFixture(task);
+  try {
+    const results = [await context.tasks.get('read-task'), await context.tasks.getBySubject('subject'),
+      ...(await context.tasks.listByThread('thread-1')), ...(await context.tasks.listByKind('work'))];
+    for (const result of results) {
+      assert.deepEqual(result, { ...taskReadBase, userId: 'local-owner', entrustedWork: {
+        revision: 3, closure: { state: 'open' }, admission: { sourceRefs: ['message:source'] },
+      } });
+      assert.ok(Object.isFrozen(result));
+      assert.ok(Object.isFrozen(result!.entrustedWork!.admission.sourceRefs));
+    }
+    task.entrustedWork.admission.sourceRefs.push('message:later');
+    assert.deepEqual(results[0]!.entrustedWork!.admission.sourceRefs, ['message:source']);
+  } finally { await activation.stop(); }
+});
+
+test('Task reads reject an undeclared owner projection instead of silently losing owned Tasks', async () => {
+  const { context, activation } = await taskReadFixture(taskReadBase);
+  try {
+    await assert.rejects(() => context.tasks.get('read-task'), /Task read.*userId/);
+    await assert.rejects(() => context.tasks.getBySubject('subject'), /Task read.*userId/);
+    await assert.rejects(() => context.tasks.listByThread('thread-1'), /Task read.*userId/);
+    await assert.rejects(() => context.tasks.listByKind('work'), /Task read.*userId/);
+  } finally { await activation.stop(); }
+});
+
+test('Task reads accept explicit unowned null and reject malformed Work summaries', async () => {
+  const legacy = await taskReadFixture({ ...taskReadBase, userId: null });
+  try { assert.deepEqual(await legacy.context.tasks.get('read-task'), { ...taskReadBase, userId: null }); }
+  finally { await legacy.activation.stop(); }
+  for (const entrustedWork of [{ revision: -1, closure: { state: 'open' }, admission: { sourceRefs: [] } },
+    { revision: 3, closure: { state: 'open' }, admission: { sourceRefs: ['message:source', 1] } }]) {
+    const invalid = await taskReadFixture({ ...taskReadBase, userId: 'owner', entrustedWork });
+    try { await assert.rejects(() => invalid.context.tasks.get('read-task'), /Task read.*entrustedWork/); }
+    finally { await invalid.activation.stop(); }
+  }
 });

@@ -136,6 +136,19 @@ export interface PluginTaskItem {
   readonly updatedAt: number;
 }
 
+/** Read-only owner/source summary. It is never a Task admission or execution grant. */
+export interface PluginTaskEntrustedWorkSummary {
+  readonly revision: number;
+  readonly closure: { readonly state: string };
+  readonly admission: { readonly sourceRefs: readonly string[] };
+}
+
+/** All Task reads explicitly distinguish an unowned legacy Task from an absent projection. */
+export interface PluginTaskReadItem extends PluginTaskItem {
+  readonly userId: string | null;
+  readonly entrustedWork?: PluginTaskEntrustedWorkSummary;
+}
+
 export interface PluginTaskCreateInput {
   readonly threadId: string;
   readonly title: string;
@@ -155,10 +168,10 @@ export interface PluginTaskUpdateInput {
 
 export interface PluginTaskHost {
   setWait(taskId: string, input: PluginWaitUpdate): Promise<PluginTaskItem | null>;
-  get(taskId: string): Promise<PluginTaskItem | null>;
-  listByThread(threadId: string): Promise<readonly PluginTaskItem[]>;
-  listByKind(kind: PluginTaskKind): Promise<readonly PluginTaskItem[]>;
-  getBySubject(subjectKey: string): Promise<PluginTaskItem | null>;
+  get(taskId: string): Promise<PluginTaskReadItem | null>;
+  listByThread(threadId: string): Promise<readonly PluginTaskReadItem[]>;
+  listByKind(kind: PluginTaskKind): Promise<readonly PluginTaskReadItem[]>;
+  getBySubject(subjectKey: string): Promise<PluginTaskReadItem | null>;
   create(input: PluginTaskCreateInput): Promise<PluginTaskItem>;
   upsertBySubject(input: PluginTaskCreateInput): Promise<PluginTaskItem>;
   update(taskId: string, input: PluginTaskUpdateInput): Promise<PluginTaskItem | null>;

@@ -44,3 +44,14 @@ and current Service authority in its isolated `signal/assertCurrent` context. Ne
 nor a source fact supplies purpose-winner proof, invocation-bound opaque signatures or private
 Task/Work receipt authority. Enqueue is refused by Host inside verifier/browser purpose. This SDK
 mirror does not register Collective's staged native callers or establish installed functionality.
+
+
+### Task read projection
+
+The existing `get`, `listByThread`, `listByKind` and `getBySubject` methods return `PluginTaskReadItem`.
+It retains the minimal Task fields and explicitly includes `userId` (`null` for an unowned legacy Task).
+An optional `entrustedWork` summary includes only `revision`, `closure.state` and `admission.sourceRefs`.
+SDK reads return detached immutable projections and reject a missing owner field or malformed summary;
+they do not silently turn an incompatible Host response into an empty owner view.
+The summary is read-only data, not a grant, receipt, Task admission or execution authority.
+Task mutation method signatures and required Host write permissions are unchanged.
