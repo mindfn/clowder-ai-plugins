@@ -90,9 +90,9 @@
       "freshBuild": null,
       "actualDirectoryJourneyAccepted": false,
       "entrypointRefresh": {
-        "sourceHead": "09f1dcf28f6d0c7c54a494f4f0c9c82606c1ecb3",
-        "scope": "Original owner view candidate entries after sequential build/installed fixture; aggregate historical census and actual Host acceptance unchanged",
-        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/owner-participation-view-verification.json"
+        "sourceHead": "ef0c264e0eb6564449c6f4f38e6bfb8afc75bebb",
+        "scope": "Codex331 Task read projection fix after sequential SDK/Collective build and packed consumer; historical census and actual Host acceptance unchanged",
+        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/owner-task-read-verification.json"
       }
     },
     {
