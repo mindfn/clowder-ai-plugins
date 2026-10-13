@@ -61,14 +61,15 @@ function makeHost(dataDirectory: string): ModulePluginHostShape {
     id: 'task-1', kind: 'work', threadId: 'thread-1', subjectKey: 'fixture:1', title: 'Fixture task',
     ownerCatId: null, status: 'todo', why: '', createdBy: 'system', createdAt: 1, updatedAt: 1,
   } as const;
+  const taskRead = { ...task, userId: null };
   // Retained beta.12 and the workspace SDK share these services. Structural
   // assignment checks required methods without rejecting newer fixture fields.
   const services = {
     tasks: {
-      get: async () => task,
-      listByThread: async () => [task],
-      listByKind: async () => [task],
-      getBySubject: async () => task,
+      get: async () => taskRead,
+      listByThread: async () => [taskRead],
+      listByKind: async () => [taskRead],
+      getBySubject: async () => taskRead,
       create: async () => task,
       upsertBySubject: async (_input: unknown) => task,
       update: async () => task,

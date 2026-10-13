@@ -116,7 +116,7 @@ export class TypedWaitRuntime {
     return this.run(subject, async signal => {
       const check = async () => { this.assertRunning(); signal.throwIfAborted(); await caller.assertCurrent(); };
       await check();
-      let task = await this.options.context.tasks.getBySubject(subject);
+      let task: PluginTaskItem | null = await this.options.context.tasks.getBySubject(subject);
       if (task) this.assertOwner(task, caller);
       const target: GitHubTarget = { kind, number, repoFullName: value.repoFullName, threadId: caller.threadId, catId: caller.catId,
         reviewThreadIds: value.when?.flatMap(predicate => predicate.reviewThreadIds ?? []) ?? [] };

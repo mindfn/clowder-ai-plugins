@@ -685,6 +685,8 @@ test('real carrier keeps dismissed reviews final in journal, cloud projection an
 
 function host() {
   const tasks = new Map<string, PluginTaskItem>();
+  // These fixture Tasks have no persisted owner field; stable reads expose explicit legacy null.
+  const readTask = (task: PluginTaskItem) => ({ ...structuredClone(task), userId: null });
   const createTask: ModulePluginHostShape['tasks']['create'] = async input => {
     if ([...tasks.values()].some(task => task.subjectKey === input.subjectKey)) throw new Error('Subject exists');
     const task: PluginTaskItem = { id: `task-${tasks.size}`, kind: input.kind ?? 'work', subjectKey: input.subjectKey ?? null,
@@ -711,10 +713,10 @@ function host() {
   const runtimeHost: ModulePluginHostShape = {
     storage, config: { get: async () => undefined }, secrets: { get: async () => undefined },
     tasks: {
-      get: async id => structuredClone(tasks.get(id) ?? null),
-      getBySubject: async key => structuredClone([...tasks.values()].find(task => task.subjectKey === key) ?? null),
-      listByThread: async id => structuredClone([...tasks.values()].filter(task => task.threadId === id)),
-      listByKind: async kind => structuredClone([...tasks.values()].filter(task => task.kind === kind)),
+      get: async id => { const task = tasks.get(id); return task ? readTask(task) : null; },
+      getBySubject: async key => { const task = [...tasks.values()].find(task => task.subjectKey === key); return task ? readTask(task) : null; },
+      listByThread: async id => [...tasks.values()].filter(task => task.threadId === id).map(readTask),
+      listByKind: async kind => [...tasks.values()].filter(task => task.kind === kind).map(readTask),
       create: createTask, upsertBySubject: createTask,
       update: async (id, input) => { const task = tasks.get(id); if (!task) return null;
         const next = { ...task, ...input }; tasks.set(id, next); return structuredClone(next); },
