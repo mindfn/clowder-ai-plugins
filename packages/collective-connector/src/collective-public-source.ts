@@ -21,6 +21,10 @@ const changed = () => participationError('PUBLIC_SOURCE_CHANGED', 'Exact public 
 export function createCollectivePublicSourceCaller(options: PublicSourceCallerOptions) {
   // Module configuration is not a native tool selector. Snapshot before any asynchronous caller can mutate it.
   const native = { contributionId: options.native.contributionId, methods: [...options.native.methods].sort() };
+  // A source keeps its original granted methods across a module upgrade.
+  // New declarations do not add authority to that persisted binding.
+  const isActiveNativeScope = (scope: { readonly contributionId: string; readonly methods: readonly string[] }) =>
+    scope.contributionId === native.contributionId && scope.methods.every(method => native.methods.includes(method));
   const currentSource = async (messageRef: string, current: () => Promise<void>) => {
     await current();
     const binding = options.connector.readCurrentPublicSource(messageRef);
@@ -36,7 +40,7 @@ export function createCollectivePublicSourceCaller(options: PublicSourceCallerOp
     // No sourceFacts/nativeContext/ALS read, no Queue receipt substituted for permission.
     const { binding } = await currentSource(input.source.messageRef, current);
     if (!isDeepStrictEqual(input.authority, binding.authority) || input.targetCatId !== binding.targetCatId ||
-      !isDeepStrictEqual(input.native, binding.native) || !isDeepStrictEqual(binding.native, native)) throw changed();
+      !isDeepStrictEqual(input.native, binding.native) || !isActiveNativeScope(binding.native)) throw changed();
     await current();
     return Object.freeze({ current: true as const });
   };
@@ -72,7 +76,7 @@ export function createCollectivePublicSourceCaller(options: PublicSourceCallerOp
       if (!thread || thread.createdBy !== owner.userId || !thread.participants.includes(source.catId)) throw changed();
       if (item.disposition === 'routed' && item.publicSource && item.routeReceipt?.kind === 'thread_message') {
         const existing = options.connector.readCurrentPublicSource(item.publicSource.messageRef);
-        if (existing.pluginInstanceId !== owner.pluginInstanceId || !isDeepStrictEqual(existing.native, native) ||
+        if (existing.pluginInstanceId !== owner.pluginInstanceId || !isActiveNativeScope(existing.native) ||
           existing.messageRef !== `message:${item.routeReceipt.messageId}` || item.routeReceipt.threadId !== destination.threadId)
           throw changed();
         await currentSource(existing.messageRef, current);
@@ -97,8 +101,13 @@ export function createCollectivePublicSourceCaller(options: PublicSourceCallerOp
       if (sent.threadId !== destination.threadId) throw changed();
       await currentDestination();
       const messageRef = `message:${sent.messageId}` as const;
+      const latest = (await options.connector.listInbox(connectionId)).find(item => item.event.eventId === eventId);
+      await current();
+      const sourceNative = latest?.publicSource
+        ? options.connector.readCurrentPublicSource(latest.publicSource.messageRef).native : native;
+      if (!isActiveNativeScope(sourceNative)) throw changed();
       await options.connector.recordPublicSource({ connectionId, eventId, ownerUserId: owner.userId,
-        pluginInstanceId: owner.pluginInstanceId, threadId: destination.threadId, messageRef, native });
+        pluginInstanceId: owner.pluginInstanceId, threadId: destination.threadId, messageRef, native: sourceNative });
       await currentSource(messageRef, current);
       await options.connector.completeInboxRouting(connectionId, eventId, route.revision,
         { kind: 'thread_message', ...sent, catId: source.catId });
@@ -132,7 +141,7 @@ export function createCollectivePublicSourceCaller(options: PublicSourceCallerOp
         const { binding, context } = await currentSource(messageRef, () => action.assertCurrent());
         const event = (await options.connector.listInbox(binding.source.connectionId)).find(item => item.event.eventId === binding.source.eventId)?.event;
         if (binding.ownerUserId !== auth.userId || binding.threadId !== auth.threadId || binding.targetCatId !== auth.catId ||
-          !isDeepStrictEqual(binding.native, native) || !binding.native.methods.includes(method) ||
+          !isActiveNativeScope(binding.native) || !binding.native.methods.includes(method) ||
           fact.userId !== auth.userId || fact.threadId !== auth.threadId || fact.catId !== null ||
           fact.extra.pluginMessage.instanceId !== binding.pluginInstanceId || fact.source.connector !== 'collective' ||
           !isDeepStrictEqual(fact.source.meta?.participation, binding.source) || !event || fact.content !== event.body) throw changed();

@@ -2,6 +2,7 @@ import { expect, it, vi } from 'vitest';
 import { join } from 'node:path';
 import { openCollectiveContextReferences } from '../../../collective-context-refs.js';
 import { createCollectivePublicNativeActions } from '../../../collective-public-native-context.js';
+import { createCollectivePublicSourceCaller } from '../../../collective-public-source.js';
 import { publicSourceFixture } from './public-source-caller.fixture.js';
 
 async function setup() {
@@ -75,4 +76,55 @@ it('keeps the real proposal after lost response and after late lifecycle refusal
     await expect(g.invoke('collective.work.propose', { contextRef: g.context.contextRef })).rejects.toThrow('Caller expired');
     expect((await g.connector.readWorkSourceContext(g.source)).matters).toHaveLength(1);
   } finally { vi.restoreAllMocks(); await g.close(); }
+});
+
+
+it('keeps original method permissions on a retained source after the native table grows without granting the new method', async () => {
+  const legacy = ['collective.context.current', 'collective.context.read', 'collective.participation.set-interest', 'collective.reply.submit'];
+  const f = await publicSourceFixture({ methods: legacy, invocationId: 'fixture-running-turn' });
+  try {
+    await f.admit();
+    const before = f.connector.readCurrentPublicSource('message:host-source');
+    const upgraded = createCollectivePublicSourceCaller({ connector: f.connector,
+      native: { contributionId: 'collective-native', methods: [...legacy, 'collective.work.propose'] },
+      nativeContext: { async current() { return structuredClone(f.native); } },
+      ownerThreads: { async get() { throw new Error('No owner effect during native read'); },
+        async create() { throw new Error('Unused'); }, async addParticipants() { throw new Error('Unused'); } },
+      messaging: { async send() { throw new Error('No send during source replay'); }, async subscribe() { throw new Error('Unused'); }, async unsubscribe() { throw new Error('Unused'); } } });
+    const current = await upgraded.resolveNative(f.action, 'collective.context.current');
+    expect(current.binding).toEqual(before);
+    await expect(upgraded.resolveNative(f.action, 'collective.work.propose')).rejects.toMatchObject({ code: 'PUBLIC_SOURCE_CHANGED' });
+    expect(f.connector.readCurrentPublicSource('message:host-source')).toEqual(before);
+    await expect(upgraded.publicInvocationVerifier({ source: { messageRef: 'message:host-source' }, authority: before.authority,
+      targetCatId: before.targetCatId, native: before.native },
+      { signal: new AbortController().signal, async assertCurrent() {} })).resolves.toEqual({ current: true });
+  } finally { await f.close(); }
+});
+
+
+it('finishes the original routing after response loss across a native-method upgrade without widening its binding', async () => {
+  const legacy = ['collective.context.current', 'collective.context.read', 'collective.participation.set-interest', 'collective.reply.submit'];
+  const f = await publicSourceFixture({ methods: legacy, invocationId: 'fixture-running-turn' });
+  try {
+    f.beforeSendReturns(async () => { await f.sourceCaller.resolveNative(f.action, 'collective.context.current'); });
+    f.loseSend(); await expect(f.admit()).rejects.toThrow('Wake send response lost');
+    const binding = f.connector.readCurrentPublicSource('message:host-source');
+    const originalDraft = (f.calls.find((call: any) => call[0] === 'send') as any)[2];
+    let sends = 0;
+    const upgraded = createCollectivePublicSourceCaller({ connector: f.connector,
+      native: { contributionId: 'collective-native', methods: [...legacy, 'collective.work.propose'] },
+      nativeContext: { async current() { return structuredClone(f.native); } },
+      ownerThreads: { async get(id) { return { id, createdBy: f.owner.userId, participants: [f.source.catId] }; },
+        async create() { throw new Error('Unused'); }, async addParticipants() { throw new Error('Unused'); } },
+      messaging: { async send(threadId, draft) { sends++; expect(draft).toEqual(originalDraft);
+        return { messageId: 'host-source', threadId, revision: 1, messageHandle: { kind: 'message' as const, token: 'retained-receipt' } }; },
+        async subscribe() { throw new Error('Unused'); }, async unsubscribe() { throw new Error('Unused'); } } });
+    const receipt = await upgraded.admitAgentEvent(f.connection.connectionId, f.source.eventId, f.owner);
+    expect(receipt).toEqual({ messageId: 'host-source', threadId: 'channel' });
+    expect((await f.connector.listInbox(f.connection.connectionId))[0]).toMatchObject({ disposition: 'routed' });
+    expect(f.connector.readCurrentPublicSource('message:host-source')).toEqual(binding);
+    expect(await upgraded.admitAgentEvent(f.connection.connectionId, f.source.eventId, f.owner)).toEqual(receipt);
+    expect(sends).toBe(1);
+    await expect(upgraded.resolveNative(f.action, 'collective.work.propose')).rejects.toMatchObject({ code: 'PUBLIC_SOURCE_CHANGED' });
+  } finally { await f.close(); }
 });
