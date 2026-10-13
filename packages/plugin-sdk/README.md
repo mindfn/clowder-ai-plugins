@@ -54,4 +54,7 @@ An optional `entrustedWork` summary includes only `revision`, `closure.state` an
 SDK reads return detached immutable projections and reject a missing owner field or malformed summary;
 they do not silently turn an incompatible Host response into an empty owner view.
 The summary is read-only data, not a grant, receipt, Task admission or execution authority.
-Task mutation method signatures and required Host write permissions are unchanged.
+`pluginWait` is also projected to its declared neutral fields, including the nested `await` and
+`waitOutcome.ownerFence`. Host-only identity, registration/source and invalidation fields are excluded;
+malformed declared wait fields fail the read. Task mutation method signatures and required Host write
+permissions are unchanged.

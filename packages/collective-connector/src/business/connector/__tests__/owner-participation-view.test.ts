@@ -136,17 +136,26 @@ if (process.env.C1_TASK_READ_HOST_MODULE) test('compiled Host four read ports cr
   const { createPluginTaskHost } = await import(process.env.C1_TASK_READ_HOST_MODULE!);
   const base: PluginTaskReadItem = { id: 'actual-host-task', title: 'Original entrusted work', threadId: 'channel', kind: 'work',
     subjectKey: 'work:fixture', status: 'doing', ownerCatId: null, why: '', createdBy: 'local-owner', createdAt: 1,
-    updatedAt: 1, userId: 'local-owner', entrustedWork: { revision: 3, closure: { state: 'open' },
+    updatedAt: 1, userId: 'local-owner', pluginWait: { pluginInstanceId: 'installed-instance', generation: 2,
+      await: { generation: 2, expiresAt: 9000 }, waitOutcome: { outcomeId: 'outcome-1', generation: 1,
+        ownerFence: { kind: 'containing_task', generation: 1 }, reason: 'matched', delivery: 'delivered' } }, entrustedWork: { revision: 3, closure: { state: 'open' },
       admission: { sourceRefs: ['message:view-source'] } } };
-  const raw = { ...base, privateHostField: 'not-visible', entrustedWork: { ...base.entrustedWork!,
+  const raw = { ...base, privateHostField: 'not-visible', pluginWait: { ...base.pluginWait!,
+    invalidated: true, userId: 'private-owner', catId: 'private-cat', threadId: 'private-thread',
+    registration: { invocationId: 'private-invocation', source: { content: 'private-source' } },
+    await: { ...base.pluginWait!.await!, registration: { source: 'private-await-source' } },
+    waitOutcome: { ...base.pluginWait!.waitOutcome!, ownerFence: { ...base.pluginWait!.waitOutcome!.ownerFence, source: 'private-fence' } } }, entrustedWork: { ...base.entrustedWork!,
     admission: { ...base.entrustedWork!.admission, ownerReceipt: 'not-authority' }, execution: { grant: 'not-visible' } } };
   const legacy = { ...base, id: 'legacy-unowned' };
   Reflect.deleteProperty(legacy, 'userId'); Reflect.deleteProperty(legacy, 'entrustedWork');
   const taskHost: ModulePluginHostShape['tasks'] = createPluginTaskHost({ pluginId: 'official.collective-connector',
+    ownerUserId: 'local-owner', readThreadStore: { async get(id: string) { return { id, createdBy: 'local-owner' }; } },
     effectiveGrants: ['task.read'], taskStore: { async get() { return raw; }, async getBySubject() { return raw; },
       async listByThread() { return [raw, legacy]; }, async listByKind() { return [raw, legacy]; } } });
   const results = [await taskHost.get(raw.id), await taskHost.getBySubject('work:fixture'),
     ...(await taskHost.listByThread('channel')), ...(await taskHost.listByKind('work'))];
+  expect(results.filter(row => row?.id === raw.id)).toHaveLength(4);
+  expect(results.filter(row => row?.id === legacy.id)).toHaveLength(2);
   for (const result of results.filter(row => row?.id === raw.id)) expect(result).toEqual(base);
   for (const result of results.filter(row => row?.id === legacy.id)) expect(result!.userId).toBeNull();
   await expect(taskHost.update(raw.id, { status: 'done' })).rejects.toThrow(/task.write/);

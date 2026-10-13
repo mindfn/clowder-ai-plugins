@@ -960,11 +960,13 @@ test('native second context keeps authenticated owner/policy and exact origin se
 });
 
 
-async function taskReadFixture(task: unknown) {
+async function taskReadFixture(task: unknown, taskHost?: ModulePluginHostShape['tasks']) {
   let context!: FeatureContext;
-  const runtimeHost = host([]);
-  for (const name of ['get', 'getBySubject'] as const) runtimeHost.tasks[name] = async () => task as never;
-  for (const name of ['listByThread', 'listByKind'] as const) runtimeHost.tasks[name] = async () => [task] as never;
+  const runtimeHost: ModulePluginHostShape = { ...host([]), ...(taskHost ? { tasks: taskHost } : {}) };
+  if (!taskHost) {
+    for (const name of ['get', 'getBySubject'] as const) runtimeHost.tasks[name] = async () => task as never;
+    for (const name of ['listByThread', 'listByKind'] as const) runtimeHost.tasks[name] = async () => [task] as never;
+  }
   const entrypoint = definePluginModule(input => definePlugin({ manifest: input, activate: {
     'feature-1': value => { context = value; return { actions: {
       'fixture.outbound': () => undefined, 'fixture.echo': () => undefined,
@@ -1018,4 +1020,59 @@ test('Task reads accept explicit unowned null and reject malformed Work summarie
     try { await assert.rejects(() => invalid.context.tasks.get('read-task'), /Task read.*entrustedWork/); }
     finally { await invalid.activation.stop(); }
   }
+});
+
+
+const publicWait = { pluginInstanceId: 'installed-instance', generation: 2,
+  await: { generation: 2, expiresAt: 9000 },
+  waitOutcome: { outcomeId: 'outcome-1', generation: 1, ownerFence: { kind: 'containing_task', generation: 1 },
+    reason: 'matched', delivery: 'delivered' } } as const;
+
+test('rich Host pluginWait is reduced to every declared neutral wait field on all four Task reads', async () => {
+  const richWait = { ...publicWait, invalidated: true, userId: 'private-owner', catId: 'private-cat', threadId: 'private-thread',
+    registration: { invocationId: 'private-invocation', source: { content: 'private-source' } },
+    await: { ...publicWait.await, registration: { source: 'private-await-source' } },
+    waitOutcome: { ...publicWait.waitOutcome, userId: 'private-owner', ownerFence: { ...publicWait.waitOutcome.ownerFence, source: 'private-fence' } } };
+  const { context, activation } = await taskReadFixture({ ...taskReadBase, userId: 'owner', pluginWait: richWait });
+  try {
+    for (const task of [await context.tasks.get('read-task'), await context.tasks.getBySubject('subject'),
+      ...(await context.tasks.listByThread('thread')), ...(await context.tasks.listByKind('work'))]) {
+      assert.deepEqual(task!.pluginWait, publicWait);
+      assert.ok(Object.isFrozen(task!.pluginWait!.await));
+      assert.ok(Object.isFrozen(task!.pluginWait!.waitOutcome!.ownerFence));
+    }
+  } finally { await activation.stop(); }
+});
+
+test('Task wait projection rejects malformed declared nested fields without leaking a partial snapshot', async () => {
+  for (const pluginWait of [{ ...publicWait, generation: -1 }, { ...publicWait, await: { generation: '2' } },
+    { ...publicWait, waitOutcome: { ...publicWait.waitOutcome, reason: 'unknown-private-reason' } },
+    { ...publicWait, waitOutcome: { ...publicWait.waitOutcome, ownerFence: { kind: 'foreign_scope', generation: 1 } } },
+    { ...publicWait, waitOutcome: { ...publicWait.waitOutcome, delivery: 'invalid' } }]) {
+    const { context, activation } = await taskReadFixture({ ...taskReadBase, userId: null, pluginWait });
+    try { await assert.rejects(() => context.tasks.get('read-task'), /Task read.*pluginWait/); }
+    finally { await activation.stop(); }
+  }
+});
+
+
+if (process.env.C1_TASK_READ_HOST_MODULE) test('actual compiled Host rich wait crosses SDK as exactly the public neutral wait snapshot', async () => {
+  const { createPluginTaskHost } = await import(process.env.C1_TASK_READ_HOST_MODULE!);
+  const raw = { ...taskReadBase, userId: 'owner', pluginWait: { ...publicWait,
+    userId: 'private-owner', catId: 'private-cat', threadId: 'private-thread', invalidated: true,
+    registration: { invocationId: 'private-invocation', source: { content: 'private-source' } },
+    await: { ...publicWait.await, registration: { source: 'private-await-source' } },
+    waitOutcome: { ...publicWait.waitOutcome, ownerFence: { ...publicWait.waitOutcome.ownerFence, source: 'private-fence' } } } };
+  const taskHost: ModulePluginHostShape['tasks'] = createPluginTaskHost({ pluginId: 'dev.clowder.module-fixture',
+    ownerUserId: 'owner', readThreadStore: { async get(id: string) { return { id, createdBy: 'owner' }; } },
+    effectiveGrants: ['task.read'], taskStore: { async get() { return raw; }, async getBySubject() { return raw; },
+      async listByThread() { return [raw]; }, async listByKind() { return [raw]; } } });
+  const { context, activation } = await taskReadFixture(undefined, taskHost);
+  try {
+    for (const task of [await context.tasks.get('read-task'), await context.tasks.getBySubject('subject'),
+      ...(await context.tasks.listByThread('thread')), ...(await context.tasks.listByKind('work'))]) {
+      assert.deepEqual(task!.pluginWait, publicWait);
+      assert.deepEqual(Object.keys(task!.pluginWait!).sort(), ['await', 'generation', 'pluginInstanceId', 'waitOutcome']);
+    }
+  } finally { await activation.stop(); }
 });

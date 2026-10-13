@@ -1,4 +1,4 @@
-import type { PluginTaskEntrustedWorkSummary, PluginTaskReadItem } from './module-host.js';
+import type { PluginTaskEntrustedWorkSummary, PluginTaskReadItem, PluginTaskWait } from './module-host.js';
 
 function invalid(field: string): never { throw new TypeError(`Task read projection has invalid ${field}`); }
 function record(value: unknown, field: string): Record<string, unknown> {
@@ -40,6 +40,38 @@ function workSummary(value: unknown): PluginTaskEntrustedWorkSummary {
   } };
 }
 
+function generation(value: unknown, field: string): number {
+  const result = number(value, field);
+  if (!Number.isSafeInteger(result) || result < 0) invalid(field);
+  return result;
+}
+function waitSummary(value: unknown): PluginTaskWait {
+  const wait = record(value, 'pluginWait');
+  const active = wait.await === undefined ? undefined : record(wait.await, 'pluginWait.await');
+  const outcome = wait.waitOutcome === undefined ? undefined : record(wait.waitOutcome, 'pluginWait.waitOutcome');
+  const ownerFence = outcome === undefined ? undefined : record(outcome.ownerFence, 'pluginWait.waitOutcome.ownerFence');
+  return {
+    pluginInstanceId: text(wait.pluginInstanceId, 'pluginWait.pluginInstanceId'),
+    generation: generation(wait.generation, 'pluginWait.generation'),
+    ...(active === undefined ? {} : { await: {
+      generation: generation(active.generation, 'pluginWait.await.generation'),
+      ...(active.expiresAt === undefined ? {} : { expiresAt: number(active.expiresAt, 'pluginWait.await.expiresAt') }),
+    } }),
+    ...(outcome === undefined ? {} : { waitOutcome: {
+      outcomeId: text(outcome.outcomeId, 'pluginWait.waitOutcome.outcomeId'),
+      generation: generation(outcome.generation, 'pluginWait.waitOutcome.generation'),
+      ownerFence: {
+        kind: choice(ownerFence!.kind, ['containing_task'], 'pluginWait.waitOutcome.ownerFence.kind'),
+        generation: generation(ownerFence!.generation, 'pluginWait.waitOutcome.ownerFence.generation'),
+      },
+      reason: choice(outcome.reason, ['matched', 'subject_terminal', 'expired', 'owner_changed', 'superseded', 'user_cancel'],
+        'pluginWait.waitOutcome.reason'),
+      delivery: choice(outcome.delivery, ['pending', 'delivered', 'not_applicable', 'legacy_unfenced'],
+        'pluginWait.waitOutcome.delivery'),
+    } }),
+  };
+}
+
 /** Project only declared read facts; never carry private Task authority from a richer Host record. */
 export function projectTaskRead(value: unknown): PluginTaskReadItem | null {
   if (value === null) return null;
@@ -52,7 +84,7 @@ export function projectTaskRead(value: unknown): PluginTaskReadItem | null {
     status: choice(task.status, ['todo', 'doing', 'blocked', 'done'], 'status'), why: text(task.why, 'why'),
     createdBy: text(task.createdBy, 'createdBy'), createdAt: number(task.createdAt, 'createdAt'),
     updatedAt: number(task.updatedAt, 'updatedAt'), userId,
-    ...(task.pluginWait === undefined ? {} : { pluginWait: structuredClone((value as PluginTaskReadItem).pluginWait!) }),
+    ...(task.pluginWait === undefined ? {} : { pluginWait: waitSummary(task.pluginWait) }),
     ...(task.entrustedWork === undefined ? {} : { entrustedWork: workSummary(task.entrustedWork) }),
   };
   return freeze(result);
