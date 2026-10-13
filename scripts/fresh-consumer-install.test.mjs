@@ -74,6 +74,9 @@ test('Chrome direct retained contract installs beside the current SDK in a fresh
   await mkdir(packs);
   await mkdir(consumer);
   try {
+    // Contract CI reaches this test before Chrome is built; pack deliberately skips scripts.
+    for (const name of ['plugin-contract', 'plugin-sdk', 'personal-chrome-companion'])
+      run('pnpm', ['--filter', `@clowder-ai/${name}`, 'build'], repoRoot);
     const tarballs = ['plugin-contract', 'plugin-sdk', 'personal-chrome-companion']
       .map(name => pack(`packages/${name}`, packs));
     await writeFile(join(consumer, 'package.json'), JSON.stringify({
