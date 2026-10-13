@@ -35,7 +35,8 @@ test('actual module sends one named wake and handles native context before the s
       const early = await active!.actions['collective.context.current']!({}, action);
       expect(early).toHaveProperty('contextRef');
       calls.push('native-before-receipt');
-      return { messageId: 'message-origin', threadId };
+      return { messageId: 'message-origin', threadId, revision: 1,
+        messageHandle: { kind: 'message' as const, token: 'fixture-host-message-handle' }, publishSequence: 42 };
     } },
     browserServices: { async getBinding(id) { return { contributionId: id, origin: 'http://127.0.0.1:5271', parentOrigin: 'http://localhost:5172',
       clientBuildId: 'collective-client-v2', assetDigest: 'a'.repeat(64), limits: BROWSER_SERVICE_LIMITS, assertCurrent: current }; },

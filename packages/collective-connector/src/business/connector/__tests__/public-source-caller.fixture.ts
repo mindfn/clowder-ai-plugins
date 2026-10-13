@@ -22,7 +22,8 @@ export async function publicSourceFixture(options: { methods?: readonly string[]
           extra: { pluginMessage: { instanceId: owner.pluginInstanceId } } } };
       await beforeSendReturns?.();
       if (loseSend) throw new Error('Wake send response lost');
-      return { messageId: 'host-source', threadId }; } },
+      return { messageId: 'host-source', threadId, revision: 1,
+        messageHandle: { kind: 'message' as const, token: 'fixture-host-message-handle' }, publishSequence: 42 }; } },
     nativeContext: { async current() { return structuredClone(native); } },
   });
   const admit = () => sourceCaller.admitAgentEvent(f.connection.connectionId, f.source.eventId, owner);

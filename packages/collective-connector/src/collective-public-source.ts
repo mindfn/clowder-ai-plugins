@@ -84,12 +84,15 @@ export function createCollectivePublicSourceCaller(options: PublicSourceCallerOp
       // One Host operation owns storage and named wake, including retry/deduplication.
       // A lost receipt must retry this same send even if the early native caller has
       // already bound its authenticated source; that binding is not a wake receipt.
-      const sent = await options.messaging.send(destination.threadId, {
+      const hostReceipt = await options.messaging.send(destination.threadId, {
         idempotencyKey: ingressIdempotencyKey(item.event), identity: 'collective', sender: projected.sender, meta: projected.meta,
         wake: { catId: source.catId },
         payload: { provenance: { origin: { kind: 'plugin', instanceId: owner.pluginInstanceId }, epistemicStatus: 'observation' },
           elements: [{ elementId: 'collective-source', kind: 'text', payload: { text: item.event.body } }] },
       });
+      // The builtin Host can return revision/handle/publication fields beyond the
+      // SDK type. Only the original message/thread pair belongs in business custody.
+      const sent = { messageId: hostReceipt.messageId, threadId: hostReceipt.threadId };
       await current();
       if (sent.threadId !== destination.threadId) throw changed();
       await currentDestination();
