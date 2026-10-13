@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -300,4 +301,149 @@ test('unpublished current versions and matching published history pass together'
   });
   assert.deepEqual(result.published, ['@clowder-ai/example@0.1.0-alpha.1']);
   assert.deepEqual(result.unpublished, ['@clowder-ai/example@0.1.0-alpha.2']);
+});
+
+
+async function runPublicationAction(t, { retained, published, tags, integrity = 'sha512-exact', registryIntegrity = integrity, restoreRaceNext, packageExists = true }) {
+  const root = await mkdtemp(join(tmpdir(), 'clowder-publication-action-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const bin = join(root, 'bin');
+  await mkdir(bin);
+  const statePath = join(root, 'registry.json');
+  const state = { published, tags, integrity: registryIntegrity, restoreRaceNext, packageExists, mutations: [] };
+  await writeFile(statePath, JSON.stringify(state));
+  await writeFile(join(bin, 'npm'), `#!${process.execPath}
+const fs = require('node:fs');
+const state = JSON.parse(fs.readFileSync(process.env.MOCK_REGISTRY, 'utf8'));
+const args = process.argv.slice(2);
+if (args[0] === 'view') {
+  if (args[2] === 'dist-tags') {
+    if (!state.packageExists) { console.error('E404'); process.exit(1); }
+    if (state.mutations.length && process.env.DIST_TAGS_JSON_PATH?.endsWith('prerelease-restore-tags.json') && state.restoreRaceNext) {
+      state.tags.next = state.restoreRaceNext;
+      fs.writeFileSync(process.env.MOCK_REGISTRY, JSON.stringify(state));
+    }
+    console.log(JSON.stringify(state.tags));
+  }
+  else if (state.published) console.log(JSON.stringify({version:process.env.PACKAGE_VERSION,dist:{integrity:state.integrity}}));
+  else { console.error('E404'); process.exit(1); }
+} else if (args[0] === 'publish') {
+  state.published = true;
+  state.packageExists = true;
+  state.tags.next = process.env.PACKAGE_VERSION;
+  state.tags.latest ??= process.env.PACKAGE_VERSION;
+  state.mutations.push(args);
+  fs.writeFileSync(process.env.MOCK_REGISTRY, JSON.stringify(state));
+} else if (args[0] === 'dist-tag' && args[1] === 'add') {
+  if (args[3] !== 'next') throw new Error('only next is authorized in this regression');
+  state.tags.next = args[2].slice(args[2].lastIndexOf('@') + 1);
+  state.mutations.push(args);
+  fs.writeFileSync(process.env.MOCK_REGISTRY, JSON.stringify(state));
+} else { throw new Error('unexpected npm call: '+JSON.stringify(args)); }
+`);
+  // One failed inspection is enough to reproduce a tag mismatch without a five-minute wait.
+  await writeFile(join(bin, 'seq'), '#!/bin/sh\necho 1\n');
+  await writeFile(join(bin, 'sleep'), '#!/bin/sh\nexit 0\n');
+  for (const name of ['npm', 'seq', 'sleep']) await chmod(join(bin, name), 0o755);
+  const action = parse(await readFile(new URL('../.github/actions/publish-prerelease/action.yml', import.meta.url), 'utf8'));
+  const outputs = { pack: { name: '@clowder-ai/plugin-sdk', version: '0.1.0-beta.12', integrity, filename: 'exact.tgz' }, registry: {} };
+  const inputs = { 'retained-artifact': retained ? 'authenticated-retained.tgz' : '', 'npm-token': '' };
+  const interpolate = value => value.replace(/\$\{\{\s*(.*?)\s*\}\}/g, (_, key) => {
+    if (key === 'runner.temp') return root;
+    if (key.startsWith('inputs.')) return inputs[key.slice(7)];
+    const [, id, field] = /^steps\.([^.]+)\.outputs\.([^.]+)$/.exec(key);
+    return outputs[id][field] ?? '';
+  });
+  let failure;
+  for (const step of action.runs.steps.slice(1)) {
+    if (step.if && published) continue;
+    if (step.if?.includes('retained-artifact') && !retained) continue;
+    const outputPath = join(root, 'output');
+    await writeFile(outputPath, '');
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, MOCK_REGISTRY: statePath,
+      PACKAGE_VERSION: outputs.pack.version, GITHUB_OUTPUT: outputPath,
+      ...Object.fromEntries(Object.entries(step.env ?? {}).map(([key, value]) => [key, interpolate(value)])) };
+    for (const key of Object.keys(env)) if (key.toUpperCase().includes('TOKEN')) delete env[key];
+    const result = spawnSync('bash', ['-c', step.run], { env, cwd: new URL('../', import.meta.url), encoding: 'utf8' });
+    if (result.status !== 0) { failure = { step: step.name, status: result.status, stderr: result.stderr }; break; }
+    if (step.id) for (const line of (await readFile(outputPath, 'utf8')).trim().split('\n')) {
+      const split = line.indexOf('=');
+      outputs[step.id][line.slice(0, split)] = line.slice(split + 1);
+    }
+  }
+  return { failure, state: JSON.parse(await readFile(statePath, 'utf8')) };
+}
+
+test('retained publication replay validates immutable bytes without demanding an older next tag', async t => {
+  const result = await runPublicationAction(t, { retained: true, published: true,
+    tags: { latest: '1.0.0', next: '0.1.0-beta.20' } });
+  assert.equal(result.failure, undefined, JSON.stringify(result.failure));
+  assert.deepEqual(result.state.tags, { latest: '1.0.0', next: '0.1.0-beta.20' });
+  assert.deepEqual(result.state.mutations, []);
+});
+
+test('new retained prerequisite restores an existing next tag after its exact upload', async t => {
+  const result = await runPublicationAction(t, { retained: true, published: false,
+    tags: { latest: '1.0.0', next: '0.1.0-beta.20' } });
+  assert.equal(result.failure, undefined, JSON.stringify(result.failure));
+  assert.deepEqual(result.state.tags, { latest: '1.0.0', next: '0.1.0-beta.20' });
+});
+
+
+for (const published of [false, true]) {
+  test(`retained ${published ? 'replay' : 'first upload'} preserves the existing no-next behavior`, async t => {
+    const result = await runPublicationAction(t, { retained: true, published, tags: {} });
+    assert.equal(result.failure, undefined, JSON.stringify(result.failure));
+    assert.deepEqual(result.state.tags, published ? {} : { latest: '0.1.0-beta.12', next: '0.1.0-beta.12' });
+    assert.equal(result.state.mutations.length, published ? 0 : 1);
+  });
+}
+
+test('ordinary current publisher still owns next and preserves stable latest', async t => {
+  const result = await runPublicationAction(t, { retained: false, published: false,
+    tags: { latest: '1.0.0', next: '0.1.0-beta.11' } });
+  assert.equal(result.failure, undefined, JSON.stringify(result.failure));
+  assert.deepEqual(result.state.tags, { latest: '1.0.0', next: '0.1.0-beta.12' });
+  assert.equal(result.state.mutations.length, 1);
+});
+
+test('retained replay refuses a conflicting immutable registry integrity before mutation', async t => {
+  const result = await runPublicationAction(t, { retained: true, published: true,
+    tags: { latest: '1.0.0', next: '0.1.0-beta.20' }, registryIntegrity: 'sha512-conflict' });
+  assert.equal(result.failure?.step, 'Inspect registry before publish');
+  assert.match(result.failure.stderr, /registry integrity mismatch/);
+  assert.deepEqual(result.state.mutations, []);
+});
+
+test('retained tag restore refuses an observed competing release instead of overwriting it', async t => {
+  const result = await runPublicationAction(t, { retained: true, published: false,
+    tags: { latest: '1.0.0', next: '0.1.0-beta.20' }, restoreRaceNext: '0.1.0-beta.21' });
+  assert.equal(result.failure?.step, 'Preserve existing next after retained upload');
+  assert.match(result.failure.stderr, /next changed outside/);
+  assert.equal(result.state.tags.next, '0.1.0-beta.21');
+  assert.equal(result.state.mutations.length, 1, 'no dist-tag write after detecting competition');
+});
+
+test('retained preflight rejects a malformed next snapshot before upload or tag mutation', async t => {
+  const result = await runPublicationAction(t, { retained: true, published: false,
+    tags: { latest: '1.0.0', next: '0.1.0-beta.20\nprevious_next=attacker' } });
+  assert.equal(result.failure?.step, 'Inspect registry before publish');
+  assert.match(result.failure.stderr, /invalid registry next tag/);
+  assert.deepEqual(result.state.mutations, []);
+});
+
+
+test('retained first package publication handles official package E404 without inventing previous tags', async t => {
+  const result = await runPublicationAction(t, { retained: true, published: false, packageExists: false, tags: {} });
+  assert.equal(result.failure, undefined, JSON.stringify(result.failure));
+  assert.deepEqual(result.state.tags, { latest: '0.1.0-beta.12', next: '0.1.0-beta.12' });
+  assert.equal(result.state.mutations.length, 1);
+});
+
+test('ordinary current replay keeps its next check instead of adopting retained tag relaxation', async t => {
+  const result = await runPublicationAction(t, { retained: false, published: true,
+    tags: { latest: '1.0.0', next: '0.1.0-beta.20' } });
+  assert.equal(result.failure?.step, 'Inspect published registry state');
+  assert.match(result.failure.stderr, /registry next tag mismatch/);
+  assert.deepEqual(result.state.mutations, []);
 });
