@@ -40,7 +40,6 @@
     "prepack": "pnpm build"
   },
   "devDependencies": {
-    "@clowder-ai/plugin-contract": "0.1.0-beta.29",
     "@types/node": "^20.17.0",
     "esbuild": "0.28.1",
     "jsdom": "^28.0.0",
@@ -49,6 +48,7 @@
     "yaml": "2.9.0"
   },
   "dependencies": {
+    "@clowder-ai/plugin-contract": "0.1.0-beta.29",
     "@clowder-ai/plugin-sdk": "0.2.0-beta.12"
   },
   "keywords": [

@@ -9,6 +9,7 @@
       "version": "0.1.0-alpha.4",
       "license": "MIT",
       "dependencies": {
+        "@clowder-ai/plugin-contract": "0.1.0-beta.29",
         "@clowder-ai/plugin-sdk": "0.2.0-beta.12"
       }
     },
