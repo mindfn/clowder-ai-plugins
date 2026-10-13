@@ -98,6 +98,8 @@ features:
       - type: webhook
         id: collective-participation-policy
       - type: webhook
+        id: collective-participation-view
+      - type: webhook
         id: collective-participation-reconcile
       - type: identity
         id: collective
@@ -111,6 +113,7 @@ features:
       - thread.listMetadata
       - thread.write
       - messaging.send
+      - task.read
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js
@@ -418,3 +421,8 @@ contributions:
     runtime: { transport: stdio, entrypoint: dist/owner-mcp-entrypoint.js }
     actions:
       - { method: collective.connector.send }
+  - type: webhook
+    id: collective-participation-view
+    path: connections/:connectionId/participation
+    methods: [GET]
+    action: { method: collective.control.http }

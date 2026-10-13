@@ -1,5 +1,6 @@
 import { createCollectiveAgentVerification } from './native-agent-verification.js';
 import { createCollectiveOwnerSendAction } from './collective-owner-native-send.js';
+import { createCollectiveOwnerView } from './owner-participation-caller.js';
 import { activateCollectivePublicNative } from './public-native-activation.js';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
@@ -94,6 +95,7 @@ async function activateService(context: FeatureContext, declaration: BrowserServ
   const roster = context.participantRoster, threads = context.ownerThreads;
   const entry = createCollectiveEntryCaller({ connector, participantRoster: roster, contributionId: COLLECTIVE_NATIVE_ID });
   const ownerControl = createOwnerControlHttp({ connector, binding, entry,
+    view: createCollectiveOwnerView(context, connector, async () => { assertActive(); await binding.assertCurrent(); assertActive(); }),
     async reconcile(ownerUserId, connectionId, input) {
       const current = async () => { assertActive(); await binding.assertCurrent(); assertActive(); };
       const connection = await connector.getProjection(connectionId);

@@ -27,6 +27,7 @@ export interface CollectiveLocalServiceStatus {
   readonly setupStep?: 'github_app' | 'owner_setup';
 }
 interface OwnerControlOptions {
+  readonly view?: (ownerUserId: string, connectionId: string) => Promise<unknown>;
   readonly entry?: ReturnType<typeof createCollectiveEntryCaller>;
   readonly reconcile?: (ownerUserId: string, connectionId: string, input: z.infer<typeof reconcileInput> & { readonly policy?: z.infer<typeof desiredParticipationSchema> }) => Promise<HostRouteConfig>;
   readonly connector: Pick<CollectiveConnector, 'listConnections' | 'listInbox' | 'sync' | 'revoke' | 'getHostRoute' |
@@ -62,6 +63,17 @@ export function createOwnerControlHttp(options: OwnerControlOptions) {
     const { connector } = options;
     const current = async () => { options.assertActive(); await options.binding.assertCurrent(); options.assertActive(); };
     const finish = async (status: number, body: unknown) => { await current(); return response(status, body); };
+    const view = /^connections\/([A-Za-z0-9_-]{1,240})\/participation$/.exec(request.path);
+    if (view && options.view) {
+      if (request.method !== 'GET') return finish(405, { code: 'OWNER_CONTROL_METHOD_NOT_ALLOWED' });
+      try { return finish(200, await options.view(request.principal.id, view[1]!)); }
+      catch (error) {
+        await current();
+        const code = error && typeof error === 'object' && 'code' in error ? error.code : 'PARTICIPATION_UNAVAILABLE';
+        return response(code === 'CONNECTOR_OWNER_MISMATCH' ? 403 : 409,
+          { code, error: error instanceof Error ? error.message : 'Participation unavailable' });
+      }
+    }
     if (request.path === 'entry-roster' && request.method === 'GET' && options.entry) return finish(200, await options.entry.entryRoster());
     if (request.path === 'pair' && request.method === 'POST' && options.entry) {
       const result = await options.entry.pair(request.body, typeof origin === 'string' ? origin : undefined);

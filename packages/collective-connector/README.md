@@ -133,8 +133,8 @@ checks the route revision, and publishes the resulting participation. This opera
 participation policy; it does not admit a Task or grant private execution. `POST .../participation/reconcile`
 continues to accept only `{expectedRevision, channelIds}`.
 
-The full participation view, request/Task actions, private Work callbacks and owner native send
-remain migration work. This endpoint does not make those missing journeys available.
+Request/Task mutations and private Work callbacks remain migration work. This policy endpoint does
+not make those missing journeys available; the independent owner send is described below.
 
 ### Owner Agent messages
 
@@ -154,4 +154,22 @@ a rejected response never claims rollback. This operation grants no Task or priv
 
 The SDK declares the existing authenticated `ownerAuthProvenance`, optional policy and exact
 `originTriggerMessageId` facts. It does not derive permission from userId, input or a held source.
-The full participation view and original private Task admission/execution remain migration work.
+Original private Task admission/execution remains migration work.
+
+### Retained owner participation view
+
+`GET connections/:connectionId/participation` preserves the original owner view: connection and route
+revision, registered/removed Cat eligibility, desired policy and initial exclusions, bindings/channel
+routes/interests, owner thread choices, routed requests/responses and the owner's admitted-source Work
+Task summaries. It reads existing Host ports and requires `task.read`; it never writes/adopts a Task,
+admits execution, creates a thread or borrows native identity. Accessible foreign threads and Tasks do
+not become owner data. The Host thread list is traversed with its existing exclusive cursor, then every
+row is checked through the strict owner thread port.
+
+The original request-progress algorithm is retained, including exact owner, source event, connection,
+Cat and Queue scope checks. Current Host source facts omit Queue custody and refuse queued body reads,
+so this candidate cannot yet display actual queued/started/ended/failed request execution through that
+port. It omits unavailable progress rather than inferring it from Task status or message content. The
+specific Host fact pairing remains original migration work; no new carrier or private authority is
+introduced. Complete retained request/Task actions, private/progress returns and real owner browser
+journeys remain open.
