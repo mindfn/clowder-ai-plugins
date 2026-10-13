@@ -6,16 +6,19 @@ import { collectiveContextError, type CollectiveContextReferences } from './coll
 import { currentWorkSourceContext } from './collective-work-source-context.js';
 import type { createCollectivePublicSourceCaller } from './collective-public-source.js';
 
-// These four schemas preserve ca5 callback-collective-participation-routes.ts byte semantics.
+// These schemas preserve ca5 callback-collective-participation-routes.ts byte semantics.
 const currentSchema = z.object({}).strict();
 const readSchema = z.object({ contextRef: z.string().min(1).max(256),
   afterSequence: z.number().int().nonnegative().default(0), limit: z.number().int().min(1).max(100).default(30) }).strict();
 const replySchema = z.object({ returnRef: z.string().min(1).max(256), replyOperationRef: z.string().min(1).max(256),
   body: z.string().trim().min(1).max(20000) }).strict();
+const proposeSchema = z.object({ contextRef: z.string().min(1).max(256),
+  requestKind: z.string().trim().min(1).max(240).optional(), title: z.string().trim().min(1).max(200).optional(),
+  intendedOutcome: z.string().trim().min(1).max(32000).optional() }).strict();
 const interestSchema = z.object({ contextRef: z.string().min(1).max(256), state: z.enum(['listen', 'withdraw']) }).strict();
 interface Options {
   readonly connector: Pick<CollectiveConnector, 'prepareReply' | 'submitReply' | 'sync' | 'getHostRoute' | 'getProjection' |
-    'readParticipationContext' | 'setStandingInterest' | 'currentWorkDecision' | 'readWorkSourceContext'>;
+    'readParticipationContext' | 'setStandingInterest' | 'currentWorkDecision' | 'readWorkSourceContext' | 'proposeWork'>;
   readonly sourceCaller: Pick<ReturnType<typeof createCollectivePublicSourceCaller>, 'resolveNative'>;
   readonly references: CollectiveContextReferences;
 }
@@ -97,6 +100,16 @@ export function createCollectivePublicNativeActions(options: Options): Readonly<
       await binding.revalidate();
       return { catId: binding.identity.catId, channelId: binding.source.location.channelId, state: input.state,
         attentionRevision: updated.attentionRevision };
+    }),
+    'collective.work.propose': handler('collective.work.propose', proposeSchema, async (binding, input) => {
+      refs.verifyRef(binding.identity, input.contextRef, 'context', binding.refScope);
+      await binding.revalidate();
+      // Original public proposal: Service decides the matter; this grants no Task/execution authority.
+      return connector.proposeWork(binding.source, `work-proposal:${binding.identity.invocationId}`, binding.agent, {
+        ...(input.requestKind ? { requestKind: input.requestKind } : {}),
+        ...(input.title ? { title: input.title } : {}),
+        ...(input.intendedOutcome ? { intendedOutcome: input.intendedOutcome } : {}),
+      });
     }),
     'collective.reply.submit': handler('collective.reply.submit', replySchema, async (binding, input) => {
       const operation = await connector.prepareReply(binding.source, binding.sourceRef, 'request'); await binding.revalidate();

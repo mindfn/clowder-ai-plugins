@@ -55,7 +55,7 @@ test('retained connections and provision callers resolve non-anonymous owner dec
   } finally { await active.stop(); await rm(directory, { recursive: true, force: true }); }
 });
 
-test('implemented owner method/path pairs and four ordinary native methods are advertised', () => {
+test('implemented owner method/path pairs and five ordinary native methods are advertised', () => {
   const expected = ['GET connections', 'GET connections/:connectionId/inbox', 'GET connections/:connectionId/route',
     'POST connections/:connectionId/reconnect', 'POST connections/:connectionId/revoke',
     'GET connections/:connectionId/listening', 'POST connections/:connectionId/listening',
@@ -65,7 +65,7 @@ test('implemented owner method/path pairs and four ordinary native methods are a
   assert.deepEqual(webhooks.flatMap((item: { path: string; methods: string[] }) => item.methods.map(method => method + ' ' + item.path)).sort(), expected.sort());
   for (const item of webhooks) { assert.equal(item.verificationSecretRef, undefined); assert.equal(item.action.method, 'collective.control.http'); }
   assert.deepEqual(manifest.contributions.find((item: { type: string }) => item.type === 'mcp').actions.map((item: { method: string }) => item.method).sort(),
-    ['collective.context.current', 'collective.context.read', 'collective.participation.set-interest', 'collective.reply.submit'].sort());
+    ['collective.context.current', 'collective.context.read', 'collective.participation.set-interest', 'collective.reply.submit', 'collective.work.propose'].sort());
 });
 function controlledPort() {
   const calls: unknown[] = []; let owner = 'fixture-owner'; let stale = false;

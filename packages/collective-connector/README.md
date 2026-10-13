@@ -42,8 +42,8 @@ shape from the current Host binding and persistent metadata, without starting a 
 Only this authenticated launch response contains an unclaimed private bootstrap fragment; public
 Service status and connections metadata never do. Claiming bootstrap alone is still setup-required.
 
-The production module now registers the four ordinary native methods (`context.current`, `context.read`,
-`participation.set-interest`, `reply.submit`) under `collective-native` and its stdio MCP entrypoint.
+The production module now registers the five ordinary native methods (`context.current`, `context.read`,
+`participation.set-interest`, `reply.submit`, `work.propose`) under `collective-native` and its stdio MCP entrypoint.
 It also registers the original `entry-roster`, `pair` and `participation/reconcile` owner webhooks.
 Settings → Collective participation → Paired connections lists owner-bound routes; each row’s Sync
 uses the authenticated owner operation to send each exact named request with `wake: {catId}`.
@@ -51,7 +51,7 @@ Host owns persistence and wake deduplication in that single operation. Native so
 before its receipt returns; they bind the authenticated Host origin to the original inbox and Service.
 The private activation verifier rereads the existing Connector inbox and Service permission; it is not
 an ordinary action. Native Agent verification reads the actual Host native context, never tool-body
-identity. Five other native methods and the remaining owner controls still retain their original
+identity. A Work proposal uses the original Service operation and does not accept Work or grant execution authority. Four other native methods and the remaining owner controls still retain their original
 separate consumers and are not advertised as complete.
 Host owns authentication and those durable facts; the package parses its own participation/Work rules.
 Actual retained page and installed use must be validated with a matching Host caller candidate.

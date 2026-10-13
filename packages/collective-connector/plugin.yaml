@@ -123,6 +123,7 @@ contributions:
       - { method: collective.context.read }
       - { method: collective.participation.set-interest }
       - { method: collective.reply.submit }
+      - { method: collective.work.propose }
   - type: browser-service
     id: collective-client-api
     action:

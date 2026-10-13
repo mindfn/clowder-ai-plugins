@@ -34,6 +34,8 @@ test('actual module sends one named wake and handles native context before the s
       const action = { userId: owner.userId, threadId, catId: 'codex-sol', invocationId: 'real-native', assertCurrent: current };
       const early = await active!.actions['collective.context.current']!({}, action);
       expect(early).toHaveProperty('contextRef');
+      const proposed = await active!.actions['collective.work.propose']!({ contextRef: (early as { contextRef: string }).contextRef, title: 'Original public proposal' }, action);
+      expect(proposed).toMatchObject({ status: 'proposed' });
       calls.push('native-before-receipt');
       return { messageId: 'message-origin', threadId, revision: 1,
         messageHandle: { kind: 'message' as const, token: 'fixture-host-message-handle' }, publishSequence: 42 };
@@ -45,6 +47,8 @@ test('actual module sends one named wake and handles native context before the s
   let active: Awaited<ReturnType<ReturnType<typeof entrypoint.create>['start']>> | undefined;
   try {
     expect(manifest.contributions.find((item: { type: string; id: string }) => item.type === 'mcp' && item.id === 'collective-native')).toBeDefined();
+    const declared = manifest.contributions.find((item: { id: string }) => item.id === 'collective-native');
+    expect(declared.actions).toContainEqual({ method: 'collective.work.propose' });
     active = await entrypoint.create(manifest).start(host);
     expect(active.publicInvocationVerifier).toBeTypeOf('function');
     const roster = await active.actions['collective.control.http']!({ request: { method: 'GET', path: 'entry-roster',
