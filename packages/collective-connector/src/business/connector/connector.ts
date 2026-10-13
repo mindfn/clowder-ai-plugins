@@ -1,4 +1,5 @@
 import { semanticDigest } from './local-operation-recovery.js';
+import { recordPublicSource, readCurrentPublicSource, type RecordPublicSourceInput } from './public-source-custody.js';
 import { isDeepStrictEqual } from 'node:util';
 import {
   type CollectivePairingIntent,
@@ -321,6 +322,14 @@ export class CollectiveConnector {
   async listInbox(connectionId: string) {
     const connection = requireConnection(this.persistence.snapshot().connections[connectionId]);
     return structuredClone(connection.inbox);
+  }
+
+  recordPublicSource(input: RecordPublicSourceInput) {
+    return recordPublicSource(this.persistence, input);
+  }
+
+  readCurrentPublicSource(messageRef: string) {
+    return readCurrentPublicSource(this.persistence, messageRef);
   }
 
   async listWorkResultPublicationCandidates(): Promise<CollectiveWorkResultPublicationCandidate[]> {

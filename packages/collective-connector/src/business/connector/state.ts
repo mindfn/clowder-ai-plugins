@@ -16,6 +16,7 @@ import { type HostRouteConfig, hostRouteConfigSchema } from './host-route-state.
 import { type ConnectorRouteReceipt, routeReceiptSchema } from './route-receipt.js';
 import { type ConnectorWorkCustody, workCustodySchema } from './work-custody-state.js';
 import { workResultTextPublicationSchema } from './work-result-publication.js';
+import { publicSourceBindingSchema, type CollectivePublicSourceBinding } from './public-source-custody.js';
 
 export {
   type AgentHostRoute,
@@ -102,6 +103,7 @@ const inboxItemSchema = z
     routedAt: z.string().datetime().optional(),
     routeReceipt: routeReceiptSchema.optional(),
     routeFailure: routeFailureSchema.optional(),
+    publicSource: publicSourceBindingSchema.optional(),
   })
   .strict()
   .superRefine((item, context) => {
@@ -284,6 +286,7 @@ export interface ConnectorOutboxItem {
 }
 
 export interface ConnectorInboxItem {
+  readonly publicSource?: CollectivePublicSourceBinding;
   readonly event: CollectiveEventEnvelope;
   readonly disposition: 'persisted' | 'routing' | 'routed' | 'route_failed';
   readonly persistedAt: string;

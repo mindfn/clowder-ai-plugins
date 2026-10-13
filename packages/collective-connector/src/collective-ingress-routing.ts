@@ -1,6 +1,12 @@
-import { ConnectorTransportError, type HostRouteConfig } from '@cat-cafe/collective-connector';
-import type { CollectiveEventEnvelope, CollectiveSourceIdentity, ConnectorSource } from '@cat-cafe/shared';
-import { collectiveEventSourceIdentity } from '@cat-cafe/shared';
+import { ConnectorTransportError } from './business/connector/service-client.js';
+import type { HostRouteConfig } from './business/connector/state.js';
+import type { CollectiveEventEnvelope, CollectiveSourceIdentity } from './business/contracts/index.js';
+interface ConnectorSource {
+  readonly connector: string; readonly label: string; readonly icon: string;
+  readonly sender: { readonly id: string; readonly name: string };
+  readonly meta: Readonly<Record<string, unknown>>;
+}
+import { collectiveEventSourceIdentity } from './business/contracts/index.js';
 
 interface CollectiveIngressSocketManager {
   broadcastToRoom(room: string, event: string, data: unknown): void;
