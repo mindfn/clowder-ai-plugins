@@ -1118,128 +1118,213 @@
     {
       "directory": "feishu-meeting-intake",
       "packageName": "@clowder-ai/feishu-meeting-intake",
-      "version": "0.1.0-alpha.10",
-      "sourceDirectory": "/Users/lang/workspace/github-lab/clowder-ai-plugins-collective-sol/packages/feishu-meeting-intake",
-      "packageJsonSha256": "722e98f3be36c712835b05f08d47851f110bef7f7f2805cb8f07d4781ecf1887",
-      "canonicalYamlPresent": false,
+      "version": "0.1.0-alpha.11",
+      "sourceDirectory": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/packages/feishu-meeting-intake",
+      "packageJsonSha256": "f1883ca74305c90b8ec11c1eccc0359e1c09e67404bae5b9ba0227c358ce0c75",
+      "canonicalYamlPresent": true,
       "entries": [
         {
-          "path": "./dist/index.js",
-          "present": false
+          "path": "dist/index.js",
+          "present": true,
+          "sha256": "60bb41302179f3d482806cec8dd379797ecc6c85efae5eb5cc9a8925dd344467",
+          "bytes": 1138
         },
         {
-          "path": "./manifest.json",
+          "path": "manifest.json",
           "present": true,
-          "sha256": "c7c7fa9fc54682927afba01be2efc9a1794c0bdaac9fea6c38678cd249bdf816",
-          "bytes": 843
+          "sha256": "400dd3c24c000d3c92735ab18dffdc0d61a848c8ee8731bbaeab39dd60a961b1",
+          "bytes": 6674
         },
         {
-          "path": "./schemas/feishu-meeting-artifact.schema.json",
+          "path": "plugin.yaml",
           "present": true,
-          "sha256": "7db455ef9605978a90008c8f03d1eb16341d5717a394dc00f5b1f45c1068109e",
-          "bytes": 1363
+          "sha256": "fdbfdcbe05c9130c105c5e76183a18cb6ac7000d05f69d108d74f3d7021f96e8",
+          "bytes": 4674
+        },
+        {
+          "path": "dist/mcp-entrypoint.js",
+          "present": true,
+          "sha256": "1e4202415c24166df47220624374b97635e929b10afef99919da4d105950be4f",
+          "bytes": 979
+        },
+        {
+          "path": "dist/lark-cli",
+          "present": true,
+          "sha256": "94b3b04ad7674b106b5ba94833152dd1723fac4eebf75e396290d5b3ef4476b1",
+          "bytes": 46107497
+        },
+        {
+          "path": "dist/lark-cli-runtime.json",
+          "present": true,
+          "sha256": "51e2a8886f3e427287621c15e3561937eaec8af38f44f0a64f320564bb3c3257",
+          "bytes": 352
         }
       ],
       "dependencies": [
         {
           "name": "@clack/core",
           "requested": "1.4.3",
-          "present": false
+          "present": true,
+          "resolvedVersion": "1.4.3",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/@clack+core@1.4.3/node_modules/@clack/core",
+          "packageJsonSha256": "374e2b0df8fae1a578f52879d630dfaa39cf44ecf5d3383d602bad4205d213b5",
+          "exactPinMatched": true
         },
         {
           "name": "@clack/prompts",
           "requested": "1.7.0",
-          "present": false
+          "present": true,
+          "resolvedVersion": "1.7.0",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/@clack+prompts@1.7.0/node_modules/@clack/prompts",
+          "packageJsonSha256": "94428ab2d003e96b494eb3a772e1dc26f80126bdf7dbb1b54b55c5f9373daea5",
+          "exactPinMatched": true
         },
         {
           "name": "@clowder-ai/plugin-contract",
-          "requested": "0.1.0-beta.9",
-          "present": false
+          "requested": "0.1.0-beta.36",
+          "present": true,
+          "resolvedVersion": "0.1.0-beta.36",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/packages/plugin-contract",
+          "packageJsonSha256": "1a06740274de0edf6d8ecba245d0650d7f1c3190676957bdef092de513a63453",
+          "exactPinMatched": true
         },
         {
           "name": "@clowder-ai/plugin-sdk",
-          "requested": "0.1.0-beta.5",
-          "present": false
+          "requested": "0.2.0-beta.20",
+          "present": true,
+          "resolvedVersion": "0.2.0-beta.20",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/packages/plugin-sdk",
+          "packageJsonSha256": "3776394f7489ff257231d2f80460d1664323fbbffae578aadfb9e6c0cd2c13ec",
+          "exactPinMatched": true
         },
         {
           "name": "@larksuite/cli",
           "requested": "1.0.85",
-          "present": false
+          "present": true,
+          "resolvedVersion": "1.0.85",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/@larksuite+cli@1.0.85/node_modules/@larksuite/cli",
+          "packageJsonSha256": "c60800b90a939645e2ff7d5e91b3d860baa4b708cc325dd5d810daa8319f0210",
+          "exactPinMatched": true
         },
         {
           "name": "ajv",
           "requested": "8.20.0",
-          "present": false
+          "present": true,
+          "resolvedVersion": "8.20.0",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/ajv@8.20.0/node_modules/ajv",
+          "packageJsonSha256": "1f9033ee5a6515e7d76938b7072941862d1ed228a6879cc7fe10cdeb75107989",
+          "exactPinMatched": true
         },
         {
           "name": "ajv-formats",
           "requested": "3.0.1",
-          "present": false
+          "present": true,
+          "resolvedVersion": "3.0.1",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/ajv-formats@3.0.1_ajv@8.20.0/node_modules/ajv-formats",
+          "packageJsonSha256": "402fb4bcfa457f0226813f3976ac42839dd619907c075c108efba8600d7edb69",
+          "exactPinMatched": true
         },
         {
           "name": "fast-deep-equal",
           "requested": "3.1.3",
-          "present": false
+          "present": true,
+          "resolvedVersion": "3.1.3",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/fast-deep-equal@3.1.3/node_modules/fast-deep-equal",
+          "packageJsonSha256": "a5c63940db0260739be9e2ac67f3aac268df4db5770420ee4e34e493152f97d2",
+          "exactPinMatched": true
         },
         {
           "name": "fast-string-truncated-width",
           "requested": "3.0.3",
-          "present": false
+          "present": true,
+          "resolvedVersion": "3.0.3",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/fast-string-truncated-width@3.0.3/node_modules/fast-string-truncated-width",
+          "packageJsonSha256": "68f98cd59ee3f050e88ad1924dd29dd6a3522199cb480e9ae08f95fd7f8c6f4a",
+          "exactPinMatched": true
         },
         {
           "name": "fast-string-width",
           "requested": "3.0.2",
-          "present": false
+          "present": true,
+          "resolvedVersion": "3.0.2",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/fast-string-width@3.0.2/node_modules/fast-string-width",
+          "packageJsonSha256": "2c49e010864a982bf0084dc4c7c267672f38462446e9911a64d0383e16e02712",
+          "exactPinMatched": true
         },
         {
           "name": "fast-uri",
           "requested": "3.1.3",
-          "present": false
+          "present": true,
+          "resolvedVersion": "3.1.3",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/fast-uri@3.1.3/node_modules/fast-uri",
+          "packageJsonSha256": "1b2be7d3d7da1ae91bc607016f4a3ecb60308c3b84f5e3ee571e8b5b5558e108",
+          "exactPinMatched": true
         },
         {
           "name": "fast-wrap-ansi",
           "requested": "0.2.2",
-          "present": false
+          "present": true,
+          "resolvedVersion": "0.2.2",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/fast-wrap-ansi@0.2.2/node_modules/fast-wrap-ansi",
+          "packageJsonSha256": "faec2e80d1e1a395112ffaced479b858905ee233b5630d970a170666aa99c9fc",
+          "exactPinMatched": true
         },
         {
           "name": "json-schema-traverse",
           "requested": "1.0.0",
-          "present": false
+          "present": true,
+          "resolvedVersion": "1.0.0",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/json-schema-traverse@1.0.0/node_modules/json-schema-traverse",
+          "packageJsonSha256": "156fb24af02845c190701360d06dfda35ef04282e34a734289ea9535ad9819ae",
+          "exactPinMatched": true
         },
         {
           "name": "require-from-string",
           "requested": "2.0.2",
-          "present": false
+          "present": true,
+          "resolvedVersion": "2.0.2",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/require-from-string@2.0.2/node_modules/require-from-string",
+          "packageJsonSha256": "c0002f7d4c7d7e2a885cf0f97226344902417c3a0980f2beca41962d2bc1f6d8",
+          "exactPinMatched": true
         },
         {
           "name": "sisteransi",
           "requested": "1.0.5",
-          "present": false
+          "present": true,
+          "resolvedVersion": "1.0.5",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/sisteransi@1.0.5/node_modules/sisteransi",
+          "packageJsonSha256": "4a17bc5c93db1b8f01d84708031339f3a22f39e60e1a92e089cde82f0bb48633",
+          "exactPinMatched": true
+        },
+        {
+          "name": "@modelcontextprotocol/sdk",
+          "requested": "1.26.0",
+          "present": true,
+          "resolvedVersion": "1.26.0",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk",
+          "packageJsonSha256": "ef00e241a1d5ea06ce8e6b71510ed2ad9bac5a175332ebd76e8852fde8478ef8",
+          "exactPinMatched": true
+        },
+        {
+          "name": "zod",
+          "requested": "3.25.76",
+          "present": true,
+          "resolvedVersion": "3.25.76",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/zod@3.25.76/node_modules/zod",
+          "packageJsonSha256": "70eedbe34fd52385a4ae2f3e5759b19682189f0118ea73a6e7c32c677f61668e",
+          "exactPinMatched": true
         }
       ],
-      "missingEntrypoints": [
-        "./dist/index.js"
-      ],
-      "missingDirectDependencies": [
-        "@clack/core",
-        "@clack/prompts",
-        "@clowder-ai/plugin-contract",
-        "@clowder-ai/plugin-sdk",
-        "@larksuite/cli",
-        "ajv",
-        "ajv-formats",
-        "fast-deep-equal",
-        "fast-string-truncated-width",
-        "fast-string-width",
-        "fast-uri",
-        "fast-wrap-ansi",
-        "json-schema-traverse",
-        "require-from-string",
-        "sisteransi"
-      ],
+      "missingEntrypoints": [],
+      "missingDirectDependencies": [],
       "directPinMismatches": [],
-      "freshBuild": null,
-      "actualDirectoryJourneyAccepted": false
+      "freshBuild": {
+        "package": "feishu-meeting-intake",
+        "exit": 0,
+        "log": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/meeting-production-r5-installed.log"
+      },
+      "actualDirectoryJourneyAccepted": false,
+      "currentVerification": "builtin/owned CLI fixture regression99/99; typecheck; final canonical packed empty-consumer actual MCP/runner/control/lifecycle1/1; inventory10/10. Source review and actual Host/account journey pending."
     },
     {
       "directory": "personal-chrome-companion",
@@ -1690,6 +1775,7 @@
     "14 plain builds plus GenOffice fresh renderer/worker add ignored bytes only; unchanged business was not re-reviewed or runtime-activated",
     "Host125 stage counts are reported from its owner; package writer read diagnosis, not independent rerun of Host tests",
     "W3 4574 files and Feishu literal census >32MiB prevent assuming packlist selection fits original quotas; Host policy still requires bounded review",
-    "Video-generation build is existing source only; safety Task2134 remains separate; meeting legacy broker is not rebuilt or claimed migrated"
+    "Video-generation build is existing source only; safety Task2134 remains separate; meeting legacy broker is not rebuilt or claimed migrated",
+    "Top sourceHead/counts and non-meeting rows remain the dated historical census; only the meeting row is refreshed for this source-review candidate. Current 16 actual installations are independently recorded by Host in c1-resume-inventory-d699f241.json; these counts do not claim current full C1 installation acceptance."
   ]
 }

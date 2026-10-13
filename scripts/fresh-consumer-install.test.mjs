@@ -472,9 +472,9 @@ test('packed public packages install and import in a fresh npm consumer', async 
     assert.equal(sdkPackage.dependencies['@clowder-ai/plugin-contract'], sourceContract.version);
     assert.equal(
       feishuPackage.dependencies['@clowder-ai/plugin-contract'],
-      '0.1.0-beta.9',
+      sourceContract.version,
     );
-    assert.equal(feishuPackage.dependencies['@clowder-ai/plugin-sdk'], '0.1.0-beta.5');
+    assert.equal(feishuPackage.dependencies['@clowder-ai/plugin-sdk'], sourceSdk.version);
     assert.equal(feishuPackage.dependencies['@larksuite/cli'], '1.0.85');
     assert.deepEqual(
       [...feishuPackage.bundledDependencies].sort(),
@@ -482,9 +482,11 @@ test('packed public packages install and import in a fresh npm consumer', async 
     );
     assert.equal(feishuManifest.version, feishuPackage.version);
     assert.deepEqual(feishuManifest.runtime, {
-      transport: 'stdio',
-      entrypoint: 'dist/entrypoint.js',
+      transport: 'builtin',
+      entrypoint: 'dist/index.js',
+      dataDirectory: 'feishu-meeting-intake',
     });
+    assert.equal(feishuManifest.signals, undefined);
     await readFile(
       join(consumer, 'node_modules/@clowder-ai/feishu-meeting-intake/dist/entrypoint.js'),
       'utf8',

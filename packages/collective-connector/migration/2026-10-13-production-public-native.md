@@ -49,7 +49,7 @@ before continuing thread/route/publication effects.
 4. Settings → Collective participation → Paired connections displays current owner-bound connection
    rows. Select Sync on that row. The existing owner action route is
    POST `/api/plugins/official.collective-connector/actions/participation/sync`, body
-   `{input:{connectionId}}`. It syncs Service and persists exact named ordinary requests, then admits
+   `{connectionId}`. It syncs Service and persists exact named ordinary requests, then admits
    each named Cat through Host Queue. The returned rows distinguish Queue custody and sources still
    pending their original Work/channel consumer. No worker/index/protocol is added.
 5. The authenticated native invocation calls current context, optionally bounded read/interest, then

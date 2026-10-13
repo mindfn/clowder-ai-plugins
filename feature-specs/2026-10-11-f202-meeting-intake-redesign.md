@@ -4,16 +4,19 @@ topics: [plugins, meeting-intake, migration, lifecycle, authority]
 doc_kind: implementation-plan
 created: 2026-10-11
 architecture-cell: plugin
-tips_exempt: Internal unactivated source foundation; no new user-invocable capability is delivered by this checkpoint.
+tips_exempt: Package README and declared MCP tool descriptions carry discovery; this package change does not alter the Host capability-tip seed or claim installed acceptance.
 ---
 
 # Meeting intake: owned records, SDK notification and installed MCP
 
-Status: original Task1843 implementation in progress. Host150 paired the existing
-control-only activation; a private owned-record/notification foundation is implemented
-for source review. No activated redesign, SDK export, setup lane, package release or
-installed acceptance is claimed.
-The author remains the sole package writer. Host implementation remains its existing owner.
+Status: original Task1843 implementation in progress. The production manifest now selects
+an actual builtin control module and two declaration-activated MCP readers. The original
+record/notification, outbox/cursor and catch-up algorithms are connected. Directed production
+module, credential isolation and owned subprocess fixtures pass (99/99). The final canonical
+packed empty consumer starts the actual module, MCP and pinned runner; typecheck and inventory
+checks pass. Independent source review and actual Host/account acceptance remain pending. No actual Feishu account, installed Host journey, release
+or C1 completion is claimed. The author remains the sole package writer; Host installation
+and concrete Host wiring remain its existing owner.
 
 ## Accepted goal and applicable source
 
@@ -183,7 +186,7 @@ Relevant existing commands: `pnpm --filter @clowder-ai/feishu-meeting-intake typ
 `pnpm test:train-c1-inventory`, `git diff --check`.
 Full operator acceptance/soak/release/C1 remain open.
 
-## Current source checkpoint: private record/notification foundation
+## Reviewed record foundation (historical checkpoint)
 
 `src/record-delivery.ts` retains metadata and canonical source/revision after delivery.
 It uses a Host-provided private instance directory, 16KiB regular private record
@@ -219,7 +222,7 @@ to 512 characters and JSON-encodes it on one explicitly untrusted data line. No 
 provider title can add a SYSTEM, mention or tool-command template line; this framing
 does not claim that a model cannot misinterpret quoted data.
 
-This module is internal and has **no activated caller or public root export**.
+At that historical review checkpoint this module had no activated caller or public root export. The current builtin module now calls it; the core still is not exported from the public root.
 Its scope object is an internal fence supplied by the eventual module caller, not
 new authority. Reads require that caller's authorization; each sender call requires
 current target/grants through the SDK/Host. The Host owns the single active writer
@@ -232,11 +235,7 @@ same-process overlap, revocation before commit/after acceptance, hostile persist
 bytes/symlinks, receipt mismatch, bounded pages and opaque identifiers. These are
 injected-sender/isolated filesystem proofs, not authenticated Host sends, full disk
 failure, source cursor+record atomicity, process shutdown, login, MCP or installation.
-The old runtime still publishes broker events; its alpha.10 manifest and exact
-contract9/SDK5 dependencies are unchanged. Integration must connect discovery/cursor,
-source intent/current grants, SDK messaging and native reads before this can replace
-that runtime. This checkpoint is a source-review boundary within work unit2, not
-a partial product delivery or completion of the redesign.
+Legacy broker/runtime library functions remain as compatibility history. The current alpha.11 production manifest selects builtin/MCP and removes events.publish; its adapter requires the existing SDK20/contract36 module ABI. Current verification and actual Host installation remain open. The old checkpoint was a source-review boundary, not completion of the redesign.
 
 Architecture cell: plugin. Map delta: candidate authority inversion from historical
 F292 Host source/intake custody to package record/read custody; requires exact Host

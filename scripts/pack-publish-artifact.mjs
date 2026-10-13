@@ -149,6 +149,18 @@ async function main() {
   try {
     const sourceRoot = join(temporaryRoot, 'source');
     await mkdir(sourceRoot);
+    const deploymentRoot = join(temporaryRoot, 'deployment');
+    // pack's linker option does not reconstruct a workspace's existing linked
+    // tree. Deploy first: otherwise bundled packages lose indirect dependencies
+    // that live beside their targets in pnpm's virtual store (MCP schema codec).
+    // This isolated production deployment uses the frozen local cache, never
+    // rewrites package declarations or the checkout's node_modules/pins.
+    run('pnpm', ['--config.ignore-scripts=true', '--config.node-linker=hoisted',
+      '--offline', '--filter', packageJson.name, 'deploy', '--prod', deploymentRoot], repoRoot);
+    const deployedManifest = JSON.parse(await readFile(join(deploymentRoot, 'package.json'), 'utf8'));
+    if (JSON.stringify(Object.entries(deployedManifest.dependencies).sort()) !== JSON.stringify(Object.entries(packageJson.dependencies).sort()))
+      throw new Error('production deployment changed declared runtime dependency identities');
+    await writeFile(join(deploymentRoot, 'package.json'), await readFile(join(packageRoot, 'package.json')));
     const pnpmOutput = run(
       'pnpm',
       [
@@ -159,7 +171,7 @@ async function main() {
         '--pack-destination',
         destinationRoot,
       ],
-      packageRoot,
+      deploymentRoot,
     );
     const materialized = readPnpmArtifact(pnpmOutput);
     const archivePath = resolve(packageRoot, materialized.filename);

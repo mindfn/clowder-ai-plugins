@@ -269,10 +269,20 @@
     {
       "directory": "feishu-meeting-intake",
       "packageName": "@clowder-ai/feishu-meeting-intake",
-      "classification": "retained-external-baseline-specialized-host-wiring",
-      "managerInstallable": false,
-      "boundary": "alpha.10 legacy manifest.json and events.publish/broker stdio baseline; no canonical plugin.yaml, no C1-owned-records/MCP/send redesign yet; retained classification is not a C1 completion exemption",
-      "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
+      "classification": "manager-installable-official-public",
+      "managerInstallable": true,
+      "boundary": "alpha.11 original C1 redesign in review: actual control-only builtin, retained records/SDK messaging and two native MCP reads. Requires reviewed package candidate and actual Host grants/account/target installation; not a C1 completion exemption.",
+      "directoryAcceptance": "Host installation not yet performed for this new candidate",
+      "releaseAdmission": false,
+      "fullInstalledAcceptance": false,
+      "workSubject": "task:0001789822127811-001843-1c2133b0",
+      "acceptedSource": "thread_mu8dg6h7l2x4ohsk#0001791692969613-000094-97be6e64",
+      "contractClosure": "canonical plugin.yaml contractVersion0.1.0 with exact contract0.1.0-beta.36 module/MCP ABI",
+      "sdkClosure": "exact SDK0.2.0-beta.20 required for builtin owner operation/native context and module-action MCP; other retained pins unchanged",
+      "yamlClosure": "canonical plugin.yaml matches manifest.json",
+      "runtimeClosure": "dist/index.js default builtin control module; dist/mcp-entrypoint.js two strict native tools; checksum-attested CLI1.0.85 is packaged and supervised only on explicit owner/read/collection work",
+      "catalogClosure": "alpha.11 is not admitted to the release catalog",
+      "freshConsumerClosure": "targeted test/installed-directory.test.mjs passed the final canonical archive in an empty consumer: actual MCP, control-only module, packaged runner version and stop fence; actual Host/account acceptance remains pending"
     },
     {
       "directory": "personal-chrome-companion",
@@ -337,9 +347,9 @@
     },
     {
       "path": "packages/feishu-meeting-intake/manifest.json",
-      "classification": "retained-specialized-manifest",
-      "canonicalSource": null,
-      "terminalRule": "not admitted as a Manager plugin until a future migration supplies canonical plugin.yaml"
+      "classification": "canonical-manifest",
+      "canonicalSource": "packages/feishu-meeting-intake/plugin.yaml",
+      "terminalRule": "alpha.11 canonical module/MCP candidate requires independent review and actual Host/account journey; releaseAdmission remains false"
     },
     {
       "path": "packages/loopback-fixture-plugin/manifest.json",
