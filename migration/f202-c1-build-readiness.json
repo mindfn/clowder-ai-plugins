@@ -24,20 +24,26 @@
         {
           "path": "./plugin.yaml",
           "present": true,
-          "sha256": "d8b93c2efa475c1caa0f3d01bf6d71b92efc037aa61d4e3cb2779f9bdfbd1904",
-          "bytes": 11668
+          "sha256": "c79451d9b352ed9636e31d55b28c19fcbce6f9f0490140d9e41f87e91e319ebe",
+          "bytes": 12283
         },
         {
           "path": "dist/plugin-entrypoint.js",
           "present": true,
-          "sha256": "aa188342009e2f03b75cdb5cdfb203de3dca637d174851af96f491a1beb66982",
-          "bytes": 10322
+          "sha256": "bcb7d845bbfde02ab47034d1b92c4b76075f1c00ac5d160803b135c6368ee568",
+          "bytes": 10640
         },
         {
           "path": "dist/mcp-entrypoint.js",
           "present": true,
           "sha256": "ee2fc8c3a100a158d55eeda3571f9034c2595d38fafbd970e2aa845a50112374",
           "bytes": 1007
+        },
+        {
+          "path": "dist/owner-mcp-entrypoint.js",
+          "present": true,
+          "sha256": "9c1c3adfc0a6e7e3f61778b7ccdbe6e156e7494058672279c531103bc5b85122",
+          "bytes": 1016
         }
       ],
       "dependencies": [
@@ -82,7 +88,12 @@
       "missingDirectDependencies": [],
       "directPinMismatches": [],
       "freshBuild": null,
-      "actualDirectoryJourneyAccepted": false
+      "actualDirectoryJourneyAccepted": false,
+      "entrypointRefresh": {
+        "sourceHead": "0c4813b0a43aed142cf93367cb88cdedefa38007",
+        "scope": "Collective manifest entrypoint bytes after the owner-native installed fixture build; no actual directory/Host/provider acceptance claim",
+        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/owner-native-send-verification-r1-red.json"
+      }
     },
     {
       "directory": "companion",
@@ -1776,6 +1787,6 @@
     "Host125 stage counts are reported from its owner; package writer read diagnosis, not independent rerun of Host tests",
     "W3 4574 files and Feishu literal census >32MiB prevent assuming packlist selection fits original quotas; Host policy still requires bounded review",
     "Video-generation build is existing source only; safety Task2134 remains separate; meeting legacy broker is not rebuilt or claimed migrated",
-    "Top sourceHead/counts and non-meeting rows remain the dated historical census; only the meeting row is refreshed for this source-review candidate. Current 16 actual installations are independently recorded by Host in c1-resume-inventory-d699f241.json; these counts do not claim current full C1 installation acceptance."
+    "Top sourceHead/counts and other package rows remain the dated historical census. The meeting row and Collective entrypoint bytes were refreshed for their separate source-review candidates; this file does not replace Host installation receipts or claim current full C1 acceptance."
   ]
 }
