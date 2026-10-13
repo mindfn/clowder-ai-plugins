@@ -1,3 +1,5 @@
+import { projectSourceProgress, type PluginSourceProgressFact } from './source-progress.js';
+export type { PluginQueueProgress, PluginSourceProgressFact } from './source-progress.js';
 import {
   assertPluginSourceFact, assertPluginSourceFactsReadInput, assertPluginNativeContext,
   type PluginSourceFact, type PluginNativeContext,
@@ -8,6 +10,8 @@ export type { PluginSourceFact, PluginNativeContext, PluginSourceFactsReadInput 
  * No Task/receipt/ancestor reads or background fallback are supplied by this slice. */
 export interface PluginSourceFactsHost {
   read(input: { readonly messageRef: `message:${string}` }): Promise<PluginSourceFact>;
+  /** Authenticated owner-only, content-free Queue display facts; absent on older carriers. */
+  readProgress?(input: { readonly messageRef: `message:${string}` }): Promise<PluginSourceProgressFact>;
 }
 /** Native-only authenticated identity; neither a tool body nor typed-wait source supplies identity. */
 export interface PluginNativeContextHost {
@@ -22,7 +26,15 @@ function freeze<T>(value: T): T {
 }
 export function createSourceFactsClient(host: PluginSourceFactsHost, assertContentAccess: () => void): PluginSourceFactsHost {
   if (!host || typeof host.read !== 'function') throw new TypeError('Host source facts port requires read');
+  if (host.readProgress !== undefined && typeof host.readProgress !== 'function') throw new TypeError('Host source facts readProgress must be callable');
+  const readProgress = host.readProgress?.bind(host);
   return Object.freeze({
+    ...(readProgress === undefined ? {} : { async readProgress(input: { readonly messageRef: `message:${string}` }) {
+      assertContentAccess(); assertPluginSourceFactsReadInput(input);
+      const result = await readProgress(Object.freeze({ messageRef: input.messageRef }));
+      assertContentAccess();
+      return freeze(projectSourceProgress(result, input.messageRef));
+    } }),
     async read(input: { readonly messageRef: `message:${string}` }) {
       assertContentAccess();
       assertPluginSourceFactsReadInput(input);

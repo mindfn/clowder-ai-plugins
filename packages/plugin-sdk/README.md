@@ -58,3 +58,14 @@ The summary is read-only data, not a grant, receipt, Task admission or execution
 `waitOutcome.ownerFence`. Host-only identity, registration/source and invalidation fields are excluded;
 malformed declared wait fields fail the read. Task mutation method signatures and required Host write
 permissions are unchanged.
+
+
+### Owner Queue progress
+
+`sourceFacts.readProgress({messageRef})` is an optional existing-Host read surface requiring
+`thread.readContent` and an authenticated owner request. It returns source identity and optional
+Queue display facts without content, invocation witnesses, receipts or execution authority. SDK
+validation rejects body/extra authority fields, malformed projections and mismatched message IDs;
+outputs are detached and frozen. Older Host carriers keep this method absent. There is no fallback
+body read, retry or native identity substitution. Host authorization and currentness still govern
+queued and delivered terminal progress; the package keeps its original per-target display checks.

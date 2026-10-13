@@ -2,7 +2,7 @@ import type { FeatureContext } from '@clowder-ai/plugin-sdk';
 import type { CollectiveConnector } from './business/connector/connector.js';
 import { registeredCollectiveCats } from './entry-control.js';
 import { collectiveOwnerParticipationView } from './owner-participation-view.js';
-import type { OwnerViewMessage, OwnerViewThread } from './owner-participation-host-types.js';
+import type { OwnerViewThread } from './owner-participation-host-types.js';
 import { COLLECTIVE_NATIVE_ID } from './public-native-methods.js';
 
 /** Adapt the original owner view to existing Host read ports. No Task effects or synthetic queue truth. */
@@ -46,11 +46,9 @@ export function createCollectiveOwnerView(context: FeatureContext, connector: Pi
       } },
       messages: { async getById(id) {
         await current();
-        if (!context.sourceFacts) throw new Error('Host source facts unavailable');
-        const fact = await context.sourceFacts.read({ messageRef: `message:${id}` }); await current();
-        // Queue fields are absent on current Host. The original helper honestly omits execution;
-        // do not infer progress from content, delivery, Tasks or owner provenance.
-        return fact as unknown as OwnerViewMessage;
+        if (!context.sourceFacts?.readProgress) return undefined;
+        const fact = await context.sourceFacts.readProgress({ messageRef: `message:${id}` }); await current();
+        return fact;
       } },
     }, { connector, connection, ...(route ? { route } : {}), userId });
     await current(); return body;

@@ -166,13 +166,15 @@ admits execution, creates a thread or borrows native identity. Accessible foreig
 not become owner data. The Host thread list is traversed with its existing exclusive cursor, then every
 row is checked through the strict owner thread port.
 
-The original request-progress algorithm is retained, including exact owner, source event, connection,
-Cat and Queue scope checks. Current Host source facts omit Queue custody and refuse queued body reads,
-so this candidate cannot yet display actual queued/started/ended/failed request execution through that
-port. It omits unavailable progress rather than inferring it from Task status or message content. The
-specific Host fact pairing remains original migration work; no new carrier or private authority is
-introduced. Complete retained request/Task actions, private/progress returns and real owner browser
-journeys remain open.
+Request progress preserves the original owner, source event, connection, recipient Cat and target
+binding checks. It consumes the existing Host `sourceFacts.readProgress` owner-only, content-free
+projection. Current Queue `status` and per-target seen/exposure/failure/handled witnesses supply
+queued/started/failed/ended; the deleted `executionScope` marker is not synthesized. Terminal custody
+is retained by the actual Queue delivery transition. Queued body reads stay forbidden. Missing ports,
+missing Queue facts or refused progress reads omit execution instead of inferring it from Task status
+or content. These display facts never authorize private Work or Task execution. Complete retained
+request/Task actions, private/progress returns and real owner browser journeys remain open.
+
 
 
 The retained participation GET consumes the SDK's declared `PluginTaskReadItem` through existing

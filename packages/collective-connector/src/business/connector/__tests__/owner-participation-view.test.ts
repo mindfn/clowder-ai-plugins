@@ -7,21 +7,26 @@ import { fixture } from './communication-work-custody.fixture.js';
 import { ownerRequestExecution } from '../../../collective-owner-request-progress.js';
 
 const manifest = parse(await readFile(new URL('../../../../plugin.yaml', import.meta.url), 'utf8'));
-async function setup(taskHost?: ModulePluginHostShape['tasks']) {
-  const f = await fixture(); let stale = false, reads = 0;
+async function setup(taskHost?: ModulePluginHostShape['tasks'], sourceFactory?: (f: Awaited<ReturnType<typeof fixture>>,
+  current: () => Promise<void>) => Promise<{ messageId: string; port: NonNullable<ModulePluginHostShape['sourceFacts']> }>) {
+  const f = await fixture(); let stale = false, reads = 0, bodyReads = 0;
+  let progressQueue: { status: 'queued' | 'processing' | 'terminal'; allTargetCats: string[]; handledByCatIds: string[];
+    failedByCatIds: string[]; seenByCatIds: string[]; targetOutcomeByCatId?: Record<string, { handledAt: number }> } | undefined;
+  const current = async () => { if (stale) throw new Error('Owner view expired'); };
+  const external = await sourceFactory?.(f, current);
+  const sourceMessageId = external?.messageId ?? 'view-source';
   await f.connector.sync(f.connection.connectionId);
   const route = (await f.connector.getHostRoute(f.connection.connectionId))!;
   await f.connector.beginInboxRouting(f.connection.connectionId, f.source.eventId, route.revision);
   await f.connector.completeInboxRouting(f.connection.connectionId, f.source.eventId, route.revision,
-    { kind: 'thread_message', messageId: 'view-source', threadId: 'channel', catId: 'codex-sol' });
+    { kind: 'thread_message', messageId: sourceMessageId, threadId: 'channel', catId: 'codex-sol' });
   const rows = [{ id: 'channel', title: 'Owner channel', createdBy: 'local-owner', participants: ['codex-sol'] },
     { id: 'foreign', title: 'Foreign private', createdBy: 'foreign-owner', participants: ['codex-sol'] }];
-  const current = async () => { if (stale) throw new Error('Owner view expired'); };
   const unused = async (): Promise<never> => { throw new Error('Read must not invoke an unrelated Host port'); };
   const base: PluginTaskReadItem = { id: 'owned-task', title: 'Original entrusted work', threadId: 'channel',
     kind: 'work', subjectKey: null, status: 'doing', ownerCatId: null, why: '', createdBy: 'local-owner',
     createdAt: 1, updatedAt: 1, userId: 'local-owner',
-    entrustedWork: { revision: 3, closure: { state: 'open' }, admission: { sourceRefs: ['message:view-source'] } } };
+    entrustedWork: { revision: 3, closure: { state: 'open' }, admission: { sourceRefs: [`message:${sourceMessageId}`] } } };
   const tasks: PluginTaskReadItem[] = [base, { ...base, id: 'foreign-task', userId: 'foreign-owner' },
     { ...base, id: 'unrelated-task', entrustedWork: { ...base.entrustedWork!, admission: { sourceRefs: ['message:other'] } } },
     { ...base, id: 'legacy-unowned-task', userId: null }];
@@ -41,15 +46,16 @@ async function setup(taskHost?: ModulePluginHostShape['tasks']) {
     ownerThreads: { async get(id: string) { await current(); const r = rows.find(r => r.id === id);
       return r ? { id: r.id, createdBy: r.createdBy, participants: r.participants } : null;
     }, async create() { throw new Error('Read must not create'); }, async addParticipants() { throw new Error('Read must not mutate'); } },
-    sourceFacts: { async read() { await current(); return { id: 'view-source', threadId: 'channel', userId: 'local-owner', catId: null,
-      content: 'Fixture request', source: { connector: 'collective', meta: { participation: f.source } }, extra: { pluginMessage: { instanceId: 'fixture' } } }; } },
+    sourceFacts: external?.port ?? { async read() { bodyReads++; throw new Error('Owner progress must not read message body'); },
+      async readProgress() { await current(); return { id: 'view-source', threadId: 'channel', userId: 'local-owner', catId: null,
+      ...(progressQueue ? { queueCustody: progressQueue } : {}), source: { connector: 'collective', meta: { participation: f.source } }, extra: { pluginMessage: { instanceId: 'fixture' } } }; } },
     participantRoster: { async listForNativeContribution() { await current(); return [{ catId: 'codex-sol', displayName: 'Sol', defaultModel: 'fixture', supported: true }]; } },
     nativeContext: { async current() { throw new Error('Owner GET must not borrow native identity'); } },
     browserServices: { async getBinding(id: string) { return { contributionId: id, origin: 'http://127.0.0.1:5271', parentOrigin: 'http://localhost:5172',
       clientBuildId: 'collective-client-v2', assetDigest: 'a'.repeat(64), limits: BROWSER_SERVICE_LIMITS, assertCurrent: current }; },
       async dispatchLocal() { throw new Error('Unused'); } } };
   const active = await entrypoint.create(manifest).start(host);
-  return { ...f, active, tasks, rows, get reads() { return reads; }, expire() { stale = true; },
+  return { ...f, active, tasks, rows, get reads() { return reads; }, get bodyReads() { return bodyReads; }, setProgress(queue: typeof progressQueue) { progressQueue = queue; }, expire() { stale = true; },
     invoke(owner = 'local-owner', native?: unknown) { return active.actions['collective.control.http']!({ request: { method: 'GET',
       path: `connections/${f.connection.connectionId}/participation`, headers: { origin: 'http://localhost:5172' },
       principal: { kind: 'owner', id: owner } } }, native as never); }, async close() { await active.stop(); await f.close(); } };
@@ -97,14 +103,14 @@ test('the existing fifty-row Host cursor preserves the complete owned-thread sel
     expect(result.body.threads.some(t => t.id === 'foreign')).toBe(false);
   } finally { await f.close(); }
 });
-test('original progress stages require the exact owner/source/cat/connection and original queue scope', async () => {
+test('original progress stages require the exact owner/source/cat/connection and current Queue display facts', async () => {
   const f = await fixture(); try {
     await f.connector.sync(f.connection.connectionId);
     const item = (await f.connector.listInbox(f.connection.connectionId)).find(item => item.event.eventId === f.source.eventId)!;
     const request = { ...item, routeReceipt: { kind: 'thread_message' as const, threadId: 'channel', messageId: 'source', catId: 'codex-sol' } };
     const thread = { id: 'channel', title: 'Owner', createdBy: 'local-owner', participants: ['codex-sol'] };
-    const message = { id: 'source', userId: 'local-owner', threadId: 'channel', source: { meta: { participation: f.source } },
-      queueCustody: { executionScope: 'collective-participation', allTargetCats: ['codex-sol'], handledByCatIds: [] as string[],
+    const message = { id: 'source', userId: 'local-owner', threadId: 'channel', source: { connector: 'collective', meta: { participation: f.source } },
+      queueCustody: { status: 'queued' as const, allTargetCats: ['codex-sol'], handledByCatIds: [] as string[],
         failedByCatIds: [] as string[], seenByCatIds: [] as string[] } };
     const read = () => ownerRequestExecution(request, thread, { async getById() { return message; } }, 'local-owner', f.connection.connectionId);
     expect(await read()).toEqual({ stage: 'queued' });
@@ -112,8 +118,8 @@ test('original progress stages require the exact owner/source/cat/connection and
     message.queueCustody.failedByCatIds = ['codex-sol']; expect(await read()).toEqual({ stage: 'failed' });
     message.queueCustody.handledByCatIds = ['codex-sol']; expect(await read()).toEqual({ stage: 'ended' });
     message.userId = 'foreign-owner'; expect(await read()).toBeUndefined(); message.userId = 'local-owner';
-    message.queueCustody.executionScope = 'ordinary'; expect(await read()).toBeUndefined();
-    message.queueCustody.executionScope = 'collective-participation';
+    message.queueCustody.allTargetCats = ['foreign-cat']; expect(await read()).toBeUndefined();
+    message.queueCustody.allTargetCats = ['codex-sol'];
     expect(await ownerRequestExecution(request, thread, { async getById() { return message; } }, 'local-owner', 'another-connection')).toBeUndefined();
   } finally { await f.close(); }
 });
@@ -164,5 +170,92 @@ if (process.env.C1_TASK_READ_HOST_MODULE) test('compiled Host four read ports cr
     expect(response.status, JSON.stringify(response)).toBe(200);
     expect(response.body.tasks).toEqual([{ id: raw.id, title: raw.title, threadId: 'channel', status: 'doing',
       revision: 3, closure: 'open', sourceRefs: ['message:view-source'] }]);
+  } finally { await f.close(); }
+});
+
+
+test('actual owner GET consumes real Queue phases and per-target witnesses without ever reading queued content', async () => {
+  const f = await setup(); try {
+    const queue = { status: 'queued' as 'queued' | 'processing' | 'terminal', allTargetCats: ['codex-sol'],
+      handledByCatIds: [] as string[], failedByCatIds: [] as string[], seenByCatIds: [] as string[] };
+    f.setProgress(queue);
+    const stage = async () => { const r = await f.invoke() as { status: number; body: { requests: { execution?: { stage: string } }[] } };
+      expect(r.status).toBe(200); return r.body.requests[0]!.execution?.stage; };
+    expect(await stage()).toBe('queued');
+    queue.status = 'processing'; queue.seenByCatIds = ['codex-sol']; expect(await stage()).toBe('started');
+    queue.status = 'terminal'; queue.failedByCatIds = ['codex-sol']; expect(await stage()).toBe('failed');
+    queue.handledByCatIds = ['codex-sol']; expect(await stage()).toBe('ended');
+    queue.allTargetCats = ['foreign-cat']; expect(await stage()).toBeUndefined();
+    f.setProgress(undefined); expect(await stage()).toBeUndefined();
+    expect(f.bodyReads).toBe(0);
+  } finally { await f.close(); }
+});
+
+
+if (process.env.C1_SOURCE_PROGRESS_HOST_ROOT) test('real compiled Queue and owner source reader drive the production retained GET stages', async () => {
+  const base = process.env.C1_SOURCE_PROGRESS_HOST_ROOT!;
+  const { MessageStore } = await import(`${base}/domains/cats/services/stores/ports/MessageStore.js`);
+  const { createInitialQueuedMessageCustody } = await import(`${base}/domains/cats/services/agents/invocation/QueuedMessageCustodyCoordinator.js`);
+  const { createPluginSourceFactsHost } = await import(`${base}/domains/plugin/host-surface/plugin-source-facts-host.js`);
+  const { withPluginOwnerRequest, withPluginOwnerWebhook } = await import(`${base}/domains/plugin/carrier/plugin-owner-request-context.js`);
+  const owner = (operation: () => unknown) => withPluginOwnerRequest({ pluginId: 'official.collective-connector',
+    contributionId: 'owner-view', userId: 'local-owner', operation: 'read', signal: new AbortController().signal },
+    () => withPluginOwnerWebhook('official.collective-connector', 'owner-view', 'fixture', false, () => {}, operation));
+  for (const stage of ['queued', 'started', 'failed', 'ended']) {
+    let bodyReads = 0;
+    const f = await setup(undefined, async (fixture, current) => {
+      const store = new MessageStore();
+      const custody = createInitialQueuedMessageCustody({ id: 'entry', threadId: 'channel', userId: 'local-owner',
+        ownerAuthProvenance: 'unknown', source: 'connector', content: 'private queued body', messageId: 'source',
+        mergedMessageIds: [], targetCats: ['codex-sol'], allTargetCats: ['codex-sol'], intent: 'execute', autoExecute: true,
+        status: 'queued', priority: 'normal', createdAt: 1000 });
+      const message = store.append({ userId: 'local-owner', threadId: 'channel', catId: null, content: 'private queued body',
+        mentions: ['codex-sol'], timestamp: 1000, deliveryStatus: 'queued', queueCustody: custody,
+        source: { connector: 'collective', meta: { participation: fixture.source } },
+        extra: { pluginMessage: { instanceId: 'fixture', revision: 1 } } });
+      if (stage !== 'queued') {
+        const before = store.getById(message.id).queueCustody;
+        const next = { ...before, revision: before.revision + 1, status: 'processing', updatedAt: 2000,
+          seenByCatIds: ['codex-sol'], bodyExposures: [{ targetCatId: 'codex-sol', invocationId: 'private-child', seenAt: 1100 }],
+          seenInvocationIdByCatId: { 'codex-sol': 'private-child' } };
+        if (stage === 'failed') next.failedByCatIds = ['codex-sol'];
+        if (stage === 'ended') Object.assign(next, { status: 'terminal', pendingTargetCats: [], handledByCatIds: ['codex-sol'],
+          targetOutcomeByCatId: { 'codex-sol': { invocationId: 'private-child', disposition: 'completed_with_turn',
+            evidenceRef: { kind: 'turn_execution', invocationId: 'private-child' }, handledAt: 2000 } } });
+        expect(store.transitionQueueCustody(message.id, { expectedRevision: before.revision, next,
+          ...(stage === 'ended' ? { deliveredAt: 2000 } : {}) }).kind).toBe('updated');
+      }
+      const host = createPluginSourceFactsHost({ pluginInstanceId: 'fixture', ownerUserId: 'local-owner',
+        messageStore: { async getById(id: string) { return structuredClone(store.getById(id)); } },
+        threadStore: { async get() { return { id: 'channel', createdBy: 'local-owner' }; } }, assertCurrent: current });
+      return { messageId: message.id, port: { ...host.sourceFacts, async read() { bodyReads++; throw new Error('Must not read body'); } } };
+    });
+    try {
+      const result = await owner(() => f.invoke()) as { status: number; body: { requests: { execution: { stage: string } }[] } };
+      expect(result.status, JSON.stringify(result)).toBe(200);
+      expect(result.body.requests[0]!.execution).toEqual({ stage });
+      expect(JSON.stringify(result.body.requests)).not.toContain('private-child');
+      expect(JSON.stringify(result.body.requests)).not.toContain('private queued body');
+      expect(bodyReads).toBe(0);
+    } finally { await f.close(); }
+  }
+});
+
+
+test('a target outcome must be an own per-cat witness rather than an inherited object property', async () => {
+  const f = await fixture(); try {
+    await f.connector.sync(f.connection.connectionId);
+    const item = (await f.connector.listInbox(f.connection.connectionId)).find(item => item.event.eventId === f.source.eventId)!;
+    const catId = 'toString';
+    const recipient = item.event.recipient; if (recipient?.kind !== 'agent') throw new Error('Expected original Agent recipient');
+    const request = { ...item, event: { ...item.event, recipient: { ...recipient, agentId: catId } },
+      routeReceipt: { kind: 'thread_message' as const, threadId: 'channel', messageId: 'source', catId } };
+    const thread = { id: 'channel', title: 'Owner', createdBy: 'local-owner', participants: [catId] };
+    const message = { id: 'source', userId: 'local-owner', threadId: 'channel',
+      source: { connector: 'collective', meta: { participation: { ...f.source, catId } } },
+      queueCustody: { status: 'queued' as const, allTargetCats: [catId], handledByCatIds: [], failedByCatIds: [],
+        seenByCatIds: [], targetOutcomeByCatId: {} } };
+    expect(await ownerRequestExecution(request, thread, { async getById() { return message; } },
+      'local-owner', f.connection.connectionId)).toEqual({ stage: 'queued' });
   } finally { await f.close(); }
 });

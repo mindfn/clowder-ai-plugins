@@ -8,7 +8,8 @@ type OwnerThread = Awaited<ReturnType<IThreadStore['list']>>[number];
 type Stage = 'queued' | 'started' | 'ended' | 'failed';
 
 function stageFor(custody: QueuedMessageCustody, catId: string): Stage {
-  if (custody.targetOutcomeByCatId?.[catId] || custody.handledByCatIds.some((id) => id === catId)) return 'ended';
+  if ((custody.targetOutcomeByCatId && Object.hasOwn(custody.targetOutcomeByCatId, catId)) ||
+    custody.handledByCatIds.some((id) => id === catId)) return 'ended';
   if (custody.failedByCatIds.some((id) => id === catId)) return 'failed';
   if (
     custody.seenByCatIds.some((id) => id === catId) ||
@@ -18,7 +19,7 @@ function stageFor(custody: QueuedMessageCustody, catId: string): Stage {
   return 'queued';
 }
 
-/** Owner-only view of exact private execution; no Thread ID or custody enters Service. */
+/** Owner-only display of the exact routed target; no Thread ID or custody enters Service. */
 export async function ownerRequestExecution(
   item: InboxItem,
   thread: OwnerThread | undefined,
@@ -43,7 +44,7 @@ export async function ownerRequestExecution(
     source.data.connectionId !== connectionId ||
     source.data.eventId !== item.event.eventId ||
     source.data.catId !== recipient.agentId ||
-    custody?.executionScope !== 'collective-participation' ||
+    !custody ||
     !custody.allTargetCats.some((id) => id === recipient.agentId)
   )
     return undefined;
