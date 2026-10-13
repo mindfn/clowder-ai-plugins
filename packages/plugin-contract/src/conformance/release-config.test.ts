@@ -131,9 +131,9 @@ const messagingBehaviorSuite = JSON.parse(
 ) as BehaviorSuite;
 
 function assertPrereleaseDistTagsVerified(action: string): void {
-  assert.equal(action.match(/npm view "\$PACKAGE_NAME" dist-tags --json/g)?.length, 3);
+  assert.equal(action.match(/npm view "\$PACKAGE_NAME" dist-tags --json/g)?.length, 4);
   assert.equal(
-    action.match(/distTags\.next !== process\.env\.PACKAGE_VERSION/g)?.length,
+    action.match(/distTags\.next !== expectedNext/g)?.length,
     2,
   );
   assert.equal(
@@ -158,9 +158,21 @@ function assertPrereleaseDistTagsVerified(action: string): void {
     /\bnpm\s+dist-tag\s+rm\b/,
     'the historical NPM_TOKEN route must not require unproven dist-tag deletion authority',
   );
+  const inspect = namedActionStep(action, 'Inspect published registry state');
+  assert.match(inspect, /process\.env\.RETAINED_ARTIFACT && process\.env\.ALREADY_PUBLISHED === 'true'/);
+  assert.match(inspect, /\? \(process\.env\.PREVIOUS_NEXT \|\| undefined\) : process\.env\.PACKAGE_VERSION/);
+  const final = namedActionStep(action, 'Verify final registry state');
+  assert.match(final, /const preserveNext = process\.env\.RETAINED_ARTIFACT &&/);
+  assert.match(final, /process\.env\.ALREADY_PUBLISHED === 'true' \|\| process\.env\.PREVIOUS_NEXT/);
+  assert.match(final, /const expectedNext = preserveNext \? \(process\.env\.PREVIOUS_NEXT \|\| undefined\) : process\.env\.PACKAGE_VERSION/);
+  const restore = namedActionStep(action, 'Preserve existing next after retained upload');
+  assert.match(restore, /tags\.next !== process\.env\.PACKAGE_VERSION && tags\.next !== process\.env\.PREVIOUS_NEXT/);
+  assert.match(restore, /throw new Error\('registry next changed outside this retained upload'\)/);
+  assert.match(restore, /if \[\[ "\$CURRENT_NEXT" == "\$PACKAGE_VERSION" \]\]/);
+  assert.match(restore, /npm dist-tag add "\$PACKAGE_NAME@\$PREVIOUS_NEXT" next/);
 }
 
-function assertAuthorizedTokenPublicationBaseline(workflow: string): void {
+function assertAuthorizedTokenPublicationBaseline(workflow: string, action = prereleasePublishAction): void {
   const validateJob = workflow.match(/^  validate:\n[\s\S]*?(?=^  publish:)/m)?.[0];
   const publishJob = workflow.match(/^  publish:\n[\s\S]*$/m)?.[0];
 
@@ -219,10 +231,21 @@ function assertAuthorizedTokenPublicationBaseline(workflow: string): void {
     'each public package action must receive the operator-authorized npm token',
   );
   assert.equal(
-    prereleasePublishAction.match(/NODE_AUTH_TOKEN: \$\{\{ inputs\.npm-token \}\}/g)?.length,
-    1,
-    'the write token must be scoped to publication only',
+    action.match(/NODE_AUTH_TOKEN: \$\{\{ inputs\.npm-token \}\}/g)?.length,
+    2,
+    'the write token must be scoped to upload and retained-next restoration only',
   );
+  for (const name of ['Pack release candidate', 'Inspect registry before publish',
+    'Inspect published registry state', 'Verify final registry state']) {
+    assert.doesNotMatch(namedActionStep(action, name), /NODE_AUTH_TOKEN|inputs\.npm-token/,
+      `${name} must not receive the write token`);
+  }
+  assert.match(namedActionStep(action, 'Publish prerelease to next'), /NODE_AUTH_TOKEN: \$\{\{ inputs\.npm-token \}\}/);
+  const restore = namedActionStep(action, 'Preserve existing next after retained upload');
+  assert.match(restore, /NODE_AUTH_TOKEN: \$\{\{ inputs\.npm-token \}\}/);
+  assert.match(restore, /^      if: steps\.registry\.outputs\.already_published != 'true' && inputs\.retained-artifact != ''$/m);
+  assert.match(restore, /npm dist-tag add "\$PACKAGE_NAME@\$PREVIOUS_NEXT" next/);
+  assert.doesNotMatch(restore, /\bnpm\s+publish\b|\bnpm\s+dist-tag\s+rm\b/);
   assert.doesNotMatch(
     validateJob,
     /NPM_TOKEN|NODE_AUTH_TOKEN/,
@@ -432,6 +455,10 @@ test('main publishes the public dependency chain through one hardened action', (
     'the prerelease publication action must be committed',
   );
   const orderedPackages = [
+    // Three authenticated retained contract -> SDK pairs precede current consumers.
+    'packages/plugin-contract', 'packages/plugin-sdk',
+    'packages/plugin-contract', 'packages/plugin-sdk',
+    'packages/plugin-contract', 'packages/plugin-sdk',
     'packages/plugin-contract',
     'packages/plugin-sdk',
     'packages/enterprise-workflow',
@@ -450,6 +477,7 @@ test('main publishes the public dependency chain through one hardened action', (
     'packages/wechat-visible-reader',
     'packages/genoffice-docx',
     'packages/feishu-meeting-intake',
+    'packages/github-operations',
   ];
   const publishedPackages = publishedPackageDirectories(releaseWorkflow);
   const catalogPackages = catalogPackageDirectories(pluginCatalog);
@@ -457,7 +485,7 @@ test('main publishes the public dependency chain through one hardened action', (
 
   for (const packageDirectory of orderedPackages) {
     const marker = `          package-directory: ${packageDirectory}`;
-    const index = releaseWorkflow.indexOf(marker);
+    const index = releaseWorkflow.indexOf(marker, previousIndex + 1);
     assert.ok(index > previousIndex, `${packageDirectory} must publish in dependency order`);
     previousIndex = index;
   }
@@ -497,7 +525,7 @@ test('main publishes the public dependency chain through one hardened action', (
   assert.match(prereleasePublishAction, /npm publish "\$PACKAGE_TARBALL"/);
   assert.match(prereleasePublishAction, /metadata\.dist\?\.integrity !== process\.env\.EXPECTED_INTEGRITY/);
   assert.match(prereleasePublishAction, /npm publish "\$PACKAGE_TARBALL" --tag next --provenance --access public/);
-  assert.match(prereleasePublishAction, /distTags\.next !== process\.env\.PACKAGE_VERSION/);
+  assert.match(prereleasePublishAction, /distTags\.next !== expectedNext/);
   assert.match(prereleasePublishAction, /distTags\.latest !== process\.env\.PREVIOUS_LATEST/);
   assert.match(prereleasePublishAction, /process\.env\.PACKAGE_VERSION\.includes\('-'\)/);
   assert.doesNotMatch(prereleasePublishAction, /npm dist-tag rm "\$PACKAGE_NAME" latest/);
@@ -685,8 +713,8 @@ test('prerelease dist-tag guards reject fail-open action mutations', () => {
       'true',
     ),
     replaceActionOnce(
-      'distTags.next !== process.env.PACKAGE_VERSION',
-      'distTags.next === process.env.PACKAGE_VERSION',
+      'distTags.next !== expectedNext',
+      'distTags.next === expectedNext',
     ),
     replaceActionOnce(
       'distTags.latest !== process.env.PREVIOUS_LATEST',
@@ -972,4 +1000,19 @@ test('public consumer packages contain no workspace protocol and CI installs pac
   }
   assert.match(npmrc, /^link-workspace-packages=true$/m);
   assert.match(localGate, /pnpm test:fresh-consumer/);
+});
+
+test('retained publication token and next restoration guards reject authority expansion', () => {
+  const tokenLeak = replaceNamedActionStepOnce('Inspect published registry state',
+    '        PACKAGE_NAME:', '        NODE_AUTH_TOKEN: ${{ inputs.npm-token }}\n        PACKAGE_NAME:');
+  const unrestrictedRestore = replaceNamedActionStepOnce('Preserve existing next after retained upload',
+    " && inputs.retained-artifact != ''", '');
+  const competingOverwrite = replaceNamedActionStepOnce('Preserve existing next after retained upload',
+    'tags.next !== process.env.PACKAGE_VERSION && tags.next !== process.env.PREVIOUS_NEXT', 'false');
+  const ordinaryTagRelaxation = replaceNamedActionStepOnce('Verify final registry state',
+    'const preserveNext = process.env.RETAINED_ARTIFACT &&', 'const preserveNext = true &&');
+  assert.throws(() => assertAuthorizedTokenPublicationBaseline(releaseWorkflow, tokenLeak));
+  assert.throws(() => assertAuthorizedTokenPublicationBaseline(releaseWorkflow, unrestrictedRestore));
+  assert.throws(() => assertPrereleaseDistTagsVerified(competingOverwrite));
+  assert.throws(() => assertPrereleaseDistTagsVerified(ordinaryTagRelaxation));
 });
