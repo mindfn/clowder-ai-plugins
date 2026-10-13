@@ -56,7 +56,7 @@ test('retained connections and provision callers resolve non-anonymous owner dec
 });
 
 test('implemented owner method/path pairs and seven ordinary native methods are advertised', () => {
-  const expected = ['GET connections', 'GET connections/:connectionId/inbox', 'GET connections/:connectionId/route',
+  const expected = ['GET connections', 'GET connections/:connectionId/inbox', 'GET connections/:connectionId/route', 'PUT connections/:connectionId/route',
     'POST connections/:connectionId/reconnect', 'POST connections/:connectionId/revoke',
     'GET connections/:connectionId/listening', 'POST connections/:connectionId/listening',
     'GET connections/:connectionId/work-policy', 'POST connections/:connectionId/work-policy/adopt',

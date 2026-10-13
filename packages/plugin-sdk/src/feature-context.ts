@@ -1,7 +1,7 @@
 import { projectTaskRead, projectTaskReadList } from './task-read.js';
 import { capturePublicInvocationVerifier, guardPublicInvocationVerifier, PUBLIC_INVOCATION_VERIFIER_METHOD, type PluginPublicInvocationVerifier } from './public-invocation-verifier.js';
 import { createSourceFactsClient, createNativeContextClient, type PluginSourceFactsHost, type PluginNativeContextHost } from './source-facts.js';
-import { createParticipantRosterClient, type PluginParticipantRosterHost } from './participant-roster.js';
+import { createParticipantRosterClient, type PluginParticipantRosterHost, type PluginParticipantRosterClient } from './participant-roster.js';
 import { createPublicInvocationClient, type PluginPublicInvocationHost } from './public-invocations.js';
 import type { BrowserServiceHost, PluginHostActionContext } from './browser-services.js';
 import { createFrustrationClient, type PluginFrustrationHost } from './frustration.js';
@@ -158,7 +158,7 @@ export interface FeatureContext {
   /** Verified native invocation only; no body identity or Work binding. */
   readonly nativeContext?: PluginNativeContextHost;
   /** Current owner or same-owner verified native invocation; absent on older carriers. */
-  readonly participantRoster?: PluginParticipantRosterHost;
+  readonly participantRoster?: PluginParticipantRosterClient;
   /** Strict authenticated owner webhook calls only; absent on older carriers. */
   readonly ownerThreads?: PluginOwnerThreadHost;
   readonly browserServices?: BrowserServiceHost;

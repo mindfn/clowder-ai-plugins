@@ -374,7 +374,7 @@ contributions:
   - type: webhook
     id: collective-owner-20
     path: connections/:connectionId/route
-    methods: [GET]
+    methods: [GET, PUT]
     action: { method: collective.control.http }
   - type: webhook
     id: collective-owner-22

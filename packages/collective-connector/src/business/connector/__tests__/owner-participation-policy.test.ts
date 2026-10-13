@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse } from 'yaml';
-import type { ModulePluginHostShape } from '@clowder-ai/plugin-sdk';
+import type { PluginParticipantRosterHost, ModulePluginHostShape } from '@clowder-ai/plugin-sdk';
 import { BROWSER_SERVICE_LIMITS } from '@clowder-ai/plugin-sdk';
 import entrypoint from '../../../plugin-entrypoint.js';
 import { fixture } from './communication-work-custody.fixture.js';
@@ -12,7 +12,7 @@ const request = (connectionId: string, body: unknown, owner = 'local-owner', met
   method, path: `connections/${connectionId}/participation/policy`, body, headers: { origin: 'http://localhost:5172' },
   principal: { kind: 'owner', id: owner },
 } });
-async function setup(clearAgentRoutes = false) {
+async function setup(clearAgentRoutes = false, actualRoster?: PluginParticipantRosterHost) {
   const f = await fixture();
   if (clearAgentRoutes) {
     const prior = (await f.connector.getHostRoute(f.connection.connectionId))!;
@@ -22,11 +22,12 @@ async function setup(clearAgentRoutes = false) {
     ['channel', { id: 'channel', createdBy: 'local-owner', participants: ['codex-sol'] }],
   ]);
   let creates = 0, stale = false;
+  const quota = new Map([['codex-sol', true]]);
   const roster = [{ catId: 'codex-sol', displayName: 'Sol', defaultModel: 'fixture', supported: true }];
   const host: ModulePluginHostShape = { dataDirectory: f.root,
     config: { async get() { return undefined; } }, secrets: { async get() { return undefined; } },
     storage: {} as never, tasks: {} as never, threads: {} as never, media: {} as never, messaging: {} as never, log() {},
-    participantRoster: { async listForNativeContribution() { return roster; } },
+    participantRoster: actualRoster ?? { async listForNativeContribution(input) { return input.includeAvailability === true ? roster.map(row => ({ ...row, available: quota.get(row.catId) === true })) : roster; } },
     nativeContext: { async current() { throw new Error('Owner policy must not borrow a native invocation'); } },
     ownerThreads: { async get(id) { return threads.get(id) ?? null; }, async create() {
       const row = { id: 'owner-thread-' + ++creates, createdBy: 'local-owner', participants: [] as string[] }; threads.set(row.id, row); return row;
@@ -37,7 +38,7 @@ async function setup(clearAgentRoutes = false) {
   };
   const active = await entrypoint.create(manifest).start(host);
   const route = async () => JSON.parse(await readFile(join(f.root, 'connector/collective-connector.json'), 'utf8')).hostRoutes[f.connection.connectionId];
-  return { ...f, active, threads, route, roster, expire() { stale = true; }, get creates() { return creates; }, async close() { await active.stop(); await f.close(); } };
+  return { ...f, active, threads, route, roster, quota, expire() { stale = true; }, get creates() { return creates; }, async close() { await active.stop(); await f.close(); } };
 }
 const policy = (excluded: string[] = []) => ({ defaultMode: 'include', excludedCatIds: excluded,
   channelOverrides: { general: { excludedCatIds: [] } } });
@@ -163,5 +164,113 @@ test('revoked connection cannot change individual participation or standing-work
     const before = await f.route();
     expect(await invoke(individualRequest(f.connection.connectionId, individualInput(before.revision)))).toMatchObject({ status: 409, body: { code: 'PARTICIPATION_REVOKED' } });
     expect(await f.route()).toEqual(before); expect(f.creates).toBe(0);
+  } finally { await f.close(); }
+});
+
+
+const rawRouteRequest = (id: string, body: unknown, owner = 'local-owner') => ({ request: {
+  method: 'PUT', path: `connections/${id}/route`, body, headers: { origin: 'http://localhost:5172' },
+  principal: { kind: 'owner', id: owner },
+} });
+test('raw owner route PUT is retained in the existing authenticated webhook declaration', () => {
+  const row = manifest.contributions.find((c: { path?: string }) => c.path === 'connections/:connectionId/route');
+  expect(row).toMatchObject({ type: 'webhook', methods: ['GET', 'PUT'], action: { method: 'collective.control.http' } });
+});
+test('raw owner route PUT uses the actual module and original Connector route CAS before publication', async () => {
+  const f = await setup(); try {
+    const invoke = f.active.actions['collective.control.http']!, before = await f.route();
+    const body = { defaultIngressThreadId: 'channel', humanNotificationThreadId: 'channel', expectedRevision: before.revision,
+      agentRoutes: { [`${f.owner.human.humanId}:codex-sol`]: { catId: 'codex-sol', threadId: 'channel' } } };
+    expect(await invoke(rawRouteRequest(f.connection.connectionId, { ...body, localOwnerUserId: 'forged' }))).toMatchObject({ status: 400 });
+    expect(await f.route()).toEqual(before);
+    expect(await invoke(rawRouteRequest(f.connection.connectionId, body))).toMatchObject({ status: 200 });
+    const after = await f.route(); expect(after.revision).toBe(before.revision + 1);
+    expect(after.localOwnerUserId).toBe('local-owner'); expect(after.agentRoutes).toEqual(body.agentRoutes);
+    expect(f.creates).toBe(0);
+  } finally { await f.close(); }
+});
+
+
+test('raw owner route allows quota-available plain routing when native support is false and refuses quota loss', async () => {
+  const f = await setup(); try {
+    const invoke = f.active.actions['collective.control.http']!, before = await f.route(); f.roster[0]!.supported = false;
+    const body = { defaultIngressThreadId: 'channel', humanNotificationThreadId: 'channel', expectedRevision: before.revision,
+      agentRoutes: { [`${f.owner.human.humanId}:codex-sol`]: { catId: 'codex-sol', threadId: 'channel' } } };
+    expect(await invoke(rawRouteRequest(f.connection.connectionId, body))).toMatchObject({ status: 200 });
+    const after = await f.route(); f.quota.set('codex-sol', false);
+    expect(await invoke(rawRouteRequest(f.connection.connectionId, { ...body, expectedRevision: after.revision }))).toMatchObject({ status: 422, body: { code: 'ROUTE_CAT_UNAVAILABLE' } });
+    expect(await f.route()).toEqual(after);
+  } finally { await f.close(); }
+});
+test('raw owner route retains foreign owner/body/thread refusals, scoped revision requirement and shared CAS serialization', async () => {
+  const f = await setup(); try {
+    const invoke = f.active.actions['collective.control.http']!, before = await f.route();
+    const body = { defaultIngressThreadId: 'channel', humanNotificationThreadId: 'channel', expectedRevision: before.revision,
+      agentRoutes: { [`${f.owner.human.humanId}:codex-sol`]: { catId: 'codex-sol', threadId: 'channel' } } };
+    expect(await invoke(rawRouteRequest(f.connection.connectionId, body, 'foreign-owner'))).toMatchObject({ status: 403 });
+    const { expectedRevision: _revision, ...noRevision } = body;
+    expect(await invoke(rawRouteRequest(f.connection.connectionId, noRevision))).toMatchObject({ status: 400, body: { code: 'PARTICIPATION_REVISION_REQUIRED' } });
+    f.threads.get('channel')!.createdBy = 'foreign';
+    expect(await invoke(rawRouteRequest(f.connection.connectionId, body))).toMatchObject({ status: 422, body: { code: 'ROUTE_THREAD_UNAVAILABLE' } });
+    f.threads.get('channel')!.createdBy = 'local-owner';
+    expect(await f.route()).toEqual(before);
+    const results = await Promise.all([invoke(rawRouteRequest(f.connection.connectionId, body)), invoke(rawRouteRequest(f.connection.connectionId, body))]);
+    expect(results.map(r => (r as { status: number }).status).sort()).toEqual([200, 409]);
+    const after = await f.route(); expect(after.revision).toBe(before.revision + 1);
+    f.expire(); await expect(invoke(rawRouteRequest(f.connection.connectionId, { ...body, expectedRevision: after.revision }))).rejects.toThrow(/expired/);
+    expect(await f.route()).toEqual(after); expect(f.creates).toBe(0);
+  } finally { await f.close(); }
+});
+
+const hostRoot = '/Users/lang/workspace/github-lab/clowder-ai-f202-c1-core';
+test('raw scoped route keeps original profile/standing checks and publishes the accepted configuration', async () => {
+  const f = await setup(); try {
+    const invoke = f.active.actions['collective.control.http']!, before = await f.route();
+    const key = `${f.owner.human.humanId}:codex-sol`;
+    const row = { catId: 'codex-sol', threadId: 'channel', participation: { displayName: 'Sol（fixture）', channelIds: ['general'] },
+      standingWork: { channelIds: ['general'], requestingHumanIds: ['requesting-human'], expiresAt: null } };
+    const body = { defaultIngressThreadId: 'channel', humanNotificationThreadId: 'channel', expectedRevision: before.revision,
+      agentRoutes: { [key]: row } };
+    expect(await invoke(rawRouteRequest(f.connection.connectionId, { ...body,
+      agentRoutes: { [key]: { ...row, participation: { ...row.participation, displayName: 'forged' } } } })))
+      .toMatchObject({ status: 422, body: { code: 'PARTICIPATION_UNSUPPORTED' } });
+    expect(await invoke(rawRouteRequest(f.connection.connectionId, { ...body,
+      agentRoutes: { [key]: { ...row, standingWork: { ...row.standingWork, channelIds: ['private'] } } } })))
+      .toMatchObject({ status: 422, body: { code: 'OWNER_ADMISSION_SCOPE_MISMATCH' } });
+    expect(await f.route()).toEqual(before);
+    expect(await invoke(rawRouteRequest(f.connection.connectionId, body))).toMatchObject({ status: 200 });
+    const after = await f.route();
+    expect(after.agentRoutes[key]).toMatchObject(row);
+    expect(after.agentRoutes[key].standingWorkRevision).toBeGreaterThan(0);
+    expect(f.store.listParticipants(f.owner.sessionToken, f.connection.collectiveId))
+      .toContainEqual(expect.objectContaining({ catId: 'codex-sol', displayName: 'Sol（fixture）', participationRevision: after.revision }));
+    expect(f.creates).toBe(0);
+  } finally { await f.close(); }
+});
+test.runIf(process.env.F202_APPROVED_HOST_ROSTER === '1')('approved compiled Host quota facts cross SDK into actual module raw owner PUT', async () => {
+  const { createPluginParticipantRosterHost } = await import(hostRoot + '/packages/api/dist/domains/plugin/host-surface/plugin-participant-roster-host.js');
+  const { withPluginOwnerRequest, withPluginOwnerWebhook } = await import(hostRoot + '/packages/api/dist/domains/plugin/carrier/plugin-owner-request-context.js');
+  let available = true, quotaReads = 0, loseAfterFirst = false;
+  const actualRoster = createPluginParticipantRosterHost({ pluginInstanceId: 'raw-route-fixture', ownerUserId: 'local-owner',
+    manifest, effectiveGrants: manifest.features[0].capabilities, assertCurrent: async () => {},
+    services: { listCats: () => [{ catId: 'codex-sol', displayName: 'Sol', defaultModel: 'fixture' }],
+      publicAvatar: async () => undefined, isCatAvailable: () => { quotaReads++; return loseAfterFirst ? quotaReads === 1 : available; },
+      supportsNativeAction: () => false } });
+  const f = await setup(false, actualRoster);
+  const invoke = (body: unknown) => withPluginOwnerRequest({ pluginId: manifest.pluginId, contributionId: 'collective-owner-20',
+    userId: 'local-owner', operation: 'write', signal: new AbortController().signal },
+    () => withPluginOwnerWebhook(manifest.pluginId, 'collective-owner-20', 'raw-route-fixture', false, () => {},
+      () => f.active.actions['collective.control.http']!(rawRouteRequest(f.connection.connectionId, body))));
+  try {
+    const before = await f.route();
+    const body = { defaultIngressThreadId: 'channel', humanNotificationThreadId: 'channel', expectedRevision: before.revision,
+      agentRoutes: { [`${f.owner.human.humanId}:codex-sol`]: { catId: 'codex-sol', threadId: 'channel' } } };
+    expect(await invoke(body)).toMatchObject({ status: 200 }); expect(quotaReads).toBe(2);
+    const after = await f.route(); available = false;
+    expect(await invoke({ ...body, expectedRevision: after.revision })).toMatchObject({ status: 422, body: { code: 'ROUTE_CAT_UNAVAILABLE' } });
+    expect(await f.route()).toEqual(after);
+    available = true; quotaReads = 0; loseAfterFirst = true;
+    expect(await invoke({ ...body, expectedRevision: after.revision })).toMatchObject({ status: 409, body: { code: 'ROUTE_ROSTER_CHANGED' } });
+    expect(await f.route()).toEqual(after);
   } finally { await f.close(); }
 });

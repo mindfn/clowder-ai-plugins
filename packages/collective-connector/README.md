@@ -36,7 +36,12 @@ connection resources use `connections/:connectionId/...`. No anonymous verificat
 The original eleven owner method/path pairs remain: connections GET; service/provision
 POST; inbox/route GET; reconnect/revoke POST; listening GET/POST; and work-policy GET/adopt/revoke.
 They call the moved connector algorithms. Listening/policy/route preserve local owner checks and
-original request schemas. Unknown local sync/revoke outcomes remain visible 409 recovery states;
+original request schemas. Raw route PUT also retains strict paired-Human targets, scoped revision CAS,
+owned participant threads and standing-work channel bounds before `setHostRoute` / publication.
+It explicitly opts into the existing Host roster quota fact: `available` is independent of native
+`supported`. Default roster consumers retain their original strict shape. Unregistered Cats cannot
+be invented from request data. This configuration does not create Task admission or execution
+authority; real installed owner use still requires the matching approved Host projection. Unknown local sync/revoke outcomes remain visible 409 recovery states;
 ordinary reconnect does not replay or clear a hold. Provision returns the existing `{service,launchUrl}`
 shape from the current Host binding and persistent metadata, without starting a second listener.
 Only this authenticated launch response contains an unclaimed private bootstrap fragment; public

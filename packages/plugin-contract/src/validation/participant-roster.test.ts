@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertPluginParticipant, assertPluginParticipantRosterInput } from './participant-roster.js';
+import { assertPluginParticipant, assertPluginParticipantWithAvailability, assertPluginParticipantRosterInput } from './participant-roster.js';
 test('participant DTO retains public required and optional fields without inventing eligible authority', () => {
   const row = { catId: 'cat', displayName: 'Cat', defaultModel: 'model', supported: false };
   assertPluginParticipant(row);
@@ -16,4 +16,24 @@ test('participant roster input is exactly the bounded UTF16 trim-equal contribut
     { contributionId: 'native\n' }, { contributionId: 'native', method: 'forged' }, { contributionId: 'native', instanceId: 'forged' }]) {
     assert.throws(() => assertPluginParticipantRosterInput(value), /PluginParticipantRosterInput/);
   }
+});
+
+
+test('participant roster quota is requested only by explicit true opt-in and never accepts authority selectors', () => {
+  assertPluginParticipantRosterInput({ contributionId: 'native', includeAvailability: true });
+  for (const value of [{ contributionId: 'native', includeAvailability: false }, { contributionId: 'native', includeAvailability: undefined },
+    { contributionId: 'native', includeAvailability: true, ownerUserId: 'forged' }, { contributionId: 'native', includeAvailability: true, methods: ['forged'] }]) {
+    assert.throws(() => assertPluginParticipantRosterInput(value), /PluginParticipantRosterInput/);
+  }
+});
+
+
+test('opt-in quota participant shape is bounded and required while legacy participants remain strict', () => {
+  const row = { catId: 'cat', displayName: 'Cat', defaultModel: 'model', supported: false };
+  assertPluginParticipantWithAvailability({ ...row, available: true });
+  assertPluginParticipantWithAvailability({ ...row, available: false });
+  for (const value of [row, { ...row, available: 'true' }, { ...row, available: true, grantRef: 'forged' }]) {
+    assert.throws(() => assertPluginParticipantWithAvailability(value), /PluginParticipantWithAvailability/);
+  }
+  assert.throws(() => assertPluginParticipant({ ...row, available: true }), /PluginParticipant/);
 });

@@ -24,14 +24,14 @@
         {
           "path": "./plugin.yaml",
           "present": true,
-          "sha256": "ba45a077c507c2f9bb9d9347cbf4e38e96c2af88349dd67fab80d1eb715d766c",
-          "bytes": 12543
+          "sha256": "27b7a7e32d547eb346f969ad6f55b0b3a2e1c9f9445ae6141bcf02e61050bbd5",
+          "bytes": 12548
         },
         {
           "path": "dist/plugin-entrypoint.js",
           "present": true,
-          "sha256": "b1e23e9300981c5ca7a8d2aeb3daf10aaddc864ac8f736d4bb774e3652db0367",
-          "bytes": 11115
+          "sha256": "89568dbc331061f01842aa95846613c4873bc8ab72c09381aae67f6e30ebf3e9",
+          "bytes": 11346
         },
         {
           "path": "dist/mcp-entrypoint.js",
@@ -90,9 +90,9 @@
       "freshBuild": null,
       "actualDirectoryJourneyAccepted": false,
       "entrypointRefresh": {
-        "sourceHead": "b5b7ff9bc7f86294612892e4b1d32e410fd462ce",
-        "scope": "Original per-Cat PUT participation migration after sequential SDK/Collective build and packed consumer; only Collective literal entry hashes refreshed. Historical census and actual installed acceptance remain separate.",
-        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/owner-individual-participation-verification.json"
+        "sourceHead": "c8836ffe9ade1a16d1ff2ed5b4a562af62a212ef",
+        "scope": "Original raw owner route PUT and explicit quota opt-in after sequential Contract/SDK/Collective build and packed consumer; only Collective literal entry hashes refreshed. Historical census and actual installed acceptance remain separate.",
+        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/owner-raw-route-verification-r3.json"
       }
     },
     {

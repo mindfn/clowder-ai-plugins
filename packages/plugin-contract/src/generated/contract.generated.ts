@@ -87,8 +87,20 @@ export type PluginParticipant = {
   readonly avatar?: string;
   readonly supported: boolean;
 };
+export type PluginParticipantWithAvailability = {
+  readonly catId: string;
+  readonly displayName: string;
+  readonly nickname?: string;
+  readonly variantLabel?: string;
+  readonly defaultModel: string;
+  readonly roleDescription?: string;
+  readonly avatar?: string;
+  readonly supported: boolean;
+  readonly available: boolean;
+};
 export type PluginParticipantRosterInput = {
   readonly contributionId: string;
+  readonly includeAvailability?: true;
 };
 export type PluginOwnerThread = {
   readonly id: string;

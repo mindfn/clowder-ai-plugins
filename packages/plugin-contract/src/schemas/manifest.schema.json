@@ -358,6 +358,49 @@
         }
       }
     },
+    "PluginParticipantWithAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catId",
+        "displayName",
+        "defaultModel",
+        "supported",
+        "available"
+      ],
+      "properties": {
+        "catId": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "variantLabel": {
+          "type": "string"
+        },
+        "defaultModel": {
+          "type": "string"
+        },
+        "roleDescription": {
+          "type": "string"
+        },
+        "avatar": {
+          "type": "string",
+          "maxLength": 1200,
+          "pattern": "^data:image/webp;base64,[A-Za-z0-9+/]+=*$"
+        },
+        "supported": {
+          "type": "boolean"
+        },
+        "available": {
+          "type": "boolean"
+        }
+      },
+      "description": "Explicit quota availability snapshot returned only for includeAvailability:true; not native capability or invocation authority."
+    },
     "PluginParticipantRosterInput": {
       "type": "object",
       "additionalProperties": false,
@@ -369,6 +412,10 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        },
+        "includeAvailability": {
+          "const": true,
+          "description": "Opt-in only; omission preserves the strict legacy participant shape."
         }
       }
     },

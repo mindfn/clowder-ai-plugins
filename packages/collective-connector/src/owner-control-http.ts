@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { hostRouteBodySchema } from './owner-route-validation.js';
 import { individualParticipationInput } from './owner-participation-change.js';
 import type { BrowserServiceBinding } from '@clowder-ai/plugin-sdk';
 import type { CollectiveConnector } from './business/connector/connector.js';
@@ -28,6 +29,7 @@ export interface CollectiveLocalServiceStatus {
   readonly setupStep?: 'github_app' | 'owner_setup';
 }
 interface OwnerControlOptions {
+  readonly routeChange?: (ownerUserId: string, connectionId: string, input: z.infer<typeof hostRouteBodySchema>) => Promise<HostRouteConfig>;
   readonly participation?: (ownerUserId: string, connectionId: string, input: z.infer<typeof individualParticipationInput>) => Promise<HostRouteConfig>;
   readonly view?: (ownerUserId: string, connectionId: string) => Promise<unknown>;
   readonly entry?: ReturnType<typeof createCollectiveEntryCaller>;
@@ -65,6 +67,24 @@ export function createOwnerControlHttp(options: OwnerControlOptions) {
     const { connector } = options;
     const current = async () => { options.assertActive(); await options.binding.assertCurrent(); options.assertActive(); };
     const finish = async (status: number, body: unknown) => { await current(); return response(status, body); };
+    const rawRoute = /^connections\/([A-Za-z0-9_-]{1,240})\/route$/.exec(request.path);
+    if (rawRoute && request.method === 'PUT' && options.routeChange) {
+      const parsed = hostRouteBodySchema.safeParse(request.body);
+      if (!parsed.success) return finish(400, { error: 'Invalid Collective Host route' });
+      try {
+        const updated = await mutate(rawRoute[1]!, async () => {
+          await current(); return options.routeChange!(request.principal.id, rawRoute[1]!, parsed.data);
+        });
+        return finish(200, updated);
+      } catch (error) {
+        await current();
+        const code = error && typeof error === 'object' && 'code' in error ? error.code : 'CONNECTOR_OPERATION_FAILED';
+        const status = code === 'CONNECTOR_OWNER_MISMATCH' ? 403 : error && typeof error === 'object' && 'status' in error && typeof error.status === 'number'
+          ? error.status : code === 'IDENTITY_REBIND_REQUIRED' || code === 'ROUTE_ROSTER_CHANGED' || code === 'PARTICIPATION_REVISION_CONFLICT' ? 409
+          : error instanceof Error && error.message === 'Collective connection was not found' ? 404 : 502;
+        return response(status, { code, error: error instanceof Error ? error.message : 'Collective route unavailable' });
+      }
+    }
     const view = /^connections\/([A-Za-z0-9_-]{1,240})\/participation$/.exec(request.path);
     if (view && request.method === 'PUT' && options.participation) {
       try {

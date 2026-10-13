@@ -1076,3 +1076,33 @@ if (process.env.C1_TASK_READ_HOST_MODULE) test('actual compiled Host rich wait c
     }
   } finally { await activation.stop(); }
 });
+
+
+test('participantRoster opt-in exposes quota separately from unsupported native policy without changing default rows', async () => {
+  const calls: unknown[] = [], row = { catId: 'cat', displayName: 'Cat', defaultModel: 'model', supported: false };
+  const { context, activation } = await participantRosterFixture({ async listForNativeContribution(input: { contributionId: string; includeAvailability?: true }) {
+    calls.push(input); return input.includeAvailability === true ? [{ ...row, available: true }] : [row];
+  } });
+  try {
+    const request = { contributionId: 'native', includeAvailability: true as const };
+    const rows = await context.participantRoster!.listForNativeContribution(request);
+    assert.deepEqual(calls, [request]); assert.deepEqual(rows, [{ ...row, available: true }]);
+    assert.ok(Object.isFrozen(rows)); assert.ok(Object.isFrozen(rows[0]));
+    assert.deepEqual(await context.participantRoster!.listForNativeContribution({ contributionId: 'native' }), [row]);
+  } finally { await activation.stop(); }
+});
+test('participantRoster quota opt-in refuses missing/malformed quota, extra authority, and false/undefined flags before Host effects', async () => {
+  const row = { catId: 'cat', displayName: 'Cat', defaultModel: 'model', supported: true }; let result: unknown = [], calls = 0;
+  const { context, activation } = await participantRosterFixture({ async listForNativeContribution() { calls++; return result; } });
+  try {
+    for (const value of [{ ...row }, { ...row, available: 'true' }, { ...row, available: null }, { ...row, available: true, grantRef: 'forged' }]) {
+      result = [value];
+      await assert.rejects(() => context.participantRoster!.listForNativeContribution({ contributionId: 'native', includeAvailability: true } as never), /PluginParticipant/);
+    }
+    const before = calls;
+    for (const value of [{ contributionId: 'native', includeAvailability: false }, { contributionId: 'native', includeAvailability: undefined }]) {
+      await assert.rejects(() => context.participantRoster!.listForNativeContribution(value as never), /PluginParticipantRosterInput/);
+    }
+    assert.equal(calls, before);
+  } finally { await activation.stop(); }
+});
