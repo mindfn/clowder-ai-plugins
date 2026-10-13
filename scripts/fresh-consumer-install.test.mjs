@@ -54,6 +54,59 @@ function runNpm(args, cwd) {
   return run(process.execPath, [npmCli, ...args], cwd);
 }
 
+function retained12Overrides(retainedSdk, retainedContract) {
+  return ['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow'].map(name => [
+    `@clowder-ai/${name}`, {
+      // Chrome imports contract directly; the SDK-only edge cannot supply it.
+      ...(name === 'personal-chrome-companion' ? { '@clowder-ai/plugin-contract@0.1.0-beta.29': retainedContract } : {}),
+      '@clowder-ai/plugin-sdk@0.2.0-beta.12': { '.': retainedSdk,
+      '@clowder-ai/plugin-contract@0.1.0-beta.29': retainedContract } },
+  ]);
+}
+
+test('Chrome direct retained contract installs beside the current SDK in a fresh consumer', async () => {
+  await readRetainedSdkClosure();
+  const retainedSdk = new URL('./fixtures/retained-sdk/clowder-ai-plugin-sdk-0.2.0-beta.12.tgz', import.meta.url).href;
+  const retainedContract = new URL('./fixtures/retained-sdk/clowder-ai-plugin-contract-0.1.0-beta.29.tgz', import.meta.url).href;
+  const root = await mkdtemp(join(tmpdir(), 'clowder-chrome-direct-consumer-'));
+  const packs = join(root, 'packs');
+  const consumer = join(root, 'consumer');
+  await mkdir(packs);
+  await mkdir(consumer);
+  try {
+    const tarballs = ['plugin-contract', 'plugin-sdk', 'personal-chrome-companion']
+      .map(name => pack(`packages/${name}`, packs));
+    await writeFile(join(consumer, 'package.json'), JSON.stringify({
+      private: true, type: 'module',
+      overrides: Object.fromEntries(retained12Overrides(retainedSdk, retainedContract)),
+    }));
+    runNpm(['install', '--ignore-scripts', '--package-lock=false', '--no-audit', '--no-fund',
+      '--registry=https://registry.npmjs.org/', ...tarballs], consumer);
+    run(process.execPath, ['--input-type=module', '--eval', `
+      import assert from 'node:assert/strict';
+      import { execFileSync } from 'node:child_process';
+      import { readFileSync } from 'node:fs';
+      import { dirname, join } from 'node:path';
+      import { fileURLToPath, pathToFileURL } from 'node:url';
+      const resolveFrom = (directory, name) => fileURLToPath(execFileSync(process.execPath,
+        ['--input-type=module', '--eval', 'process.stdout.write(import.meta.resolve(process.argv[1]))', name],
+        { cwd: directory, encoding: 'utf8' }));
+      const chromeEntry = fileURLToPath(import.meta.resolve('@clowder-ai/personal-chrome-companion'));
+      const version = entry => JSON.parse(readFileSync(join(dirname(entry), '../package.json'), 'utf8')).version;
+      assert.equal(version(resolveFrom(dirname(chromeEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.29');
+      const retainedSdkEntry = resolveFrom(dirname(chromeEntry), '@clowder-ai/plugin-sdk');
+      assert.equal(version(retainedSdkEntry), '0.2.0-beta.12');
+      assert.equal(version(resolveFrom(dirname(retainedSdkEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.29');
+      const currentSdkEntry = fileURLToPath(import.meta.resolve('@clowder-ai/plugin-sdk'));
+      assert.equal(version(currentSdkEntry), '0.2.0-beta.20');
+      assert.equal(version(resolveFrom(dirname(currentSdkEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.36');
+      assert.equal(typeof (await import(pathToFileURL(chromeEntry).href)).default.create, 'function');
+    `], consumer);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('packed public packages install and import in a fresh npm consumer', async () => {
   const root = await mkdtemp(join(tmpdir(), 'clowder-public-consumer-'));
   const packs = join(root, 'packs');
@@ -307,10 +360,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
         }],
         ...connectorPackages.map(({ name }) => [name, { '@clowder-ai/plugin-sdk@0.2.0-beta.15': { '.': retainedSdk15,
           '@clowder-ai/plugin-contract@0.1.0-beta.30': retainedContract30 } }]),
-        ...['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow'].map(name => [
-          `@clowder-ai/${name}`, { '@clowder-ai/plugin-sdk@0.2.0-beta.12': { '.': pathToFileURL(retainedSdk).href,
-            '@clowder-ai/plugin-contract@0.1.0-beta.29': pathToFileURL(retainedContract).href } },
-        ]),
+        ...retained12Overrides(pathToFileURL(retainedSdk).href, pathToFileURL(retainedContract).href),
       ]),
     }));
     runNpm(
