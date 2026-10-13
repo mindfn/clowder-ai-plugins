@@ -3,10 +3,11 @@ import type { BrowserServiceBinding } from '@clowder-ai/plugin-sdk';
 import type { CollectiveConnector } from './business/connector/connector.js';
 import type { createCollectiveEntryCaller } from './entry-control.js';
 import type { HostRouteConfig } from './business/connector/host-route-state.js';
+import { desiredParticipationSchema } from './business/connector/host-route-state.js';
 import { channelListeningInputSchema } from './business/connector/channel-listening-custody.js';
 
 const requestSchema = z.object({
-  method: z.enum(['GET', 'POST']), path: z.string().min(1).max(512),
+  method: z.enum(['GET', 'POST', 'PUT']), path: z.string().min(1).max(512),
   query: z.record(z.unknown()).optional(), body: z.unknown().optional(), rawBody: z.unknown().optional(),
   headers: z.record(z.union([z.string(), z.array(z.string()), z.undefined()])).default({}),
   principal: z.object({ kind: z.literal('owner'), id: z.string().min(1).max(240) }).strict(),
@@ -14,6 +15,7 @@ const requestSchema = z.object({
 const inputSchema = z.object({ request: requestSchema }).strict();
 const reconcileInput = z.object({ expectedRevision: z.number().int().nonnegative(),
   channelIds: z.array(z.string().trim().min(1).max(160)).min(1).max(100) }).strict();
+const policyInput = reconcileInput.extend({ policy: desiredParticipationSchema }).strict();
 const adoptInput = z.object({ expectedPolicyRevision: z.number().int().positive() }).strict();
 const revokeInput = z.object({ grantRefs: z.array(z.string().trim().min(1).max(240)).min(1).max(100) }).strict();
 export interface CollectiveLocalServiceStatus {
@@ -26,7 +28,7 @@ export interface CollectiveLocalServiceStatus {
 }
 interface OwnerControlOptions {
   readonly entry?: ReturnType<typeof createCollectiveEntryCaller>;
-  readonly reconcile?: (ownerUserId: string, connectionId: string, input: z.infer<typeof reconcileInput>) => Promise<HostRouteConfig>;
+  readonly reconcile?: (ownerUserId: string, connectionId: string, input: z.infer<typeof reconcileInput> & { readonly policy?: z.infer<typeof desiredParticipationSchema> }) => Promise<HostRouteConfig>;
   readonly connector: Pick<CollectiveConnector, 'listConnections' | 'listInbox' | 'sync' | 'revoke' | 'getHostRoute' |
     'setChannelListening' | 'readWorkPolicyStatus' | 'adoptWorkPolicy' | 'revokeWorkGrants'>;
   readonly binding: BrowserServiceBinding;
@@ -65,10 +67,12 @@ export function createOwnerControlHttp(options: OwnerControlOptions) {
       const result = await options.entry.pair(request.body, typeof origin === 'string' ? origin : undefined);
       return finish(result.status, result.body);
     }
-    const reconcile = /^connections\/([A-Za-z0-9_-]{1,240})\/participation\/reconcile$/.exec(request.path);
-    if (reconcile && request.method === 'POST' && options.reconcile) {
+    const reconcile = /^connections\/([A-Za-z0-9_-]{1,240})\/participation\/(reconcile|policy)$/.exec(request.path);
+    if (reconcile && options.reconcile) {
+      const isPolicy = reconcile[2] === 'policy';
+      if (request.method !== (isPolicy ? 'PUT' : 'POST')) return finish(405, { code: 'OWNER_CONTROL_METHOD_NOT_ALLOWED' });
       try {
-        const parsed = reconcileInput.parse(request.body);
+        const parsed = (isPolicy ? policyInput : reconcileInput).parse(request.body);
         const route = await mutate(reconcile[1]!, async () => { await current(); return options.reconcile!(request.principal.id, reconcile[1]!, parsed); });
         return finish(200, { revision: route.revision, published: true });
       } catch (error) {

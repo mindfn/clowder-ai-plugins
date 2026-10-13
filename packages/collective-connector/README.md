@@ -122,3 +122,16 @@ Matching Host retained Client launch/iframe and normal stop/restart journeys, th
 controls and authority mapping, and the original finite C1 installation/use acceptance remain open.
 The existing maintainer local acceptance is the original combined testing/publication finish line; this
 package does not add a second operator acceptance or soak gate. Publication is not admitted.
+
+### Retained participation policy
+
+The retained Host participation panel can send `PUT connections/:connectionId/participation/policy`
+through the existing owner-authenticated webhook lane. Its strict body is
+`{expectedRevision, channelIds, policy:{defaultMode:"include", excludedCatIds, channelOverrides}}`.
+The original reconciler reads the current Host roster, keeps owner threads and initial exclusions,
+checks the route revision, and publishes the resulting participation. This operation changes the
+participation policy; it does not admit a Task or grant private execution. `POST .../participation/reconcile`
+continues to accept only `{expectedRevision, channelIds}`.
+
+The full participation view, request/Task actions, private Work callbacks and owner native send
+remain migration work. This endpoint does not make those missing journeys available.

@@ -96,6 +96,8 @@ features:
       - type: webhook
         id: collective-pair
       - type: webhook
+        id: collective-participation-policy
+      - type: webhook
         id: collective-participation-reconcile
       - type: identity
         id: collective
@@ -403,4 +405,9 @@ contributions:
     id: collective-participation-reconcile
     path: connections/:connectionId/participation/reconcile
     methods: [POST]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-participation-policy
+    path: connections/:connectionId/participation/policy
+    methods: [PUT]
     action: { method: collective.control.http }
