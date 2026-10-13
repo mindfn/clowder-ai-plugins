@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
-import { cp, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { statSync } from 'node:fs';
+import { chmod, cp, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import test from 'node:test';
 import { stringify } from 'yaml';
 
 import { materializeLockedDependencies } from './materialize-locked-dependencies.mjs';
+import { ownPublishMembers } from './own-publish-members.mjs';
 
 const copyPublishPackage = (source, destination) => cp(source, destination, {
   recursive: true, filter: path => !relative(source, path).split(sep).includes('node_modules'),
@@ -103,4 +106,32 @@ test('rejects a lock snapshot that omits a declared production edge', async t =>
   await writeFile(join(f.root, 'pnpm-lock.yaml'), stringify(f.lock));
   await assert.rejects(materializeLockedDependencies({ repoRoot: f.root, packageRoot: f.source,
     destination: f.stage, copyPublishPackage }), /missing locked production edge c/u);
+});
+
+test('own publish enumeration never walks checkout bundled links and preserves npm file selection', async t => {
+  const f = await fixture(t);
+  const manifest = { name: 'app', version: '1.0.0', files: ['dist', 'assets'],
+    dependencies: { a: '1.0.0', b: '1.0.0' }, bundledDependencies: ['a', 'b'],
+    scripts: { prepack: 'node -e "process.exit(91)"' }, bin: { app: 'dist/cli.js' } };
+  const original = JSON.stringify(manifest);
+  await writeFile(join(f.source, 'package.json'), original);
+  await mkdir(join(f.source, 'dist'));
+  await mkdir(join(f.source, 'assets'));
+  for (const path of ['dist/cli.js', 'assets/keep.txt', 'assets/secret.txt', 'test-only.txt', 'README.md'])
+    await writeFile(join(f.source, path), path);
+  await chmod(join(f.source, 'dist/cli.js'), 0o755);
+  await writeFile(join(f.source, 'assets/.npmignore'), 'secret.txt\n');
+  let enumerated;
+  const members = await ownPublishMembers(f.source, { runNpm(args, cwd) {
+    enumerated = args.at(-1);
+    assert.notEqual(enumerated, f.source, 'npm must not enumerate the bundled checkout');
+    assert.equal((statSync(join(enumerated, 'dist/cli.js')).mode & 0o777), 0o755);
+    const result = spawnSync('npm', args, { cwd, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout;
+  } });
+  assert.deepEqual(members.sort(), ['README.md', 'assets/keep.txt', 'dist/cli.js', 'package.json']);
+  assert.equal(await readFile(join(f.source, 'package.json'), 'utf8'), original);
+  assert.equal((await stat(join(f.source, 'dist/cli.js'))).mode & 0o777, 0o755);
+  await assert.rejects(readFile(join(enumerated, 'package.json')), { code: 'ENOENT' });
 });

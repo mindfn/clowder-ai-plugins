@@ -18,6 +18,7 @@ import { assertProductionDependencyClosure } from './catalog-package-shrinkwrap.
 import { normalizeBundledPublishGzip } from './canonical-publish-gzip.mjs';
 import { assertArchiveBins } from './package-bins.mjs';
 import { materializeLockedDependencies } from './materialize-locked-dependencies.mjs';
+import { ownPublishMembers } from './own-publish-members.mjs';
 
 const repoRoot = fileURLToPath(new URL('../', import.meta.url));
 
@@ -156,14 +157,8 @@ async function main() {
     async function copyPublishPackage(source, target) {
       let members = ownMembers.get(source);
       if (!members) {
-        const [ownArtifact] = JSON.parse(runNpm(
-          ['pack', '--json', '--ignore-scripts', '--dry-run', source], repoRoot,
-        ));
-        // Only own publish members: npm's walk of the checkout's bundled links
-        // can report indirect files outside the source package. The frozen lock
-        // graph supplies those dependencies independently, as physical files.
-        members = ownArtifact.files.map(file => file.path).filter(path =>
-          !path.startsWith('node_modules/') && isContained(source, resolve(source, path)));
+        members = (await ownPublishMembers(source, { runNpm })).filter(path =>
+          isContained(source, resolve(source, path)));
         ownMembers.set(source, members);
       }
       for (const member of members) {
