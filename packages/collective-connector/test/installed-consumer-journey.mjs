@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { lstat, mkdtemp, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
 import { Server } from 'node:net';
@@ -40,10 +41,29 @@ async function importTree(directory) {
   for (const item of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, item.name);
     if (item.isDirectory()) await importTree(path);
-    else if (item.name.endsWith('.js')) await import(pathToFileURL(path).href);
+    else if (item.name.endsWith('.js') && item.name !== 'mcp-entrypoint.js') await import(pathToFileURL(path).href);
   }
 }
 await importTree(join(packageRoot, 'dist'));
+const fromPackage = createRequire(join(packageRoot, 'package.json'));
+const { Client } = await import(pathToFileURL(fromPackage.resolve('@modelcontextprotocol/sdk/client/index.js')).href);
+const { StdioClientTransport } = await import(pathToFileURL(fromPackage.resolve('@modelcontextprotocol/sdk/client/stdio.js')).href);
+const native = manifest.contributions.find(item => item.type === 'mcp' && item.id === 'collective-native');
+const nativeTransport = new StdioClientTransport({ command: process.execPath, args: [join(packageRoot, native.runtime.entrypoint)],
+  env: { PATH: process.env.PATH ?? '' }, stderr: 'pipe' });
+const nativeClient = new Client({ name: 'isolated-installed-consumer', version: '1.0.0' });
+try {
+  await nativeClient.connect(nativeTransport);
+  const { tools } = await nativeClient.listTools();
+  assert.deepEqual(tools.map(tool => tool.name).sort(), ['cat_cafe_collective_current_context', 'cat_cafe_collective_read_context',
+    'cat_cafe_collective_set_interest', 'cat_cafe_collective_submit_reply'].sort());
+  for (const tool of tools) {
+    assert.equal(tool.inputSchema.additionalProperties, false);
+    assert.equal(Object.hasOwn(tool.inputSchema.properties ?? {}, 'userId'), false);
+    assert.equal(Object.hasOwn(tool.inputSchema.properties ?? {}, 'invocationId'), false);
+  }
+} finally { await nativeClient.close(); }
+
 await assert.rejects(stat(join(packageRoot, 'dist/business/service/cli.js')), { code: 'ENOENT' });
 const directory = await mkdtemp(join(tmpdir(), 'installed-collective-data-'));
 const host = {
@@ -51,7 +71,11 @@ const host = {
   config: { async get() { throw new Error('Collective has no configuration-read authority'); } },
   secrets: { async get() { return undefined; } },
   storage: {}, tasks: {}, threads: {}, media: {}, messaging: {}, log() {},
-  browserServices: {
+  participantRoster: { async listForNativeContribution() { return []; } },
+    nativeContext: { async current() { throw new Error('No native invocation'); } },
+    publicInvocations: { async enqueue() { throw new Error('Unused admission port'); } },
+    ownerThreads: { async get() { throw new Error('Unused owner thread port'); }, async create() { throw new Error('Unused'); }, async addParticipants() { throw new Error('Unused'); } },
+    browserServices: {
     async getBinding(contributionId) { return { contributionId, origin: 'http://127.0.0.1:5271', parentOrigin: 'http://localhost:5172',
       clientBuildId: 'collective-client-v2', assetDigest: 'a'.repeat(64), limits: BROWSER_SERVICE_LIMITS, async assertCurrent() {} }; },
     async dispatchLocal() { throw new Error('Unused fixture local port'); },

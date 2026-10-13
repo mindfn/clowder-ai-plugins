@@ -539,6 +539,9 @@ importers:
 
   packages/collective-connector:
     dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.26.0
+        version: 1.26.0(zod@3.25.76)
       "@clowder-ai/plugin-contract":
         specifier: 0.1.0-beta.36
         version: link:../plugin-contract

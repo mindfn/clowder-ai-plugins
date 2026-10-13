@@ -1,8 +1,12 @@
+import { activateCollectivePublicNative, collectiveNativeAgentVerifier } from './public-native-activation.js';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { definePlugin, definePluginModule, type FeatureContext, type FeatureActivation, type PluginModuleEntrypoint } from '@clowder-ai/plugin-sdk';
 import { BROWSER_SERVICE_LIMITS, type BrowserServiceContribution } from '@clowder-ai/plugin-sdk';
+import { createCollectiveEntryCaller } from './entry-control.js';
+import { createCollectiveParticipationCaller } from './participation-reconciler.js';
+import { COLLECTIVE_NATIVE_ID } from './public-native-methods.js';
 import { createNodeHttpAdapter } from './node-http-adapter.js';
 import { createLocalServiceTransport } from './local-service-transport.js';
 import { createRecoveryActions } from './recovery-actions.js';
@@ -70,19 +74,33 @@ async function activateService(context: FeatureContext, declaration: BrowserServ
   const bootstrapLinkPath = join(dataDirectory, 'owner-bootstrap.url');
   if (bootstrapSecret) await writeBootstrapLink(bootstrapLinkPath, binding.origin + '#bootstrap=' + encodeURIComponent(bootstrapSecret));
   await binding.assertCurrent();
+  let stopped = false;
+  const assertActive = () => { if (stopped) throw new Error('Collective module is stopped'); void context.dataDirectory; };
   const connector = await CollectiveConnector.open({ dataDirectory: join(context.dataDirectory, 'connector'),
-    // Native verification/control is not granted by browser-service transport.
-    verifyAgent: async () => false, localTransport: createLocalServiceTransport(context.browserServices, binding, opened.store) });
+    verifyAgent: collectiveNativeAgentVerifier(context, assertActive), localTransport: createLocalServiceTransport(context.browserServices, binding, opened.store) });
   const contribution = declaration;
   const dispatch = createNodeHttpAdapter({ store: opened.store, allowedHostOrigins, bootstrapLinkPath, githubAppSetup }, binding, contribution);
-  let stopped = false;
+  const native = await activateCollectivePublicNative(context, connector, assertActive);
   const localServiceStatus = (): CollectiveLocalServiceStatus => {
     const metadata = opened.store.getMetadata();
     return { state: metadata.onboardingComplete ? 'ready' : 'setup_required', serviceUrl: binding.origin, dataDirectory,
       serviceInstanceId: metadata.serviceInstanceId, bootstrapNeeded: metadata.bootstrapNeeded,
       ...(!metadata.onboardingComplete ? { setupStep: provider.readiness.ready ? 'owner_setup' as const : 'github_app' as const } : {}) };
   };
-  const ownerControl = createOwnerControlHttp({ connector, binding,
+  if (!context.participantRoster || !context.ownerThreads) throw new Error('Collective owner roster/thread ports are required');
+  const roster = context.participantRoster, threads = context.ownerThreads;
+  const entry = createCollectiveEntryCaller({ connector, participantRoster: roster, contributionId: COLLECTIVE_NATIVE_ID });
+  const ownerControl = createOwnerControlHttp({ connector, binding, entry,
+    async reconcile(ownerUserId, connectionId, input) {
+      const current = async () => { assertActive(); await binding.assertCurrent(); assertActive(); };
+      const connection = await connector.getProjection(connectionId);
+      const route = await connector.getHostRoute(connectionId); await current();
+      if (route && route.localOwnerUserId !== ownerUserId) throw Object.assign(new Error('Connection belongs to another owner'), { code: 'CONNECTOR_OWNER_MISMATCH' });
+      if (connection.authorityStatus !== 'connected' || !connection.authorizedHumanId) throw Object.assign(new Error('Collective participation authority is revoked'), { code: 'PARTICIPATION_REVOKED' });
+      return createCollectiveParticipationCaller({ ownerUserId, contributionId: COLLECTIVE_NATIVE_ID, participantRoster: roster,
+        ownerThreads: threads, connector, assertCurrent: current }).reconcile({ ...input, connectionId, route,
+          initialExcludedCatIds: connection.initialExcludedCatIds });
+    },
     assertActive() { if (stopped) throw new Error('Collective module is stopped'); void context.dataDirectory; },
     status: localServiceStatus,
     async launch() {
@@ -94,7 +112,9 @@ async function activateService(context: FeatureContext, declaration: BrowserServ
     },
   });
   return {
+    publicInvocationVerifier: native.publicInvocationVerifier,
     actions: {
+      ...native.actions,
       ...createRecoveryActions(connector, binding),
       'collective.control.http': ownerControl,
       'collective.http.dispatch': async (input, native, caller) => {

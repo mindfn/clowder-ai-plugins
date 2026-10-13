@@ -47,6 +47,21 @@ configuration:
         confirm: Resume the same operation once using its verified recovery proof?
         action:
           method: collective.recovery.resume
+  - key: participation
+    label: Collective participation
+    kind: operation
+    required: false
+    actions:
+      - id: list
+        label: Paired connections
+        render: button
+        resultRender: rows
+        action: { method: collective.owner.connections }
+      - id: sync
+        label: Sync this connection and admit its named requests
+        render: row
+        resultRender: rows
+        action: { method: collective.owner.sync }
 features:
   - id: collective-backend
     name: Collective backend
@@ -76,13 +91,38 @@ features:
         id: collective-owner-24
       - type: webhook
         id: collective-owner-31
+      - type: webhook
+        id: collective-entry-roster
+      - type: webhook
+        id: collective-pair
+      - type: webhook
+        id: collective-participation-reconcile
+      - type: identity
+        id: collective
+      - type: mcp
+        id: collective-native
     capabilities:
       - data.directory
+      - thread.readContent
+      - thread.listMetadata
+      - thread.write
+      - messaging.send
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js
   dataDirectory: collective
 contributions:
+  - type: identity
+    id: collective
+    displayName: Collective
+  - type: mcp
+    id: collective-native
+    runtime: { transport: stdio, entrypoint: dist/mcp-entrypoint.js }
+    actions:
+      - { method: collective.context.current }
+      - { method: collective.context.read }
+      - { method: collective.participation.set-interest }
+      - { method: collective.reply.submit }
   - type: browser-service
     id: collective-client-api
     action:
@@ -344,5 +384,20 @@ contributions:
   - type: webhook
     id: collective-owner-31
     path: service/provision
+    methods: [POST]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-entry-roster
+    path: entry-roster
+    methods: [GET]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-pair
+    path: pair
+    methods: [POST]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-participation-reconcile
+    path: connections/:connectionId/participation/reconcile
     methods: [POST]
     action: { method: collective.control.http }

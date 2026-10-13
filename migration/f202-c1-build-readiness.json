@@ -11,8 +11,8 @@
       "directory": "collective-connector",
       "packageName": "@clowder-ai/collective-connector",
       "version": "0.1.0-alpha.2",
-      "sourceDirectory": "/Users/lang/workspace/github-lab/clowder-ai-plugins-collective-sol/packages/collective-connector",
-      "packageJsonSha256": "b0e902929657101b57a3ced2ed3dcb89f6a65fd07259620223544d9b6772e953",
+      "sourceDirectory": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/packages/collective-connector",
+      "packageJsonSha256": "00051e6c71c6d1f5ec1f75d11c0e36324b43fec6fe5c4d28202c66647fbf3b60",
       "canonicalYamlPresent": true,
       "entries": [
         {
@@ -24,14 +24,20 @@
         {
           "path": "./plugin.yaml",
           "present": true,
-          "sha256": "7dafb8d5e25013207ff72ee64d09e9487ed87af926e61fec595a6e69d05ffe79",
-          "bytes": 7725
+          "sha256": "d8b93c2efa475c1caa0f3d01bf6d71b92efc037aa61d4e3cb2779f9bdfbd1904",
+          "bytes": 11668
         },
         {
           "path": "dist/plugin-entrypoint.js",
           "present": true,
-          "sha256": "45be50d6c367d27c28c6ac76637e9ade3ae2fbb8589bddfbfd5803ac84f1bab8",
-          "bytes": 6700
+          "sha256": "aa188342009e2f03b75cdb5cdfb203de3dca637d174851af96f491a1beb66982",
+          "bytes": 10322
+        },
+        {
+          "path": "dist/mcp-entrypoint.js",
+          "present": true,
+          "sha256": "ee2fc8c3a100a158d55eeda3571f9034c2595d38fafbd970e2aa845a50112374",
+          "bytes": 1007
         }
       ],
       "dependencies": [
@@ -41,7 +47,7 @@
           "present": true,
           "resolvedVersion": "0.2.0-beta.20",
           "packageJsonSha256": "3776394f7489ff257231d2f80460d1664323fbbffae578aadfb9e6c0cd2c13ec",
-          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-collective-sol/packages/plugin-sdk",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/packages/plugin-sdk",
           "exactPinMatched": true
         },
         {
@@ -50,7 +56,7 @@
           "present": true,
           "resolvedVersion": "3.25.76",
           "packageJsonSha256": "70eedbe34fd52385a4ae2f3e5759b19682189f0118ea73a6e7c32c677f61668e",
-          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-collective-sol/node_modules/.pnpm/zod@3.25.76/node_modules/zod",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/zod@3.25.76/node_modules/zod",
           "exactPinMatched": true
         },
         {
@@ -59,7 +65,16 @@
           "present": true,
           "resolvedVersion": "0.1.0-beta.36",
           "packageJsonSha256": "1a06740274de0edf6d8ecba245d0650d7f1c3190676957bdef092de513a63453",
-          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-collective-sol/packages/plugin-contract",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/packages/plugin-contract",
+          "exactPinMatched": true
+        },
+        {
+          "name": "@modelcontextprotocol/sdk",
+          "requested": "1.26.0",
+          "present": true,
+          "resolvedVersion": "1.26.0",
+          "packageJsonSha256": "ef00e241a1d5ea06ce8e6b71510ed2ad9bac5a175332ebd76e8852fde8478ef8",
+          "physicalSource": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/node_modules/.pnpm/@modelcontextprotocol+sdk@1.26.0_zod@3.25.76/node_modules/@modelcontextprotocol/sdk",
           "exactPinMatched": true
         }
       ],

@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import type { BrowserServiceBinding } from '@clowder-ai/plugin-sdk';
 import type { CollectiveConnector } from './business/connector/connector.js';
+import type { createCollectiveEntryCaller } from './entry-control.js';
+import type { HostRouteConfig } from './business/connector/host-route-state.js';
 import { channelListeningInputSchema } from './business/connector/channel-listening-custody.js';
 
 const requestSchema = z.object({
@@ -10,6 +12,8 @@ const requestSchema = z.object({
   principal: z.object({ kind: z.literal('owner'), id: z.string().min(1).max(240) }).strict(),
 }).strict();
 const inputSchema = z.object({ request: requestSchema }).strict();
+const reconcileInput = z.object({ expectedRevision: z.number().int().nonnegative(),
+  channelIds: z.array(z.string().trim().min(1).max(160)).min(1).max(100) }).strict();
 const adoptInput = z.object({ expectedPolicyRevision: z.number().int().positive() }).strict();
 const revokeInput = z.object({ grantRefs: z.array(z.string().trim().min(1).max(240)).min(1).max(100) }).strict();
 export interface CollectiveLocalServiceStatus {
@@ -21,6 +25,8 @@ export interface CollectiveLocalServiceStatus {
   readonly setupStep?: 'github_app' | 'owner_setup';
 }
 interface OwnerControlOptions {
+  readonly entry?: ReturnType<typeof createCollectiveEntryCaller>;
+  readonly reconcile?: (ownerUserId: string, connectionId: string, input: z.infer<typeof reconcileInput>) => Promise<HostRouteConfig>;
   readonly connector: Pick<CollectiveConnector, 'listConnections' | 'listInbox' | 'sync' | 'revoke' | 'getHostRoute' |
     'setChannelListening' | 'readWorkPolicyStatus' | 'adoptWorkPolicy' | 'revokeWorkGrants'>;
   readonly binding: BrowserServiceBinding;
@@ -34,6 +40,16 @@ const response = (status: number, body: unknown) => ({ status, headers: { 'conte
  * Host supplies principal only after local owner authentication and declared-webhook admission.
  * Core connector persistence, policy, sync and revocation algorithms stay unchanged. */
 export function createOwnerControlHttp(options: OwnerControlOptions) {
+  // Retain the original owner participation mutation serialization across thread/route effects.
+  const mutations = new Map<string, Promise<void>>();
+  const mutate = async <T>(id: string, run: () => Promise<T>) => {
+    const previous = mutations.get(id) ?? Promise.resolve();
+    let release!: () => void;
+    const tail = new Promise<void>(resolve => { release = resolve; });
+    mutations.set(id, tail);
+    await previous;
+    try { return await run(); } finally { release(); if (mutations.get(id) === tail) mutations.delete(id); }
+  };
   return async (input: unknown, native?: unknown, caller?: unknown) => {
     if (native !== undefined || caller !== undefined) throw new Error('Collective owner webhook context required');
     const { request } = inputSchema.parse(input);
@@ -44,6 +60,24 @@ export function createOwnerControlHttp(options: OwnerControlOptions) {
     const { connector } = options;
     const current = async () => { options.assertActive(); await options.binding.assertCurrent(); options.assertActive(); };
     const finish = async (status: number, body: unknown) => { await current(); return response(status, body); };
+    if (request.path === 'entry-roster' && request.method === 'GET' && options.entry) return finish(200, await options.entry.entryRoster());
+    if (request.path === 'pair' && request.method === 'POST' && options.entry) {
+      const result = await options.entry.pair(request.body, typeof origin === 'string' ? origin : undefined);
+      return finish(result.status, result.body);
+    }
+    const reconcile = /^connections\/([A-Za-z0-9_-]{1,240})\/participation\/reconcile$/.exec(request.path);
+    if (reconcile && request.method === 'POST' && options.reconcile) {
+      try {
+        const parsed = reconcileInput.parse(request.body);
+        const route = await mutate(reconcile[1]!, async () => { await current(); return options.reconcile!(request.principal.id, reconcile[1]!, parsed); });
+        return finish(200, { revision: route.revision, published: true });
+      } catch (error) {
+        await current();
+        if (error instanceof z.ZodError) return response(400, { code: 'INVALID_PARTICIPATION_REQUEST' });
+        const code = error && typeof error === 'object' && 'code' in error ? error.code : 'PARTICIPATION_UNAVAILABLE';
+        return response(code === 'CONNECTOR_OWNER_MISMATCH' ? 403 : 409, { code, error: error instanceof Error ? error.message : 'Participation unavailable' });
+      }
+    }
     if (request.path === 'connections' && request.method === 'GET')
       return finish(200, { runtimeStatus: 'active', connections: await connector.listConnections(), localService: options.status() });
     if (request.path === 'service/provision' && request.method === 'POST') {

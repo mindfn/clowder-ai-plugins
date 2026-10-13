@@ -11,6 +11,10 @@ const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url)
 function host(directory: string | undefined): ModulePluginHostShape {
   return { dataDirectory: directory, config: { async get() { throw new Error('Collective has no configuration-read authority'); } }, secrets: { async get() { return undefined; } },
     storage: {} as never, tasks: {} as never, threads: {} as never, media: {} as never, messaging: {} as never, log() {},
+    participantRoster: { async listForNativeContribution() { return []; } },
+    nativeContext: { async current() { throw new Error('No native invocation'); } },
+    publicInvocations: { async enqueue() { throw new Error('Unused admission port'); } },
+    ownerThreads: { async get() { throw new Error('Unused owner thread port'); }, async create() { throw new Error('Unused'); }, async addParticipants() { throw new Error('Unused'); } },
     browserServices: { async getBinding(id) { return { contributionId: id, origin: 'http://127.0.0.1:5271', parentOrigin: 'http://localhost:5172',
       clientBuildId: 'collective-client-v2', assetDigest: 'a'.repeat(64), limits: BROWSER_SERVICE_LIMITS, async assertCurrent() {} }; },
       async dispatchLocal() { throw new Error('Unused fixture local port'); } } };

@@ -23,7 +23,7 @@ Client assets remain in the Host/C2 boundary. Asset paths cannot enter the decla
 `clientBuildId` is a retained protocol label distinct from the actual asset digest. The private bootstrap URL is a backend handshake coordinate;
 it is not a working owner onboarding UI. Settings install/enable/status and the current owner-local Service binding have paired Host evidence.
 The authenticated owner HTTP adapter now restores the retained launch/status and existing connector
-controls below; remaining authority-dependent controls and native invocation are still open in aggregate task1843. This package remains `private: true` while that
+controls below; remaining authority-dependent controls and native/Host installed use are still open in aggregate task1843. This package remains `private: true` while that
 work continues; this checkpoint makes no catalog, installed Settings, publication, or whole-C1 claim.
 
 ## Owner control HTTP
@@ -33,7 +33,7 @@ browser-service action and native MCP identity. Declarations use the actual `off
 ID. The old root GET becomes `/api/plugins/official.collective-connector/connections`; individual
 connection resources use `connections/:connectionId/...`. No anonymous verification secret is declared.
 
-This checkpoint declares eleven existing owner method/path pairs: connections GET; service/provision
+The original eleven owner method/path pairs remain: connections GET; service/provision
 POST; inbox/route GET; reconnect/revoke POST; listening GET/POST; and work-policy GET/adopt/revoke.
 They call the moved connector algorithms. Listening/policy/route preserve local owner checks and
 original request schemas. Unknown local sync/revoke outcomes remain visible 409 recovery states;
@@ -42,8 +42,15 @@ shape from the current Host binding and persistent metadata, without starting a 
 Only this authenticated launch response contains an unclaimed private bootstrap fragment; public
 Service status and connections metadata never do. Claiming bootstrap alone is still setup-required.
 
-The remaining eleven owner pairs and nine native methods depend on the precise Host roster/source/
-Task-admission/prepared-artifact facts being paired in task1843. They are not declared as working actions.
+The production module now registers the four ordinary native methods (`context.current`, `context.read`,
+`participation.set-interest`, `reply.submit`) under `collective-native` and its stdio MCP entrypoint.
+It also registers the original `entry-roster`, `pair` and `participation/reconcile` owner webhooks.
+Settings → Collective participation → Paired connections lists owner-bound routes; each row’s Sync
+uses the authenticated owner operation to persist exact named requests and admit Host Queue entries.
+The private activation verifier rereads the existing Connector inbox and Service permission; it is not
+an ordinary action. Native Agent verification reads the actual Host native context, never tool-body
+identity. Five other native methods and the remaining owner controls still retain their original
+separate consumers and are not advertised as complete.
 Host owns authentication and those durable facts; the package parses its own participation/Work rules.
 Actual retained page and installed use must be validated with a matching Host caller candidate.
 
@@ -79,6 +86,10 @@ Connector/service internals and domain declarations remain private implementatio
 
 ## Install permissions
 
+- `thread.readContent`: read only the authenticated native origin and its current source through Host ports.
+- `thread.listMetadata`: verify the owner-created route thread before admitting a named request.
+- `thread.write`: create the original per-channel owner threads and materialize selected participants.
+- `messaging.send`: persist an exact Collective request before one Host Queue admission; return replies through the Collective business outbox.
 - `data.directory`: persist Collective business state and private credentials in the Host-authorized
   package directory. Stop preserves that state; the package never falls back to another directory.
 

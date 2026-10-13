@@ -11,7 +11,11 @@ const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url)
 const fixtureHost = (directory: string): ModulePluginHostShape => ({ dataDirectory: directory,
   config: { async get() { throw new Error('Unused configuration read'); } }, secrets: { async get() { return undefined; } },
   storage: {} as never, tasks: {} as never, threads: {} as never, media: {} as never, messaging: {} as never, log() {},
-  browserServices: { async getBinding(id) { return { contributionId: id, origin: 'http://127.0.0.1:5271', parentOrigin: 'http://localhost:5172',
+  participantRoster: { async listForNativeContribution() { return []; } },
+    nativeContext: { async current() { throw new Error('No native invocation'); } },
+    publicInvocations: { async enqueue() { throw new Error('Unused admission port'); } },
+    ownerThreads: { async get() { throw new Error('Unused owner thread port'); }, async create() { throw new Error('Unused'); }, async addParticipants() { throw new Error('Unused'); } },
+    browserServices: { async getBinding(id) { return { contributionId: id, origin: 'http://127.0.0.1:5271', parentOrigin: 'http://localhost:5172',
     clientBuildId: 'collective-client-v2', assetDigest: 'a'.repeat(64), limits: BROWSER_SERVICE_LIMITS, async assertCurrent() {} }; },
     async dispatchLocal() { throw new Error('Unused local dispatch'); } } });
 const ownerRequest = (method: string, path: string, body?: unknown) => ({ request: { method, path, query: {},
@@ -51,16 +55,17 @@ test('retained connections and provision callers resolve non-anonymous owner dec
   } finally { await active.stop(); await rm(directory, { recursive: true, force: true }); }
 });
 
-test('only the eleven implemented owner method/path pairs are advertised; pending authority controls remain absent', () => {
+test('implemented owner method/path pairs and four ordinary native methods are advertised', () => {
   const expected = ['GET connections', 'GET connections/:connectionId/inbox', 'GET connections/:connectionId/route',
     'POST connections/:connectionId/reconnect', 'POST connections/:connectionId/revoke',
     'GET connections/:connectionId/listening', 'POST connections/:connectionId/listening',
     'GET connections/:connectionId/work-policy', 'POST connections/:connectionId/work-policy/adopt',
-    'POST connections/:connectionId/work-policy/revoke', 'POST service/provision'];
+    'POST connections/:connectionId/work-policy/revoke', 'POST service/provision', 'GET entry-roster', 'POST pair', 'POST connections/:connectionId/participation/reconcile'];
   const webhooks = manifest.contributions.filter((item: { type: string }) => item.type === 'webhook');
   assert.deepEqual(webhooks.flatMap((item: { path: string; methods: string[] }) => item.methods.map(method => method + ' ' + item.path)).sort(), expected.sort());
   for (const item of webhooks) { assert.equal(item.verificationSecretRef, undefined); assert.equal(item.action.method, 'collective.control.http'); }
-  assert.equal(manifest.contributions.some((item: { type: string }) => item.type === 'mcp'), false);
+  assert.deepEqual(manifest.contributions.find((item: { type: string }) => item.type === 'mcp').actions.map((item: { method: string }) => item.method).sort(),
+    ['collective.context.current', 'collective.context.read', 'collective.participation.set-interest', 'collective.reply.submit'].sort());
 });
 function controlledPort() {
   const calls: unknown[] = []; let owner = 'fixture-owner'; let stale = false;
