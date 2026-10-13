@@ -1,14 +1,28 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { InvocationRecord } from '../../cats/services/agents/invocation/InvocationRegistry.js';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { constants } from 'node:fs';
+import { link, mkdir, open, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { createSecret } from './business/service/persistence.js';
 
-export function opaqueRef(auth: InvocationRecord, operation: string, sourceRef: string): string {
-  return createHmac('sha256', auth.callbackToken)
-    .update(JSON.stringify([auth.invocationId, operation, sourceRef]))
+/** Constructed only from authenticated Host native context, never tool input.
+ * This identifies a business reference; it is not a Host Task admission receipt. */
+export interface CollectiveReferenceIdentity {
+  readonly pluginInstanceId: string;
+  readonly invocationId: string;
+}
+export interface CollectiveContextReferences {
+  opaqueRef(auth: CollectiveReferenceIdentity, operation: string, sourceRef: string): string;
+  verifyRef(auth: CollectiveReferenceIdentity, actual: string, operation: string, sourceRef: string): void;
+}
+
+function opaqueRef(key: string, auth: CollectiveReferenceIdentity, operation: string, sourceRef: string): string {
+  return createHmac('sha256', key)
+    .update(JSON.stringify([auth.pluginInstanceId, auth.invocationId, operation, sourceRef]))
     .digest('base64url');
 }
 
-export function verifyRef(auth: InvocationRecord, actual: string, operation: string, sourceRef: string) {
-  const expected = Buffer.from(opaqueRef(auth, operation, sourceRef));
+function verifyRef(key: string, auth: CollectiveReferenceIdentity, actual: string, operation: string, sourceRef: string) {
+  const expected = Buffer.from(opaqueRef(key, auth, operation, sourceRef));
   const received = Buffer.from(actual);
   if (received.length !== expected.length || !timingSafeEqual(expected, received))
     throw collectiveContextError(
@@ -19,4 +33,61 @@ export function verifyRef(auth: InvocationRecord, actual: string, operation: str
 
 export function collectiveContextError(code: string, message: string) {
   return Object.assign(new Error(message), { code });
+}
+
+async function readKey(path: string): Promise<string> {
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const stat = await file.stat();
+    if (!stat.isFile() || stat.mode & 0o077 || stat.size < 1 || stat.size > 64)
+      throw new Error('Collective native reference key is invalid');
+    const key = (await file.readFile('utf8')).trim();
+    if (!/^[A-Za-z0-9_-]{43}$/.test(key) || Buffer.from(key, 'base64url').toString('base64url') !== key)
+      throw new Error('Collective native reference key is invalid');
+    return key;
+  } finally { await file.close(); }
+}
+
+/** Fixed file under the existing Host-provisioned instance-private data directory.
+ * Complete private bytes are linked atomically without replacing another initializer's winner.
+ * Invalid existing state is refused, never regenerated. No Host callback secret is read or exposed. */
+export async function openCollectiveContextReferences(
+  dataDirectory: string,
+  assertActive: () => void,
+): Promise<CollectiveContextReferences> {
+  assertActive();
+  const path = join(dataDirectory, 'native-reference.secret');
+  let key: string;
+  try { key = await readKey(path); }
+  catch (error) {
+    if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error;
+    assertActive();
+    await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
+    assertActive();
+    const temporary = path + '.' + randomUUID() + '.tmp';
+    try {
+      const file = await open(temporary, 'wx', 0o600);
+      try { await file.writeFile(createSecret() + '\n', 'utf8'); await file.sync(); }
+      finally { await file.close(); }
+      assertActive();
+      try { await link(temporary, path); }
+      catch (error) {
+        if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'EEXIST') throw error;
+      }
+      const directory = await open(dataDirectory, 'r');
+      try { await directory.sync(); } finally { await directory.close(); }
+      assertActive();
+      key = await readKey(path);
+    } finally { await rm(temporary, { force: true }); }
+  }
+  assertActive();
+  // Keep key inside the package closure. Only opaque MACs and original refusal errors cross callers.
+  return Object.freeze({
+    opaqueRef(auth: CollectiveReferenceIdentity, operation: string, sourceRef: string) {
+      assertActive(); return opaqueRef(key, auth, operation, sourceRef);
+    },
+    verifyRef(auth: CollectiveReferenceIdentity, actual: string, operation: string, sourceRef: string) {
+      assertActive(); verifyRef(key, auth, actual, operation, sourceRef);
+    },
+  });
 }
