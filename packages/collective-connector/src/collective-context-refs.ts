@@ -36,7 +36,8 @@ export function collectiveContextError(code: string, message: string) {
 }
 
 async function readKey(path: string): Promise<string> {
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  // Nonblocking open reaches the fd type check even when corrupt state is a FIFO with no writer.
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = await file.stat();
     if (!stat.isFile() || stat.mode & 0o077 || stat.size < 1 || stat.size > 64)

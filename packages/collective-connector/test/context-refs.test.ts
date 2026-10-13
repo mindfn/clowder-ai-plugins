@@ -4,6 +4,8 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHmac } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import * as module from '../src/collective-context-refs.js';
 type Identity = { invocationId: string; pluginInstanceId: string };
 type References = { opaqueRef(auth: Identity, operation: string, scope: string): string; verifyRef(auth: Identity, actual: string, operation: string, scope: string): void };
@@ -56,4 +58,25 @@ test('revoked feature rejects key opening and references without exposing or ini
   const value = refs.opaqueRef(auth, 'context', 'message:1'); assert.throws(() => fenced.verifyRef(auth, value, 'context', 'message:1'), /feature stopped/);
   const missing = join(directory, 'never-created'); await assert.rejects(open!(missing, () => { throw new Error('feature stopped'); }), /feature stopped/);
   await assert.rejects(stat(missing), { code: 'ENOENT' });
+});
+test('preexisting FIFO key refuses promptly without a writer, replacement or hung process', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'collective-refs-fifo-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  const path = join(directory, 'native-reference.secret');
+  const fifo = spawnSync('mkfifo', ['-m', '600', path], { encoding: 'utf8' }); assert.equal(fifo.status, 0, fifo.stderr);
+  const script = join(directory, 'probe.mjs');
+  const source = new URL('../src/collective-context-refs.ts', import.meta.url);
+  await writeFile(script, `import {openCollectiveContextReferences} from ${JSON.stringify(source.href)};
+console.log('KEY_OPEN_STARTED');
+try { await openCollectiveContextReferences(${JSON.stringify(directory)},()=>{}); process.exitCode=2; }
+catch(error) { if (!/reference key is invalid/.test(error.message)) throw error; console.log('FIFO_REFUSED'); }
+`);
+  // A blocking libuv open cannot be reliably retired by an in-process Promise timeout.
+  // Bound the owned probe process, including on the original RED implementation.
+  const probe = spawnSync(process.execPath, ['--import', 'tsx', script], {
+    cwd: fileURLToPath(new URL('..', import.meta.url)), encoding: 'utf8', timeout: 4000, killSignal: 'SIGKILL',
+  });
+  assert.match(probe.stdout, /KEY_OPEN_STARTED/);
+  assert.equal(probe.error, undefined, 'FIFO key open must settle before the owned probe deadline');
+  assert.equal(probe.status, 0, probe.stderr); assert.match(probe.stdout, /FIFO_REFUSED/);
+  assert.equal((await stat(path)).isFIFO(), true);
 });
