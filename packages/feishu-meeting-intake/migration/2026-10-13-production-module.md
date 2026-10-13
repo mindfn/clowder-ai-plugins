@@ -15,7 +15,9 @@ Manager/runtime; preserve its 16 installed instances and their data.
 
 Source directory: `/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/packages/feishu-meeting-intake`.
 The final source-ready receipt will bind exact HEAD/TREE, canonical archive and the
-physical dependency graph; install only after independent approval. This local
+physical dependency graph; install only after independent approval. Host122 found bundled
+directory admission unsupported; use the existing Manager local-archive entry with this
+exact canonical tgz once the Host large-runner preflight adaptation is approved. This local
 artifact includes CLI1.0.85 for macOS arm64 and must match the Host platform.
 
 Host grants are exactly `data.directory`, `plugin.config.read`, `secret.read`,
@@ -30,7 +32,7 @@ The human supplies meeting interpretation and output goals.
 
 ## Exact operation order
 
-1. Select this approved directory in Manager, install, grant the five capabilities,
+1. Select the approved canonical local archive in Manager, install, grant the five capabilities,
    then enable. First enable returns a callable control module, auth
    `not_configured`, collection intent `disabled`, live `stopped`; no CLI/login or
    provider request occurs. An enabled instance is not an authorized collector.

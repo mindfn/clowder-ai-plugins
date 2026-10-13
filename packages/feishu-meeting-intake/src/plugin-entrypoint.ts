@@ -13,6 +13,7 @@ import { requirePollingAuthorization } from './lark-cli-polling-normalizer.js';
 import { createFeishuMeetingCatchUpService } from './catch-up.js';
 import { meetingListInput, meetingReadInput } from './native-methods.js';
 import { readMeetingSource } from './source-reader.js';
+import { FeishuGatewayError } from './gateway.js';
 
 const stateSchema = z.object({ v: z.literal(1), ownerUserId: z.string().min(1).optional(), instanceId: z.string().min(1).optional(),
   auth: z.enum(['not_configured','pending','connected','expired','unknown']), collectionIntent: z.enum(['disabled','enabled']),
@@ -67,11 +68,23 @@ async function activate(context: FeatureContext, options: MeetingModuleOptions):
   };
   const verify = async () => {
     const appId = await configure();
-    const result = await command(['auth','status','--json','--verify'], currentSignal) as { appId?: string; identity?: string };
-    await current();
-    if (result.appId !== appId || result.identity !== 'user') throw new Error('The configured Feishu user account is unavailable');
-    requirePollingAuthorization(result);
-    return result;
+    try {
+      const result = await command(['auth','status','--json','--verify'], currentSignal) as { appId?: string; identity?: string };
+      await current();
+      requirePollingAuthorization(result);
+      if (result.appId !== appId || result.identity !== 'user') throw new Error('The configured Feishu user account is unavailable');
+      const state = await load();
+      if (state.auth !== 'connected') await save({ ...state, auth: 'connected' });
+      return result;
+    } catch (error) {
+      // Persist the fresh account observation before surfacing the failure in any
+      // owner, native or background consumer. Lost/uncertain checks do not prove
+      // credential expiry. Revoke/currentness refusal cannot commit a new state.
+      await current();
+      const auth = error instanceof FeishuGatewayError && error.code === 'AUTH_EXPIRED' ? 'expired' : 'unknown';
+      await save({ ...await load(), auth });
+      throw error;
+    }
   };
   const target = async (): Promise<string> => {
     const value = await context.config.get('notificationThreadId'); await current();
@@ -152,7 +165,13 @@ async function activate(context: FeatureContext, options: MeetingModuleOptions):
     }),
     'meeting.complete': ownerAction(async (input, owner) => {
       envelope(input, empty); const state = owned(await load(), owner);
-      if (state.attempt?.state !== 'pending' || !state.attempt.deviceCode || (state.attempt.expiresAt ?? 0) < Date.now()) throw new Error('Authorization attempt needs account verification before retry');
+      if (state.attempt?.state === 'pending' && (state.attempt.expiresAt ?? 0) < Date.now()) {
+        // Device challenge expiry does not prove any existing account is expired.
+        // Keep its evidence and require a fresh account check instead of replay.
+        await save({ ...state, auth: 'unknown', attempt: { ...state.attempt, state: 'unknown' } });
+        throw new Error('Authorization attempt needs account verification before retry');
+      }
+      if (state.attempt?.state !== 'pending' || !state.attempt.deviceCode) throw new Error('Authorization attempt needs account verification before retry');
       await configure(); await save({ ...state, auth: 'unknown', attempt: { ...state.attempt, state: 'unknown' } });
       await command(['auth','login','--device-code',state.attempt.deviceCode,'--json'], currentSignal);
       await verify(); const { attempt: _, ...base } = state; await save({ ...base, auth: 'connected' }); return publicStatus(await load(), live);

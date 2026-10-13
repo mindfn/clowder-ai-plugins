@@ -10,7 +10,7 @@ async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'meeting-shipped-journey-'));
   const config = new Map<string, unknown>([['appId','cli_fixture'],['notificationThreadId','thread'],['minutesReference','minute1']]);
   const calls: string[][] = [], sends: unknown[] = [];
-  let revoked = false, blocked = false, failCompletion = false;
+  let revoked = false, blocked = false, failCompletion = false, authVerified = true, statusFailure = false, authChecks = 0, expireAtCheck = Infinity, deviceExpiry = 240;
   const current = async () => { if (revoked) throw new Error('owner revoked'); };
   const owner = (actionId: string, operationKey = 'account'): PluginOwnerOperationContext => ({ kind: 'owner-operation', userId: 'owner', pluginInstanceId: 'installed-meeting', operationKey, actionId, requestId: actionId, signal: new AbortController().signal, assertCurrent: current });
   const minute = { ok: true, data: { minute: { token: 'minute1', create_time: '1786381200000', title: 'Meeting title' } } };
@@ -22,9 +22,9 @@ async function fixture() {
   } as unknown as ModulePluginHostShape;
   const module = createMeetingPluginModule({ command: () => async (args, signal, cwd) => {
     signal.throwIfAborted(); calls.push([...args]);
-    if (args[0] === 'auth' && args[1] === 'status') return { appId: 'cli_fixture', identity: 'user', verified: true, identities: { user: { scope: scopes } } };
+    if (args[0] === 'auth' && args[1] === 'status') { authChecks++; if (statusFailure) throw new Error('Fixture provider timeout'); return { appId: 'cli_fixture', identity: 'user', verified: authVerified && authChecks < expireAtCheck, identities: { user: { scope: scopes } } }; }
     if (args[0] === 'auth' && args[1] === 'login' && !args.includes('--no-wait') && failCompletion) throw new Error('Token exchange result lost');
-    if (args[0] === 'auth' && args[1] === 'login') return args.includes('--no-wait') ? { device_code: 'private-device-code', verification_url: 'https://accounts.feishu.cn/device?user_code=fixture', expires_in: 240 } : { ok: true };
+    if (args[0] === 'auth' && args[1] === 'login') return args.includes('--no-wait') ? { device_code: 'private-device-code', verification_url: 'https://accounts.feishu.cn/device?user_code=fixture', expires_in: deviceExpiry } : { ok: true };
     if (args[0] === 'minutes' && args[1] === 'minutes') return minute;
     if (args[0] === 'minutes' && args[1] === '+detail') {
       await mkdir(join(cwd!, 'artifact'), { recursive: true });
@@ -37,7 +37,7 @@ async function fixture() {
   let active = await module.create(manifest).start(host);
   const native: PluginActionContext = { userId: 'owner', threadId: 'thread', catId: 'cat', invocationId: 'invocation', assertCurrent: current };
   const input = (body: Record<string, unknown> = {}) => ({ input: { ...Object.fromEntries(config), ...body } });
-  return { directory, get active() { return active; }, async restart() { await active.stop(); active = await module.create(manifest).start(host); }, native, input, owner, config, calls, sends, loseCompletion() { failCompletion = true; }, revoke() { revoked = true; }, block() { blocked = true; }, async close() { await active.stop(); await rm(directory, { recursive: true, force: true }); } };
+  return { directory, get active() { return active; }, async restart() { await active.stop(); active = await module.create(manifest).start(host); }, native, input, owner, config, calls, sends, loseCompletion() { failCompletion = true; }, expireAuth() { authVerified = false; }, restoreAuth() { authVerified = true; statusFailure = false; expireAtCheck = Infinity; }, loseStatus() { statusFailure = true; }, expireAfterChecks(count: number) { expireAtCheck = authChecks + count; }, shortDeviceAttempt() { deviceExpiry = 1; }, revoke() { revoked = true; }, block() { blocked = true; }, async close() { await active.stop(); await rm(directory, { recursive: true, force: true }); } };
 }
 
 test('actual Settings → device authorization → retained notification → native read survives module restart', async () => {
@@ -96,5 +96,78 @@ test('interrupted authorization retains unknown truth and never blindly repeats 
     await f.active.actions['meeting.verify']!(f.input(), undefined, f.owner('verify', 'verifyAccount'));
     const status = await f.active.actions['meeting.status']!(f.input(), undefined, f.owner('status')) as { data: { auth: string; collectionIntent: string } };
     assert.equal(status.data.auth, 'connected'); assert.equal(status.data.collectionIntent, 'disabled');
+  } finally { await f.close(); }
+});
+
+
+test('every account-validation consumer persists explicit expired truth before rejecting', async () => {
+  const f = await fixture();
+  try {
+    await f.active.actions['meeting.verify']!(f.input(), undefined, f.owner('verify', 'verifyAccount'));
+    await f.active.actions['meeting.import']!(f.input(), undefined, f.owner('import', 'manualImport'));
+    const page = await f.active.actions['meeting.records.list']!({}, f.native) as { records: { id: string }[] };
+    const checks = [
+      () => f.active.actions['meeting.verify']!(f.input(), undefined, f.owner('verify', 'verifyAccount')),
+      () => f.active.actions['meeting.start']!(f.input(), undefined, f.owner('start', 'collection')),
+      () => f.active.actions['meeting.poll']!(f.input(), undefined, f.owner('poll', 'collectNow')),
+      () => f.active.actions['meeting.import']!(f.input(), undefined, f.owner('import', 'manualImport')),
+      () => f.active.actions['meeting.records.list']!({}, f.native),
+      () => f.active.actions['meeting.records.read']!({ recordId: page.records[0]!.id }, f.native),
+    ];
+    for (const invoke of checks) {
+      f.restoreAuth();
+      await f.active.actions['meeting.verify']!(f.input(), undefined, f.owner('verify', 'verifyAccount'));
+      f.expireAuth();
+      await assert.rejects(invoke as () => Promise<unknown>, /not verified/);
+      const status = await f.active.actions['meeting.status']!(f.input(), undefined, f.owner('status')) as { data: { auth: string } };
+      assert.equal(status.data.auth, 'expired');
+    }
+    assert.equal(f.sends.length, 1, 'negative verification cannot produce another notification');
+    await f.restart();
+    const retained = await f.active.actions['meeting.status']!(f.input(), undefined, f.owner('status')) as { data: { auth: string } };
+    assert.equal(retained.data.auth, 'expired', 'negative account truth survives restart');
+    f.restoreAuth();
+    await f.active.actions['meeting.records.list']!({}, f.native);
+    const recovered = await f.active.actions['meeting.status']!(f.input(), undefined, f.owner('status')) as { data: { auth: string } };
+    assert.equal(recovered.data.auth, 'connected', 'a fresh successful native account check restores truth');
+  } finally { await f.close(); }
+});
+
+test('provider uncertainty becomes unknown and background auth-negative is separate from degraded live state', async () => {
+  const f = await fixture();
+  try {
+    await f.active.actions['meeting.verify']!(f.input(), undefined, f.owner('verify', 'verifyAccount'));
+    f.loseStatus();
+    await assert.rejects(() => f.active.actions['meeting.verify']!(f.input(), undefined, f.owner('verify', 'verifyAccount')) as Promise<unknown>, /provider timeout/);
+    const unknown = await f.active.actions['meeting.status']!(f.input(), undefined, f.owner('status')) as { data: { auth: string } };
+    assert.equal(unknown.data.auth, 'unknown');
+    f.restoreAuth();
+    await f.active.actions['meeting.verify']!(f.input(), undefined, f.owner('verify', 'verifyAccount'));
+    f.expireAfterChecks(2); // start verifies successfully; the first background check explicitly refuses.
+    await f.active.actions['meeting.start']!(f.input(), undefined, f.owner('start', 'collection'));
+    let status: { data: { auth: string; live: string; collectionIntent: string } } | undefined;
+    for (let i = 0; i < 20; i++) {
+      status = await f.active.actions['meeting.status']!(f.input(), undefined, f.owner('status')) as typeof status;
+      if (status?.data.live === 'degraded') break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(status?.data, { auth: 'expired', collectionIntent: 'enabled', live: 'degraded' });
+    assert.equal(f.sends.length, 0);
+  } finally { await f.close(); }
+});
+
+test('expired device challenge records unknown account truth without repeating the exchange', async () => {
+  const f = await fixture();
+  try {
+    f.shortDeviceAttempt();
+    await f.active.actions['meeting.connect']!(f.input(), undefined, f.owner('connect', 'authorization'));
+    await new Promise(resolve => setTimeout(resolve, 1050));
+    const before = f.calls.length;
+    await assert.rejects(() => f.active.actions['meeting.complete']!(f.input(), undefined, f.owner('complete', 'authorization')) as Promise<unknown>, /verification/);
+    const status = await f.active.actions['meeting.status']!(f.input(), undefined, f.owner('status')) as { data: { auth: string } };
+    assert.equal(status.data.auth, 'unknown', 'expired challenge does not prove old account credentials are expired');
+    assert.equal(f.calls.length, before);
+    await assert.rejects(() => f.active.actions['meeting.complete']!(f.input(), undefined, f.owner('complete', 'authorization')) as Promise<unknown>);
+    assert.equal(f.calls.length, before, 'no blind exchange retry');
   } finally { await f.close(); }
 });

@@ -16,7 +16,7 @@ certify an actual Feishu account, Host installation or completion of C1.
 
 ## Settings journey
 
-1. Select the package directory in Manager, grant the capabilities below, then enable it.
+1. Select the approved local archive in Manager, grant the capabilities below, then enable it.
    First enable starts only the control plane: no login, CLI process, collection or provider request.
 2. Save your Feishu app ID and secret and an existing accessible notification thread.
 3. Select **Authorize Feishu**, open its Feishu URL, then **Check authorization**.
@@ -28,6 +28,8 @@ certify an actual Feishu account, Host installation or completion of C1.
 6. For an interrupted/ambiguous authorization, use **Verify existing account** first.
    The previous exchange is not silently repeated. The explicit reset action preserves its evidence
    and pauses collection before a fresh attempt. A corrupted credential compartment is refused.
+   Confirmed account refusal is durably `expired` before the error; uncertain checks are `unknown`.
+   An expired device challenge is `unknown`, since it does not prove the old credentials expired.
 7. Historical catch-up requires a preview and an explicit future-only or replay decision tied to
    that exact preview; opening status never starts collection or historical replay.
 

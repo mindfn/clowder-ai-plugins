@@ -21,6 +21,7 @@ test('first explicit enable starts only the meeting control plane and stop revok
     assert.equal(typeof namespace.default?.create, 'function', 'installed root must expose the actual builtin module');
     const manifest = JSON.parse(await readFile(new URL('../manifest.json', import.meta.url), 'utf8'));
     assert.equal(manifest.runtime.transport, 'builtin', 'retired broker must not be the production runtime');
+    assert.deepEqual(manifest.contributions.filter((value: { type: string }) => value.type === 'identity').map((value: { id: string }) => value.id), ['feishu-meeting'], 'actual Host SDK messaging requires a declared authored identity');
     assert.deepEqual(manifest.features[0].capabilities, ['data.directory', 'plugin.config.read', 'secret.read', 'thread.readContent', 'messaging.send']);
     const state = new Map<string, { revision: number; value: unknown }>();
     const host = { dataDirectory: directory, config: { async get() { return undefined; } },

@@ -240,6 +240,10 @@
       "resources": [],
       "contributions": [
         {
+          "type": "identity",
+          "id": "feishu-meeting"
+        },
+        {
           "type": "mcp",
           "id": "meeting-records"
         }
@@ -259,6 +263,11 @@
     "dataDirectory": "feishu-meeting-intake"
   },
   "contributions": [
+    {
+      "type": "identity",
+      "id": "feishu-meeting",
+      "displayName": "Feishu meetings"
+    },
     {
       "type": "mcp",
       "id": "meeting-records",

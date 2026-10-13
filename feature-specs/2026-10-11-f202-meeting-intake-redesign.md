@@ -12,7 +12,7 @@ tips_exempt: Package README and declared MCP tool descriptions carry discovery; 
 Status: original Task1843 implementation in progress. The production manifest now selects
 an actual builtin control module and two declaration-activated MCP readers. The original
 record/notification, outbox/cursor and catch-up algorithms are connected. Directed production
-module, credential isolation and owned subprocess fixtures pass (99/99). The final canonical
+module, credential isolation and owned subprocess fixtures pass (102/102). The final canonical
 packed empty consumer starts the actual module, MCP and pinned runner; typecheck and inventory
 checks pass. Independent source review and actual Host/account acceptance remain pending. No actual Feishu account, installed Host journey, release
 or C1 completion is claimed. The author remains the sole package writer; Host installation

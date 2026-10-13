@@ -272,7 +272,7 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "boundary": "alpha.11 original C1 redesign in review: actual control-only builtin, retained records/SDK messaging and two native MCP reads. Requires reviewed package candidate and actual Host grants/account/target installation; not a C1 completion exemption.",
-      "directoryAcceptance": "Host installation not yet performed for this new candidate",
+      "directoryAcceptance": "Host122 rejects raw bundled directory topology; existing Manager canonical local-archive route paired, actual installation not yet performed for this new candidate",
       "releaseAdmission": false,
       "fullInstalledAcceptance": false,
       "workSubject": "task:0001789822127811-001843-1c2133b0",

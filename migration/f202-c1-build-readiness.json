@@ -1132,14 +1132,14 @@
         {
           "path": "manifest.json",
           "present": true,
-          "sha256": "400dd3c24c000d3c92735ab18dffdc0d61a848c8ee8731bbaeab39dd60a961b1",
-          "bytes": 6674
+          "sha256": "0d7a4784fdb37fddc8e7bc427ef1a953cb9b3c46763f3a23d04059faa0f1cf14",
+          "bytes": 6866
         },
         {
           "path": "plugin.yaml",
           "present": true,
-          "sha256": "fdbfdcbe05c9130c105c5e76183a18cb6ac7000d05f69d108d74f3d7021f96e8",
-          "bytes": 4674
+          "sha256": "479d162edf7c490928f70ce9bdd44ed25a80b61e102a80a10a3e895dfd388fb2",
+          "bytes": 4799
         },
         {
           "path": "dist/mcp-entrypoint.js",
@@ -1321,10 +1321,10 @@
       "freshBuild": {
         "package": "feishu-meeting-intake",
         "exit": 0,
-        "log": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/meeting-production-r5-installed.log"
+        "log": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/meeting-production-r6-installed.log"
       },
       "actualDirectoryJourneyAccepted": false,
-      "currentVerification": "builtin/owned CLI fixture regression99/99; typecheck; final canonical packed empty-consumer actual MCP/runner/control/lifecycle1/1; inventory10/10. Source review and actual Host/account journey pending."
+      "currentVerification": "R6 production regression102/102, types, actual Host identity projection, fresh canonical packed module/MCP/runner/stop1/1, inventory10/10 passed. Auth truth/device challenge and authored identity pending exact local_cat delta review; original real Host/account journey remains open."
     },
     {
       "directory": "personal-chrome-companion",
