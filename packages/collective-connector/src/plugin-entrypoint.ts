@@ -1,4 +1,6 @@
-import { activateCollectivePublicNative, collectiveNativeAgentVerifier } from './public-native-activation.js';
+import { createCollectiveAgentVerification } from './native-agent-verification.js';
+import { createCollectiveOwnerSendAction } from './collective-owner-native-send.js';
+import { activateCollectivePublicNative } from './public-native-activation.js';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -76,8 +78,9 @@ async function activateService(context: FeatureContext, declaration: BrowserServ
   await binding.assertCurrent();
   let stopped = false;
   const assertActive = () => { if (stopped) throw new Error('Collective module is stopped'); void context.dataDirectory; };
+  const verification = createCollectiveAgentVerification(context, assertActive);
   const connector = await CollectiveConnector.open({ dataDirectory: join(context.dataDirectory, 'connector'),
-    verifyAgent: collectiveNativeAgentVerifier(context, assertActive), localTransport: createLocalServiceTransport(context.browserServices, binding, opened.store) });
+    verifyAgent: verification.verifyAgent, localTransport: createLocalServiceTransport(context.browserServices, binding, opened.store) });
   const contribution = declaration;
   const dispatch = createNodeHttpAdapter({ store: opened.store, allowedHostOrigins, bootstrapLinkPath, githubAppSetup }, binding, contribution);
   const native = await activateCollectivePublicNative(context, connector, assertActive);
@@ -115,6 +118,7 @@ async function activateService(context: FeatureContext, declaration: BrowserServ
     publicInvocationVerifier: native.publicInvocationVerifier,
     actions: {
       ...native.actions,
+      'collective.connector.send': createCollectiveOwnerSendAction({ connector, roster, verification, assertActive }),
       ...createRecoveryActions(connector, binding),
       'collective.control.http': ownerControl,
       'collective.http.dispatch': async (input, native, caller) => {

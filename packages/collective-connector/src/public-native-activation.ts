@@ -2,28 +2,11 @@ import { z } from 'zod';
 import { rowsResult, operationRowAction } from '@clowder-ai/plugin-sdk';
 import type { FeatureContext, PluginActionHandler, PluginOwnerOperationContext } from '@clowder-ai/plugin-sdk';
 import type { CollectiveConnector } from './business/connector/connector.js';
-import type { VerifiedAgent } from './business/connector/state.js';
 import { collectiveEventSourceIdentity } from './business/contracts/index.js';
 import { createCollectivePublicSourceCaller } from './collective-public-source.js';
 import { createCollectivePublicNativeActions } from './collective-public-native-context.js';
 import { openCollectiveContextReferences } from './collective-context-refs.js';
 import { COLLECTIVE_NATIVE_ID, COLLECTIVE_PUBLIC_METHODS } from './public-native-methods.js';
-
-/** The Host supplies the authenticated invocation. Browser calls and owner bodies cannot attest an Agent. */
-export function collectiveNativeAgentVerifier(context: FeatureContext, assertActive: () => void) {
-  return async (agent: VerifiedAgent): Promise<boolean> => {
-    assertActive();
-    if (!context.nativeContext || agent.agentId !== agent.catId) return false;
-    try {
-      const native = await context.nativeContext.current();
-      assertActive();
-      return native.catId === agent.catId && native.invocationId === agent.sessionRef;
-    } catch (error) {
-      assertActive();
-      return false;
-    }
-  };
-}
 
 const syncInput = z.object({ connectionId: z.string().trim().min(1).max(240) }).strict();
 export async function activateCollectivePublicNative(context: FeatureContext, connector: CollectiveConnector, assertActive: () => void) {

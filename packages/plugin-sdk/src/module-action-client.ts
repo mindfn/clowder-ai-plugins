@@ -6,6 +6,12 @@ export interface PluginActionContext {
   readonly threadId: string;
   readonly userId: string;
   readonly invocationId: string;
+  /** Authentication-grade Host fact; matching userId alone is never owner permission. */
+  readonly ownerAuthProvenance?: 'strict' | 'compatibility_fallback' | 'unknown';
+  /** Detached Host policy facts. A consumer must not treat their presence as unrestricted authority. */
+  readonly toolExecutionPolicy?: Readonly<Record<string, unknown>>;
+  /** Exact invocation origin, separate from a primary/adopted-hold source projection. */
+  readonly originTriggerMessageId?: string;
   readonly source?: {
     readonly kind: 'primary' | 'adopted_hold';
     readonly sourceMessageId: string;

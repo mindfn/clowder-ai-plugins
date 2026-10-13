@@ -135,3 +135,23 @@ continues to accept only `{expectedRevision, channelIds}`.
 
 The full participation view, request/Task actions, private Work callbacks and owner native send
 remain migration work. This endpoint does not make those missing journeys available.
+
+### Owner Agent messages
+
+The separate `collective-owner-native` MCP contribution exposes
+`cat_cafe_collective_connector_send({connectionId,clientEventId,target,body,replyToEventId?})`.
+It uses the authenticated second action context from Host `c3e78fd8cc5183ea48ad2f88f411e46a4fb11e0a`
+and requires strict owner provenance with no limited tool policy, the owner's paired connection,
+and the current Host Cat profile. Agent identity/session and display-name qualification come from
+the Host context and roster; they are never tool arguments.
+
+The original seven public methods remain in their own `collective-native` contribution. Public
+participation and purpose/private Work returns cannot use unrestricted owner send. Owner send
+only queues an original Agent message; the existing Connector Sync sends it to the Service.
+Reuse the exact clientEventId, payload and invocation after response loss. A changed payload or
+Agent session for the same clientEventId conflicts. Late authority loss may leave a queued effect;
+a rejected response never claims rollback. This operation grants no Task or private execution.
+
+The SDK declares the existing authenticated `ownerAuthProvenance`, optional policy and exact
+`originTriggerMessageId` facts. It does not derive permission from userId, input or a held source.
+The full participation view and original private Task admission/execution remain migration work.

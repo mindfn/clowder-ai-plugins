@@ -8,6 +8,7 @@ import {
   type FeatureContext,
 } from './feature-context.js';
 import { definePluginModule } from './module-plugin.js';
+import type { PluginActionContext } from './module-action-client.js';
 import type { ModulePluginHostShape } from './module-host.js';
 import { operationRowAction, rowsResult } from './operation-results.js';
 
@@ -936,4 +937,24 @@ test('public verifier duplicates reject startup and dispose both feature owners'
   } }));
   await assert.rejects(entrypoint.create(candidate).start(host([])), /multiple plugin features/);
   assert.equal(disposals, 2);
+});
+
+
+test('native second context keeps authenticated owner/policy and exact origin separate from held source', async () => {
+  let seen: PluginActionContext | undefined;
+  const entrypoint = definePluginModule(input => definePlugin({ manifest: input, activate: {
+    'feature-1': () => ({ actions: { 'fixture.outbound': () => undefined, 'fixture.echo': (_input, native) => { seen = native; return native?.ownerAuthProvenance; } } }),
+  } }));
+  const active = await entrypoint.create(manifest()).start(host([]));
+  const policy = Object.freeze({ mode: 'read_only', replayDeniedToolNames: Object.freeze([]) });
+  const native: PluginActionContext = Object.freeze({ userId: 'owner', threadId: 'thread', catId: 'cat', invocationId: 'invocation',
+    ownerAuthProvenance: 'strict', toolExecutionPolicy: policy, originTriggerMessageId: 'origin',
+    source: Object.freeze({ kind: 'adopted_hold', sourceMessageId: 'different-held-source', holdTaskId: 'task' }), async assertCurrent() {} });
+  try {
+    assert.equal(await active.actions['fixture.echo']!({ ownerAuthProvenance: 'unknown' }, native), 'strict');
+    assert.equal(seen, native); assert.equal(seen?.originTriggerMessageId, 'origin');
+    assert.equal(seen?.source?.sourceMessageId, 'different-held-source'); assert.equal(seen?.toolExecutionPolicy, policy);
+    assert.equal(await active.actions['fixture.echo']!({ ownerAuthProvenance: 'strict' }), undefined);
+    assert.equal(seen, undefined, 'business input cannot populate native authority');
+  } finally { await active.stop(); }
 });

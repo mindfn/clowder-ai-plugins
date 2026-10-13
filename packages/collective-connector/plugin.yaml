@@ -102,6 +102,8 @@ features:
       - type: identity
         id: collective
       - type: mcp
+        id: collective-owner-native
+      - type: mcp
         id: collective-native
     capabilities:
       - data.directory
@@ -411,3 +413,8 @@ contributions:
     path: connections/:connectionId/participation/policy
     methods: [PUT]
     action: { method: collective.control.http }
+  - type: mcp
+    id: collective-owner-native
+    runtime: { transport: stdio, entrypoint: dist/owner-mcp-entrypoint.js }
+    actions:
+      - { method: collective.connector.send }

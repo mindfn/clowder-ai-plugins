@@ -41,7 +41,7 @@ async function importTree(directory) {
   for (const item of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, item.name);
     if (item.isDirectory()) await importTree(path);
-    else if (item.name.endsWith('.js') && item.name !== 'mcp-entrypoint.js') await import(pathToFileURL(path).href);
+    else if (item.name.endsWith('.js') && !['mcp-entrypoint.js', 'owner-mcp-entrypoint.js'].includes(item.name)) await import(pathToFileURL(path).href);
   }
 }
 await importTree(join(packageRoot, 'dist'));
@@ -63,6 +63,21 @@ try {
     assert.equal(Object.hasOwn(tool.inputSchema.properties ?? {}, 'invocationId'), false);
   }
 } finally { await nativeClient.close(); }
+
+const ownerNative = manifest.contributions.find(item => item.type === 'mcp' && item.id === 'collective-owner-native');
+assert.deepEqual(ownerNative.actions, [{ method: 'collective.connector.send' }]);
+const ownerClient = new Client({ name: 'isolated-installed-owner-consumer', version: '1.0.0' });
+const ownerTransport = new StdioClientTransport({ command: process.execPath, args: [join(packageRoot, ownerNative.runtime.entrypoint)],
+  env: { PATH: process.env.PATH ?? '' }, stderr: 'pipe' });
+try {
+  await ownerClient.connect(ownerTransport);
+  const { tools } = await ownerClient.listTools();
+  assert.deepEqual(tools.map(tool => tool.name), ['cat_cafe_collective_connector_send']);
+  const schema = tools[0].inputSchema;
+  assert.equal(schema.additionalProperties, false);
+  for (const key of ['agent', 'userId', 'catId', 'sessionRef', 'workResultIntent', 'workProgressIntent'])
+    assert.equal(Object.hasOwn(schema.properties, key), false);
+} finally { await ownerClient.close(); }
 
 await assert.rejects(stat(join(packageRoot, 'dist/business/service/cli.js')), { code: 'ENOENT' });
 const directory = await mkdtemp(join(tmpdir(), 'installed-collective-data-'));
