@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
+import { parse } from 'yaml';
 
 import { normalizeBundledPublishGzip } from './canonical-publish-gzip.mjs';
 import {
@@ -7,8 +12,11 @@ import {
   addImmutableClaim,
   assertRegistryCompatibility,
   collectPublishPackageDirectories,
+  collectRetainedPublishArtifacts,
   readRegistryIntegrity,
 } from './registry-publish-compatibility.mjs';
+import { prepareRetainedPublication } from './prepare-retained-publish-artifact.mjs';
+import { readRetainedSdkClosures } from './retained-sdk-fixture.mjs';
 
 const workflowSource = `
 jobs:
@@ -24,6 +32,63 @@ jobs:
 
 test('publish inventory comes from the workflow publish action inputs', () => {
   assert.deepEqual(collectPublishPackageDirectories(workflowSource), ['packages/example']);
+});
+
+test('protected workflow publishes all authenticated retained pairs before current and consuming packages', async () => {
+  const source = await readFile(new URL('../.github/workflows/contract-ci.yml', import.meta.url), 'utf8');
+  const steps = parse(source).jobs.publish.steps;
+  const inputs = collectRetainedPublishArtifacts(source);
+  const expected = (await readRetainedSdkClosures()).flatMap(pair => ['contract', 'sdk'].map(kind =>
+    `scripts/fixtures/retained-sdk/clowder-ai-plugin-${kind}-${pair[kind].version}.tgz`));
+  assert.deepEqual(inputs.map(input => input.artifactPath).sort(), expected.sort());
+  const currentIndex = steps.findIndex(step => step.uses === './.github/actions/publish-prerelease' &&
+    !step.with['retained-artifact']);
+  for (const pair of await readRetainedSdkClosures()) {
+    const index = kind => steps.findIndex(step => step.with?.['retained-artifact']?.endsWith(
+      `clowder-ai-plugin-${kind}-${pair[kind].version}.tgz`));
+    assert.ok(index('contract') < index('sdk'));
+    assert.ok(index('sdk') < currentIndex, 'current release keeps final next tag ownership');
+  }
+  assert.ok(collectPublishPackageDirectories(source).includes('packages/github-operations'));
+  assert.equal(collectPublishPackageDirectories(source).includes('packages/collective-connector'), false);
+  const githubBuild = steps.findIndex(step => step.run === 'pnpm --filter @clowder-ai/github-operations build');
+  const githubPublish = steps.findIndex(step => step.with?.['package-directory'] === 'packages/github-operations');
+  assert.ok(githubBuild >= 0 && githubBuild < githubPublish);
+});
+
+test('retained preparation copies six pinned archives unchanged and rejects path, identity and integrity substitutions', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'clowder-retained-publication-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = await readFile(new URL('../.github/workflows/contract-ci.yml', import.meta.url), 'utf8');
+  const inputs = collectRetainedPublishArtifacts(source);
+  assert.equal(inputs.length, 6);
+  for (const input of inputs) {
+    const original = await readFile(new URL(`../${input.artifactPath}`, import.meta.url));
+    const artifact = await prepareRetainedPublication({ ...input, destination: root });
+    assert.deepEqual(await readFile(join(root, artifact.filename)), original);
+    assert.equal(artifact.integrity, `sha512-${createHash('sha512').update(original).digest('base64')}`);
+    assert.equal(artifact.retained, true);
+  }
+  const first = inputs[0];
+  await assert.rejects(prepareRetainedPublication({ ...first, directory: 'packages/github-operations', destination: root }),
+    /authenticated SDK\/contract archive identity/);
+  await assert.rejects(prepareRetainedPublication({ ...first, artifactPath: '../outside.tgz', destination: root }),
+    /authenticated SDK\/contract archive identity/);
+  const alteredRoot = join(root, 'altered');
+  const changed = join(alteredRoot, first.artifactPath);
+  await mkdir(dirname(changed), { recursive: true });
+  await writeFile(changed, 'same filename is not the authenticated archive');
+  await assert.rejects(prepareRetainedPublication({ ...first, destination: join(root, 'refused'), root: alteredRoot }),
+    /archive integrity mismatch/);
+  await assert.rejects(readFile(join(root, 'refused', first.artifactPath.split('/').at(-1))), { code: 'ENOENT' });
+});
+
+test('registry gate refuses a conflicting published retained identity before packing current releases', async () => {
+  const source = await readFile(new URL('../.github/workflows/contract-ci.yml', import.meta.url), 'utf8');
+  await assert.rejects(assertRegistryCompatibility({ catalog: { plugins: [] }, workflowSource: source,
+    registryIntegrity: async () => 'sha512-conflicting-published-version',
+    packCurrentPackage: async () => { assert.fail('retained conflict must stop before current packing'); },
+  }), /already published with immutable integrity/u);
 });
 
 test('same package version cannot claim two local byte identities', () => {

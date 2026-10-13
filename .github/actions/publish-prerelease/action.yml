@@ -5,6 +5,10 @@ inputs:
   package-directory:
     description: Repository-relative public package directory
     required: true
+  retained-artifact:
+    description: Authenticated retained SDK/contract archive, when publishing an existing pinned dependency
+    required: false
+    default: ''
   npm-token:
     description: npm automation token
     required: true
@@ -17,6 +21,7 @@ runs:
       shell: bash
       env:
         PACKAGE_DIRECTORY: ${{ inputs.package-directory }}
+        RETAINED_ARTIFACT: ${{ inputs.retained-artifact }}
         PACK_JSON_PATH: ${{ runner.temp }}/prerelease-pack.json
       run: |
         set -euo pipefail
@@ -25,7 +30,11 @@ runs:
           exit 1
         fi
 
-        node scripts/pack-publish-artifact.mjs "$PACKAGE_DIRECTORY" "$RUNNER_TEMP" > "$PACK_JSON_PATH"
+        if [[ -n "$RETAINED_ARTIFACT" ]]; then
+          node scripts/prepare-retained-publish-artifact.mjs "$PACKAGE_DIRECTORY" "$RETAINED_ARTIFACT" "$RUNNER_TEMP" > "$PACK_JSON_PATH"
+        else
+          node scripts/pack-publish-artifact.mjs "$PACKAGE_DIRECTORY" "$RUNNER_TEMP" > "$PACK_JSON_PATH"
+        fi
         node --input-type=module <<'NODE'
         import { appendFileSync, readFileSync } from 'node:fs';
         import { join } from 'node:path';
@@ -39,7 +48,9 @@ runs:
             throw new Error(`npm pack did not report ${field}`);
           }
         }
-        if (artifact.name !== packageJson.name || artifact.version !== packageJson.version) {
+        const retained = process.env.RETAINED_ARTIFACT !== '';
+        if (artifact.name !== packageJson.name ||
+            (retained ? artifact.retained !== true : artifact.version !== packageJson.version)) {
           throw new Error(
             `packed identity mismatch: ${artifact.name}@${artifact.version} != ${packageJson.name}@${packageJson.version}`,
           );

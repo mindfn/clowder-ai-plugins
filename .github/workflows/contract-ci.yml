@@ -272,10 +272,57 @@ jobs:
       - name: Build WeChat visible reader package
         run: pnpm --filter @clowder-ai/wechat-visible-reader build
 
+      - name: Build GitHub operations package
+        run: pnpm --filter @clowder-ai/github-operations build
+
       - name: Build and verify frozen GenOffice renderer
         run: |
           pnpm --filter @clowder-ai/genoffice-docx build:renderer
           pnpm --filter @clowder-ai/genoffice-docx prepack
+
+      # Current consumers retain these exact dependency identities. Publish
+      # authenticated original archives first; later current releases own next.
+      - name: Publish retained contract beta.29
+        uses: ./.github/actions/publish-prerelease
+        with:
+          package-directory: packages/plugin-contract
+          retained-artifact: scripts/fixtures/retained-sdk/clowder-ai-plugin-contract-0.1.0-beta.29.tgz
+          npm-token: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish retained SDK beta.12
+        uses: ./.github/actions/publish-prerelease
+        with:
+          package-directory: packages/plugin-sdk
+          retained-artifact: scripts/fixtures/retained-sdk/clowder-ai-plugin-sdk-0.2.0-beta.12.tgz
+          npm-token: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish retained contract beta.30
+        uses: ./.github/actions/publish-prerelease
+        with:
+          package-directory: packages/plugin-contract
+          retained-artifact: scripts/fixtures/retained-sdk/clowder-ai-plugin-contract-0.1.0-beta.30.tgz
+          npm-token: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish retained SDK beta.15
+        uses: ./.github/actions/publish-prerelease
+        with:
+          package-directory: packages/plugin-sdk
+          retained-artifact: scripts/fixtures/retained-sdk/clowder-ai-plugin-sdk-0.2.0-beta.15.tgz
+          npm-token: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish retained contract beta.35
+        uses: ./.github/actions/publish-prerelease
+        with:
+          package-directory: packages/plugin-contract
+          retained-artifact: scripts/fixtures/retained-sdk/clowder-ai-plugin-contract-0.1.0-beta.35.tgz
+          npm-token: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish retained SDK beta.19
+        uses: ./.github/actions/publish-prerelease
+        with:
+          package-directory: packages/plugin-sdk
+          retained-artifact: scripts/fixtures/retained-sdk/clowder-ai-plugin-sdk-0.2.0-beta.19.tgz
+          npm-token: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish contract prerelease
         uses: ./.github/actions/publish-prerelease
@@ -383,4 +430,10 @@ jobs:
         uses: ./.github/actions/publish-prerelease
         with:
           package-directory: packages/feishu-meeting-intake
+          npm-token: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish GitHub operations prerelease
+        uses: ./.github/actions/publish-prerelease
+        with:
+          package-directory: packages/github-operations
           npm-token: ${{ secrets.NPM_TOKEN }}

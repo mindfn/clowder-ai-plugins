@@ -357,3 +357,23 @@ test('initial installation selects exactly the original seventeen packages witho
     assert.equal(item.enabled, true, 'Host config readiness gates the original initial enabled intent');
   }
 });
+
+test('every public initial C1 package is covered by the protected main publisher', async () => {
+  const selection = JSON.parse(await readFile(new URL('../catalog/initial-plugins.json', import.meta.url), 'utf8'));
+  const selected = new Set(selection.plugins.map(item => item.pluginId));
+  const workflow = parse(await readFile(new URL('../.github/workflows/contract-ci.yml', import.meta.url), 'utf8'));
+  const publisher = workflow.jobs.publish;
+  assert.equal(publisher.needs, 'validate');
+  assert.equal(publisher.if, "github.event_name == 'push' && github.ref == 'refs/heads/main'");
+  const directories = new Set(publisher.steps.filter(step => step.uses === './.github/actions/publish-prerelease')
+    .map(step => step.with['package-directory']));
+  const missing = [];
+  for (const entry of inventory.repositoryPackages.filter(item => item.managerInstallable)) {
+    const root = new URL(`../packages/${entry.directory}/`, import.meta.url);
+    const pkg = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
+    const manifest = parse(await readFile(new URL('plugin.yaml', root), 'utf8'));
+    if (selected.has(manifest.pluginId) && pkg.private !== true && !directories.has(`packages/${entry.directory}`))
+      missing.push(`packages/${entry.directory}`);
+  }
+  assert.deepEqual(missing.sort(), [], 'selected public packages cannot stop at local pack without a main publication path');
+});

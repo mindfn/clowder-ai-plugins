@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as sleepDefault } from 'node:timers/promises';
 
 import { parse } from 'yaml';
+import { prepareRetainedPublication } from './prepare-retained-publish-artifact.mjs';
 
 export const OFFICIAL_NPM_REGISTRY = 'https://registry.npmjs.org';
 export const PUBLISH_ACTION = './.github/actions/publish-prerelease';
@@ -58,6 +59,7 @@ export function collectPublishPackageDirectories(workflowSource) {
   for (const job of Object.values(workflow?.jobs ?? {})) {
     for (const step of job?.steps ?? []) {
       if (step?.uses !== PUBLISH_ACTION) continue;
+      if (step.with?.['retained-artifact'] !== undefined) continue;
       const directory = step.with?.['package-directory'];
       if (typeof directory !== 'string' || !/^packages\/[a-z0-9-]+$/u.test(directory)) {
         throw new Error(`publish-prerelease step has invalid package-directory: ${directory}`);
@@ -73,6 +75,24 @@ export function collectPublishPackageDirectories(workflowSource) {
     throw new Error('Contract CI publishes the same package directory more than once');
   }
   return unique;
+}
+
+export function collectRetainedPublishArtifacts(workflowSource) {
+  const workflow = parse(workflowSource);
+  const artifacts = [];
+  for (const job of Object.values(workflow?.jobs ?? {})) {
+    for (const step of job?.steps ?? []) {
+      if (step?.uses !== PUBLISH_ACTION || step.with?.['retained-artifact'] === undefined) continue;
+      const directory = step.with['package-directory'];
+      const artifactPath = step.with['retained-artifact'];
+      if (typeof directory !== 'string' || typeof artifactPath !== 'string')
+        throw new Error('retained publisher requires an explicit directory and archive path');
+      if (artifacts.some(item => item.artifactPath === artifactPath))
+        throw new Error('Contract CI publishes the same retained archive more than once');
+      artifacts.push({ directory, artifactPath });
+    }
+  }
+  return artifacts;
 }
 
 export function addImmutableClaim(claims, claim) {
@@ -176,6 +196,12 @@ export async function assertRegistryCompatibility({
 
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'clowder-registry-compat-'));
   try {
+    for (const input of collectRetainedPublishArtifacts(workflowSource)) {
+      const artifact = await prepareRetainedPublication({ ...input, destination: temporaryRoot, root });
+      addImmutableClaim(claims, { name: artifact.name, version: artifact.version, integrity: artifact.integrity,
+        source: `retained publish job ${input.artifactPath}` });
+      await check(claims.get(`${artifact.name}@${artifact.version}`));
+    }
     for (const directory of collectPublishPackageDirectories(workflowSource)) {
       let artifact;
       if (packCurrentPackage !== undefined) {

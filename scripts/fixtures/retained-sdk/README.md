@@ -10,7 +10,7 @@ created: 2026-10-08
 This is the canonical MIT-licensed `@clowder-ai/plugin-sdk@0.2.0-beta.12`
 archive independently rebuilt from exact source
 `80e26fc4bc2c337449c80e3f32184db1a96f07cf` during Batch9 acceptance.
-It is test input, not a new release or a replacement for registry publication.
+It is an immutable dependency input, not a claim that registry publication has happened.
 
 - Size: 55,750 bytes; 58 archive members.
 - SHA-256: `af0cd615aa2b2f8f9de994499f541f83163d9637d56fb89406bc1f7aa023ad7b`
@@ -30,7 +30,7 @@ beta.12, nor bypass Host installation or authorization acceptance.
 
 The beta.12 SDK still requires contract beta.29. This unchanged canonical archive
 comes from the accepted de917e86f39631aa4b70006fa056c7be470942d8 graph
-(candidate-de917e8-artifact-matrix.json), and is used only as fresh-consumer input.
+(candidate-de917e8-artifact-matrix.json), and is used as an authenticated retained dependency input.
 Size: 228047 bytes. SHA-256: `25225f3c1b3f9935c692dbca7f8f001eca70ab7c198165b4e9ef69ca91d9b458`.
 SRI: `sha512-77p2pQyLZvbC+kv7yOOzIdsXNYeUblxy50H6VQVQYx2CB6vwySSux2LvUXzPLvdVZCNuJkFHpY04mZ3vHmnXgQ==`.
 The test verifies the retained shrinkwrap and resolves each SDK's contract
@@ -43,7 +43,7 @@ retain their accepted beta.15/beta.30 dependency bytes. These MIT-licensed
 canonical archives come from the recorded `c4316f3` alpha.6 artifact graph,
 also reused by the independently verified alpha.14 graph at
 `d1a6bfb2db8fdf8f0a633ecb5e04ef3ac4a6444a`; they are immutable test inputs,
-not new releases. Evidence: `f202-handoff/w3-github/integrated-c4316f3-alpha6/canonical.json`.
+not evidence of publication. Evidence: `f202-handoff/w3-github/integrated-c4316f3-alpha6/canonical.json`.
 
 - SDK beta.15: 78680 bytes, SHA256 `60912dfbd6911794b84a303c409215524bfe3629c34c41e1564255aa106cd04f`.
 - Contract beta.30: 229585 bytes, SHA256 `55379eb6d73d690bef91224e6a0684c7ba8938a88c4b63c41e241e3fd3344dd3`.
@@ -67,5 +67,20 @@ original archive SRIs independently match GitHub's unchanged production shrinkwr
 The version-specific loader verifies original bytes, declared version, SDK-to-contract
 edge and derived SRI before the GitHub artifact guard accepts this retained graph.
 The guard still rejects an unrecognized identity or changed integrity. These are
-test inputs, not publication, a rewritten production pin or a current directory
+immutable inputs, not publication, a rewritten production pin or a current directory
 installation proof. Existing beta.12/beta.15 fixtures remain unchanged.
+
+## Protected publication of retained prerequisites
+
+The main-only publisher also admits these six exact archives so unchanged production
+shrinkwraps can resolve their retained SDK/contract identities from npm. The helper
+`prepare-retained-publish-artifact.mjs` authenticates the allowlisted pair, original
+hash and SDK-to-contract edge, then copies the archive unchanged. It rejects an
+arbitrary path, mismatched package or changed archive; it does not rebuild old
+versions from current source. The existing action still checks registry integrity,
+uses the `next` tag and verifies publication. Retained prerequisites run before
+current versions so they do not leave `next` pointing at an older version.
+
+PR validation performs preparation and registry checks only. Actual publication
+requires the existing validated main/maintainer path. No archive here is reported
+as published merely because local tests or CI pass.
