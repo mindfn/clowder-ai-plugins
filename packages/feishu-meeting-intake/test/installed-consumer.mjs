@@ -4,13 +4,20 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, dirname, relative } from 'node:path';
+import { join, dirname, isAbsolute, relative, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import module from '@clowder-ai/feishu-meeting-intake';
 import { validateManifest } from '@clowder-ai/plugin-contract';
 const packageRoot=dirname(dirname(fileURLToPath(import.meta.resolve('@clowder-ai/feishu-meeting-intake'))));
 const consumer=process.cwd();
-for(const name of ['plugin-sdk','plugin-contract','feishu-meeting-intake'])assert.ok(!relative(consumer,fileURLToPath(import.meta.resolve('@clowder-ai/'+name))).startsWith('..'));
+assert.ok(!relative(consumer,packageRoot).startsWith('..'),'meeting module must be installed in this consumer');
+const metadata=JSON.parse(await readFile(join(packageRoot,'package.json'),'utf8'));
+for(const [name,entry]of [['@clowder-ai/plugin-sdk','@clowder-ai/plugin-sdk'],['@clowder-ai/plugin-contract','@clowder-ai/plugin-contract'],['@modelcontextprotocol/sdk','@modelcontextprotocol/sdk/client/index.js']]){
+ const bundledRoot=join(packageRoot,'node_modules',name),resolved=fileURLToPath(import.meta.resolve(entry));
+ const local=relative(bundledRoot,resolved);
+ assert.ok(local!== '..'&&!local.startsWith('..'+sep)&&!isAbsolute(local),name+' must resolve from the meeting bundle');
+ assert.equal(JSON.parse(await readFile(join(bundledRoot,'package.json'),'utf8')).version,metadata.dependencies[name],name+' must retain its exact declared identity');
+}
 const manifest=JSON.parse(await readFile(join(packageRoot,'manifest.json'),'utf8'));
 assert.equal(validateManifest(manifest).valid,true);
 assert.equal(manifest.runtime.transport,'builtin');
