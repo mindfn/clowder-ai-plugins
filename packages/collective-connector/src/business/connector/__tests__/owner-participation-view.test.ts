@@ -62,7 +62,7 @@ async function setup(taskHost?: ModulePluginHostShape['tasks'], sourceFactory?: 
 }
 test('retained GET participation and original read-only Task dependency are declared', () => {
   const c = manifest.contributions.find((c: { path?: string }) => c.path === 'connections/:connectionId/participation');
-  expect(c).toMatchObject({ type: 'webhook', methods: ['GET'], action: { method: 'collective.control.http' } });
+  expect(c).toMatchObject({ type: 'webhook', methods: ['GET', 'PUT'], action: { method: 'collective.control.http' } });
   expect(manifest.features[0].contributions).toContainEqual({ type: 'webhook', id: c.id });
   expect(manifest.features[0].capabilities).toContain('task.read');
   expect(manifest.features[0].capabilities).not.toContain('task.write');

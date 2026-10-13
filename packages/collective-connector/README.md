@@ -181,3 +181,15 @@ The retained participation GET consumes the SDK's declared `PluginTaskReadItem` 
 `task.read` ports. Owner/source filtering uses explicit `userId` and the bounded entrusted Work
 summary; a Host missing that projection fails the read visibly. It does not grant Task writes,
 admission or execution, and unavailable Queue progress facts remain unavailable.
+
+
+### Retained individual participation mutation
+
+The existing owner `PUT connections/:connectionId/participation` retains the original strict per-Cat
+schema, route revision CAS and connection mutation serialization. Enable stores the Cat's public
+participation and optional owner standing-work scope; disable removes both while preserving the
+same owner thread. The current Host roster decides eligibility and strict owner thread ports reject
+deleted or foreign threads before mutation. The original Connector persists route/standing-work
+revisions and publishes participation to the Service. This configuration does not create a Task,
+admit execution or allow a public/native caller to act as the owner. Manual Work admission/resume,
+reconsideration, private/progress returns and the complete retained browser journey remain open.

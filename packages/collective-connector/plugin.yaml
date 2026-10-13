@@ -424,5 +424,5 @@ contributions:
   - type: webhook
     id: collective-participation-view
     path: connections/:connectionId/participation
-    methods: [GET]
+    methods: [GET, PUT]
     action: { method: collective.control.http }

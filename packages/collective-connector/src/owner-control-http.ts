@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { individualParticipationInput } from './owner-participation-change.js';
 import type { BrowserServiceBinding } from '@clowder-ai/plugin-sdk';
 import type { CollectiveConnector } from './business/connector/connector.js';
 import type { createCollectiveEntryCaller } from './entry-control.js';
@@ -27,6 +28,7 @@ export interface CollectiveLocalServiceStatus {
   readonly setupStep?: 'github_app' | 'owner_setup';
 }
 interface OwnerControlOptions {
+  readonly participation?: (ownerUserId: string, connectionId: string, input: z.infer<typeof individualParticipationInput>) => Promise<HostRouteConfig>;
   readonly view?: (ownerUserId: string, connectionId: string) => Promise<unknown>;
   readonly entry?: ReturnType<typeof createCollectiveEntryCaller>;
   readonly reconcile?: (ownerUserId: string, connectionId: string, input: z.infer<typeof reconcileInput> & { readonly policy?: z.infer<typeof desiredParticipationSchema> }) => Promise<HostRouteConfig>;
@@ -64,6 +66,19 @@ export function createOwnerControlHttp(options: OwnerControlOptions) {
     const current = async () => { options.assertActive(); await options.binding.assertCurrent(); options.assertActive(); };
     const finish = async (status: number, body: unknown) => { await current(); return response(status, body); };
     const view = /^connections\/([A-Za-z0-9_-]{1,240})\/participation$/.exec(request.path);
+    if (view && request.method === 'PUT' && options.participation) {
+      try {
+        const parsed = individualParticipationInput.parse(request.body);
+        const route = await mutate(view[1]!, async () => { await current(); return options.participation!(request.principal.id, view[1]!, parsed); });
+        return finish(200, { revision: route.revision, published: true });
+      } catch (error) {
+        await current();
+        if (error instanceof z.ZodError) return response(400, { code: 'INVALID_PARTICIPATION_REQUEST' });
+        const code = error && typeof error === 'object' && 'code' in error ? error.code : 'PARTICIPATION_UNAVAILABLE';
+        return response(code === 'CONNECTOR_OWNER_MISMATCH' ? 403 : code === 'PARTICIPATION_UNSUPPORTED' ? 422 : 409,
+          { code, error: error instanceof Error ? error.message : 'Participation unavailable' });
+      }
+    }
     if (view && options.view) {
       if (request.method !== 'GET') return finish(405, { code: 'OWNER_CONTROL_METHOD_NOT_ALLOWED' });
       try { return finish(200, await options.view(request.principal.id, view[1]!)); }
