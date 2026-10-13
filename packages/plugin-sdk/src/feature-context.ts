@@ -1,6 +1,8 @@
 import { projectTaskRead, projectTaskReadList } from './task-read.js';
 import { capturePublicInvocationVerifier, guardPublicInvocationVerifier, PUBLIC_INVOCATION_VERIFIER_METHOD, type PluginPublicInvocationVerifier } from './public-invocation-verifier.js';
-import { createSourceFactsClient, createNativeContextClient, type PluginSourceFactsHost, type PluginNativeContextHost } from './source-facts.js';
+import { createSourceFactsClient, createNativeContextClient, type PluginSourceFactsHost, type PluginNativeContextHost,
+  type PluginNativeContextClient } from './source-facts.js';
+import { createEntrustedTaskClient } from './task-entrusted.js';
 import { createParticipantRosterClient, type PluginParticipantRosterHost, type PluginParticipantRosterClient } from './participant-roster.js';
 import { createPublicInvocationClient, type PluginPublicInvocationHost } from './public-invocations.js';
 import type { BrowserServiceHost, PluginHostActionContext } from './browser-services.js';
@@ -71,7 +73,7 @@ export interface FeatureHostAdapter {
   readonly publicInvocations?: PluginPublicInvocationHost;
   /** Exact authenticated source subset; absent on older carriers. */
   readonly sourceFacts?: PluginSourceFactsHost;
-  /** Verified native invocation only; no body identity or Work binding. */
+  /** Verified native invocation; Task facts require explicit opt-in and task.read, never body identity. */
   readonly nativeContext?: PluginNativeContextHost;
   /** Current owner or same-owner verified native invocation; absent on older carriers. */
   readonly participantRoster?: PluginParticipantRosterHost;
@@ -155,8 +157,8 @@ export interface FeatureContext {
   readonly publicInvocations?: PluginPublicInvocationHost;
   /** Exact authenticated source subset; absent on older carriers. */
   readonly sourceFacts?: PluginSourceFactsHost;
-  /** Verified native invocation only; no body identity or Work binding. */
-  readonly nativeContext?: PluginNativeContextHost;
+  /** Verified native invocation; Task facts require explicit opt-in and task.read, never body identity. */
+  readonly nativeContext?: PluginNativeContextClient;
   /** Current owner or same-owner verified native invocation; absent on older carriers. */
   readonly participantRoster?: PluginParticipantRosterClient;
   /** Strict authenticated owner webhook calls only; absent on older carriers. */
@@ -385,6 +387,10 @@ export function createFeatureContextSession(
       runWhileActive(() => adapter.storage.delete(key, expectedRevision)),
   };
   const tasks: PluginTaskHost = {
+    ...(adapter.tasks ? createEntrustedTaskClient(adapter.tasks, () => {
+      assertActive();
+      if (!binding.grantedCapabilities.includes('task.admitEntrusted')) throw new FeaturePermissionError('task.admitEntrusted not granted');
+    }) : {}),
     setWait: (taskId, input) => runWhileActive(() => adapter.tasks.setWait(taskId, input)),
     get: (taskId) => runWhileActive(async () => projectTaskRead(await adapter.tasks.get(taskId))),
     listByThread: (threadId) => runWhileActive(async () => projectTaskReadList(await adapter.tasks.listByThread(threadId))),
@@ -431,7 +437,10 @@ export function createFeatureContextSession(
     assertContentAccess();
     if (!binding.grantedCapabilities.includes('messaging.send')) throw new FeaturePermissionError('messaging.send not granted');
   });
-  const nativeContext = adapter.nativeContext === undefined ? undefined : createNativeContextClient(adapter.nativeContext, assertContentAccess);
+  const nativeContext = adapter.nativeContext === undefined ? undefined : createNativeContextClient(adapter.nativeContext, assertContentAccess, () => {
+    assertActive();
+    if (!binding.grantedCapabilities.includes('task.read')) throw new FeaturePermissionError('task.read not granted');
+  });
   const participantRoster = adapter.participantRoster === undefined ? undefined : createParticipantRosterClient(adapter.participantRoster, assertActive);
   const ownerThreads = adapter.ownerThreads === undefined ? undefined : createOwnerThreadClient(adapter.ownerThreads, capability => {
     assertActive();

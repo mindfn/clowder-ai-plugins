@@ -23,6 +23,7 @@ import {
 } from '../generated/contract.generated.js';
 import { WIRE_UINT53_MAX } from '../wire/wire-uint53.js';
 import { MAX_FRAME_BYTES } from '../wire/constants.js';
+import { MAX_GRANT_ITEMS } from '../wire/grants.js';
 import {
   EVENTS_PUBLISH_ERROR_BYTE_PROOF,
   EVENTS_PUBLISH_REQUEST_BYTE_PROOF,
@@ -321,14 +322,15 @@ export function ackResponseTemplate(): ByteProofInput {
 // ---------------------------------------------------------------------------
 
 /**
- * Every capability enum value from the generated contract. Schema order is
- * deterministic, and importing the generated arrays avoids a second mirror.
+ * Maximal legal distinct grant snapshot from the generated vocabulary.
+ * New capability names do not enlarge the frozen wire array limit.
  */
 const ALL_CAPABILITY_VALUES = [
   ...L0_CAPABILITIES,
   ...L1_CAPABILITIES,
   ...L2_CAPABILITIES,
-] as const;
+].sort((a, b) => Buffer.byteLength(JSON.stringify(b)) - Buffer.byteLength(JSON.stringify(a)) || a.localeCompare(b))
+  .slice(0, MAX_GRANT_ITEMS);
 
 /**
  * Compute the maximum encoded bytes for a host.grants.changed notification.

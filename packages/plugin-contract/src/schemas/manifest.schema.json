@@ -6,7 +6,7 @@
   "x-clowder-capability-layers": {
     "L0": ["plugin.config.read", "plugin.state.get", "plugin.state.set"],
     "L1": ["messaging.send", "schedule.register", "events.publish", "messaging.appendElements", "media.read"],
-    "L2": ["onMessage", "message.event.subscribe", "secret.read", "thread.listMetadata", "thread.readContent", "thread.write", "custody.invoke", "custody.verify", "deployment.read", "frustration.read", "frustration.link", "task.read", "task.write", "memory.query", "memory.append", "memory.retrieve", "windows.create", "whisper.extend", "data.directory", "cloud.conversation.host"]
+    "L2": ["onMessage", "message.event.subscribe", "secret.read", "thread.listMetadata", "thread.readContent", "thread.write", "custody.invoke", "custody.verify", "deployment.read", "frustration.read", "frustration.link", "task.read", "task.write", "task.admitEntrusted", "memory.query", "memory.append", "memory.retrieve", "windows.create", "whisper.extend", "data.directory", "cloud.conversation.host"]
   },
   "x-clowder-data-class-strategies": {
     "cache": ["lifecycle", "retained", "ask-on-uninstall"],
@@ -130,6 +130,455 @@
         },
         "source": {
           "$ref": "#/$defs/PluginSourceFact"
+        }
+      }
+    },
+    "PluginNativeTaskContextInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "includeTask"
+      ],
+      "properties": {
+        "includeTask": {
+          "const": true
+        }
+      }
+    },
+    "PluginNativeTaskContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "userId",
+        "threadId",
+        "catId",
+        "invocationId",
+        "originTriggerMessageId",
+        "source",
+        "task"
+      ],
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "catId": {
+          "type": "string"
+        },
+        "invocationId": {
+          "type": "string"
+        },
+        "originTriggerMessageId": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/PluginSourceFact"
+        },
+        "task": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "taskRef",
+            "taskRevision",
+            "admissionRef",
+            "executionRef",
+            "sourceRevision"
+          ],
+          "properties": {
+            "taskRef": {
+              "type": "string",
+              "pattern": "^task:work:\\S{1,500}$"
+            },
+            "taskRevision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "admissionRef": {
+              "type": "string",
+              "pattern": "^message:\\S{1,500}$"
+            },
+            "executionRef": {
+              "type": "string",
+              "pattern": "^message:\\S{1,500}$"
+            },
+            "sourceRevision": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "PluginTaskAdmissionInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceMessageId",
+        "targetCatId",
+        "destination",
+        "subject"
+      ],
+      "properties": {
+        "sourceMessageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "x-clowder-max-utf16-units": 500,
+          "pattern": "\\S"
+        },
+        "targetCatId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "x-clowder-max-utf16-units": 500,
+          "pattern": "\\S"
+        },
+        "destination": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "derived_from_source"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "threadId"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "existing_thread"
+                },
+                "threadId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500,
+                  "x-clowder-max-utf16-units": 500,
+                  "pattern": "\\S"
+                }
+              }
+            }
+          ]
+        },
+        "subject": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "title",
+                "intendedOutcome"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "new"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "x-clowder-max-utf16-units": 200,
+                  "pattern": "\\S"
+                },
+                "intendedOutcome": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000,
+                  "x-clowder-max-utf16-units": 4000,
+                  "pattern": "\\S"
+                },
+                "closure": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "condition",
+                    "expectedSignal"
+                  ],
+                  "properties": {
+                    "condition": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000,
+                      "x-clowder-max-utf16-units": 4000,
+                      "pattern": "\\S"
+                    },
+                    "expectedSignal": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000,
+                      "x-clowder-max-utf16-units": 1000,
+                      "pattern": "\\S"
+                    }
+                  }
+                },
+                "time": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [],
+                  "properties": {
+                    "businessDeadline": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "value",
+                        "sourceRef"
+                      ],
+                      "properties": {
+                        "value": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "sourceRef": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000,
+                          "x-clowder-max-utf16-units": 1000,
+                          "pattern": "\\S"
+                        }
+                      }
+                    },
+                    "reviewBy": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "value",
+                        "sourceRef"
+                      ],
+                      "properties": {
+                        "value": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "sourceRef": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000,
+                          "x-clowder-max-utf16-units": 1000,
+                          "pattern": "\\S"
+                        }
+                      }
+                    },
+                    "plannedStart": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "value",
+                        "sourceRef"
+                      ],
+                      "properties": {
+                        "value": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "sourceRef": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000,
+                          "x-clowder-max-utf16-units": 1000,
+                          "pattern": "\\S"
+                        }
+                      }
+                    },
+                    "actualStart": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "value",
+                        "sourceRef"
+                      ],
+                      "properties": {
+                        "value": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "sourceRef": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000,
+                          "x-clowder-max-utf16-units": 1000,
+                          "pattern": "\\S"
+                        }
+                      }
+                    },
+                    "estimatedCompletion": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "value",
+                        "sourceRef"
+                      ],
+                      "properties": {
+                        "value": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "sourceRef": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000,
+                          "x-clowder-max-utf16-units": 1000,
+                          "pattern": "\\S"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "taskRef",
+                "expectedRevision"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "continue"
+                },
+                "taskRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500,
+                  "x-clowder-max-utf16-units": 500,
+                  "pattern": "^task:work:.+"
+                },
+                "expectedRevision": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "PluginTaskAdmissionResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "result",
+            "clarificationReason"
+          ],
+          "properties": {
+            "result": {
+              "const": "needs_clarification"
+            },
+            "clarificationReason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000,
+              "pattern": "\\S"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "result",
+            "taskRef",
+            "taskRevision",
+            "threadId",
+            "admissionRef",
+            "executionRef"
+          ],
+          "properties": {
+            "result": {
+              "enum": [
+                "admitted",
+                "resumed"
+              ]
+            },
+            "taskRef": {
+              "type": "string",
+              "pattern": "^task:work:\\S{1,500}$"
+            },
+            "taskRevision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "threadId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "pattern": "\\S"
+            },
+            "admissionRef": {
+              "type": "string",
+              "pattern": "^message:\\S{1,500}$"
+            },
+            "executionRef": {
+              "type": "string",
+              "pattern": "^message:\\S{1,500}$"
+            }
+          }
+        }
+      ]
+    },
+    "PluginTaskDispatchInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskRef",
+        "taskRevision",
+        "executionRef"
+      ],
+      "properties": {
+        "taskRef": {
+          "type": "string",
+          "pattern": "^task:work:\\S{1,500}$"
+        },
+        "taskRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "executionRef": {
+          "type": "string",
+          "pattern": "^message:\\S{1,500}$"
+        }
+      }
+    },
+    "PluginTaskDispatchResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "messageRef",
+        "entryId",
+        "status"
+      ],
+      "properties": {
+        "messageRef": {
+          "type": "string",
+          "pattern": "^message:\\S{1,500}$"
+        },
+        "entryId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "pattern": "\\S"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "processing",
+            "terminal"
+          ]
         }
       }
     },
@@ -1135,6 +1584,7 @@
         "frustration.link",
         "task.read",
         "task.write",
+        "task.admitEntrusted",
         "memory.query",
         "memory.append",
         "memory.retrieve",

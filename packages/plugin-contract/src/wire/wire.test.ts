@@ -485,7 +485,7 @@ test('beta.8 closes H1/H3/H4/H5/H6 bounded grammars', () => {
 test('beta.8 exact-validation evidence covers every H field boundary and type', () => {
   const digest = `sha512-${'A'.repeat(86)}==`;
   const maxVersion = `0.0.0-${'a'.repeat(HANDSHAKE_VERSION_MAX_LENGTH - 6)}`;
-  const maxGrants = [...VALID_CAPABILITIES];
+  const maxGrants = [...VALID_CAPABILITIES].slice(0, MAX_GRANT_ITEMS);
   const binding = {
     pluginId: 'a',
     packageDigest: digest,

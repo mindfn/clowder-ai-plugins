@@ -45,6 +45,90 @@ export type PluginNativeContext = {
   readonly originTriggerMessageId: string;
   readonly source: PluginSourceFact;
 };
+export type PluginNativeTaskContextInput = {
+  readonly includeTask: true;
+};
+export type PluginNativeTaskContext = {
+  readonly userId: string;
+  readonly threadId: string;
+  readonly catId: string;
+  readonly invocationId: string;
+  readonly originTriggerMessageId: string;
+  readonly source: PluginSourceFact;
+  readonly task: {
+    readonly taskRef: string;
+    readonly taskRevision: number;
+    readonly admissionRef: string;
+    readonly executionRef: string;
+    readonly sourceRevision: number;
+  };
+};
+export type PluginTaskAdmissionInput = {
+  readonly sourceMessageId: string;
+  readonly targetCatId: string;
+  readonly destination: {
+    readonly kind: 'derived_from_source';
+  } | {
+    readonly kind: 'existing_thread';
+    readonly threadId: string;
+  };
+  readonly subject: {
+    readonly kind: 'new';
+    readonly title: string;
+    readonly intendedOutcome: string;
+    readonly closure?: {
+      readonly condition: string;
+      readonly expectedSignal: string;
+    };
+    readonly time?: {
+      readonly businessDeadline?: {
+        readonly value: number;
+        readonly sourceRef: string;
+      };
+      readonly reviewBy?: {
+        readonly value: number;
+        readonly sourceRef: string;
+      };
+      readonly plannedStart?: {
+        readonly value: number;
+        readonly sourceRef: string;
+      };
+      readonly actualStart?: {
+        readonly value: number;
+        readonly sourceRef: string;
+      };
+      readonly estimatedCompletion?: {
+        readonly value: number;
+        readonly sourceRef: string;
+      };
+    };
+  } | {
+    readonly kind: 'continue';
+    readonly taskRef: string;
+    readonly expectedRevision: number;
+  };
+};
+export type PluginTaskAdmissionResult = {
+  readonly result: 'needs_clarification';
+  readonly clarificationReason: string;
+} | {
+  readonly result: 'admitted' | 'resumed';
+  readonly taskRef: string;
+  readonly taskRevision: number;
+  readonly threadId: string;
+  readonly admissionRef: string;
+  readonly executionRef: string;
+};
+export type PluginTaskDispatchInput = {
+  readonly taskRef: string;
+  readonly taskRevision: number;
+  readonly executionRef: string;
+};
+export type PluginTaskDispatchResult = {
+  readonly messageRef: string;
+  readonly entryId: string;
+  readonly status: 'queued' | 'processing' | 'terminal';
+};
 export type FrustrationSourceId = string;
 export type FrustrationSource = {
   readonly issueId: string;
@@ -229,7 +313,7 @@ export type PredicateProviderBinding = {
 export type SemVer = string;
 export type DataClass = 'cache' | 'ephemeral' | 'user-authored' | 'derived-user-visible' | 'relationship' | 'interaction-history';
 export type DataStrategy = 'lifecycle' | 'retained' | 'ask-on-uninstall';
-export type Capability = 'plugin.config.read' | 'plugin.state.get' | 'plugin.state.set' | 'messaging.send' | 'schedule.register' | 'events.publish' | 'messaging.appendElements' | 'media.read' | 'onMessage' | 'message.event.subscribe' | 'secret.read' | 'thread.listMetadata' | 'thread.readContent' | 'thread.write' | 'custody.invoke' | 'custody.verify' | 'deployment.read' | 'frustration.read' | 'frustration.link' | 'task.read' | 'task.write' | 'memory.query' | 'memory.append' | 'memory.retrieve' | 'windows.create' | 'whisper.extend' | 'data.directory' | 'cloud.conversation.host';
+export type Capability = 'plugin.config.read' | 'plugin.state.get' | 'plugin.state.set' | 'messaging.send' | 'schedule.register' | 'events.publish' | 'messaging.appendElements' | 'media.read' | 'onMessage' | 'message.event.subscribe' | 'secret.read' | 'thread.listMetadata' | 'thread.readContent' | 'thread.write' | 'custody.invoke' | 'custody.verify' | 'deployment.read' | 'frustration.read' | 'frustration.link' | 'task.read' | 'task.write' | 'task.admitEntrusted' | 'memory.query' | 'memory.append' | 'memory.retrieve' | 'windows.create' | 'whisper.extend' | 'data.directory' | 'cloud.conversation.host';
 export type DataDeclaration = {
   readonly name: string;
   readonly dataClass: 'cache';
@@ -2081,7 +2165,7 @@ export type PermissionMatrixEntry = {
   readonly firstPartyPreset: boolean;
 };
 export type PermissionMatrixInput = {
-  readonly entries: readonly [PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry];
+  readonly entries: readonly [PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry, PermissionMatrixEntry];
 };
 export type DeleteReplayEventsInput = {
   readonly subscriptionId: string;
@@ -2184,7 +2268,7 @@ export const L0_CAPABILITIES = ['plugin.config.read', 'plugin.state.get', 'plugi
 export type L0Capability = (typeof L0_CAPABILITIES)[number];
 export const L1_CAPABILITIES = ['messaging.send', 'schedule.register', 'events.publish', 'messaging.appendElements', 'media.read'] as const;
 export type L1Capability = (typeof L1_CAPABILITIES)[number];
-export const L2_CAPABILITIES = ['onMessage', 'message.event.subscribe', 'secret.read', 'thread.listMetadata', 'thread.readContent', 'thread.write', 'custody.invoke', 'custody.verify', 'deployment.read', 'frustration.read', 'frustration.link', 'task.read', 'task.write', 'memory.query', 'memory.append', 'memory.retrieve', 'windows.create', 'whisper.extend', 'data.directory', 'cloud.conversation.host'] as const;
+export const L2_CAPABILITIES = ['onMessage', 'message.event.subscribe', 'secret.read', 'thread.listMetadata', 'thread.readContent', 'thread.write', 'custody.invoke', 'custody.verify', 'deployment.read', 'frustration.read', 'frustration.link', 'task.read', 'task.write', 'task.admitEntrusted', 'memory.query', 'memory.append', 'memory.retrieve', 'windows.create', 'whisper.extend', 'data.directory', 'cloud.conversation.host'] as const;
 export type L2Capability = (typeof L2_CAPABILITIES)[number];
 export const CAPABILITY_TABLE = {
   L0: L0_CAPABILITIES,

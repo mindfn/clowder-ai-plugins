@@ -167,6 +167,9 @@ export interface PluginTaskUpdateInput {
 }
 
 export interface PluginTaskHost {
+  /** Prepare Host-owned Task/receipt or queue that exact prepared execution; absent on older carriers. */
+  prepareEntrusted?(input: import('@clowder-ai/plugin-contract').PluginTaskAdmissionInput): Promise<import('@clowder-ai/plugin-contract').PluginTaskAdmissionResult>;
+  dispatchEntrusted?(input: import('@clowder-ai/plugin-contract').PluginTaskDispatchInput): Promise<import('@clowder-ai/plugin-contract').PluginTaskDispatchResult>;
   setWait(taskId: string, input: PluginWaitUpdate): Promise<PluginTaskItem | null>;
   get(taskId: string): Promise<PluginTaskReadItem | null>;
   listByThread(threadId: string): Promise<readonly PluginTaskReadItem[]>;

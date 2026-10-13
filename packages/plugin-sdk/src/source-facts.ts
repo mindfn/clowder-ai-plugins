@@ -2,9 +2,10 @@ import { projectSourceProgress, type PluginSourceProgressFact } from './source-p
 export type { PluginQueueProgress, PluginSourceProgressFact } from './source-progress.js';
 import {
   assertPluginSourceFact, assertPluginSourceFactsReadInput, assertPluginNativeContext,
-  type PluginSourceFact, type PluginNativeContext,
+  assertPluginNativeTaskContext, assertPluginNativeTaskContextInput,
+  type PluginSourceFact, type PluginNativeContext, type PluginNativeTaskContext,
 } from '@clowder-ai/plugin-contract';
-export type { PluginSourceFact, PluginNativeContext, PluginSourceFactsReadInput } from '@clowder-ai/plugin-contract';
+export type { PluginSourceFact, PluginNativeContext, PluginNativeTaskContext, PluginSourceFactsReadInput } from '@clowder-ai/plugin-contract';
 
 /** Host-owned authorization: same-instance owner source or the exact verified native origin only.
  * No Task/receipt/ancestor reads or background fallback are supplied by this slice. */
@@ -15,6 +16,11 @@ export interface PluginSourceFactsHost {
 }
 /** Native-only authenticated identity; neither a tool body nor typed-wait source supplies identity. */
 export interface PluginNativeContextHost {
+  /** Optional selector is additive; legacy default-only Host implementations remain assignable. */
+  current(input?: { readonly includeTask: true }): Promise<PluginNativeContext>;
+}
+export interface PluginNativeContextClient {
+  current(input: { readonly includeTask: true }): Promise<PluginNativeTaskContext>;
   current(): Promise<PluginNativeContext>;
 }
 function freeze<T>(value: T): T {
@@ -45,16 +51,19 @@ export function createSourceFactsClient(host: PluginSourceFactsHost, assertConte
     },
   });
 }
-export function createNativeContextClient(host: PluginNativeContextHost, assertContentAccess: () => void): PluginNativeContextHost {
+export function createNativeContextClient(host: PluginNativeContextHost, assertContentAccess: () => void,
+  assertTaskAccess: () => void = () => { throw new Error('task.read access verifier required'); }): PluginNativeContextClient {
   if (!host || typeof host.current !== 'function') throw new TypeError('Host native context port requires current');
-  return Object.freeze({
-    async current(input?: unknown) {
-      assertContentAccess();
-      if (input !== undefined) throw new TypeError('Native context current accepts no body');
-      const result = await host.current();
-      assertContentAccess();
-      assertPluginNativeContext(result);
-      return freeze(structuredClone(result));
-    },
-  });
+  async function current(input: { readonly includeTask: true }): Promise<PluginNativeTaskContext>;
+  async function current(): Promise<PluginNativeContext>;
+  async function current(input?: unknown): Promise<PluginNativeContext | PluginNativeTaskContext> {
+    assertContentAccess();
+    if (input !== undefined) { assertPluginNativeTaskContextInput(input); assertTaskAccess(); }
+    const result = input === undefined ? await host.current() : await host.current(Object.freeze({ includeTask: true }));
+    assertContentAccess();
+    if (input === undefined) assertPluginNativeContext(result);
+    else { assertTaskAccess(); assertPluginNativeTaskContext(result); }
+    return freeze(structuredClone(result));
+  }
+  return Object.freeze({ current });
 }
