@@ -124,6 +124,8 @@ contributions:
       - { method: collective.participation.set-interest }
       - { method: collective.reply.submit }
       - { method: collective.work.propose }
+      - { method: collective.work.accept }
+      - { method: collective.work.continue }
   - type: browser-service
     id: collective-client-api
     action:

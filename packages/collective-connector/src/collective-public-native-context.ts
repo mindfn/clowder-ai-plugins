@@ -3,7 +3,7 @@ import type { PluginActionContext, PluginActionHandler } from '@clowder-ai/plugi
 import type { CollectiveConnector } from './business/connector/connector.js';
 import { resolveMaterializedParticipation } from './business/connector/participation-custody.js';
 import { collectiveContextError, type CollectiveContextReferences } from './collective-context-refs.js';
-import { currentWorkSourceContext } from './collective-work-source-context.js';
+import { continueWorkFromSource, currentWorkSourceContext } from './collective-work-source-context.js';
 import type { createCollectivePublicSourceCaller } from './collective-public-source.js';
 
 // These schemas preserve ca5 callback-collective-participation-routes.ts byte semantics.
@@ -15,16 +15,23 @@ const replySchema = z.object({ returnRef: z.string().min(1).max(256), replyOpera
 const proposeSchema = z.object({ contextRef: z.string().min(1).max(256),
   requestKind: z.string().trim().min(1).max(240).optional(), title: z.string().trim().min(1).max(200).optional(),
   intendedOutcome: z.string().trim().min(1).max(32000).optional() }).strict();
+const acceptSchema = z.object({ contextRef: z.string().min(1).max(256),
+  grantRef: z.string().trim().min(1).max(240), grantRevision: z.number().int().positive(),
+  requestKind: z.string().trim().min(1).max(240), title: z.string().trim().min(1).max(200),
+  intendedOutcome: z.string().trim().min(1).max(32000) }).strict();
+const continueSchema = z.object({ contextRef: z.string().min(1).max(256), workRef: z.string().min(1).max(2000),
+  kind: z.enum(['resume', 'revision']), grantRef: z.string().trim().min(1).max(240),
+  grantRevision: z.number().int().positive(), requestKind: z.string().trim().min(1).max(240) }).strict();
 const interestSchema = z.object({ contextRef: z.string().min(1).max(256), state: z.enum(['listen', 'withdraw']) }).strict();
 interface Options {
   readonly connector: Pick<CollectiveConnector, 'prepareReply' | 'submitReply' | 'sync' | 'getHostRoute' | 'getProjection' |
-    'readParticipationContext' | 'setStandingInterest' | 'currentWorkDecision' | 'readWorkSourceContext' | 'proposeWork'>;
+    'readParticipationContext' | 'setStandingInterest' | 'currentWorkDecision' | 'readWorkSourceContext' | 'proposeWork' | 'acceptWork' | 'continueWork'>;
   readonly sourceCaller: Pick<ReturnType<typeof createCollectivePublicSourceCaller>, 'resolveNative'>;
   readonly references: CollectiveContextReferences;
 }
 
 /** Original ordinary public context/reply consumer, bound to authenticated exact native origin.
- * Work admission, reconsideration, progress and unrestricted send retain their separate consumers.
+ * Host Work admission, reconsideration, private progress and unrestricted send retain their separate consumers.
  * Production declarations/entrypoint are paired separately; this factory supplies no launch authority. */
 export function createCollectivePublicNativeActions(options: Options): Readonly<Record<string, PluginActionHandler>> {
   const refs = options.references, connector = options.connector;
@@ -110,6 +117,20 @@ export function createCollectivePublicNativeActions(options: Options): Readonly<
         ...(input.title ? { title: input.title } : {}),
         ...(input.intendedOutcome ? { intendedOutcome: input.intendedOutcome } : {}),
       });
+    }),
+    'collective.work.accept': handler('collective.work.accept', acceptSchema, async (binding, { contextRef, ...input }) => {
+      refs.verifyRef(binding.identity, contextRef, 'context', binding.refScope);
+      await binding.revalidate();
+      const work = await connector.acceptWork(binding.source, binding.agent, input);
+      await binding.revalidate();
+      await connector.sync(binding.source.connectionId); await binding.revalidate();
+      return { workId: work.workId, assignmentEventId: work.assignmentEventId, accountableHumanId: work.accountableHumanId,
+        acceptance: work.acceptance, lifecycle: work.lifecycle, disposition: 'accepted_pending_host_admission' as const };
+    }),
+    'collective.work.continue': handler('collective.work.continue', continueSchema, async (binding, { contextRef, ...input }) => {
+      refs.verifyRef(binding.identity, contextRef, 'context', binding.refScope);
+      await binding.revalidate();
+      return continueWorkFromSource(connector, refs, binding.identity, binding, input, binding.revalidate);
     }),
     'collective.reply.submit': handler('collective.reply.submit', replySchema, async (binding, input) => {
       const operation = await connector.prepareReply(binding.source, binding.sourceRef, 'request'); await binding.revalidate();

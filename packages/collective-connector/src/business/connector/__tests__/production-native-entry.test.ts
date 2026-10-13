@@ -10,6 +10,7 @@ import { fixture } from './communication-work-custody.fixture.js';
 const manifest = parse(await readFile(new URL('../../../../plugin.yaml', import.meta.url), 'utf8'));
 test('actual module sends one named wake and handles native context before the send receipt', async () => {
   const f = await fixture();
+  await f.connector.adoptWorkPolicy(f.connection.connectionId, 'local-owner', f.policy.revision);
   let native: PluginNativeContext;
   const calls: string[] = [];
   const current = async () => {};
@@ -36,6 +37,13 @@ test('actual module sends one named wake and handles native context before the s
       expect(early).toHaveProperty('contextRef');
       const proposed = await active!.actions['collective.work.propose']!({ contextRef: (early as { contextRef: string }).contextRef, title: 'Original public proposal' }, action);
       expect(proposed).toMatchObject({ status: 'proposed' });
+      const accepted = await active!.actions['collective.work.accept']!({ contextRef: (early as { contextRef: string }).contextRef, ...f.input }, action);
+      expect(accepted).toMatchObject({ disposition: 'accepted_pending_host_admission', lifecycle: 'committed' });
+      const after = await active!.actions['collective.context.current']!({}, action) as { contextRef: string; workSourceContext: { matters: { workRef: string }[] } };
+      const continued = await active!.actions['collective.work.continue']!({ contextRef: after.contextRef,
+        workRef: after.workSourceContext.matters[0]!.workRef, kind: 'resume', grantRef: f.input.grantRef,
+        grantRevision: f.input.grantRevision, requestKind: f.input.requestKind }, action);
+      expect(continued).toMatchObject({ disposition: 'accepted_pending_host_admission', executionAuthority: { revision: 2 } });
       calls.push('native-before-receipt');
       return { messageId: 'message-origin', threadId, revision: 1,
         messageHandle: { kind: 'message' as const, token: 'fixture-host-message-handle' }, publishSequence: 42 };
@@ -49,6 +57,8 @@ test('actual module sends one named wake and handles native context before the s
     expect(manifest.contributions.find((item: { type: string; id: string }) => item.type === 'mcp' && item.id === 'collective-native')).toBeDefined();
     const declared = manifest.contributions.find((item: { id: string }) => item.id === 'collective-native');
     expect(declared.actions).toContainEqual({ method: 'collective.work.propose' });
+    expect(declared.actions).toContainEqual({ method: 'collective.work.accept' });
+    expect(declared.actions).toContainEqual({ method: 'collective.work.continue' });
     active = await entrypoint.create(manifest).start(host);
     expect(active.publicInvocationVerifier).toBeTypeOf('function');
     const roster = await active.actions['collective.control.http']!({ request: { method: 'GET', path: 'entry-roster',

@@ -56,14 +56,17 @@ export async function currentWorkSourceContext(
 }
 
 export async function continueWorkFromSource(
-  connector: CollectiveConnector,
+  connector: Pick<CollectiveConnector, 'readWorkSourceContext' | 'continueWork' | 'sync'>,
   refs: CollectiveContextReferences,
   auth: InvocationIdentity,
   binding: SourceBinding,
   input: CollectiveContinueWorkInput,
+  assertCurrent: () => Promise<unknown>,
 ) {
   const expected = decodeWorkRef(refs, auth, binding.sourceRef, input.workRef);
+  await assertCurrent();
   const current = await connector.readWorkSourceContext(binding.source);
+  await assertCurrent();
   const matter = current.matters.find((candidate) => candidate.workId === expected.workId);
   if (!matter || JSON.stringify(workCoordinates(matter)) !== JSON.stringify(expected))
     throw collectiveContextError(
@@ -72,6 +75,7 @@ export async function continueWorkFromSource(
     );
   if (current.relatedWorkIds.length === 1 && current.relatedWorkIds[0] !== matter.workId)
     throw collectiveContextError('WORK_SOURCE_AMBIGUOUS', 'This source references another matter');
+  await assertCurrent();
   const work = await connector.continueWork(
     binding.source,
     {
@@ -92,7 +96,9 @@ export async function continueWorkFromSource(
         : {}),
     },
   );
+  await assertCurrent();
   await connector.sync(binding.source.connectionId);
+  await assertCurrent();
   return {
     workId: work.workId,
     assignmentEventId: work.assignmentEventId,

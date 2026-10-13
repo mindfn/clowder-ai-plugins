@@ -56,7 +56,7 @@ try {
   await nativeClient.connect(nativeTransport);
   const { tools } = await nativeClient.listTools();
   assert.deepEqual(tools.map(tool => tool.name).sort(), ['cat_cafe_collective_current_context', 'cat_cafe_collective_read_context',
-    'cat_cafe_collective_set_interest', 'cat_cafe_collective_submit_reply', 'cat_cafe_collective_propose_work'].sort());
+    'cat_cafe_collective_set_interest', 'cat_cafe_collective_submit_reply', 'cat_cafe_collective_propose_work', 'cat_cafe_collective_accept_work', 'cat_cafe_collective_continue_work'].sort());
   for (const tool of tools) {
     assert.equal(tool.inputSchema.additionalProperties, false);
     assert.equal(Object.hasOwn(tool.inputSchema.properties ?? {}, 'userId'), false);
