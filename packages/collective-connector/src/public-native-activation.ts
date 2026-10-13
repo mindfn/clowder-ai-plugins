@@ -34,10 +34,10 @@ export async function activateCollectivePublicNative(context: FeatureContext, co
     native: { contributionId: COLLECTIVE_NATIVE_ID, methods: COLLECTIVE_PUBLIC_METHODS },
     messaging: context.messaging, publicInvocations: context.publicInvocations,
     nativeContext: context.nativeContext, ownerThreads: context.ownerThreads });
-  const inputOf = (value: unknown) => z.object({ input: syncInput }).strict().parse(value).input;
+  const inputOf = <T>(value: unknown, schema: z.ZodType<T>) => schema.parse(z.object({ input: z.unknown() }).strict().parse(value).input);
   const list: PluginActionHandler = async (input, native, caller) => {
     if (native || caller?.kind !== 'owner-operation') throw new Error('Collective connections require the authenticated owner operation');
-    z.object({}).strict().parse(input ?? {});
+    inputOf(input, z.object({}).strict());
     caller.signal.throwIfAborted(); await caller.assertCurrent(); assertActive();
     const rows = [];
     for (const connection of await connector.listConnections()) {
@@ -52,7 +52,7 @@ export async function activateCollectivePublicNative(context: FeatureContext, co
     if (native || caller?.kind !== 'owner-operation') throw new Error('Collective sync requires the authenticated owner operation');
     const owner: PluginOwnerOperationContext = caller;
     const current = async () => { assertActive(); owner.signal.throwIfAborted(); await owner.assertCurrent(); assertActive(); owner.signal.throwIfAborted(); };
-    const { connectionId } = inputOf(input);
+    const { connectionId } = inputOf(input, syncInput);
     await current();
     const route = await connector.getHostRoute(connectionId); await current();
     if (route?.localOwnerUserId !== owner.userId) throw new Error('Collective connection belongs to another owner');

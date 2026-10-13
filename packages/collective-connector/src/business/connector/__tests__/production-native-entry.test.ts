@@ -47,7 +47,9 @@ test('actual module declares native MCP, persists source, admits Queue and sends
     const roster = await active.actions['collective.control.http']!({ request: { method: 'GET', path: 'entry-roster',
       headers: { origin: 'http://localhost:5172' }, principal: { kind: 'owner', id: owner.userId } } });
     expect(roster).toMatchObject({ status: 200, body: { cats: [{ id: 'codex-sol', eligible: true }] } });
-    await expect(active.actions['collective.owner.connections']!({}, undefined, { ...owner, actionId: 'list' })).resolves.toMatchObject({ render: 'rows', data: { rows: [{ actions: [{ input: { connectionId: f.connection.connectionId } }] }] } });
+    await expect(active.actions['collective.owner.connections']!({}, undefined, { ...owner, actionId: 'list' })).rejects.toThrow();
+    await expect(active.actions['collective.owner.connections']!({ input: { userId: owner.userId } }, undefined, { ...owner, actionId: 'list' })).rejects.toThrow();
+    await expect(active.actions['collective.owner.connections']!({ input: {} }, undefined, { ...owner, actionId: 'list' })).resolves.toMatchObject({ render: 'rows', data: { rows: [{ actions: [{ input: { connectionId: f.connection.connectionId } }] }] } });
     await expect(active.actions['collective.owner.sync']!({ input: { connectionId: f.connection.connectionId } })).rejects.toThrow();
     const admitted = await active.actions['collective.owner.sync']!({ input: { connectionId: f.connection.connectionId } }, undefined, owner);
     expect(admitted).toMatchObject({ render: 'rows', data: { rows: [{ key: f.source.eventId, detail: expect.stringContaining('queued') }] } });
