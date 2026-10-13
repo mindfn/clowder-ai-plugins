@@ -33,4 +33,3 @@ export async function publicSourceFixture(options: { methods?: readonly string[]
   const action: PluginActionContext = { userId: owner.userId, threadId: 'channel', catId: 'codex-sol', invocationId: options.invocationId ?? 'native-invocation', assertCurrent: current };
   return { ...f, serviceOwner: f.owner, owner, calls, sourceCaller, admit, action, get native() { return native; }, beforeThread(fn: () => Promise<void>) { beforeThread = fn; }, afterEnqueue(fn: () => void) { afterEnqueue = fn; }, updateFact(source: Partial<PluginSourceFact>) { native = { ...native, source: { ...native.source, ...source } }; }, expire() { expired = true; }, lose() { lost = true; }, recover() { lost = false; } };
 }
-
