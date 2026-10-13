@@ -12,7 +12,7 @@ const request = (connectionId: string, body: unknown, owner = 'local-owner', met
   method, path: `connections/${connectionId}/participation/policy`, body, headers: { origin: 'http://localhost:5172' },
   principal: { kind: 'owner', id: owner },
 } });
-async function setup(clearAgentRoutes = false, actualRoster?: PluginParticipantRosterHost) {
+async function setup(clearAgentRoutes = false, actualRoster?: PluginParticipantRosterHost, module = entrypoint) {
   const f = await fixture();
   if (clearAgentRoutes) {
     const prior = (await f.connector.getHostRoute(f.connection.connectionId))!;
@@ -36,7 +36,7 @@ async function setup(clearAgentRoutes = false, actualRoster?: PluginParticipantR
       clientBuildId: 'collective-client-v2', assetDigest: 'a'.repeat(64), limits: BROWSER_SERVICE_LIMITS, async assertCurrent() { if (stale) throw new Error('Owner request expired'); } }; },
       async dispatchLocal() { throw new Error('The fixture connection uses its original remote Service'); } },
   };
-  const active = await entrypoint.create(manifest).start(host);
+  const active = await module.create(manifest).start(host);
   const route = async () => JSON.parse(await readFile(join(f.root, 'connector/collective-connector.json'), 'utf8')).hostRoutes[f.connection.connectionId];
   return { ...f, active, threads, route, roster, quota, expire() { stale = true; }, get creates() { return creates; }, async close() { await active.stop(); await f.close(); } };
 }
@@ -172,6 +172,32 @@ const rawRouteRequest = (id: string, body: unknown, owner = 'local-owner') => ({
   method: 'PUT', path: `connections/${id}/route`, body, headers: { origin: 'http://localhost:5172' },
   principal: { kind: 'owner', id: owner },
 } });
+test('actual owner pairing cannot create a connection after the binding expires during roster read', async () => {
+  let revokeOnRead = false;
+  let f: Awaited<ReturnType<typeof setup>>;
+  const selected = process.env.F202_PAIR_COMPARE_OLD === '1'
+    ? (await import('/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/collective-83c348f-frozen-source/packages/collective-connector/dist/plugin-entrypoint.js')).default
+    : entrypoint;
+  f = await setup(false, { async listForNativeContribution() {
+    if (revokeOnRead) f.expire();
+    return [{ catId: 'codex-sol', displayName: 'Sol', defaultModel: 'fixture', supported: true }];
+  } }, selected);
+  const invoke = (path: string, method: string, body?: unknown) => f.active.actions['collective.control.http']!({ request: {
+    path, method, body, headers: { origin: 'http://localhost:5172' }, principal: { kind: 'owner', id: 'local-owner' },
+  } });
+  const connections = async () => Object.keys(JSON.parse(await readFile(join(f.root, 'connector/collective-connector.json'), 'utf8')).connections).sort();
+  try {
+    const roster = await invoke('entry-roster', 'GET') as { body: { fingerprint: string } };
+    const collective = await f.store.createCollective({ sessionToken: f.owner.sessionToken, name: 'Second pair currentness' });
+    const intent = await f.store.createPairingIntent({ sessionToken: f.owner.sessionToken, collectiveId: collective.collectiveId,
+      hostOrigin: 'http://localhost:5172', nonce: 'owner-currentness-pairing-1234' });
+    const before = await connections();
+    revokeOnRead = true;
+    await expect(invoke('pair', 'POST', { serviceUrl: f.connection.serviceUrl, endpointLabel: 'Second connection',
+      intent, rosterFingerprint: roster.body.fingerprint, excludedCatIds: [] })).rejects.toThrow(/expired/);
+    expect(await connections()).toEqual(before);
+  } finally { await f.close(); }
+});
 test('raw owner route PUT is retained in the existing authenticated webhook declaration', () => {
   const row = manifest.contributions.find((c: { path?: string }) => c.path === 'connections/:connectionId/route');
   expect(row).toMatchObject({ type: 'webhook', methods: ['GET', 'PUT'], action: { method: 'collective.control.http' } });

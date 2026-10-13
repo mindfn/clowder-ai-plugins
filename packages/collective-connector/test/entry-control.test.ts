@@ -10,7 +10,7 @@ function fixture() {
   assert.equal(typeof entry.createCollectiveEntryCaller, 'function', 'the original entry caller must be migrated');
   const calls: unknown[] = []; let current = rows;
   const connector = { async pair(input: unknown) { calls.push(input); return { connectionId: 'con_aaaaaaaa' }; } };
-  const caller = entry.createCollectiveEntryCaller({ participantRoster: { async listForNativeContribution(input) {
+  const caller = entry.createCollectiveEntryCaller({ async assertCurrent() {}, participantRoster: { async listForNativeContribution(input) {
     calls.push(['roster', input]); return current; } }, contributionId: 'declared-native', connector: connector as never });
   return { caller, calls, change() { current = rows.map(row => ({ ...row, supported: false })); }, connector };
 }
@@ -47,8 +47,32 @@ test('pair preserves invalid/origin/unknown exclusion and duplicate error respon
 test('roster Host refusal propagates and cannot become available or a cached pairing roster', async () => {
   assert.equal(typeof entry.createCollectiveEntryCaller, 'function');
   const refusal = new Error('DELIVERY_REJECTED'); let paired = false;
-  const caller = entry.createCollectiveEntryCaller({ contributionId: 'declared-native', participantRoster: {
+  const caller = entry.createCollectiveEntryCaller({ async assertCurrent() {}, contributionId: 'declared-native', participantRoster: {
     async listForNativeContribution() { throw refusal; } }, connector: { async pair() { paired = true; } } as never });
   await assert.rejects(() => caller.entryRoster(), error => error === refusal);
   assert.equal(paired, false);
+});
+
+test('pairing rechecks the Host binding after roster reads before entering Connector effects', async () => {
+  let revoked = false, paired = false;
+  const current = async () => { if (revoked) throw new Error('Owner binding expired'); };
+  const caller = entry.createCollectiveEntryCaller({ contributionId: 'declared-native', assertCurrent: current,
+    participantRoster: { async listForNativeContribution() { revoked = true; return rows; } },
+    connector: { async pair() { paired = true; return { connectionId: 'con_aaaaaaaa' }; } } as never });
+  const roster = entry.entryRoster(entry.registeredCollectiveCats(rows.map(({ catId, supported: _supported, ...row }) => ({ ...row, id: catId })),
+    id => rows.find(row => row.catId === id)?.supported === true));
+  const body = { serviceUrl: 'http://127.0.0.1:5271', endpointLabel: 'Owner', intent, rosterFingerprint: roster.fingerprint, excludedCatIds: [] };
+  await assert.rejects(() => caller.pair(body, intent.hostOrigin), /binding expired/);
+  assert.equal(paired, false, 'lost binding must refuse before Connector pair enters');
+});
+test('pairing keeps a late effect honest when the Host binding expires during Connector pair', async () => {
+  let revoked = false, paired = 0;
+  const caller = entry.createCollectiveEntryCaller({ contributionId: 'declared-native',
+    assertCurrent: async () => { if (revoked) throw new Error('Owner binding expired'); },
+    participantRoster: { async listForNativeContribution() { return rows; } },
+    connector: { async pair() { paired++; revoked = true; return { connectionId: 'con_aaaaaaaa' }; } } as never });
+  const roster = await caller.entryRoster();
+  const body = { serviceUrl: 'http://127.0.0.1:5271', endpointLabel: 'Owner', intent, rosterFingerprint: roster.fingerprint, excludedCatIds: [] };
+  await assert.rejects(() => caller.pair(body, intent.hostOrigin), /binding expired/);
+  assert.equal(paired, 1, 'currentness failure does not claim to roll back an already entered pair');
 });

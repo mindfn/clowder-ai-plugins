@@ -60,15 +60,18 @@ export function entryRoster(cats: readonly ParticipationCat[]) {
   return { cats: cards, fingerprint: createHash('sha256').update(JSON.stringify(cards)).digest('hex') };
 }
 
-/** Original owner entry business caller, staged until its native MCP declaration and handlers are paired.
- * The surrounding owner-webhook handler owns authentication/origin/currentness; this is not a new authority lane. */
+/** Original owner entry business caller. The surrounding owner webhook supplies
+ * authentication/origin and the existing binding fence; this is not a new authority lane. */
 export function createCollectiveEntryCaller(options: {
   readonly participantRoster: PluginParticipantRosterHost;
   readonly contributionId: string;
   readonly connector: Pick<CollectiveConnector, 'pair'> | undefined;
+  readonly assertCurrent: () => Promise<void>;
 }) {
   const read = async () => {
+    await options.assertCurrent();
     const rows = await options.participantRoster.listForNativeContribution({ contributionId: options.contributionId });
+    await options.assertCurrent();
     const byId = new Map(rows.map(row => [row.catId, row.supported]));
     return entryRoster(registeredCollectiveCats(rows.map(({ catId, supported: _supported, ...row }) => ({ ...row, id: catId })),
       catId => byId.get(catId) === true));
@@ -86,13 +89,18 @@ export function createCollectiveEntryCaller(options: {
         return { status: 409, body: { code: 'ENTRY_ROSTER_CHANGED', error: '伙伴名单已更新，请重新确认。' } };
       const connector = options.connector;
       if (!connector) return { status: 409, body: { code: 'CONNECTOR_INACTIVE', error: 'Collective Connector is not active' } };
+      await options.assertCurrent();
+      let connection: Awaited<ReturnType<typeof connector.pair>>;
       try {
-        return { status: 200, body: await connector.pair({ ...pair, initialExcludedCatIds: excludedCatIds }) };
+        connection = await connector.pair({ ...pair, initialExcludedCatIds: excludedCatIds });
       } catch (error) {
+        await options.assertCurrent();
         if (error instanceof Error && error.message === 'This Café is already connected to this Collective')
           return { status: 409, body: { code: 'COLLECTIVE_ALREADY_CONNECTED', error: '这台 Café 已连接此 Collective。' } };
         return { status: 502, body: { code: 'CONNECTOR_OPERATION_FAILED', error: 'Collective pairing failed' } };
       }
+      await options.assertCurrent();
+      return { status: 200, body: connection };
     },
   });
 }

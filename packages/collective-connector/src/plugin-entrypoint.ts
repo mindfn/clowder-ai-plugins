@@ -95,7 +95,8 @@ async function activateService(context: FeatureContext, declaration: BrowserServ
   };
   if (!context.participantRoster || !context.ownerThreads) throw new Error('Collective owner roster/thread ports are required');
   const roster = context.participantRoster, threads = context.ownerThreads;
-  const entry = createCollectiveEntryCaller({ connector, participantRoster: roster, contributionId: COLLECTIVE_NATIVE_ID });
+  const entry = createCollectiveEntryCaller({ connector, participantRoster: roster, contributionId: COLLECTIVE_NATIVE_ID,
+    async assertCurrent() { assertActive(); await binding.assertCurrent(); assertActive(); } });
   const ownerControl = createOwnerControlHttp({ connector, binding, entry,
     routeChange: createCollectiveOwnerRouteChange(context, connector, async () => { assertActive(); await binding.assertCurrent(); assertActive(); }),
     participation: createCollectiveOwnerParticipationChange(context, connector, async () => { assertActive(); await binding.assertCurrent(); assertActive(); }),

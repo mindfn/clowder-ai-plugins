@@ -30,8 +30,8 @@
         {
           "path": "dist/plugin-entrypoint.js",
           "present": true,
-          "sha256": "89568dbc331061f01842aa95846613c4873bc8ab72c09381aae67f6e30ebf3e9",
-          "bytes": 11346
+          "sha256": "c69070494bfd92684d81d1249554ae18c8c1fb5ea1c286b9f7806686f8f24335",
+          "bytes": 11444
         },
         {
           "path": "dist/mcp-entrypoint.js",
@@ -90,9 +90,9 @@
       "freshBuild": null,
       "actualDirectoryJourneyAccepted": false,
       "entrypointRefresh": {
-        "sourceHead": "c8836ffe9ade1a16d1ff2ed5b4a562af62a212ef",
-        "scope": "Original raw owner route PUT and explicit quota opt-in after sequential Contract/SDK/Collective build and packed consumer; only Collective literal entry hashes refreshed. Historical census and actual installed acceptance remain separate.",
-        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/owner-raw-route-verification-r3.json"
+        "sourceHead": "83c348f07cc9b236761fa388995cb5ee34aa2c4f",
+        "scope": "Original owner pair currentness correction after sequential build and packed consumer; only Collective literal entry hashes refreshed. Historical census and actual installed acceptance remain separate.",
+        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/owner-pair-currentness-verification.json"
       }
     },
     {
