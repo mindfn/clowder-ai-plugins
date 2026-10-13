@@ -4,31 +4,33 @@ import { join } from 'node:path';
 import { isCollectiveLocalEcho } from '../public-source-custody.js';
 import { publicSourceFixture as setup } from './public-source-caller.fixture.js';
 
-it('persists source without wake, commits the inbox binding, then enqueues one declared target; verifier rechecks real Service', async () => {
+it('sends with named wake and commits its receipt; the private verifier still rechecks real Service', async () => {
   const f = await setup(); try {
     const receipt = await f.admit();
-    expect(receipt).toEqual({ messageRef: 'message:host-source', entryId: 'queue-entry', status: 'queued' });
-    if ('kind' in receipt) throw new Error('Expected Queue receipt for non-echo source');
-    expect(f.calls.map((call: any) => call[0])).toEqual(['thread', 'send', 'enqueue']);
-    const draft = (f.calls[1] as any)[2]; expect(draft.wake).toBeUndefined();
+    expect(receipt).toEqual({ messageId: 'host-source', threadId: 'channel' });
+    if ('kind' in receipt) throw new Error('Expected message receipt for non-echo source');
+    const messageRef = `message:${receipt.messageId}` as const;
+    expect(f.calls.map((call: any) => call[0])).toEqual(['thread', 'send']);
+    const draft = (f.calls[1] as any)[2]; expect(draft.wake).toEqual({ catId: f.source.catId });
     expect(draft.meta.participation).toEqual(f.source);
     expect(draft.payload.provenance).toEqual({ origin: { kind: 'plugin', instanceId: 'installed-instance' }, epistemicStatus: 'observation' });
-    const binding = f.connector.readCurrentPublicSource(receipt.messageRef);
-    expect(await f.sourceCaller.publicInvocationVerifier({ authority: binding.authority, source: { messageRef: receipt.messageRef },
+    const binding = f.connector.readCurrentPublicSource(messageRef);
+    expect(await f.sourceCaller.publicInvocationVerifier({ authority: binding.authority, source: { messageRef },
       targetCatId: binding.targetCatId, native: binding.native }, { signal: new AbortController().signal, async assertCurrent() {} })).toEqual({ current: true });
     const resolved = await f.sourceCaller.resolveNative(f.action, 'collective.context.current');
     expect(resolved.source).toEqual(f.source); expect(resolved.auth.invocationId).toEqual(f.action.invocationId);
   } finally { await f.close(); }
 });
 
-it('lost admission response preserves real persisted source and retries the same binding without another send', async () => {
+it('lost Host wake receipt retries the same idempotent send when no native mapping has arrived yet', async () => {
   const f = await setup(); try {
-    f.lose(); await expect(f.admit()).rejects.toThrow('Admission response lost');
-    const before = f.connector.readCurrentPublicSource('message:host-source');
-    f.recover(); await f.admit();
-    expect(f.connector.readCurrentPublicSource('message:host-source')).toEqual(before);
-    expect(f.calls.filter((call: any) => call[0] === 'send')).toHaveLength(1);
-    expect(f.calls.filter((call: any) => call[0] === 'enqueue')).toHaveLength(2);
+    f.loseSend(); await expect(f.admit()).rejects.toThrow('Wake send response lost');
+    expect(() => f.connector.readCurrentPublicSource('message:host-source')).toThrow();
+    f.recoverSend(); await f.admit();
+    expect(f.connector.readCurrentPublicSource('message:host-source').source).toEqual(f.source);
+    const sends = f.calls.filter((call: any) => call[0] === 'send') as any[];
+    expect(sends).toHaveLength(2); expect(sends[0][2]).toEqual(sends[1][2]);
+    expect(f.calls.filter((call: any) => call[0] === 'enqueue')).toHaveLength(0);
   } finally { await f.close(); }
 });
 
@@ -83,12 +85,12 @@ it('a resolved native caller rechecks real Service permission before a later rep
 });
 
 
-it('a late admission result after owner stop is refused without pretending to undo persisted Host effects', async () => {
+it('a late wake receipt after owner stop is refused without undoing the early native source mapping', async () => {
   const f = await setup(); try {
-    f.afterEnqueue(() => f.expire());
+    f.beforeSendReturns(async () => { await f.sourceCaller.resolveNative(f.action, 'collective.context.current'); f.expire(); });
     await expect(f.admit()).rejects.toThrow('Caller expired');
     expect(f.connector.readCurrentPublicSource('message:host-source').source).toEqual(f.source);
-    expect(f.calls.filter((call: any) => call[0] === 'enqueue')).toHaveLength(1);
+    expect(f.calls.filter((call: any) => call[0] === 'send')).toHaveLength(1);
   } finally { await f.close(); }
 });
 

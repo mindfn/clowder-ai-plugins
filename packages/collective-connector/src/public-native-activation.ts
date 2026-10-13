@@ -27,12 +27,12 @@ export function collectiveNativeAgentVerifier(context: FeatureContext, assertAct
 
 const syncInput = z.object({ connectionId: z.string().trim().min(1).max(240) }).strict();
 export async function activateCollectivePublicNative(context: FeatureContext, connector: CollectiveConnector, assertActive: () => void) {
-  if (!context.nativeContext || !context.publicInvocations || !context.ownerThreads)
-    throw new Error('Collective native source/admission/owner-thread Host ports are required');
+  if (!context.nativeContext || !context.ownerThreads)
+    throw new Error('Collective native source/owner-thread Host ports are required');
   const references = await openCollectiveContextReferences(context.dataDirectory, assertActive);
   const sourceCaller = createCollectivePublicSourceCaller({ connector,
     native: { contributionId: COLLECTIVE_NATIVE_ID, methods: COLLECTIVE_PUBLIC_METHODS },
-    messaging: context.messaging, publicInvocations: context.publicInvocations,
+    messaging: context.messaging,
     nativeContext: context.nativeContext, ownerThreads: context.ownerThreads });
   const inputOf = <T>(value: unknown, schema: z.ZodType<T>) => schema.parse(z.object({ input: z.unknown() }).strict().parse(value).input);
   const list: PluginActionHandler = async (input, native, caller) => {
@@ -70,7 +70,7 @@ export async function activateCollectivePublicNative(context: FeatureContext, co
       await current();
     }
     return rowsResult([
-      ...admissions.map(({ eventId, receipt }) => ({ key: eventId, label: 'Named request admission', detail: JSON.stringify(receipt) })),
+      ...admissions.map(({ eventId, receipt }) => ({ key: eventId, label: 'Named request sent', detail: JSON.stringify(receipt) })),
       ...remaining.map(eventId => ({ key: eventId, label: 'Original consumer pending', detail: 'This source remains pending its Work or channel consumer.' })),
     ], { empty: 'No pending named requests' });
   };

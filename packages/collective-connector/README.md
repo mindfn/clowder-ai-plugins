@@ -46,7 +46,9 @@ The production module now registers the four ordinary native methods (`context.c
 `participation.set-interest`, `reply.submit`) under `collective-native` and its stdio MCP entrypoint.
 It also registers the original `entry-roster`, `pair` and `participation/reconcile` owner webhooks.
 Settings → Collective participation → Paired connections lists owner-bound routes; each row’s Sync
-uses the authenticated owner operation to persist exact named requests and admit Host Queue entries.
+uses the authenticated owner operation to send each exact named request with `wake: {catId}`.
+Host owns persistence and wake deduplication in that single operation. Native source reads may start
+before its receipt returns; they bind the authenticated Host origin to the original inbox and Service.
 The private activation verifier rereads the existing Connector inbox and Service permission; it is not
 an ordinary action. Native Agent verification reads the actual Host native context, never tool-body
 identity. Five other native methods and the remaining owner controls still retain their original
@@ -89,7 +91,7 @@ Connector/service internals and domain declarations remain private implementatio
 - `thread.readContent`: read only the authenticated native origin and its current source through Host ports.
 - `thread.listMetadata`: verify the owner-created route thread before admitting a named request.
 - `thread.write`: create the original per-channel owner threads and materialize selected participants.
-- `messaging.send`: persist an exact Collective request before one Host Queue admission; return replies through the Collective business outbox.
+- `messaging.send`: send an exact request and wake its named member in one Host operation; replies return through the Collective business outbox.
 - `data.directory`: persist Collective business state and private credentials in the Host-authorized
   package directory. Stop preserves that state; the package never falls back to another directory.
 
