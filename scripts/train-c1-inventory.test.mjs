@@ -336,3 +336,24 @@ test('build readiness includes every manifest entrypoint, including nested runti
     }
   }
 });
+
+
+test('initial installation selects exactly the original seventeen packages without companion or fixtures', async () => {
+  const selection = JSON.parse(await readFile(new URL('../catalog/initial-plugins.json', import.meta.url), 'utf8'));
+  assert.deepEqual(Object.keys(selection).sort(), ['plugins', 'schemaVersion']);
+  assert.equal(selection.schemaVersion, 1);
+  const originalDirectories = ['connector-dingtalk', 'connector-feishu', 'connector-telegram', 'connector-wecom-agent',
+    'connector-wecom-bot', 'connector-weixin', 'connector-xiaoyi', 'github-operations', 'video-generation',
+    'video-analysis', 'weixin-mp', 'wechat-visible-reader', 'personal-chrome-companion', 'enterprise-workflow',
+    'collective-connector', 'genoffice-docx', 'feishu-meeting-intake'];
+  const expected = await Promise.all(originalDirectories.map(async directory => {
+    const manifest = parse(await readFile(new URL(`../packages/${directory}/plugin.yaml`, import.meta.url), 'utf8'));
+    return manifest.pluginId;
+  }));
+  assert.equal(selection.plugins.length, 17);
+  assert.deepEqual(selection.plugins.map(item => item.pluginId).sort(), expected.sort());
+  for (const item of selection.plugins) {
+    assert.deepEqual(Object.keys(item).sort(), ['enabled', 'pluginId']);
+    assert.equal(item.enabled, true, 'Host config readiness gates the original initial enabled intent');
+  }
+});
