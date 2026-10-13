@@ -24,14 +24,14 @@
         {
           "path": "./plugin.yaml",
           "present": true,
-          "sha256": "8c2ab007967510e3a5ab91ba141b7fabc55b6fd59b228f6d25cfc6ef2e2d5f6e",
-          "bytes": 12538
+          "sha256": "ba45a077c507c2f9bb9d9347cbf4e38e96c2af88349dd67fab80d1eb715d766c",
+          "bytes": 12543
         },
         {
           "path": "dist/plugin-entrypoint.js",
           "present": true,
-          "sha256": "f9db75ba31a0d7d4d16fd0f75672a1771681178f1bc9175fd7170858447304d2",
-          "bytes": 10858
+          "sha256": "b1e23e9300981c5ca7a8d2aeb3daf10aaddc864ac8f736d4bb774e3652db0367",
+          "bytes": 11115
         },
         {
           "path": "dist/mcp-entrypoint.js",
@@ -90,9 +90,9 @@
       "freshBuild": null,
       "actualDirectoryJourneyAccepted": false,
       "entrypointRefresh": {
-        "sourceHead": "ef0c264e0eb6564449c6f4f38e6bfb8afc75bebb",
-        "scope": "Codex331 Task read projection fix after sequential SDK/Collective build and packed consumer; historical census and actual Host acceptance unchanged",
-        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/owner-task-read-verification.json"
+        "sourceHead": "b5b7ff9bc7f86294612892e4b1d32e410fd462ce",
+        "scope": "Original per-Cat PUT participation migration after sequential SDK/Collective build and packed consumer; only Collective literal entry hashes refreshed. Historical census and actual installed acceptance remain separate.",
+        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/owner-individual-participation-verification.json"
       }
     },
     {
