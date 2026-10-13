@@ -24,14 +24,14 @@
         {
           "path": "./plugin.yaml",
           "present": true,
-          "sha256": "c79451d9b352ed9636e31d55b28c19fcbce6f9f0490140d9e41f87e91e319ebe",
-          "bytes": 12283
+          "sha256": "8c2ab007967510e3a5ab91ba141b7fabc55b6fd59b228f6d25cfc6ef2e2d5f6e",
+          "bytes": 12538
         },
         {
           "path": "dist/plugin-entrypoint.js",
           "present": true,
-          "sha256": "bcb7d845bbfde02ab47034d1b92c4b76075f1c00ac5d160803b135c6368ee568",
-          "bytes": 10640
+          "sha256": "f9db75ba31a0d7d4d16fd0f75672a1771681178f1bc9175fd7170858447304d2",
+          "bytes": 10858
         },
         {
           "path": "dist/mcp-entrypoint.js",
@@ -90,9 +90,9 @@
       "freshBuild": null,
       "actualDirectoryJourneyAccepted": false,
       "entrypointRefresh": {
-        "sourceHead": "0c4813b0a43aed142cf93367cb88cdedefa38007",
-        "scope": "Collective manifest entrypoint bytes after the owner-native installed fixture build; no actual directory/Host/provider acceptance claim",
-        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/owner-native-send-verification-r1-red.json"
+        "sourceHead": "09f1dcf28f6d0c7c54a494f4f0c9c82606c1ecb3",
+        "scope": "Original owner view candidate entries after sequential build/installed fixture; aggregate historical census and actual Host acceptance unchanged",
+        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/owner-participation-view-verification.json"
       }
     },
     {
