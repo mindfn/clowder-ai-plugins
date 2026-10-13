@@ -1,6 +1,7 @@
 import { capturePublicInvocationVerifier, guardPublicInvocationVerifier, PUBLIC_INVOCATION_VERIFIER_METHOD, type PluginPublicInvocationVerifier } from './public-invocation-verifier.js';
 import { createSourceFactsClient, createNativeContextClient, type PluginSourceFactsHost, type PluginNativeContextHost } from './source-facts.js';
 import { createParticipantRosterClient, type PluginParticipantRosterHost } from './participant-roster.js';
+import { createPublicInvocationClient, type PluginPublicInvocationHost } from './public-invocations.js';
 import type { BrowserServiceHost, PluginHostActionContext } from './browser-services.js';
 import { createFrustrationClient, type PluginFrustrationHost } from './frustration.js';
 import { createDeploymentClient, type PluginDeploymentHost } from './deployment.js';
@@ -66,6 +67,7 @@ export interface HostContributionReceipt {
 export type PluginLogLevel = ModulePluginLogLevel;
 
 export interface FeatureHostAdapter {
+  readonly publicInvocations?: PluginPublicInvocationHost;
   /** Exact authenticated source subset; absent on older carriers. */
   readonly sourceFacts?: PluginSourceFactsHost;
   /** Verified native invocation only; no body identity or Work binding. */
@@ -148,6 +150,8 @@ export interface ContributionRegistrar<T extends StaticContribution> {
 }
 
 export interface FeatureContext {
+  /** Persist source first, save business mapping, then admit through Host Queue; absent on older carriers. */
+  readonly publicInvocations?: PluginPublicInvocationHost;
   /** Exact authenticated source subset; absent on older carriers. */
   readonly sourceFacts?: PluginSourceFactsHost;
   /** Verified native invocation only; no body identity or Work binding. */
@@ -422,6 +426,10 @@ export function createFeatureContextSession(
     if (!binding.grantedCapabilities.includes('thread.readContent')) throw new FeaturePermissionError('thread.readContent not granted');
   };
   const sourceFacts = adapter.sourceFacts === undefined ? undefined : createSourceFactsClient(adapter.sourceFacts, assertContentAccess);
+  const publicInvocations = adapter.publicInvocations === undefined ? undefined : createPublicInvocationClient(adapter.publicInvocations, () => {
+    assertContentAccess();
+    if (!binding.grantedCapabilities.includes('messaging.send')) throw new FeaturePermissionError('messaging.send not granted');
+  });
   const nativeContext = adapter.nativeContext === undefined ? undefined : createNativeContextClient(adapter.nativeContext, assertContentAccess);
   const participantRoster = adapter.participantRoster === undefined ? undefined : createParticipantRosterClient(adapter.participantRoster, assertActive);
   const ownerThreads = adapter.ownerThreads === undefined ? undefined : createOwnerThreadClient(adapter.ownerThreads, capability => {
@@ -482,6 +490,7 @@ export function createFeatureContextSession(
     }),
   } : undefined;
   const context: FeatureContext = {
+    ...(publicInvocations ? { publicInvocations } : {}),
     ...(sourceFacts ? { sourceFacts } : {}),
     ...(nativeContext ? { nativeContext } : {}),
     ...(participantRoster ? { participantRoster } : {}),

@@ -94,6 +94,7 @@ function declaredContributionAdapter(
       .map((contribution) => [`${contribution.type}:${contribution.id}`, canonicalJson(contribution)] as const),
   );
   return {
+    publicInvocations: host.publicInvocations,
     sourceFacts: host.sourceFacts,
     nativeContext: host.nativeContext,
     participantRoster: host.participantRoster,

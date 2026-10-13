@@ -225,6 +225,8 @@ export interface PluginMessagingHost {
 
 /** Structural mirror of the Host-owned in-process module surface. */
 export interface ModulePluginHostShape {
+  /** Optional on older carriers; Host-owned admission of a persisted public source. */
+  readonly publicInvocations?: import('./public-invocations.js').PluginPublicInvocationHost;
   readonly sourceFacts?: import('./source-facts.js').PluginSourceFactsHost;
   readonly nativeContext?: import('./source-facts.js').PluginNativeContextHost;
   readonly participantRoster?: import('./participant-roster.js').PluginParticipantRosterHost;
