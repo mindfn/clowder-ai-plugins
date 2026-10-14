@@ -473,6 +473,9 @@ contributions:
       - { method: collective.work.context.current }
       - { method: collective.work.context.read }
       - { method: collective.work.progress }
+      - { method: collective.work.artifact.publish-text }
+      - { method: collective.work.artifact.read }
+      - { method: collective.work.reply.submit }
   - type: webhook
     id: collective-work-admit
     path: connections/:connectionId/work/admit

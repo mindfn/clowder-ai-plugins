@@ -71,6 +71,7 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
         readonly displayName: string;
         readonly refScope: string;
         readonly work: {
+          readonly workId: string;
           readonly revision: number;
           readonly resultRevision: number;
           readonly executionRevision: number;
@@ -226,6 +227,7 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
             resultKey: `work:${task.id}`,
             displayName: participation.displayName,
             work: {
+              workId: work.workId,
               // Host assertCurrent/readTaskBinding fence execution authority. Its
               // captured Task revision stays fixed while evidence-only metadata
               // advances the aggregate CAS revision; the two are different facts.

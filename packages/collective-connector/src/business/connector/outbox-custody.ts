@@ -301,12 +301,36 @@ export async function submitReplyOperation(
   return input.persistence.transaction((state) => {
     const item = requireReplyOperation(state, input, agent);
     assertArtifactMatchesWork(item, artifactSnapshot);
+    if (item.workPurpose?.artifactSnapshot && !isDeepStrictEqual(item.workPurpose.artifactSnapshot, artifactSnapshot))
+      throw participationError('REPLY_PAYLOAD_CONFLICT', 'This result already selected another material');
     const recovered = recoverSubmittedReply(item, body, agent, artifactSnapshot);
     if (recovered) return recovered;
     item.agent = agent;
     item.body = body;
     if (item.workPurpose && artifactSnapshot) item.workPurpose.artifactSnapshot = artifactSnapshot;
     item.status = 'queued';
+    return structuredClone(item);
+  });
+}
+
+/** Bind material to the original prepared result slot before reporting publication.
+ * The private byte record is not an absence oracle: this durable snapshot makes
+ * missing bytes an unavailable artifact, rather than a body-only result. */
+export async function stageReplyArtifactOperation(input: PrepareReplyInput & {
+  operationId: string; agent: VerifiedAgent; verifyAgent: (agent: VerifiedAgent) => Promise<boolean>;
+  artifactSnapshot: WorkResultArtifactSnapshot;
+}): Promise<ConnectorOutboxItem> {
+  const agent = verifiedAgentSchema.parse(input.agent);
+  const snapshot = workResultArtifactSnapshotSchema.parse(input.artifactSnapshot);
+  if (agent.agentId !== agent.catId || !(await input.verifyAgent(agent)))
+    throw participationError('AGENT_PROVENANCE_UNVERIFIED', 'Host could not verify the current Cat invocation');
+  return input.persistence.transaction(state => {
+    const item = requireReplyOperation(state, input, agent);assertArtifactMatchesWork(item, snapshot);
+    if (!item.workPurpose || item.workPurpose.progressKey ||
+      (item.workPurpose.artifactSnapshot && !isDeepStrictEqual(item.workPurpose.artifactSnapshot, snapshot)) ||
+      (item.status !== 'prepared' && !item.workPurpose.artifactSnapshot))
+      throw participationError('REPLY_PAYLOAD_CONFLICT', 'This result already selected another material');
+    item.workPurpose.artifactSnapshot = snapshot;
     return structuredClone(item);
   });
 }

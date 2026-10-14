@@ -207,3 +207,18 @@ it('keeps the assigned source while a verified current home Cat returns the admi
     }),
   ).rejects.toMatchObject({ code: 'AGENT_PROVENANCE_UNVERIFIED' });
 });
+
+it('the original prepared Work slot retains one artifact selection and refuses body-only downgrade', async () => {
+  const f = await fixture();const input = {...f, resultKey: 'work:task', workRevision: 1, resultRevision: 1,
+    execution: {revision: 1, assignmentEventId: f.source.eventId}};
+  const operation = await outbox.prepareReplyOperation(input);
+  const agent = {catId: 'opus', agentId: 'opus', displayName: 'Opus', sessionRef: 'invocation-one'};
+  const artifactSnapshot = {taskRef: 'task:work:task', taskRevision: 1, artifactRef: 'artifact:published',
+    artifactRevision: '1', completenessRef: 'complete:1', previewRef: 'preview:1', openInWorkspaceRef: 'workspace:1'};
+  const request = {...input, operationId: operation.outboxId, agent, artifactSnapshot, verifyAgent: async () => true};
+  expect((await outbox.stageReplyArtifactOperation(request)).workPurpose?.artifactSnapshot).toEqual(artifactSnapshot);
+  expect((await outbox.stageReplyArtifactOperation(request)).outboxId).toBe(operation.outboxId);
+  await expect(outbox.submitReplyOperation({...request, body: 'result', artifactSnapshot: undefined})).rejects.toMatchObject({code: 'REPLY_PAYLOAD_CONFLICT'});
+  await expect(outbox.stageReplyArtifactOperation({...request, artifactSnapshot: {...artifactSnapshot, artifactRef: 'other'}})).rejects.toMatchObject({code: 'REPLY_PAYLOAD_CONFLICT'});
+  expect((await outbox.submitReplyOperation({...request, body: 'result'})).status).toBe('queued');
+});

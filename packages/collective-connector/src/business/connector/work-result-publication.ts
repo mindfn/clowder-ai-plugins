@@ -3,7 +3,7 @@ import type { ConnectorConnectionState, HostRouteConfig, WorkResultArtifactSnaps
 
 const boundedOwnerRef = z.string().trim().min(1).max(1_000);
 
-/** Host-sealed published UTF8 bytes; never a caller supplied workspace locator. */
+/** Published UTF8 snapshot captured inside the verified native Work consumer; never a caller workspace locator. */
 export const workResultTextPublicationSchema = z
   .object({
     v: z.literal(1),

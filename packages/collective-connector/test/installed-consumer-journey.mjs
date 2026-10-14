@@ -88,7 +88,7 @@ const workTransport = new StdioClientTransport({command: process.execPath, args:
 try {
   await workClient.connect(workTransport);
   const {tools} = await workClient.listTools();
-  assert.deepEqual(tools.map(tool => tool.name).sort(), ['cat_cafe_collective_work_current_context', 'cat_cafe_collective_work_read_context', 'cat_cafe_collective_progress'].sort());
+  assert.deepEqual(tools.map(tool => tool.name).sort(), ['cat_cafe_collective_work_current_context', 'cat_cafe_collective_work_read_context', 'cat_cafe_collective_progress', 'cat_cafe_collective_work_publish_text', 'cat_cafe_collective_work_read_artifact', 'cat_cafe_collective_work_return_result'].sort());
   for (const tool of tools) {
     assert.equal(tool.inputSchema.additionalProperties, false);
     for (const field of ['userId', 'catId', 'invocationId', 'taskId', 'executionRef', 'grantRef'])

@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import type { FeatureContext, FeatureActivation, PluginActionHandler, PluginOwnerHttpContext, PluginOwnerOperationContext } from '@clowder-ai/plugin-sdk';
 import { rowsResult, operationRowAction } from '@clowder-ai/plugin-sdk';
@@ -8,6 +9,7 @@ import { collectiveSource, ingressIdempotencyKey, assertSettledCollectiveSource 
 import { createCollectiveAgentWorkContextCaller } from './agent-work-context-caller.js';
 import { createCollectiveWorkAdmissionCaller } from './collective-work-admission-caller.js';
 import { createCollectiveOwnerWorkCaller } from './owner-work-manual-caller.js';
+import { createCollectiveWorkArtifacts } from './collective-work-artifacts.js';
 import { publishCollectiveProgress } from './owner-work-progress.js';
 import { openCollectiveContextReferences, collectiveContextError } from './collective-context-refs.js';
 import { COLLECTIVE_WORK_NATIVE_ID, collectiveWorkNativeTools } from './work-native-methods.js';
@@ -35,6 +37,7 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
   const refs = await openCollectiveContextReferences(context.dataDirectory, assertActive);
   const reader = createCollectiveAgentWorkContextCaller({connector, context,
     firstReceipts: {storage: context.storage, messaging: context.messaging}});
+  const artifacts = createCollectiveWorkArtifacts(context);
   type WorkBinding = Parameters<Parameters<typeof reader.withCurrentTask>[1]>[0];
   const identityOf = (binding: WorkBinding) => ({pluginInstanceId: binding.auth.source.extra.pluginMessage.instanceId,
     invocationId: binding.auth.invocationId});
@@ -51,17 +54,29 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
         await current(binding);const result = await consume(binding, input);await current(binding);return result;
       });
     };
-  const handlers: Record<string, PluginActionHandler> = {
-    'collective.work.context.current': nativeHandler('collective.work.context.current', collectiveWorkNativeTools[0].schema, async binding => {
+  const prepareReply = (binding: WorkBinding) => connector.prepareReply(binding.source, binding.sourceRef, binding.resultKey,
+    binding.work.revision, binding.work.resultRevision,
+    {revision: binding.work.executionRevision, assignmentEventId: binding.work.assignmentEventId});
+  const currentReply = async (binding: WorkBinding) => {
+    await current(binding);let operation = await prepareReply(binding);await current(binding);
+    if (operation.status === 'queued' || operation.status === 'sending') {
+      await connector.sync(binding.source.connectionId);await current(binding);
+      operation = await prepareReply(binding);await current(binding);
+    }
       const source = await connector.readParticipationContext(binding.source, 0, 1);await current(binding);
       const identity = identityOf(binding);
-      return {kind: 'collective', authority: 'owner_admitted_work', actor: binding.source.actor,
+      return {replyOperationRef: refs.opaqueRef(identity, `reply:${operation.outboxId}`, binding.refScope),
+        reply: {status: operation.status, ...(operation.status !== 'prepared' ? {body: operation.body, author: operation.agent} : {}),
+          ...(operation.acceptedEventId ? {eventId: operation.acceptedEventId} : {}),
+          ...(operation.failureCode ? {code: operation.failureCode} : {})}, kind: 'collective', authority: 'owner_admitted_work', actor: binding.source.actor,
         location: binding.source.location, participant: binding.displayName, request: source.source,
         workRef: {subjectRef: binding.auth.task.taskRef, revision: binding.work.revision},
         contextRef: refs.opaqueRef(identity, 'context', binding.refScope),
         returnRef: refs.opaqueRef(identity, 'return', binding.refScope),
         progressOperationRef: refs.opaqueRef(identity, 'progress', binding.refScope)};
-    }),
+  };
+  const handlers: Record<string, PluginActionHandler> = {
+    'collective.work.context.current': nativeHandler('collective.work.context.current', collectiveWorkNativeTools[0].schema, currentReply),
     'collective.work.context.read': nativeHandler('collective.work.context.read', collectiveWorkNativeTools[1].schema, async (binding, input) => {
       refs.verifyRef(identityOf(binding), input.contextRef, 'context', binding.refScope);await current(binding);
       return connector.readParticipationContext(binding.source, input.afterSequence ?? 0, input.limit ?? 30);
@@ -71,6 +86,41 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
       refs.verifyRef(identity, input.returnRef, 'return', binding.refScope);
       refs.verifyRef(identity, input.progressOperationRef, 'progress', binding.refScope);await current(binding);
       return publishCollectiveProgress(connector, binding.auth, binding, input.body);
+    }),
+    'collective.work.artifact.publish-text': nativeHandler('collective.work.artifact.publish-text', collectiveWorkNativeTools[3].schema, async (binding, input) => {
+      refs.verifyRef(identityOf(binding), input.contextRef, 'context', binding.refScope);await current(binding);
+      const operation = await prepareReply(binding);await current(binding);
+      if (operation.workPurpose?.artifactSnapshot) {
+        const selected = await artifacts.readCurrent(binding);await current(binding);
+        if (!selected || !isDeepStrictEqual(selected.snapshot, operation.workPurpose.artifactSnapshot))
+          throw collectiveContextError('WORK_ARTIFACT_UNAVAILABLE', 'Selected private artifact is unavailable');
+      } else if (operation.status !== 'prepared')
+        throw collectiveContextError('WORK_ARTIFACT_UNAVAILABLE', 'This result already selected no artifact');
+      const snapshot = await artifacts.publishText(binding, {text: input.text, mediaType: input.mediaType});await current(binding);
+      await connector.stageReplyArtifact(binding.source, binding.sourceRef, binding.resultKey, operation.outboxId,
+        {catId: binding.auth.catId, agentId: binding.auth.catId, displayName: binding.displayName, sessionRef: binding.auth.invocationId},
+        snapshot, binding.work.revision, binding.work.resultRevision,
+        {revision: binding.work.executionRevision, assignmentEventId: binding.work.assignmentEventId});
+      await current(binding);return snapshot;
+    }),
+    'collective.work.artifact.read': nativeHandler('collective.work.artifact.read', collectiveWorkNativeTools[4].schema, async (binding, input) => {
+      refs.verifyRef(identityOf(binding), input.contextRef, 'context', binding.refScope);await current(binding);
+      const artifact = await artifacts.readCurrent(binding);await current(binding);
+      return artifact ? {state: 'available', ...artifact, trust: 'untrusted_external', sourceTrust: 'unknown', instructionPolicy: 'data_only'}
+        : {state: 'unavailable', code: 'UNSEALED_ARTIFACT'};
+    }),
+    'collective.work.reply.submit': nativeHandler('collective.work.reply.submit', collectiveWorkNativeTools[5].schema, async (binding, input) => {
+      const operation = await prepareReply(binding);await current(binding);
+      const identity = identityOf(binding);
+      refs.verifyRef(identity, input.returnRef, 'return', binding.refScope);
+      refs.verifyRef(identity, input.replyOperationRef, `reply:${operation.outboxId}`, binding.refScope);await current(binding);
+      const artifact = await artifacts.selectForReturn(binding, operation.workPurpose?.artifactSnapshot);await current(binding);
+      await connector.submitReply(binding.source, binding.sourceRef, binding.resultKey, operation.outboxId, input.body,
+        {catId: binding.auth.catId, agentId: binding.auth.catId, displayName: binding.displayName, sessionRef: binding.auth.invocationId},
+        artifact?.snapshot, binding.work.resultRevision,
+        {revision: binding.work.executionRevision, assignmentEventId: binding.work.assignmentEventId});
+      await current(binding);await connector.sync(binding.source.connectionId);await current(binding);
+      return currentReply(binding);
     }),
   };
   handlers['collective.work.control.http'] = async (unsafe, native, caller) => {

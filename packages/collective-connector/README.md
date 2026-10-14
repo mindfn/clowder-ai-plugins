@@ -213,8 +213,8 @@ the separate Work feature below; resume and the complete retained browser journe
 ## Private Work production actions
 
 The distinct `collective-work` feature owns exactly one Task MCP, `collective-work-native`.
-Its three tools read the current admitted Task/source, read that source through a context reference,
-and publish real progress. They consume the actual Host `includeTask:true` snapshot and the original
+Its six tools read the current admitted Task/source, read that source through a context reference,
+publish real progress, publish/read private text artifacts, and return the result to its original Service. They consume the actual Host `includeTask:true` snapshot and the original
 package first receipt; ordinary public participation and the owner-send MCP retain their six existing
 grants and cannot enter this private method set. Progress preserves result/execution identity and
 never completes Work. The inherited native reference key remains under the same authorized directory.
@@ -229,6 +229,17 @@ resume DTO is registered but honestly returns unavailable while its separate rec
 
 This is production declaration and consumer wiring, not a complete installed Work journey.
 Autonomous source publication, later execution/bootstrap, independent owner resume/current custody,
-result publication/file seals/accepted history and the packaged Work skill still need their original
-complete integration. The old skill is not advertised or packed while it instructs unavailable callbacks.
+accepted history/legacy artifact reconciliation and the packaged Work skill still need their original
+complete integration. The current private text publication and result-return path has composition evidence,
+not a complete installed/operator/provider journey. The old skill is not advertised or packed while it instructs unavailable callbacks.
+Text publication captures the authenticated native publisher and Task/result/execution scope in the
+existing private CAS. Markdown/plain text is bounded to 65536 UTF8 bytes; binary/NUL and malformed
+Unicode are refused. The thread gets one file reference, while bytes stay private and the artifact reader
+rechecks the stored message and digest. Ordinary plugin messages remain ordinary messages: the package
+captures their association with the native invocation instead of claiming a Host callback row.
+A settled response loss reuses the original publication. Successful publication also binds its snapshot
+to the existing prepared reply slot; missing private material cannot silently become a body-only result.
+The same private result aggregate atomically selects text or no artifact before return; result return
+stores the exact selected snapshot in the existing Service-accepted outbox. Returning a result does not approve it or close Host Task custody.
+Historical content and legacy Host-created artifacts are not made readable by this current publication.
 No background source is emitted using a guessed instance id or Host provenance. Full C1 remains open.

@@ -14,7 +14,8 @@ import { type ChannelListeningInput, setChannelListening } from './channel-liste
 import type { CollectiveConnectorOptions } from './connector-options.js';
 import { type ConnectorSyncHooks, ConnectorSynchronization } from './connector-synchronization.js';
 import { desiredParticipationSchema } from './host-route-state.js';
-import { prepareReplyOperation, queueVerifiedAgentMessage, submitReplyOperation } from './outbox-custody.js';
+import { prepareReplyOperation,
+  stageReplyArtifactOperation, queueVerifiedAgentMessage, submitReplyOperation } from './outbox-custody.js';
 import { participationDeclaration, requireParticipation } from './participation-custody.js';
 import { ConnectorPersistence } from './persistence.js';
 import { type ConnectorProjection, projectConnection, recoveryChoices } from './projection.js';
@@ -476,6 +477,16 @@ export class CollectiveConnector {
       ...(resultRevision ? { resultRevision } : {}),
       ...(execution ? { execution } : {}),
     });
+  }
+
+  async stageReplyArtifact(
+    source: CollectiveSourceIdentity, sourceRef: string, resultKey: string, operationId: string,
+    agent: VerifiedAgent, artifactSnapshot: WorkResultArtifactSnapshot, workRevision: number,
+    resultRevision: number, execution: {readonly revision: number; readonly assignmentEventId: string},
+  ) {
+    await this.readParticipationContext(source, 0, 1);
+    return stageReplyArtifactOperation({persistence: this.persistence, now: this.now, source, sourceRef, resultKey,
+      operationId, agent, artifactSnapshot, workRevision, resultRevision, execution, verifyAgent: this.verifyAgent});
   }
 
   async submitReply(

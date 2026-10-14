@@ -24,8 +24,8 @@
         {
           "path": "./plugin.yaml",
           "present": true,
-          "sha256": "17c7a1ca93ebbdd6526dfc8653d2c0316fa012ac7b87d07d474e2cbe338bb930",
-          "bytes": 14331
+          "sha256": "74a6fbd6e203cc787a0eb92a2dab5c60ad7283767a900a422f24021d19e5a9f4",
+          "bytes": 14488
         },
         {
           "path": "dist/plugin-entrypoint.js",
@@ -96,11 +96,11 @@
       "freshBuild": null,
       "actualDirectoryJourneyAccepted": false,
       "entrypointRefresh": {
-        "sourceHead": "7b89ec655ccc0864efc225df4b91391f3cce52c5",
+        "sourceHead": "5c69732f3b1c84b5e393fb70307bde42a093d114",
         "uncommittedCandidate": true,
-        "scope": "Collective production Work feature and its declared third MCP after real build. Only this package entry hashes are refreshed; historical census and full installed C1 acceptance remain separate.",
-        "candidateManifestSha256": "17c7a1ca93ebbdd6526dfc8653d2c0316fa012ac7b87d07d474e2cbe338bb930",
-        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/work-production-entry-verification-r3.json"
+        "scope": "Current Collective Work publication/read/result consumer and canonical manifest; physical entry hashes only, not installed/provider C1 acceptance.",
+        "candidateManifestSha256": "74a6fbd6e203cc787a0eb92a2dab5c60ad7283767a900a422f24021d19e5a9f4",
+        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/work-result-publication-verification-r1.json"
       }
     },
     {
