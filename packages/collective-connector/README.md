@@ -235,9 +235,9 @@ the package does not bypass this protection or infer success from a stored Queue
 
 This is production declaration and consumer wiring, not a complete installed Work journey.
 Autonomous source publication, complete later execution/bootstrap recovery, independent owner resume/current custody,
-legacy artifact reconciliation/browser and the packaged Work skill still need their original
-complete integration. The current private text publication and result-return path has composition evidence,
-not a complete installed/operator/provider journey. The old skill is not advertised or packed while it instructs unavailable callbacks.
+legacy artifact reconciliation/browser still need their original complete integration.
+The declared skill uses current package text publication and accepted-history readers; actual Host skill mounts and agent/operator use still need full installed acceptance. The current private text publication and result-return path has composition evidence,
+not a complete installed/operator/provider journey. The original `collective-participation` skill is now declared and packed with the backend feature. Its public and private Work instructions name only the installed MCP methods; loading it adds no Work authority or grants.
 Text publication captures the authenticated native publisher and Task/result/execution scope in the
 existing private CAS. Markdown/plain text is bounded to 65536 UTF8 bytes; binary/NUL and malformed
 Unicode are refused. The thread gets one file reference, while bytes stay private and the artifact reader

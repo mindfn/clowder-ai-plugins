@@ -120,6 +120,8 @@ features:
         id: collective-participation-reconcile
       - type: identity
         id: collective
+      - type: skill
+        id: collective-participation
       - type: mcp
         id: collective-owner-native
       - type: mcp
@@ -153,6 +155,9 @@ runtime:
   entrypoint: dist/plugin-entrypoint.js
   dataDirectory: collective
 contributions:
+  - type: skill
+    id: collective-participation
+    path: skills/collective-participation
   - type: identity
     id: collective
     displayName: Collective

@@ -17,7 +17,8 @@
   "files": [
     "dist",
     "plugin.yaml",
-    "README.md"
+    "README.md",
+    "skills"
   ],
   "engines": {
     "node": ">=24.0.0"

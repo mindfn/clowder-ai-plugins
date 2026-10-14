@@ -34,6 +34,12 @@ const manifest = JSON.parse(await readFile('manifest.json', 'utf8'));
 const validated = validateManifest(manifest);
 assert.equal(validated.valid, true, JSON.stringify(validated.errors));
 assert.equal(manifest.runtime.transport, 'builtin');
+const skill = manifest.contributions.find(item => item.type === 'skill' && item.id === 'collective-participation');
+assert.ok(skill, 'original Collective skill must be an admitted manifest contribution');
+assert.equal(skill.path, 'skills/collective-participation');
+const skillBody = await readFile(join(packageRoot, skill.path, 'SKILL.md'), 'utf8');
+const declaredToolNames = new Set();
+
 const namespace = await import(pathToFileURL(join(packageRoot, manifest.runtime.entrypoint)).href);
 const entrypoint = requirePluginModuleEntrypoint(namespace.default);
 assert.equal(module, namespace.default, 'public export must identify the same installed module');
@@ -56,6 +62,7 @@ const nativeClient = new Client({ name: 'isolated-installed-consumer', version: 
 try {
   await nativeClient.connect(nativeTransport);
   const { tools } = await nativeClient.listTools();
+  for (const tool of tools) declaredToolNames.add(tool.name);
   assert.deepEqual(tools.map(tool => tool.name).sort(), ['cat_cafe_collective_current_context', 'cat_cafe_collective_read_context',
     'cat_cafe_collective_set_interest', 'cat_cafe_collective_submit_reply', 'cat_cafe_collective_propose_work', 'cat_cafe_collective_accept_work', 'cat_cafe_collective_continue_work'].sort());
   for (const tool of tools) {
@@ -88,6 +95,7 @@ const workTransport = new StdioClientTransport({command: process.execPath, args:
 try {
   await workClient.connect(workTransport);
   const {tools} = await workClient.listTools();
+  for (const tool of tools) declaredToolNames.add(tool.name);
   assert.deepEqual(tools.map(tool => tool.name).sort(), ['cat_cafe_collective_work_current_context', 'cat_cafe_collective_work_read_context', 'cat_cafe_collective_progress', 'cat_cafe_collective_work_publish_text', 'cat_cafe_collective_work_read_artifact', 'cat_cafe_collective_work_return_result'].sort());
   for (const tool of tools) {
     assert.equal(tool.inputSchema.additionalProperties, false);
@@ -95,6 +103,14 @@ try {
       assert.equal(Object.hasOwn(tool.inputSchema.properties, field), false);
   }
 } finally {await workClient.close();}
+for (const name of skillBody.match(/cat_cafe_[a-z_]+/g) ?? []) {
+  assert.ok(declaredToolNames.has(name), 'installed skill must name a real public or protected Work tool: ' + name);
+}
+assert.match(skillBody, /65536/);
+console.log(JSON.stringify({declaredSkillMaterialized: true, originalSkillName: skill.id,
+  skillBytes: Buffer.byteLength(skillBody), allNamedToolsListedByActualInstalledMcp: true,
+  limits: 'File discovery and actual MCP names; agent judgement and real Host skill activation remain independent evidence'}));
+
 
 await assert.rejects(stat(join(packageRoot, 'dist/business/service/cli.js')), { code: 'ENOENT' });
 const directory = await mkdtemp(join(tmpdir(), 'installed-collective-data-'));

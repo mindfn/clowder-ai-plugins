@@ -14,6 +14,7 @@ function run(command, args, cwd) {
   const env = { ...process.env };
   delete env.NODE_PATH;
   delete env.NODE_OPTIONS;
+  if (command === 'tar') env.COPYFILE_DISABLE = '1';
   const result = spawnSync(command, args, { cwd, env, encoding: 'utf8', timeout: 120_000, maxBuffer: 4 * 1024 * 1024 });
   assert.equal(result.status, 0, [command, ...args, result.error?.message, result.stdout, result.stderr].filter(Boolean).join('\n'));
   return result.stdout;
@@ -36,6 +37,7 @@ test('local directory installs into an empty consumer and runs the real SDK life
       if (name === 'collective-connector') {
         assert.ok(result[0].files.some(file => file.path === 'plugin.yaml'));
         assert.ok(result[0].files.some(file => file.path === 'dist/plugin-entrypoint.js'));
+        assert.ok(result[0].files.some(file => file.path === 'skills/collective-participation/SKILL.md'));
       }
     }
     await writeFile(join(consumer, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
