@@ -4,7 +4,7 @@ import type { PluginMessagingHost, PluginOwnerHttpContext, PluginStorageHost, Pl
 import type { AssignedWorkAuthorityScope, CollectiveConnector } from "./business/connector/connector.js";
 import { collectiveEventSourceIdentity, collectiveSourceIdentitySchema, collectiveWorkAssignmentMatches,
   participationSourceIsCurrent } from "./business/contracts/index.js";
-import { retainManualWorkFirstReceipt, workReceiptDigest } from "./owner-work-first-receipt.js";
+import { retainManualWorkFirstReceipt, workReceiptDigest, type ManualWorkExecutionBinding } from "./owner-work-first-receipt.js";
 import { resolveCollectiveWorkThread, selectCollectiveWorkThread } from "./collective-work-thread.js";
 import { classifyEntrustedWorkSourceTime } from "./work-source-signals.js";
 
@@ -116,6 +116,40 @@ export function createCollectiveOwnerWorkCaller(options: Options) {
           firstRequest: {requestId: request.requestId, contributionId: request.contributionId, method: request.method,
             path: request.path, bodyDigest: request.bodyDigest, queryDigest: request.queryDigest},
         }, current, selectedThread.kind === "existing");
+        const currentTask = async (
+          coordinates: Pick<ManualWorkExecutionBinding, "taskRef" | "taskRevision" | "threadId">,
+          newlyPrepared = false,
+        ) => {
+          const task = await ports.tasks.get(coordinates.taskRef.slice("task:work:".length));
+          await current();
+          if (!task || `task:work:${task.id}` !== coordinates.taskRef || task.kind !== "work" ||
+            task.userId !== ownerUserId || task.ownerCatId !== identity.data.catId ||
+            task.threadId !== coordinates.threadId || task.status === "done" || task.entrustedWork?.closure.state !== "open" ||
+            (newlyPrepared && task.entrustedWork.revision !== coordinates.taskRevision) ||
+            task.entrustedWork.admission.sourceRefs.length !== 1 ||
+            task.entrustedWork.admission.sourceRefs[0] !== `message:${source.id}`) throw unavailable();
+        };
+        const dispatchBound = async (binding: ManualWorkExecutionBinding) => {
+          if (binding.refScope !== `message:${source.id}:work:${binding.taskRef.slice("task:work:".length)}:${binding.taskRevision}:result:1:execution:1:${binding.executionRef}`)
+            throw unavailable();
+          await currentTask(binding);
+          await receipt.assertBound(binding);
+          // Reuse the captured execution selectors. Host dispatch revalidates its
+          // protected authority version and canonical custody; aggregate evidence
+          // changes never replace this receipt or create another execution.
+          const queue = await ports.tasks.dispatchEntrusted!({taskRef: binding.taskRef,
+            taskRevision: binding.taskRevision, executionRef: binding.executionRef});
+          await currentTask(binding);
+          await receipt.assertBound(binding);
+          return queue;
+        };
+        const bound = await receipt.readBinding();
+        if (bound) {
+          // This is replay of the initial admission, not a new owner_resume.
+          const queue = await dispatchBound(bound);
+          return {result: "resumed" as const, taskRef: bound.taskRef, taskRevision: bound.taskRevision,
+            threadId: bound.threadId, admissionRef: bound.admissionRef, executionRef: bound.executionRef, queue};
+        }
         const relation = classifyEntrustedWorkSourceTime(scope.work.intendedOutcome);
         if (relation === "ambiguous") return {result: "needs_clarification" as const, reason: "ambiguous_source_time"};
         if (relation === "deadline" && !input.businessDeadline) return {result: "needs_clarification" as const};
@@ -130,25 +164,13 @@ export function createCollectiveOwnerWorkCaller(options: Options) {
             ...(input.businessDeadline ? {time: {businessDeadline: {value: input.businessDeadline, sourceRef: `message:${source.id}`}}} : {})}});
         await current();
         if (result.result === "needs_clarification") return result;
-        const currentTask = async () => {
-          const task = await ports.tasks.get(result.taskRef.slice("task:work:".length));
-          await current();
-          if (!task || `task:work:${task.id}` !== result.taskRef || task.kind !== "work" || task.userId !== ownerUserId || task.ownerCatId !== identity.data.catId ||
-            task.threadId !== threadId || task.status === "done" || task.entrustedWork?.closure.state !== "open" ||
-            task.entrustedWork.revision !== result.taskRevision || task.entrustedWork.admission.sourceRefs.length !== 1 ||
-            task.entrustedWork.admission.sourceRefs[0] !== `message:${source.id}`) throw unavailable();
-        };
-        await currentTask();
+        if (result.threadId !== threadId) throw unavailable();
+        await currentTask(result, true);
         const binding = {taskRef: result.taskRef, taskRevision: result.taskRevision, threadId: result.threadId,
           admissionRef: result.admissionRef, executionRef: result.executionRef,
           refScope: `message:${source.id}:work:${result.taskRef.slice("task:work:".length)}:${result.taskRevision}:result:1:execution:1:${result.executionRef}`};
-        if (result.threadId !== threadId) throw unavailable();
         await receipt.bind(binding);
-        await currentTask();
-        await receipt.assertBound(binding);
-        const queue = await ports.tasks.dispatchEntrusted!({taskRef: result.taskRef, taskRevision: result.taskRevision,
-          executionRef: result.executionRef});
-        await current(); await receipt.assertBound(binding);
+        const queue = await dispatchBound(binding);
         return {...result, queue};
       });
     },

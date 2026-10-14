@@ -90,6 +90,11 @@ export async function retainManualWorkFirstReceipt(
     if (!first) throw conflict();
   }
   return Object.freeze({
+    async readBinding() {
+      const actual = await read();
+      if (!actual) throw conflict();
+      return actual.receipt.binding;
+    },
     async bind(raw: ManualWorkExecutionBinding) {
       const binding = bindingSchema.parse(raw);
       const before = await read();

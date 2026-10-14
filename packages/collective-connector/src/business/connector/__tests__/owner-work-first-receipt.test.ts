@@ -210,3 +210,28 @@ test("another authenticated plugin instance cannot fork a retained first source/
     expect(f.calls()).toEqual({prepareCalls: 0, dispatchCalls: 0});
   } finally {await f.close();}
 });
+
+test("bound admission replay uses the captured execution after evidence advances the Task aggregate", async () => {
+  const f = await setup();
+  try {
+    const first = await f.make().admit("local-owner", f.connection.connectionId, f.input, f.ownerContext);
+    if (first.result === "needs_clarification") throw new Error("Unexpected clarification");
+    const before = structuredClone([...f.records]);
+    const originalRead = f.ports.tasks.get;
+    f.ports.tasks.get = async () => {
+      const task = await originalRead();
+      return task?.entrustedWork ? {...task, entrustedWork: {...task.entrustedWork, revision: 2}} : task;
+    };
+    // A real Host rejects the second prepare's immutable receipt conflict.
+    // Here refusal isolates the caller's unwanted prepare; real Host proof is separate.
+    f.ports.tasks.prepareEntrusted = async () => {throw new Error("Bound execution must not prepare again");};
+    const replay = await f.make().admit("local-owner", f.connection.connectionId, f.input,
+      {...f.ownerContext, requestIdentity: {...f.ownerContext.requestIdentity!, requestId: "replay-after-evidence"}});
+    if (replay.result === "needs_clarification") throw new Error("Unexpected clarification");
+    expect(replay.taskRevision).toBe(first.taskRevision);
+    expect(replay.executionRef).toBe(first.executionRef);
+    expect(replay.queue.entryId).toBe(first.queue.entryId);
+    expect([...f.records]).toEqual(before);
+    expect(f.calls()).toEqual({prepareCalls: 1, dispatchCalls: 2});
+  } finally {await f.close();}
+});
