@@ -39,6 +39,11 @@ const humanStandingReceiptSchema = commonReceipt.extend({
     grantRef: ref, grantRevision: revision, scope: collectiveStandingWorkSchema}).strict(),
 }).strict();
 const firstReceiptSchema = z.union([manualReceiptSchema, standingReceiptSchema, humanStandingReceiptSchema]);
+const continuedReceiptSchema = commonReceipt.extend({
+  kind: z.literal("continued_execution"), firstSourceMessageId: ref,
+  basis: standingReceiptSchema.shape.basis,
+}).strict();
+export type ContinuedWorkExecutionReceipt = z.infer<typeof continuedReceiptSchema>;
 export type ManualWorkFirstReceipt = z.infer<typeof manualReceiptSchema>;
 export type StandingWorkFirstReceipt = z.infer<typeof standingReceiptSchema> | z.infer<typeof humanStandingReceiptSchema>;
 export type WorkFirstReceipt = z.infer<typeof firstReceiptSchema>;
@@ -81,6 +86,57 @@ export async function readWorkFirstReceipt(
   if (!parsed.success || parsed.data.ownerUserId !== owner ||
     parsed.data.source.id !== source || parsed.data.source.identity.catId !== cat) throw conflict();
   return parsed.data;
+}
+
+/** Later executions refer to the immutable first choice; they never replace it.
+ * The same plugin-private receipt container and source/Cat key are reused. */
+export async function readWorkExecutionReceipt(
+  storage: Pick<PluginStorageHost, "get">, owner: string, source: string, cat: string,
+) {
+  const entry = await storage.get(manualWorkFirstReceiptKey(owner, source, cat));
+  if (!entry) return undefined;
+  const parsed = z.union([firstReceiptSchema, continuedReceiptSchema]).safeParse(entry.value);
+  if (!parsed.success || parsed.data.ownerUserId !== owner ||
+    parsed.data.source.id !== source || parsed.data.source.identity.catId !== cat) throw conflict();
+  return parsed.data;
+}
+
+export async function retainWorkContinuationReceipt(
+  storage: Pick<PluginStorageHost, "get" | "compareAndSet">,
+  selected: Omit<ContinuedWorkExecutionReceipt, "binding">,
+  current: () => Promise<void>,
+) {
+  const expected = continuedReceiptSchema.parse(selected);
+  if (expected.firstSourceMessageId === expected.source.id || expected.work.executionRevision <= 1) throw conflict();
+  const key = manualWorkFirstReceiptKey(expected.ownerUserId, expected.source.id, expected.source.identity.catId);
+  const read = async () => {
+    await current(); const entry = await storage.get(key); await current();
+    if (!entry) return undefined;
+    const parsed = continuedReceiptSchema.safeParse(entry.value);
+    if (!parsed.success) throw conflict();
+    const facts = {...parsed.data}; delete facts.binding;
+    const selectedFacts = {...expected}; delete selectedFacts.binding;
+    if (!isDeepStrictEqual(facts, selectedFacts)) throw conflict();
+    return {entry, receipt: parsed.data};
+  };
+  if (!(await read())) {
+    await current(); await storage.compareAndSet(key, null, expected);
+    if (!(await read())) throw conflict();
+  }
+  return Object.freeze({
+    async readBinding() {const value = await read(); if (!value) throw conflict(); return value.receipt.binding;},
+    async bind(raw: ManualWorkExecutionBinding) {
+      const binding = bindingSchema.parse(raw), before = await read(); if (!before) throw conflict();
+      if (!before.receipt.binding) {
+        await current(); await storage.compareAndSet(key, before.entry.revision, {...before.receipt, binding});
+      }
+      const bound = await read(); if (!bound || !isDeepStrictEqual(bound.receipt.binding, binding)) throw conflict();
+      return bound.receipt;
+    },
+    async assertBound(binding: ManualWorkExecutionBinding) {
+      const actual = await read(); if (!actual || !isDeepStrictEqual(actual.receipt.binding, binding)) throw conflict();
+    },
+  });
 }
 
 export async function retainManualWorkFirstReceipt(

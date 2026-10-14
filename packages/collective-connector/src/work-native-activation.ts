@@ -10,6 +10,7 @@ import { createCollectiveAgentWorkContextCaller } from './agent-work-context-cal
 import { createCollectiveWorkAdmissionCaller } from './collective-work-admission-caller.js';
 import { createCollectiveOwnerWorkCaller } from './owner-work-manual-caller.js';
 import { createCollectiveWorkArtifacts } from './collective-work-artifacts.js';
+import { readPreviousCollectiveWorkArtifact } from './collective-work-history.js';
 import { publishCollectiveProgress } from './owner-work-progress.js';
 import { openCollectiveContextReferences, collectiveContextError } from './collective-context-refs.js';
 import { COLLECTIVE_WORK_NATIVE_ID, collectiveWorkNativeTools } from './work-native-methods.js';
@@ -79,7 +80,9 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
     'collective.work.context.current': nativeHandler('collective.work.context.current', collectiveWorkNativeTools[0].schema, currentReply),
     'collective.work.context.read': nativeHandler('collective.work.context.read', collectiveWorkNativeTools[1].schema, async (binding, input) => {
       refs.verifyRef(identityOf(binding), input.contextRef, 'context', binding.refScope);await current(binding);
-      return connector.readParticipationContext(binding.source, input.afterSequence ?? 0, input.limit ?? 30);
+      const source = await connector.readParticipationContext(binding.source, input.afterSequence ?? 0, input.limit ?? 30);await current(binding);
+      const previousResultArtifact = await readPreviousCollectiveWorkArtifact(connector, binding, artifacts);await current(binding);
+      return {...source, ...(previousResultArtifact ? {previousResultArtifact} : {})};
     }),
     'collective.work.progress': nativeHandler('collective.work.progress', collectiveWorkNativeTools[2].schema, async (binding, input) => {
       const identity = identityOf(binding);
@@ -177,7 +180,7 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
     const rows = [];
     for (const item of await connector.listInbox(input.connectionId)) {
       const identity = collectiveEventSourceIdentity(item.event);
-      if (!identity || item.event.workRequest !== 'entrust') continue;
+      if (!identity || !['entrust', 'continue'].includes(String(item.event.workRequest))) continue;
       await current();
       try {
         const receipt = await connector.withInboxRoutingAuthority(input.connectionId, item.event.eventId, async (currentRoute, currentItem) => {
@@ -203,7 +206,14 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
           await connector.completeInboxRouting(input.connectionId, item.event.eventId, currentRoute.revision, recorded);
           await current();return recorded;
         });
-        const work = await connector.readAssignedWorkByAssignment(input.connectionId, item.event.eventId);await current();
+        const work = item.event.workRequest === 'continue' && item.event.workExecutionNotice
+          ? await connector.readAssignedWork(input.connectionId, item.event.workExecutionNotice.workId)
+          : await connector.readAssignedWorkByAssignment(input.connectionId, item.event.eventId);await current();
+        if (item.event.workRequest === 'entrust' && (work.executionAuthority?.revision ?? 1) > 1) {
+          rows.push({key: item.event.eventId, label: 'Previous Work execution',
+            detail: 'The first admission is preserved. Only the current Service execution notice may continue this task.'});
+          continue;
+        }
         const result = await createCollectiveWorkAdmissionCaller({connector, tasks: context.tasks, threads: context.threads,
           firstReceipts: {storage: context.storage, messaging: context.messaging}, assertCurrent: current})
           .admit({ownerUserId: owner.userId, identity, sourceMessageId: receipt.messageId, workId: work.workId,
@@ -214,7 +224,7 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
         await current();rows.push({key: item.event.eventId, label: 'Private execution unavailable', detail: error instanceof Error ? error.message.slice(0, 500) : 'Current Work is unavailable'});
       }
     }
-    return rowsResult(rows, {empty: 'No initial committed Work sources'});
+    return rowsResult(rows, {empty: 'No committed Work sources or current execution notices'});
   };
   return {actions: handlers, dispose() {live = false;}};
 }

@@ -220,16 +220,22 @@ grants and cannot enter this private method set. Progress preserves result/execu
 never completes Work. The inherited native reference key remains under the same authorized directory.
 
 Settings → Private Collective Work → Paired Work connections offers an authenticated Sync operation.
-It sends current committed initial Work notices without wake, records the original inbox mapping,
+It sends committed initial Work and registered Agent continuation notices without wake, records the original inbox mapping,
 then consumes current Service or human standing authority through the reviewed package admission caller.
 The Host supplies the real instance identity through that owner-operation context; neither manifest
 plugin id nor tool input substitutes for it. `POST connections/:connectionId/work/admit` enters the
 separate `collective.work.control.http` owner webhook and the reviewed manual/replay caller. The original
 resume DTO is registered but honestly returns unavailable while its separate recovery boundary is open.
+For a registered Agent continuation, the package reads its immutable first receipt, preserves the original
+Task/thread/admission, and captures a separate execution receipt before the fresh exact Service acknowledgement
+and Host dispatch. It does not recapture the first basis. The native reader also requires both receipts.
+The current Host classifies an owner-operation continuation as `owner_resume`: the same request can dispatch,
+but another HTTP/Settings request cannot borrow that descriptor. Cross-request replay remains unavailable;
+the package does not bypass this protection or infer success from a stored Queue receipt.
 
 This is production declaration and consumer wiring, not a complete installed Work journey.
-Autonomous source publication, later execution/bootstrap, independent owner resume/current custody,
-accepted history/legacy artifact reconciliation and the packaged Work skill still need their original
+Autonomous source publication, complete later execution/bootstrap recovery, independent owner resume/current custody,
+legacy artifact reconciliation/browser and the packaged Work skill still need their original
 complete integration. The current private text publication and result-return path has composition evidence,
 not a complete installed/operator/provider journey. The old skill is not advertised or packed while it instructs unavailable callbacks.
 Text publication captures the authenticated native publisher and Task/result/execution scope in the
@@ -241,5 +247,10 @@ A settled response loss reuses the original publication. Successful publication 
 to the existing prepared reply slot; missing private material cannot silently become a body-only result.
 The same private result aggregate atomically selects text or no artifact before return; result return
 stores the exact selected snapshot in the existing Service-accepted outbox. Returning a result does not approve it or close Host Task custody.
-Historical content and legacy Host-created artifacts are not made readable by this current publication.
+The original context-read action also reads the previous accepted package text result. Current Service
+history must match exactly one accepted local outbox snapshot for the same Work, Task, owner and result;
+the reader then verifies its old publisher capture, live owned trigger/publication, immutable seal and
+private bytes, and rechecks that accepted witness. Historical text never revives the old execution.
+Missing/ambiguous accepted witnesses are unavailable; missing bytes or withdrawn old publications fail
+closed. Legacy Host-created uploads explicitly remain unavailable and no arbitrary path or URL is opened.
 No background source is emitted using a guessed instance id or Host provenance. Full C1 remains open.

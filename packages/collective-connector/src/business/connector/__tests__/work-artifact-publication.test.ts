@@ -17,7 +17,7 @@ async function fixture() {
     task: {taskRef: 'task:work:task', taskRevision: 1, admissionRef: 'message:admission', executionRef: 'message:execution'}},
     source: {serviceInstanceId: 'svc_aaaaaaaa', collectiveId: 'col_aaaaaaaa', connectionId: 'con_aaaaaaaa', eventId: 'evt_aaaaaaaa',
       catId: 'cat', participationRevision: 1, location: {channelId: 'general'}, actor: {kind: 'human', humanId: 'human_aaaaaaaa', displayName: 'Owner'}},
-    sourceRef: 'message:source', refScope: 'exact-business-scope',
+    sourceRef: 'message:source', refScope: 'message:source:work:task:1:result:1:execution:1:message:execution',
     work: {workId: 'work_aaaaaaaa', revision: 1, resultRevision: 1, executionRevision: 1, assignmentEventId: 'evt_assignment'},
     async revalidate() {if (!current) throw new Error('Execution revoked');}} as unknown as import('../../../collective-work-artifacts.js').CollectiveWorkArtifactBinding;
   const context = {storage: {async get(key: string) {return structuredClone(records.get(key));},
@@ -109,4 +109,43 @@ test('a selected canonical snapshot forbids downgrading missing private material
   f.records.clear();
   await expect(f.artifacts.selectForReturn(f.binding, snapshot)).rejects.toMatchObject({code: 'WORK_ARTIFACT_UNAVAILABLE'});
   expect(f.records.size).toBe(0);
+});
+
+async function historyFixture() {
+  const f=await fixture();const snapshot=await f.artifacts.publishText(f.binding,{text:'Accepted first result',mediaType:'text/plain'});
+  f.messages.set('trigger',{id:'trigger',threadId:'private',userId:'owner',catId:null,content:'Host Task trigger',
+    timestamp:1,mentions:[],sourceRevision:'trigger-revision'});
+  const publication: import('../work-result-publication.js').CollectiveWorkResultPublication={
+    serviceInstanceId:'svc_aaaaaaaa',collectiveId:'col_aaaaaaaa',connectionId:'con_aaaaaaaa',authorizedHumanId:'human_aaaaaaaa',
+    localOwnerUserId:'owner',assignmentEventId:'evt_assignment',channelId:'general',catId:'cat',taskRef:'task:work:task',taskRevision:1,
+    workId:'work_aaaaaaaa',resultEventId:'evt_result1',resultRevision:1,executionRevision:1,artifactSnapshot:snapshot};
+  const next={...f.binding,auth:{...f.binding.auth,invocationId:'new-execution-turn',task:{...f.binding.auth.task,taskRevision:3,executionRef:'message:execution2'}},
+    work:{...f.binding.work,revision:3,resultRevision:2,executionRevision:2}};
+  return {...f,publication,next};
+}
+test('accepted history reads its original seal across later Task/execution revisions without reviving execution',async()=>{
+  const f=await historyFixture(),before=JSON.stringify([...f.records]);
+  expect(await f.artifacts.readAccepted(f.next,f.publication)).toMatchObject({state:'available',text:'Accepted first result',
+    resultRevision:1,resultEventId:'evt_result1',trust:'untrusted_external',instructionPolicy:'data_only'});
+  expect(JSON.stringify([...f.records])).toBe(before);expect(f.sends).toBe(1);
+});
+test('history refuses foreign Work/Task/owner/human/channel and a current or future result',async()=>{
+  const f=await historyFixture();
+  for(const delta of [{workId:'work_foreign'},{taskRef:'task:work:foreign'},{localOwnerUserId:'foreign'},
+    {authorizedHumanId:'foreign'},{channelId:'foreign'},{resultRevision:2},{executionRevision:3}])
+    await expect(f.artifacts.readAccepted(f.next,{...f.publication,...delta})).rejects.toMatchObject({code:'WORK_ARTIFACT_UNAVAILABLE'});
+});
+test('history rejects a missing old trigger, changed publication and missing private bytes',async()=>{
+  const f=await historyFixture(),trigger=f.messages.get('trigger')!;f.messages.delete('trigger');
+  await expect(f.artifacts.readAccepted(f.next,f.publication)).rejects.toMatchObject({code:'WORK_ARTIFACT_UNAVAILABLE'});
+  f.messages.set('trigger',trigger);const publication=f.messages.get('published')!;
+  f.messages.set('published',{...publication,sourceRevision:'changed'});
+  await expect(f.artifacts.readAccepted(f.next,f.publication)).rejects.toMatchObject({code:'WORK_ARTIFACT_UNAVAILABLE'});
+  f.messages.set('published',publication);f.records.clear();
+  await expect(f.artifacts.readAccepted(f.next,f.publication)).rejects.toMatchObject({code:'WORK_ARTIFACT_UNAVAILABLE'});
+  expect(f.sends).toBe(1);
+});
+test('history read keeps current authority lifetime and treats text as data',async()=>{
+  const f=await historyFixture();f.expire();
+  await expect(f.artifacts.readAccepted(f.next,f.publication)).rejects.toThrow('revoked');
 });

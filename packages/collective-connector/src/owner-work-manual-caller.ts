@@ -2,9 +2,9 @@ import { z } from "zod";
 import { isDeepStrictEqual } from "node:util";
 import type { PluginMessagingHost, PluginOwnerHttpContext, PluginStorageHost, PluginTaskHost, PluginThreadHost } from "@clowder-ai/plugin-sdk";
 import type { AssignedWorkAuthorityScope, CollectiveConnector } from "./business/connector/connector.js";
-import { collectiveEventSourceIdentity, collectiveSourceIdentitySchema, collectiveWorkAssignmentMatches,
+import { collectiveEventSourceIdentity, collectiveSourceIdentitySchema, collectiveWorkAssignmentMatches, collectiveWorkExecutionNoticeSchema,
   participationSourceIsCurrent } from "./business/contracts/index.js";
-import { readWorkFirstReceipt, retainManualWorkFirstReceipt, workReceiptDigest, type ManualWorkExecutionBinding } from "./owner-work-first-receipt.js";
+import { readWorkExecutionReceipt, retainManualWorkFirstReceipt, workReceiptDigest, type ManualWorkExecutionBinding } from "./owner-work-first-receipt.js";
 import { resolveCollectiveWorkThread, selectCollectiveWorkThread } from "./collective-work-thread.js";
 import { classifyEntrustedWorkSourceTime } from "./work-source-signals.js";
 import { createCollectiveWorkAdmissionCaller } from "./collective-work-admission-caller.js";
@@ -70,8 +70,8 @@ export function createCollectiveOwnerWorkCaller(options: Options) {
       if (!source || source.id !== input.sourceMessageId || source.userId !== ownerUserId || source.catId !== null ||
         source.source?.connector !== "collective" || !identity.success || identity.data.connectionId !== connectionId ||
         !["human", "agent"].includes(identity.data.actor.kind)) throw unavailable();
-      return ports.connector.withSynchronizedAssignedWorkAuthority(connectionId, identity.data.eventId, async scope => {
-        const prior = await readWorkFirstReceipt(ports.storage, ownerUserId, source.id, identity.data.catId);
+      const consume = async (scope: AssignedWorkAuthorityScope) => {
+        const prior = await readWorkExecutionReceipt(ports.storage, ownerUserId, source.id, identity.data.catId);
         await currentRequest();
         if (identity.data.actor.kind === "agent" || prior?.basis.kind === "standing_grant") {
           // The real HTTP click may reuse the original captured standing
@@ -186,7 +186,12 @@ export function createCollectiveOwnerWorkCaller(options: Options) {
         await receipt.bind(binding);
         const queue = await dispatchBound(binding);
         return {...result, queue};
-      });
+      };
+      if (source.source.meta?.workRequest === "continue") {
+        const notice = collectiveWorkExecutionNoticeSchema.parse(source.source.meta.workExecutionNotice);
+        return ports.connector.withAssignedWorkAuthority(connectionId, notice.workId, consume);
+      }
+      return ports.connector.withSynchronizedAssignedWorkAuthority(connectionId, identity.data.eventId, consume);
     },
     async resume(_ownerUserId: string, _connectionId: string, unsafe: unknown): Promise<never> {
       ownerWorkResumeInput.parse(unsafe);

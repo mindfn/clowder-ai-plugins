@@ -11,7 +11,7 @@ import { resolveMaterializedParticipation } from "./business/connector/participa
 import { collectiveContextError } from "./collective-context-refs.js";
 import { opaqueHostAdmission } from "./collective-work-admission-caller.js";
 import { resolveHumanStandingWorkBasis } from "./collective-human-standing.js";
-import { readWorkFirstReceipt, workReceiptDigest } from "./owner-work-first-receipt.js";
+import { readWorkFirstReceipt, readWorkExecutionReceipt, workReceiptDigest } from "./owner-work-first-receipt.js";
 
 interface Options {
   readonly connector: CollectiveConnector;
@@ -88,7 +88,7 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
       const notice =
         item?.event.workRequest === "continue" ? item.event.workExecutionNotice : item?.event.workAcceptanceNotice;
       const captured = options.firstReceipts
-        ? await readWorkFirstReceipt(options.firstReceipts.storage, first.auth.userId, first.auth.source.id, first.auth.catId)
+        ? await readWorkExecutionReceipt(options.firstReceipts.storage, first.auth.userId, first.auth.source.id, first.auth.catId)
         : undefined;
       await action.assertCurrent();
       const workId = first.source.actor.kind === "human" ? captured?.work.workId : notice?.workId;
@@ -178,7 +178,7 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
           if (captured) {
             const ports = options.firstReceipts;
             if (!ports?.messaging.get || !captured.binding) throw changed();
-            const stored = await readWorkFirstReceipt(ports.storage, auth.userId, auth.source.id, auth.catId);
+            const stored = await readWorkExecutionReceipt(ports.storage, auth.userId, auth.source.id, auth.catId);
             const message = await ports.messaging.get(auth.source.id);
             await action.assertCurrent();
             if (!isDeepStrictEqual(stored, captured) || !message ||
@@ -193,6 +193,20 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
               captured.binding.executionRef !== auth.task.executionRef ||
               captured.binding.refScope !== `message:${auth.source.id}:work:${task.id}:${auth.task.taskRevision}:result:${resultRevision}:execution:${executionRevision}:${auth.task.executionRef}`)
               throw changed();
+            if (continued) {
+              if (!("firstSourceMessageId" in captured) || typeof captured.firstSourceMessageId !== "string" ||
+                !("kind" in captured) || captured.kind !== "continued_execution" ||
+                captured.firstSourceMessageId !== firstReceipt.messageId || source.actor.kind !== "agent") throw changed();
+              const root = await readWorkFirstReceipt(ports.storage, auth.userId, captured.firstSourceMessageId, auth.catId);
+              const rootMessage = await ports.messaging.get(captured.firstSourceMessageId); await action.assertCurrent();
+              if (!root?.binding || root.basis.kind !== "standing_grant" || root.basis.producer !== "registered_work" ||
+                root.work.workId !== work.workId || root.work.assignmentEventId !== work.assignmentEventId ||
+                root.binding.taskRef !== auth.task.taskRef || root.binding.threadId !== auth.threadId ||
+                root.binding.admissionRef !== auth.task.admissionRef || !rootMessage || rootMessage.userId !== auth.userId ||
+                rootMessage.catId !== null || rootMessage.id !== root.source.id || rootMessage.threadId !== root.source.threadId ||
+                rootMessage.sourceRevision !== root.source.revision || workReceiptDigest(rootMessage.content) !== root.source.bodyDigest ||
+                !isDeepStrictEqual(rootMessage.source?.meta?.participation, root.source.identity)) throw changed();
+            } else if ("kind" in captured) throw changed();
           }
           if (source.actor.kind === "agent") {
             const grant = await connector.resolveAcceptedWorkGrant(source);

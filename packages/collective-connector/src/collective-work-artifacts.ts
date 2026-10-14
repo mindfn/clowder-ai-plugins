@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { FeatureContext, PluginNativeTaskContext, PluginMessage } from '@clowder-ai/plugin-sdk';
 import { collectiveSourceIdentitySchema, type CollectiveSourceIdentity } from './business/contracts/index.js';
 import { workResultArtifactSnapshotSchema } from './business/connector/state.js';
+import type { CollectiveWorkResultPublication } from './business/connector/work-result-publication.js';
 import { collectiveContextError } from './collective-context-refs.js';
 
 const ref = z.string().min(1).max(1000);
@@ -165,6 +166,51 @@ export function createCollectiveWorkArtifacts(context: Pick<FeatureContext, 'sto
     async readCurrent(binding: CollectiveWorkArtifactBinding) {
       const value = await read(binding);if (!value || value.capture.kind === 'none') return undefined;
       return {snapshot: await verify(binding, value.capture), text: value.capture.text};
+    },
+    /** Only the original current Work/accepted-outbox selector may call this.
+     * A prior publication is readable evidence, never an old execution grant. */
+    async readAccepted(binding: CollectiveWorkArtifactBinding, publication: CollectiveWorkResultPublication) {
+      await binding.revalidate();
+      const snapshot = publication.artifactSnapshot, seal = snapshot?.textPublication;
+      const match = /^collective-artifact:([a-f0-9]{64})$/.exec(snapshot?.artifactRef ?? '');
+      if (!snapshot || !seal || !match || !context.messaging.get ||
+        publication.workId !== binding.work.workId || publication.taskRef !== binding.auth.task.taskRef ||
+        publication.localOwnerUserId !== binding.auth.userId || publication.catId !== binding.auth.catId ||
+        publication.serviceInstanceId !== binding.source.serviceInstanceId || publication.collectiveId !== binding.source.collectiveId ||
+        publication.connectionId !== binding.source.connectionId || publication.channelId !== binding.source.location.channelId ||
+        publication.authorizedHumanId !== (binding.source.actor.kind === 'human'
+          ? binding.source.actor.humanId : binding.source.actor.human.humanId) ||
+        publication.assignmentEventId !== binding.work.assignmentEventId ||
+        publication.resultRevision >= binding.work.resultRevision || snapshot.taskRef !== publication.taskRef ||
+        snapshot.taskRevision !== publication.taskRevision || seal.resultRevision !== publication.resultRevision ||
+        seal.executionRevision !== (publication.executionRevision ?? 1) || seal.executionRevision > binding.work.executionRevision)
+        throw changed();
+      const entry = await context.storage.get('collective-work-artifact:' + match[1]); await binding.revalidate();
+      if (!entry) throw changed();
+      const capture = parsed(entry.value);
+      if (capture.kind !== 'text' || !isDeepStrictEqual(capture.snapshot, snapshot) ||
+        artifactRefOf(capture.scope) !== snapshot.artifactRef || capture.scope.workId !== publication.workId ||
+        capture.scope.taskRef !== publication.taskRef || capture.scope.taskRevision !== publication.taskRevision ||
+        capture.scope.ownerUserId !== binding.auth.userId || capture.scope.catId !== binding.auth.catId ||
+        capture.scope.threadId !== binding.auth.threadId ||
+        capture.scope.pluginInstanceId !== binding.auth.source.extra.pluginMessage.instanceId ||
+        capture.scope.assignmentEventId !== publication.assignmentEventId || capture.scope.resultRevision !== publication.resultRevision ||
+        capture.scope.executionRevision !== (publication.executionRevision ?? 1) ||
+        capture.scope.source.serviceInstanceId !== publication.serviceInstanceId ||
+        capture.scope.source.collectiveId !== publication.collectiveId || capture.scope.source.connectionId !== publication.connectionId ||
+        capture.scope.source.catId !== publication.catId || capture.scope.source.location.channelId !== publication.channelId ||
+        capture.scope.refScope !== `${capture.scope.sourceRef}:work:${seal.taskId}:${capture.scope.taskRevision}:result:${capture.scope.resultRevision}:execution:${capture.scope.executionRevision}:${capture.scope.executionRef}`)
+        throw changed();
+      const trigger = await context.messaging.get(capture.publisher.triggerMessageId); await binding.revalidate();
+      if (!trigger || trigger.id !== capture.publisher.triggerMessageId || trigger.userId !== capture.scope.ownerUserId ||
+        trigger.threadId !== capture.scope.threadId || trigger.catId !== null || trigger.source) throw changed();
+      await verify(binding, capture);
+      const latest = await context.storage.get('collective-work-artifact:' + match[1]); await binding.revalidate();
+      if (!latest || !isDeepStrictEqual(latest, entry)) throw changed();
+      return {state: 'available' as const, artifactRef: snapshot.artifactRef, artifactRevision: snapshot.artifactRevision,
+        sourceMessageRef: `message:${capture.scope.threadId}:${seal.sourceMessageId}`, resultEventId: publication.resultEventId,
+        resultRevision: publication.resultRevision, contentDigest: seal.contentDigest, mediaType: seal.mediaType, text: capture.text,
+        trust: 'untrusted_external' as const, sourceTrust: 'unknown' as const, instructionPolicy: 'data_only' as const};
     },
   });
 }
