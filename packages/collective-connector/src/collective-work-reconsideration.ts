@@ -311,7 +311,12 @@ export function createCollectiveWorkReconsiderationCaller(options: Options) {
       const fact = await progress({ messageRef: prepared.binding.messageRef });
       await current();
       verifyProgress(fact);
-      if (receipt.status === 'terminal' && !fact.queueCustody?.handledByCatIds.includes(request.catId))
+      if (!fact.queueCustody || receipt.messageRef !== prepared.binding.messageRef)
+        throw unavailable('WORK_RECONSIDERATION_CUSTODY_UNAVAILABLE');
+      if (
+        fact.queueCustody.status === 'terminal' &&
+        !fact.queueCustody.handledByCatIds.includes(request.catId)
+      )
         throw unavailable('WORK_RECONSIDERATION_ALREADY_STOPPED');
       return {
         sourceEventId: request.sourceEventId,
@@ -321,7 +326,7 @@ export function createCollectiveWorkReconsiderationCaller(options: Options) {
         grantRef: request.grantRef,
         grantRevision: request.grantRevision,
         disposition:
-          receipt.status === 'terminal'
+          fact.queueCustody.status === 'terminal'
             ? 'already_classified'
             : prepared.replay
               ? 'already_queued'

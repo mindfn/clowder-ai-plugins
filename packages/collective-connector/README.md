@@ -36,8 +36,9 @@ connection resources use `connections/:connectionId/...`. No anonymous verificat
 The original eleven owner method/path pairs remain: connections GET; service/provision
 POST; inbox/route GET; reconnect/revoke POST; listening GET/POST; and work-policy GET/adopt/revoke.
 `POST connections/:connectionId/work/reconsider` retains the original public reclassification request
-under an adopted Service rule. It stores the purpose/message relationship in the existing private inbox,
-sends without ordinary wake, and then admits through the existing Host Queue after releasing the
+under an adopted Service rule. It stores the purpose/message relationship alongside the retained private
+Connector document, linked to its original inbox receipt; historical packages can still read that document.
+It sends without ordinary wake, and then admits through the existing Host Queue after releasing the
 connection fence. Replays restore the same entry; terminal unhandled requests remain refused.
 The verifier and native callbacks reread the original source and selected rule/class, including queued
 original input. Recall or deletion still refuses before launch. The complete installed user journey

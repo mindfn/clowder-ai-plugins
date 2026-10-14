@@ -86,16 +86,19 @@ export function findWorkReconsiderationSource(
   messageRef: string,
 ): WorkReconsiderationBinding | undefined {
   const state = persistence.snapshot();
-  const matches = Object.values(state.connections).flatMap((c) =>
-    c.inbox.flatMap((item) =>
-      (item.workReconsiderations ?? [])
-        .filter((binding) => binding.messageRef === messageRef)
-        .map((binding) => ({ item, binding })),
-    ),
-  );
+  const matches = persistence
+    .reconsiderationSources()
+    .filter((binding) => binding.messageRef === messageRef)
+    .map((binding) => ({
+      binding,
+      item: state.connections[binding.source.connectionId]?.inbox.find(
+        (item) => item.event.eventId === binding.source.eventId,
+      ),
+    }));
   if (!matches.length) return undefined;
   if (matches.length !== 1) throw changed();
   const { item, binding } = matches[0]!;
+  if (!item) throw changed();
   const { route, binding: participation } = requireParticipation(state, binding.source);
   if (
     item.disposition !== 'routed' ||
@@ -118,11 +121,7 @@ export function findWorkReconsiderationSourceByPurpose(
   persistence: ConnectorPersistence,
   purposeKey: string,
 ) {
-  const matches = Object.values(persistence.snapshot().connections).flatMap((c) =>
-    c.inbox.flatMap((item) =>
-      (item.workReconsiderations ?? []).filter((binding) => binding.purposeKey === purposeKey),
-    ),
-  );
+  const matches = persistence.reconsiderationSources().filter((binding) => binding.purposeKey === purposeKey);
   if (!matches.length) return undefined;
   if (matches.length !== 1) throw changed();
   return findWorkReconsiderationSource(persistence, matches[0]!.messageRef);
@@ -134,38 +133,38 @@ export async function recordWorkReconsiderationSource(
 ) {
   const binding = make(scope, structuredClone(input));
   await scope.assertCurrentPermission();
-  return persistence.transaction((state) => {
-    const { route, binding: participation } = requireParticipation(state, scope.source);
-    const item = state.connections[scope.source.connectionId]?.inbox.find(
-      (x) => x.event.eventId === scope.source.eventId,
-    );
-    if (
-      !item ||
-      !isDeepStrictEqual(item.event, scope.event) ||
-      item.disposition !== 'routed' ||
-      item.routeReceipt?.kind !== 'thread_message' ||
-      item.routeReceipt.messageId !== scope.sourceMessageId ||
-      item.routeReceipt.threadId !== scope.threadId ||
-      route.localOwnerUserId !== scope.ownerUserId ||
-      participation.threadId !== scope.threadId
-    )
-      throw changed();
-    const existing = item.workReconsiderations?.find((x) => x.purposeKey === binding.purposeKey);
-    if (existing) {
-      if (!isDeepStrictEqual(existing, binding)) throw changed();
-      return structuredClone(existing);
-    }
-    if (
-      Object.values(state.connections).some((c) =>
-        c.inbox.some(
-          (x) =>
-            x.publicSource?.messageRef === binding.messageRef ||
-            x.workReconsiderations?.some((b) => b.messageRef === binding.messageRef),
-        ),
+  return persistence.transactionReconsiderationSources(
+    (state, bindings) => {
+      const { route, binding: participation } = requireParticipation(state, scope.source);
+      const item = state.connections[scope.source.connectionId]?.inbox.find(
+        (x) => x.event.eventId === scope.source.eventId,
+      );
+      if (
+        !item ||
+        !isDeepStrictEqual(item.event, scope.event) ||
+        item.disposition !== 'routed' ||
+        item.routeReceipt?.kind !== 'thread_message' ||
+        item.routeReceipt.messageId !== scope.sourceMessageId ||
+        item.routeReceipt.threadId !== scope.threadId ||
+        route.localOwnerUserId !== scope.ownerUserId ||
+        participation.threadId !== scope.threadId
       )
-    )
-      throw changed();
-    (item.workReconsiderations ??= []).push(binding);
-    return structuredClone(binding);
-  });
+        throw changed();
+      const existing = bindings.find((x) => x.purposeKey === binding.purposeKey);
+      if (existing) {
+        if (!isDeepStrictEqual(existing, binding)) throw changed();
+        return structuredClone(existing);
+      }
+      if (
+        bindings.some((b) => b.messageRef === binding.messageRef) ||
+        Object.values(state.connections).some((c) =>
+          c.inbox.some((x) => x.publicSource?.messageRef === binding.messageRef),
+        )
+      )
+        throw changed();
+      bindings.push(binding);
+      return structuredClone(binding);
+    },
+    () => scope.assertCurrentPermission(),
+  );
 }
