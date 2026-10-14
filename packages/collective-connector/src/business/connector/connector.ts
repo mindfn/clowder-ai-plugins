@@ -362,7 +362,7 @@ export class CollectiveConnector {
     unsafeInput: SetHostRouteInput,
     expectedRevision?: number,
   ): Promise<HostRouteConfig> {
-    return this.withAuthority(connectionId, () =>
+    return this.withAuthority(`routing:${connectionId}`, () => this.withAuthority(connectionId, () =>
       setHostRoute({
         persistence: this.persistence,
         now: this.now,
@@ -370,7 +370,7 @@ export class CollectiveConnector {
         unsafeInput,
         ...(expectedRevision !== undefined ? { expectedRevision } : {}),
       }),
-    );
+    ));
   }
 
   async setStandingInterest(
@@ -586,6 +586,23 @@ export class CollectiveConnector {
 
   async listInboxForRouting(connectionId: string): Promise<ConnectorInboxItem[]> {
     return listInboxForRouting(this.persistence, connectionId);
+  }
+
+  /** Linearize publication with destination writes using the existing tail map.
+   * Route writers acquire this resource before their connection authority tail.
+   * Early native reads and mutations can therefore consume their original
+   * connection fence while the Host is still returning its wake receipt. */
+  withInboxRoutingAuthority<T>(
+    connectionId: string,
+    eventId: string,
+    consume: (route: HostRouteConfig, item: ConnectorInboxItem) => Promise<T>,
+  ): Promise<T> {
+    return this.withAuthority(`routing:${connectionId}`, async () => {
+      const route = await this.getHostRoute(connectionId);
+      const item = (await this.listInbox(connectionId)).find(item => item.event.eventId === eventId);
+      if (!route || !item) throw new Error('Collective inbox route is unavailable');
+      return consume(route, item);
+    });
   }
 
   async beginInboxRouting(

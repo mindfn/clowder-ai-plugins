@@ -5,13 +5,13 @@ import type { CollectiveConnector } from './business/connector/connector.js';
 import { collectiveEventSourceIdentity, collectiveSourceIdentitySchema } from './business/contracts/index.js';
 import { resolveMaterializedParticipation, participationError } from './business/connector/participation-custody.js';
 import { isCollectiveLocalEcho } from './business/connector/public-source-custody.js';
-import { collectiveSource, ingressIdempotencyKey } from './collective-ingress-routing.js';
+import { collectiveSource, ingressIdempotencyKey, assertSettledCollectiveSource } from './collective-ingress-routing.js';
 import type { createCollectiveWorkReconsiderationCaller } from './collective-work-reconsideration.js';
 
 interface PublicSourceCallerOptions {
   readonly reconsideration?: Pick<ReturnType<typeof createCollectiveWorkReconsiderationCaller>, 'readCurrent'>;
   readonly connector: Pick<CollectiveConnector, 'listInbox' | 'getHostRoute' | 'beginInboxRouting' | 'completeInboxRouting' |
-    'recordPublicSource' | 'readCurrentPublicSource' | 'readParticipationContext'>;
+    'recordPublicSource' | 'readCurrentPublicSource' | 'readParticipationContext' | 'withInboxRoutingAuthority'>;
   readonly native: { readonly contributionId: string; readonly methods: readonly string[] };
   readonly messaging: FeatureContext['messaging'];
   readonly nativeContext: PluginNativeContextHost;
@@ -54,69 +54,72 @@ export function createCollectivePublicSourceCaller(options: PublicSourceCallerOp
       if (owner.kind !== 'owner-operation') throw changed();
       const current = async () => { owner.signal.throwIfAborted(); await owner.assertCurrent(); owner.signal.throwIfAborted(); };
       await current();
-      const route = await options.connector.getHostRoute(connectionId);
-      if (!route || route.localOwnerUserId !== owner.userId) throw changed();
-      const item = (await options.connector.listInbox(connectionId)).find(item => item.event.eventId === eventId);
-      if (!item) throw changed();
-      if (isCollectiveLocalEcho(item.event, connectionId)) {
+      return options.connector.withInboxRoutingAuthority(connectionId, eventId, async (route, item) => {
         await current();
-        return Object.freeze({ kind: 'local_echo' as const });
-      }
-      const source = collectiveEventSourceIdentity(item.event);
-      if (!source || source.connectionId !== connectionId || item.event.target.kind !== 'agent' ||
-        item.event.workRequest || item.event.workAcceptanceNotice || item.event.workExecutionNotice || item.event.workRevisionNotice)
-        throw participationError('PUBLIC_SOURCE_UNAVAILABLE', 'This source requires its original authority consumer');
-      const destination = resolveMaterializedParticipation(route, item.event.target.humanId, source.catId, source.location.channelId);
-      if (!destination) throw changed();
-      const currentDestination = async () => {
+        if (route.localOwnerUserId !== owner.userId) throw changed();
+        if (isCollectiveLocalEcho(item.event, connectionId)) {
+          await current();
+          return Object.freeze({ kind: 'local_echo' as const });
+        }
+        const source = collectiveEventSourceIdentity(item.event);
+        if (!source || source.connectionId !== connectionId || item.event.target.kind !== 'agent' ||
+          item.event.workRequest || item.event.workAcceptanceNotice || item.event.workExecutionNotice || item.event.workRevisionNotice)
+          throw participationError('PUBLIC_SOURCE_UNAVAILABLE', 'This source requires its original authority consumer');
+        const destination = resolveMaterializedParticipation(route, item.event.target.humanId, source.catId, source.location.channelId);
+        if (!destination) throw changed();
         await options.connector.readParticipationContext(source, 0, 1); await current();
-        const after = await options.connector.getHostRoute(connectionId); await current();
-        const next = after && resolveMaterializedParticipation(after, item.event.target.kind === 'agent' ? item.event.target.humanId : '',
-          source.catId, source.location.channelId);
-        if (after?.localOwnerUserId !== owner.userId || !isDeepStrictEqual(next, destination)) throw changed();
-      };
-      await options.connector.readParticipationContext(source, 0, 1); await current();
-      const thread = await options.ownerThreads.get(destination.threadId); await current();
-      if (!thread || thread.createdBy !== owner.userId || !thread.participants.includes(source.catId)) throw changed();
-      if (item.disposition === 'routed' && item.publicSource && item.routeReceipt?.kind === 'thread_message') {
-        const existing = options.connector.readCurrentPublicSource(item.publicSource.messageRef);
-        if (existing.pluginInstanceId !== owner.pluginInstanceId || !isActiveNativeScope(existing.native) ||
-          existing.messageRef !== `message:${item.routeReceipt.messageId}` || item.routeReceipt.threadId !== destination.threadId)
+        const thread = await options.ownerThreads.get(destination.threadId); await current();
+        if (!thread || thread.createdBy !== owner.userId || !thread.participants.includes(source.catId)) throw changed();
+        if (item.disposition === 'routed' && item.publicSource && item.routeReceipt?.kind === 'thread_message') {
+          const existing = options.connector.readCurrentPublicSource(item.publicSource.messageRef);
+          if (existing.pluginInstanceId !== owner.pluginInstanceId || !isActiveNativeScope(existing.native) ||
+            existing.messageRef !== `message:${item.routeReceipt.messageId}` || item.routeReceipt.threadId !== destination.threadId)
+            throw changed();
+          await currentSource(existing.messageRef, current);
+          return { messageId: item.routeReceipt.messageId, threadId: item.routeReceipt.threadId };
+        }
+        await options.connector.beginInboxRouting(connectionId, eventId, route.revision); await current();
+        const projected = collectiveSource(item.event, source);
+        await options.connector.readParticipationContext(source, 0, 1); await current();
+        // One Host operation owns storage and named wake, including retry/deduplication.
+        // A lost receipt must retry this same send even if the early native caller has
+        // already bound its authenticated source; that binding is not a wake receipt.
+        const hostReceipt = await options.messaging.send(destination.threadId, {
+          idempotencyKey: ingressIdempotencyKey(item.event), identity: 'collective', sender: projected.sender, meta: projected.meta,
+          wake: { catId: source.catId },
+          payload: { provenance: { origin: { kind: 'plugin', instanceId: owner.pluginInstanceId }, epistemicStatus: 'observation' },
+            elements: [{ elementId: 'collective-source', kind: 'text', payload: { text: item.event.body } }] },
+        });
+        // The builtin Host can return revision/handle/publication fields beyond the
+        // SDK type. Only the original message/thread pair belongs in business custody.
+        const sent = { messageId: hostReceipt.messageId, threadId: hostReceipt.threadId };
+        if (sent.threadId !== destination.threadId) {
+          if (item.disposition !== 'routing' || !options.messaging.get) throw changed();
+          assertSettledCollectiveSource(await options.messaging.get(sent.messageId), sent, item.event, source, owner.userId);
+          await options.connector.completeInboxRouting(connectionId, eventId, route.revision,
+            {kind: 'thread_message', ...sent, catId: source.catId});
+          // The old delivery is now accounted for. Current route permission
+          // does not authorize waking or binding this historical destination.
           throw changed();
-        await currentSource(existing.messageRef, current);
-        return { messageId: item.routeReceipt.messageId, threadId: item.routeReceipt.threadId };
-      }
-      await options.connector.beginInboxRouting(connectionId, eventId, route.revision); await current();
-      const projected = collectiveSource(item.event, source);
-      await currentDestination();
-      // One Host operation owns storage and named wake, including retry/deduplication.
-      // A lost receipt must retry this same send even if the early native caller has
-      // already bound its authenticated source; that binding is not a wake receipt.
-      const hostReceipt = await options.messaging.send(destination.threadId, {
-        idempotencyKey: ingressIdempotencyKey(item.event), identity: 'collective', sender: projected.sender, meta: projected.meta,
-        wake: { catId: source.catId },
-        payload: { provenance: { origin: { kind: 'plugin', instanceId: owner.pluginInstanceId }, epistemicStatus: 'observation' },
-          elements: [{ elementId: 'collective-source', kind: 'text', payload: { text: item.event.body } }] },
+        }
+        const messageRef = `message:${sent.messageId}` as const;
+        try {
+          const latest = (await options.connector.listInbox(connectionId)).find(item => item.event.eventId === eventId);
+          const sourceNative = latest?.publicSource
+            ? options.connector.readCurrentPublicSource(latest.publicSource.messageRef).native : native;
+          if (!isActiveNativeScope(sourceNative)) throw changed();
+          await options.connector.recordPublicSource({ connectionId, eventId, ownerUserId: owner.userId,
+            pluginInstanceId: owner.pluginInstanceId, threadId: destination.threadId, messageRef, native: sourceNative });
+        } finally {
+          // Settling the returned Host effect is bookkeeping, not a grant: a
+          // revoked endpoint still cannot bind or consume executable source.
+          await options.connector.completeInboxRouting(connectionId, eventId, route.revision,
+            { kind: 'thread_message', ...sent, catId: source.catId });
+        }
+        await currentSource(messageRef, current);
+        await current();
+        return sent;
       });
-      // The builtin Host can return revision/handle/publication fields beyond the
-      // SDK type. Only the original message/thread pair belongs in business custody.
-      const sent = { messageId: hostReceipt.messageId, threadId: hostReceipt.threadId };
-      await current();
-      if (sent.threadId !== destination.threadId) throw changed();
-      await currentDestination();
-      const messageRef = `message:${sent.messageId}` as const;
-      const latest = (await options.connector.listInbox(connectionId)).find(item => item.event.eventId === eventId);
-      await current();
-      const sourceNative = latest?.publicSource
-        ? options.connector.readCurrentPublicSource(latest.publicSource.messageRef).native : native;
-      if (!isActiveNativeScope(sourceNative)) throw changed();
-      await options.connector.recordPublicSource({ connectionId, eventId, ownerUserId: owner.userId,
-        pluginInstanceId: owner.pluginInstanceId, threadId: destination.threadId, messageRef, native: sourceNative });
-      await currentSource(messageRef, current);
-      await options.connector.completeInboxRouting(connectionId, eventId, route.revision,
-        { kind: 'thread_message', ...sent, catId: source.catId });
-      await current();
-      return sent;
     },
     async resolveNative(action: PluginActionContext, method: string) {
       const resolve = async () => {

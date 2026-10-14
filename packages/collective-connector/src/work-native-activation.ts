@@ -4,7 +4,7 @@ import { rowsResult, operationRowAction } from '@clowder-ai/plugin-sdk';
 import type { CollectiveConnector } from './business/connector/connector.js';
 import { collectiveEventSourceIdentity } from './business/contracts/index.js';
 import { resolveMaterializedParticipation } from './business/connector/participation-custody.js';
-import { collectiveSource, ingressIdempotencyKey } from './collective-ingress-routing.js';
+import { collectiveSource, ingressIdempotencyKey, assertSettledCollectiveSource } from './collective-ingress-routing.js';
 import { createCollectiveAgentWorkContextCaller } from './agent-work-context-caller.js';
 import { createCollectiveWorkAdmissionCaller } from './collective-work-admission-caller.js';
 import { createCollectiveOwnerWorkCaller } from './owner-work-manual-caller.js';
@@ -124,29 +124,35 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
     await current();const route = await connector.getHostRoute(input.connectionId);await current();
     if (!route || route.localOwnerUserId !== owner.userId) throw new Error('Connection belongs to another owner');
     await connector.sync(input.connectionId);await current();
-    const connection = await connector.getProjection(input.connectionId);await current();
     const rows = [];
     for (const item of await connector.listInbox(input.connectionId)) {
       const identity = collectiveEventSourceIdentity(item.event);
       if (!identity || item.event.workRequest !== 'entrust') continue;
-      const destination = resolveMaterializedParticipation(route, connection.authorizedHumanId ?? '', identity.catId, identity.location.channelId);
-      if (!destination) continue;
       await current();
       try {
-        let receipt = item.routeReceipt;
-        if (receipt?.kind !== 'thread_message') {
+        const receipt = await connector.withInboxRoutingAuthority(input.connectionId, item.event.eventId, async (currentRoute, currentItem) => {
+          await current();
+          if (currentRoute.localOwnerUserId !== owner.userId) throw new Error('Connection belongs to another owner');
+          const connection = await connector.getProjection(input.connectionId);
+          const destination = resolveMaterializedParticipation(currentRoute, connection.authorizedHumanId ?? '', identity.catId, identity.location.channelId);
+          if (!destination) throw new Error('Work source route is unavailable');
+          if (currentItem.routeReceipt?.kind === 'thread_message') return currentItem.routeReceipt;
           await connector.readParticipationContext(identity, 0, 1);await current();
-          await connector.beginInboxRouting(input.connectionId, item.event.eventId, route.revision);await current();
-          const projected = collectiveSource(item.event, identity);
-          const sent = await context.messaging.send(destination.threadId, {idempotencyKey: ingressIdempotencyKey(item.event),
+          await connector.beginInboxRouting(input.connectionId, item.event.eventId, currentRoute.revision);await current();
+          const projected = collectiveSource(currentItem.event, identity);
+          const sent = await context.messaging.send(destination.threadId, {idempotencyKey: ingressIdempotencyKey(currentItem.event),
             identity: 'collective', sender: projected.sender, meta: projected.meta,
             payload: {provenance: {origin: {kind: 'plugin', instanceId: owner.pluginInstanceId}, epistemicStatus: 'observation'},
-              elements: [{elementId: 'collective-source', kind: 'text', payload: {text: item.event.body}}]}});
-          await current();
-          if (sent.threadId !== destination.threadId) throw new Error('Work source destination changed');
-          receipt = {kind: 'thread_message', messageId: sent.messageId, threadId: sent.threadId, catId: identity.catId};
-          await connector.completeInboxRouting(input.connectionId, item.event.eventId, route.revision, receipt);await current();
-        }
+              elements: [{elementId: 'collective-source', kind: 'text', payload: {text: currentItem.event.body}}]}});
+          if (sent.threadId !== destination.threadId) {
+            if (currentItem.disposition !== 'routing' || !context.messaging.get) throw new Error('Work source destination changed');
+            assertSettledCollectiveSource(await context.messaging.get(sent.messageId), sent, currentItem.event, identity, owner.userId);
+          }
+          const recorded = {kind: 'thread_message' as const, messageId: sent.messageId, threadId: sent.threadId, catId: identity.catId};
+          // Record the returned durable effect before testing a late owner result.
+          await connector.completeInboxRouting(input.connectionId, item.event.eventId, currentRoute.revision, recorded);
+          await current();return recorded;
+        });
         const work = await connector.readAssignedWorkByAssignment(input.connectionId, item.event.eventId);await current();
         const result = await createCollectiveWorkAdmissionCaller({connector, tasks: context.tasks, threads: context.threads,
           firstReceipts: {storage: context.storage, messaging: context.messaging}, assertCurrent: current})

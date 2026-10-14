@@ -2,7 +2,63 @@ import { expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isCollectiveLocalEcho } from '../public-source-custody.js';
+import { setHostRouteInputSchema } from '../host-route-state.js';
 import { publicSourceFixture as setup } from './public-source-caller.fixture.js';
+
+it('records the public send receipt before a same-connection route writer can retarget the source', async () => {
+  const f = await setup(); let writer: Promise<unknown> | undefined; let settledDuringSend = false;
+  try {
+    f.beforeSendReturns(async () => {
+      const route = (await f.connector.getHostRoute(f.connection.connectionId))!;
+      writer = f.connector.setHostRoute(f.connection.connectionId, setHostRouteInputSchema.strip().parse({...route,
+        defaultIngressThreadId: 'replacement',
+        agentRoutes: Object.fromEntries(Object.entries(route.agentRoutes).map(([key, value]) => [key, {...value, threadId: 'replacement'}])),
+      }), route.revision);
+      settledDuringSend = await Promise.race([writer.then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 20))]);
+      // A real early native callback must still read/bind without re-entering the route writer tail.
+      await f.sourceCaller.resolveNative(f.action, 'collective.context.current');
+    });
+    const receipt = await f.admit();
+    await writer;
+    expect(settledDuringSend).toBe(false);
+    const item = (await f.connector.listInbox(f.connection.connectionId)).find(item => item.event.eventId === f.source.eventId)!;
+    expect(item.disposition).toBe('routed');
+    expect(item.routeReceipt).toMatchObject(receipt);
+    expect(item.routeReceipt).toMatchObject({threadId: 'channel', messageId: 'host-source'});
+    expect((await f.connector.getHostRoute(f.connection.connectionId))!.defaultIngressThreadId).toBe('replacement');
+    expect(f.calls.filter((call: any) => call[0] === 'send')).toHaveLength(1);
+  } finally {await writer;await f.close();}
+});
+
+it('retains the actual public send receipt when endpoint revocation refuses executable source binding', async () => {
+  const f = await setup();
+  try {
+    f.beforeSendReturns(async () => {await f.connector.revoke(f.connection.connectionId);});
+    await expect(f.admit()).rejects.toBeInstanceOf(Error);
+    const item = (await f.connector.listInbox(f.connection.connectionId)).find(item => item.event.eventId === f.source.eventId)!;
+    expect(item).toMatchObject({disposition: 'routed', routeReceipt: {messageId: 'host-source', threadId: 'channel'}});
+    expect(() => f.connector.readCurrentPublicSource('message:host-source')).toThrow();
+  } finally {await f.close();}
+});
+
+it('settles a lost public receipt after retargeting without granting the historical destination', async () => {
+  const f = await setup();
+  try {
+    f.loseSend();await expect(f.admit()).rejects.toThrow('Wake send response lost');
+    const route = (await f.connector.getHostRoute(f.connection.connectionId))!;
+    await f.connector.setHostRoute(f.connection.connectionId, setHostRouteInputSchema.strip().parse({...route,
+      defaultIngressThreadId: 'replacement',
+      agentRoutes: Object.fromEntries(Object.entries(route.agentRoutes).map(([key, value]) => [key, {...value, threadId: 'replacement'}])),
+    }), route.revision);
+    f.recoverSend();await expect(f.admit()).rejects.toMatchObject({code: 'PUBLIC_SOURCE_CHANGED'});
+    const item = (await f.connector.listInbox(f.connection.connectionId)).find(item => item.event.eventId === f.source.eventId)!;
+    expect(item).toMatchObject({disposition: 'routed', routeReceipt: {messageId: 'host-source', threadId: 'channel'}});
+    expect(() => f.connector.readCurrentPublicSource('message:host-source')).toThrow();
+    const sends = f.calls.filter((call: any) => call[0] === 'send') as any[];
+    expect(sends.map(call => call[1])).toEqual(['channel', 'replacement']);
+    expect(sends[0][2].idempotencyKey).toBe(sends[1][2].idempotencyKey);
+  } finally {await f.close();}
+});
 
 it('sends with named wake and commits its receipt; the private verifier still rechecks real Service', async () => {
   const f = await setup(); try {

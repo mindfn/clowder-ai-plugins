@@ -1,4 +1,6 @@
 import { ConnectorTransportError } from './business/connector/service-client.js';
+import { isDeepStrictEqual } from 'node:util';
+import type { PluginMessage } from '@clowder-ai/plugin-sdk';
 import type { HostRouteConfig } from './business/connector/state.js';
 import type { CollectiveEventEnvelope, CollectiveSourceIdentity } from './business/contracts/index.js';
 interface ConnectorSource {
@@ -56,6 +58,17 @@ export function attentionSource(
 
 export function ingressIdempotencyKey(event: CollectiveEventEnvelope): string {
   return `collective-ingress:${event.serviceInstanceId}:${event.collectiveId}:${event.eventId}`;
+}
+
+/** Reconcile an earlier pending send from actual owned Host storage.
+ * The receipt comes from this instance's Host send ledger; message reading
+ * checks content identity only, never callback identity or execution permission. */
+export function assertSettledCollectiveSource(message: PluginMessage | null, receipt: {messageId: string; threadId: string},
+  event: CollectiveEventEnvelope, source: CollectiveSourceIdentity, ownerUserId: string): void {
+  if (!message || message.id !== receipt.messageId || message.threadId !== receipt.threadId || message.catId !== null ||
+    message.userId !== ownerUserId || message.content !== event.body ||
+    message.source?.connector !== 'collective' || !isDeepStrictEqual(message.source.meta, collectiveSource(event, source).meta))
+    throw ingressError('ROUTE_RECEIPT_CHANGED', 'Prior Host source receipt does not match this exact Collective event');
 }
 
 export function collectiveSender(event: CollectiveEventEnvelope): { id: string; name: string } {
