@@ -61,6 +61,11 @@ export type PluginNativeTaskContext = {
     readonly admissionRef: string;
     readonly executionRef: string;
     readonly sourceRevision: number;
+    readonly execution?: {
+      readonly kind: 'initial' | 'owner_resume' | 'source_continuation';
+      readonly firstAdmissionKind: 'owner_http_write' | 'owner_operation_write' | 'native_exact_origin' | 'installed_plugin_policy';
+      readonly requestKind: 'owner_http_write' | 'owner_operation_write' | 'native_exact_origin' | 'installed_plugin_policy';
+    };
   };
 };
 export type PluginTaskAdmissionInput = {

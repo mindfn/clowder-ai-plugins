@@ -20,6 +20,8 @@ export interface PluginNativeContextHost {
   current(input?: { readonly includeTask: true }): Promise<PluginNativeContext>;
 }
 export interface PluginNativeContextClient {
+  /** Explicit Task snapshot may contain bounded Host entry provenance.
+   * These facts never identify manual/standing Work basis or grant execution. */
   current(input: { readonly includeTask: true }): Promise<PluginNativeTaskContext>;
   current(): Promise<PluginNativeContext>;
 }

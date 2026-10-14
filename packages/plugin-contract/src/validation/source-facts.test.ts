@@ -51,3 +51,31 @@ test('native wrapper preserves the Host source snapshot nesting allowance', () =
   check('assertPluginSourceFact', nested);
   check('assertPluginNativeContext', { userId: 'owner', threadId: 'thread', catId: 'cat', invocationId: 'inv', originTriggerMessageId: 'origin', source: nested });
 });
+
+test('Task opt-in accepts v1 absence and bounded v2 Host entry facts without business authority', () => {
+  const task = { taskRef: 'task:work:task', taskRevision: 2, admissionRef: 'message:first',
+    executionRef: 'message:execution', sourceRevision: 1 };
+  const context = { userId: 'owner', threadId: 'private-thread', catId: 'cat', invocationId: 'inv',
+    originTriggerMessageId: 'trigger', source: fact, task };
+  check('assertPluginNativeTaskContext', context);
+  for (const kind of ['initial', 'owner_resume', 'source_continuation'])
+    for (const firstAdmissionKind of ['owner_http_write', 'owner_operation_write', 'native_exact_origin', 'installed_plugin_policy'])
+      for (const requestKind of ['owner_http_write', 'owner_operation_write', 'native_exact_origin', 'installed_plugin_policy'])
+        check('assertPluginNativeTaskContext', { ...context, task: { ...task,
+          execution: { kind, firstAdmissionKind, requestKind } } });
+  // The enum product describes a bounded data shape; only the Host authenticates
+  // the protected receipt and permitted phase/provenance combination.
+  const execution = { kind: 'initial', firstAdmissionKind: 'owner_http_write', requestKind: 'owner_http_write' };
+  let reads = 0;
+  const getter = Object.defineProperty({ ...execution }, 'kind', { enumerable: true,
+    get() { reads++; return 'initial'; } });
+  for (const value of [null, {}, { ...execution, kind: 'completed' },
+    { ...execution, firstAdmissionKind: 'manual_owner_write' }, { ...execution, requestKind: 'standing_grant' },
+    { ...execution, requestKind: undefined }, { ...execution, request: { body: 'secret' } },
+    { ...execution, bearer: 'secret' }, { ...execution, executionAuthorityRevision: 1 }, getter,
+    Object.assign(Object.create({ businessBasis: 'standing_grant' }), execution)]) {
+    assert.throws(() => check('assertPluginNativeTaskContext', { ...context, task: { ...task, execution: value } }), TypeError);
+  }
+  assert.equal(reads, 0);
+  assert.throws(() => check('assertPluginNativeContext', context), TypeError);
+});

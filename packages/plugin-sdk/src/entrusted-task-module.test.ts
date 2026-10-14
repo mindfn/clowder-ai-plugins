@@ -41,6 +41,45 @@ test('explicit Task current preserves dispatch origin and distinct owned source 
     fact.task.taskRevision = 5; assert.equal(value.task.taskRevision, 2);
   } finally { await f.activation.stop(); }
 });
+
+test('Task v2 entry provenance is optional, detached/frozen and never substitutes Work basis', async () => {
+  let reply: unknown = nativeTask();
+  const f = await fixture({}, { async current() { return reply; } });
+  try {
+    const old = await f.context.nativeContext!.current({ includeTask: true });
+    assert.equal(old.task.execution, undefined);
+    for (const kind of ['initial', 'owner_resume', 'source_continuation'] as const) {
+      const execution = { kind, firstAdmissionKind: 'installed_plugin_policy' as const, requestKind: 'owner_http_write' as const };
+      reply = { ...nativeTask(), task: { ...nativeTask().task, execution } };
+      const value = await f.context.nativeContext!.current({ includeTask: true });
+      assert.deepEqual(value.task.execution, execution);
+      assert.ok(Object.isFrozen(value.task.execution));
+      assert.notEqual(value.task.execution, execution);
+      assert.throws(() => { (value.task.execution as { requestKind: string }).requestKind = 'standing_grant'; }, TypeError);
+      assert.equal(value.task.execution!.requestKind, 'owner_http_write');
+    }
+    const execution = { kind: 'initial', firstAdmissionKind: 'owner_http_write', requestKind: 'owner_http_write' };
+    let reads = 0;
+    const getter = Object.defineProperty({ ...execution }, 'requestKind', { enumerable: true,
+      get() { reads++; return 'owner_http_write'; } });
+    for (const invalid of [null, { ...execution, requestKind: 'standing_grant' }, { ...execution, businessBasis: 'manual_owner_write' },
+      { ...execution, body: 'secret' }, { ...execution, request: { requestId: 'caller' } }, getter]) {
+      reply = { ...nativeTask(), task: { ...nativeTask().task, execution: invalid } };
+      await assert.rejects(f.context.nativeContext!.current({ includeTask: true }), TypeError);
+    }
+    assert.equal(reads, 0);
+  } finally { await f.activation.stop(); }
+});
+
+test('a v2 Task result arriving after activation stop is refused', async () => {
+  let resolve!: (value: unknown) => void;
+  const f = await fixture({}, { async current() { return new Promise(r => { resolve = r; }); } });
+  const pending = f.context.nativeContext!.current({ includeTask: true });
+  await f.activation.stop();
+  resolve({ ...nativeTask(), task: { ...nativeTask().task,
+    execution: { kind: 'initial', firstAdmissionKind: 'installed_plugin_policy', requestKind: 'installed_plugin_policy' } } });
+  await assert.rejects(pending, FeatureContextRevokedError);
+});
 test('Task current requires task.read and rejects forged selector/expanded or foreign response', async () => {
   let calls = 0, reply: unknown = nativeTask();
   const host = { async current() { calls++; return reply; } };

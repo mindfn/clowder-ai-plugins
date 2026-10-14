@@ -206,6 +206,40 @@
             "sourceRevision": {
               "type": "integer",
               "minimum": 1
+            },
+            "execution": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "firstAdmissionKind",
+                "requestKind"
+              ],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "initial",
+                    "owner_resume",
+                    "source_continuation"
+                  ]
+                },
+                "firstAdmissionKind": {
+                  "enum": [
+                    "owner_http_write",
+                    "owner_operation_write",
+                    "native_exact_origin",
+                    "installed_plugin_policy"
+                  ]
+                },
+                "requestKind": {
+                  "enum": [
+                    "owner_http_write",
+                    "owner_operation_write",
+                    "native_exact_origin",
+                    "installed_plugin_policy"
+                  ]
+                }
+              }
             }
           }
         }
