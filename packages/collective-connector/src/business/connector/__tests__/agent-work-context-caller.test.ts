@@ -166,7 +166,7 @@ test("authenticated Agent Task binds the original source, current Service admiss
   }
 });
 
-test("foreign action, source body and canonical Task revision are refused before consuming private context", async () => {
+test("foreign action, source body and canonical Task ownership are refused before consuming private context", async () => {
   const f = await setup();
   let consumed = 0;
   try {
@@ -185,7 +185,7 @@ test("foreign action, source body and canonical Task revision are refused before
     f.setNative(original);
     const task = f.task();
     if (!task.entrustedWork) throw new Error("Expected fixture Task");
-    f.setTask({ ...task, entrustedWork: { ...task.entrustedWork, revision: 2 } });
+    f.setTask({ ...task, ownerCatId: "foreign" });
     await expect(
       f.caller.withCurrentTask(f.action, async () => {
         consumed++;
@@ -389,4 +389,22 @@ test("original private progress can acquire its own sync fence without reenterin
     await progress?.catch(() => {});
     await f.close();
   }
+});
+
+// The actual Registry/Task metadata and revocation contrast is independently
+// exercised by the compiled Host+SDK composition probe; this port-level test
+// isolates the package's consumer/refScope behavior.
+test("evidence-only aggregate changes keep the authenticated execution scope stable", async () => {
+  const f = await setup();
+  try {
+    await f.caller.withCurrentTask(f.action, async binding => {
+      const before = binding.refScope;
+      const task = f.task();
+      if (!task.entrustedWork) throw new Error("Expected Task");
+      f.setTask({ ...task, entrustedWork: { ...task.entrustedWork, revision: 2 } });
+      await binding.revalidate();
+      expect(binding.refScope).toBe(before);
+      expect(binding.work.revision).toBe(f.native().task.taskRevision);
+    });
+  } finally { await f.close(); }
 });

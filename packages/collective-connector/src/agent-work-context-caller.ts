@@ -112,7 +112,6 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
             task.threadId !== auth.threadId ||
             task.status === "done" ||
             task.entrustedWork?.closure.state !== "open" ||
-            task.entrustedWork.revision !== auth.task.taskRevision ||
             firstReceipt?.kind !== "thread_message" ||
             task.entrustedWork.admission.sourceRefs.length !== 1 ||
             task.entrustedWork.admission.sourceRefs[0] !== `message:${firstReceipt.messageId}` ||
@@ -179,12 +178,15 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
             resultKey: `work:${task.id}`,
             displayName: participation.displayName,
             work: {
-              revision: task.entrustedWork.revision,
+              // Host assertCurrent/readTaskBinding fence execution authority. Its
+              // captured Task revision stays fixed while evidence-only metadata
+              // advances the aggregate CAS revision; the two are different facts.
+              revision: auth.task.taskRevision,
               resultRevision,
               executionRevision,
               assignmentEventId: work.assignmentEventId,
             },
-            refScope: `message:${auth.source.id}:work:${task.id}:${task.entrustedWork.revision}:result:${resultRevision}:execution:${executionRevision}:${auth.task.executionRef}`,
+            refScope: `message:${auth.source.id}:work:${task.id}:${auth.task.taskRevision}:result:${resultRevision}:execution:${executionRevision}:${auth.task.executionRef}`,
           };
         });
       const initial = await read();
