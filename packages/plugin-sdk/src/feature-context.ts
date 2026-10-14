@@ -3,6 +3,7 @@ import { capturePublicInvocationVerifier, guardPublicInvocationVerifier, PUBLIC_
 import { createSourceFactsClient, createNativeContextClient, type PluginSourceFactsHost, type PluginNativeContextHost,
   type PluginNativeContextClient } from './source-facts.js';
 import { createEntrustedTaskClient } from './task-entrusted.js';
+import { createMessageReader, type PluginMessage } from './message-read.js';
 import { createParticipantRosterClient, type PluginParticipantRosterHost, type PluginParticipantRosterClient } from './participant-roster.js';
 import { createPublicInvocationClient, type PluginPublicInvocationHost } from './public-invocations.js';
 import type { BrowserServiceHost, PluginHostActionContext } from './browser-services.js';
@@ -70,6 +71,7 @@ export interface HostContributionReceipt {
 export type PluginLogLevel = ModulePluginLogLevel;
 
 export interface FeatureHostAdapter {
+  getMessage?(messageId: string): Promise<PluginMessage | null>;
   readonly publicInvocations?: PluginPublicInvocationHost;
   /** Exact authenticated source subset; absent on older carriers. */
   readonly sourceFacts?: PluginSourceFactsHost;
@@ -183,6 +185,7 @@ export interface FeatureContext {
   readonly limbs: ContributionRegistrar<LimbContribution>;
   readonly webhooks: ContributionRegistrar<WebhookContribution>;
   readonly messaging: {
+    readonly get?: (messageId: string) => Promise<PluginMessage | null>;
     readonly subscribe: (
       threadId: string,
       options?: PluginMessagingSubscribeOptions,
@@ -433,6 +436,7 @@ export function createFeatureContextSession(
     if (!binding.grantedCapabilities.includes('thread.readContent')) throw new FeaturePermissionError('thread.readContent not granted');
   };
   const sourceFacts = adapter.sourceFacts === undefined ? undefined : createSourceFactsClient(adapter.sourceFacts, assertContentAccess);
+  const getMessage = adapter.getMessage === undefined ? undefined : createMessageReader(adapter.getMessage.bind(adapter), assertContentAccess);
   const publicInvocations = adapter.publicInvocations === undefined ? undefined : createPublicInvocationClient(adapter.publicInvocations, () => {
     assertContentAccess();
     if (!binding.grantedCapabilities.includes('messaging.send')) throw new FeaturePermissionError('messaging.send not granted');
@@ -523,7 +527,7 @@ export function createFeatureContextSession(
     skills: registrar<SkillContribution>('skill'),
     limbs: registrar<LimbContribution>('limb'),
     webhooks: registrar<WebhookContribution>('webhook'),
-    messaging: { subscribe: subscribeMessage, unsubscribe: unsubscribeMessage, send: sendMessage },
+    messaging: { ...(getMessage ? { get: getMessage } : {}), subscribe: subscribeMessage, unsubscribe: unsubscribeMessage, send: sendMessage },
     media,
     mediaSources: registrar<MediaSourceContribution>('media-source'),
     services: registrar<ServiceContribution>('service'),
@@ -712,17 +716,35 @@ export async function activateDefinedFeature(
   const httpMethods = new Map((plugin.manifest.contributions ?? []).filter(
     (contribution): contribution is BrowserServiceContribution => contribution.type === 'browser-service',
   ).map(contribution => [contribution.action.method, contribution.id]));
+  const ownerWebhooks = (plugin.manifest.contributions ?? []).filter(
+    (contribution): contribution is WebhookContribution => contribution.type === 'webhook',
+  );
   const guardedActions = Object.freeze(Object.fromEntries(Object.entries(actions).map(([method, handler]) => [method,
     async (input: unknown, nativeContext?: import('./module-action-client.js').PluginActionContext, hostContext?: PluginHostActionContext) => {
       const assertCall = async () => {
         if (disposed) throw new FeatureContextRevokedError();
-        if (hostContext && (hostContext.kind !== 'http' && hostContext.kind !== 'owner-operation'))
+        if (hostContext && (hostContext.kind !== 'http' && hostContext.kind !== 'owner-operation' && hostContext.kind !== 'owner-http-request'))
           throw new FeaturePermissionError('unknown Host action context');
         if (httpMethods.has(method)) {
           if (nativeContext !== undefined || hostContext?.kind !== 'http' || hostContext.contributionId !== httpMethods.get(method) ||
             !['browser', 'local'].includes(hostContext.lane) || !hostContext.requestId)
             throw new FeaturePermissionError('private browser-service action requires its exact HTTP context');
         } else if (hostContext?.kind === 'http') throw new FeaturePermissionError('HTTP context cannot invoke ordinary actions');
+        if (hostContext?.kind === 'owner-http-request') {
+          if (nativeContext !== undefined || !hostContext.userId || !hostContext.pluginInstanceId ||
+            !['read', 'write'].includes(hostContext.operation))
+            throw new FeaturePermissionError('owner HTTP caller is invalid');
+          const request = hostContext.requestIdentity;
+          if (!ownerWebhooks.some(webhook => webhook.action.method === method &&
+            (request === undefined || webhook.id === request.contributionId && webhook.path === request.declaredPath &&
+              webhook.methods.some(verb => verb === request.method))))
+            throw new FeaturePermissionError('owner HTTP call does not match its declared webhook');
+          if (request && (request.kind !== 'owner_http' || !request.requestId ||
+            request.userId !== hostContext.userId || request.pluginInstanceId !== hostContext.pluginInstanceId ||
+            request.pluginId !== plugin.manifest.pluginId ||
+            (request.method === 'GET' ? 'read' : 'write') !== hostContext.operation))
+            throw new FeaturePermissionError('owner HTTP descriptor is inconsistent');
+        }
         if (hostContext?.kind === 'owner-operation') {
           if (nativeContext !== undefined || !hostContext.userId || !hostContext.pluginInstanceId || !hostContext.requestId)
             throw new FeaturePermissionError('owner-operation caller is invalid');

@@ -20,6 +20,20 @@ const fixtureHost = (directory: string): ModulePluginHostShape => ({ dataDirecto
     async dispatchLocal() { throw new Error('Unused local dispatch'); } } });
 const ownerRequest = (method: string, path: string, body?: unknown) => ({ request: { method, path, query: {},
   headers: { origin: 'http://localhost:5172' }, principal: { kind: 'owner', id: 'fixture-owner' }, ...(body === undefined ? {} : { body }) } });
+
+test('authenticated owner HTTP facts reach the original control caller and expired or mismatched requests have no effects', async () => {
+  const port = controlledPort(); const controller = new AbortController();
+  const caller = { kind: 'owner-http-request' as const, userId: 'fixture-owner', pluginInstanceId: 'instance',
+    operation: 'read' as const, signal: controller.signal, async assertCurrent() { controller.signal.throwIfAborted(); } };
+  const result = await port.invoke(ownerRequest('GET', 'connections'), undefined, caller);
+  assert.equal(result.status, 200); assert.deepEqual(port.calls, ['list']);
+  await assert.rejects(() => port.invoke(ownerRequest('GET', 'connections'), undefined, { ...caller, userId: 'foreign' }), /webhook/);
+  await assert.rejects(() => port.invoke(ownerRequest('GET', 'connections'), undefined, { ...caller, operation: 'write' }), /webhook/);
+  assert.equal(port.calls.length, 1);
+  controller.abort(new Error('HTTP request ended'));
+  await assert.rejects(() => port.invoke(ownerRequest('GET', 'connections'), undefined, caller), /request ended/);
+  assert.equal(port.calls.length, 1);
+});
 test('retained connections and provision callers resolve non-anonymous owner declarations and real handlers', async () => {
   for (const [path, verb] of [['connections', 'GET'], ['service/provision', 'POST']]) {
     const declaration = manifest.contributions.find((item: { type: string; path?: string; methods?: string[] }) =>

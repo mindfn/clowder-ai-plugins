@@ -78,6 +78,10 @@ export interface PluginThreadBindingSummary {
   readonly createdAt: number;
 }
 
+export type PluginThreadEnsureInput =
+  | { readonly title: string; readonly parentThreadId?: never; readonly participants?: never }
+  | { readonly title: string; readonly parentThreadId: string; readonly participants: readonly string[] };
+
 export interface PluginThreadHost {
   get(threadId: string): Promise<PluginThreadSummary | null>;
   /** Live owner-visible keyset; use the previous page's last position. A short
@@ -89,7 +93,7 @@ export interface PluginThreadHost {
   create(input: { readonly title: string }): Promise<PluginThreadSummary>;
   update(threadId: string, patch: { readonly title?: string; readonly preferredCats?: readonly string[] }): Promise<PluginThreadSummary>;
   findByKey(key: string): Promise<PluginThreadSummary | null>;
-  ensureByKey(key: string, input: { readonly title: string }): Promise<PluginThreadSummary>;
+  ensureByKey(key: string, input: PluginThreadEnsureInput): Promise<PluginThreadSummary>;
   bind(key: string, threadId: string): Promise<PluginThreadBindingSummary>;
   unbind(key: string): Promise<boolean>;
   listBindings(): Promise<readonly PluginThreadBindingSummary[]>;
@@ -227,6 +231,8 @@ export interface PluginMediaHost {
 }
 
 export interface PluginMessagingHost {
+  /** Optional only for legacy carriers; real persistent facts, no callback authority. */
+  get?(messageId: string): Promise<import('./message-read.js').PluginMessage | null>;
   send(input: PluginMessagingDraft & { readonly threadId: string }): Promise<{
     readonly messageId: string;
     readonly threadId: string;

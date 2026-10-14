@@ -29,6 +29,32 @@ const BINDING: FeatureBinding = {
   executionLease: 'opaque-host-signed-lease',
 };
 
+test('approved generic child ensure coordinates pass through the existing feature wrapper, with old title-only path intact', async () => {
+  const adapter = new RecordingAdapter();
+  const calls: unknown[] = [];
+  Object.assign(adapter.threads, { async ensureByKey(key: string, input: unknown) {
+    calls.push([key, input]);
+    return { id: 'child', deepLinkUrl: 'https://owner.example/thread/child', title: null,
+      createdAt: 1, lastActiveAt: 1, featureRefs: [], preferredCats: [] };
+  } });
+  const session = createFeatureContextSession(BINDING, adapter);
+  const input = { title: 'Original title', parentThreadId: 'parent', participants: ['cat'] };
+  await session.context.threads.ensureByKey('original-key', {
+    title: 'Original title', parentThreadId: 'parent', participants: ['cat'],
+  });
+  await session.context.threads.ensureByKey('legacy-key', { title: 'Legacy' });
+  assert.deepEqual(calls, [['original-key', input], ['legacy-key', { title: 'Legacy' }]]);
+  if (false) {
+    // @ts-expect-error The approved child path requires participants together with parent.
+    await session.context.threads.ensureByKey('partial', { title: 'Child', parentThreadId: 'parent' });
+    // @ts-expect-error Owner/project facts are never chosen by the package request.
+    await session.context.threads.ensureByKey('forged', { title: 'Child', userId: 'other' });
+  }
+  await session.revoke();
+  await assert.rejects(session.context.threads.ensureByKey('stopped', input), FeatureContextRevokedError);
+  assert.equal(calls.length, 2);
+});
+
 test('accepted thread projections and preferredCats patch cross the real FeatureContext wrapper', async () => {
   const adapter = new RecordingAdapter();
   const seen: unknown[] = [];

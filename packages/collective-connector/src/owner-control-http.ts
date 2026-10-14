@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { hostRouteBodySchema } from './owner-route-validation.js';
 import { individualParticipationInput } from './owner-participation-change.js';
-import type { BrowserServiceBinding } from '@clowder-ai/plugin-sdk';
+import type { BrowserServiceBinding, PluginOwnerHttpContext } from '@clowder-ai/plugin-sdk';
 import type { CollectiveConnector } from './business/connector/connector.js';
 import type { createCollectiveEntryCaller } from './entry-control.js';
 import type { HostRouteConfig } from './business/connector/host-route-state.js';
@@ -58,14 +58,25 @@ export function createOwnerControlHttp(options: OwnerControlOptions) {
     try { return await run(); } finally { release(); if (mutations.get(id) === tail) mutations.delete(id); }
   };
   return async (input: unknown, native?: unknown, caller?: unknown) => {
-    if (native !== undefined || caller !== undefined) throw new Error('Collective owner webhook context required');
+    if (native !== undefined || caller !== undefined &&
+      (!caller || typeof caller !== 'object' || !('kind' in caller) || caller.kind !== 'owner-http-request'))
+      throw new Error('Collective owner webhook context required');
     const { request } = inputSchema.parse(input);
-    options.assertActive(); await options.binding.assertCurrent(); options.assertActive();
+    const owner = caller as PluginOwnerHttpContext | undefined;
+    if (owner && (owner.userId !== request.principal.id || !owner.pluginInstanceId ||
+      owner.operation !== (request.method === 'GET' ? 'read' : 'write') || typeof owner.assertCurrent !== 'function' ||
+      owner.requestIdentity && (owner.requestIdentity.method !== request.method || owner.requestIdentity.path !== request.path)))
+      throw new Error('Collective owner webhook context required');
+    const current = async () => {
+      owner?.signal.throwIfAborted(); await owner?.assertCurrent();
+      options.assertActive(); await options.binding.assertCurrent(); options.assertActive();
+      owner?.signal.throwIfAborted(); await owner?.assertCurrent();
+    };
+    await current();
     const origin = request.headers.origin;
     if (origin !== undefined && origin !== options.binding.parentOrigin)
       return response(403, { code: 'PAIRING_ORIGIN_MISMATCH', error: 'Owner request origin does not match this Host' });
     const { connector } = options;
-    const current = async () => { options.assertActive(); await options.binding.assertCurrent(); options.assertActive(); };
     const finish = async (status: number, body: unknown) => { await current(); return response(status, body); };
     const rawRoute = /^connections\/([A-Za-z0-9_-]{1,240})\/route$/.exec(request.path);
     if (rawRoute && request.method === 'PUT' && options.routeChange) {

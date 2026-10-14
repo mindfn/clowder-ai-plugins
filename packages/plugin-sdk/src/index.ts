@@ -60,6 +60,7 @@ export {
 } from './handshake-client.js';
 
 export { classifyFrame } from '@clowder-ai/plugin-contract';
+export type { PluginMessage } from './message-read.js';
 export type {
   DispatchResult,
   InFlightEntry,
@@ -197,6 +198,7 @@ export type {
   PluginTaskUpdateInput,
   PluginThreadBindingSummary,
   PluginThreadHost,
+  PluginThreadEnsureInput,
   PluginThreadMessage,
   PluginThreadCat,
   PluginThreadCats,

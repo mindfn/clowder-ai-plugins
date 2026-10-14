@@ -100,6 +100,7 @@ function declaredContributionAdapter(
     participantRoster: host.participantRoster,
     ownerThreads: host.ownerThreads,
     browserServices: host.browserServices,
+    ...(host.messaging?.get === undefined ? {} : { getMessage: host.messaging.get.bind(host.messaging) }),
     readConfig: (_binding, key) => host.config.get(key),
     readSecret: (_binding, key) => host.secrets.get(key),
     storage: host.storage,
