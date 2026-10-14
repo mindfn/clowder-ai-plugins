@@ -18,7 +18,15 @@ const fact = () => ({
     causal: { kind: "invocation_reply" as const, triggerMessageId: "trigger" },
     rich: {
       v: 1 as const,
-      blocks: [{ id: "file", kind: "file", v: 1, url: "artifact:original", fileName: "report.md" }],
+      blocks: [
+        {
+          id: "file",
+          kind: "file",
+          v: 1,
+          url: "artifact:original",
+          fileName: "report.md",
+        },
+      ],
     },
   },
 });
@@ -43,18 +51,16 @@ async function fixture(get?: (id: string) => Promise<unknown>, capabilities = ["
       },
     }),
   );
-  const activation = await module
-    .create(manifest)
-    .start({
-      config: { get: async () => undefined },
-      secrets: { get: async () => undefined },
-      storage: {},
-      tasks: {},
-      threads: {},
-      messaging: get ? { get } : {},
-      media: {},
-      log() {},
-    } as unknown as ModulePluginHostShape);
+  const activation = await module.create(manifest).start({
+    config: { get: async () => undefined },
+    secrets: { get: async () => undefined },
+    storage: {},
+    tasks: {},
+    threads: {},
+    messaging: get ? { get } : {},
+    media: {},
+    log() {},
+  } as unknown as ModulePluginHostShape);
   const read = (context.messaging as unknown as { get?: (id: string) => Promise<unknown> }).get;
   return { context, activation, read };
 }
@@ -151,4 +157,117 @@ test("an activation stopped during get never accepts the late read and never ret
   resolve(fact());
   await assert.rejects(pending, FeatureContextRevokedError);
   assert.equal(calls, 1);
+});
+
+test("source projects its public fields and sender while malformed declared fields refuse", async () => {
+  let reply: unknown = {
+    ...fact(),
+    source: {
+      connector: "c",
+      label: "C",
+      icon: "i",
+      url: "original",
+      meta: { opaque: { x: 1 } },
+      sender: { id: "sender", name: "Name", hiddenAuthority: "secret" },
+      hiddenAuthority: "secret",
+    },
+  };
+  const f = await fixture(async () => reply);
+  try {
+    assert.ok(f.read);
+    const result = (await f.read("original")) as { source: unknown };
+    assert.deepEqual(result.source, {
+      connector: "c",
+      label: "C",
+      icon: "i",
+      url: "original",
+      meta: { opaque: { x: 1 } },
+      sender: { id: "sender", name: "Name" },
+    });
+    for (const source of [
+      { connector: "c", icon: "i" },
+      { connector: "c", label: "C" },
+      { connector: "c", label: 7, icon: "i" },
+      { connector: "c", label: "C", icon: {} },
+      { connector: "c", label: "C", icon: "i", sender: { id: 7 } },
+      { connector: "c", label: "C", icon: "i", sender: { id: "s", name: 7 } },
+      { connector: "c", label: "C", icon: "i", meta: [] },
+    ]) {
+      reply = { ...fact(), source };
+      await assert.rejects(f.read("original"), TypeError);
+    }
+  } finally {
+    await f.activation.stop();
+  }
+});
+
+test("all content variants project declared structure and preserve only explicit opaque leaves", async () => {
+  const blocks = [
+    { type: "text", text: "" },
+    { type: "image", url: "image", alt: "" },
+    {
+      type: "file",
+      url: "file",
+      fileName: "name",
+      mimeType: "text/plain",
+      fileSize: 0,
+    },
+    { type: "code", code: "", language: "js", filename: "x.js" },
+    {
+      type: "tool_call",
+      toolName: "tool",
+      toolId: "id",
+      input: { opaque: { hiddenAuthority: "data" } },
+    },
+    {
+      type: "tool_result",
+      toolId: "id",
+      result: { opaque: "data" },
+      isError: false,
+    },
+    { type: "context_attachment", attachment: { opaque: "data" } },
+  ];
+  const f = await fixture(async () => ({
+    ...fact(),
+    contentBlocks: blocks.map((block) => ({
+      ...block,
+      hiddenAuthority: "secret",
+    })),
+  }));
+  try {
+    assert.ok(f.read);
+    const result = (await f.read("original")) as { contentBlocks: unknown };
+    assert.deepEqual(result.contentBlocks, blocks);
+    assert.ok(Object.isFrozen(result.contentBlocks));
+  } finally {
+    await f.activation.stop();
+  }
+});
+
+test("malformed content discriminants and variant fields cannot acquire the declared public type", async () => {
+  let block: unknown;
+  const f = await fixture(async () => ({ ...fact(), contentBlocks: [block] }));
+  try {
+    assert.ok(f.read);
+    for (block of [
+      { type: "unknown" },
+      { type: "text" },
+      { type: "text", text: 5 },
+      { type: "image", url: "image", alt: 5 },
+      {
+        type: "file",
+        url: "file",
+        fileName: "x",
+        mimeType: "text/plain",
+        fileSize: "5",
+      },
+      { type: "code", code: "x", language: 5 },
+      { type: "tool_call", toolName: "tool", toolId: "id", input: [] },
+      { type: "tool_result", toolId: "id", result: null, isError: "false" },
+      { type: "context_attachment" },
+    ])
+      await assert.rejects(f.read("original"), TypeError);
+  } finally {
+    await f.activation.stop();
+  }
 });
