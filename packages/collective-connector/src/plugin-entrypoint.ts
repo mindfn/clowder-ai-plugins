@@ -98,6 +98,7 @@ async function activateService(context: FeatureContext, declaration: BrowserServ
   const entry = createCollectiveEntryCaller({ connector, participantRoster: roster, contributionId: COLLECTIVE_NATIVE_ID,
     async assertCurrent() { assertActive(); await binding.assertCurrent(); assertActive(); } });
   const ownerControl = createOwnerControlHttp({ connector, binding, entry,
+    reconsideration: native.reconsideration.reconsider,
     routeChange: createCollectiveOwnerRouteChange(context, connector, async () => { assertActive(); await binding.assertCurrent(); assertActive(); }),
     participation: createCollectiveOwnerParticipationChange(context, connector, async () => { assertActive(); await binding.assertCurrent(); assertActive(); }),
     view: createCollectiveOwnerView(context, connector, async () => { assertActive(); await binding.assertCurrent(); assertActive(); }),

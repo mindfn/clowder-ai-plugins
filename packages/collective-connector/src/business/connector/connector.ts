@@ -1,5 +1,6 @@
 import { semanticDigest } from './local-operation-recovery.js';
 import { recordPublicSource, readCurrentPublicSource, type RecordPublicSourceInput } from './public-source-custody.js';
+import { recordWorkReconsiderationSource, findWorkReconsiderationSource, findWorkReconsiderationSourceByPurpose } from './work-reconsideration-custody.js';
 import { isDeepStrictEqual } from 'node:util';
 import {
   type CollectivePairingIntent,
@@ -332,6 +333,17 @@ export class CollectiveConnector {
 
   readCurrentPublicSource(messageRef: string) {
     return readCurrentPublicSource(this.persistence, messageRef);
+  }
+
+  recordWorkReconsiderationSource(scope: WorkReconsiderationAuthorityScope,
+    input: Parameters<typeof recordWorkReconsiderationSource>[2]) {
+    return recordWorkReconsiderationSource(this.persistence, scope, input);
+  }
+  findWorkReconsiderationSource(messageRef: string) {
+    return findWorkReconsiderationSource(this.persistence, messageRef);
+  }
+  findWorkReconsiderationSourceByPurpose(purposeKey: string) {
+    return findWorkReconsiderationSourceByPurpose(this.persistence, purposeKey);
   }
 
   async listWorkResultPublicationCandidates(): Promise<CollectiveWorkResultPublicationCandidate[]> {

@@ -7,6 +7,7 @@ import type { createCollectiveEntryCaller } from './entry-control.js';
 import type { HostRouteConfig } from './business/connector/host-route-state.js';
 import { desiredParticipationSchema } from './business/connector/host-route-state.js';
 import { channelListeningInputSchema } from './business/connector/channel-listening-custody.js';
+import { reconsiderationInput, type createCollectiveWorkReconsiderationCaller } from './collective-work-reconsideration.js';
 
 const requestSchema = z.object({
   method: z.enum(['GET', 'POST', 'PUT']), path: z.string().min(1).max(512),
@@ -29,6 +30,7 @@ export interface CollectiveLocalServiceStatus {
   readonly setupStep?: 'github_app' | 'owner_setup';
 }
 interface OwnerControlOptions {
+  readonly reconsideration?: ReturnType<typeof createCollectiveWorkReconsiderationCaller>['reconsider'];
   readonly routeChange?: (ownerUserId: string, connectionId: string, input: z.infer<typeof hostRouteBodySchema>) => Promise<HostRouteConfig>;
   readonly participation?: (ownerUserId: string, connectionId: string, input: z.infer<typeof individualParticipationInput>) => Promise<HostRouteConfig>;
   readonly view?: (ownerUserId: string, connectionId: string) => Promise<unknown>;
@@ -78,6 +80,24 @@ export function createOwnerControlHttp(options: OwnerControlOptions) {
       return response(403, { code: 'PAIRING_ORIGIN_MISMATCH', error: 'Owner request origin does not match this Host' });
     const { connector } = options;
     const finish = async (status: number, body: unknown) => { await current(); return response(status, body); };
+    const reconsider = /^connections\/([A-Za-z0-9_-]{1,240})\/work\/reconsider$/.exec(request.path);
+    if (reconsider) {
+      if (request.method !== 'POST') return finish(405, { code: 'OWNER_CONTROL_METHOD_NOT_ALLOWED' });
+      if (!options.reconsideration || !owner) return finish(409, { code: 'WORK_RECONSIDERATION_UNAVAILABLE' });
+      try {
+        const parsed = reconsiderationInput.parse(request.body);
+        const result = await mutate(reconsider[1]!, async () => {
+          await current(); return options.reconsideration!(reconsider[1]!, parsed, owner);
+        });
+        return finish(200, result);
+      } catch (error) {
+        await current();
+        if (error instanceof z.ZodError) return response(400, { code: 'INVALID_WORK_RECONSIDERATION_REQUEST' });
+        const code = error && typeof error === 'object' && 'code' in error ? error.code : 'WORK_RECONSIDERATION_UNAVAILABLE';
+        return response(code === 'CONNECTOR_OWNER_MISMATCH' ? 403 : code === 'PARTICIPATION_UNSUPPORTED' ? 422 : 409,
+          { code, error: error instanceof Error ? error.message : 'Current reconsideration is unavailable' });
+      }
+    }
     const rawRoute = /^connections\/([A-Za-z0-9_-]{1,240})\/route$/.exec(request.path);
     if (rawRoute && request.method === 'PUT' && options.routeChange) {
       const parsed = hostRouteBodySchema.safeParse(request.body);

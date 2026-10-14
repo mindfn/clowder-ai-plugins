@@ -90,6 +90,8 @@ features:
       - type: webhook
         id: collective-owner-24
       - type: webhook
+        id: collective-work-reconsideration
+      - type: webhook
         id: collective-owner-31
       - type: webhook
         id: collective-entry-roster
@@ -394,6 +396,11 @@ contributions:
   - type: webhook
     id: collective-owner-31
     path: service/provision
+    methods: [POST]
+    action: { method: collective.control.http }
+  - type: webhook
+    id: collective-work-reconsideration
+    path: connections/:connectionId/work/reconsider
     methods: [POST]
     action: { method: collective.control.http }
   - type: webhook

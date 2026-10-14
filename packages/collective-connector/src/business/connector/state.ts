@@ -17,6 +17,7 @@ import { type ConnectorRouteReceipt, routeReceiptSchema } from './route-receipt.
 import { type ConnectorWorkCustody, workCustodySchema } from './work-custody-state.js';
 import { workResultTextPublicationSchema } from './work-result-publication.js';
 import { publicSourceBindingSchema, type CollectivePublicSourceBinding } from './public-source-custody.js';
+import { workReconsiderationBindingSchema, type WorkReconsiderationBinding } from './work-reconsideration-custody.js';
 
 export {
   type AgentHostRoute,
@@ -104,6 +105,7 @@ const inboxItemSchema = z
     routeReceipt: routeReceiptSchema.optional(),
     routeFailure: routeFailureSchema.optional(),
     publicSource: publicSourceBindingSchema.optional(),
+    workReconsiderations: z.array(workReconsiderationBindingSchema).optional(),
   })
   .strict()
   .superRefine((item, context) => {
@@ -286,6 +288,7 @@ export interface ConnectorOutboxItem {
 }
 
 export interface ConnectorInboxItem {
+  readonly workReconsiderations?: WorkReconsiderationBinding[];
   readonly publicSource?: CollectivePublicSourceBinding;
   readonly event: CollectiveEventEnvelope;
   readonly disposition: 'persisted' | 'routing' | 'routed' | 'route_failed';

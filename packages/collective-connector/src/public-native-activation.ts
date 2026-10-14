@@ -7,16 +7,21 @@ import { createCollectivePublicSourceCaller } from './collective-public-source.j
 import { createCollectivePublicNativeActions } from './collective-public-native-context.js';
 import { openCollectiveContextReferences } from './collective-context-refs.js';
 import { COLLECTIVE_NATIVE_ID, COLLECTIVE_PUBLIC_METHODS } from './public-native-methods.js';
+import { createCollectiveWorkReconsiderationCaller } from './collective-work-reconsideration.js';
 
 const syncInput = z.object({ connectionId: z.string().trim().min(1).max(240) }).strict();
 export async function activateCollectivePublicNative(context: FeatureContext, connector: CollectiveConnector, assertActive: () => void) {
-  if (!context.nativeContext || !context.ownerThreads)
+  if (!context.nativeContext || !context.ownerThreads || !context.participantRoster)
     throw new Error('Collective native source/owner-thread Host ports are required');
   const references = await openCollectiveContextReferences(context.dataDirectory, assertActive);
+  const reconsideration = createCollectiveWorkReconsiderationCaller({ connector,
+    native: { contributionId: COLLECTIVE_NATIVE_ID, methods: COLLECTIVE_PUBLIC_METHODS },
+    messaging: context.messaging, ownerThreads: context.ownerThreads, participantRoster: context.participantRoster,
+    sourceFacts: context.sourceFacts, publicInvocations: context.publicInvocations });
   const sourceCaller = createCollectivePublicSourceCaller({ connector,
     native: { contributionId: COLLECTIVE_NATIVE_ID, methods: COLLECTIVE_PUBLIC_METHODS },
     messaging: context.messaging,
-    nativeContext: context.nativeContext, ownerThreads: context.ownerThreads });
+    nativeContext: context.nativeContext, ownerThreads: context.ownerThreads, reconsideration });
   const inputOf = <T>(value: unknown, schema: z.ZodType<T>) => schema.parse(z.object({ input: z.unknown() }).strict().parse(value).input);
   const list: PluginActionHandler = async (input, native, caller) => {
     if (native || caller?.kind !== 'owner-operation') throw new Error('Collective connections require the authenticated owner operation');
@@ -57,6 +62,6 @@ export async function activateCollectivePublicNative(context: FeatureContext, co
       ...remaining.map(eventId => ({ key: eventId, label: 'Original consumer pending', detail: 'This source remains pending its Work or channel consumer.' })),
     ], { empty: 'No pending named requests' });
   };
-  return { publicInvocationVerifier: sourceCaller.publicInvocationVerifier,
+  return { reconsideration, publicInvocationVerifier: sourceCaller.publicInvocationVerifier,
     actions: { ...createCollectivePublicNativeActions({ connector, sourceCaller, references }), 'collective.owner.sync': sync, 'collective.owner.connections': list } };
 }

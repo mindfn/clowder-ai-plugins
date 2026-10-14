@@ -35,6 +35,13 @@ connection resources use `connections/:connectionId/...`. No anonymous verificat
 
 The original eleven owner method/path pairs remain: connections GET; service/provision
 POST; inbox/route GET; reconnect/revoke POST; listening GET/POST; and work-policy GET/adopt/revoke.
+`POST connections/:connectionId/work/reconsider` retains the original public reclassification request
+under an adopted Service rule. It stores the purpose/message relationship in the existing private inbox,
+sends without ordinary wake, and then admits through the existing Host Queue after releasing the
+connection fence. Replays restore the same entry; terminal unhandled requests remain refused.
+The verifier and native callbacks reread the original source and selected rule/class, including queued
+original input. Recall or deletion still refuses before launch. The complete installed user journey
+remains unverified. Queue admission never means Work completion.
 They call the moved connector algorithms. Listening/policy/route preserve local owner checks and
 original request schemas. Raw route PUT also retains strict paired-Human targets, scoped revision CAS,
 owned participant threads and standing-work channel bounds before `setHostRoute` / publication.
@@ -197,4 +204,4 @@ same owner thread. The current Host roster decides eligibility and strict owner 
 deleted or foreign threads before mutation. The original Connector persists route/standing-work
 revisions and publishes participation to the Service. This configuration does not create a Task,
 admit execution or allow a public/native caller to act as the owner. Manual Work admission/resume,
-reconsideration, private/progress returns and the complete retained browser journey remain open.
+private/progress returns and the complete retained browser journey remain open.

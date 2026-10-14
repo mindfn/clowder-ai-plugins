@@ -73,7 +73,7 @@ test('implemented owner method/path pairs and seven ordinary native methods are 
   const expected = ['GET connections', 'GET connections/:connectionId/inbox', 'GET connections/:connectionId/route', 'PUT connections/:connectionId/route',
     'POST connections/:connectionId/reconnect', 'POST connections/:connectionId/revoke',
     'GET connections/:connectionId/listening', 'POST connections/:connectionId/listening',
-    'GET connections/:connectionId/work-policy', 'POST connections/:connectionId/work-policy/adopt',
+    'GET connections/:connectionId/work-policy', 'POST connections/:connectionId/work-policy/adopt', 'POST connections/:connectionId/work/reconsider',
     'POST connections/:connectionId/work-policy/revoke', 'POST service/provision', 'GET entry-roster', 'POST pair', 'POST connections/:connectionId/participation/reconcile', 'PUT connections/:connectionId/participation/policy', 'GET connections/:connectionId/participation', 'PUT connections/:connectionId/participation'];
   const webhooks = manifest.contributions.filter((item: { type: string }) => item.type === 'webhook');
   assert.deepEqual(webhooks.flatMap((item: { path: string; methods: string[] }) => item.methods.map(method => method + ' ' + item.path)).sort(), expected.sort());

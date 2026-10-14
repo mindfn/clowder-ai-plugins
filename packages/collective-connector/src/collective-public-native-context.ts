@@ -5,6 +5,7 @@ import { resolveMaterializedParticipation } from './business/connector/participa
 import { collectiveContextError, type CollectiveContextReferences } from './collective-context-refs.js';
 import { continueWorkFromSource, currentWorkSourceContext } from './collective-work-source-context.js';
 import type { createCollectivePublicSourceCaller } from './collective-public-source.js';
+import { ownerWakeDecision, assertReconsiderationInput } from './collective-work-reconsideration.js';
 
 // These schemas preserve ca5 callback-collective-participation-routes.ts byte semantics.
 const currentSchema = z.object({}).strict();
@@ -30,15 +31,16 @@ interface Options {
   readonly references: CollectiveContextReferences;
 }
 
-/** Original ordinary public context/reply consumer, bound to authenticated exact native origin.
- * Host Work admission, reconsideration, private progress and unrestricted send retain their separate consumers.
+/** Original public context/reply consumer, bound to authenticated exact native origin.
+ * Reconsideration additionally requires its durable purpose binding and original grant/source revalidation.
+ * Host Work admission, private progress and unrestricted send retain their separate consumers.
  * Production declarations/entrypoint are paired separately; this factory supplies no launch authority. */
 export function createCollectivePublicNativeActions(options: Options): Readonly<Record<string, PluginActionHandler>> {
   const refs = options.references, connector = options.connector;
   const requireSource = async (action: PluginActionContext, method: string) => {
     const resolved = await options.sourceCaller.resolveNative(action, method);
-    // Ordinary origin cannot borrow a purpose winner or private Work merely because it has a Queue receipt.
-    if (resolved.auth.source.source.meta?.reconsideration !== undefined)
+    // Metadata cannot manufacture a purpose winner; the package resolver must supply its current durable binding.
+    if (resolved.auth.source.source.meta?.reconsideration !== undefined && !resolved.ownerWakePurpose)
       throw collectiveContextError('PUBLIC_SOURCE_UNAVAILABLE', 'Reconsideration requires its original purpose consumer');
     const profile = async () => {
       const route = await connector.getHostRoute(resolved.source.connectionId);
@@ -70,7 +72,7 @@ export function createCollectivePublicNativeActions(options: Options): Readonly<
       await connector.sync(binding.source.connectionId); await binding.revalidate();
       operation = await connector.prepareReply(binding.source, binding.sourceRef, 'request'); await binding.revalidate();
     }
-    const workDecision = await connector.currentWorkDecision(binding.source); await binding.revalidate();
+    const workDecision = await ownerWakeDecision(connector, binding); await binding.revalidate();
     const workSourceContext = await currentWorkSourceContext(connector, refs, binding.identity, binding); await binding.revalidate();
     return { kind: 'collective' as const, authority: 'public_participation' as const, workDecision, workSourceContext,
       actor: binding.source.actor, location: binding.source.location, participant: binding.displayName, request: binding.context.source,
@@ -119,6 +121,7 @@ export function createCollectivePublicNativeActions(options: Options): Readonly<
       });
     }),
     'collective.work.accept': handler('collective.work.accept', acceptSchema, async (binding, { contextRef, ...input }) => {
+      assertReconsiderationInput(binding.ownerWakePurpose, input);
       refs.verifyRef(binding.identity, contextRef, 'context', binding.refScope);
       await binding.revalidate();
       const work = await connector.acceptWork(binding.source, binding.agent, input);
@@ -128,6 +131,7 @@ export function createCollectivePublicNativeActions(options: Options): Readonly<
         acceptance: work.acceptance, lifecycle: work.lifecycle, disposition: 'accepted_pending_host_admission' as const };
     }),
     'collective.work.continue': handler('collective.work.continue', continueSchema, async (binding, { contextRef, ...input }) => {
+      assertReconsiderationInput(binding.ownerWakePurpose, input);
       refs.verifyRef(binding.identity, contextRef, 'context', binding.refScope);
       await binding.revalidate();
       return continueWorkFromSource(connector, refs, binding.identity, binding, input, binding.revalidate);

@@ -6,8 +6,10 @@ import { collectiveEventSourceIdentity, collectiveSourceIdentitySchema } from '.
 import { resolveMaterializedParticipation, participationError } from './business/connector/participation-custody.js';
 import { isCollectiveLocalEcho } from './business/connector/public-source-custody.js';
 import { collectiveSource, ingressIdempotencyKey } from './collective-ingress-routing.js';
+import type { createCollectiveWorkReconsiderationCaller } from './collective-work-reconsideration.js';
 
 interface PublicSourceCallerOptions {
+  readonly reconsideration?: Pick<ReturnType<typeof createCollectiveWorkReconsiderationCaller>, 'readCurrent'>;
   readonly connector: Pick<CollectiveConnector, 'listInbox' | 'getHostRoute' | 'beginInboxRouting' | 'completeInboxRouting' |
     'recordPublicSource' | 'readCurrentPublicSource' | 'readParticipationContext'>;
   readonly native: { readonly contributionId: string; readonly methods: readonly string[] };
@@ -27,10 +29,12 @@ export function createCollectivePublicSourceCaller(options: PublicSourceCallerOp
     scope.contributionId === native.contributionId && scope.methods.every(method => native.methods.includes(method));
   const currentSource = async (messageRef: string, current: () => Promise<void>) => {
     await current();
-    const binding = options.connector.readCurrentPublicSource(messageRef);
+    const reconsidered = await options.reconsideration?.readCurrent(messageRef, current);
+    const binding = reconsidered ?? options.connector.readCurrentPublicSource(messageRef);
     const context = await options.connector.readParticipationContext(binding.source, 0, 1);
     await current();
-    const after = options.connector.readCurrentPublicSource(messageRef);
+    const after = reconsidered ? await options.reconsideration!.readCurrent(messageRef, current)
+      : options.connector.readCurrentPublicSource(messageRef);
     if (!isDeepStrictEqual(binding, after)) throw changed();
     return { binding, context };
   };
@@ -135,7 +139,11 @@ export function createCollectivePublicSourceCaller(options: PublicSourceCallerOp
         // send(wake) can start this authenticated native invocation before send
         // returns its receipt. Bind from Host's exact origin and the original
         // Service/inbox facts, never from a native tool body or a Queue receipt.
-        if (!item.publicSource) await options.connector.recordPublicSource({ connectionId: source.connectionId,
+        const reconsidered = await options.reconsideration?.readCurrent(messageRef, () => action.assertCurrent());
+        if (reconsidered && !isDeepStrictEqual(fact.source.meta?.reconsideration, {
+          sourceMessageId: reconsidered.sourceMessageRef.slice(8), grantRef: reconsidered.grantRef,
+          grantRevision: reconsidered.grantRevision, requestKind: reconsidered.requestKind, purposeKey: reconsidered.purposeKey })) throw changed();
+        if (!item.publicSource && !reconsidered) await options.connector.recordPublicSource({ connectionId: source.connectionId,
           eventId: source.eventId, ownerUserId: auth.userId, pluginInstanceId: fact.extra.pluginMessage.instanceId,
           threadId: auth.threadId, messageRef, native });
         const { binding, context } = await currentSource(messageRef, () => action.assertCurrent());
@@ -148,8 +156,11 @@ export function createCollectivePublicSourceCaller(options: PublicSourceCallerOp
         await action.assertCurrent();
         const final = await options.nativeContext.current(); await action.assertCurrent();
         if (!isDeepStrictEqual(final, auth)) throw changed();
-        options.connector.readCurrentPublicSource(messageRef);
-        return { auth, source: binding.source, sourceRef: messageRef, context, binding };
+        if (reconsidered) await options.reconsideration!.readCurrent(messageRef, () => action.assertCurrent());
+        else options.connector.readCurrentPublicSource(messageRef);
+        return { auth, source: binding.source, sourceRef: messageRef, context, binding,
+          ...(reconsidered ? { ownerWakePurpose: { grantRef: reconsidered.grantRef,
+            grantRevision: reconsidered.grantRevision, requestKind: reconsidered.requestKind } } : {}) };
       };
       const resolved = await resolve();
       // Every future native mutation/reply must call this before and after its original business effect.
