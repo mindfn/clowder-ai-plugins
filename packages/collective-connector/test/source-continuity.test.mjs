@@ -17,7 +17,7 @@ const edges = new Map([
   ['service/identity-store.ts', 'bind OAuth callback to Host-owned browser-service origin'],
   ['service/store.ts', 'inject protocol label/bootstrap escrow and authenticated same-instance recovery snapshot without polling or writes'],
   ['connector/connector-options.ts', 'inject exact-origin local transport without granting native verifier/control authority'],
-  ['connector/connector.ts', 'delegate durable local participation/recovery and expose owner-filtered bounded recovery rows'],
+  ['connector/connector.ts', 'delegate durable local participation/recovery; expose owner-filtered bounded recovery rows and a fresh Work read bounded by the original connection consumer lifetime'],
   ['connector/connector-synchronization.ts', 'persist four local effect attempts; preserve remote retries; CAS settle and reconcile original intent without blind replay'],
   ['connector/persistence.ts', 'migrate v2 to v3; recover interrupted entered attempts as held unknown; fence stale writers and owner-expired atomic commits'],
   ['connector/projection.ts', 'add bounded held recovery metadata while keeping healthy status shape and omitting private payload/credentials'],

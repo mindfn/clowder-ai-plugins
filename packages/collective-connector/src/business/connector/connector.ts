@@ -64,6 +64,8 @@ export interface AssignedWorkAuthorityScope {
   readonly inbox: readonly ConnectorInboxItem[];
   readonly work: CollectiveWorkProjection;
   readonly resultPublications: readonly CollectiveWorkResultPublication[];
+  /** Fresh Service Work read while this same connection consumer fence is alive. */
+  readonly readCurrentWork: () => Promise<CollectiveWorkProjection>;
   readonly recordHostAdmission: (
     input: Omit<CollectiveWorkHostAdmissionRequest, 'serviceInstanceId' | 'collectiveId' | 'connectionId'>,
   ) => Promise<void>;
@@ -547,7 +549,7 @@ export class CollectiveConnector {
   ): Promise<T> {
     return this.withAuthority(connectionId, async () => {
       const work = await this.readAssignedWorkWithinAuthority(connectionId, workId);
-      return consume(this.assignedWorkAuthorityScope(connectionId, work));
+      return this.consumeAssignedWorkScope(connectionId, work, consume);
     });
   }
 
@@ -562,7 +564,7 @@ export class CollectiveConnector {
     return this.withAuthority(connectionId, async () => {
       await this.synchronization.sync(connectionId);
       const work = await this.readAssignedWorkByAssignmentWithinAuthority(connectionId, assignmentEventId);
-      return consume(this.assignedWorkAuthorityScope(connectionId, work));
+      return this.consumeAssignedWorkScope(connectionId, work, consume);
     });
   }
 
@@ -670,7 +672,21 @@ export class CollectiveConnector {
     return work;
   }
 
-  private assignedWorkAuthorityScope(connectionId: string, work: CollectiveWorkProjection): AssignedWorkAuthorityScope {
+  private async consumeAssignedWorkScope<T>(connectionId: string, work: CollectiveWorkProjection,
+    consume: (scope: AssignedWorkAuthorityScope) => Promise<T>): Promise<T> {
+    let live = true;
+    const readCurrentWork = async () => {
+      if (!live) throw new Error('Assigned Work consumer scope has ended');
+      const current = await this.readAssignedWorkWithinAuthority(connectionId, work.workId);
+      if (!live) throw new Error('Assigned Work consumer scope has ended');
+      return current;
+    };
+    try { return await consume(this.assignedWorkAuthorityScope(connectionId, work, readCurrentWork)); }
+    finally { live = false; }
+  }
+
+  private assignedWorkAuthorityScope(connectionId: string, work: CollectiveWorkProjection,
+    readCurrentWork: AssignedWorkAuthorityScope['readCurrentWork']): AssignedWorkAuthorityScope {
     const snapshot = this.persistence.snapshot();
     const connection = requireConnection(snapshot.connections[connectionId]);
     const hostRoute = snapshot.hostRoutes[connectionId];
@@ -680,6 +696,7 @@ export class CollectiveConnector {
       inbox: structuredClone(connection.inbox),
       work,
       resultPublications: projectWorkResultPublications(connection, hostRoute, work.workId),
+      readCurrentWork,
       recordHostAdmission: (input) => this.workAcceptance.recordHostAdmission(connectionId, input),
     };
   }
