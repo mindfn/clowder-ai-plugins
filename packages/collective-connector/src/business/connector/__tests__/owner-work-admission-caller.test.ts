@@ -328,3 +328,33 @@ test("failed consumers also retire their fresh Work read operation", async () =>
     await f.close();
   }
 });
+
+test("owner request cannot borrow Agent acceptance instead of durable owner request binding", async () => {
+  const f = await accepted();
+  try {
+    const caller = createCollectiveWorkAdmissionCaller({
+      connector: f.connector,
+      tasks: f.tasks,
+      assertCurrent: async () => {},
+    });
+    await expect(
+      f.connector.withAssignedWorkAuthority(f.connection.connectionId, f.work.workId, (scope) =>
+        caller.admitInScope(
+          scope,
+          {
+            ownerUserId: "local-owner",
+            identity: f.identity,
+            sourceMessageId: "host-source",
+            workId: f.work.workId,
+            destination: { kind: "existing_thread", threadId: "private" },
+          },
+          "owner_request",
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "OWNER_ADMISSION_UNAVAILABLE" });
+    expect(f.calls).not.toContain("prepare");
+    expect(f.calls).not.toContain("dispatch");
+  } finally {
+    await f.close();
+  }
+});

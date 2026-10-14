@@ -127,14 +127,16 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
     entry: "standing" | "owner_request" = "standing",
   ) => {
     const selection = structuredClone(raw);
-    // This is a package-internal entry distinction, never Host authority or an input grant.
-    // Only the authenticated owner caller uses owner_request; Host independently enforces
-    // that its selected existing_thread is unavailable to native/background requests.
-    if (entry === "owner_request" && selection.destination.kind !== "existing_thread") throw unavailable();
     await options.assertCurrent();
     const item = validateScope(scope, selection);
     const authority = scope.work.executionAuthority ?? scope.work.acceptance;
-    if (authority?.hostAdmission?.state === "rejected") throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
+    // Only actual Agent Service authority has the existing persistent ack path.
+    // Human/manual first basis and owner request identity have no approved record
+    // bridge yet. Entry mode, standing configuration and an opaque hash cannot
+    // supply that missing basis; reject before Host preparation or other effects.
+    if (entry === "owner_request" || selection.identity.actor.kind !== "agent" || !authority)
+      throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
+    if (authority.hostAdmission?.state === "rejected") throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
     const current = async () => {
       await options.assertCurrent();
       const work = await scope.readCurrentWork();
@@ -147,27 +149,9 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
       if (!sameExecution(scope.work, work)) throw unavailable();
       if ((work.executionAuthority ?? work.acceptance)?.hostAdmission?.state === "rejected")
         throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
-      if (selection.identity.actor.kind === "agent") {
-        const grant = await options.connector.resolveAcceptedWorkGrant(selection.identity);
-        await options.assertCurrent();
-        if (!sameExecution(work, grant.work)) throw unavailable();
-      } else {
-        await options.connector.readParticipationContext(selection.identity, 0, 1);
-        await options.assertCurrent();
-        if (entry !== "owner_request") {
-          const agentRoute = route?.agentRoutes[`${connection.authorizedHumanId}:${selection.identity.catId}`];
-          const standing = agentRoute?.standingWork;
-          const revision = agentRoute?.standingWorkRevision ?? route?.revision;
-          if (
-            !standing ||
-            !revision ||
-            !standing.requestingHumanIds.includes(selection.identity.actor.humanId) ||
-            !standing.channelIds.includes(selection.identity.location.channelId) ||
-            (standing.expiresAt !== null && Date.parse(standing.expiresAt) <= Date.now())
-          )
-            throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
-        }
-      }
+      const grant = await options.connector.resolveAcceptedWorkGrant(selection.identity);
+      await options.assertCurrent();
+      if (!sameExecution(work, grant.work)) throw unavailable();
       return work;
     };
     await current();
@@ -203,27 +187,25 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
       `message:${firstReceipt.messageId}`,
     );
     await current();
-    if (authority) {
-      if (!scope.work.assignmentEventId) throw unavailable();
-      const receiptRef = opaqueHostAdmission(
-        { userId: selection.ownerUserId, id: selection.sourceMessageId },
-        scope.work.workId,
-        task.id,
-      );
-      await scope.recordHostAdmission({
-        workId: scope.work.workId,
-        assignmentEventId: scope.work.assignmentEventId,
-        operationRef: authority.operationRef,
-        grantRef: authority.grantRef,
-        grantRevision: authority.grantRevision,
-        executionRevision: scope.work.executionAuthority?.revision ?? 1,
-        disposition: { state: "admitted", receiptRef },
-      });
-      const fresh = await current();
-      const acknowledgement = (fresh.executionAuthority ?? fresh.acceptance)?.hostAdmission;
-      if (acknowledgement?.state !== "admitted" || acknowledgement.receiptRef !== receiptRef)
-        throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
-    }
+    if (!scope.work.assignmentEventId) throw unavailable();
+    const receiptRef = opaqueHostAdmission(
+      { userId: selection.ownerUserId, id: selection.sourceMessageId },
+      scope.work.workId,
+      task.id,
+    );
+    await scope.recordHostAdmission({
+      workId: scope.work.workId,
+      assignmentEventId: scope.work.assignmentEventId,
+      operationRef: authority.operationRef,
+      grantRef: authority.grantRef,
+      grantRevision: authority.grantRevision,
+      executionRevision: scope.work.executionAuthority?.revision ?? 1,
+      disposition: { state: "admitted", receiptRef },
+    });
+    const fresh = await current();
+    const acknowledgement = (fresh.executionAuthority ?? fresh.acceptance)?.hostAdmission;
+    if (acknowledgement?.state !== "admitted" || acknowledgement.receiptRef !== receiptRef)
+      throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
     // Re-read the actual canonical Task and the current remote business grant after the Service effect.
     validateTask(await options.tasks.get(task.id), result, selection, `message:${firstReceipt.messageId}`);
     await current();
