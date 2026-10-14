@@ -4,9 +4,10 @@ import type { PluginMessagingHost, PluginOwnerHttpContext, PluginStorageHost, Pl
 import type { AssignedWorkAuthorityScope, CollectiveConnector } from "./business/connector/connector.js";
 import { collectiveEventSourceIdentity, collectiveSourceIdentitySchema, collectiveWorkAssignmentMatches,
   participationSourceIsCurrent } from "./business/contracts/index.js";
-import { retainManualWorkFirstReceipt, workReceiptDigest, type ManualWorkExecutionBinding } from "./owner-work-first-receipt.js";
+import { readWorkFirstReceipt, retainManualWorkFirstReceipt, workReceiptDigest, type ManualWorkExecutionBinding } from "./owner-work-first-receipt.js";
 import { resolveCollectiveWorkThread, selectCollectiveWorkThread } from "./collective-work-thread.js";
 import { classifyEntrustedWorkSourceTime } from "./work-source-signals.js";
+import { createCollectiveWorkAdmissionCaller } from "./collective-work-admission-caller.js";
 
 // Original ca5 strict DTOs are retained; parsing is not owner authorization.
 export const ownerWorkInput = z
@@ -44,8 +45,8 @@ const unavailable = () =>
 /** Internal original human owner admission. Absent composition still refuses.
  * Actual HTTP facts + same Work scope capture the original manual first choice;
  * private CAS retains it before prepare and binds exact Host facts before dispatch.
- * Agent owner clicks and resume require their original standing/execution receipts
- * and remain unavailable here. No createdBy/mode/body requestId infers permission. */
+ * Agent owner clicks only reuse their original bound standing receipt. Independent
+ * resume stays unavailable. No createdBy/mode/body requestId infers permission. */
 export function createCollectiveOwnerWorkCaller(options: Options) {
   return Object.freeze({
     async admit(ownerUserId: string, connectionId: string, unsafe: unknown, owner?: PluginOwnerHttpContext) {
@@ -68,8 +69,21 @@ export function createCollectiveOwnerWorkCaller(options: Options) {
       const identity = collectiveSourceIdentitySchema.safeParse(source?.source?.meta?.participation);
       if (!source || source.id !== input.sourceMessageId || source.userId !== ownerUserId || source.catId !== null ||
         source.source?.connector !== "collective" || !identity.success || identity.data.connectionId !== connectionId ||
-        identity.data.actor.kind !== "human") throw unavailable();
+        !["human", "agent"].includes(identity.data.actor.kind)) throw unavailable();
       return ports.connector.withSynchronizedAssignedWorkAuthority(connectionId, identity.data.eventId, async scope => {
+        const prior = await readWorkFirstReceipt(ports.storage, ownerUserId, source.id, identity.data.catId);
+        await currentRequest();
+        if (identity.data.actor.kind === "agent" || prior?.basis.kind === "standing_grant") {
+          // The real HTTP click may reuse the original captured standing
+          // choice. The shared caller refuses a missing or unbound first receipt
+          // before any capture, prepare or dispatch; owner identity cannot mint it.
+          return createCollectiveWorkAdmissionCaller({connector: ports.connector, tasks: ports.tasks,
+            threads: ports.threads, firstReceipts: {storage: ports.storage, messaging: ports.messaging},
+            assertCurrent: currentRequest}).admitInScope(scope, {ownerUserId, identity: identity.data,
+            sourceMessageId: source.id, workId: scope.work.workId,
+            destination: input.threadId ? {kind: "existing_thread", threadId: input.threadId} : {kind: "derived_from_source"}},
+          "owner_request");
+        }
         const validate = (actual: AssignedWorkAuthorityScope) => {
           const rows = actual.inbox.filter(row => row.event.eventId === identity.data.eventId);
           const item = rows.length === 1 ? rows[0] : undefined;

@@ -5,6 +5,9 @@ import type {
   PluginTaskAdmissionInput,
   PluginTaskAdmissionResult,
   PluginTaskReadItem,
+  PluginStorageHost,
+  PluginMessagingHost,
+  PluginThreadHost,
 } from "@clowder-ai/plugin-sdk";
 import type { AssignedWorkAuthorityScope, CollectiveConnector } from "./business/connector/connector.js";
 import {
@@ -15,6 +18,9 @@ import {
   type CollectiveSourceIdentity,
   type CollectiveWorkProjection,
 } from "./business/contracts/index.js";
+import { readWorkFirstReceipt, retainWorkFirstReceipt, workReceiptDigest, type ManualWorkExecutionBinding, type StandingWorkFirstReceipt } from "./owner-work-first-receipt.js";
+import { resolveHumanStandingWorkBasis } from "./collective-human-standing.js";
+import { resolveCollectiveWorkThread, selectCollectiveWorkThread } from "./collective-work-thread.js";
 
 export interface CollectiveWorkAdmissionSelection {
   readonly ownerUserId: string;
@@ -28,6 +34,13 @@ interface Options {
   readonly connector: CollectiveConnector;
   readonly tasks: Pick<PluginTaskHost, "get" | "listByKind" | "prepareEntrusted" | "dispatchEntrusted">;
   readonly assertCurrent: () => Promise<void>;
+  /** Original standing first/execution composition; previous Agent ack-only
+   * foundation has no claim of durable bound replay or production completion. */
+  readonly firstReceipts?: {
+    readonly storage: Pick<PluginStorageHost, "get" | "compareAndSet">;
+    readonly messaging: Pick<PluginMessagingHost, "get">;
+  };
+  readonly threads?: Pick<PluginThreadHost, "get" | "ensureByKey">;
 }
 const unavailable = (code = "WORK_EXECUTION_NOT_CURRENT") =>
   Object.assign(new Error("Current Collective Work does not authorize this Host execution"), { code });
@@ -48,6 +61,7 @@ function sameExecution(left: CollectiveWorkProjection, right: CollectiveWorkProj
     assignment: work.assignment,
     assignmentEventId: work.assignmentEventId,
     accountableHumanId: work.accountableHumanId,
+    intendedOutcome: work.intendedOutcome,
     authority: work.executionAuthority
       ? { ...work.executionAuthority, hostAdmission: undefined, hostAdmissionHistory: undefined }
       : work.acceptance
@@ -98,6 +112,7 @@ function validateTask(
   result: Exclude<PluginTaskAdmissionResult, { result: "needs_clarification" }>,
   selection: CollectiveWorkAdmissionSelection,
   firstSourceRef: string,
+  newlyPrepared = true,
 ) {
   if (
     !task ||
@@ -109,7 +124,7 @@ function validateTask(
     (selection.destination.kind === "existing_thread" && result.threadId !== selection.destination.threadId) ||
     task.status === "done" ||
     task.entrustedWork?.closure.state !== "open" ||
-    task.entrustedWork.revision !== result.taskRevision ||
+    (newlyPrepared && task.entrustedWork.revision !== result.taskRevision) ||
     task.entrustedWork.admission.sourceRefs.length !== 1 ||
     task.entrustedWork.admission.sourceRefs[0] !== firstSourceRef
   )
@@ -127,16 +142,19 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
     entry: "standing" | "owner_request" = "standing",
   ) => {
     const selection = structuredClone(raw);
+    let destination = selection.destination;
     await options.assertCurrent();
     const item = validateScope(scope, selection);
     const authority = scope.work.executionAuthority ?? scope.work.acceptance;
-    // Only actual Agent Service authority has the existing persistent ack path.
-    // Human/manual first basis and owner request identity have no approved record
-    // bridge yet. Entry mode, standing configuration and an opaque hash cannot
-    // supply that missing basis; reject before Host preparation or other effects.
-    if (entry === "owner_request" || selection.identity.actor.kind !== "agent" || !authority)
+    // Agent standing requires actual Service authority and acknowledgement.
+    // Human standing requires a durable choice under the original owner route
+    // scope. An owner click may only reuse either already bound choice.
+    if ((entry === "owner_request" && !options.firstReceipts) ||
+      (selection.identity.actor.kind === "agent" ? !authority : !options.firstReceipts))
       throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
-    if (authority.hostAdmission?.state === "rejected") throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
+    if (authority?.hostAdmission?.state === "rejected") throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
+    let publishedSource: Awaited<ReturnType<NonNullable<PluginMessagingHost["get"]>>> | undefined;
+    let standingBasis: StandingWorkFirstReceipt["basis"] | undefined;
     const current = async () => {
       await options.assertCurrent();
       const work = await scope.readCurrentWork();
@@ -149,14 +167,80 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
       if (!sameExecution(scope.work, work)) throw unavailable();
       if ((work.executionAuthority ?? work.acceptance)?.hostAdmission?.state === "rejected")
         throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
-      const grant = await options.connector.resolveAcceptedWorkGrant(selection.identity);
-      await options.assertCurrent();
-      if (!sameExecution(work, grant.work)) throw unavailable();
+      let basis: StandingWorkFirstReceipt["basis"];
+      if (selection.identity.actor.kind === "agent") {
+        const grant = await options.connector.resolveAcceptedWorkGrant(selection.identity);
+        await options.assertCurrent();
+        if (!sameExecution(work, grant.work) || !authority) throw unavailable();
+        basis = {kind: "standing_grant", producer: "registered_work", grantRef: grant.grant.grantRef,
+          grantRevision: grant.grant.grantRevision, requestKind: authority.requestKind,
+          operationRef: authority.operationRef, originalSource: grant.originalSource, expiresAt: grant.grant.expiresAt};
+      } else {
+        const resolved = await resolveHumanStandingWorkBasis(options.connector, selection.identity, selection.ownerUserId);
+        await options.assertCurrent();
+        if (!resolved) throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
+        basis = resolved;
+      }
+      if (standingBasis && !isDeepStrictEqual(standingBasis, basis)) throw unavailable();
+      standingBasis = basis;
+      if (options.firstReceipts) {
+        if (!options.firstReceipts.messaging.get) throw unavailable();
+        const message = await options.firstReceipts.messaging.get(selection.sourceMessageId);
+        await options.assertCurrent();
+        if (!message || message.id !== selection.sourceMessageId || message.userId !== selection.ownerUserId ||
+          message.catId !== null || item.routeReceipt?.kind !== "thread_message" ||
+          message.threadId !== item.routeReceipt.threadId ||
+          message.content !== item.event.body || message.source?.connector !== "collective" ||
+          !isDeepStrictEqual(message.source.meta?.participation, selection.identity) ||
+          message.source.meta?.workRequest !== item.event.workRequest ||
+          !isDeepStrictEqual(message.source.meta?.workAcceptanceNotice, item.event.workAcceptanceNotice) ||
+          !isDeepStrictEqual(message.source.meta?.workExecutionNotice, item.event.workExecutionNotice) ||
+          (publishedSource && (publishedSource.sourceRevision !== message.sourceRevision ||
+            publishedSource.threadId !== message.threadId || publishedSource.content !== message.content))) throw unavailable();
+        publishedSource = message;
+      }
       return work;
     };
     await current();
     if (!options.tasks.prepareEntrusted || !options.tasks.dispatchEntrusted)
       throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
+    let durableFirst: Awaited<ReturnType<typeof retainWorkFirstReceipt>> | undefined;
+    let bound: ManualWorkExecutionBinding | undefined;
+    if (options.firstReceipts) {
+      // Later Service executions need their own receipt referring to this first
+      // choice. Do not silently recapture a new source as the first admission.
+      if (!publishedSource || !standingBasis || !options.threads || !scope.work.assignmentEventId ||
+        item.event.workRequest !== "entrust" || (scope.work.executionAuthority?.revision ?? 1) !== 1)
+        throw unavailable("WORK_TASK_UNAVAILABLE");
+      if (entry === "owner_request") {
+        const prior = await readWorkFirstReceipt(options.firstReceipts.storage, selection.ownerUserId,
+          selection.sourceMessageId, selection.identity.catId);
+        await current();
+        if (prior?.basis.kind !== "standing_grant" || !prior.binding) throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
+      }
+      const tasks = await options.tasks.listByKind("work");await current();
+      const site = selectCollectiveWorkThread(tasks, publishedSource, selection.identity.catId);
+      durableFirst = await retainWorkFirstReceipt(options.firstReceipts.storage, {
+        v: 1, ownerUserId: selection.ownerUserId,
+        basis: standingBasis,
+        source: {id: publishedSource.id, revision: publishedSource.sourceRevision, threadId: publishedSource.threadId,
+          bodyDigest: workReceiptDigest(publishedSource.content), identity: selection.identity},
+        work: {workId: scope.work.workId, assignmentEventId: scope.work.assignmentEventId, resultRevision: 1,
+          executionRevision: 1, intendedOutcomeDigest: workReceiptDigest(scope.work.intendedOutcome)},
+      }, async () => {await current();}, site.kind === "existing");
+      bound = await durableFirst.readBinding();
+      if (bound) {
+        if (selection.destination.kind === "existing_thread" && selection.destination.threadId !== bound.threadId)
+          throw unavailable("OWNER_ADMISSION_CONFLICT");
+        destination = {kind: "existing_thread", threadId: bound.threadId};
+      } else {
+        const threadId = await resolveCollectiveWorkThread(options.threads, options.tasks, publishedSource, selection.identity.catId);
+        await current();
+        if (selection.destination.kind === "existing_thread" && selection.destination.threadId !== threadId)
+          throw unavailable("OWNER_ADMISSION_CONFLICT");
+        destination = {kind: "existing_thread", threadId};
+      }
+    }
     const subject = selection.subject ?? {
       kind: "new" as const,
       title: scope.work.title.slice(0, 160),
@@ -169,10 +253,12 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
     if (item.event.workRequest === "continue" && subject.kind !== "continue")
       throw unavailable("WORK_TASK_UNAVAILABLE");
     await current();
-    const result = await options.tasks.prepareEntrusted({
+    const result = bound ? {result: "resumed" as const, taskRef: bound.taskRef, taskRevision: bound.taskRevision,
+      threadId: bound.threadId, admissionRef: bound.admissionRef, executionRef: bound.executionRef}
+      : await options.tasks.prepareEntrusted({
       sourceMessageId: selection.sourceMessageId,
       targetCatId: selection.identity.catId,
-      destination: selection.destination,
+      destination,
       subject,
     });
     await current();
@@ -183,38 +269,48 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
     const task = validateTask(
       await options.tasks.get(result.taskRef.slice(10)),
       result,
-      selection,
+      {...selection, destination},
       `message:${firstReceipt.messageId}`,
+      !bound,
     );
     await current();
     if (!scope.work.assignmentEventId) throw unavailable();
+    const binding = {taskRef: result.taskRef, taskRevision: result.taskRevision, threadId: result.threadId,
+      admissionRef: result.admissionRef, executionRef: result.executionRef,
+      refScope: `message:${selection.sourceMessageId}:work:${task.id}:${result.taskRevision}:result:1:execution:1:${result.executionRef}`};
+    if (durableFirst) await durableFirst.bind(binding);
     const receiptRef = opaqueHostAdmission(
       { userId: selection.ownerUserId, id: selection.sourceMessageId },
       scope.work.workId,
       task.id,
     );
-    await scope.recordHostAdmission({
-      workId: scope.work.workId,
-      assignmentEventId: scope.work.assignmentEventId,
-      operationRef: authority.operationRef,
-      grantRef: authority.grantRef,
-      grantRevision: authority.grantRevision,
-      executionRevision: scope.work.executionAuthority?.revision ?? 1,
-      disposition: { state: "admitted", receiptRef },
-    });
-    const fresh = await current();
-    const acknowledgement = (fresh.executionAuthority ?? fresh.acceptance)?.hostAdmission;
-    if (acknowledgement?.state !== "admitted" || acknowledgement.receiptRef !== receiptRef)
-      throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
+    if (selection.identity.actor.kind === "agent") {
+      if (!authority) throw unavailable();
+      await scope.recordHostAdmission({
+        workId: scope.work.workId,
+        assignmentEventId: scope.work.assignmentEventId,
+        operationRef: authority.operationRef,
+        grantRef: authority.grantRef,
+        grantRevision: authority.grantRevision,
+        executionRevision: scope.work.executionAuthority?.revision ?? 1,
+        disposition: { state: "admitted", receiptRef },
+      });
+      const fresh = await current();
+      const acknowledgement = (fresh.executionAuthority ?? fresh.acceptance)?.hostAdmission;
+      if (acknowledgement?.state !== "admitted" || acknowledgement.receiptRef !== receiptRef)
+        throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
+    } else await current();
     // Re-read the actual canonical Task and the current remote business grant after the Service effect.
-    validateTask(await options.tasks.get(task.id), result, selection, `message:${firstReceipt.messageId}`);
+    validateTask(await options.tasks.get(task.id), result, {...selection, destination}, `message:${firstReceipt.messageId}`, !bound);
     await current();
+    await durableFirst?.assertBound(binding);
     const queue = await options.tasks.dispatchEntrusted({
       taskRef: result.taskRef,
       taskRevision: result.taskRevision,
       executionRef: result.executionRef,
     });
     await current();
+    await durableFirst?.assertBound(binding);
     return { ...result, queue };
   };
   return Object.freeze({

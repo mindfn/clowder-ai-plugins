@@ -10,12 +10,13 @@ import {
 import { resolveMaterializedParticipation } from "./business/connector/participation-custody.js";
 import { collectiveContextError } from "./collective-context-refs.js";
 import { opaqueHostAdmission } from "./collective-work-admission-caller.js";
-import { readManualWorkFirstReceipt, workReceiptDigest } from "./owner-work-first-receipt.js";
+import { resolveHumanStandingWorkBasis } from "./collective-human-standing.js";
+import { readWorkFirstReceipt, workReceiptDigest } from "./owner-work-first-receipt.js";
 
 interface Options {
   readonly connector: CollectiveConnector;
   readonly context: Pick<FeatureContext, "nativeContext"> & { readonly tasks: Pick<FeatureContext["tasks"], "get"> };
-  readonly manualReceipts?: {
+  readonly firstReceipts?: {
     readonly storage: Pick<PluginStorageHost, "get">;
     readonly messaging: Pick<PluginMessagingHost, "get">;
   };
@@ -29,8 +30,9 @@ const changed = () =>
 /** Package-internal Work reader, never an admission or a published action.
  * The Host authenticates the existing Task coordinates. The original Service
  * acceptance and source notice supply immutable business execution/result facts.
- * Human sources additionally require the original package first receipt. Absence
- * of that private composition keeps the original Agent-only reader compatible;
+ * Supplied first-receipt composition requires the exact original choice and
+ * binding for either actor; human sources always require it. Absence
+ * keeps the previously reviewed Agent ack-only reader compatible;
  * neither Task.createdBy nor Host entry provenance supplies business authority. */
 export function createCollectiveAgentWorkContextCaller(options: Options) {
   const { connector, context } = options;
@@ -55,7 +57,7 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
       throw changed();
     const parsed = collectiveSourceIdentitySchema.safeParse(auth.source.source.meta?.participation);
     if (!parsed.success || parsed.data.catId !== auth.catId ||
-      (parsed.data.actor.kind !== "agent" && (parsed.data.actor.kind !== "human" || !options.manualReceipts))) throw changed();
+      (parsed.data.actor.kind !== "agent" && (parsed.data.actor.kind !== "human" || !options.firstReceipts))) throw changed();
     return { auth, source: parsed.data };
   };
   return Object.freeze({
@@ -84,13 +86,16 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
       const item = rows.length === 1 ? rows[0] : undefined;
       const notice =
         item?.event.workRequest === "continue" ? item.event.workExecutionNotice : item?.event.workAcceptanceNotice;
-      const manual = first.source.actor.kind === "human"
-        ? await readManualWorkFirstReceipt(options.manualReceipts!.storage, first.auth.source.extra.pluginMessage.instanceId,
-          first.auth.userId, first.auth.source.id, first.auth.catId)
+      const captured = options.firstReceipts
+        ? await readWorkFirstReceipt(options.firstReceipts.storage, first.auth.userId, first.auth.source.id, first.auth.catId)
         : undefined;
       await action.assertCurrent();
-      const workId = first.source.actor.kind === "human" ? manual?.work.workId : notice?.workId;
-      if (!workId || first.source.actor.kind === "human" && !manual?.binding) throw changed();
+      const workId = first.source.actor.kind === "human" ? captured?.work.workId : notice?.workId;
+      if (!workId || (options.firstReceipts && (!captured?.binding || captured.work.workId !== workId)) ||
+        (first.source.actor.kind === "human" && (!captured ||
+          (captured.basis.kind === "manual_owner_write" && (!("pluginInstanceId" in captured) ||
+            captured.pluginInstanceId !== first.auth.source.extra.pluginMessage.instanceId)) ||
+          (captured.basis.kind === "standing_grant" && captured.basis.producer !== "standing_work")))) throw changed();
       const read = () =>
         connector.withAssignedWorkAuthority(first.source.connectionId, workId, async (scope) => {
           const current = await readNative(action);
@@ -169,26 +174,26 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
                 !collectiveWorkAssignmentMatches(source, work, auth.source.source.meta?.workAcceptanceNotice))
           )
             throw changed();
-          if (source.actor.kind === "human") {
-            const ports = options.manualReceipts;
-            if (!ports?.messaging.get || !manual?.binding) throw changed();
-            const stored = await readManualWorkFirstReceipt(ports.storage, auth.source.extra.pluginMessage.instanceId,
-              auth.userId, auth.source.id, auth.catId);
+          if (captured) {
+            const ports = options.firstReceipts;
+            if (!ports?.messaging.get || !captured.binding) throw changed();
+            const stored = await readWorkFirstReceipt(ports.storage, auth.userId, auth.source.id, auth.catId);
             const message = await ports.messaging.get(auth.source.id);
             await action.assertCurrent();
-            if (!isDeepStrictEqual(stored, manual) || !message ||
-              manual.source.revision !== message.sourceRevision || manual.source.id !== message.id ||
-              manual.source.threadId !== message.threadId || message.userId !== auth.userId || message.catId !== null ||
-              manual.source.bodyDigest !== workReceiptDigest(message.content) || message.content !== auth.source.content ||
-              !isDeepStrictEqual(manual.source.identity, source) || manual.work.assignmentEventId !== work.assignmentEventId ||
-              manual.work.resultRevision !== resultRevision || manual.work.executionRevision !== executionRevision ||
-              manual.work.intendedOutcomeDigest !== workReceiptDigest(work.intendedOutcome) ||
-              manual.binding.taskRef !== auth.task.taskRef || manual.binding.taskRevision !== auth.task.taskRevision ||
-              manual.binding.threadId !== auth.threadId || manual.binding.admissionRef !== auth.task.admissionRef ||
-              manual.binding.executionRef !== auth.task.executionRef ||
-              manual.binding.refScope !== `message:${auth.source.id}:work:${task.id}:${auth.task.taskRevision}:result:${resultRevision}:execution:${executionRevision}:${auth.task.executionRef}`)
+            if (!isDeepStrictEqual(stored, captured) || !message ||
+              captured.source.revision !== message.sourceRevision || captured.source.id !== message.id ||
+              captured.source.threadId !== message.threadId || message.userId !== auth.userId || message.catId !== null ||
+              captured.source.bodyDigest !== workReceiptDigest(message.content) || message.content !== auth.source.content ||
+              !isDeepStrictEqual(captured.source.identity, source) || captured.work.assignmentEventId !== work.assignmentEventId ||
+              captured.work.resultRevision !== resultRevision || captured.work.executionRevision !== executionRevision ||
+              captured.work.intendedOutcomeDigest !== workReceiptDigest(work.intendedOutcome) ||
+              captured.binding.taskRef !== auth.task.taskRef || captured.binding.taskRevision !== auth.task.taskRevision ||
+              captured.binding.threadId !== auth.threadId || captured.binding.admissionRef !== auth.task.admissionRef ||
+              captured.binding.executionRef !== auth.task.executionRef ||
+              captured.binding.refScope !== `message:${auth.source.id}:work:${task.id}:${auth.task.taskRevision}:result:${resultRevision}:execution:${executionRevision}:${auth.task.executionRef}`)
               throw changed();
-          } else {
+          }
+          if (source.actor.kind === "agent") {
             const grant = await connector.resolveAcceptedWorkGrant(source);
             await action.assertCurrent();
             const authority = grant.work.executionAuthority ?? grant.work.acceptance;
@@ -200,6 +205,16 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
               authority?.hostAdmission?.state !== "admitted" ||
               authority.hostAdmission.receiptRef !== opaqueHostAdmission(auth.source, work.workId, task.id)
             ) throw changed();
+            if (captured && (captured.basis.kind !== "standing_grant" || captured.basis.producer !== "registered_work" ||
+              captured.basis.grantRef !== grant.grant.grantRef || captured.basis.grantRevision !== grant.grant.grantRevision ||
+              captured.basis.requestKind !== authority.requestKind || captured.basis.operationRef !== authority.operationRef ||
+              !isDeepStrictEqual(captured.basis.originalSource, grant.originalSource) ||
+              captured.basis.expiresAt !== grant.grant.expiresAt)) throw changed();
+          }
+          if (source.actor.kind === "human" && captured?.basis.kind === "standing_grant") {
+            const basis = await resolveHumanStandingWorkBasis(connector, source, auth.userId);
+            await action.assertCurrent();
+            if (!basis || !isDeepStrictEqual(captured.basis, basis)) throw changed();
           }
           await action.assertCurrent();
           const latest = await readNative(action);
