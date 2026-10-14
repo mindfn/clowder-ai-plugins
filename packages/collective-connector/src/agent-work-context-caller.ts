@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import type { FeatureContext, PluginActionContext, PluginNativeTaskContext } from "@clowder-ai/plugin-sdk";
+import type { FeatureContext, PluginActionContext, PluginNativeTaskContext, PluginMessagingHost, PluginStorageHost } from "@clowder-ai/plugin-sdk";
 import type { CollectiveConnector } from "./business/connector/connector.js";
 import {
   collectiveEventSourceIdentity,
@@ -10,22 +10,28 @@ import {
 import { resolveMaterializedParticipation } from "./business/connector/participation-custody.js";
 import { collectiveContextError } from "./collective-context-refs.js";
 import { opaqueHostAdmission } from "./collective-work-admission-caller.js";
+import { readManualWorkFirstReceipt, workReceiptDigest } from "./owner-work-first-receipt.js";
 
 interface Options {
   readonly connector: CollectiveConnector;
   readonly context: Pick<FeatureContext, "nativeContext"> & { readonly tasks: Pick<FeatureContext["tasks"], "get"> };
+  readonly manualReceipts?: {
+    readonly storage: Pick<PluginStorageHost, "get">;
+    readonly messaging: Pick<PluginMessagingHost, "get">;
+  };
 }
 const changed = () =>
   collectiveContextError(
     "WORK_EXECUTION_NOT_CURRENT",
-    "The current private Agent Task/source/Service execution changed",
+    "The current private Task/source/Service execution changed",
   );
 
-/** Package-internal Agent Work reader, never an admission or a published action.
+/** Package-internal Work reader, never an admission or a published action.
  * The Host authenticates the existing Task coordinates. The original Service
  * acceptance and source notice supply immutable business execution/result facts.
- * Human first-admission basis and artifact/version adaptation remain separately
- * paired Host boundaries; this helper does not infer either from createdBy. */
+ * Human sources additionally require the original package first receipt. Absence
+ * of that private composition keeps the original Agent-only reader compatible;
+ * neither Task.createdBy nor Host entry provenance supplies business authority. */
 export function createCollectiveAgentWorkContextCaller(options: Options) {
   const { connector, context } = options;
   const readNative = async (action: PluginActionContext) => {
@@ -48,7 +54,8 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
     )
       throw changed();
     const parsed = collectiveSourceIdentitySchema.safeParse(auth.source.source.meta?.participation);
-    if (!parsed.success || parsed.data.catId !== auth.catId || parsed.data.actor.kind !== "agent") throw changed();
+    if (!parsed.success || parsed.data.catId !== auth.catId ||
+      (parsed.data.actor.kind !== "agent" && (parsed.data.actor.kind !== "human" || !options.manualReceipts))) throw changed();
     return { auth, source: parsed.data };
   };
   return Object.freeze({
@@ -77,9 +84,15 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
       const item = rows.length === 1 ? rows[0] : undefined;
       const notice =
         item?.event.workRequest === "continue" ? item.event.workExecutionNotice : item?.event.workAcceptanceNotice;
-      if (!notice) throw changed();
+      const manual = first.source.actor.kind === "human"
+        ? await readManualWorkFirstReceipt(options.manualReceipts!.storage, first.auth.source.extra.pluginMessage.instanceId,
+          first.auth.userId, first.auth.source.id, first.auth.catId)
+        : undefined;
+      await action.assertCurrent();
+      const workId = first.source.actor.kind === "human" ? manual?.work.workId : notice?.workId;
+      if (!workId || first.source.actor.kind === "human" && !manual?.binding) throw changed();
       const read = () =>
-        connector.withAssignedWorkAuthority(first.source.connectionId, notice.workId, async (scope) => {
+        connector.withAssignedWorkAuthority(first.source.connectionId, workId, async (scope) => {
           const current = await readNative(action);
           if (!isDeepStrictEqual(current, first)) throw changed();
           const { auth, source } = current;
@@ -156,18 +169,38 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
                 !collectiveWorkAssignmentMatches(source, work, auth.source.source.meta?.workAcceptanceNotice))
           )
             throw changed();
-          const grant = await connector.resolveAcceptedWorkGrant(source);
-          await action.assertCurrent();
-          const authority = grant.work.executionAuthority ?? grant.work.acceptance;
-          if (
-            grant.work.workId !== work.workId ||
-            grant.work.assignmentEventId !== work.assignmentEventId ||
-            !isDeepStrictEqual(grant.work.executionAuthority, work.executionAuthority) ||
-            !isDeepStrictEqual(grant.work.acceptance, work.acceptance) ||
-            authority?.hostAdmission?.state !== "admitted" ||
-            authority.hostAdmission.receiptRef !== opaqueHostAdmission(auth.source, work.workId, task.id)
-          )
-            throw changed();
+          if (source.actor.kind === "human") {
+            const ports = options.manualReceipts;
+            if (!ports?.messaging.get || !manual?.binding) throw changed();
+            const stored = await readManualWorkFirstReceipt(ports.storage, auth.source.extra.pluginMessage.instanceId,
+              auth.userId, auth.source.id, auth.catId);
+            const message = await ports.messaging.get(auth.source.id);
+            await action.assertCurrent();
+            if (!isDeepStrictEqual(stored, manual) || !message ||
+              manual.source.revision !== message.sourceRevision || manual.source.id !== message.id ||
+              manual.source.threadId !== message.threadId || message.userId !== auth.userId || message.catId !== null ||
+              manual.source.bodyDigest !== workReceiptDigest(message.content) || message.content !== auth.source.content ||
+              !isDeepStrictEqual(manual.source.identity, source) || manual.work.assignmentEventId !== work.assignmentEventId ||
+              manual.work.resultRevision !== resultRevision || manual.work.executionRevision !== executionRevision ||
+              manual.work.intendedOutcomeDigest !== workReceiptDigest(work.intendedOutcome) ||
+              manual.binding.taskRef !== auth.task.taskRef || manual.binding.taskRevision !== auth.task.taskRevision ||
+              manual.binding.threadId !== auth.threadId || manual.binding.admissionRef !== auth.task.admissionRef ||
+              manual.binding.executionRef !== auth.task.executionRef ||
+              manual.binding.refScope !== `message:${auth.source.id}:work:${task.id}:${auth.task.taskRevision}:result:${resultRevision}:execution:${executionRevision}:${auth.task.executionRef}`)
+              throw changed();
+          } else {
+            const grant = await connector.resolveAcceptedWorkGrant(source);
+            await action.assertCurrent();
+            const authority = grant.work.executionAuthority ?? grant.work.acceptance;
+            if (
+              grant.work.workId !== work.workId ||
+              grant.work.assignmentEventId !== work.assignmentEventId ||
+              !isDeepStrictEqual(grant.work.executionAuthority, work.executionAuthority) ||
+              !isDeepStrictEqual(grant.work.acceptance, work.acceptance) ||
+              authority?.hostAdmission?.state !== "admitted" ||
+              authority.hostAdmission.receiptRef !== opaqueHostAdmission(auth.source, work.workId, task.id)
+            ) throw changed();
+          }
           await action.assertCurrent();
           const latest = await readNative(action);
           if (!isDeepStrictEqual(latest, current)) throw changed();
