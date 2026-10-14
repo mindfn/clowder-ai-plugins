@@ -37,11 +37,12 @@ assert.equal(manifest.runtime.transport, 'builtin');
 const namespace = await import(pathToFileURL(join(packageRoot, manifest.runtime.entrypoint)).href);
 const entrypoint = requirePluginModuleEntrypoint(namespace.default);
 assert.equal(module, namespace.default, 'public export must identify the same installed module');
+const cliEntries = new Set(manifest.contributions.filter(item => item.type === 'mcp').map(item => item.runtime.entrypoint));
 async function importTree(directory) {
   for (const item of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, item.name);
     if (item.isDirectory()) await importTree(path);
-    else if (item.name.endsWith('.js') && !['mcp-entrypoint.js', 'owner-mcp-entrypoint.js'].includes(item.name)) await import(pathToFileURL(path).href);
+    else if (item.name.endsWith('.js') && !cliEntries.has(relative(packageRoot, path))) await import(pathToFileURL(path).href);
   }
 }
 await importTree(join(packageRoot, 'dist'));
@@ -78,6 +79,22 @@ try {
   for (const key of ['agent', 'userId', 'catId', 'sessionRef', 'workResultIntent', 'workProgressIntent'])
     assert.equal(Object.hasOwn(schema.properties, key), false);
 } finally { await ownerClient.close(); }
+
+const workNative = manifest.contributions.find(item => item.type === 'mcp' && item.id === 'collective-work-native');
+assert.ok(workNative);
+const workClient = new Client({name: 'isolated-installed-work-consumer', version: '1.0.0'});
+const workTransport = new StdioClientTransport({command: process.execPath, args: [join(packageRoot, workNative.runtime.entrypoint)],
+  env: {PATH: process.env.PATH ?? ''}, stderr: 'pipe'});
+try {
+  await workClient.connect(workTransport);
+  const {tools} = await workClient.listTools();
+  assert.deepEqual(tools.map(tool => tool.name).sort(), ['cat_cafe_collective_work_current_context', 'cat_cafe_collective_work_read_context', 'cat_cafe_collective_progress'].sort());
+  for (const tool of tools) {
+    assert.equal(tool.inputSchema.additionalProperties, false);
+    for (const field of ['userId', 'catId', 'invocationId', 'taskId', 'executionRef', 'grantRef'])
+      assert.equal(Object.hasOwn(tool.inputSchema.properties, field), false);
+  }
+} finally {await workClient.close();}
 
 await assert.rejects(stat(join(packageRoot, 'dist/business/service/cli.js')), { code: 'ENOENT' });
 const directory = await mkdtemp(join(tmpdir(), 'installed-collective-data-'));

@@ -1,3 +1,4 @@
+import { activateCollectiveWork } from './work-native-activation.js';
 import { createCollectiveAgentVerification } from './native-agent-verification.js';
 import { createCollectiveOwnerSendAction } from './collective-owner-native-send.js';
 import { createCollectiveOwnerView } from './owner-participation-caller.js';
@@ -53,7 +54,13 @@ async function writeBootstrapLink(path: string, link: string): Promise<void> {
   } finally { await rm(temporaryPath, { force: true }); }
 }
 
-async function activateService(context: FeatureContext, declaration: BrowserServiceContribution): Promise<FeatureActivation> {
+interface WorkBackend {
+  readonly connector: CollectiveConnector;
+  readonly parentOrigin: string;
+  assertActive(): void;
+}
+async function activateService(context: FeatureContext, declaration: BrowserServiceContribution,
+  ready: (backend: WorkBackend) => void, taskNative: () => FeatureContext['nativeContext']): Promise<FeatureActivation> {
   if (!context.browserServices) throw new Error('Collective requires the Host browser-service binding before start');
   const binding = await context.browserServices.getBinding('collective-client-api');
   await binding.assertCurrent();
@@ -81,11 +88,12 @@ async function activateService(context: FeatureContext, declaration: BrowserServ
   await binding.assertCurrent();
   let stopped = false;
   const assertActive = () => { if (stopped) throw new Error('Collective module is stopped'); void context.dataDirectory; };
-  const verification = createCollectiveAgentVerification(context, assertActive);
+  const verification = createCollectiveAgentVerification(context, assertActive, taskNative);
   const connector = await CollectiveConnector.open({ dataDirectory: join(context.dataDirectory, 'connector'),
     verifyAgent: verification.verifyAgent, localTransport: createLocalServiceTransport(context.browserServices, binding, opened.store) });
   const contribution = declaration;
   const dispatch = createNodeHttpAdapter({ store: opened.store, allowedHostOrigins, bootstrapLinkPath, githubAppSetup }, binding, contribution);
+  ready({connector, parentOrigin: binding.parentOrigin, assertActive});
   const native = await activateCollectivePublicNative(context, connector, assertActive);
   const localServiceStatus = (): CollectiveLocalServiceStatus => {
     const metadata = opened.store.getMetadata();
@@ -157,7 +165,19 @@ export function createCollectivePluginModule(_options: CollectivePluginModuleOpt
     const plugin = definePlugin({ manifest });
     const declaration = plugin.manifest.contributions?.find((item): item is BrowserServiceContribution => item.type === 'browser-service' && item.id === 'collective-client-api');
     if (!declaration) throw new Error('Collective browser-service declaration is missing');
-    return definePlugin({ manifest, activate: { 'collective-backend': context => activateService(context, declaration) } });
+    let backend: WorkBackend | undefined;
+    let taskContext: FeatureContext['nativeContext'];
+    return definePlugin({ manifest, activate: {
+      'collective-backend': context => activateService(context, declaration, current => {backend = current;}, () => taskContext),
+      ...(plugin.manifest.features.some(feature => feature.id === 'collective-work') ? {
+        'collective-work': async (context: FeatureContext) => {
+          if (!backend) throw new Error('Collective backend must be active before Work');
+          const activation = await activateCollectiveWork(context, backend);
+          taskContext = context.nativeContext;
+          return {...activation, dispose: async () => {taskContext = undefined;await activation.dispose?.();}};
+        },
+      } : {}),
+    } });
   });
 }
 

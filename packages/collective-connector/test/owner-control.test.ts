@@ -75,10 +75,12 @@ test('implemented owner method/path pairs and seven ordinary native methods are 
     'GET connections/:connectionId/listening', 'POST connections/:connectionId/listening',
     'GET connections/:connectionId/work-policy', 'POST connections/:connectionId/work-policy/adopt', 'POST connections/:connectionId/work/reconsider',
     'POST connections/:connectionId/work-policy/revoke', 'POST service/provision', 'GET entry-roster', 'POST pair', 'POST connections/:connectionId/participation/reconcile', 'PUT connections/:connectionId/participation/policy', 'GET connections/:connectionId/participation', 'PUT connections/:connectionId/participation'];
-  const webhooks = manifest.contributions.filter((item: { type: string }) => item.type === 'webhook');
+  const backend = manifest.features.find((item: {id: string}) => item.id === 'collective-backend');
+  const owned = new Set(backend.contributions.filter((item: {type: string}) => item.type === 'webhook').map((item: {id: string}) => item.id));
+  const webhooks = manifest.contributions.filter((item: { type: string; id: string }) => item.type === 'webhook' && owned.has(item.id));
   assert.deepEqual(webhooks.flatMap((item: { path: string; methods: string[] }) => item.methods.map(method => method + ' ' + item.path)).sort(), expected.sort());
   for (const item of webhooks) { assert.equal(item.verificationSecretRef, undefined); assert.equal(item.action.method, 'collective.control.http'); }
-  assert.deepEqual(manifest.contributions.find((item: { type: string }) => item.type === 'mcp').actions.map((item: { method: string }) => item.method).sort(),
+  assert.deepEqual(manifest.contributions.find((item: { type: string; id: string }) => item.type === 'mcp' && item.id === 'collective-native').actions.map((item: { method: string }) => item.method).sort(),
     ['collective.context.current', 'collective.context.read', 'collective.participation.set-interest', 'collective.reply.submit', 'collective.work.propose', 'collective.work.accept', 'collective.work.continue'].sort());
 });
 function controlledPort() {

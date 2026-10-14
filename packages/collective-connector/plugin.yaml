@@ -62,6 +62,21 @@ configuration:
         render: row
         resultRender: rows
         action: { method: collective.owner.sync }
+  - key: work
+    label: Private Collective Work
+    kind: operation
+    required: false
+    actions:
+      - id: list
+        label: Paired Work connections
+        render: button
+        resultRender: rows
+        action: { method: collective.work.owner.connections }
+      - id: sync
+        label: Admit current committed Work
+        render: row
+        resultRender: rows
+        action: { method: collective.work.owner.sync }
 features:
   - id: collective-backend
     name: Collective backend
@@ -116,6 +131,23 @@ features:
       - thread.write
       - messaging.send
       - task.read
+  - id: collective-work
+    name: Private Collective Work
+    resources: []
+    contributions:
+      - { type: mcp, id: collective-work-native }
+      - { type: webhook, id: collective-work-admit }
+      - { type: webhook, id: collective-work-resume }
+    capabilities:
+      - data.directory
+      - plugin.state.get
+      - plugin.state.set
+      - task.admitEntrusted
+      - task.read
+      - thread.readContent
+      - thread.listMetadata
+      - thread.write
+      - messaging.send
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js
@@ -433,3 +465,21 @@ contributions:
     path: connections/:connectionId/participation
     methods: [GET, PUT]
     action: { method: collective.control.http }
+
+  - type: mcp
+    id: collective-work-native
+    runtime: { transport: stdio, entrypoint: dist/work-mcp-entrypoint.js }
+    actions:
+      - { method: collective.work.context.current }
+      - { method: collective.work.context.read }
+      - { method: collective.work.progress }
+  - type: webhook
+    id: collective-work-admit
+    path: connections/:connectionId/work/admit
+    methods: [POST]
+    action: { method: collective.work.control.http }
+  - type: webhook
+    id: collective-work-resume
+    path: connections/:connectionId/work/resume
+    methods: [POST]
+    action: { method: collective.work.control.http }

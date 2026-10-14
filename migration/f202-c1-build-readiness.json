@@ -12,7 +12,7 @@
       "packageName": "@clowder-ai/collective-connector",
       "version": "0.1.0-alpha.2",
       "sourceDirectory": "/Users/lang/workspace/github-lab/clowder-ai-plugins-train-c1/packages/collective-connector",
-      "packageJsonSha256": "00051e6c71c6d1f5ec1f75d11c0e36324b43fec6fe5c4d28202c66647fbf3b60",
+      "packageJsonSha256": "c5d9098085b19e57bc50f73c2f8c08077abb906576ce930d611feb521d6f5fde",
       "canonicalYamlPresent": true,
       "entries": [
         {
@@ -24,14 +24,14 @@
         {
           "path": "./plugin.yaml",
           "present": true,
-          "sha256": "27b7a7e32d547eb346f969ad6f55b0b3a2e1c9f9445ae6141bcf02e61050bbd5",
-          "bytes": 12548
+          "sha256": "17c7a1ca93ebbdd6526dfc8653d2c0316fa012ac7b87d07d474e2cbe338bb930",
+          "bytes": 14331
         },
         {
           "path": "dist/plugin-entrypoint.js",
           "present": true,
-          "sha256": "c69070494bfd92684d81d1249554ae18c8c1fb5ea1c286b9f7806686f8f24335",
-          "bytes": 11444
+          "sha256": "af2bfa5d6bc8dc4002bbc9f10c61de2ec279a69da781a4fc02aa71974081870e",
+          "bytes": 12432
         },
         {
           "path": "dist/mcp-entrypoint.js",
@@ -43,6 +43,12 @@
           "path": "dist/owner-mcp-entrypoint.js",
           "present": true,
           "sha256": "9c1c3adfc0a6e7e3f61778b7ccdbe6e156e7494058672279c531103bc5b85122",
+          "bytes": 1016
+        },
+        {
+          "path": "dist/work-mcp-entrypoint.js",
+          "present": true,
+          "sha256": "85e1f2f9e7ea65ae5902a239ae2a086711f7d95e623de56ab6eac74ae464fe1c",
           "bytes": 1016
         }
       ],
@@ -90,9 +96,11 @@
       "freshBuild": null,
       "actualDirectoryJourneyAccepted": false,
       "entrypointRefresh": {
-        "sourceHead": "83c348f07cc9b236761fa388995cb5ee34aa2c4f",
-        "scope": "Original owner pair currentness correction after sequential build and packed consumer; only Collective literal entry hashes refreshed. Historical census and actual installed acceptance remain separate.",
-        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/owner-pair-currentness-verification.json"
+        "sourceHead": "7b89ec655ccc0864efc225df4b91391f3cce52c5",
+        "uncommittedCandidate": true,
+        "scope": "Collective production Work feature and its declared third MCP after real build. Only this package entry hashes are refreshed; historical census and full installed C1 acceptance remain separate.",
+        "candidateManifestSha256": "17c7a1ca93ebbdd6526dfc8653d2c0316fa012ac7b87d07d474e2cbe338bb930",
+        "verification": "/Users/lang/workspace/github-lab/f202-handoff/c1-finite-closeout-2026-10-12/work-production-entry-verification-r3.json"
       }
     },
     {

@@ -104,6 +104,9 @@ Connector/service internals and domain declarations remain private implementatio
 
 ## Install permissions
 
+- `plugin.state.get`: re-read the original first-source/Cat business receipt from the Host-private container.
+- `plugin.state.set`: retain the immutable first choice and exact execution binding through the existing CAS container; it does not issue permission.
+- `task.admitEntrusted`: the separate Work feature may prepare/dispatch the exact current authorized source; this does not grant `task.write` or Task CRUD.
 - `thread.readContent`: read only the authenticated native origin and its current source through Host ports.
 - `thread.listMetadata`: verify the owner-created route thread before admitting a named request.
 - `thread.write`: create the original per-channel owner threads and materialize selected participants.
@@ -204,5 +207,28 @@ participation and optional owner standing-work scope; disable removes both while
 same owner thread. The current Host roster decides eligibility and strict owner thread ports reject
 deleted or foreign threads before mutation. The original Connector persists route/standing-work
 revisions and publishes participation to the Service. This configuration does not create a Task,
-admit execution or allow a public/native caller to act as the owner. Manual Work admission/resume,
-private/progress returns and the complete retained browser journey remain open.
+admit execution or allow a public/native caller to act as the owner. Work admission and progress use
+the separate Work feature below; resume and the complete retained browser journey remain open.
+
+## Private Work production actions
+
+The distinct `collective-work` feature owns exactly one Task MCP, `collective-work-native`.
+Its three tools read the current admitted Task/source, read that source through a context reference,
+and publish real progress. They consume the actual Host `includeTask:true` snapshot and the original
+package first receipt; ordinary public participation and the owner-send MCP retain their six existing
+grants and cannot enter this private method set. Progress preserves result/execution identity and
+never completes Work. The inherited native reference key remains under the same authorized directory.
+
+Settings → Private Collective Work → Paired Work connections offers an authenticated Sync operation.
+It sends current committed initial Work notices without wake, records the original inbox mapping,
+then consumes current Service or human standing authority through the reviewed package admission caller.
+The Host supplies the real instance identity through that owner-operation context; neither manifest
+plugin id nor tool input substitutes for it. `POST connections/:connectionId/work/admit` enters the
+separate `collective.work.control.http` owner webhook and the reviewed manual/replay caller. The original
+resume DTO is registered but honestly returns unavailable while its separate recovery boundary is open.
+
+This is production declaration and consumer wiring, not a complete installed Work journey.
+Autonomous source publication, later execution/bootstrap, independent owner resume/current custody,
+result publication/file seals/accepted history and the packaged Work skill still need their original
+complete integration. The old skill is not advertised or packed while it instructs unavailable callbacks.
+No background source is emitted using a guessed instance id or Host provenance. Full C1 remains open.
