@@ -106,6 +106,10 @@ export function createCollectiveWorkArtifacts(context: Pick<FeatureContext, 'sto
       seal.triggerMessageId !== capture.publisher.triggerMessageId || seal.item.kind !== 'content-block' || seal.item.index !== 0 ||
       seal.contentDigest !== capture.contentDigest || seal.byteLength !== bytesOf(capture.text).length ||
       seal.mediaType !== capture.mediaType) throw changed();
+    // Thread/authority reads may await. Recheck the immutable publication after
+    // those waits instead of returning the earlier detached message snapshot.
+    const latest = assertMessage(capture, await context.messaging.get(seal.sourceMessageId), seal.sourceMessageId);
+    if (latest.sourceRevision !== message.sourceRevision) throw changed();
     return snapshot;
   }
   return Object.freeze({
@@ -169,7 +173,8 @@ export function createCollectiveWorkArtifacts(context: Pick<FeatureContext, 'sto
     },
     /** Only the original current Work/accepted-outbox selector may call this.
      * A prior publication is readable evidence, never an old execution grant. */
-    async readAccepted(binding: CollectiveWorkArtifactBinding, publication: CollectiveWorkResultPublication) {
+    async readAccepted(binding: CollectiveWorkArtifactBinding, publication: CollectiveWorkResultPublication,
+      beforeReturn?: () => Promise<void>) {
       await binding.revalidate();
       const snapshot = publication.artifactSnapshot, seal = snapshot?.textPublication;
       const match = /^collective-artifact:([a-f0-9]{64})$/.exec(snapshot?.artifactRef ?? '');
@@ -205,8 +210,16 @@ export function createCollectiveWorkArtifacts(context: Pick<FeatureContext, 'sto
       if (!trigger || trigger.id !== capture.publisher.triggerMessageId || trigger.userId !== capture.scope.ownerUserId ||
         trigger.threadId !== capture.scope.threadId || trigger.catId !== null || trigger.source) throw changed();
       await verify(binding, capture);
+      // Recheck the accepted witness outside its connection fence before the
+      // final private/material reads. It cannot turn an old message into a lease.
+      await beforeReturn?.();
       const latest = await context.storage.get('collective-work-artifact:' + match[1]); await binding.revalidate();
       if (!latest || !isDeepStrictEqual(latest, entry)) throw changed();
+      const [latestTrigger, latestPublication] = await Promise.all([
+        context.messaging.get(capture.publisher.triggerMessageId), context.messaging.get(seal.sourceMessageId),
+      ]);
+      if (!isDeepStrictEqual(latestTrigger, trigger) ||
+        assertMessage(capture, latestPublication, seal.sourceMessageId).sourceRevision !== seal.sourceMessageRevision) throw changed();
       return {state: 'available' as const, artifactRef: snapshot.artifactRef, artifactRevision: snapshot.artifactRevision,
         sourceMessageRef: `message:${capture.scope.threadId}:${seal.sourceMessageId}`, resultEventId: publication.resultEventId,
         resultRevision: publication.resultRevision, contentDigest: seal.contentDigest, mediaType: seal.mediaType, text: capture.text,

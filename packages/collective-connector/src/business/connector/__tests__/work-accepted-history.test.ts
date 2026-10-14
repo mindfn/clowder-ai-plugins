@@ -27,8 +27,9 @@ function fixture() {
   async revalidate(){if(inside)throw Error('Do not reenter the held connection fence');}} as unknown as CollectiveWorkArtifactBinding;
  const connector={async withSynchronizedAssignedWorkAuthority(_connection:string,_assignment:string,consume:(scope:AssignedWorkAuthorityScope)=>Promise<unknown>){
    inside=true;witnesses++;try{return await consume(frame as unknown as AssignedWorkAuthorityScope);}finally{inside=false;}}} as unknown as CollectiveConnector;
- const artifacts={async readAccepted(){if(inside)throw Error('Private reads must occur outside the connection fence');reads++;
+ const artifacts={async readAccepted(_binding: unknown, _publication: unknown, beforeReturn?: () => Promise<void>){if(inside)throw Error('Private reads must occur outside the connection fence');reads++;
    if(changeAfterRead)frame.resultPublications=[];
+   await beforeReturn?.();
    return {state:'available',text:'data',resultEventId:'result1'};}} as unknown as ReturnType<typeof createCollectiveWorkArtifacts>;
  return {publication,frame,binding,connector,artifacts,get reads(){return reads;},get witnesses(){return witnesses;},changeAfterRead(){changeAfterRead=true;}};
 }

@@ -12,6 +12,7 @@ async function fixture() {
   const records = new Map<string, PluginStorageEntry>();
   const messages = new Map<string, PluginMessage>();
   let revision = 0, sends = 0, current = true, loseSend = false, loseCasAt = 0;
+  let afterMessageRead: ((id: string) => void) | undefined;
   const binding = {auth: {userId: 'owner', catId: 'cat', threadId: 'private', invocationId: 'native-turn',
     originTriggerMessageId: 'trigger', source: {extra: {pluginMessage: {instanceId: 'instance'}}},
     task: {taskRef: 'task:work:task', taskRevision: 1, admissionRef: 'message:admission', executionRef: 'message:execution'}},
@@ -25,7 +26,7 @@ async function fixture() {
       const old = records.get(key); if ((old?.revision ?? null) !== expected) return {applied: false};
       const row = {revision: ++revision, value: structuredClone(value)};records.set(key, row);if (revision === loseCasAt) throw new Error('CAS response lost after apply');return {applied: true, revision};}},
     threads: {async get() {return {id: 'private', deepLinkUrl: '/owned-thread/private'};}},
-    messaging: {async get(id: string) {return structuredClone(messages.get(id) ?? null);},
+    messaging: {async get(id: string) {const detached = structuredClone(messages.get(id) ?? null);afterMessageRead?.(id);return detached;},
       async send(threadId: string, draft: Parameters<FeatureContext['messaging']['send']>[1]) {
         sends++;if (!messages.has('published')) messages.set('published', {id: 'published', threadId, userId: 'owner', catId: null,
           content: (draft.payload.elements[0]!.payload as {text: string}).text, mentions: [], timestamp: 1,
@@ -34,6 +35,7 @@ async function fixture() {
         if (loseSend) {loseSend = false;throw new Error('Settled response lost');}
         return {messageId: 'published', threadId};}}} as never;
   return {artifacts: module!.createCollectiveWorkArtifacts(context), binding, records, messages,
+    afterMessageRead(hook: (id: string) => void) {afterMessageRead = hook;},
     get sends() {return sends;}, expire() {current = false;}, loseSend() {loseSend = true;}, loseCas(at: number) {loseCasAt = at;}};
 }
 
@@ -148,4 +150,24 @@ test('history rejects a missing old trigger, changed publication and missing pri
 test('history read keeps current authority lifetime and treats text as data',async()=>{
   const f=await historyFixture();f.expire();
   await expect(f.artifacts.readAccepted(f.next,f.publication)).rejects.toThrow('revoked');
+});
+
+for (const messageId of ['trigger', 'published']) test(`historical ${messageId} withdrawn after its initial read refuses text`, async () => {
+  const f = await historyFixture();
+  f.afterMessageRead(id => {if (id === messageId) f.messages.delete(id);});
+  await expect(f.artifacts.readAccepted(f.next, f.publication)).rejects.toMatchObject({code: 'WORK_ARTIFACT_UNAVAILABLE'});
+});
+for (const operation of ['read', 'return', 'replay']) test(`current ${operation} refuses a publication withdrawn after its initial read`, async () => {
+  const f = await fixture();const snapshot = await f.artifacts.publishText(f.binding, {text: 'result', mediaType: 'text/plain'});
+  f.afterMessageRead(id => {if (id === 'published') f.messages.delete(id);});
+  const result = operation === 'read' ? f.artifacts.readCurrent(f.binding) : operation === 'return'
+    ? f.artifacts.selectForReturn(f.binding, snapshot) : f.artifacts.publishText(f.binding, {text: 'result', mediaType: 'text/plain'});
+  await expect(result).rejects.toMatchObject({code: 'WORK_ARTIFACT_UNAVAILABLE'});
+});
+
+for (const messageId of ['trigger', 'published']) test(`history rechecks ${messageId} after final accepted-witness waits`, async () => {
+  const f = await historyFixture();
+  await expect(f.artifacts.readAccepted(f.next, f.publication, async () => {
+    f.messages.delete(messageId);
+  })).rejects.toMatchObject({code: 'WORK_ARTIFACT_UNAVAILABLE'});
 });

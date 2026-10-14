@@ -45,9 +45,9 @@ export async function readPreviousCollectiveWorkArtifact(connector: CollectiveCo
   const snapshot = before.publication.artifactSnapshot;
   if (!snapshot || !snapshot.textPublication) return unavailable('UNSEALED_ARTIFACT');
   if (!/^collective-artifact:[a-f0-9]{64}$/.test(snapshot.artifactRef)) return unavailable('LEGACY_ARTIFACT_UNAVAILABLE');
-  const result = await artifacts.readAccepted(binding, before.publication);
-  await binding.revalidate(); const after = await readWitness(); await binding.revalidate();
-  if (!isDeepStrictEqual(before, after))
-    throw collectiveContextError('WORK_ARTIFACT_UNAVAILABLE', 'Accepted result witness changed during artifact read');
-  return result;
+  return artifacts.readAccepted(binding, before.publication, async () => {
+    await binding.revalidate(); const after = await readWitness(); await binding.revalidate();
+    if (!isDeepStrictEqual(before, after))
+      throw collectiveContextError('WORK_ARTIFACT_UNAVAILABLE', 'Accepted result witness changed during artifact read');
+  });
 }
