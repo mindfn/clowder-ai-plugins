@@ -229,12 +229,21 @@ resume DTO is registered but honestly returns unavailable while its separate rec
 For a registered Agent continuation, the package reads its immutable first receipt, preserves the original
 Task/thread/admission, and captures a separate execution receipt before the fresh exact Service acknowledgement
 and Host dispatch. It does not recapture the first basis. The native reader also requires both receipts.
+When a registered Agent already has execution >1 but no first Task, owner Settings sync can bootstrap
+using the immutable first assignment as the Host admission source. A separate private lineage record
+carries no grant; the current execution receipt carries the freshly revalidated Service permission.
+Both are retained before effects and bound to the exact same Task/execution before the current Service
+acknowledgement and dispatch. Native consumers preserve the Host's first-source snapshot while reading
+and rechecking the current source through that relation. Missing/conflicting bindings cannot dispatch,
+and a surviving Task without its original lineage cannot be recaptured. The Host classifies this first
+Task admission as `initial`; its existing first-admission replay is distinct from continuation recovery.
+
 The current Host classifies an owner-operation continuation as `owner_resume`: the same request can dispatch,
 but another HTTP/Settings request cannot borrow that descriptor. Cross-request replay remains unavailable;
 the package does not bypass this protection or infer success from a stored Queue receipt.
 
 This is production declaration and consumer wiring, not a complete installed Work journey.
-Autonomous source publication, complete later execution/bootstrap recovery, independent owner resume/current custody,
+Autonomous source publication, complete later execution recovery, independent owner resume/current custody,
 legacy artifact reconciliation/browser still need their original complete integration.
 The declared skill uses current package text publication and accepted-history readers; actual Host skill mounts and agent/operator use still need full installed acceptance. The current private text publication and result-return path has composition evidence,
 not a complete installed/operator/provider journey. The original `collective-participation` skill is now declared and packed with the backend feature. Its public and private Work instructions name only the installed MCP methods; loading it adds no Work authority or grants.

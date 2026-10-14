@@ -18,7 +18,7 @@ import {
   type CollectiveSourceIdentity,
   type CollectiveWorkProjection,
 } from "./business/contracts/index.js";
-import { readWorkFirstReceipt, readWorkExecutionReceipt, retainWorkFirstReceipt, retainWorkContinuationReceipt, workReceiptDigest, type ManualWorkExecutionBinding, type StandingWorkFirstReceipt, type WorkFirstReceipt } from "./owner-work-first-receipt.js";
+import { readWorkLineageReceipt, isBootstrapWorkLineage, retainBootstrapWorkLineage, readWorkExecutionReceipt, retainWorkFirstReceipt, retainWorkContinuationReceipt, workReceiptDigest, type ManualWorkExecutionBinding, type StandingWorkFirstReceipt, type WorkLineageReceipt } from "./owner-work-first-receipt.js";
 import { resolveHumanStandingWorkBasis } from "./collective-human-standing.js";
 import { resolveCollectiveWorkThread, selectCollectiveWorkThread } from "./collective-work-thread.js";
 
@@ -156,7 +156,8 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
     if (authority?.hostAdmission?.state === "rejected") throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
     let publishedSource: Awaited<ReturnType<NonNullable<PluginMessagingHost["get"]>>> | undefined;
     let standingBasis: StandingWorkFirstReceipt["basis"] | undefined;
-    let firstChoice: WorkFirstReceipt | undefined;
+    let firstChoice: WorkLineageReceipt | undefined;
+    let firstPublished: typeof publishedSource;
     const current = async () => {
       await options.assertCurrent();
       const work = await scope.readCurrentWork();
@@ -206,19 +207,31 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
           const firstItems = inbox.filter(row => row.event.eventId === work.assignmentEventId);
           const receipt = firstItems.length === 1 ? firstItems[0]?.routeReceipt : undefined;
           if (receipt?.kind !== "thread_message") throw unavailable("WORK_TASK_UNAVAILABLE");
-          const first = await readWorkFirstReceipt(options.firstReceipts.storage, selection.ownerUserId,
+          const firstItem = firstItems[0]!;
+          const firstIdentity = collectiveEventSourceIdentity(firstItem.event);
+          const first = await readWorkLineageReceipt(options.firstReceipts.storage, selection.ownerUserId,
             receipt.messageId, selection.identity.catId);
           const root = await options.firstReceipts.messaging.get(receipt.messageId);
           await options.assertCurrent();
-          if (!first?.binding || first.basis.kind !== "standing_grant" || first.basis.producer !== "registered_work" ||
-            !root || root.id !== first.source.id || root.userId !== selection.ownerUserId || root.catId !== null ||
+          if (!firstIdentity || firstIdentity.actor.kind !== "agent" || firstItem.event.workRequest !== "entrust" ||
+            !collectiveWorkAssignmentMatches(firstIdentity, work, firstItem.event.workAcceptanceNotice) ||
+            !root || root.id !== receipt.messageId || root.userId !== selection.ownerUserId || root.catId !== null ||
+            root.threadId !== receipt.threadId || root.content !== firstItem.event.body || root.source?.connector !== "collective" ||
+            !isDeepStrictEqual(root.source.meta?.participation, firstIdentity) || root.source.meta?.workRequest !== "entrust" ||
+            !isDeepStrictEqual(root.source.meta?.workAcceptanceNotice, firstItem.event.workAcceptanceNotice) ||
+            (firstPublished && !isDeepStrictEqual(firstPublished, root)) ||
+            (firstChoice && (!first || !isDeepStrictEqual({...firstChoice, binding: undefined}, {...first, binding: undefined}) ||
+              (firstChoice.binding && !isDeepStrictEqual(firstChoice.binding, first.binding))))) throw unavailable("WORK_TASK_UNAVAILABLE");
+          if (first && (
+            (!isBootstrapWorkLineage(first) && (!first.binding || first.basis.kind !== "standing_grant" ||
+              first.basis.producer !== "registered_work")) ||
             root.threadId !== first.source.threadId || root.sourceRevision !== first.source.revision ||
             workReceiptDigest(root.content) !== first.source.bodyDigest ||
-            !isDeepStrictEqual(root.source?.meta?.participation, first.source.identity) ||
+            !isDeepStrictEqual(first.source.identity, firstIdentity) ||
             first.work.workId !== work.workId || first.work.assignmentEventId !== work.assignmentEventId ||
             first.work.executionRevision !== 1 || first.work.resultRevision !== 1 ||
-            first.work.intendedOutcomeDigest !== workReceiptDigest(work.intendedOutcome) ||
-            (firstChoice && !isDeepStrictEqual(firstChoice, first))) throw unavailable("WORK_TASK_UNAVAILABLE");
+            first.work.intendedOutcomeDigest !== workReceiptDigest(work.intendedOutcome))) throw unavailable("WORK_TASK_UNAVAILABLE");
+          firstPublished = root;
           firstChoice = first;
         }
       }
@@ -229,6 +242,10 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
       throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
     let durableFirst: Awaited<ReturnType<typeof retainWorkFirstReceipt>> | Awaited<ReturnType<typeof retainWorkContinuationReceipt>> | undefined;
     let bound: ManualWorkExecutionBinding | undefined;
+    let bootstrapLineage: Awaited<ReturnType<typeof retainBootstrapWorkLineage>> | undefined;
+    const bootstrapping = continued && (!firstChoice || (isBootstrapWorkLineage(firstChoice) &&
+      firstChoice.bootstrapSourceMessageId === selection.sourceMessageId));
+    let prepareSourceMessageId = selection.sourceMessageId;
     let continuedSubject: PluginTaskAdmissionInput["subject"] | undefined;
     if (options.firstReceipts) {
       // Later Service executions need their own receipt referring to this first
@@ -243,19 +260,47 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
         if (prior?.basis.kind !== "standing_grant" || !prior.binding) throw unavailable("OWNER_ADMISSION_UNAVAILABLE");
       }
       if (continued) {
-        const first = firstChoice, authority = scope.work.executionAuthority;
-        if (!first?.binding || !authority || standingBasis.producer !== "registered_work") throw unavailable("WORK_TASK_UNAVAILABLE");
-        const task = await options.tasks.get(first.binding.taskRef.slice("task:work:".length)); await current();
-        if (!task || task.kind !== "work" || task.userId !== selection.ownerUserId || task.ownerCatId !== selection.identity.catId ||
-          task.threadId !== first.binding.threadId || task.status === "done" || task.entrustedWork?.closure.state !== "open" ||
-          task.entrustedWork.admission.sourceRefs.length !== 1 || task.entrustedWork.admission.sourceRefs[0] !== `message:${first.source.id}` ||
-          (selection.destination.kind === "existing_thread" && selection.destination.threadId !== task.threadId) ||
-          (selection.subject && (selection.subject.kind !== "continue" || selection.subject.taskRef !== first.binding.taskRef)))
+        const authority = scope.work.executionAuthority;
+        if (!authority || standingBasis.producer !== "registered_work" || !firstPublished)
           throw unavailable("WORK_TASK_UNAVAILABLE");
-        destination = {kind: "existing_thread", threadId: task.threadId};
-        continuedSubject = {kind: "continue", taskRef: first.binding.taskRef, expectedRevision: task.entrustedWork.revision};
+        if (bootstrapping) {
+          if (selection.subject && selection.subject.kind !== "new") throw unavailable("WORK_TASK_UNAVAILABLE");
+          const tasks = await options.tasks.listByKind("work"); await current();
+          const site = selectCollectiveWorkThread(tasks, firstPublished, selection.identity.catId);
+          // An existing Task without a pre-effect lineage must never be recaptured.
+          if (!firstChoice && site.kind === "existing") throw unavailable("WORK_TASK_UNAVAILABLE");
+          bootstrapLineage = await retainBootstrapWorkLineage(options.firstReceipts.storage, {
+            v: 1, kind: "bootstrap_lineage", bootstrapSourceMessageId: selection.sourceMessageId,
+            ownerUserId: selection.ownerUserId,
+            source: {id: firstPublished.id, revision: firstPublished.sourceRevision, threadId: firstPublished.threadId,
+              bodyDigest: workReceiptDigest(firstPublished.content), identity: collectiveEventSourceIdentity(
+                scope.inbox.find(row => row.event.eventId === scope.work.assignmentEventId)!.event)!},
+            work: {workId: scope.work.workId, assignmentEventId: scope.work.assignmentEventId!, resultRevision: 1,
+              executionRevision: 1, intendedOutcomeDigest: workReceiptDigest(scope.work.intendedOutcome)},
+          }, async () => {await current();});
+          const rootBinding = await bootstrapLineage.readBinding();
+          const threadId = rootBinding?.threadId ?? await resolveCollectiveWorkThread(options.threads,
+            options.tasks, firstPublished, selection.identity.catId);
+          await current();
+          if (selection.destination.kind === "existing_thread" && selection.destination.threadId !== threadId)
+            throw unavailable("WORK_TASK_UNAVAILABLE");
+          destination = {kind: "existing_thread", threadId};
+          prepareSourceMessageId = firstPublished.id;
+        } else {
+          const first = firstChoice;
+          if (!first?.binding) throw unavailable("WORK_TASK_UNAVAILABLE");
+          const task = await options.tasks.get(first.binding.taskRef.slice("task:work:".length)); await current();
+          if (!task || task.kind !== "work" || task.userId !== selection.ownerUserId || task.ownerCatId !== selection.identity.catId ||
+            task.threadId !== first.binding.threadId || task.status === "done" || task.entrustedWork?.closure.state !== "open" ||
+            task.entrustedWork.admission.sourceRefs.length !== 1 || task.entrustedWork.admission.sourceRefs[0] !== `message:${first.source.id}` ||
+            (selection.destination.kind === "existing_thread" && selection.destination.threadId !== task.threadId) ||
+            (selection.subject && (selection.subject.kind !== "continue" || selection.subject.taskRef !== first.binding.taskRef)))
+            throw unavailable("WORK_TASK_UNAVAILABLE");
+          destination = {kind: "existing_thread", threadId: task.threadId};
+          continuedSubject = {kind: "continue", taskRef: first.binding.taskRef, expectedRevision: task.entrustedWork.revision};
+        }
         durableFirst = await retainWorkContinuationReceipt(options.firstReceipts.storage, {
-          v: 1, kind: "continued_execution", firstSourceMessageId: first.source.id, ownerUserId: selection.ownerUserId,
+          v: 1, kind: "continued_execution", firstSourceMessageId: firstPublished.id, ownerUserId: selection.ownerUserId,
           basis: standingBasis,
           source: {id: publishedSource.id, revision: publishedSource.sourceRevision, threadId: publishedSource.threadId,
             bodyDigest: workReceiptDigest(publishedSource.content), identity: selection.identity},
@@ -263,9 +308,12 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
             resultRevision: authority.resultRevision, executionRevision: authority.revision,
             intendedOutcomeDigest: workReceiptDigest(scope.work.intendedOutcome)},
         }, async () => {await current();});
-        bound = await durableFirst.readBinding();
-        if (bound && (bound.taskRef !== first.binding.taskRef || bound.threadId !== first.binding.threadId ||
-          bound.admissionRef !== first.binding.admissionRef)) throw unavailable("WORK_TASK_UNAVAILABLE");
+        const rootBinding = firstChoice?.binding ?? await bootstrapLineage?.readBinding();
+        const currentBinding = await durableFirst.readBinding();
+        if (currentBinding && rootBinding && (currentBinding.taskRef !== rootBinding.taskRef ||
+          currentBinding.threadId !== rootBinding.threadId || currentBinding.admissionRef !== rootBinding.admissionRef ||
+          (bootstrapping && !isDeepStrictEqual(currentBinding, rootBinding)))) throw unavailable("WORK_TASK_UNAVAILABLE");
+        bound = currentBinding ?? (bootstrapping ? rootBinding : undefined);
       } else {
       const tasks = await options.tasks.listByKind("work");await current();
       const site = selectCollectiveWorkThread(tasks, publishedSource, selection.identity.catId);
@@ -300,13 +348,13 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
         expectedSignal: "collective:accepted-result",
       },
     };
-    if (item.event.workRequest === "continue" && subject.kind !== "continue")
+    if (continued && !bootstrapping && subject.kind !== "continue")
       throw unavailable("WORK_TASK_UNAVAILABLE");
     await current();
     const result = bound ? {result: "resumed" as const, taskRef: bound.taskRef, taskRevision: bound.taskRevision,
       threadId: bound.threadId, admissionRef: bound.admissionRef, executionRef: bound.executionRef}
       : await options.tasks.prepareEntrusted({
-      sourceMessageId: selection.sourceMessageId,
+      sourceMessageId: prepareSourceMessageId,
       targetCatId: selection.identity.catId,
       destination,
       subject,
@@ -328,6 +376,7 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
     const binding = {taskRef: result.taskRef, taskRevision: result.taskRevision, threadId: result.threadId,
       admissionRef: result.admissionRef, executionRef: result.executionRef,
       refScope: `message:${selection.sourceMessageId}:work:${task.id}:${result.taskRevision}:result:${continued ? scope.work.executionAuthority!.resultRevision : 1}:execution:${continued ? scope.work.executionAuthority!.revision : 1}:${result.executionRef}`};
+    await bootstrapLineage?.bind(binding);
     if (durableFirst) await durableFirst.bind(binding);
     const receiptRef = opaqueHostAdmission(
       { userId: selection.ownerUserId, id: selection.sourceMessageId },
@@ -354,6 +403,7 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
     validateTask(await options.tasks.get(task.id), result, {...selection, destination}, `message:${firstReceipt.messageId}`, !bound);
     await current();
     await durableFirst?.assertBound(binding);
+    await bootstrapLineage?.assertBound(binding);
     const queue = await options.tasks.dispatchEntrusted({
       taskRef: result.taskRef,
       taskRevision: result.taskRevision,
@@ -361,6 +411,7 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
     });
     await current();
     await durableFirst?.assertBound(binding);
+    await bootstrapLineage?.assertBound(binding);
     return { ...result, queue };
   };
   return Object.freeze({

@@ -1,9 +1,10 @@
 import {expect, test} from "vitest";
-import type {PluginMessage, PluginStorageEntry, PluginTaskReadItem, PluginTaskAdmissionInput} from "@clowder-ai/plugin-sdk";
+import type {PluginMessage, PluginStorageEntry, PluginTaskReadItem, PluginTaskAdmissionInput,PluginNativeTaskContext,PluginActionContext} from "@clowder-ai/plugin-sdk";
 import {collectiveEventSourceIdentity} from "../../contracts/index.js";
 import {collectiveSource} from "../../../collective-ingress-routing.js";
 import {createCollectiveWorkAdmissionCaller as sourceCaller} from "../../../collective-work-admission-caller.js";
-import {manualWorkFirstReceiptKey} from "../../../owner-work-first-receipt.js";
+import {createCollectiveAgentWorkContextCaller} from "../../../agent-work-context-caller.js";
+import {readWorkFirstReceipt,manualWorkFirstReceiptKey} from "../../../owner-work-first-receipt.js";
 import {fixture} from "./communication-work-custody.fixture.js";
 const compiledCaller = process.env.WORK_LATER_CALLER_MODULE ?? (process.env.OWNER_WORK_CALLER_COMPILED === "1"
   ? new URL("../../../../dist/collective-work-admission-caller.js",import.meta.url).href : undefined);
@@ -11,7 +12,7 @@ const createCaller: typeof sourceCaller = compiledCaller ? (await import(compile
 
 // Actual Service and Connector; Task/message/private-storage ports are explicit
 // fixtures. The separate compiled Host probe covers protected execution effects.
-async function setup() {
+async function setup(bootstrap = false) {
   const f=await fixture();
   await f.connector.adoptWorkPolicy(f.connection.connectionId,"local-owner",f.policy.revision);
   const work=await f.connector.acceptWork(f.source,f.agent,f.input); await f.connector.sync(f.connection.connectionId);
@@ -43,14 +44,14 @@ async function setup() {
   const threads={get:async(id:string)=>({id,title:"Work",deepLinkUrl:"https://fixture/"+id,createdAt:1,lastActiveAt:1,preferredCats:[],featureRefs:[]}),
     ensureByKey:async()=>({id:"child",title:"Work",deepLinkUrl:"https://fixture/child",createdAt:1,lastActiveAt:1,preferredCats:[],featureRefs:[]})};
   const options={connector:f.connector,tasks,threads,assertCurrent:async()=>{},firstReceipts:{storage,messaging:{get:async(id:string)=>structuredClone(messages.get(id)??null)}}};
-  await createCaller(options).admit(firstSelection);
+  if (!bootstrap) await createCaller(options).admit(firstSelection);
   const firstKey=manualWorkFirstReceiptKey("local-owner","first",f.agent.catId),first=structuredClone(records.get(firstKey));
   const current=await f.connector.readAssignedWork(f.connection.connectionId,work.workId);
   const continued=await f.connector.continueWork(f.source,f.agent,{workId:work.workId,expectedRevision:current.revision,
     kind:"resume",grantRef:f.input.grantRef,grantRevision:f.input.grantRevision,requestKind:f.input.requestKind});
   await f.connector.sync(f.connection.connectionId);const selection=await publish(continued.executionAuthority!.eventId,"second");
   return {...f,work,continued,selection,options,records,messages,firstKey,first,prepares,dispatches,
-    make:()=>createCaller(options),evidence:()=>{aggregate++;}};
+    task,make:()=>createCaller(options),evidence:()=>{aggregate++;}};
 }
 test("later registered execution stays on its first Task, has a separate receipt/ack and preserves first choice",async()=>{
   const f=await setup();try {f.evidence();const next=await f.make().admit(f.selection);
@@ -90,5 +91,90 @@ test("new execution never borrows its first Service ack and dispatch waits for f
       expect(f.make().admitInScope({...scope,recordHostAdmission:async()=>{}},f.selection)).rejects.toMatchObject({code:"OWNER_ADMISSION_UNAVAILABLE"}));
     expect(f.dispatches).toHaveLength(1);expect(f.records.get(f.firstKey)).toEqual(f.first);
     await f.make().admit(f.selection);expect(f.dispatches).toHaveLength(2);expect(f.prepares).toHaveLength(2);
+  }finally{await f.close();}
+});
+
+test("current execution bootstraps a missing first Task with lineage and current grant as separate receipts",async()=>{
+  const f=await setup(true);try {
+    const next=await f.make().admit(f.selection);
+    expect(next).toMatchObject({taskRef:"task:work:task",taskRevision:1,executionRef:"message:first-execution"});
+    expect(f.prepares).toHaveLength(1);expect(f.prepares[0]).toMatchObject({sourceMessageId:"first",subject:{kind:"new"}});
+    const root=f.records.get(f.firstKey)!.value as {kind:string;bootstrapSourceMessageId:string;basis?:unknown;binding:unknown};
+    const second=f.records.get(manualWorkFirstReceiptKey("local-owner","second",f.agent.catId))!.value as {kind:string;basis:{grantRef:string};binding:unknown};
+    expect(root.kind).toBe("bootstrap_lineage");expect(root.bootstrapSourceMessageId).toBe("second");expect(root.basis).toBeUndefined();
+    expect(second.kind).toBe("continued_execution");expect(second.basis.grantRef).toBe(f.input.grantRef);expect(root.binding).toEqual(second.binding);
+    expect((await f.connector.readAssignedWork(f.connection.connectionId,f.work.workId)).executionAuthority?.hostAdmission?.state).toBe("admitted");
+  }finally{await f.close();}
+});
+test("bootstrap bound evidence replay uses captured execution and does not rewrite either relation",async()=>{
+  const f=await setup(true);try {const first=await f.make().admit(f.selection);const records=structuredClone([...f.records]);f.evidence();
+    f.options.tasks.prepareEntrusted=async()=>{throw Error("Bound bootstrap must not prepare twice");};
+    const next=await f.make().admit(f.selection);if(first.result==="needs_clarification")throw Error("Expected bootstrap");
+    expect(next).toMatchObject({taskRef:first.taskRef,taskRevision:first.taskRevision,executionRef:first.executionRef,queue:first.queue});expect([...f.records]).toEqual(records);
+  }finally{await f.close();}
+});
+test("bootstrap cannot dispatch with a missing fresh current Service acknowledgement",async()=>{
+  const f=await setup(true);try {
+    await f.connector.withAssignedWorkAuthority(f.connection.connectionId,f.work.workId,scope=>
+      expect(f.make().admitInScope({...scope,recordHostAdmission:async()=>{}},f.selection)).rejects.toMatchObject({code:"OWNER_ADMISSION_UNAVAILABLE"}));
+    expect(f.prepares).toHaveLength(1);expect(f.dispatches).toHaveLength(0);
+    await f.make().admit(f.selection);expect(f.prepares).toHaveLength(1);expect(f.dispatches).toHaveLength(1);
+  }finally{await f.close();}
+});
+
+async function bootstrapNative() {
+  const f=await setup(true);const admitted=await f.make().admit(f.selection);
+  if(admitted.result==="needs_clarification")throw Error("Expected bootstrap binding");
+  const message=f.messages.get("first")!;
+  const native:PluginNativeTaskContext={userId:"local-owner",catId:f.agent.catId,threadId:"child",invocationId:"native",
+    originTriggerMessageId:"trigger",source:{id:message.id,threadId:message.threadId,userId:message.userId,catId:null,
+      content:message.content,source:{connector:message.source!.connector,meta:message.source!.meta},extra:{pluginMessage:{instanceId:"instance"}}},
+    task:{taskRef:admitted.taskRef,taskRevision:admitted.taskRevision,admissionRef:admitted.admissionRef,executionRef:admitted.executionRef,sourceRevision:1}};
+  const action:PluginActionContext={userId:native.userId,catId:native.catId,threadId:native.threadId,invocationId:native.invocationId,
+    originTriggerMessageId:native.originTriggerMessageId,ownerAuthProvenance:"unknown",toolExecutionPolicy:{mode:"plugin_native",pluginInstanceId:"instance"},assertCurrent:async()=>{}};
+  const contextCaller:typeof createCollectiveAgentWorkContextCaller=process.env.OWNER_WORK_CALLER_COMPILED === "1"
+    ? (await import(new URL("../../../../dist/agent-work-context-caller.js",import.meta.url).href)).createCollectiveAgentWorkContextCaller
+    : createCollectiveAgentWorkContextCaller;
+  const caller=contextCaller({connector:f.connector,context:{nativeContext:{current:async()=>native},tasks:f.options.tasks},
+    firstReceipts:f.options.firstReceipts});
+  return {...f,caller,action,native};
+}
+test("bootstrap native relation preserves Host first source and reads only current Service execution",async()=>{
+  const f=await bootstrapNative();try {
+    const result=await f.caller.withCurrentTask(f.action,async binding=>{
+      expect(binding.auth.source.id).toBe("first");expect(binding.source.eventId).toBe(f.selection.identity.eventId);
+      expect(binding.sourceRef).toBe("message:second");expect(binding.work.executionRevision).toBe(2);await binding.revalidate();return binding.work;
+    });expect(result.workId).toBe(f.work.workId);
+  }finally{await f.close();}
+});
+test("bootstrap native refuses either missing relation and either recalled source while Service remains current",async()=>{
+  const f=await bootstrapNative();try {
+    const secondKey=manualWorkFirstReceiptKey("local-owner","second",f.agent.catId),saved=f.records.get(secondKey)!;
+    f.records.delete(secondKey);await expect(f.caller.withCurrentTask(f.action,async()=>{})).rejects.toBeDefined();f.records.set(secondKey,saved);
+    const first=f.messages.get("first")!;f.messages.delete("first");await expect(f.caller.withCurrentTask(f.action,async()=>{})).rejects.toBeDefined();f.messages.set("first",first);
+    const second=f.messages.get("second")!;f.messages.delete("second");await expect(f.caller.withCurrentTask(f.action,async()=>{})).rejects.toBeDefined();f.messages.set("second",second);
+    f.records.delete(f.firstKey);await expect(f.caller.withCurrentTask(f.action,async()=>{})).rejects.toBeDefined();
+  }finally{await f.close();}
+});
+test("bootstrap native rechecks current message after awaited grant before entering consumer",async()=>{
+  const f=await bootstrapNative();try {
+    const resolve=f.connector.resolveAcceptedWorkGrant.bind(f.connector);let consumeCount=0;
+    f.connector.resolveAcceptedWorkGrant=async(...args)=>{const grant=await resolve(...args);f.messages.delete("second");return grant;};
+    await expect(f.caller.withCurrentTask(f.action,async()=>{consumeCount++;})).rejects.toBeDefined();expect(consumeCount).toBe(0);
+  }finally{await f.close();}
+});
+
+test("bootstrap response loss on second binding recovers both exact receipts before ack and dispatch",async()=>{
+  const f=await setup(true);try {
+    const secondKey=manualWorkFirstReceiptKey("local-owner","second",f.agent.catId);
+    const write=f.options.firstReceipts.storage.compareAndSet;let lost=false;
+    f.options.firstReceipts.storage.compareAndSet=async(key,revision,value)=>{
+      const result=await write(key,revision,value);
+      if(key===secondKey && (value as {binding?:unknown}).binding && !lost){lost=true;throw Error("Lost binding response");}return result;
+    };
+    await expect(f.make().admit(f.selection)).rejects.toThrow("Lost binding response");
+    expect(f.prepares).toHaveLength(1);expect(f.dispatches).toHaveLength(0);const before=structuredClone([...f.records]);
+    await f.make().admit(f.selection);expect(f.prepares).toHaveLength(1);expect(f.dispatches).toHaveLength(1);expect([...f.records]).toEqual(before);
+    await expect(readWorkFirstReceipt(f.options.firstReceipts.storage,"local-owner","first",f.agent.catId)).rejects.toBeDefined();
   }finally{await f.close();}
 });

@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import type { FeatureContext, PluginActionContext, PluginNativeTaskContext, PluginMessagingHost, PluginStorageHost } from "@clowder-ai/plugin-sdk";
+import type { FeatureContext, PluginActionContext, PluginNativeTaskContext, PluginMessagingHost, PluginStorageHost, PluginMessage } from "@clowder-ai/plugin-sdk";
 import type { CollectiveConnector } from "./business/connector/connector.js";
 import {
   collectiveEventSourceIdentity,
@@ -11,7 +11,7 @@ import { resolveMaterializedParticipation } from "./business/connector/participa
 import { collectiveContextError } from "./collective-context-refs.js";
 import { opaqueHostAdmission } from "./collective-work-admission-caller.js";
 import { resolveHumanStandingWorkBasis } from "./collective-human-standing.js";
-import { readWorkFirstReceipt, readWorkExecutionReceipt, workReceiptDigest } from "./owner-work-first-receipt.js";
+import { readWorkLineageReceipt, readWorkStoredReceipt, isBootstrapWorkLineage, readWorkExecutionReceipt, workReceiptDigest } from "./owner-work-first-receipt.js";
 
 interface Options {
   readonly connector: CollectiveConnector;
@@ -87,11 +87,19 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
       const item = rows.length === 1 ? rows[0] : undefined;
       const notice =
         item?.event.workRequest === "continue" ? item.event.workExecutionNotice : item?.event.workAcceptanceNotice;
-      const captured = options.firstReceipts
-        ? await readWorkExecutionReceipt(options.firstReceipts.storage, first.auth.userId, first.auth.source.id, first.auth.catId)
+      const hostReceipt = options.firstReceipts
+        ? await readWorkStoredReceipt(options.firstReceipts.storage, first.auth.userId, first.auth.source.id, first.auth.catId)
         : undefined;
+      const bootstrap = hostReceipt && isBootstrapWorkLineage(hostReceipt) ? hostReceipt : undefined;
+      const captured = bootstrap && options.firstReceipts
+        ? await readWorkExecutionReceipt(options.firstReceipts.storage, first.auth.userId,
+          bootstrap.bootstrapSourceMessageId, first.auth.catId)
+        : hostReceipt && !isBootstrapWorkLineage(hostReceipt) ? hostReceipt : undefined;
+      if (bootstrap && (!bootstrap.binding || !captured?.binding ||
+        !("firstSourceMessageId" in captured) || captured.firstSourceMessageId !== bootstrap.source.id ||
+        !isDeepStrictEqual(bootstrap.binding, captured.binding))) throw changed();
       await action.assertCurrent();
-      const workId = first.source.actor.kind === "human" ? captured?.work.workId : notice?.workId;
+      const workId = bootstrap || first.source.actor.kind === "human" ? captured?.work.workId : notice?.workId;
       if (!workId || (options.firstReceipts && (!captured?.binding || captured.work.workId !== workId)) ||
         (first.source.actor.kind === "human" && (!captured ||
           (captured.basis.kind === "manual_owner_write" && (!("pluginInstanceId" in captured) ||
@@ -101,7 +109,15 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
         connector.withAssignedWorkAuthority(first.source.connectionId, workId, async (scope) => {
           const current = await readNative(action);
           if (!isDeepStrictEqual(current, first)) throw changed();
-          const { auth, source } = current;
+          const { auth } = current;
+          const source = bootstrap ? captured!.source.identity : current.source;
+          const sourceId = bootstrap ? captured!.source.id : auth.source.id;
+          const sourceMessage = bootstrap ? await options.firstReceipts!.messaging.get!(sourceId) : auth.source;
+          await action.assertCurrent();
+          if (!sourceMessage || !sourceMessage.source || sourceMessage.source.connector !== "collective" ||
+            sourceMessage.id !== sourceId || sourceMessage.userId !== auth.userId || sourceMessage.catId !== null ||
+            !isDeepStrictEqual(sourceMessage.source.meta?.participation, source)) throw changed();
+          const materialSnapshots: PluginMessage[] = [];
           const task = await context.tasks.get(auth.task.taskRef.slice("task:work:".length));
           await action.assertCurrent();
           const work = await scope.readCurrentWork();
@@ -136,20 +152,20 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
             task.entrustedWork.admission.sourceRefs[0] !== `message:${firstReceipt.messageId}` ||
             !actual ||
             !isDeepStrictEqual(collectiveEventSourceIdentity(actual.event), source) ||
-            actual.event.body !== auth.source.content ||
-            auth.source.source.meta?.workRequest !== actual.event.workRequest ||
-            !isDeepStrictEqual(auth.source.source.meta?.workAcceptanceNotice, actual.event.workAcceptanceNotice) ||
-            !isDeepStrictEqual(auth.source.source.meta?.workExecutionNotice, actual.event.workExecutionNotice) ||
-            !isDeepStrictEqual(auth.source.source.meta?.workRevisionNotice, actual.event.workRevisionNotice) ||
+            actual.event.body !== sourceMessage.content ||
+            sourceMessage.source.meta?.workRequest !== actual.event.workRequest ||
+            !isDeepStrictEqual(sourceMessage.source.meta?.workAcceptanceNotice, actual.event.workAcceptanceNotice) ||
+            !isDeepStrictEqual(sourceMessage.source.meta?.workExecutionNotice, actual.event.workExecutionNotice) ||
+            !isDeepStrictEqual(sourceMessage.source.meta?.workRevisionNotice, actual.event.workRevisionNotice) ||
             actual.routeReceipt?.kind !== "thread_message" ||
-            actual.routeReceipt.messageId !== auth.source.id ||
-            actual.routeReceipt.threadId !== auth.source.threadId ||
+            actual.routeReceipt.messageId !== sourceId ||
+            actual.routeReceipt.threadId !== sourceMessage.threadId ||
             actual.routeReceipt.catId !== auth.catId ||
             route?.localOwnerUserId !== auth.userId ||
             connection.authorityStatus !== "connected" ||
             connection.authorizedHumanId !== work.accountableHumanId ||
             !participation ||
-            participation.threadId !== auth.source.threadId ||
+            participation.threadId !== sourceMessage.threadId ||
             !work.assignmentEventId ||
             !["committed", "in_progress", "result_ready"].includes(work.lifecycle)
           )
@@ -169,43 +185,51 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
             !resultRevision ||
             resultRevision !== expectedResult ||
             (continued
-              ? !collectiveWorkExecutionMatches(source, work, auth.source.source.meta?.workExecutionNotice)
+              ? !collectiveWorkExecutionMatches(source, work, sourceMessage.source.meta?.workExecutionNotice)
               : actual.event.workRequest !== "entrust" ||
                 (work.executionAuthority?.revision ?? 1) !== 1 ||
-                !collectiveWorkAssignmentMatches(source, work, auth.source.source.meta?.workAcceptanceNotice))
+                !collectiveWorkAssignmentMatches(source, work, sourceMessage.source.meta?.workAcceptanceNotice))
           )
             throw changed();
           if (captured) {
             const ports = options.firstReceipts;
             if (!ports?.messaging.get || !captured.binding) throw changed();
-            const stored = await readWorkExecutionReceipt(ports.storage, auth.userId, auth.source.id, auth.catId);
-            const message = await ports.messaging.get(auth.source.id);
+            const stored = await readWorkExecutionReceipt(ports.storage, auth.userId, sourceId, auth.catId);
+            const message = await ports.messaging.get(sourceId);
             await action.assertCurrent();
             if (!isDeepStrictEqual(stored, captured) || !message ||
               captured.source.revision !== message.sourceRevision || captured.source.id !== message.id ||
               captured.source.threadId !== message.threadId || message.userId !== auth.userId || message.catId !== null ||
-              captured.source.bodyDigest !== workReceiptDigest(message.content) || message.content !== auth.source.content ||
+              captured.source.bodyDigest !== workReceiptDigest(message.content) || message.content !== sourceMessage.content ||
               !isDeepStrictEqual(captured.source.identity, source) || captured.work.assignmentEventId !== work.assignmentEventId ||
               captured.work.resultRevision !== resultRevision || captured.work.executionRevision !== executionRevision ||
               captured.work.intendedOutcomeDigest !== workReceiptDigest(work.intendedOutcome) ||
               captured.binding.taskRef !== auth.task.taskRef || captured.binding.taskRevision !== auth.task.taskRevision ||
               captured.binding.threadId !== auth.threadId || captured.binding.admissionRef !== auth.task.admissionRef ||
               captured.binding.executionRef !== auth.task.executionRef ||
-              captured.binding.refScope !== `message:${auth.source.id}:work:${task.id}:${auth.task.taskRevision}:result:${resultRevision}:execution:${executionRevision}:${auth.task.executionRef}`)
+              captured.binding.refScope !== `message:${sourceId}:work:${task.id}:${auth.task.taskRevision}:result:${resultRevision}:execution:${executionRevision}:${auth.task.executionRef}`)
               throw changed();
+            materialSnapshots.push(message);
             if (continued) {
               if (!("firstSourceMessageId" in captured) || typeof captured.firstSourceMessageId !== "string" ||
                 !("kind" in captured) || captured.kind !== "continued_execution" ||
                 captured.firstSourceMessageId !== firstReceipt.messageId || source.actor.kind !== "agent") throw changed();
-              const root = await readWorkFirstReceipt(ports.storage, auth.userId, captured.firstSourceMessageId, auth.catId);
+              const root = await readWorkLineageReceipt(ports.storage, auth.userId, captured.firstSourceMessageId, auth.catId);
               const rootMessage = await ports.messaging.get(captured.firstSourceMessageId); await action.assertCurrent();
-              if (!root?.binding || root.basis.kind !== "standing_grant" || root.basis.producer !== "registered_work" ||
+              if (!root?.binding || (!isBootstrapWorkLineage(root) &&
+                  (root.basis.kind !== "standing_grant" || root.basis.producer !== "registered_work")) ||
                 root.work.workId !== work.workId || root.work.assignmentEventId !== work.assignmentEventId ||
                 root.binding.taskRef !== auth.task.taskRef || root.binding.threadId !== auth.threadId ||
                 root.binding.admissionRef !== auth.task.admissionRef || !rootMessage || rootMessage.userId !== auth.userId ||
                 rootMessage.catId !== null || rootMessage.id !== root.source.id || rootMessage.threadId !== root.source.threadId ||
                 rootMessage.sourceRevision !== root.source.revision || workReceiptDigest(rootMessage.content) !== root.source.bodyDigest ||
-                !isDeepStrictEqual(rootMessage.source?.meta?.participation, root.source.identity)) throw changed();
+                !isDeepStrictEqual(rootMessage.source?.meta?.participation, root.source.identity) ||
+                !collectiveWorkAssignmentMatches(root.source.identity, work, rootMessage.source?.meta?.workAcceptanceNotice) ||
+                rootMessage.source?.meta?.workRequest !== "entrust" ||
+                (bootstrap && (!isDeepStrictEqual(root, bootstrap) || auth.source.id !== root.source.id ||
+                  auth.source.content !== rootMessage.content || auth.source.threadId !== rootMessage.threadId ||
+                  !isDeepStrictEqual(auth.source.source, {connector: rootMessage.source?.connector, meta: rootMessage.source?.meta})))) throw changed();
+              materialSnapshots.push(rootMessage);
             } else if ("kind" in captured) throw changed();
           }
           if (source.actor.kind === "agent") {
@@ -218,7 +242,7 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
               !isDeepStrictEqual(grant.work.executionAuthority, work.executionAuthority) ||
               !isDeepStrictEqual(grant.work.acceptance, work.acceptance) ||
               authority?.hostAdmission?.state !== "admitted" ||
-              authority.hostAdmission.receiptRef !== opaqueHostAdmission(auth.source, work.workId, task.id)
+              authority.hostAdmission.receiptRef !== opaqueHostAdmission({userId: auth.userId, id: sourceId}, work.workId, task.id)
             ) throw changed();
             if (captured && (captured.basis.kind !== "standing_grant" || captured.basis.producer !== "registered_work" ||
               captured.basis.grantRef !== grant.grant.grantRef || captured.basis.grantRevision !== grant.grant.grantRevision ||
@@ -234,10 +258,24 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
           await action.assertCurrent();
           const latest = await readNative(action);
           if (!isDeepStrictEqual(latest, current)) throw changed();
+          // Bootstrap Host currentness covers its first source. Its current
+          // business source is a separate owned message; recheck both after
+          // awaited Service/Registry work before handing control to a consumer.
+          if (captured && options.firstReceipts) {
+            const finalReceipt = await readWorkExecutionReceipt(options.firstReceipts.storage,
+              auth.userId, sourceId, auth.catId);
+            if (!isDeepStrictEqual(finalReceipt, captured)) throw changed();
+            if (bootstrap && !isDeepStrictEqual(await readWorkLineageReceipt(options.firstReceipts.storage,
+              auth.userId, bootstrap.source.id, auth.catId), bootstrap)) throw changed();
+            for (const snapshot of materialSnapshots) {
+              await action.assertCurrent();
+              if (!isDeepStrictEqual(await options.firstReceipts.messaging.get!(snapshot.id), snapshot)) throw changed();
+            }
+          }
           return {
             auth,
             source,
-            sourceRef: `message:${auth.source.id}` as const,
+            sourceRef: `message:${sourceId}` as const,
             resultKey: `work:${task.id}`,
             displayName: participation.displayName,
             work: {
@@ -250,7 +288,7 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
               executionRevision,
               assignmentEventId: work.assignmentEventId,
             },
-            refScope: `message:${auth.source.id}:work:${task.id}:${auth.task.taskRevision}:result:${resultRevision}:execution:${executionRevision}:${auth.task.executionRef}`,
+            refScope: `message:${sourceId}:work:${task.id}:${auth.task.taskRevision}:result:${resultRevision}:execution:${executionRevision}:${auth.task.executionRef}`,
           };
         });
       const initial = await read();

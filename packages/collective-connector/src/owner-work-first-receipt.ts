@@ -43,6 +43,17 @@ const continuedReceiptSchema = commonReceipt.extend({
   kind: z.literal("continued_execution"), firstSourceMessageId: ref,
   basis: standingReceiptSchema.shape.basis,
 }).strict();
+// An assignment lineage is deliberately not a standing-grant receipt. The
+// current continued receipt supplies permission; both bind the same first Task.
+const bootstrapLineageSchema = commonReceipt.extend({
+  kind: z.literal("bootstrap_lineage"), bootstrapSourceMessageId: ref,
+}).strict();
+const lineageSchema = z.union([firstReceiptSchema, bootstrapLineageSchema]);
+const storedReceiptSchema = z.union([firstReceiptSchema, continuedReceiptSchema, bootstrapLineageSchema]);
+export type BootstrapWorkLineageReceipt = z.infer<typeof bootstrapLineageSchema>;
+export type WorkLineageReceipt = z.infer<typeof lineageSchema>;
+export const isBootstrapWorkLineage = (receipt: WorkLineageReceipt): receipt is BootstrapWorkLineageReceipt =>
+  "kind" in receipt && receipt.kind === "bootstrap_lineage";
 export type ContinuedWorkExecutionReceipt = z.infer<typeof continuedReceiptSchema>;
 export type ManualWorkFirstReceipt = z.infer<typeof manualReceiptSchema>;
 export type StandingWorkFirstReceipt = z.infer<typeof standingReceiptSchema> | z.infer<typeof humanStandingReceiptSchema>;
@@ -101,6 +112,38 @@ export async function readWorkExecutionReceipt(
   return parsed.data;
 }
 
+/** Native bootstrap reads a relation, then reads the separate current grant
+ * receipt. Old first-only and execution-only readers still reject this variant. */
+export async function readWorkStoredReceipt(
+  storage: Pick<PluginStorageHost, "get">, owner: string, source: string, cat: string,
+) {
+  const entry = await storage.get(manualWorkFirstReceiptKey(owner, source, cat));
+  if (!entry) return undefined;
+  const parsed = storedReceiptSchema.safeParse(entry.value);
+  if (!parsed.success || parsed.data.ownerUserId !== owner || parsed.data.source.id !== source ||
+    parsed.data.source.identity.catId !== cat) throw conflict();
+  return parsed.data;
+}
+export async function readWorkLineageReceipt(
+  storage: Pick<PluginStorageHost, "get">, owner: string, source: string, cat: string,
+) {
+  const stored = await readWorkStoredReceipt(storage, owner, source, cat);
+  if (!stored) return undefined;
+  const parsed = lineageSchema.safeParse(stored);
+  if (!parsed.success) throw conflict();
+  return parsed.data;
+}
+export async function retainBootstrapWorkLineage(
+  storage: Pick<PluginStorageHost, "get" | "compareAndSet">,
+  selected: Omit<BootstrapWorkLineageReceipt, "binding">,
+  current: () => Promise<void>,
+) {
+  const expected = bootstrapLineageSchema.parse(selected);
+  if (expected.bootstrapSourceMessageId === expected.source.id ||
+    expected.work.executionRevision !== 1 || expected.work.resultRevision !== 1) throw conflict();
+  return retainExecutionRelation(storage, bootstrapLineageSchema, expected, current);
+}
+
 export async function retainWorkContinuationReceipt(
   storage: Pick<PluginStorageHost, "get" | "compareAndSet">,
   selected: Omit<ContinuedWorkExecutionReceipt, "binding">,
@@ -108,11 +151,17 @@ export async function retainWorkContinuationReceipt(
 ) {
   const expected = continuedReceiptSchema.parse(selected);
   if (expected.firstSourceMessageId === expected.source.id || expected.work.executionRevision <= 1) throw conflict();
+  return retainExecutionRelation(storage, continuedReceiptSchema, expected, current);
+}
+async function retainExecutionRelation<T extends ContinuedWorkExecutionReceipt | BootstrapWorkLineageReceipt>(
+  storage: Pick<PluginStorageHost, "get" | "compareAndSet">, schema: z.ZodType<T>, expected: T,
+  current: () => Promise<void>,
+) {
   const key = manualWorkFirstReceiptKey(expected.ownerUserId, expected.source.id, expected.source.identity.catId);
   const read = async () => {
     await current(); const entry = await storage.get(key); await current();
     if (!entry) return undefined;
-    const parsed = continuedReceiptSchema.safeParse(entry.value);
+    const parsed = schema.safeParse(entry.value);
     if (!parsed.success) throw conflict();
     const facts = {...parsed.data}; delete facts.binding;
     const selectedFacts = {...expected}; delete selectedFacts.binding;
