@@ -88,9 +88,9 @@ export function createProtocolTools(config: ProtocolToolConfig): ProtocolToolDef
 export function buildProvider(
   providerName: string,
   template: ProtocolTemplate,
-  options: { readonly baseUrl?: string; readonly model?: string },
+  options: { readonly baseUrl?: string; readonly model?: string; readonly authType?: 'apikey' | 'query-param' },
 ): ProviderInstance {
-  const authType = (template.auth?.method ?? 'apikey') as AuthType;
+  const authType = (options.authType ?? template.auth?.method ?? 'apikey') as AuthType;
   return {
     id: providerName,
     name: providerName,

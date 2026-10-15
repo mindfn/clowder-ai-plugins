@@ -29,6 +29,7 @@ a video URL or prompt.
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `provider` | Yes | `gemini` or `zhipu`. |
+| `authType` | Yes | `apikey` (Bearer) or `query-param` (`key` URL parameter). |
 | `apiKey` | Yes | Provider credential stored and injected by the Host as a secret. |
 | `baseUrl` | No | HTTPS provider-compatible API origin. Use only an origin you trust. |
 | `model` | No | Provider model override. |
@@ -50,8 +51,9 @@ by the selected provider.
 ## Security and data flow
 
 For each invocation, the plugin sends the prompt and remote video URL to the
-configured provider. Gemini receives the API key as its documented `key` query
-parameter; Zhipu receives it as a bearer credential. Known raw and encoded forms
+configured provider. The saved authentication choice selects a bearer credential
+or the `key` query parameter. Existing callers that omit it retain the provider
+template default (Gemini query parameter; Zhipu bearer). Known raw and encoded forms
 of the key are scrubbed from returned errors and results.
 
 Only HTTPS video URLs are accepted, and embedded URL credentials are rejected.

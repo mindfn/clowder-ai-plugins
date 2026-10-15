@@ -25,6 +25,7 @@ export function buildVideoAnalysisProtocolToolConfig(
   const provider = buildProvider(config.provider, template, {
     baseUrl: config.baseUrl,
     model: config.model,
+    authType: config.authType,
   });
   if (!provider.baseUrl) throw new TypeError(`Provider ${config.provider} has no base URL`);
   provider.baseUrl = requireSafeProviderBaseUrl(provider.baseUrl);

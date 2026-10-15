@@ -3,6 +3,7 @@ export type VideoAnalysisProvider = 'gemini' | 'zhipu';
 export interface VideoAnalysisProviderConfig {
   readonly provider: VideoAnalysisProvider;
   readonly apiKey: string;
+  readonly authType?: 'apikey' | 'query-param';
   readonly baseUrl?: string;
   readonly model?: string;
 }
@@ -84,9 +85,13 @@ function requireConfig(config: VideoAnalysisProviderConfig): Required<VideoAnaly
     throw new TypeError('video-analysis provider must be gemini or zhipu');
   }
   if (config.apiKey.trim() === '') throw new TypeError('video-analysis API key is required');
+  if (config.authType !== undefined && config.authType !== 'apikey' && config.authType !== 'query-param') {
+    throw new TypeError('VIDEO_ANALYSIS_AUTH_TYPE must be apikey or query-param');
+  }
   return {
     provider: config.provider,
     apiKey: config.apiKey,
+    authType: config.authType ?? (config.provider === 'gemini' ? 'query-param' : 'apikey'),
     baseUrl: requireBaseUrl(config.baseUrl ?? DEFAULT_BASE_URL[config.provider]).toString(),
     model: config.model?.trim() || DEFAULT_MODEL[config.provider],
   };
@@ -102,10 +107,13 @@ function requestShape(
   if (!base.pathname.endsWith('/')) base.pathname += '/';
   if (config.provider === 'gemini') {
     const url = new URL(`v1beta/models/${encodeURIComponent(config.model)}:generateContent`, base);
-    url.searchParams.set('key', config.apiKey);
+    if (config.authType === 'query-param') url.searchParams.set('key', config.apiKey);
     return {
       url,
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(config.authType === 'apikey' ? { authorization: `Bearer ${config.apiKey}` } : {}),
+      },
       body: {
         contents: [
           {
@@ -120,11 +128,13 @@ function requestShape(
       },
     };
   }
+  const url = new URL('api/paas/v4/chat/completions', base);
+  if (config.authType === 'query-param') url.searchParams.set('key', config.apiKey);
   return {
-    url: new URL('api/paas/v4/chat/completions', base),
+    url,
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${config.apiKey}`,
+      ...(config.authType === 'apikey' ? { authorization: `Bearer ${config.apiKey}` } : {}),
     },
     body: {
       model: config.model,
@@ -316,6 +326,7 @@ export function readVideoAnalysisProviderConfig(
   return requireConfig({
     provider,
     apiKey: environment.VIDEO_ANALYSIS_API_KEY ?? '',
+    authType: environment.VIDEO_ANALYSIS_AUTH_TYPE as VideoAnalysisProviderConfig['authType'] || undefined,
     baseUrl: environment.VIDEO_ANALYSIS_BASE_URL,
     model: environment.VIDEO_ANALYSIS_MODEL,
   });

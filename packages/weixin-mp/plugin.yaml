@@ -9,6 +9,9 @@ description:
 icon:
   type: svg
   src: assets/icon.svg
+steps:
+  - text: 在微信公众平台注册/登录，获取 App ID 和 App Secret
+  - text: 目前支持已认证的服务号，订阅号不支持部分接口
 configuration:
   - key: appId
     label: App ID

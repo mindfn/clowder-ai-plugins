@@ -9,51 +9,11 @@ description:
 icon:
   type: svg
   src: assets/icon.svg
+steps:
+  - text: "Log in with the GitHub CLI (`gh auth login`) on the machine running Clowder AI"
+  - text: "Optional: configure a token only for plugin-managed child processes that explicitly consume it"
+  - text: "Optional: configure Noise Bot list to reduce setup-only comment noise"
 configuration:
-  - key: legacyProviderHistory
-    label: Copy historical GitHub event metadata
-    description: Preserve event kinds, times and source references for later inspection. Bodies and Host governance remain in the original history. Does not replay events or change current tracking.
-    kind: operation
-    required: false
-    actions:
-      - id: import
-        label: Copy history metadata
-        render: button
-        confirm: Copy the supplied history metadata? Existing copies are preserved. Original bodies and Host decisions stay in the old history; this does not notify anyone or start tracking.
-        action: { method: github.legacy-history.import }
-  - key: legacyIssueProgress
-    label: Copy settled issue delivery progress
-    description: Preserve settled legacy issue cursors as inert history. Fresh tracking takes a new provider baseline; this copy does not register or resume a wait.
-    kind: operation
-    required: false
-    actions:
-      - id: import
-        label: Copy issue progress
-        render: button
-        confirm: Copy settled issue progress as history? Existing records are preserved. This does not resume old delivery or activate tracking.
-        action: { method: github.legacy-issue-progress.import }
-  - key: legacyRepositoryProgress
-    label: Copy legacy repository progress once
-    description: Stage repository scan and comment progress without starting polling. Register notification destinations separately after the Host cutover. Existing progress is preserved.
-    kind: operation
-    required: false
-    actions:
-      - id: import
-        label: Copy repository progress
-        render: button
-        confirm: Copy the supplied repository progress? This stages provider cursors only and does not activate polling or replace Host governance. Stop the old producer before registering the repository here.
-        action: { method: github.legacy-repositories.import }
-  - key: legacyIssueObservations
-    label: Copy legacy issue metadata once
-    description: Copy a verified legacy snapshot without replacing existing metadata. Host assignments, signoff, routes, drafts and tracking remain unchanged. Requires the Host migration adapter to supply the snapshot.
-    kind: operation
-    required: false
-    actions:
-      - id: import
-        label: Copy legacy metadata
-        render: button
-        confirm: Copy the supplied legacy issue metadata? Existing records and all Host governance data will be preserved. This does not start tracking.
-        action: { method: github.legacy-issues.import }
   - key: narratorCatId
     label: Community narrator cat
     description: Explicit deployment cat ID for manual Community triage. Set together with the narrator thread; leave both empty to disable new narrator requests.
@@ -120,7 +80,7 @@ configuration:
     kind: secret
     required: false
   - key: setupNoiseBotLogins
-    label: Setup Noise Bot Logins
+    label: Noise Bot Login List
     kind: string
     required: false
   - key: cloudReviewerLogins

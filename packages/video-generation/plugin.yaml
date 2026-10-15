@@ -11,48 +11,54 @@ icon:
   src: assets/icon.svg
 configuration:
   - key: provider
-    label: Generation provider
+    label: 视频协议
     kind: select
     required: true
     options:
       - value: zhipu
-        label: Zhipu
+        label: 智谱
+        hint: 在智谱开放平台注册，获取 API Key
         docsUrl: https://docs.bigmodel.cn/cn/guide/models/video-generation
       - value: kling
-        label: Kling
+        label: 可灵
+        hint: 在可灵 AI 开放平台注册，获取 Access Key + Secret Key
         docsUrl: https://klingapi.com/docs
       - value: jimeng
-        label: Jimeng
+        label: 即梦 (火山引擎)
+        hint: 在火山引擎控制台注册，获取 Access Key + Secret Key
         docsUrl: https://www.volcengine.com/docs/85621/1777001
   - key: authType
-    label: Authentication type
+    label: 认证方式
     kind: select
     required: true
     options:
       - value: apikey
-        label: API key
+        label: API Key
       - value: jwt-hs256
-        label: JWT (access key and secret)
+        label: JWT (Access Key + Secret)
       - value: hmac-sha256-v4
         label: HMAC-SHA256 V4
   - key: apiKey
-    label: API key
+    label: API Key
     kind: secret
     required: false
+    requiredWhen: { key: authType, value: apikey }
   - key: accessKey
-    label: Access key
+    label: Access Key
     kind: secret
     required: false
+    requiredWhen: { key: authType, value: ["jwt-hs256", "hmac-sha256-v4"] }
   - key: secretKey
-    label: Secret key
+    label: Secret Key
     kind: secret
     required: false
+    requiredWhen: { key: authType, value: ["jwt-hs256", "hmac-sha256-v4"] }
   - key: baseUrl
     label: Base URL
     kind: url
     required: false
   - key: model
-    label: Model
+    label: 模型名称
     kind: string
     required: false
 contributions:

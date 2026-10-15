@@ -10,11 +10,24 @@ import type { RepoSubject } from './community-runtime.js';
 import { SdkCommunityEventLog } from './business/domains/community/CommunityEventLog.js';
 import { SdkCommunityObjectStore } from './business/domains/community/CommunityObjectStore.js';
 import { validateManifest, validateOperationRowsResult } from '@clowder-ai/plugin-contract';
-import { legacyRepositorySnapshotBytes } from './legacy-repository-progress.js';
-import { legacyHistoryBytes } from './legacy-provider-history.js';
+import { copyLegacyRepositoryProgress, legacyRepositorySnapshotBytes } from './legacy-repository-progress.js';
+import { copyLegacyProviderHistory, legacyHistoryBytes } from './legacy-provider-history.js';
+import { copyLegacyIssueProgress } from './legacy-issue-progress.js';
+import { copyLegacyIssueObservations } from './legacy-issue-observations.js';
+import { SdkCommunityIssueStore } from './business/domains/community/CommunityIssueStore.js';
 import { ReviewTriggerReader } from './review-trigger-observation.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
+
+test('ordinary installed module does not expose migration-only import actions', async () => {
+  const fixture = host();
+  const active = await createGitHubPluginModule().create(manifest).start(fixture.runtimeHost);
+  try {
+    assert.deepEqual(Object.keys(active.actions).filter(method => /^github\.legacy-.*\.import$/.test(method)), []);
+  } finally {
+    await active.stop();
+  }
+});
 function stoppedModule(error: unknown): boolean {
   return error instanceof Error && (error.name === 'FeatureContextRevokedError' || /stopped|disposed/.test(error.message));
 }
@@ -133,7 +146,7 @@ test('declared exact-trigger tool returns the bounded observation without storag
   assert.equal(f.deliveries.length, 0); await active.stop();
 });
 
-test('declared history copy remains readable after restart without changing the live journal or starting delivery', async () => {
+test('preexisting history remains readable after restart without an import action or live delivery', async () => {
   const f = host(); let reads = 0;
   const module = createGitHubPluginModule({ createCommunityProvider: () => ({
     listOpen: async () => { reads++; return []; }, repoComments: async () => { reads++; return []; },
@@ -145,18 +158,17 @@ test('declared history copy remains readable after restart without changing the 
   const log = new SdkCommunityEventLog(f.runtimeHost.storage);
   await log.append(event);
   const before = await f.runtimeHost.storage.list();
-  const operation = manifest.configuration.find((c: { key: string }) => c.key === 'legacyProviderHistory');
-  assert.ok(operation?.actions[0].confirm);
   const sourceSubject = 'issue:Example/Project#7';
   const events = { [sourceSubject]: [JSON.stringify({ ...event, subjectKey: sourceSubject, sourceEventId: 'old', kind: 'issue.closed', at: 10,
     payload: { body: 'old-private-body', principal: 'old-private-principal' } })] };
   const input = { protocolVersion: 1, snapshot: { events }, sourceDigest: createHash('sha256').update(legacyHistoryBytes(events)).digest('hex') };
   const collisions = { ...events, [event.subjectKey]: [JSON.stringify({ ...event, sourceEventId: 'alias' })] };
-  await assert.rejects(async () => active.actions[operation.actions[0].action.method]!({ input: {
+  await assert.rejects(async () => copyLegacyProviderHistory({
     protocolVersion: 1, snapshot: { events: collisions }, sourceDigest: createHash('sha256').update(legacyHistoryBytes(collisions)).digest('hex'),
-  } }), /duplicate canonical history subject/);
+  }, f.runtimeHost.storage, new AbortController().signal), /duplicate canonical history subject/);
   assert.deepEqual(await f.runtimeHost.storage.list(), before);
-  await active.actions[operation.actions[0].action.method]!({ input: { ...input, token: 'stored-private-token' } });
+  // Seed preexisting stored data without restoring a production import entry point.
+  await copyLegacyProviderHistory(input, f.runtimeHost.storage, new AbortController().signal);
   for (const [key, entry] of Object.entries(before)) assert.deepEqual((await f.runtimeHost.storage.get(key)), entry);
   assert.deepEqual(await log.read(event.subjectKey), [event]);
   await active.stop(); active = await module.create(manifest).start(f.runtimeHost);
@@ -212,16 +224,13 @@ test('historical issue copy stays inert; fresh typed registration freezes its ow
     async read(_target, _signal, cursor) { reads++; cursors.push(cursor); return completeSnapshot(snapshot); },
   }) });
   let active = await module.create(manifest).start(f.runtimeHost);
-  const operation = manifest.configuration.find((c: { key: string }) => c.key === 'legacyIssueProgress');
-  assert.ok(operation, 'issue progress requires a declared owner-confirmed copy action');
-  assert.ok(operation.actions[0].confirm);
   const raw = { id: 'old-task', kind: 'issue_tracking', subjectKey: 'issue:example/project#12', status: 'doing',
     threadId: 'old-private-thread', userId: 'old-private-owner',
     automationState: JSON.stringify({ issue: { lastCommentCursor: 5, lastDeliveredCursor: 4, pendingWake: null } }) };
   const bytes = '{"tasks":{"old-task":{' + Object.keys(raw).sort().map(key => JSON.stringify(key) + ':' +
     JSON.stringify(raw[key as keyof typeof raw])).join(',') + '}}}';
   const input = { protocolVersion: 1, sourceDigest: createHash('sha256').update(bytes).digest('hex'), snapshot: { tasks: { 'old-task': raw } } };
-  await active.actions[operation.actions[0].action.method]!({ input: { ...input, token: 'stored-config-secret' } });
+  await copyLegacyIssueProgress(input, f.runtimeHost.storage, new AbortController().signal);
   await active.actions['github.issue-tracking']!({});
   assert.equal(reads, 0); assert.equal(f.deliveries.length, 0);
   assert.doesNotMatch(JSON.stringify(await f.runtimeHost.storage.list()), /old-private|stored-config-secret/);
@@ -237,7 +246,7 @@ test('historical issue copy stays inert; fresh typed registration freezes its ow
   snapshot = { ...snapshot, comments: [...snapshot.comments, { id: 7, author: 'outside', body: 'new', commentType: 'conversation' }] };
   await active.actions['github.issue-tracking']!({});
   assert.equal(f.deliveries.length, 1);
-  await active.actions[operation.actions[0].action.method]!({ input });
+  await copyLegacyIssueProgress(input, f.runtimeHost.storage, new AbortController().signal);
   await active.actions['github.issue-tracking']!({});
   assert.equal(f.deliveries.length, 1, 'repeat copy cannot rewind live progress');
   await active.stop();
@@ -253,15 +262,12 @@ test('legacy repository progress stays inert until registration and resumes base
     state: async () => null, selfLogin: () => 'owner',
   }) });
   let active = await module.create(manifest).start(f.runtimeHost);
-  const operation = manifest.configuration.find((c: { key: string }) => c.key === 'legacyRepositoryProgress');
-  assert.ok(operation, 'progress copy requires a declared owner-confirmed operation');
-  assert.ok(operation.actions[0].confirm);
   const snapshot = { repositories: { [repo]: {
     [`f141:baseline:${repo}`]: '1', [`f141:notified:${repo}#issue-7`]: '1',
     [`community:repo-comment:cursor:${repo}`]: '2026-10-08T10:00:00.000Z',
   } } };
   const sourceDigest = createHash('sha256').update(legacyRepositorySnapshotBytes(snapshot.repositories)).digest('hex');
-  await active.actions[operation.actions[0].action.method]!({ input: { protocolVersion: 1, sourceDigest, snapshot, token: 'secret-config' } });
+  await copyLegacyRepositoryProgress({ protocolVersion: 1, sourceDigest, snapshot }, f.runtimeHost.storage, new AbortController().signal);
   await active.actions['github.repo-scan']!({});
   assert.equal(requests, 0); assert.equal(f.deliveries.length, 0);
   assert.deepEqual(await active.actions['github.repository.list']!({}), { data: { repositories: [], pullRequestRepositories: [] } });
@@ -307,14 +313,10 @@ test('repository intake sends a bounded sanitized provider briefing through ordi
   await active.stop();
 });
 
-test('owner operation copies raw legacy issue metadata without adopting governance, overwriting state or starting tracking', async () => {
+test('preexisting issue metadata remains readable without adopting governance or starting tracking', async () => {
   const f = host();
   const module = createGitHubPluginModule();
   let active = await module.create(manifest).start(f.runtimeHost);
-  const operation = manifest.configuration.find((c: { key: string }) => c.key === 'legacyIssueObservations');
-  assert.ok(operation, 'legacy copy must use a real owner-confirmed package operation');
-  const action = operation.actions.find((a: { id: string }) => a.id === 'import');
-  assert.ok(action.confirm);
   assert.equal(validateManifest(manifest).valid, true);
   const raw = { id: 'legacy-7', repo: 'Example/Project', issueNumber: '7', issueType: 'bug', title: 'Old public issue',
     linkedPrNumbers: '[12]', createdAt: '10', updatedAt: '20', lastActivityAt: '20', lastActivityEvent: 'guardian-signoff',
@@ -324,7 +326,7 @@ test('owner operation copies raw legacy issue metadata without adopting governan
   const sourceDigest = createHash('sha256').update('{"issues":{"legacy-7":' + canonicalRaw + '}}').digest('hex');
   const envelope = { protocolVersion: 1, sourceDigest, snapshot };
   const before = JSON.stringify(snapshot);
-  const result = await active.actions[action.action.method]!({ input: { ...envelope, token: 'merged configuration secret' } }) as { data: { imported: number; preserved: number } };
+  const result = await copyLegacyIssueObservations(envelope, new SdkCommunityIssueStore(f.runtimeHost.storage), new AbortController().signal);
   assert.equal(result.data.imported, 1);
   assert.equal(result.data.preserved, 0);
   assert.equal(JSON.stringify(snapshot), before, 'copy must not mutate the old snapshot');
@@ -333,7 +335,7 @@ test('owner operation copies raw legacy issue metadata without adopting governan
   assert.deepEqual(await active.actions['github.tracking.list']!({}), { data: { tracking: [] } });
   await active.stop();
   active = await module.create(manifest).start(f.runtimeHost);
-  const again = await active.actions[action.action.method]!({ input: envelope }) as { data: { identical: number } };
+  const again = await copyLegacyIssueObservations(envelope, new SdkCommunityIssueStore(f.runtimeHost.storage), new AbortController().signal);
   assert.equal(again.data.identical, 1);
   const metadata = await active.actions['github.issue.metadata']!({ repo: 'example/project', number: 7 }) as { data: { observation: { title: string; linkedPrNumbers: number[] }; provenance: string } };
   assert.equal(metadata.data.observation.title, raw.title);

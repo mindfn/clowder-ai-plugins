@@ -69,12 +69,9 @@ association, so delivery verification returns `insufficient` even when the exact
 GitHub review exists. No successful review completion is claimed by this source
 checkpoint. The Host installation journey remains pending.
 
-The owner-confirmed legacy metadata copy operation accepts an isolated, bounded
-raw snapshot from the Host migration adapter. It only inserts missing issue
-metadata; existing records, Host assignments/signoff/routes/drafts and tracking
-remain unchanged. The adapter and real-data cutover are still pending. The
-`github_issue_metadata` tool reads copies as private metadata, never governance
-truth. Exact input and recovery semantics: `migration/legacy-state-disposition.md`.
+Fresh installation uses the normal configuration and repository registration.
+It does not require importing old configuration, metadata or delivery cursors.
+Existing stored metadata remains readable; this migration does not delete it.
 
 ## Acceptance
 

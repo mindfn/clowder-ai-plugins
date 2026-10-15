@@ -5,6 +5,11 @@ doc_kind: implementation-evidence
 created: 2026-10-08
 ---
 
+> Current migration scope (operator1504/1607, 2026-10-15): the four import
+> settings and production import actions described below have been withdrawn.
+> These are historical implementation notes, not setup instructions or required
+> migration work. Existing stored records remain readable and are not deleted.
+
 # Legacy state copy — separate provider metadata from Host authority
 
 Frozen source: Host `496e24089ffb5f99fa241e04c7ee0850df227be4`.

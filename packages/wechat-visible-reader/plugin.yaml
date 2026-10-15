@@ -9,10 +9,14 @@ description:
 icon:
   type: svg
   src: assets/icon.svg
+steps:
+  - text: 启用插件后，在 Mac 微信中选中需要猫查看的会话
+  - text: 展开插件并阅读隐私披露，再授权读取 10 分钟
+  - text: 回到目标 Clowder AI thread，对猫说“看一下微信”
 configuration:
   - key: visibleReadingAuthorization
     label: Visible WeChat reading authorization
-    description: Local owner authorization for a bounded read of the current WeChat conversation.
+    description: 不会保存截图。识别出的微信文字会进入当前猫的模型上下文和 Clowder AI invocation trace。按联系人读取由你在当前 thread 逐次授权；执行时会短暂切到微信，可能清除目标会话未读，并在结束后尽力恢复原会话、滚动位置与前台 app。
     kind: operation
     required: false
     actions:
