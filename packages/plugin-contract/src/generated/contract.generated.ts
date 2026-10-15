@@ -515,6 +515,10 @@ export type PluginTestResult = {
 };
 export type SetupStep = {
   readonly text: string;
+  readonly mode?: string;
+};
+export type ConnectorPermissions = {
+  readonly label: string;
 };
 export type IdentityContribution = {
   readonly type: 'identity';
@@ -881,6 +885,7 @@ export type PluginManifest = {
   readonly data?: readonly DataDeclaration[];
   readonly runtime?: RuntimeDeclaration;
   readonly test?: PluginTestDeclaration;
+  readonly permissions?: ConnectorPermissions;
   readonly steps?: readonly SetupStep[];
   readonly signals?: SignalContribution;
 };

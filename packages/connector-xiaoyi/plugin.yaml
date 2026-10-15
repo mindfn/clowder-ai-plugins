@@ -24,8 +24,7 @@ configuration:
     required: true
 steps:
   - text: 在小艺开放平台创建 OpenClaw 模式智能体，获取 AK/SK 和 Agent ID
-  - text: 填写以下配置并保存，重启 API 服务后自动通过 WebSocket 连接华为 HAG
-  - text: 在小艺 APP 中发送消息验证对话链路是否正常
+  - text: 填写以下配置并保存，启用后通过 WebSocket 连接华为 HAG
 contributions:
   - type: identity
     id: xiaoyi-agent

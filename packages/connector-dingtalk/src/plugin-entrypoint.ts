@@ -1,3 +1,4 @@
+import { legacyRuntimeManifest } from './runtime-manifest.js';
 import { createGroupCommandBridge as createConnectorCommandBridge } from './group-command-bridge.js';
 import {
   definePlugin,
@@ -251,7 +252,7 @@ export function createDingTalkPluginModule(
   createRuntime: DingTalkRuntimeFactory = createDingTalkConnectorRuntime,
 ) {
   return definePluginModule((manifest) => definePlugin({
-    manifest,
+    manifest: legacyRuntimeManifest(manifest),
     activate: {
       'dingtalk-messaging': async (context) => {
         const appKey = await context.config.get('appKey');

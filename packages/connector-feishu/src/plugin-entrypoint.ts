@@ -1,3 +1,4 @@
+import { legacyRuntimeManifest } from './runtime-manifest.js';
 import { createFeishuSettings, type SettingsEntrypoint } from './settings.js';
 import { createGroupCommandBridge as createConnectorCommandBridge } from './group-command-bridge.js';
 import {
@@ -272,7 +273,7 @@ export function createFeishuPluginModule(
   createQrClient: () => FeishuQrBindClient = () => new DefaultFeishuQrBindClient(),
 ): SettingsEntrypoint {
   const runtimeModule = definePluginModule((manifest) => definePlugin({
-    manifest,
+    manifest: legacyRuntimeManifest(manifest),
     activate: {
       'feishu-messaging': async (context) => {
         const [appId, appSecret, modeValue, verificationToken, groupBotMentionsJson] = await Promise.all([

@@ -76,7 +76,6 @@ test:
 steps:
   - text: 点击「生成二维码」按钮
   - text: 使用微信扫描二维码并确认授权
-  - text: 授权成功后自动连接，无需重启服务
 contributions:
   - type: identity
     id: weixin-bot

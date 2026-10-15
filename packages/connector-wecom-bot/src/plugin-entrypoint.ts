@@ -1,3 +1,4 @@
+import { legacyRuntimeManifest } from './runtime-manifest.js';
 import { createWeComSettings, type SettingsEntrypoint } from './settings.js';
 import { createGroupCommandBridge as createConnectorCommandBridge } from './group-command-bridge.js';
 import {
@@ -230,7 +231,7 @@ export function createWeComBotPluginModule(
   validateCredentials: ValidateCredentialsFn = (botId, secret) => WeComBotAdapter.validateCredentials(botId, secret),
 ): SettingsEntrypoint {
   const runtimeModule = definePluginModule((manifest) => definePlugin({
-    manifest,
+    manifest: legacyRuntimeManifest(manifest),
     activate: {
       'wecom-bot-messaging': async (context) => {
         // Credentials may be filled only after the plugin is enabled — the runtime

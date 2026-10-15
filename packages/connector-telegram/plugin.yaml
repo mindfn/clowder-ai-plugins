@@ -20,7 +20,6 @@ test:
 steps:
   - text: 在 Telegram 中找到 @BotFather，发送 /newbot 创建机器人
   - text: 复制生成的 Bot Token
-  - text: 填写以下配置并保存，重启 API 服务后生效
 contributions:
   - type: identity
     id: telegram-bot

@@ -251,3 +251,9 @@ void [
   sendBehaviorCase,
   invalidSendBehaviorCase,
 ];
+
+// Original connector UI metadata is additive and separate from capabilities.
+const originalConnectorMetadata: Pick<import('./contract.generated.js').PluginManifest, 'permissions' | 'steps'> = {
+  permissions: { label: '飞书' }, steps: [{ text: 'Webhook', mode: 'webhook' }, { text: 'Configure' }],
+};
+void originalConnectorMetadata;

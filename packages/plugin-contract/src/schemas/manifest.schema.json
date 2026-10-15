@@ -1983,9 +1983,23 @@
     "SetupStep": {
       "type": "object",
       "properties": {
-        "text": { "type": "string", "minLength": 1 }
+        "text": { "type": "string", "minLength": 1 },
+        "mode": {
+          "type": "string",
+          "description": "Original connector setup visibility: show this step when the connectionMode configuration value matches."
+        }
       },
       "required": ["text"],
+      "additionalProperties": false
+    },
+
+    "ConnectorPermissions": {
+      "type": "object",
+      "description": "Original connector group settings declaration. The label names the owner UI; this does not grant Host capabilities or contain permission state.",
+      "properties": {
+        "label": { "type": "string" }
+      },
+      "required": ["label"],
       "additionalProperties": false
     },
 
@@ -3056,6 +3070,7 @@
     },
     "runtime": { "$ref": "#/$defs/RuntimeDeclaration" },
     "test": { "$ref": "#/$defs/PluginTestDeclaration" },
+    "permissions": { "$ref": "#/$defs/ConnectorPermissions" },
     "steps": {
       "type": "array",
       "items": { "$ref": "#/$defs/SetupStep" },
