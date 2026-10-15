@@ -11,8 +11,10 @@ find your shared history together. It ships as a Manager-installable builtin plu
 - One feature, `companion`, contributing the `companion` desktop window
   (330×350, frameless, transparent, always-on-top, skip-taskbar, bridge version 1.0.0,
   with an integrity-bound entrypoint).
-- `manifest.json` is a generated package export and must remain mechanically identical
-  to `plugin.yaml`.
+- `plugin.yaml` is the tracked declaration, available to repository discovery before
+  running scripts. Build refreshes its package version and entrypoint integrity;
+  `manifest.json` is a generated, identical package export. Commit the refreshed
+  declaration whenever those derived coordinates change.
 
 ## Authority boundary
 
