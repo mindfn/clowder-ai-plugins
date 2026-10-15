@@ -6,8 +6,8 @@ typing, and reply delivery for a Clowder AI Host.
 ## Configuration
 
 The Host projects the Bot Token and optional media behavior explicitly from the manifest. The Bot Token is
-written only by the `weixin_qr_login` operation target — it is hidden and optional so the plugin can start
-healthy (idle) before credentials exist. Relative Host media URLs have no package-side base URL override
+written only by the `weixin_qr_login` operation target. It remains hidden and required for runtime
+readiness; QR setup is available while the plugin is disabled. Saving a token preserves the Host enable intent. Relative Host media URLs have no package-side base URL override
 anymore: outbound media with a relative URL fails closed with a clear error instead of being silently sent.
 
 ## Security and authority

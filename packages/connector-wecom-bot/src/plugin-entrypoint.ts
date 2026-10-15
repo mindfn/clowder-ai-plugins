@@ -1,3 +1,4 @@
+import { createWeComSettings, type SettingsEntrypoint } from './settings.js';
 import { createGroupCommandBridge as createConnectorCommandBridge } from './group-command-bridge.js';
 import {
   definePlugin,
@@ -227,8 +228,8 @@ async function deliverOutbound(
 export function createWeComBotPluginModule(
   createRuntime: RuntimeFactory = createWeComBotConnectorRuntime,
   validateCredentials: ValidateCredentialsFn = (botId, secret) => WeComBotAdapter.validateCredentials(botId, secret),
-) {
-  return definePluginModule((manifest) => definePlugin({
+): SettingsEntrypoint {
+  const runtimeModule = definePluginModule((manifest) => definePlugin({
     manifest,
     activate: {
       'wecom-bot-messaging': async (context) => {
@@ -375,6 +376,11 @@ export function createWeComBotPluginModule(
       },
     },
   }));
+  return {
+    create(manifest) {
+      return { ...runtimeModule.create(manifest), settings: host => createWeComSettings(host, validateCredentials) };
+    },
+  };
 }
 
 export default createWeComBotPluginModule();

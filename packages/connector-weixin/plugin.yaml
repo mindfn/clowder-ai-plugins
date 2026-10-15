@@ -13,7 +13,7 @@ configuration:
   - key: botToken
     label: Bot Token (扫码自动获取)
     kind: secret
-    required: false
+    required: true
     hidden: true
   - key: voiceItemMode
     label: Voice Item Mode

@@ -1,3 +1,4 @@
+import { createFeishuSettings, type SettingsEntrypoint } from './settings.js';
 import { createGroupCommandBridge as createConnectorCommandBridge } from './group-command-bridge.js';
 import {
   definePlugin,
@@ -269,8 +270,8 @@ async function deliverOutbound(
 export function createFeishuPluginModule(
   createRuntime: RuntimeFactory = createFeishuConnectorRuntime,
   createQrClient: () => FeishuQrBindClient = () => new DefaultFeishuQrBindClient(),
-) {
-  return definePluginModule((manifest) => definePlugin({
+): SettingsEntrypoint {
+  const runtimeModule = definePluginModule((manifest) => definePlugin({
     manifest,
     activate: {
       'feishu-messaging': async (context) => {
@@ -429,6 +430,11 @@ export function createFeishuPluginModule(
       },
     },
   }));
+  return {
+    create(manifest) {
+      return { ...runtimeModule.create(manifest), settings: host => createFeishuSettings(createQrClient()) };
+    },
+  };
 }
 
 export default createFeishuPluginModule();

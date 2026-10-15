@@ -11,6 +11,8 @@ import {
   operationRowAction,
   rowsResult,
   type FeatureContext,
+  type PluginModuleEntrypoint,
+  type PluginModuleDefinition,
 } from '@clowder-ai/plugin-sdk';
 
 import { createConversationHostOperations } from './conversation-host.js';
@@ -197,8 +199,43 @@ export function createConversationHostOperationsForDataDirectory(dataDirectory: 
   return createConversationHostOperations({ dataDirectory });
 }
 
-export function createPersonalChromePluginModule() {
-  return definePluginModule((manifest) =>
+export interface PersonalChromeSettingsHost {
+  readonly dataDirectory?: string;
+  readonly log: FeatureContext['log'];
+}
+export interface PersonalChromeSettingsEntrypoint extends PluginModuleEntrypoint {
+  create(manifest: unknown): PluginModuleDefinition & {
+    settings(host: PersonalChromeSettingsHost): {
+      actions: Readonly<Record<string, (input: unknown) => Promise<unknown>>>;
+      dispose(): Promise<void>;
+    };
+  };
+}
+
+function loadedSettings(host: PersonalChromeSettingsHost) {
+  if (!host.dataDirectory) throw new TypeError('Personal Chrome settings require the declared data.directory grant');
+  const conversationHost = createConversationHostOperations({ dataDirectory: host.dataDirectory, log: host.log });
+  const operations = createAuthorizationOperations({
+    authorizationPath: join(host.dataDirectory, 'conversation-binding.json'), helperStatus: conversationHost.status,
+  });
+  // Inspect/revoke and explicit helper probes do not prepare runtime delivery or
+  // register the cloud-conversation-host contribution.
+  return { actions: {
+    [PERSONAL_CHROME_LIST_METHOD]: operations.list,
+    [PERSONAL_CHROME_REVOKE_METHOD]: operations.revoke,
+    [PERSONAL_CHROME_STATUS_METHOD]: operations.status,
+    [PERSONAL_CHROME_REFRESH_TITLES_METHOD]: async () => {
+      const titleSync = await conversationHost.refreshTitles();
+      return { render: 'status', data: { titleSync }, label: titleSync.status === 'synced'
+        ? `Updated ${titleSync.updatedCount} of ${titleSync.requestedCount} conversation title(s).`
+        : `Title refresh unavailable: ${titleSync.errorCode}` };
+    },
+    [PERSONAL_CHROME_TEST_METHOD]: () => conversationHost.probe(),
+  }, dispose: () => conversationHost.dispose() };
+}
+
+export function createPersonalChromePluginModule(): PersonalChromeSettingsEntrypoint {
+  const runtimeModule = definePluginModule((manifest) =>
     definePlugin({
       manifest,
       activate: {
@@ -252,6 +289,11 @@ export function createPersonalChromePluginModule() {
       },
     }),
   );
+  return {
+    create(manifest) {
+      return { ...runtimeModule.create(manifest), settings: loadedSettings };
+    },
+  };
 }
 
 export default createPersonalChromePluginModule();

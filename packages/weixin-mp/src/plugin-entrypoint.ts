@@ -3,6 +3,8 @@ import {
   definePluginModule,
   type FeatureContext,
   type PluginModuleEntrypoint,
+  type PluginModuleDefinition,
+  type ModulePluginHostShape,
 } from '@clowder-ai/plugin-sdk';
 
 import { WeixinAccessTokenManager } from './access-token-manager.js';
@@ -53,7 +55,7 @@ function limbParams(value: unknown, method: string): Readonly<Record<string, unk
 }
 
 async function activationContext(
-  context: FeatureContext,
+  context: Pick<FeatureContext, 'config' | 'secrets'>,
   createTokenManager: NonNullable<WeixinMpPluginModuleOptions['createTokenManager']>,
 ): Promise<InvokeContext> {
   const [appIdValue, appSecretValue] = await Promise.all([
@@ -77,13 +79,43 @@ function requireHandler(handlers: Readonly<Record<string, InvokeHandler>>, metho
   return handler;
 }
 
+type SettingsHost = Pick<ModulePluginHostShape, 'config' | 'secrets'>;
+export interface SettingsEntrypoint extends PluginModuleEntrypoint {
+  create(manifest: unknown): PluginModuleDefinition & {
+    settings(host: SettingsHost): Promise<{
+      actions: Readonly<Record<string, () => Promise<unknown>>>;
+      dispose(): void | Promise<void>;
+    }>;
+  };
+}
+
+function connectionTest(handlers: Readonly<Record<string, InvokeHandler>>, invokeContext: InvokeContext) {
+  return async () => {
+    const result = await requireHandler(handlers, 'weixin-mp:check_status')({}, invokeContext);
+    const data = result.success
+      ? result.data as { readonly status?: unknown; readonly message?: unknown } | undefined
+      : undefined;
+    const status = data?.status;
+    const connected = result.success && status === 'connected';
+    return {
+      ok: connected,
+      message: connected
+        ? 'WeChat Official Account is connected'
+        : typeof data?.message === 'string'
+          ? data.message
+          : 'WeChat Official Account connection failed',
+      details: { status: typeof status === 'string' ? status : 'error' },
+    };
+  };
+}
+
 export function createWeixinMpPluginModule(
   options: WeixinMpPluginModuleOptions = {},
-): PluginModuleEntrypoint {
+): SettingsEntrypoint {
   const createHandlers = options.createHandlers ?? createWeixinMpHandlers;
   const createTokenManager = options.createTokenManager
     ?? ((input) => new WeixinAccessTokenManager(input));
-  return definePluginModule((manifest) => definePlugin({
+  const runtimeModule = definePluginModule((manifest) => definePlugin({
     manifest,
     activate: {
       'publish-official-account-content': async (context) => {
@@ -96,29 +128,34 @@ export function createWeixinMpPluginModule(
         return {
           actions: {
             ...actions,
-            [TEST_METHOD]: async () => {
-              const result = await requireHandler(handlers, 'weixin-mp:check_status')({}, invokeContext);
-              const data = result.success
-                ? result.data as { readonly status?: unknown; readonly message?: unknown } | undefined
-                : undefined;
-              const status = data?.status;
-              const connected = result.success && status === 'connected';
-              return {
-                ok: connected,
-                message: connected
-                  ? 'WeChat Official Account is connected'
-                  : typeof data?.message === 'string'
-                    ? data.message
-                    : 'WeChat Official Account connection failed',
-                details: { status: typeof status === 'string' ? status : 'error' },
-              };
-            },
+            [TEST_METHOD]: connectionTest(handlers, invokeContext),
           },
           dispose: () => invokeContext.tokenManager.invalidateAccessToken(),
         };
       },
     },
   }));
+  return {
+    create(manifest) {
+      return {
+        ...runtimeModule.create(manifest),
+        settings: async host => {
+          const [appIdValue, appSecretValue] = await Promise.all([host.config.get('appId'), host.secrets.get('appSecret')]);
+          const appId = typeof appIdValue === 'string' ? appIdValue : '';
+          const appSecret = typeof appSecretValue === 'string' ? appSecretValue : '';
+          // The original check_status reports not_configured before requesting a token.
+          const invokeContext: InvokeContext = {
+            pluginConfig: { WEIXIN_MP_APP_ID: appId, WEIXIN_MP_APP_SECRET: appSecret },
+            tokenManager: createTokenManager({ appId, appSecret }),
+          };
+          return {
+            actions: { [TEST_METHOD]: connectionTest(createHandlers(), invokeContext) },
+            dispose: () => invokeContext.tokenManager.invalidateAccessToken(),
+          };
+        },
+      };
+    },
+  };
 }
 
 export default createWeixinMpPluginModule();

@@ -1,3 +1,4 @@
+import { createWeixinSettings, type SettingsEntrypoint } from './settings.js';
 import { createDirectCommandBridge as createConnectorCommandBridge } from './direct-command-bridge.js';
 import {
   definePlugin,
@@ -227,8 +228,8 @@ async function deliverOutbound(
   }
 }
 
-export function createWeixinPluginModule(createRuntime: RuntimeFactory = createWeixinConnectorRuntime) {
-  return definePluginModule((manifest) => definePlugin({
+export function createWeixinPluginModule(createRuntime: RuntimeFactory = createWeixinConnectorRuntime): SettingsEntrypoint {
+  const runtimeModule = definePluginModule((manifest) => definePlugin({
     manifest,
     activate: {
       'weixin-messaging': async (context) => {
@@ -352,6 +353,11 @@ export function createWeixinPluginModule(createRuntime: RuntimeFactory = createW
       },
     },
   }));
+  return {
+    create(manifest) {
+      return { ...runtimeModule.create(manifest), settings: host => createWeixinSettings(host) };
+    },
+  };
 }
 
 export default createWeixinPluginModule();

@@ -45,3 +45,7 @@ acceptance before enabling it for real publication.
 
 This package requests these Host capabilities, verbatim from its manifest
 (`plugin.yaml` — kept in sync by `pnpm test:train-c1-inventory`): `plugin.config.read`, `secret.read`.
+
+The connection test is available independently of runtime enablement. It uses the
+same account status handler; missing credentials report `not_configured`. Testing
+does not activate the publishing limb.

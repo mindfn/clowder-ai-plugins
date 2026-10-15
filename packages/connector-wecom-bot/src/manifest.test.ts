@@ -17,8 +17,8 @@ test('manifest keeps Bot Secret private and wake authority out of the package', 
   assert.equal(manifest.contractVersion, '0.1.0');
   assert.deepEqual(manifest.configuration.filter(field => !['permissionWhitelistEnabled', 'permissionCommandAdminOnly',
     'permissionAdminIdsJson', 'permissionGroupsJson', 'permissionRevision', 'connector_permissions', 'connector_permissions_apply'].includes(field.key)), [
-    { key: 'botId', label: 'Bot ID', kind: 'string', required: false },
-    { key: 'botSecret', label: 'Bot Secret', kind: 'secret', required: false },
+    { key: 'botId', label: 'Bot ID', kind: 'string', required: true },
+    { key: 'botSecret', label: 'Bot Secret', kind: 'secret', required: true },
     {
       key: 'wecom_validate',
       label: '验证并连接',

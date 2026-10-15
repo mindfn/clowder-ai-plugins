@@ -13,11 +13,11 @@ configuration:
   - key: appId
     label: App ID
     kind: string
-    required: false
+    required: true
   - key: appSecret
     label: App Secret
     kind: secret
-    required: false
+    required: true
   - key: connectionMode
     label: 连接模式
     kind: select

@@ -145,3 +145,7 @@ calling a private ChatGPT API.
 This package is a review candidate only. It does not publish to npm or the
 Chrome Web Store. Signed Chrome Web Store identity/admission and Windows support remain open; Windows is explicitly
 unsupported.
+
+Reading or revoking existing conversation authorizations is independent of runtime
+enablement and uses the same data directory. These settings operations do not
+install a helper, copy extension files or register a conversation runtime.

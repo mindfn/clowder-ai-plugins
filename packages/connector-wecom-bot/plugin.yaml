@@ -13,11 +13,11 @@ configuration:
   - key: botId
     label: Bot ID
     kind: string
-    required: false
+    required: true
   - key: botSecret
     label: Bot Secret
     kind: secret
-    required: false
+    required: true
   - key: wecom_validate
     label: 验证并连接
     kind: operation

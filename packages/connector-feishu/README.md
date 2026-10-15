@@ -10,7 +10,7 @@ optional group mention aliases. The package does not read repository `.env` file
 
 ## 迁移已知差异
 
-- **新装走扫码要先把连接模式设成 WebSocket 并保存**：默认的 webhook 模式下 `verificationToken` 必填，配置不就绪就不能启用插件。旧版扫码同样会强制切到 websocket，行为一致，但新装 owner 需要知道先改连接模式。
+- **配置与启用独立**：App ID / App Secret 保留原必填约束；扫码可在停用时完成，challenge 由 Host operation state 保存，轮询不依赖运行实例。成功后 Host 保存凭据，保持原启用意图；启用时才运行消息连接。
 - **`groupBotMentionsJson` 没有 owner 入口**：群 @bot 别名映射只能通过包配置调整，配置面板不暴露该项。
 - **扫码的 target 去掉了 `verificationToken`**：QR 登录回写的 targetValues 不再包含 verificationToken（webhook 校验 token 走普通配置项）。
 - **「已连接」展示依赖 Host W2-2c**：判断依据是 operation target 是否有值，而不是旧 Hub 的实时连接状态；实时状态请使用 `feishu.test`。

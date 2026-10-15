@@ -67,11 +67,11 @@ test('manifest restores the wecom_validate operation with a validate → disconn
     { id: 'disconnect', label: '断开连接', render: 'button', action: { method: 'wecom-bot.disconnect' }, next: 'validate' },
   ]);
   assert.equal(parsed.test.action.method, 'wecom-bot.test');
-  // Credentials are user-pasted, so the plugin must enable (healthy, idle) without them.
+  // Loaded settings validate user-pasted credentials before runtime enablement.
   const botId = parsed.configuration.find((item) => item.key === 'botId');
   const botSecret = parsed.configuration.find((item) => item.key === 'botSecret');
-  assert.equal(botId?.required, false);
-  assert.equal(botSecret?.required, false);
+  assert.equal(botId?.required, true);
+  assert.equal(botSecret?.required, true);
 });
 
 test('module starts healthy and idle without credentials', async () => {

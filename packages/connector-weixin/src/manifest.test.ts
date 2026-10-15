@@ -25,7 +25,8 @@ test('manifest keeps the bot token secret and checkpoint authority out of packag
   assert.equal(manifest.contractVersion, '0.1.0');
   assert.deepEqual(manifest.configuration.filter(item => item.kind === 'secret').map(item => item.key), ['botToken']);
   const botToken = manifest.configuration.find(item => item.key === 'botToken');
-  assert.equal(botToken?.required, false, 'credentials written only by the QR operation must not deadlock enable');
+  assert.equal(botToken?.required, true, 'the original token requirement is independent of loaded QR settings');
+  assert.equal(botToken?.hidden, true, 'the original login flow supplies the hidden token');
   assert.equal(botToken?.hidden, true);
   assert.deepEqual(
     manifest.configuration.filter(item => item.kind === 'boolean' || item.key === 'voiceItemMode').map(item => item.key),
