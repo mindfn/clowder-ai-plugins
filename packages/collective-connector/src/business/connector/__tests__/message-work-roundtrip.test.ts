@@ -263,8 +263,22 @@ test('explicit artifact registration advances only the same Task snapshot while 
       await binding.registerArtifactRefs(1, ['/uploads/report.md']);
       expect(binding.work.revision).toBe(2);expect(binding.artifactRefs).toEqual(['/uploads/report.md']);
       expect(binding.work.executionRevision).toBe(1);await binding.revalidate();
-      await expect(binding.registerArtifactRefs(1, [])).rejects.toMatchObject({code: 'WORK_ARTIFACT_REVISION_CONFLICT'});
+      await expect(binding.registerArtifactRefs(1, ['/uploads/other.md'])).rejects.toMatchObject({code: 'WORK_ARTIFACT_REVISION_CONFLICT'});
     });
     expect(f.task.entrustedWork!.revision).toBe(2);expect(f.updates()).toBe(1);expect(f.wakes()).toBe(1);
+  } finally {await f.close();}
+});
+
+test('the actual Task writing boundary refuses invalid selections before CAS and compares the canonical single ref', async () => {
+  const f = await setup();
+  try {
+    await f.caller.withCurrentMessage(f.action, async binding => {
+      for (const refs of [[], ['/uploads/z.md', '/uploads/a.md'], ['/uploads/a.md', '/uploads/a.md']]) {
+        await expect(binding.registerArtifactRefs(1, refs)).rejects.toThrow();
+        expect(f.updates()).toBe(0);expect(f.task.entrustedWork!.revision).toBe(1);
+      }
+      await binding.registerArtifactRefs(1, [' /uploads/report.md ']);
+      expect(binding.artifactRefs).toEqual(['/uploads/report.md']);expect(f.updates()).toBe(1);
+    });
   } finally {await f.close();}
 });

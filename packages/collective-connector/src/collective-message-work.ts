@@ -10,6 +10,7 @@ import {collectiveContextError} from './collective-context-refs.js';
 import {assertSettledCollectiveSource, collectiveSource, ingressIdempotencyKey} from './collective-ingress-routing.js';
 import {resolveHumanMessageWork} from './collective-human-message-work.js';
 import {resolveCollectiveWorkThread} from './collective-work-thread.js';
+import {collectiveWorkArtifactRefsSchema} from './work-native-methods.js';
 
 const changed = () => collectiveContextError('WORK_EXECUTION_NOT_CURRENT', 'The Collective source or current Service permission changed');
 const subjectKey = (connectionId: string, workId: string) => `collective-work:${connectionId}:${workId}`;
@@ -134,16 +135,17 @@ export function createCollectiveMessageWorkCaller(connector: CollectiveConnector
         if (!live || !isDeepStrictEqual(latest, initial)) throw changed();
       };
       const binding = {...initial, revalidate, registerArtifactRefs: async (expectedRevision: number, artifactRefs: readonly string[]) => {
+        const refs = collectiveWorkArtifactRefsSchema.parse(artifactRefs);
         await revalidate();
         if (expectedRevision !== initial.work.revision)
           throw collectiveContextError('WORK_ARTIFACT_REVISION_CONFLICT', 'Task data changed; reread current context');
         const updated = await context.tasks.updateIfThreadId(initial.resultKey.slice('work:'.length), initial.auth.threadId,
-          {entrustedWork: {expectedRevision, artifactRefs}});
+          {entrustedWork: {expectedRevision, artifactRefs: refs}});
         if (!updated || !live) throw changed();
         const latest = await read(action);
         // Rebase only this successful, exact data CAS. Source/Service/invocation,
         // ownership, date and execution facts must all remain byte-for-byte equal.
-        if (!live || latest.work.revision !== expectedRevision + 1 || !isDeepStrictEqual(latest.artifactRefs, artifactRefs) ||
+        if (!live || latest.work.revision !== expectedRevision + 1 || !isDeepStrictEqual(latest.artifactRefs, refs) ||
           !isDeepStrictEqual({...latest, work: {...latest.work, revision: initial.work.revision}, artifactRefs: initial.artifactRefs}, initial)) throw changed();
         initial = latest;Object.assign(binding, latest);
       }};

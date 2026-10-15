@@ -45,15 +45,15 @@ test('received file stays unselected; explicit registration uses the canonical T
 
 test('stale registration cannot overwrite a newer explicit choice', async () => {
   const f = fixture();await f.artifacts.register(f.binding, 1234, ['/uploads/report.md']);
-  await expect(f.artifacts.register(f.binding, 1234, [])).rejects.toMatchObject({code: 'WORK_ARTIFACT_REVISION_CONFLICT'});
+  await expect(f.artifacts.register(f.binding, 1234, ['/uploads/other.md'])).rejects.toMatchObject({code: 'WORK_ARTIFACT_REVISION_CONFLICT'});
   expect((await f.artifacts.current(f.binding)).artifactRefs).toEqual(['/uploads/report.md']);
 });
 
 test('missing publication and multiple explicit refs refuse rather than choose or downgrade', async () => {
   const f = fixture();await f.artifacts.register(f.binding, 1234, ['/uploads/report.md']);f.remove();
   await expect(f.artifacts.readSelected(f.binding)).rejects.toThrow();
-  await f.artifacts.register(f.binding, 1235, ['/uploads/report.md', '/uploads/other.md']);
-  await expect(f.artifacts.readSelected(f.binding)).rejects.toThrow();
+  await expect(f.artifacts.register(f.binding, 1235, ['/uploads/report.md', '/uploads/other.md'])).rejects.toThrow();
+  expect(f.binding.work.revision).toBe(1235);expect(f.binding.artifactRefs).toEqual(['/uploads/report.md']);
 });
 
 test('explicitly retained publication is data across later results; another Task or stopped invocation cannot satisfy it', async () => {
@@ -62,4 +62,15 @@ test('explicitly retained publication is data across later results; another Task
   expect((await f.artifacts.readSelected(f.binding))?.text).toBe(f.text);
   f.capture.taskRef = 'task:work:foreign';await expect(f.artifacts.readSelected(f.binding)).rejects.toThrow();
   f.stop();await expect(f.artifacts.current(f.binding)).rejects.toThrow('stopped');
+});
+
+test('internal explicit registration rejects empty, multiple and duplicate refs before mutation and canonicalizes a single ref', async () => {
+  const f = fixture();
+  for (const refs of [[], ['/uploads/z.md', '/uploads/a.md'], ['/uploads/a.md', '/uploads/a.md']]) {
+    await expect(f.artifacts.register(f.binding, 1234, refs)).rejects.toThrow();
+    expect(f.binding.work.revision).toBe(1234);expect(f.binding.artifactRefs).toEqual([]);
+  }
+  const selected = await f.artifacts.register(f.binding, 1234, [' /uploads/report.md ']);
+  expect(selected).toEqual({revision: 1235, artifactRefs: ['/uploads/report.md']});
+  expect((await f.artifacts.readSelected(f.binding))?.text).toBe(f.text);
 });

@@ -1,14 +1,13 @@
 import {isDeepStrictEqual} from 'node:util';
-import {z} from 'zod';
 import type {FeatureContext} from '@clowder-ai/plugin-sdk';
 import type {CollectiveConnector} from './business/connector/connector.js';
 import {workResultArtifactSnapshotSchema} from './business/connector/state.js';
 import {collectiveContextError} from './collective-context-refs.js';
 import type {createCollectiveMessageWorkCaller} from './collective-message-work.js';
 import type {createCollectiveMessageWorkMaterials} from './collective-message-work-materials.js';
+import {collectiveWorkArtifactRefsSchema} from './work-native-methods.js';
 
 type Binding = Parameters<Parameters<ReturnType<typeof createCollectiveMessageWorkCaller>['withCurrentMessage']>[1]>[0];
-const ref = z.string().trim().min(1).max(1000);
 const changed = () => collectiveContextError('WORK_ARTIFACT_UNAVAILABLE', 'Explicitly selected Work material is unavailable or changed');
 const taskRefOf = (binding: Binding) => `task:${binding.resultKey}`;
 
@@ -70,10 +69,10 @@ export function createCollectiveMessageWorkArtifacts(context: Pick<FeatureContex
   return {
     async current(binding: Binding) {return selection(binding);},
     async register(binding: Binding, expectedRevision: number, artifactRefs: readonly string[]) {
+      const refs = collectiveWorkArtifactRefsSchema.parse(artifactRefs);
       const selected = await selection(binding);
       if (expectedRevision !== selected.revision)
         throw collectiveContextError('WORK_ARTIFACT_REVISION_CONFLICT', 'Task data changed; reread current context');
-      const refs = z.array(ref).max(64).parse(artifactRefs);
       await binding.registerArtifactRefs(expectedRevision, refs);
       return selection(binding);
     },

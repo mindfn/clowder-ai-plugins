@@ -64,7 +64,8 @@ Service/Connector 核当前 Work 权限；不要求专属 Task execution policy�
    这是原 `update_entrusted_work(..., artifactRefs)` 登记步骤迁到包 MCP 的调用名；旧全局工具
    不会转发到本插件。登记写入同一 Task 的 artifactRefs；该 revision 就是 Task 数据版本，
    与日期、关闭共用，不是 Service execution revision。包内没有另一份选材账本。
-   冲突时重读 current context，不能用旧版本覆盖；没有选材时保留空列表，不自动挑线程文件。
+   登记只接收恰好一个非空文件 ref；空列表、多项或重复输入会在写入前拒绝。
+   冲突时重读 current context，不能用旧版本覆盖；没有材料时不调用登记，仍可只回传正文，不自动挑线程文件。
 6. 用 `cat_cafe_collective_work_read_artifact` 和 `contextRef` 核本次已登记材料。
    Markdown/plain text 正文上限为 65536 UTF-8 字节；其它格式保留原文件元数据与打开引用。
    文件字节在 Host 订阅回调授权期间捕获并持久保存，之后不打开任意路径或 URL。
