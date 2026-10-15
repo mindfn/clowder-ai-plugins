@@ -20,6 +20,7 @@ export function createCollectiveOwnerView(context: FeatureContext, connector: Pi
     const cats = registeredCollectiveCats(rows.map(({ catId, supported: _supported, ...row }) => ({ ...row, id: catId })),
       id => support.get(id) === true);
     const body = await collectiveOwnerParticipationView({ cats: () => cats,
+      storage: {async get(key) {await current();const value = await context.storage.get(key);await current();return value;}},
       threads: { async list(owner) {
         if (owner !== userId) throw new Error('Owner view principal changed');
         const owned: OwnerViewThread[] = [];

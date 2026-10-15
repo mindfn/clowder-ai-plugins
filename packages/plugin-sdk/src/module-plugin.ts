@@ -139,7 +139,7 @@ function featureBinding(
   if (feature === undefined) throw new TypeError(`feature ${featureId} is not declared by the plugin manifest`);
   const canReadDataDirectory = feature.capabilities.includes('data.directory');
   return {
-    pluginInstanceId: plugin.manifest.pluginId,
+    pluginInstanceId: host.pluginInstanceId,
     featureId,
     packageRevision: plugin.manifest.version,
     integrityEpoch: 0,

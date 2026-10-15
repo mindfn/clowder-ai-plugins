@@ -12,10 +12,22 @@ const createCaller: typeof sourceCaller = compiledCaller ? (await import(compile
 
 // Actual Service and Connector; Task/message/private-storage ports are explicit
 // fixtures. The separate compiled Host probe covers protected execution effects.
-async function setup(bootstrap = false) {
+async function setup(bootstrap = false, humanBirth = false) {
   const f=await fixture();
   await f.connector.adoptWorkPolicy(f.connection.connectionId,"local-owner",f.policy.revision);
-  const work=await f.connector.acceptWork(f.source,f.agent,f.input); await f.connector.sync(f.connection.connectionId);
+  let work: Awaited<ReturnType<typeof f.connector.acceptWork>>;
+  if(humanBirth) {
+    const proposed=await f.store.proposeCollectiveWork(f.owner.sessionToken,{serviceInstanceId:f.connection.serviceInstanceId,
+      collectiveId:f.connection.collectiveId,sourceEventId:f.source.eventId,requestId:"later-human-propose"});
+    work=await f.store.commitCollectiveWork(f.owner.sessionToken,{serviceInstanceId:f.connection.serviceInstanceId,
+      collectiveId:f.connection.collectiveId,workId:proposed.workId,expectedRevision:proposed.revision,requestId:"later-human-commit",
+      assignment:{connectionId:f.connection.connectionId,catId:f.agent.catId,participationRevision:1}});
+    const route=(await f.connector.getHostRoute(f.connection.connectionId))!,key=`${f.connection.authorizedHumanId}:${f.agent.catId}`;
+    await f.connector.setHostRoute(f.connection.connectionId,{localOwnerUserId:route.localOwnerUserId,
+      defaultIngressThreadId:route.defaultIngressThreadId,humanNotificationThreadId:route.humanNotificationThreadId,
+      agentRoutes:{...route.agentRoutes,[key]:{...route.agentRoutes[key]!,standingWork:{channelIds:["general"],requestingHumanIds:[f.owner.human.humanId],expiresAt:null}}}},route.revision);
+  } else work=await f.connector.acceptWork(f.source,f.agent,f.input);
+  await f.connector.sync(f.connection.connectionId);
   const records=new Map<string,PluginStorageEntry>(), messages=new Map<string,PluginMessage>();
   let version=0,aggregate=1,created=false; const prepares: PluginTaskAdmissionInput[]=[]; const dispatches: string[]=[];
   const storage={get:async(key:string)=>structuredClone(records.get(key)),compareAndSet:async(key:string,expected:number|null,value:unknown)=>{
@@ -24,8 +36,9 @@ async function setup(bootstrap = false) {
   async function publish(eventId:string,id:string) {
     const item=(await f.connector.listInbox(f.connection.connectionId)).find(x=>x.event.eventId===eventId)!;
     const identity=collectiveEventSourceIdentity(item.event)!;
-    await f.connector.beginInboxRouting(f.connection.connectionId,eventId,1);
-    await f.connector.completeInboxRouting(f.connection.connectionId,eventId,1,{kind:"thread_message",threadId:"channel",messageId:id,catId:identity.catId});
+    const routeRevision=(await f.connector.getHostRoute(f.connection.connectionId))!.revision;
+    await f.connector.beginInboxRouting(f.connection.connectionId,eventId,routeRevision);
+    await f.connector.completeInboxRouting(f.connection.connectionId,eventId,routeRevision,{kind:"thread_message",threadId:"channel",messageId:id,catId:identity.catId});
     messages.set(id,{id,threadId:"channel",userId:"local-owner",catId:null,content:item.event.body,
       source:collectiveSource(item.event,identity),timestamp:1,mentions:[],sourceRevision:"revision:"+id});
     return {ownerUserId:"local-owner",identity,sourceMessageId:id,workId:work.workId,destination:{kind:"derived_from_source" as const}};
@@ -122,8 +135,8 @@ test("bootstrap cannot dispatch with a missing fresh current Service acknowledge
   }finally{await f.close();}
 });
 
-async function bootstrapNative() {
-  const f=await setup(true);const admitted=await f.make().admit(f.selection);
+async function bootstrapNative(humanBirth = false) {
+  const f=await setup(true,humanBirth);const admitted=await f.make().admit(f.selection);
   if(admitted.result==="needs_clarification")throw Error("Expected bootstrap binding");
   const message=f.messages.get("first")!;
   const native:PluginNativeTaskContext={userId:"local-owner",catId:f.agent.catId,threadId:"child",invocationId:"native",
@@ -176,5 +189,37 @@ test("bootstrap response loss on second binding recovers both exact receipts bef
     expect(f.prepares).toHaveLength(1);expect(f.dispatches).toHaveLength(0);const before=structuredClone([...f.records]);
     await f.make().admit(f.selection);expect(f.prepares).toHaveLength(1);expect(f.dispatches).toHaveLength(1);expect([...f.records]).toEqual(before);
     await expect(readWorkFirstReceipt(f.options.firstReceipts.storage,"local-owner","first",f.agent.catId)).rejects.toBeDefined();
+  }finally{await f.close();}
+});
+
+test("registered continuation may reuse a Human-committed first Task without treating its old route scope as permission",async()=>{
+  const f=await setup(false,true);try {
+    const next=await f.make().admit(f.selection);expect(next).toMatchObject({taskRef:"task:work:task",executionRef:"message:second-execution"});
+    expect(f.records.get(f.firstKey)).toEqual(f.first);expect(f.prepares).toHaveLength(2);
+    const route=(await f.connector.getHostRoute(f.connection.connectionId))!,key=`${f.connection.authorizedHumanId}:${f.agent.catId}`;
+    const branch={...route.agentRoutes[key]!};delete branch.standingWork;
+    await f.connector.setHostRoute(f.connection.connectionId,{localOwnerUserId:route.localOwnerUserId,defaultIngressThreadId:route.defaultIngressThreadId,
+      humanNotificationThreadId:route.humanNotificationThreadId,agentRoutes:{...route.agentRoutes,[key]:branch}},route.revision);
+    await f.make().admit(f.selection);expect(f.records.get(f.firstKey)).toEqual(f.first);
+    const current=await f.connector.readAssignedWork(f.connection.connectionId,f.work.workId);expect(current.executionAuthority?.hostAdmission?.state).toBe("admitted");
+  }finally{await f.close();}
+});
+test("current registered grant may bootstrap a Human assignment with no prior private Task",async()=>{
+  const f=await setup(true,true);try {
+    const next=await f.make().admit(f.selection);expect(next).toMatchObject({taskRef:"task:work:task",executionRef:"message:first-execution"});
+    expect(f.prepares).toHaveLength(1);expect(f.prepares[0]).toMatchObject({sourceMessageId:"first",subject:{kind:"new"}});
+    const root=f.records.get(f.firstKey)!.value as {source:{identity:{actor:{kind:string}}};basis?:unknown};
+    expect(root.source.identity.actor.kind).toBe("human");expect(root.basis).toBeUndefined();
+  }finally{await f.close();}
+});
+
+test("native bootstrap preserves Human Host lineage while current Agent permission remains independently revocable",async()=>{
+  const f=await bootstrapNative(true);try {
+    await f.caller.withCurrentTask(f.action,async binding=>{
+      expect(binding.auth.source.id).toBe("first");expect(binding.auth.source.source.meta?.participation).toMatchObject({actor:{kind:"human"}});
+      expect(binding.source.actor.kind).toBe("agent");expect(binding.sourceRef).toBe("message:second");expect(binding.work.executionRevision).toBe(2);
+    });
+    await f.store.revokeConnection({sessionToken:f.owner.sessionToken,collectiveId:f.connection.collectiveId,connectionId:f.connection.connectionId});
+    await expect(f.caller.withCurrentTask(f.action,async()=>{})).rejects.toBeDefined();
   }finally{await f.close();}
 });

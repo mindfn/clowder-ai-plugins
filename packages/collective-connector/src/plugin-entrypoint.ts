@@ -22,6 +22,7 @@ import { GitHubAppManifestSetup } from './business/service/github-app-manifest-s
 import { ConfigurableGitHubHumanAuthProvider } from './business/service/github-human-auth-provider.js';
 import { CollectiveServiceStore } from './business/service/store.js';
 import { createSecret } from './business/service/persistence.js';
+import {startCollectiveBackgroundSync} from './collective-background-sync.js';
 
 export type CollectivePluginModuleOptions = Readonly<Record<string, never>>;
 
@@ -58,9 +59,10 @@ interface WorkBackend {
   readonly connector: CollectiveConnector;
   readonly parentOrigin: string;
   assertActive(): void;
+  startBackground(workSync: (connectionId: string, current: () => Promise<void>) => Promise<void>): void;
 }
 async function activateService(context: FeatureContext, declaration: BrowserServiceContribution,
-  ready: (backend: WorkBackend) => void, taskNative: () => FeatureContext['nativeContext']): Promise<FeatureActivation> {
+  ready: (backend: WorkBackend) => void, workNative: () => FeatureContext['nativeContext'], expectsWork: boolean): Promise<FeatureActivation> {
   if (!context.browserServices) throw new Error('Collective requires the Host browser-service binding before start');
   const binding = await context.browserServices.getBinding('collective-client-api');
   await binding.assertCurrent();
@@ -88,13 +90,31 @@ async function activateService(context: FeatureContext, declaration: BrowserServ
   await binding.assertCurrent();
   let stopped = false;
   const assertActive = () => { if (stopped) throw new Error('Collective module is stopped'); void context.dataDirectory; };
-  const verification = createCollectiveAgentVerification(context, assertActive, taskNative);
+  const verification = createCollectiveAgentVerification(context, assertActive, workNative);
   const connector = await CollectiveConnector.open({ dataDirectory: join(context.dataDirectory, 'connector'),
     verifyAgent: verification.verifyAgent, localTransport: createLocalServiceTransport(context.browserServices, binding, opened.store) });
   const contribution = declaration;
   const dispatch = createNodeHttpAdapter({ store: opened.store, allowedHostOrigins, bootstrapLinkPath, githubAppSetup }, binding, contribution);
-  ready({connector, parentOrigin: binding.parentOrigin, assertActive});
   const native = await activateCollectivePublicNative(context, connector, assertActive);
+  const background = new AbortController();
+  let stopBackground: (() => Promise<void>) | undefined;
+  const startBackground = (workSync: (connectionId: string, current: () => Promise<void>) => Promise<void>) => {
+    if (stopBackground) throw new Error('Collective background sync is already active');
+    const current = async () => {assertActive();background.signal.throwIfAborted();await binding.assertCurrent();assertActive();};
+    stopBackground = startCollectiveBackgroundSync(async () => {
+      await current();
+      for (const connection of await connector.listConnections()) {
+        if (connection.authorityStatus === 'revoked') continue;
+        try {
+          await current();await connector.sync(connection.connectionId);await current();
+          await native.syncModule(connection.connectionId, current, background.signal);await current();
+          await workSync(connection.connectionId, current);await current();
+        } catch {assertActive();}
+      }
+    });
+  };
+  ready({connector, parentOrigin: binding.parentOrigin, assertActive, startBackground});
+  if (!expectsWork) startBackground(async () => {});
   const localServiceStatus = (): CollectiveLocalServiceStatus => {
     const metadata = opened.store.getMetadata();
     return { state: metadata.onboardingComplete ? 'ready' : 'setup_required', serviceUrl: binding.origin, dataDirectory,
@@ -154,6 +174,7 @@ async function activateService(context: FeatureContext, declaration: BrowserServ
     },
     async dispose() {
       stopped = true;
+      background.abort();await stopBackground?.();
 
       if (!opened.store.getMetadata().bootstrapNeeded) await rm(bootstrapSecretPath, { force: true });
     },
@@ -166,15 +187,16 @@ export function createCollectivePluginModule(_options: CollectivePluginModuleOpt
     const declaration = plugin.manifest.contributions?.find((item): item is BrowserServiceContribution => item.type === 'browser-service' && item.id === 'collective-client-api');
     if (!declaration) throw new Error('Collective browser-service declaration is missing');
     let backend: WorkBackend | undefined;
-    let taskContext: FeatureContext['nativeContext'];
+    let workContext: FeatureContext['nativeContext'];
     return definePlugin({ manifest, activate: {
-      'collective-backend': context => activateService(context, declaration, current => {backend = current;}, () => taskContext),
+      'collective-backend': context => activateService(context, declaration, current => {backend = current;}, () => workContext,
+        plugin.manifest.features.some(feature => feature.id === 'collective-work')),
       ...(plugin.manifest.features.some(feature => feature.id === 'collective-work') ? {
         'collective-work': async (context: FeatureContext) => {
           if (!backend) throw new Error('Collective backend must be active before Work');
           const activation = await activateCollectiveWork(context, backend);
-          taskContext = context.nativeContext;
-          return {...activation, dispose: async () => {taskContext = undefined;await activation.dispose?.();}};
+          workContext = context.nativeContext;
+          return {...activation, dispose: async () => {workContext = undefined;await activation.dispose?.();}};
         },
       } : {}),
     } });

@@ -96,7 +96,7 @@ try {
   await workClient.connect(workTransport);
   const {tools} = await workClient.listTools();
   for (const tool of tools) declaredToolNames.add(tool.name);
-  assert.deepEqual(tools.map(tool => tool.name).sort(), ['cat_cafe_collective_work_current_context', 'cat_cafe_collective_work_read_context', 'cat_cafe_collective_progress', 'cat_cafe_collective_work_publish_text', 'cat_cafe_collective_work_read_artifact', 'cat_cafe_collective_work_return_result'].sort());
+  assert.deepEqual(tools.map(tool => tool.name).sort(), ['cat_cafe_collective_work_current_context', 'cat_cafe_collective_work_read_context', 'cat_cafe_collective_progress', 'cat_cafe_collective_work_read_artifact', 'cat_cafe_collective_work_register_artifact', 'cat_cafe_collective_work_return_result'].sort());
   for (const tool of tools) {
     assert.equal(tool.inputSchema.additionalProperties, false);
     for (const field of ['userId', 'catId', 'invocationId', 'taskId', 'executionRef', 'grantRef'])
@@ -118,7 +118,7 @@ const host = {
   dataDirectory: directory,
   config: { async get() { throw new Error('Collective has no configuration-read authority'); } },
   secrets: { async get() { return undefined; } },
-  storage: {}, tasks: {}, threads: {}, media: {}, messaging: {}, log() {},
+  storage: {}, tasks: {listByKind: async () => []}, threads: {}, media: {}, messaging: {}, log() {},
   participantRoster: { async listForNativeContribution() { return []; } },
     nativeContext: { async current() { throw new Error('No native invocation'); } },
     publicInvocations: { async enqueue() { throw new Error('Unused admission port'); } },

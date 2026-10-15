@@ -17,8 +17,9 @@ test('actual module sends one named wake and handles native context before the s
   const owner: PluginOwnerOperationContext = { kind: 'owner-operation', userId: 'local-owner', pluginInstanceId: 'installed-instance',
     operationKey: 'participation', actionId: 'sync', requestId: 'owner-sync', signal: new AbortController().signal, assertCurrent: current };
   const host: ModulePluginHostShape = {
+    pluginInstanceId: 'installed-instance',
     dataDirectory: f.root, config: { async get() { return undefined; } }, secrets: { async get() { return undefined; } },
-    storage: {} as never, tasks: {} as never, threads: {} as never, media: {} as never, log() {},
+    storage: {} as never, tasks: {listByKind: async () => []} as never, threads: {} as never, media: {} as never, log() {},
     participantRoster: { async listForNativeContribution() { return [{ catId: 'codex-sol', displayName: 'Sol', defaultModel: 'fixture', supported: true }]; } },
     ownerThreads: { async get(id) { return { id, createdBy: owner.userId, participants: ['codex-sol'] }; },
       async create() { throw new Error('Unused'); }, async addParticipants() { throw new Error('Unused'); } },

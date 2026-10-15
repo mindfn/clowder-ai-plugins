@@ -107,6 +107,8 @@ Connector/service internals and domain declarations remain private implementatio
 - `plugin.state.get`: re-read the original first-source/Cat business receipt from the Host-private container.
 - `plugin.state.set`: retain the immutable first choice and exact execution binding through the existing CAS container; it does not issue permission.
 - `task.admitEntrusted`: the separate Work feature may prepare/dispatch the exact current authorized source; this does not grant `task.write` or Task CRUD.
+- `message.event.subscribe` and `media.read`: capture original callback file bytes in subscribed private Work threads; reception does not select or authorize Work.
+- `task.write`: the ordinary-send Work adapter maintains the existing UI Task record and marks it done only after the original Service result-acceptance checks. This record does not authenticate an execution.
 - `thread.readContent`: read only the authenticated native origin and its current source through Host ports.
 - `thread.listMetadata`: verify the owner-created route thread before admitting a named request.
 - `thread.write`: create the original per-channel owner threads and materialize selected participants.
@@ -212,23 +214,62 @@ the separate Work feature below; resume and the complete retained browser journe
 
 ## Private Work production actions
 
-The distinct `collective-work` feature owns exactly one Task MCP, `collective-work-native`.
-Its six tools read the current admitted Task/source, read that source through a context reference,
-publish real progress, publish/read private text artifacts, and return the result to its original Service. They consume the actual Host `includeTask:true` snapshot and the original
-package first receipt; ordinary public participation and the owner-send MCP retain their six existing
-grants and cannot enter this private method set. Progress preserves result/execution identity and
+The distinct `collective-work` feature owns `collective-work-native`. During the accepted migration
+closeout, registered Agent Work uses ordinary `messaging.send(wake)` into the original private child
+thread and default `nativeContext.current()`. Registry facts and the existing Service grant authenticate
+the call; the same Task retains its original entrustedWork data and Schedule projection without a Host execution receipt.
+Current/read/progress/result-return are connected on this path. The retained owner page associates
+the same UI Task with its original inbox messages. `POST .../work/resume` rechecks the original Service
+continuation predicate and sends into the same private thread; the same requestId deduplicates the
+message and wake. The page's observed revision is the canonical Task contract revision, distinct from
+Service execution authority and material-selection versions. `POST .../work/result/accepted` retains the original strict DTO and current Service acceptance
+checks before closing that UI record; repeated reconciliation returns already_closed.
+Committed Human manual and standing entry points now use the same ordinary send/read/result path.
+Original document generation and callback publication now enter a declared Work-thread subscription.
+The Host grants HMR reads only during delivery; bounded text is retained privately for later result reads.
+Arrival does not select a result. The original explicit artifactRefs registration moves to
+`collective.work.artifact.register`, using `artifactSelection.revision` from current context. This is
+the same Task contract revision used by dates and closure; Service execution revision is independent. It does not intercept
+the old global update-entrusted-work callback. Task creation preserves original source/outcome/closure/time
+through the Host data lifecycle. Explicit selection writes that Task's original artifactRefs, without a
+parallel private selection record; private storage retains only captured publication bytes and Service
+association. Typed accepted-result closure uses the existing publication reader to seal completion,
+so active and completed Schedule reads keep the original material coordinate.
+Public participation and owner-send retain their own
+grants. Progress preserves result/execution identity and
 never completes Work. The inherited native reference key remains under the same authorized directory.
 
 Settings → Private Collective Work → Paired Work connections offers an authenticated Sync operation.
-It sends committed initial Work and registered Agent continuation notices without wake, records the original inbox mapping,
-then consumes current Service or human standing authority through the reviewed package admission caller.
-The Host supplies the real instance identity through that owner-operation context; neither manifest
-plugin id nor tool input substitutes for it. `POST connections/:connectionId/work/admit` enters the
-separate `collective.work.control.http` owner webhook and the reviewed manual/replay caller. The original
-resume DTO is registered but honestly returns unavailable while its separate recovery boundary is open.
-For a registered Agent continuation, the package reads its immutable first receipt, preserves the original
+Work syncs immediately at activation and every two seconds, without requiring the Settings operation.
+Disable/stop cancels and drains that loop. The SDK uses the Host's actual installed instance id.
+Human requests first retain their original participation-thread inbox message without waking private Work.
+An existing Service commitment plus the original manual owner choice or current standing scope permits
+private delivery. A request without Service Work remains unavailable, as in the original implementation.
+`POST connections/:connectionId/work/admit` uses the original owner DTO and authenticated owner HTTP
+context. An explicit business deadline is saved with its original source reference in canonical Task time;
+missing or ambiguous time retains the original clarification outcome. Date storage and Schedule projection
+are separate from ordinary wake, and do not require prepareEntrusted/dispatchEntrusted.
+Manual and standing choices reuse the existing private first-choice container. Registry identity and
+current Service/route checks authenticate the native consumer; the Task UI record is not a grant.
+A later registered Agent execution uses its current Service grant even when the first assignment came
+from a Human. If no Task exists, the original first assignment determines the private-thread site while
+the current grant permits execution. Owner resume reuses the same Task/thread and original continuation
+rules. Existing bare or legacy execution-bound records are not silently adopted into the new subject;
+accepted closure uses the typed Task lifecycle, never generic status writes. Browser/Manager/provider and
+the original Schedule material-button journey remain unverified by these module probes.
+### Prior Task-bound adaptation evidence (not active runtime)
+
+The current module no longer imports the legacy Task-execution reader/admission/artifact handlers or
+declares publish-text. The following records prior adaptation evidence, not a second active Work path.
+
+The following retained adapter is not required by ordinary Work execution.
+In this legacy Task-bound path, a registered Agent continuation reads its immutable first receipt, preserves the original
 Task/thread/admission, and captures a separate execution receipt before the fresh exact Service acknowledgement
 and Host dispatch. It does not recapture the first basis. The native reader also requires both receipts.
+The immutable first Task may have originated from a committed Human manual or standing choice. A later
+registered Agent execution uses its own current Service grant and fresh acknowledgement; the old Human
+request or route scope remains lineage, not permission for that execution. A missing first Task can also
+bootstrap from a Human assignment under that same current registered permission.
 When a registered Agent already has execution >1 but no first Task, owner Settings sync can bootstrap
 using the immutable first assignment as the Host admission source. A separate private lineage record
 carries no grant; the current execution receipt carries the freshly revalidated Service permission.
@@ -238,13 +279,14 @@ and rechecking the current source through that relation. Missing/conflicting bin
 and a surviving Task without its original lineage cannot be recaptured. The Host classifies this first
 Task admission as `initial`; its existing first-admission replay is distinct from continuation recovery.
 
-The current Host classifies an owner-operation continuation as `owner_resume`: the same request can dispatch,
+For that legacy path, the current Host classifies an owner-operation continuation as `owner_resume`: the same request can dispatch,
 but another HTTP/Settings request cannot borrow that descriptor. Cross-request replay remains unavailable;
 the package does not bypass this protection or infer success from a stored Queue receipt.
 
 This is production declaration and consumer wiring, not a complete installed Work journey.
-Autonomous source publication, complete later execution recovery, independent owner resume/current custody,
-legacy artifact reconciliation/browser still need their original complete integration.
+Deadline metadata, material/browser operations and the complete installed/provider journey still need
+their original integration. The ordinary-send owner resume above does not relax the remaining legacy
+Task execution descriptor. Old production data import is outside this fresh-data migration acceptance.
 The declared skill uses current package text publication and accepted-history readers; actual Host skill mounts and agent/operator use still need full installed acceptance. The current private text publication and result-return path has composition evidence,
 not a complete installed/operator/provider journey. The original `collective-participation` skill is now declared and packed with the backend feature. Its public and private Work instructions name only the installed MCP methods; loading it adds no Work authority or grants.
 Text publication captures the authenticated native publisher and Task/result/execution scope in the
@@ -261,5 +303,5 @@ history must match exactly one accepted local outbox snapshot for the same Work,
 the reader then verifies its old publisher capture, live owned trigger/publication, immutable seal and
 private bytes, and rechecks that accepted witness. Historical text never revives the old execution.
 Missing/ambiguous accepted witnesses are unavailable; missing bytes or withdrawn old publications fail
-closed. Legacy Host-created uploads explicitly remain unavailable and no arbitrary path or URL is opened.
+closed. Old production files and pre-subscription uploads explicitly remain unavailable and no arbitrary path or URL is opened.
 No background source is emitted using a guessed instance id or Host provenance. Full C1 remains open.

@@ -155,6 +155,8 @@ export interface ContributionRegistrar<T extends StaticContribution> {
 }
 
 export interface FeatureContext {
+  /** Host installation attribution. This id grants no operation or business authority. */
+  readonly pluginInstanceId: string;
   /** Persist source first, save business mapping, then admit through Host Queue; absent on older carriers. */
   readonly publicInvocations?: PluginPublicInvocationHost;
   /** Exact authenticated source subset; absent on older carriers. */
@@ -504,6 +506,12 @@ export function createFeatureContextSession(
     }),
   } : undefined;
   const context: FeatureContext = {
+    get pluginInstanceId() {
+      assertActive();
+      if (typeof binding.pluginInstanceId !== 'string' || !binding.pluginInstanceId.trim())
+        throw new TypeError('Host installed plugin instance id is unavailable');
+      return binding.pluginInstanceId;
+    },
     ...(publicInvocations ? { publicInvocations } : {}),
     ...(sourceFacts ? { sourceFacts } : {}),
     ...(nativeContext ? { nativeContext } : {}),

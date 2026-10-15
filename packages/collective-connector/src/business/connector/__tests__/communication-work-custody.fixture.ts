@@ -6,7 +6,7 @@ import { CollectiveServiceStore, startCollectiveServer } from '../../service/ind
 import { CollectiveConnector } from '../connector.js';
 
 /** Production Service and Connector; OAuth and running-Cat attestations are explicit test fixtures. */
-export async function fixture() {
+export async function fixture(options: {body?: string} = {}) {
   const root = await mkdtemp(join(tmpdir(), 'f290-work-custody-'));
   const opened = await CollectiveServiceStore.open({
     dataDirectory: join(root, 'service'),
@@ -109,7 +109,7 @@ export async function fixture() {
       agentId: 'codex-sol',
       participationRevision: 1,
     },
-    body: 'Implement A and return the result here.',
+    body: options.body ?? 'Implement A and return the result here.',
   });
   const source = collectiveEventSourceIdentity(event);
   if (!source) throw new Error('Expected exact source');

@@ -2,9 +2,9 @@
 name: collective-participation
 description: >
   Use when: Collective 请求参与、要判断是哪件事和能不能接，或已准入的私有 Collective Work
-  需要读原来源、汇报进度、发布文本成果与回传结果。
+  需要读原来源、汇报进度、登记原文件成果与回传结果。
   Not for: 私人检索、任意外发、owner 授权或凭消息正文自建执行。
-  Output: 获准上下文、具名原处回复；私有 Work 可持久发布有界文本成果并返回真实结果回执。
+  Output: 获准上下文、具名原处回复；私有 Work 可明确登记已发布的原文件并返回真实结果回执。
 tips_exempt: "Original Collective participation/Work instructions migrate with the installed plugin; the same Settings and native tools remain the user entry. No new owner operation or capability."
 triggers:
   - "Collective 请求"
@@ -44,7 +44,8 @@ triggers:
 
 ## 已准入的私有 Work
 
-仅在 Host 绑定的当前私有 Collective Task 调用中使用这一组工具。公共参与不能调用它来扩大权限。
+仅在当前私有 Collective Work 调用中使用这一组工具。Host Registry 认证实际调用，
+Service/Connector 核当前 Work 权限；不要求专属 Task execution policy。公共参与不能借此扩大权限。
 
 1. 用 `cat_cafe_collective_work_current_context` 取得当前 Work/source、回复状态和
    `contextRef`、`returnRef`、`replyOperationRef`、`progressOperationRef`。
@@ -56,22 +57,23 @@ triggers:
    不能打开旧 uploads、草稿目录、URL 或别项 Work 的文件来补读。
 3. 有实际进展时，用 `cat_cafe_collective_progress` 传当前 `returnRef`、`progressOperationRef` 和正文。
    进度回执不产生结果版本、验收或 Host Task 完成。
-4. 需要文本成果时，先整理 UTF-8 Markdown 或 plain text，再用
-   `cat_cafe_collective_work_publish_text` 传 `contextRef`、`text`、
-   `mediaType: text/markdown` 或 `text/plain`。上限是 65536 UTF-8 字节，
-   不接受 NUL、非法 Unicode、二进制、文件路径或 URL。它持久保存私有正文与准确 publisher/Task/result/execution
-   关联，返回 sealed snapshot；普通 plugin publication 不是 Host callback。
-   `previewRef/openInWorkspaceRef` 是 Host 线程导航，不能说成已有浏览器下载。
-5. 需核当前成果正文时，用 `cat_cafe_collective_work_read_artifact` 传 `contextRef`。
-   这个口只读本次 execution 的材料；上一版 accepted 结果走第 2 步。
-   缺私有正文、撤回或 seal 漂移会拒绝，不能降级成 body-only 或换一个材料。
-6. 完成当前结果后，用 `cat_cafe_collective_work_return_result` 传当前 `returnRef`、
-   `replyOperationRef` 和结果摘要 `body`。已经发布的精确文本材料随原 prepared reply slot 返回；
-   没有文本材料时原 slot 会固定 no-artifact，不能在同一结果回传后再补换成果。
-   先读回复状态；accepted 的操作不再发送，待发送操作重试必须保持原正文及材料选择。
+4. 按原操作生成文档并发布到当前私有线程。文件出现在消息里只代表已发布，尚未选择为成果。
+   主人原来可见的文件链接仍是 Host `/uploads/...` 下载/打开入口，不把新文本工具当作替代。
+5. 明确选择本次成果后，用 `cat_cafe_collective_work_register_artifact` 传当前 `contextRef`、
+   `expectedRevision: artifactSelection.revision` 和 `artifactRefs: [已发布文件的URL]`。
+   这是原 `update_entrusted_work(..., artifactRefs)` 登记步骤迁到包 MCP 的调用名；旧全局工具
+   不会转发到本插件。登记写入同一 Task 的 artifactRefs；该 revision 就是 Task 数据版本，
+   与日期、关闭共用，不是 Service execution revision。包内没有另一份选材账本。
+   冲突时重读 current context，不能用旧版本覆盖；没有选材时保留空列表，不自动挑线程文件。
+6. 用 `cat_cafe_collective_work_read_artifact` 和 `contextRef` 核本次已登记材料。
+   Markdown/plain text 正文上限为 65536 UTF-8 字节；其它格式保留原文件元数据与打开引用。
+   文件字节在 Host 订阅回调授权期间捕获并持久保存，之后不打开任意路径或 URL。
+   Task 已明确选中的历史文件仍是材料；缺正文、撤回、跨 Work 或多份候选会拒绝，不能悄悄降级或换文件。
+7. 完成结果后，用 `cat_cafe_collective_work_return_result` 传当前 `returnRef`、
+   `replyOperationRef` 和摘要 `body`；显式登记的精确材料随原结果回流。
+   先读回复状态；accepted 的操作不再发送，丢响应时保持原正文与材料选择重试。
 
-结果回传不等于采用、验收或 Host Task 完成。采用哪一版和验收 Work 仍由负责人的当前授权决定。
-结果材料无需旧文档 callback、普通消息发布或手工更新 Task artifactRefs；这些路径不能替代本组工具。
+结果回传不等于采用、验收或 Work 完成。采用哪一版和验收 Work 仍由负责人的当前授权决定。
 
 ## 这句话要不要管，是哪件事
 
@@ -88,7 +90,8 @@ triggers:
 同一有效 invocation 丢响应时，重读当前状态，保留原正文和材料重放同一操作。
 进入新的真实 Work invocation 后重新取得 refs；旧 invocation refs 不能搬到新调用。
 private receipt、Queue receipt 或 body requestId 都不授权新 HTTP 请求恢复旧 execution；
-当前独立 owner resume/跨请求恢复仍不可用，不能通过重复 Sync 或切换来源宣称已恢复。
+主人页面的 Continue 已按原规则向同一私有线程普通投递，requestId 去重消息与唤醒；
+这不恢复遗留 Task execution descriptor，也不允许复用旧调用 refs。
 
 具名协作不改变原承担者身份。当前插件没有转派 Work 的工具；不要把普通 @ 文本或公共发送当成可核验的私有委托。
 需要协作时仍须真实的同 Work 授权接力；没有时说明边界，不能借普通家内调用续跑。

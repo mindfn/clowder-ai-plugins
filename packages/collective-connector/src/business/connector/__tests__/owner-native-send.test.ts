@@ -13,9 +13,9 @@ async function setup() {
   const f = await fixture(); let expired = false, nativeReads = 0, rosterReads = 0;
   let rows = [{ catId: 'codex-sol', displayName: 'Sol', defaultModel: 'fixture', supported: true },
     { catId: 'other-cat', displayName: 'Other', defaultModel: 'fixture', supported: true }];
-  const host: ModulePluginHostShape = { dataDirectory: f.root,
+  const host: ModulePluginHostShape = { pluginInstanceId: 'installed-instance', dataDirectory: f.root,
     config: { async get() { return undefined; } }, secrets: { async get() { return undefined; } },
-    storage: {} as never, tasks: {} as never, threads: {} as never, media: {} as never, messaging: {} as never, log() {},
+    storage: {} as never, tasks: {listByKind: async () => []} as never, threads: {} as never, media: {} as never, messaging: {} as never, log() {},
     participantRoster: { async listForNativeContribution() { rosterReads++; return structuredClone(rows); } },
     nativeContext: { async current() { nativeReads++; throw new Error('Owner calls have no public plugin source'); } },
     ownerThreads: { async get(id) { return { id, createdBy: 'local-owner', participants: ['codex-sol'] }; }, async create() { throw new Error('Unused'); }, async addParticipants() { throw new Error('Unused'); } },

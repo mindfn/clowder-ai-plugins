@@ -16,7 +16,12 @@ interface PublicSourceCallerOptions {
   readonly messaging: FeatureContext['messaging'];
   readonly nativeContext: PluginNativeContextHost;
   readonly ownerThreads: PluginOwnerThreadHost;
+  readonly moduleThreads?: Pick<FeatureContext['threads'], 'get' | 'getCats'>;
 }
+type SourceCaller = PluginOwnerOperationContext | {
+  readonly kind: 'module'; readonly userId: string; readonly pluginInstanceId: string;
+  readonly signal: AbortSignal; assertCurrent(): Promise<void>;
+};
 const changed = () => participationError('PUBLIC_SOURCE_CHANGED', 'Exact public source or native invocation changed');
 
 /** Ordinary exact-agent send/wake bridge. Work/reconsideration and channel-selection retain their original consumers. */
@@ -50,8 +55,8 @@ export function createCollectivePublicSourceCaller(options: PublicSourceCallerOp
   };
   return Object.freeze({
     publicInvocationVerifier,
-    async admitAgentEvent(connectionId: string, eventId: string, owner: PluginOwnerOperationContext) {
-      if (owner.kind !== 'owner-operation') throw changed();
+    async admitAgentEvent(connectionId: string, eventId: string, owner: SourceCaller) {
+      if (owner.kind !== 'owner-operation' && owner.kind !== 'module') throw changed();
       const current = async () => { owner.signal.throwIfAborted(); await owner.assertCurrent(); owner.signal.throwIfAborted(); };
       await current();
       return options.connector.withInboxRoutingAuthority(connectionId, eventId, async (route, item) => {
@@ -68,8 +73,15 @@ export function createCollectivePublicSourceCaller(options: PublicSourceCallerOp
         const destination = resolveMaterializedParticipation(route, item.event.target.humanId, source.catId, source.location.channelId);
         if (!destination) throw changed();
         await options.connector.readParticipationContext(source, 0, 1); await current();
-        const thread = await options.ownerThreads.get(destination.threadId); await current();
-        if (!thread || thread.createdBy !== owner.userId || !thread.participants.includes(source.catId)) throw changed();
+        if (owner.kind === 'module') {
+          if (!options.moduleThreads) throw changed();
+          const thread = await options.moduleThreads.get(destination.threadId);
+          const cats = await options.moduleThreads.getCats(destination.threadId);await current();
+          if (!thread || !cats.participants.some(cat => cat.catId === source.catId)) throw changed();
+        } else {
+          const thread = await options.ownerThreads.get(destination.threadId);await current();
+          if (!thread || thread.createdBy !== owner.userId || !thread.participants.includes(source.catId)) throw changed();
+        }
         if (item.disposition === 'routed' && item.publicSource && item.routeReceipt?.kind === 'thread_message') {
           const existing = options.connector.readCurrentPublicSource(item.publicSource.messageRef);
           if (existing.pluginInstanceId !== owner.pluginInstanceId || !isActiveNativeScope(existing.native) ||

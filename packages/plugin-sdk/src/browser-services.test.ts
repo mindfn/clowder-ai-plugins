@@ -22,7 +22,7 @@ const manifest = {
   ],
 };
 function fixtureHost(): ModulePluginHostShape {
-  return { config: { async get() {} }, secrets: { async get() { return undefined; } }, storage: {} as never, tasks: {} as never,
+  return { pluginInstanceId: 'installed-browser-fixture', config: { async get() {} }, secrets: { async get() { return undefined; } }, storage: {} as never, tasks: {} as never,
     threads: {} as never, messaging: {} as never, media: {} as never, log() {}, browserServices: {
       async getBinding(id) { return { contributionId: id, origin: 'http://127.0.0.1:5271', parentOrigin: 'http://localhost:5172',
         clientBuildId: 'fixture', assetDigest: 'a'.repeat(64), limits: BROWSER_SERVICE_LIMITS, async assertCurrent() {} }; },

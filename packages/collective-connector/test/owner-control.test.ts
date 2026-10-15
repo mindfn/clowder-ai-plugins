@@ -8,9 +8,9 @@ import { parse } from 'yaml';
 import entrypoint from '../src/plugin-entrypoint.js';
 import { createOwnerControlHttp } from '../src/owner-control-http.js';
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
-const fixtureHost = (directory: string): ModulePluginHostShape => ({ dataDirectory: directory,
+const fixtureHost = (directory: string): ModulePluginHostShape => ({ pluginInstanceId: 'installed-instance', dataDirectory: directory,
   config: { async get() { throw new Error('Unused configuration read'); } }, secrets: { async get() { return undefined; } },
-  storage: {} as never, tasks: {} as never, threads: {} as never, media: {} as never, messaging: {} as never, log() {},
+  storage: {} as never, tasks: {listByKind: async () => []} as never, threads: {} as never, media: {} as never, messaging: {} as never, log() {},
   participantRoster: { async listForNativeContribution() { return []; } },
     nativeContext: { async current() { throw new Error('No native invocation'); } },
     publicInvocations: { async enqueue() { throw new Error('Unused admission port'); } },

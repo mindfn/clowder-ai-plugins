@@ -21,7 +21,7 @@ export async function activateCollectivePublicNative(context: FeatureContext, co
   const sourceCaller = createCollectivePublicSourceCaller({ connector,
     native: { contributionId: COLLECTIVE_NATIVE_ID, methods: COLLECTIVE_PUBLIC_METHODS },
     messaging: context.messaging,
-    nativeContext: context.nativeContext, ownerThreads: context.ownerThreads, reconsideration });
+    nativeContext: context.nativeContext, ownerThreads: context.ownerThreads, moduleThreads: context.threads, reconsideration });
   const inputOf = <T>(value: unknown, schema: z.ZodType<T>) => schema.parse(z.object({ input: z.unknown() }).strict().parse(value).input);
   const list: PluginActionHandler = async (input, native, caller) => {
     if (native || caller?.kind !== 'owner-operation') throw new Error('Collective connections require the authenticated owner operation');
@@ -63,5 +63,17 @@ export async function activateCollectivePublicNative(context: FeatureContext, co
     ], { empty: 'No pending named requests' });
   };
   return { reconsideration, publicInvocationVerifier: sourceCaller.publicInvocationVerifier,
+    async syncModule(connectionId: string, current: () => Promise<void>, signal: AbortSignal) {
+      const route = await connector.getHostRoute(connectionId);await current();
+      if (!route) return;
+      for (const item of await connector.listInbox(connectionId)) {
+        await current();
+        const event = item.event;
+        if (item.disposition === 'routed' || !collectiveEventSourceIdentity(event) || event.target.kind !== 'agent' ||
+          event.workRequest || event.workAcceptanceNotice || event.workExecutionNotice || event.workRevisionNotice) continue;
+        await sourceCaller.admitAgentEvent(connectionId, event.eventId, {kind: 'module', userId: route.localOwnerUserId,
+          pluginInstanceId: context.pluginInstanceId, signal, assertCurrent: current});
+      }
+    },
     actions: { ...createCollectivePublicNativeActions({ connector, sourceCaller, references }), 'collective.owner.sync': sync, 'collective.owner.connections': list } };
 }

@@ -1,4 +1,4 @@
-import type { PluginTaskEntrustedWorkSummary, PluginTaskReadItem, PluginTaskWait } from './module-host.js';
+import type { PluginTaskEntrustedWorkSummary, PluginTaskReadItem, PluginTaskWait, PluginTaskWorkTime } from './module-host.js';
 
 function invalid(field: string): never { throw new TypeError(`Task read projection has invalid ${field}`); }
 function record(value: unknown, field: string): Record<string, unknown> {
@@ -35,7 +35,19 @@ function workSummary(value: unknown): PluginTaskEntrustedWorkSummary {
   const admission = record(work.admission, 'entrustedWork.admission');
   const state = text(closure.state, 'entrustedWork.closure.state');
   if (!state || !Array.isArray(admission.sourceRefs)) invalid('entrustedWork');
-  return { revision, closure: { state }, admission: {
+  const time = work.time === undefined ? undefined : record(work.time, 'entrustedWork.time');
+  const projectedTime: PluginTaskWorkTime = Object.fromEntries(
+    (['businessDeadline', 'reviewBy', 'plannedStart', 'actualStart', 'estimatedCompletion'] as const).flatMap(key => {
+      if (time?.[key] === undefined) return [];
+      const fact = record(time[key], `entrustedWork.time.${key}`);
+      const value = number(fact.value, `entrustedWork.time.${key}.value`);
+      return [[key, {value, sourceRef: text(fact.sourceRef, `entrustedWork.time.${key}.sourceRef`)}]];
+    }),
+  );
+  if (work.artifactRefs !== undefined && !Array.isArray(work.artifactRefs)) invalid('entrustedWork.artifactRefs');
+  return { revision, ...(time === undefined ? {} : {time: projectedTime}),
+    ...(work.artifactRefs === undefined ? {} : {artifactRefs: (work.artifactRefs as unknown[]).map(ref => text(ref, 'entrustedWork.artifactRefs'))}),
+    closure: { state }, admission: {
     sourceRefs: admission.sourceRefs.map(ref => text(ref, 'entrustedWork.admission.sourceRefs')),
   } };
 }

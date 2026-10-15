@@ -99,9 +99,10 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
         !("firstSourceMessageId" in captured) || captured.firstSourceMessageId !== bootstrap.source.id ||
         !isDeepStrictEqual(bootstrap.binding, captured.binding))) throw changed();
       await action.assertCurrent();
-      const workId = bootstrap || first.source.actor.kind === "human" ? captured?.work.workId : notice?.workId;
+      const businessSource = bootstrap ? captured!.source.identity : first.source;
+      const workId = bootstrap || businessSource.actor.kind === "human" ? captured?.work.workId : notice?.workId;
       if (!workId || (options.firstReceipts && (!captured?.binding || captured.work.workId !== workId)) ||
-        (first.source.actor.kind === "human" && (!captured ||
+        (businessSource.actor.kind === "human" && (!captured ||
           (captured.basis.kind === "manual_owner_write" && (!("pluginInstanceId" in captured) ||
             captured.pluginInstanceId !== first.auth.source.extra.pluginMessage.instanceId)) ||
           (captured.basis.kind === "standing_grant" && captured.basis.producer !== "standing_work")))) throw changed();
@@ -216,8 +217,7 @@ export function createCollectiveAgentWorkContextCaller(options: Options) {
                 captured.firstSourceMessageId !== firstReceipt.messageId || source.actor.kind !== "agent") throw changed();
               const root = await readWorkLineageReceipt(ports.storage, auth.userId, captured.firstSourceMessageId, auth.catId);
               const rootMessage = await ports.messaging.get(captured.firstSourceMessageId); await action.assertCurrent();
-              if (!root?.binding || (!isBootstrapWorkLineage(root) &&
-                  (root.basis.kind !== "standing_grant" || root.basis.producer !== "registered_work")) ||
+              if (!root?.binding ||
                 root.work.workId !== work.workId || root.work.assignmentEventId !== work.assignmentEventId ||
                 root.binding.taskRef !== auth.task.taskRef || root.binding.threadId !== auth.threadId ||
                 root.binding.admissionRef !== auth.task.admissionRef || !rootMessage || rootMessage.userId !== auth.userId ||

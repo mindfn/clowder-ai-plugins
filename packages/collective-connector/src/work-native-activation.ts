@@ -1,24 +1,21 @@
-import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import type { FeatureContext, FeatureActivation, PluginActionHandler, PluginOwnerHttpContext, PluginOwnerOperationContext } from '@clowder-ai/plugin-sdk';
 import { rowsResult, operationRowAction } from '@clowder-ai/plugin-sdk';
 import type { CollectiveConnector } from './business/connector/connector.js';
 import { collectiveEventSourceIdentity } from './business/contracts/index.js';
-import { resolveMaterializedParticipation } from './business/connector/participation-custody.js';
-import { collectiveSource, ingressIdempotencyKey, assertSettledCollectiveSource } from './collective-ingress-routing.js';
-import { createCollectiveAgentWorkContextCaller } from './agent-work-context-caller.js';
-import { createCollectiveWorkAdmissionCaller } from './collective-work-admission-caller.js';
-import { createCollectiveOwnerWorkCaller } from './owner-work-manual-caller.js';
-import { createCollectiveWorkArtifacts } from './collective-work-artifacts.js';
-import { readPreviousCollectiveWorkArtifact } from './collective-work-history.js';
-import { publishCollectiveProgress } from './owner-work-progress.js';
 import { openCollectiveContextReferences, collectiveContextError } from './collective-context-refs.js';
-import { COLLECTIVE_WORK_NATIVE_ID, collectiveWorkNativeTools } from './work-native-methods.js';
+import { collectiveWorkNativeTools } from './work-native-methods.js';
+import {createCollectiveMessageWorkCaller} from './collective-message-work.js';
+import {reconcileCollectiveMessageWorkResult, resumeCollectiveMessageWork, admitCollectiveMessageWork} from './collective-owner-work-result.js';
+import {createCollectiveMessageWorkActions} from './collective-message-work-actions.js';
+import {createCollectiveMessageWorkMaterials, WORK_MATERIAL_RECEIVER} from './collective-message-work-materials.js';
+import {createCollectiveMessageWorkArtifacts} from './collective-message-work-artifacts.js';
 
 interface Backend {
   readonly connector: CollectiveConnector;
   readonly parentOrigin: string;
   assertActive(): void;
+  startBackground(workSync: (connectionId: string, current: () => Promise<void>) => Promise<void>): void;
 }
 const requestSchema = z.object({request: z.object({method: z.literal('POST'), path: z.string().min(1).max(512),
   headers: z.record(z.union([z.string(), z.array(z.string()), z.undefined()])).default({}),
@@ -28,103 +25,29 @@ const syncSchema = z.object({connectionId: z.string().min(1).max(240)}).strict()
 
 /** One declared private Work feature consumes original callers. Its actions use
  * its own grants/lifetime; sharing the backend Connector does not share owner
- * or native authority. No timers, source identity guesses or Task CRUD grants. */
+ * or native authority. The original Task lifecycle keeps UI data; it does not issue an execution identity. */
 export async function activateCollectiveWork(context: FeatureContext, backend: Backend): Promise<FeatureActivation> {
   let live = true;
   const assertActive = () => {if (!live) throw new Error('Collective Work is stopped');void context.dataDirectory;backend.assertActive();};
   assertActive();
-  if (!context.nativeContext) throw new Error('Collective Work requires authenticated Task native context');
+  if (!context.nativeContext) throw new Error('Collective Work requires authenticated native context');
   const {connector} = backend;
   const refs = await openCollectiveContextReferences(context.dataDirectory, assertActive);
-  const reader = createCollectiveAgentWorkContextCaller({connector, context,
-    firstReceipts: {storage: context.storage, messaging: context.messaging}});
-  const artifacts = createCollectiveWorkArtifacts(context);
-  type WorkBinding = Parameters<Parameters<typeof reader.withCurrentTask>[1]>[0];
-  const identityOf = (binding: WorkBinding) => ({pluginInstanceId: binding.auth.source.extra.pluginMessage.instanceId,
-    invocationId: binding.auth.invocationId});
-  const current = async (binding: WorkBinding) => {assertActive();await binding.revalidate();assertActive();};
-  const nativeHandler = <T>(method: string, schema: z.ZodType<T>, consume: (binding: WorkBinding, input: T) => Promise<unknown>): PluginActionHandler =>
-    async (unsafe, action, caller) => {
-      assertActive();
-      if (!action || caller || action.toolExecutionPolicy?.mode !== 'plugin_native' ||
-        action.toolExecutionPolicy.contributionId !== COLLECTIVE_WORK_NATIVE_ID ||
-        !Array.isArray(action.toolExecutionPolicy.actionMethods) || !action.toolExecutionPolicy.actionMethods.includes(method))
-        throw collectiveContextError('NOT_COLLECTIVE_ORIGIN', 'This action requires the authenticated private Work invocation');
-      const input = schema.parse(unsafe ?? {});
-      return reader.withCurrentTask(action, async binding => {
-        await current(binding);const result = await consume(binding, input);await current(binding);return result;
-      });
-    };
-  const prepareReply = (binding: WorkBinding) => connector.prepareReply(binding.source, binding.sourceRef, binding.resultKey,
-    binding.work.revision, binding.work.resultRevision,
-    {revision: binding.work.executionRevision, assignmentEventId: binding.work.assignmentEventId});
-  const currentReply = async (binding: WorkBinding) => {
-    await current(binding);let operation = await prepareReply(binding);await current(binding);
-    if (operation.status === 'queued' || operation.status === 'sending') {
-      await connector.sync(binding.source.connectionId);await current(binding);
-      operation = await prepareReply(binding);await current(binding);
-    }
-      const source = await connector.readParticipationContext(binding.source, 0, 1);await current(binding);
-      const identity = identityOf(binding);
-      return {replyOperationRef: refs.opaqueRef(identity, `reply:${operation.outboxId}`, binding.refScope),
-        reply: {status: operation.status, ...(operation.status !== 'prepared' ? {body: operation.body, author: operation.agent} : {}),
-          ...(operation.acceptedEventId ? {eventId: operation.acceptedEventId} : {}),
-          ...(operation.failureCode ? {code: operation.failureCode} : {})}, kind: 'collective', authority: 'owner_admitted_work', actor: binding.source.actor,
-        location: binding.source.location, participant: binding.displayName, request: source.source,
-        workRef: {subjectRef: binding.auth.task.taskRef, revision: binding.work.revision},
-        contextRef: refs.opaqueRef(identity, 'context', binding.refScope),
-        returnRef: refs.opaqueRef(identity, 'return', binding.refScope),
-        progressOperationRef: refs.opaqueRef(identity, 'progress', binding.refScope)};
-  };
+  const materials = createCollectiveMessageWorkMaterials(connector, context, assertActive);
+  await materials.restore();
+  const messageCaller = createCollectiveMessageWorkCaller(connector, context, {beforeWake: materials.subscribe});
+  const messageArtifacts = createCollectiveMessageWorkArtifacts(context, materials);
+  const messageAction = createCollectiveMessageWorkActions(connector, messageCaller, refs, messageArtifacts);
   const handlers: Record<string, PluginActionHandler> = {
-    'collective.work.context.current': nativeHandler('collective.work.context.current', collectiveWorkNativeTools[0].schema, currentReply),
-    'collective.work.context.read': nativeHandler('collective.work.context.read', collectiveWorkNativeTools[1].schema, async (binding, input) => {
-      refs.verifyRef(identityOf(binding), input.contextRef, 'context', binding.refScope);await current(binding);
-      const source = await connector.readParticipationContext(binding.source, input.afterSequence ?? 0, input.limit ?? 30);await current(binding);
-      const previousResultArtifact = await readPreviousCollectiveWorkArtifact(connector, binding, artifacts);await current(binding);
-      return {...source, ...(previousResultArtifact ? {previousResultArtifact} : {})};
-    }),
-    'collective.work.progress': nativeHandler('collective.work.progress', collectiveWorkNativeTools[2].schema, async (binding, input) => {
-      const identity = identityOf(binding);
-      refs.verifyRef(identity, input.returnRef, 'return', binding.refScope);
-      refs.verifyRef(identity, input.progressOperationRef, 'progress', binding.refScope);await current(binding);
-      return publishCollectiveProgress(connector, binding.auth, binding, input.body);
-    }),
-    'collective.work.artifact.publish-text': nativeHandler('collective.work.artifact.publish-text', collectiveWorkNativeTools[3].schema, async (binding, input) => {
-      refs.verifyRef(identityOf(binding), input.contextRef, 'context', binding.refScope);await current(binding);
-      const operation = await prepareReply(binding);await current(binding);
-      if (operation.workPurpose?.artifactSnapshot) {
-        const selected = await artifacts.readCurrent(binding);await current(binding);
-        if (!selected || !isDeepStrictEqual(selected.snapshot, operation.workPurpose.artifactSnapshot))
-          throw collectiveContextError('WORK_ARTIFACT_UNAVAILABLE', 'Selected private artifact is unavailable');
-      } else if (operation.status !== 'prepared')
-        throw collectiveContextError('WORK_ARTIFACT_UNAVAILABLE', 'This result already selected no artifact');
-      const snapshot = await artifacts.publishText(binding, {text: input.text, mediaType: input.mediaType});await current(binding);
-      await connector.stageReplyArtifact(binding.source, binding.sourceRef, binding.resultKey, operation.outboxId,
-        {catId: binding.auth.catId, agentId: binding.auth.catId, displayName: binding.displayName, sessionRef: binding.auth.invocationId},
-        snapshot, binding.work.revision, binding.work.resultRevision,
-        {revision: binding.work.executionRevision, assignmentEventId: binding.work.assignmentEventId});
-      await current(binding);return snapshot;
-    }),
-    'collective.work.artifact.read': nativeHandler('collective.work.artifact.read', collectiveWorkNativeTools[4].schema, async (binding, input) => {
-      refs.verifyRef(identityOf(binding), input.contextRef, 'context', binding.refScope);await current(binding);
-      const artifact = await artifacts.readCurrent(binding);await current(binding);
-      return artifact ? {state: 'available', ...artifact, trust: 'untrusted_external', sourceTrust: 'unknown', instructionPolicy: 'data_only'}
-        : {state: 'unavailable', code: 'UNSEALED_ARTIFACT'};
-    }),
-    'collective.work.reply.submit': nativeHandler('collective.work.reply.submit', collectiveWorkNativeTools[5].schema, async (binding, input) => {
-      const operation = await prepareReply(binding);await current(binding);
-      const identity = identityOf(binding);
-      refs.verifyRef(identity, input.returnRef, 'return', binding.refScope);
-      refs.verifyRef(identity, input.replyOperationRef, `reply:${operation.outboxId}`, binding.refScope);await current(binding);
-      const artifact = await artifacts.selectForReturn(binding, operation.workPurpose?.artifactSnapshot);await current(binding);
-      await connector.submitReply(binding.source, binding.sourceRef, binding.resultKey, operation.outboxId, input.body,
-        {catId: binding.auth.catId, agentId: binding.auth.catId, displayName: binding.displayName, sessionRef: binding.auth.invocationId},
-        artifact?.snapshot, binding.work.resultRevision,
-        {revision: binding.work.executionRevision, assignmentEventId: binding.work.assignmentEventId});
-      await current(binding);await connector.sync(binding.source.connectionId);await current(binding);
-      return currentReply(binding);
-    }),
+    [WORK_MATERIAL_RECEIVER]: async (input) => {assertActive();await materials.receive(input);assertActive();},
+  };
+  for (const tool of collectiveWorkNativeTools) handlers[tool.method] = async (unsafe, action, caller) => {
+    assertActive();
+    if (!action || caller)
+      throw collectiveContextError('NOT_COLLECTIVE_ORIGIN', 'This action requires the authenticated private Work invocation');
+    await action.assertCurrent();assertActive();
+    const result = await messageAction(tool.method, unsafe, action);
+    assertActive();await action.assertCurrent();return result;
   };
   handlers['collective.work.control.http'] = async (unsafe, native, caller) => {
     assertActive();
@@ -137,20 +60,26 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
       throw new Error('Authenticated owner Work webhook required');
     const current = async () => {assertActive();owner.signal.throwIfAborted();await owner.assertCurrent();assertActive();};
     await current();
-    const match = /^connections\/([A-Za-z0-9_-]{1,240})\/work\/(admit|resume)$/.exec(request.path);
+    const match = /^connections\/([A-Za-z0-9_-]{1,240})\/work\/(admit|resume|result\/accepted)$/.exec(request.path);
     if (!match) return {status: 404, headers: {'content-type': 'application/json'}, body: {code: 'OWNER_CONTROL_NOT_FOUND'}};
-    const ownerCaller = createCollectiveOwnerWorkCaller({current, ports: {pluginInstanceId: owner.pluginInstanceId,
-      connector, storage: context.storage, messaging: context.messaging, tasks: context.tasks, threads: context.threads}});
     try {
+      if (match[2] === 'result/accepted') {
+        const result = await reconcileCollectiveMessageWorkResult(connector, context, owner.userId, match[1]!, request.body, current);
+        await current();
+        return {status: result.result === 'not_admitted' ? 202 : result.result === 'terminal_unchanged' ? 409 : 200,
+          headers: {'content-type': 'application/json'}, body: result.result === 'terminal_unchanged'
+            ? {code: 'COLLECTIVE_RESULT_TERMINAL_CONFLICT', ...result} : result};
+      }
       const result = match[2] === 'admit'
-        ? await ownerCaller.admit(owner.userId, match[1]!, request.body, owner)
-        : await ownerCaller.resume(owner.userId, match[1]!, request.body);
-      await current();return {status: 200, headers: {'content-type': 'application/json'}, body: result};
+        ? await admitCollectiveMessageWork(connector, context, messageCaller, owner, match[1]!, request.body, current)
+        : await resumeCollectiveMessageWork(connector, context, messageCaller, owner.userId, match[1]!, request.body, current);
+      await current();return {status: 'result' in result && result.result === 'needs_clarification' ? 422 : 200,
+        headers: {'content-type': 'application/json'}, body: result};
     } catch (error) {
       await current();
-      if (error instanceof z.ZodError) return {status: 400, headers: {'content-type': 'application/json'}, body: {code: 'INVALID_OWNER_WORK_REQUEST'}};
+      if (error instanceof z.ZodError) return {status: 400, headers: {'content-type': 'application/json'}, body: {code: match[2] === 'result/accepted' ? 'INVALID_COLLECTIVE_RESULT' : 'INVALID_OWNER_WORK_REQUEST'}};
       const code = error && typeof error === 'object' && 'code' in error ? error.code : 'OWNER_ADMISSION_UNAVAILABLE';
-      return {status: 409, headers: {'content-type': 'application/json'}, body: {code, error: error instanceof Error ? error.message.slice(0, 500) : 'Work admission unavailable'}};
+      return {status: code === 'CONNECTOR_OWNER_MISMATCH' ? 403 : 409, headers: {'content-type': 'application/json'}, body: {code, error: error instanceof Error ? error.message.slice(0, 500) : 'Work admission unavailable'}};
     }
   };
   const ownerOperation = (caller: unknown): PluginOwnerOperationContext => {
@@ -183,48 +112,25 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
       if (!identity || !['entrust', 'continue'].includes(String(item.event.workRequest))) continue;
       await current();
       try {
-        const receipt = await connector.withInboxRoutingAuthority(input.connectionId, item.event.eventId, async (currentRoute, currentItem) => {
-          await current();
-          if (currentRoute.localOwnerUserId !== owner.userId) throw new Error('Connection belongs to another owner');
-          const connection = await connector.getProjection(input.connectionId);
-          const destination = resolveMaterializedParticipation(currentRoute, connection.authorizedHumanId ?? '', identity.catId, identity.location.channelId);
-          if (!destination) throw new Error('Work source route is unavailable');
-          if (currentItem.routeReceipt?.kind === 'thread_message') return currentItem.routeReceipt;
-          await connector.readParticipationContext(identity, 0, 1);await current();
-          await connector.beginInboxRouting(input.connectionId, item.event.eventId, currentRoute.revision);await current();
-          const projected = collectiveSource(currentItem.event, identity);
-          const sent = await context.messaging.send(destination.threadId, {idempotencyKey: ingressIdempotencyKey(currentItem.event),
-            identity: 'collective', sender: projected.sender, meta: projected.meta,
-            payload: {provenance: {origin: {kind: 'plugin', instanceId: owner.pluginInstanceId}, epistemicStatus: 'observation'},
-              elements: [{elementId: 'collective-source', kind: 'text', payload: {text: currentItem.event.body}}]}});
-          if (sent.threadId !== destination.threadId) {
-            if (currentItem.disposition !== 'routing' || !context.messaging.get) throw new Error('Work source destination changed');
-            assertSettledCollectiveSource(await context.messaging.get(sent.messageId), sent, currentItem.event, identity, owner.userId);
-          }
-          const recorded = {kind: 'thread_message' as const, messageId: sent.messageId, threadId: sent.threadId, catId: identity.catId};
-          // Record the returned durable effect before testing a late owner result.
-          await connector.completeInboxRouting(input.connectionId, item.event.eventId, currentRoute.revision, recorded);
-          await current();return recorded;
-        });
-        const work = item.event.workRequest === 'continue' && item.event.workExecutionNotice
-          ? await connector.readAssignedWork(input.connectionId, item.event.workExecutionNotice.workId)
-          : await connector.readAssignedWorkByAssignment(input.connectionId, item.event.eventId);await current();
-        if (item.event.workRequest === 'entrust' && (work.executionAuthority?.revision ?? 1) > 1) {
-          rows.push({key: item.event.eventId, label: 'Previous Work execution',
-            detail: 'The first admission is preserved. Only the current Service execution notice may continue this task.'});
-          continue;
-        }
-        const result = await createCollectiveWorkAdmissionCaller({connector, tasks: context.tasks, threads: context.threads,
-          firstReceipts: {storage: context.storage, messaging: context.messaging}, assertCurrent: current})
-          .admit({ownerUserId: owner.userId, identity, sourceMessageId: receipt.messageId, workId: work.workId,
-            destination: {kind: 'derived_from_source'}});
-        await current();rows.push({key: item.event.eventId, label: result.result === 'needs_clarification' ? 'Owner clarification required' : 'Work admitted',
-          detail: result.result === 'needs_clarification' ? 'Clarify the missing admission information before retrying.' : 'The original private task was admitted. This does not mark the Work complete.'});
+        const sent = await messageCaller.send(input.connectionId, item.event.eventId, owner.userId, current);
+        rows.push({key: item.event.eventId, label: 'Work sent', detail: `Message ${sent.messageId} sent to the original Cat thread.`});
       } catch (error) {
         await current();rows.push({key: item.event.eventId, label: 'Private execution unavailable', detail: error instanceof Error ? error.message.slice(0, 500) : 'Current Work is unavailable'});
       }
     }
     return rowsResult(rows, {empty: 'No committed Work sources or current execution notices'});
   };
-  return {actions: handlers, dispose() {live = false;}};
+  backend.startBackground(async (connectionId, current) => {
+    assertActive();
+    const route = await connector.getHostRoute(connectionId);await current();
+    if (!route) return;
+    for (const item of await connector.listInbox(connectionId)) {
+      const source = collectiveEventSourceIdentity(item.event);
+      if (!source || !['entrust', 'continue'].includes(String(item.event.workRequest))) continue;
+      assertActive();await current();
+      try {await messageCaller.send(connectionId, item.event.eventId, route.localOwnerUserId, current);}
+      catch {assertActive();await current();}
+    }
+  });
+  return {actions: handlers, async dispose() {live = false;await materials.dispose();}};
 }

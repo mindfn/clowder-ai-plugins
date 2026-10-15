@@ -7,6 +7,43 @@ import { fixture } from './communication-work-custody.fixture.js';
 import { ownerRequestExecution } from '../../../collective-owner-request-progress.js';
 
 const manifest = parse(await readFile(new URL('../../../../plugin.yaml', import.meta.url), 'utf8'));
+
+test('original owner page shows ordinary Work in its private thread and accepted closure', async () => {
+  const f = await setup();
+  try {
+    await f.connector.adoptWorkPolicy(f.connection.connectionId, 'local-owner', f.policy.revision);
+    const work = await f.connector.acceptWork(f.source, f.agent, f.input);
+    await f.connector.sync(f.connection.connectionId);
+    const route = (await f.connector.getHostRoute(f.connection.connectionId))!;
+    await f.connector.beginInboxRouting(f.connection.connectionId, work.assignmentEventId!, route.revision);
+    await f.connector.completeInboxRouting(f.connection.connectionId, work.assignmentEventId!, route.revision,
+      {kind: 'thread_message', messageId: 'ordinary-assignment', threadId: 'channel', catId: 'codex-sol'});
+    f.rows.push({id: 'private-work', title: 'Original private Work', createdBy: 'local-owner', participants: ['codex-sol']});
+    const task: PluginTaskReadItem = {id: 'ordinary-task', kind: 'work', title: work.title, why: work.intendedOutcome,
+      subjectKey: `collective-work:${f.connection.connectionId}:${work.workId}`, threadId: 'private-work',
+      ownerCatId: 'codex-sol', userId: null, createdBy: 'system', status: 'doing', createdAt: 1, updatedAt: 7};
+    f.tasks.push(task, {...task, id: 'wrong-cat', ownerCatId: 'other-cat'});
+    // A second Connector instance seeded the event; reopen the module to load
+    // its persisted inbox, just as the existing restart fixtures do.
+    await f.restart();
+    expect(f.subscriptions.has('private-work')).toBe(true);
+    const result = await f.invoke() as {status: number; body: {tasks: unknown[]}};
+    expect(result.status).toBe(200);
+    expect(result.body.tasks).toContainEqual({id: task.id, title: task.title, threadId: 'private-work', status: 'doing',
+      revision: 7, closure: 'open', sourceRefs: ['message:ordinary-assignment']});
+    expect(result.body.tasks).not.toContainEqual(expect.objectContaining({id: 'wrong-cat'}));
+    f.tasks[f.tasks.indexOf(task)] = {...task, status: 'done', updatedAt: 8};
+    const closed = await f.invoke() as {status: number; body: {tasks: unknown[]}};
+    expect(closed.body.tasks).toContainEqual(expect.objectContaining({id: task.id, closure: 'satisfied', revision: 8}));
+  } finally {await f.close();}
+});
+
+test('the original browser accepted-result operation has an owner webhook declaration', () => {
+  const declaration = manifest.contributions.find((c: {path?: string}) => c.path === 'connections/:connectionId/work/result/accepted');
+  expect(declaration).toMatchObject({type: 'webhook', methods: ['POST'], action: {method: 'collective.work.control.http'}});
+  expect(manifest.features.find((f: {id: string}) => f.id === 'collective-work').contributions)
+    .toContainEqual({type: 'webhook', id: declaration.id});
+});
 async function setup(taskHost?: ModulePluginHostShape['tasks'], sourceFactory?: (f: Awaited<ReturnType<typeof fixture>>,
   current: () => Promise<void>) => Promise<{ messageId: string; port: NonNullable<ModulePluginHostShape['sourceFacts']> }>) {
   const f = await fixture(); let stale = false, reads = 0, bodyReads = 0;
@@ -22,6 +59,7 @@ async function setup(taskHost?: ModulePluginHostShape['tasks'], sourceFactory?: 
     { kind: 'thread_message', messageId: sourceMessageId, threadId: 'channel', catId: 'codex-sol' });
   const rows = [{ id: 'channel', title: 'Owner channel', createdBy: 'local-owner', participants: ['codex-sol'] },
     { id: 'foreign', title: 'Foreign private', createdBy: 'foreign-owner', participants: ['codex-sol'] }];
+  const subscriptions = new Set<string>();
   const unused = async (): Promise<never> => { throw new Error('Read must not invoke an unrelated Host port'); };
   const base: PluginTaskReadItem = { id: 'owned-task', title: 'Original entrusted work', threadId: 'channel',
     kind: 'work', subjectKey: null, status: 'doing', ownerCatId: null, why: '', createdBy: 'local-owner',
@@ -30,8 +68,10 @@ async function setup(taskHost?: ModulePluginHostShape['tasks'], sourceFactory?: 
   const tasks: PluginTaskReadItem[] = [base, { ...base, id: 'foreign-task', userId: 'foreign-owner' },
     { ...base, id: 'unrelated-task', entrustedWork: { ...base.entrustedWork!, admission: { sourceRefs: ['message:other'] } } },
     { ...base, id: 'legacy-unowned-task', userId: null }];
-  const host: ModulePluginHostShape = { dataDirectory: f.root, config: { async get() {} }, secrets: { async get() { return undefined; } }, storage: { get: unused, list: unused, set: unused, compareAndSet: unused, delete: unused },
-    media: { read: unused }, messaging: { send: unused, subscribe: unused, unsubscribe: unused }, log() {},
+  const host: ModulePluginHostShape = { pluginInstanceId: 'installed-instance', dataDirectory: f.root, config: { async get() {} }, secrets: { async get() { return undefined; } }, storage: { get: unused, list: unused, set: unused, compareAndSet: unused, delete: unused },
+    media: { read: unused }, messaging: { send: unused,
+      async subscribe({threadId}) {expect(rows.find(row => row.id === threadId)?.createdBy).toBe('local-owner');subscriptions.add(threadId);},
+      async unsubscribe({threadId}) {subscriptions.delete(threadId);}}, log() {},
     tasks: taskHost ?? { get: unused, listByThread: unused, getBySubject: unused, create: unused, upsertBySubject: unused,
       update: unused, updateIfThreadId: unused, setWait: unused,
       async listByKind(kind) { await current(); expect(kind).toBe('work'); reads++; return tasks; } },
@@ -54,8 +94,11 @@ async function setup(taskHost?: ModulePluginHostShape['tasks'], sourceFactory?: 
     browserServices: { async getBinding(id: string) { return { contributionId: id, origin: 'http://127.0.0.1:5271', parentOrigin: 'http://localhost:5172',
       clientBuildId: 'collective-client-v2', assetDigest: 'a'.repeat(64), limits: BROWSER_SERVICE_LIMITS, assertCurrent: current }; },
       async dispatchLocal() { throw new Error('Unused'); } } };
-  const active = await entrypoint.create(manifest).start(host);
-  return { ...f, active, tasks, rows, get reads() { return reads; }, get bodyReads() { return bodyReads; }, setProgress(queue: typeof progressQueue) { progressQueue = queue; }, expire() { stale = true; },
+  let active = await entrypoint.create(manifest).start(host);
+  // Work activation restores subscriptions with a permitted metadata read.
+  // The counters below measure only the subsequent owner HTTP request.
+  reads = 0;
+  return { ...f, get active() {return active;}, tasks, rows, subscriptions, async restart() {await active.stop();active = await entrypoint.create(manifest).start(host);reads = 0;}, get reads() { return reads; }, get bodyReads() { return bodyReads; }, setProgress(queue: typeof progressQueue) { progressQueue = queue; }, expire() { stale = true; },
     invoke(owner = 'local-owner', native?: unknown) { return active.actions['collective.control.http']!({ request: { method: 'GET',
       path: `connections/${f.connection.connectionId}/participation`, headers: { origin: 'http://localhost:5172' },
       principal: { kind: 'owner', id: owner } } }, native as never); }, async close() { await active.stop(); await f.close(); } };

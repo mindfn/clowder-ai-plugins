@@ -12,12 +12,15 @@ import {
   preserveInitialExclusions,
 } from './participation-reconciler.js';
 import { ownerRequestExecution } from './collective-owner-request-progress.js';
+import type {PluginStorageHost} from '@clowder-ai/plugin-sdk';
+import {readWorkFirstReceipt} from './owner-work-first-receipt.js';
 
 interface ViewOptions {
   readonly cats: () => readonly ParticipationCat[];
   readonly threads: Pick<IThreadStore, 'list'>;
   readonly messages: Pick<IMessageStore, 'getById'>;
   readonly tasks: Pick<ITaskStore, 'listByKind'>;
+  readonly storage?: Pick<PluginStorageHost, 'get'>;
 }
 
 interface ViewAuthority {
@@ -41,9 +44,7 @@ export async function collectiveOwnerParticipationView(options: ViewOptions, aut
       item.routeReceipt?.kind === 'thread_message' ? [`message:${item.routeReceipt.messageId}`] : [],
     ),
   );
-  const tasks = (await options.tasks.listByKind('work')).filter(
-    (task) => task.userId === auth.userId && task.entrustedWork?.admission.sourceRefs.some((ref) => sources.has(ref)),
-  );
+  const tasks = await options.tasks.listByKind('work');
   const published = await auth.connector.isParticipationPublished(auth.connection.connectionId).catch(() => false);
   const registeredCats = options.cats();
   const profiles = new Map(registeredCats.map((cat) => [cat.id, cat]));
@@ -52,6 +53,41 @@ export async function collectiveOwnerParticipationView(options: ViewOptions, aut
     (thread) => !thread.deletedAt && thread.createdBy === auth.userId,
   );
   const ownerThreadById = new Map(ownerThreads.map((thread) => [thread.id, thread]));
+  const workByEvent = new Map<string, string>();
+  for (const item of inbox) {
+    const notice = item.event.workExecutionNotice ?? item.event.workAcceptanceNotice;
+    if (notice) workByEvent.set(item.event.eventId, notice.workId);
+    if (item.event.workExecutionNotice)
+      workByEvent.set(item.event.workExecutionNotice.assignmentEventId, item.event.workExecutionNotice.workId);
+    if (options.storage && item.event.actor.kind === 'human' && item.event.workRequest === 'entrust' &&
+      item.routeReceipt?.kind === 'thread_message' && item.event.recipient?.kind === 'agent') {
+      const choice = await readWorkFirstReceipt(options.storage, auth.userId,
+        item.routeReceipt.messageId, item.event.recipient.agentId);
+      if (choice) workByEvent.set(item.event.eventId, choice.work.workId);
+    }
+  }
+  const taskSummaries = tasks.flatMap((task) => {
+    const work = task.entrustedWork;
+    if (work) return task.userId === auth.userId && work.admission.sourceRefs.some(ref => sources.has(ref))
+      ? [{id: task.id, title: task.title, threadId: task.threadId, status: task.status,
+          revision: work.revision, closure: work.closure.state, sourceRefs: work.admission.sourceRefs}]
+      : [];
+    const thread = ownerThreadById.get(task.threadId);
+    if ((task.userId !== null && task.userId !== auth.userId) || !task.ownerCatId ||
+      !thread?.participants.includes(task.ownerCatId)) return [];
+    const sourceRefs = inbox.flatMap(item => {
+      const workId = workByEvent.get(item.event.eventId);
+      const recipient = item.event.recipient;
+      return workId && task.subjectKey === `collective-work:${auth.connection.connectionId}:${workId}` &&
+        recipient?.kind === 'agent' && recipient.connectionId === auth.connection.connectionId &&
+        recipient.agentId === task.ownerCatId && item.routeReceipt?.kind === 'thread_message'
+        ? [`message:${item.routeReceipt.messageId}`] : [];
+    });
+    // These are the same UI fields used before migration. updatedAt is the
+    // ordinary Task's observed version, not an execution/authorization revision.
+    return sourceRefs.length ? [{id: task.id, title: task.title, threadId: task.threadId, status: task.status,
+      revision: task.updatedAt, closure: task.status === 'done' ? 'satisfied' : 'open', sourceRefs}] : [];
+  });
   const requestItems = inbox.filter(
     (item) =>
       (item.event.recipient?.kind === 'agent' && item.event.recipient.connectionId === auth.connection.connectionId) ||
@@ -120,22 +156,7 @@ export async function collectiveOwnerParticipationView(options: ViewOptions, aut
     published,
     threads: ownerThreads.map((thread) => ({ id: thread.id, title: thread.title, participants: thread.participants })),
     requests,
-    tasks: tasks.flatMap((task) => {
-      const work = task.entrustedWork;
-      return work
-        ? [
-            {
-              id: task.id,
-              title: task.title,
-              threadId: task.threadId,
-              status: task.status,
-              revision: work.revision,
-              closure: work.closure.state,
-              sourceRefs: work.admission.sourceRefs,
-            },
-          ]
-        : [];
-    }),
+    tasks: taskSummaries,
   };
 }
 

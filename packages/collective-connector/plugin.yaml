@@ -128,6 +128,7 @@ features:
         id: collective-native
     capabilities:
       - data.directory
+      - plugin.state.get
       - thread.readContent
       - thread.listMetadata
       - thread.write
@@ -138,18 +139,23 @@ features:
     resources: []
     contributions:
       - { type: mcp, id: collective-work-native }
+      - { type: message-subscription, id: collective-work-materials }
       - { type: webhook, id: collective-work-admit }
       - { type: webhook, id: collective-work-resume }
+      - { type: webhook, id: collective-work-result-accepted }
     capabilities:
       - data.directory
       - plugin.state.get
       - plugin.state.set
       - task.admitEntrusted
+      - task.write
       - task.read
       - thread.readContent
       - thread.listMetadata
       - thread.write
       - messaging.send
+      - message.event.subscribe
+      - media.read
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js
@@ -471,6 +477,11 @@ contributions:
     methods: [GET, PUT]
     action: { method: collective.control.http }
 
+  - type: message-subscription
+    id: collective-work-materials
+    binding: collective
+    action: { method: collective.work.material.receive }
+    presentation: v1
   - type: mcp
     id: collective-work-native
     runtime: { transport: stdio, entrypoint: dist/work-mcp-entrypoint.js }
@@ -478,8 +489,8 @@ contributions:
       - { method: collective.work.context.current }
       - { method: collective.work.context.read }
       - { method: collective.work.progress }
-      - { method: collective.work.artifact.publish-text }
       - { method: collective.work.artifact.read }
+      - { method: collective.work.artifact.register }
       - { method: collective.work.reply.submit }
   - type: webhook
     id: collective-work-admit
@@ -489,5 +500,10 @@ contributions:
   - type: webhook
     id: collective-work-resume
     path: connections/:connectionId/work/resume
+    methods: [POST]
+    action: { method: collective.work.control.http }
+  - type: webhook
+    id: collective-work-result-accepted
+    path: connections/:connectionId/work/result/accepted
     methods: [POST]
     action: { method: collective.work.control.http }

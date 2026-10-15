@@ -13,9 +13,10 @@ test('production Work module owns one private MCP and rejects untrusted calls be
   let effects = 0;
   const unexpected = async () => { effects++; throw new Error('Private effect before authenticated Work'); };
   const host: ModulePluginHostShape = {
+    pluginInstanceId: 'installed-instance',
     dataDirectory: directory, config: {get: async () => undefined}, secrets: {get: async () => undefined},
     storage: {get: unexpected, compareAndSet: unexpected} as never,
-    tasks: {get: unexpected, listByKind: unexpected, prepareEntrusted: unexpected, dispatchEntrusted: unexpected} as never,
+    tasks: {get: unexpected, listByKind: async () => [], prepareEntrusted: unexpected, dispatchEntrusted: unexpected} as never,
     messaging: {get: unexpected, send: unexpected} as never, threads: {} as never, media: {} as never, log() {},
     nativeContext: {current: unexpected},
     participantRoster: {listForNativeContribution: async () => []},
@@ -35,7 +36,7 @@ test('production Work module owns one private MCP and rejects untrusted calls be
     assert.equal(taskMcp[0].id, 'collective-work-native');
     assert.deepEqual(taskMcp[0].actions.map((action: {method: string}) => action.method).sort(),
       ['collective.work.context.current', 'collective.work.context.read', 'collective.work.progress',
-        'collective.work.artifact.publish-text', 'collective.work.artifact.read', 'collective.work.reply.submit'].sort());
+        'collective.work.artifact.read', 'collective.work.artifact.register', 'collective.work.reply.submit'].sort());
     assert.equal(manifest.features.find((feature: {id: string}) => feature.id === 'collective-backend').capabilities.includes('task.admitEntrusted'), false);
     for (const method of taskMcp[0].actions.map((action: {method: string}) => action.method)) {
       assert.equal(typeof active.actions[method], 'function');

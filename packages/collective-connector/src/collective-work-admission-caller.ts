@@ -213,7 +213,7 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
             receipt.messageId, selection.identity.catId);
           const root = await options.firstReceipts.messaging.get(receipt.messageId);
           await options.assertCurrent();
-          if (!firstIdentity || firstIdentity.actor.kind !== "agent" || firstItem.event.workRequest !== "entrust" ||
+          if (!firstIdentity || firstItem.event.workRequest !== "entrust" ||
             !collectiveWorkAssignmentMatches(firstIdentity, work, firstItem.event.workAcceptanceNotice) ||
             !root || root.id !== receipt.messageId || root.userId !== selection.ownerUserId || root.catId !== null ||
             root.threadId !== receipt.threadId || root.content !== firstItem.event.body || root.source?.connector !== "collective" ||
@@ -222,9 +222,11 @@ export function createCollectiveWorkAdmissionCaller(options: Options) {
             (firstPublished && !isDeepStrictEqual(firstPublished, root)) ||
             (firstChoice && (!first || !isDeepStrictEqual({...firstChoice, binding: undefined}, {...first, binding: undefined}) ||
               (firstChoice.binding && !isDeepStrictEqual(firstChoice.binding, first.binding))))) throw unavailable("WORK_TASK_UNAVAILABLE");
+          // The immutable first choice may be Human manual/standing. Current
+          // registered permission above authorizes this continuation; the old
+          // choice contributes lineage/binding, never its previous grant.
           if (first && (
-            (!isBootstrapWorkLineage(first) && (!first.binding || first.basis.kind !== "standing_grant" ||
-              first.basis.producer !== "registered_work")) ||
+            (!isBootstrapWorkLineage(first) && !first.binding) ||
             root.threadId !== first.source.threadId || root.sourceRevision !== first.source.revision ||
             workReceiptDigest(root.content) !== first.source.bodyDigest ||
             !isDeepStrictEqual(first.source.identity, firstIdentity) ||

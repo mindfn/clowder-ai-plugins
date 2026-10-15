@@ -143,6 +143,8 @@ export interface PluginTaskItem {
 /** Read-only owner/source summary. It is never a Task admission or execution grant. */
 export interface PluginTaskEntrustedWorkSummary {
   readonly revision: number;
+  readonly time?: PluginTaskWorkTime;
+  readonly artifactRefs?: readonly string[];
   readonly closure: { readonly state: string };
   readonly admission: { readonly sourceRefs: readonly string[] };
 }
@@ -154,6 +156,8 @@ export interface PluginTaskReadItem extends PluginTaskItem {
 }
 
 export interface PluginTaskCreateInput {
+  /** Original Task/Schedule data; does not prepare or dispatch an execution. */
+  readonly entrustedWork?: PluginTaskWorkData;
   readonly threadId: string;
   readonly title: string;
   readonly why?: string;
@@ -163,12 +167,34 @@ export interface PluginTaskCreateInput {
 }
 
 export interface PluginTaskUpdateInput {
+  readonly entrustedWork?: PluginTaskWorkMutation;
   readonly title?: string;
   readonly status?: PluginTaskStatus;
   readonly why?: string;
   readonly ownerCatId?: string | null;
   readonly threadId?: string;
 }
+
+/** Existing canonical Work time representation, projected by the Task owner. */
+export type PluginTaskWorkTime = NonNullable<Extract<import('@clowder-ai/plugin-contract').PluginTaskAdmissionInput['subject'], {kind: 'new'}>['time']>;
+export interface PluginTaskWorkData {
+  readonly sourceMessageId: string;
+  readonly intendedOutcome: string;
+  readonly closure: {readonly condition: string; readonly expectedSignal: string};
+  readonly time?: PluginTaskWorkTime;
+}
+export type PluginTaskWorkMutation = {
+  readonly expectedRevision: number;
+  readonly artifactRefs?: readonly string[];
+  readonly time?: {readonly [K in keyof PluginTaskWorkTime]?: PluginTaskWorkTime[K] | null};
+  readonly progress?: {readonly summary: string; readonly nextStep?: string; readonly blockerReason?: string; readonly sourceRef: string} | null;
+} | {
+  readonly expectedRevision: number;
+  readonly closure: {readonly state: 'satisfied'; readonly condition: string; readonly expectedSignal: string; readonly evidenceRefs: readonly string[]}
+    | {readonly state: 'cancelled' | 'abandoned'; readonly condition: string; readonly expectedSignal: string; readonly evidenceRefs: readonly string[];
+      readonly disposition: {readonly kind: 'cancelled' | 'abandoned'; readonly actorKind: 'human' | 'owner'; readonly actorRef: string;
+        readonly authorityRef: string; readonly dispositionRef: string; readonly disposedAt: number}};
+};
 
 export interface PluginTaskHost {
   /** Prepare Host-owned Task/receipt or queue that exact prepared execution; absent on older carriers. */
@@ -247,6 +273,8 @@ export interface PluginMessagingHost {
 
 /** Structural mirror of the Host-owned in-process module surface. */
 export interface ModulePluginHostShape {
+  /** Installation attribution supplied by the Host, never the manifest's package id. */
+  readonly pluginInstanceId: string;
   /** Optional on older carriers; Host-owned admission of a persisted public source. */
   readonly publicInvocations?: import('./public-invocations.js').PluginPublicInvocationHost;
   readonly sourceFacts?: import('./source-facts.js').PluginSourceFactsHost;

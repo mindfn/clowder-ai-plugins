@@ -24,9 +24,9 @@ async function setup(clearAgentRoutes = false, actualRoster?: PluginParticipantR
   let creates = 0, stale = false;
   const quota = new Map([['codex-sol', true]]);
   const roster = [{ catId: 'codex-sol', displayName: 'Sol', defaultModel: 'fixture', supported: true }];
-  const host: ModulePluginHostShape = { dataDirectory: f.root,
+  const host: ModulePluginHostShape = { pluginInstanceId: 'installed-instance', dataDirectory: f.root,
     config: { async get() { return undefined; } }, secrets: { async get() { return undefined; } },
-    storage: {} as never, tasks: {} as never, threads: {} as never, media: {} as never, messaging: {} as never, log() {},
+    storage: {} as never, tasks: {listByKind: async () => []} as never, threads: {} as never, media: {} as never, messaging: {} as never, log() {},
     participantRoster: actualRoster ?? { async listForNativeContribution(input) { return input.includeAvailability === true ? roster.map(row => ({ ...row, available: quota.get(row.catId) === true })) : roster; } },
     nativeContext: { async current() { throw new Error('Owner policy must not borrow a native invocation'); } },
     ownerThreads: { async get(id) { return threads.get(id) ?? null; }, async create() {

@@ -238,6 +238,7 @@ function host(
     ownerCatId: null, status: 'todo', why: '', createdBy: 'system', createdAt: 1, updatedAt: 1, userId: null,
   } as const;
   return {
+    pluginInstanceId: 'installed-module-fixture',
     config: { get: async (key: string) => key === 'mode' ? 'safe' : undefined },
     secrets: { get: async (key: string) => key === 'token' ? 'secret' : undefined },
     storage: {
@@ -300,6 +301,20 @@ function host(
     },
   };
 }
+
+test('module activation exposes the actual installed instance, independently of manifest identity', async () => {
+  let instance: unknown;
+  const entrypoint = definePluginModule(input => definePlugin({manifest: input, activate: {
+    'feature-1': context => {
+      instance = (context as FeatureContext & {pluginInstanceId?: string}).pluginInstanceId;
+      return {actions: {'fixture.outbound': () => undefined, 'fixture.echo': () => undefined}};
+    },
+  }}));
+  const runtime = await entrypoint.create(manifest()).start(host([]));
+  assert.equal(instance, 'installed-module-fixture');
+  assert.notEqual(instance, manifest().pluginId);
+  await runtime.stop();
+});
 
 test('module carrier exposes the Host dataDirectory only to a feature granted data.directory', async () => {
   const calls: Array<{ operation: string; value?: unknown }> = [];
