@@ -1,6 +1,5 @@
+import { createDirectCommandBridge as createConnectorCommandBridge } from './direct-command-bridge.js';
 import {
-  createConnectorCommandBridge,
-  createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
@@ -200,7 +199,6 @@ export function createXiaoyiPluginModule(createRuntime: RuntimeFactory = createX
         });
         return {
           actions: {
-            ...createConnectorPermissionActions(context.storage),
             'host.messaging.lifecycle': lifecycle,
             'xiaoyi.outbound': async (candidate) => {
               const { inputs, replyPrefix } = await bridge.outbound(candidate);

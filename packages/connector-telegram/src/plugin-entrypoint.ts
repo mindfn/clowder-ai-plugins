@@ -1,6 +1,5 @@
+import { createDirectCommandBridge as createConnectorCommandBridge } from './direct-command-bridge.js';
 import {
-  createConnectorCommandBridge,
-  createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
@@ -450,7 +449,6 @@ export function createTelegramPluginModule(
         });
         return {
           actions: {
-            ...createConnectorPermissionActions(context.storage),
             'host.messaging.lifecycle': lifecycle,
             'telegram.media-source.read': mediaSource.read,
             'telegram.media-source.settle': mediaSource.settle,

@@ -40,7 +40,7 @@ and requests `plugin.config.read`, `plugin.state.get`, `plugin.state.set`, `medi
 `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.readContent`, `thread.listMetadata`, `thread.write`. It does not
 expose C2 audio/AI services, mention parsing, UI slots, or generic public hooks.
 
-## Commands and owner permission recovery
+## Commands and configuration
 
 The builtin entrypoint intercepts `/where`, `/new`, `/threads`, `/use`, `/thread`, `/commands`, `/cats`,
 `/status`, `/history`, `/unbind`, `/allow-group`, `/deny-group`, `/focus`, and `/ask` before ordinary ingress.
@@ -49,15 +49,6 @@ Commands reply through the provider and keep their audit quiet. Only an explicit
 `/use` traverses the owner-visible live thread inventory beyond the first 50 rows, deduplicates IDs and
 rejects a non-progressing or exhausted traversal instead of selecting from an incomplete list.
 
-Permission state starts **uninitialized**, not permissive. After the declared runtime is available, use
-Settings “读取当前权限”, edit the visible whitelist/admin/group fields, then explicitly confirm
-“应用权限设置”. Reading does not initialize state; saving requires the displayed revision. If a concurrent
-change makes the form stale, read it again before saving. An explicitly empty admin list stays empty.
-Group facts come from the authenticated provider adapter; direct-only integrations do not invent groups.
-
-“一次性导入旧权限” accepts only the bounded raw snapshot supplied by the owner-authorized Host cutover
-tool, after confirmation; the package never connects to legacy Redis. It recomputes the snapshot digest
-and inserts permission state only when absent. The same untouched digest returns `already_applied`;
-existing or subsequently edited state returns `preserved_existing`, never an overwrite. Disabling the
-plugin preserves this state. Keep the old Host implementation and hashes until actual replacement and
-no-double-run verification pass; archive tests alone do not authorize their deletion.
+This adapter supports direct conversations only. Configure the original account/login fields and receive messages;
+there is no group-permission page, permission initialization or legacy-import step. Group management commands
+do not grant a direct-message sender administrator authority. Existing stored data is not deleted.

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -9,10 +8,6 @@ import { parse } from 'yaml';
 const factories = { feishu: 'createFeishuPluginModule', dingtalk: 'createDingTalkPluginModule',
   telegram: 'createTelegramPluginModule', 'wecom-agent': 'createWeComAgentPluginModule',
   'wecom-bot': 'createWeComBotPluginModule', weixin: 'createWeixinPluginModule', xiaoyi: 'createXiaoyiPluginModule' };
-const canonical = value => value && typeof value === 'object' && !Array.isArray(value)
-  ? `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
-  : JSON.stringify(value);
-
 // The optional roots select physically extracted archives outside the checkout.
 // Provider transport and Host ports remain substituted in both modes: packed
 // execution proves closure, not production provider/Host installation acceptance.
@@ -35,22 +30,8 @@ for (const [name, factoryName] of Object.entries(factories)) {
       assert.equal(pkg.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.15');
       assert.equal(sdk.version, '0.2.0-beta.15');
     }
-    const targets = ['permissionWhitelistEnabled', 'permissionCommandAdminOnly', 'permissionAdminIdsJson', 'permissionGroupsJson', 'permissionRevision'];
-    const settings = manifest.configuration.find(field => field.key === 'connector_permissions');
-    assert.equal(settings.kind, 'operation'); assert.equal(settings.hidden, undefined);
-    assert.deepEqual(settings.target, targets);
-    assert.deepEqual(settings.actions.map(action => [action.id, action.action.method]), [['read', 'permissions.read']]);
-    const apply = manifest.configuration.find(field => field.key === 'connector_permissions_apply');
-    assert.equal(apply.kind, 'operation'); assert.equal(apply.hidden, undefined);
-    assert.deepEqual(apply.target, targets);
-    assert.deepEqual(apply.actions.map(action => [action.id, action.action.method]), [['configure', 'permissions.configure']]);
-    assert.ok(apply.actions[0].confirm, 'mutation requires owner confirmation while read remains independently reachable');
-    const fields = manifest.configuration.filter(field => targets.includes(field.key));
-    assert.deepEqual(fields.map(field => field.key), targets);
-    assert.deepEqual(fields.map(field => field.kind), ['select', 'select', 'string', 'string', 'string']);
-    assert.ok(fields.every(field => field.default === undefined));
-    assert.ok(fields.slice(0, 4).every(field => field.hidden === undefined));
-    assert.equal(fields[4].hidden, true, 'only optimistic revision token is an internal form field');
+    assert.deepEqual(manifest.configuration.filter(field => /legacy_permissions|connector_permissions|permission.*Json|permissionRevision/.test(field.key)), []);
+    const groupsSupported = ['feishu', 'dingtalk', 'wecom-bot'].includes(name);
     const state = new Map(); const replies = []; const sent = []; const closes = []; let inbound;
     let delayedPermissionRead;
     let historyAnswer = '真实历史回答';
@@ -104,23 +85,13 @@ for (const [name, factoryName] of Object.entries(factories)) {
       externalSenderId: sender, providerConversationId: 'provider-chat', providerMessageId: id, text,
       chatType: group ? 'group' : 'p2p', conversation: { type: group ? 'group' : 'direct' }, sender: { id: sender } });
     try {
-      await assert.rejects(inbound(input('/where', 'repairable')), /permission.*initializ/i);
-      assert.equal(sent.length, 0, 'uninitialized policy cannot deliver or audit');
-      assert.equal((await active.actions['permissions.read']({})).data.status, 'uninitialized');
-      assert.equal(state.size, 0, 'reading owner form never initializes permission state');
-      const snapshot = { config: { whitelistEnabled: 'true', commandAdminOnly: 'true', adminOpenIds: '["admin"]' }, groups: {} };
-      const receipt = await active.actions['permissions.importLegacy']({ input: { appSecret: 'never-store', protocolVersion: 1,
-        sourceDigest: createHash('sha256').update(canonical(snapshot)).digest('hex'), snapshot } });
-      assert.equal(receipt.data.status, 'imported');
-      assert.equal((await active.actions['permissions.importLegacy']({ input: { protocolVersion: 1,
-        sourceDigest: receipt.data.sourceDigest, snapshot } })).data.status, 'already_applied');
-      const form = await active.actions['permissions.read']({});
-      assert.equal(form.targetValues.permissionAdminIdsJson, '["admin"]');
-      const updated = await active.actions['permissions.configure']({ input: { ...form.targetValues, appSecret: 'never-store' } });
-      assert.equal(updated.data.status, 'configured');
-      const repeated = await active.actions['permissions.importLegacy']({ input: { protocolVersion: 1,
-        sourceDigest: receipt.data.sourceDigest, snapshot } });
-      assert.equal(repeated.data.status, 'preserved_existing');
+      assert.deepEqual(Object.keys(active.actions).filter(key => key.startsWith('permissions.')), []);
+      // Explicit Host-storage fixture for configured original group rules;
+      // no import operation or second user initialization is involved.
+      if (groupsSupported) await host.storage.set('connector.permissions.v1', {
+        v: 1, whitelistEnabled: true, commandAdminOnly: true,
+        adminConfigured: true, adminOpenIds: ['admin'], allowedGroups: [],
+      });
       await inbound(input('/where', 'repairable'));
       assert.equal(replies.length, 1); assert.match(replies[0].body, /Bound/);
       assert.ok(replies[0].body.includes(threads.get('bound').deepLinkUrl));
@@ -148,8 +119,8 @@ for (const [name, factoryName] of Object.entries(factories)) {
         if (text === '/history 1') assert.match(replies.at(-1).body, /真实历史问题/);
         if (text === '/where') assert.match(replies.at(-1).body, /Owner-created/);
         if (text === '/unbind') assert.equal(bindings.has('chat'), false);
-        if (text === '/allow-group explicit-group') assert.equal(state.get('connector.permissions.v1').value.allowedGroups[0].externalChatId, 'explicit-group');
-        if (text === '/deny-group explicit-group') assert.deepEqual(state.get('connector.permissions.v1').value.allowedGroups, []);
+        if (groupsSupported && text === '/allow-group explicit-group') assert.equal(state.get('connector.permissions.v1').value.allowedGroups[0].externalChatId, 'explicit-group');
+        if (groupsSupported && text === '/deny-group explicit-group') assert.deepEqual(state.get('connector.permissions.v1').value.allowedGroups, []);
       }
       await inbound(input('/use F202', 'history-link-binding'));
       historyAnswer = '真实历史回答'.repeat(6000);
@@ -177,38 +148,17 @@ for (const [name, factoryName] of Object.entries(factories)) {
       }
       if (name === 'xiaoyi') assert.equal(closes.length, replies.length - 2,
         'only two explicit bodies remain unsettled');
-      // Exercise the shared durable invariant through every actual module and
-      // physical SDK, not a command-store substitute. Fixture injection below
-      // represents old buggy persisted state, never a production data write.
-      const priorPolicy = structuredClone(state.get('connector.permissions.v1').value);
-      const capForm = await active.actions['permissions.read']({});
-      const capGroups = Array.from({ length: 5000 }, (_, i) => ({ externalChatId: `g${i}` }));
-      await active.actions['permissions.configure']({ input: { ...capForm.targetValues,
-        permissionGroupsJson: JSON.stringify(capGroups) } });
-      const atCap = structuredClone(state.get('connector.permissions.v1'));
-      const beforeCapFailure = { sent: sent.length, replies: replies.length };
-      await assert.rejects(inbound(input('/allow-group g5000', 'group-5001')), /group bound/);
-      assert.deepEqual(state.get('connector.permissions.v1'), atCap);
-      assert.equal(sent.length, beforeCapFailure.sent); assert.equal(replies.length, beforeCapFailure.replies);
-      await inbound(input('/allow-group g0', 'cap-replacement'));
-      assert.equal(state.get('connector.permissions.v1').value.allowedGroups.length, 5000);
-      const validPolicy = structuredClone(state.get('connector.permissions.v1').value);
-      await host.storage.set('connector.permissions.v1', { ...validPolicy,
-        allowedGroups: [...validPolicy.allowedGroups, { externalChatId: 'g5000', addedAt: 5 }] });
-      const overCap = structuredClone(state.get('connector.permissions.v1'));
-      await assert.rejects(inbound(input('/where', 'oversized-closed')), /group bound/);
-      const recovery = await active.actions['permissions.read']({});
-      assert.equal(recovery.data.status, 'recovery_required'); assert.equal(recovery.data.groupCount, 5001);
-      assert.equal(recovery.targetValues.permissionGroupsJson, '');
-      assert.ok(Buffer.byteLength(JSON.stringify(recovery)) < 4096);
-      await assert.rejects(active.actions['permissions.configure']({ input: recovery.targetValues }));
-      assert.deepEqual(state.get('connector.permissions.v1'), overCap);
-      await active.actions['permissions.configure']({ input: { ...recovery.targetValues,
-        permissionGroupsJson: '[{"externalChatId":"g4999"}]' } });
-      assert.deepEqual(state.get('connector.permissions.v1').value.allowedGroups,
-        [validPolicy.allowedGroups.find(group => group.externalChatId === 'g4999')]);
-      await host.storage.set('connector.permissions.v1', priorPolicy);
-      assert.equal(JSON.stringify(state.get('connector.permissions.v1')).includes('never-store'), false);
+      if (groupsSupported) {
+        const policy = structuredClone(state.get('connector.permissions.v1').value);
+        await host.storage.set('connector.permissions.v1', { ...policy,
+          allowedGroups: Array.from({ length: 5000 }, (_, i) => ({ externalChatId: `g${i}`, addedAt: i })) });
+        const atCap = structuredClone(state.get('connector.permissions.v1'));
+        await assert.rejects(inbound(input('/allow-group g5000', 'group-5001')), /group bound/);
+        assert.deepEqual(state.get('connector.permissions.v1'), atCap);
+        await inbound(input('/allow-group g0', 'cap-replacement'));
+        assert.equal(state.get('connector.permissions.v1').value.allowedGroups.length, 5000);
+        await host.storage.set('connector.permissions.v1', policy);
+      }
       const persisted = structuredClone(state.get('connector.permissions.v1'));
       const beforeStop = sent.length;
       const repliesBeforeStop = replies.length;
@@ -226,18 +176,6 @@ for (const [name, factoryName] of Object.entries(factories)) {
       assert.equal(sent.length, beforeStop, 'stopped carrier cannot deliver late command events');
       assert.equal(replies.length, repliesBeforeStop, 'in-flight command cannot reply success after stop');
       assert.deepEqual(state.get('connector.permissions.v1'), persisted, 'stop preserves owner permission state');
-      state.clear(); // isolated fixture only: start a separate fresh-owner journey.
-      const fresh = await entrypoint.create(manifest).start(host);
-      try {
-        const empty = await fresh.actions['permissions.read']({});
-        assert.equal(empty.data.status, 'uninitialized'); assert.equal(state.size, 0);
-        await fresh.actions['permissions.configure']({ input: empty.targetValues });
-        const configured = await fresh.actions['permissions.read']({});
-        assert.equal(configured.data.status, 'configured');
-        assert.equal(configured.targetValues.permissionAdminIdsJson, '[]');
-        assert.equal((await fresh.actions['permissions.importLegacy']({ input: { protocolVersion: 1,
-          sourceDigest: receipt.data.sourceDigest, snapshot } })).data.status, 'preserved_existing');
-      } finally { await fresh.stop(); }
     } finally { await active.stop(); }
   });
 }

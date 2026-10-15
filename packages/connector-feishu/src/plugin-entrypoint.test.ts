@@ -11,32 +11,26 @@ import { validateManifest } from '../../plugin-contract/dist/index.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as unknown;
 
-test('all seven connectors declare a schema-valid confirmed owner permission import action', async () => {
+test('all seven connectors keep schema-valid original setup without permission migration actions', async () => {
   for (const name of ['feishu', 'dingtalk', 'telegram', 'wecom-agent', 'wecom-bot', 'weixin', 'xiaoyi']) {
     const value = parse(await readFile(new URL(`../../connector-${name}/plugin.yaml`, import.meta.url), 'utf8'));
     assert.equal(validateManifest(value).valid, true, name);
-    const operation = value.configuration.find((field: { key: string }) => field.key === 'legacy_permissions');
-    assert.ok(operation, name);
-    assert.equal(operation.hidden, undefined);
-    assert.equal(operation.actions[0].id, 'import');
-    assert.ok(operation.actions[0].confirm);
-    assert.equal(operation.actions[0].action.method, 'permissions.importLegacy');
+    assert.equal(value.configuration.some((field: { key: string }) =>
+      /legacy_permissions|connector_permissions|permission.*Json|permissionRevision/.test(field.key)), false, name);
   }
 });
 
-test('real builtin import action accepts merged config, remains idempotent and omits secrets', async () => {
+test('module leaves existing permission data untouched and exposes no import action', async () => {
   const entrypoint = createFeishuPluginModule(() => ({ async start() {}, async stop() {}, outbound: {} }) as FeishuConnectorRuntime<FeishuAdapter>);
-  const active = await entrypoint.create(manifest).start(host({ connectionMode: 'webhook' }, { appSecret: 'secret' }, [], [], false));
-  const input = { protocolVersion: 1,
-    sourceDigest: '449c5887711ea90c6c14ff8f26adfeefc2d7f129f2bac9db59259c2915b5cad3',
-    snapshot: { config: { whitelistEnabled: 'true', commandAdminOnly: 'false', adminOpenIds: '[]' },
-      groups: { chat: '{"label":"Group","addedAt":12}' } }, appSecret: 'do-not-store' };
-  const action = active.actions['permissions.importLegacy']; assert.ok(action);
-  const receipt = await action({ input });
-  assert.equal((receipt as { data: { status: string } }).data.status, 'imported');
-  assert.equal(JSON.stringify(receipt).includes('do-not-store'), false);
-  assert.equal((await action({ input }) as { data: { status: string } }).data.status, 'already_applied');
+  const pluginHost = host({ connectionMode: 'webhook' }, { appSecret: 'secret' }, [], [], false);
+  const existing = { v: 1, whitelistEnabled: true, commandAdminOnly: true,
+    adminConfigured: true, adminOpenIds: ['existing-admin'], allowedGroups: [{ externalChatId: 'existing-group', addedAt: 12 }] };
+  await pluginHost.storage.set('connector.permissions.v1', existing);
+  const before = await pluginHost.storage.get('connector.permissions.v1');
+  const active = await entrypoint.create(manifest).start(pluginHost);
+  assert.deepEqual(Object.keys(active.actions).filter(key => key.startsWith('permissions.')), []);
   await active.stop();
+  assert.deepEqual(await pluginHost.storage.get('connector.permissions.v1'), before);
 });
 
 test('real Feishu entrypoint intercepts where before normal ingress and audits without wake', async () => {
@@ -56,9 +50,6 @@ test('real Feishu entrypoint intercepts where before normal ingress and audits w
     async ensureSystemThread() { return { id: 'system', title: 'System', createdAt: 1, lastActiveAt: 1, featureRefs: [], preferredCats: [] }; },
   });
   const active = await entrypoint.create(manifest).start(pluginHost);
-  await active.actions['permissions.importLegacy']!({ input: { protocolVersion: 1,
-    sourceDigest: '449c5887711ea90c6c14ff8f26adfeefc2d7f129f2bac9db59259c2915b5cad3',
-    snapshot: { config: { whitelistEnabled: 'true', commandAdminOnly: 'false', adminOpenIds: '[]' }, groups: { chat: '{"label":"Group","addedAt":12}' } } } });
   await active.actions['feishu.webhook']!({ request: { method: 'POST', path: 'feishu/events', query: {}, body: {}, rawBody: Buffer.from('{}'), headers: {} } });
   assert.equal(replies.length, 1); assert.match(replies[0]!, /Bound/);
   assert.equal(drafts.length, 1, 'quiet audit only, no normal ingress');
@@ -129,7 +120,7 @@ test('module exposes both manifest-declared connector and webhook actions', asyn
   const secrets: Record<string, string> = { appSecret: 'secret', verificationToken: '' };
   const active = await entrypoint.create(manifest).start(host(config, secrets));
   assert.deepEqual(Object.keys(active.actions).sort(), [
-    'feishu.disconnect', 'feishu.media-source.read', 'feishu.media-source.settle', 'feishu.outbound', 'feishu.qr-generate', 'feishu.qr-status', 'feishu.test', 'feishu.webhook', 'host.messaging.lifecycle', 'permissions.configure', 'permissions.importLegacy', 'permissions.read',
+    'feishu.disconnect', 'feishu.media-source.read', 'feishu.media-source.settle', 'feishu.outbound', 'feishu.qr-generate', 'feishu.qr-status', 'feishu.test', 'feishu.webhook', 'host.messaging.lifecycle',
   ]);
   const request = {
     method: 'POST', path: 'feishu/events', query: {},

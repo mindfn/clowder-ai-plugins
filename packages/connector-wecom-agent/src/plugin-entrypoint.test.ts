@@ -68,7 +68,7 @@ test('module exposes both manifest-declared connector and webhook actions', asyn
   const secrets: Record<string, string> = { agentSecret: 'secret', callbackToken: 'token', encodingAesKey: 'aes' };
   const active = await entrypoint.create(manifest).start(host(config, secrets));
   assert.deepEqual(Object.keys(active.actions).sort(), [
-    'permissions.configure', 'permissions.importLegacy', 'permissions.read',
+
     'wecom-agent.media-source.read', 'wecom-agent.media-source.settle', 'wecom-agent.outbound', 'wecom-agent.webhook',
   ]);
   const request = {

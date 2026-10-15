@@ -10,73 +10,6 @@ icon:
   type: svg
   src: assets/icon.svg
 configuration:
-  - key: permissionWhitelistEnabled
-    label: 启用群白名单
-    kind: select
-    required: false
-    options:
-      - value: "false"
-        label: 不限制群
-      - value: "true"
-        label: 仅允许白名单群
-  - key: permissionCommandAdminOnly
-    label: 群命令仅管理员可用
-    kind: select
-    required: false
-    options:
-      - value: "false"
-        label: 群成员可用
-      - value: "true"
-        label: 仅管理员可用
-  - key: permissionAdminIdsJson
-    label: 管理员身份列表（JSON）
-    description: 输入供应商身份的 JSON 数组，显式空列表 [] 不会自动补入管理员。
-    kind: string
-    required: false
-  - key: permissionGroupsJson
-    label: 群白名单（JSON）
-    description: 输入包含 externalChatId 和可选 label 的对象数组；保留已有群的加入时间。
-    kind: string
-    required: false
-  - key: permissionRevision
-    label: 当前权限版本
-    kind: string
-    required: false
-    hidden: true
-  - key: connector_permissions
-    label: 读取连接器权限
-    kind: operation
-    required: false
-    target: [permissionWhitelistEnabled, permissionCommandAdminOnly, permissionAdminIdsJson, permissionGroupsJson, permissionRevision]
-    actions:
-      - id: read
-        label: 读取当前权限
-        render: button
-        action:
-          method: permissions.read
-  - key: connector_permissions_apply
-    label: 应用连接器权限
-    kind: operation
-    required: false
-    target: [permissionWhitelistEnabled, permissionCommandAdminOnly, permissionAdminIdsJson, permissionGroupsJson, permissionRevision]
-    actions:
-      - id: configure
-        label: 应用权限设置
-        render: button
-        confirm: 确认以当前表单替换管理员、群白名单及限制？尚未初始化时会创建新权限；旧快照不会覆盖此设置。请先读取当前权限。
-        action:
-          method: permissions.configure
-  - key: legacy_permissions
-    label: 一次性导入旧权限
-    kind: operation
-    required: false
-    actions:
-      - id: import
-        label: 导入旧权限
-        render: button
-        confirm: 确认从已授权的旧连接器权限快照导入？已有权限不会被覆盖。
-        action:
-          method: permissions.importLegacy
   - key: botToken
     label: Bot Token
     kind: secret
@@ -84,6 +17,10 @@ configuration:
 test:
   action:
     method: telegram.test
+steps:
+  - text: 在 Telegram 中找到 @BotFather，发送 /newbot 创建机器人
+  - text: 复制生成的 Bot Token
+  - text: 填写以下配置并保存，重启 API 服务后生效
 contributions:
   - type: identity
     id: telegram-bot

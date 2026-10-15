@@ -1,6 +1,5 @@
+import { createGroupCommandBridge as createConnectorCommandBridge } from './group-command-bridge.js';
 import {
-  createConnectorCommandBridge,
-  createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
@@ -285,7 +284,6 @@ export function createDingTalkPluginModule(
         });
         return {
           actions: {
-            ...createConnectorPermissionActions(context.storage),
             'host.messaging.lifecycle': lifecycle,
             'dingtalk.media-source.read': mediaSource.read,
             'dingtalk.media-source.settle': mediaSource.settle,

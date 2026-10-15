@@ -1,6 +1,5 @@
+import { createGroupCommandBridge as createConnectorCommandBridge } from './group-command-bridge.js';
 import {
-  createConnectorCommandBridge,
-  createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
@@ -330,7 +329,6 @@ export function createFeishuPluginModule(
         const qrClient = createQrClient();
         return {
           actions: {
-            ...createConnectorPermissionActions(context.storage),
             'host.messaging.lifecycle': lifecycle,
             'feishu.media-source.read': mediaSource.read,
             'feishu.media-source.settle': mediaSource.settle,

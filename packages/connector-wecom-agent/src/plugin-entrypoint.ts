@@ -1,6 +1,5 @@
+import { createDirectCommandBridge as createConnectorCommandBridge } from './direct-command-bridge.js';
 import {
-  createConnectorCommandBridge,
-  createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
@@ -274,7 +273,6 @@ export function createWeComAgentPluginModule(createRuntime: RuntimeFactory = cre
         const mediaSource = createInboundMediaSourceActions(context, locator => runtime.outbound.downloadMedia(locator.platformKey));
         return {
           actions: {
-            ...createConnectorPermissionActions(context.storage),
             'wecom-agent.media-source.read': mediaSource.read,
             'wecom-agent.media-source.settle': mediaSource.settle,
             'wecom-agent.outbound': async (candidate) => {

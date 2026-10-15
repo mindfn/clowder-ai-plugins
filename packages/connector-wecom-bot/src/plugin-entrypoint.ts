@@ -1,6 +1,5 @@
+import { createGroupCommandBridge as createConnectorCommandBridge } from './group-command-bridge.js';
 import {
-  createConnectorCommandBridge,
-  createConnectorPermissionActions,
   definePlugin,
   definePluginModule,
   requireConnectorOutboundDelivery,
@@ -281,7 +280,6 @@ export function createWeComBotPluginModule(
         });
         return {
           actions: {
-            ...createConnectorPermissionActions(context.storage),
             'host.messaging.lifecycle': lifecycle,
             'wecom-bot.media-source.read': mediaSource.read,
             'wecom-bot.media-source.settle': mediaSource.settle,
