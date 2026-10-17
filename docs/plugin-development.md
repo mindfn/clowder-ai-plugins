@@ -66,8 +66,8 @@ export default {
 packages/my-plugin/       # 独立项目也可直接放在项目根
 ├── package.json          # 包名、版本、依赖、build、files
 ├── plugin.yaml           # 身份、版本、运行入口与实际能力
-├── README.md             # 用途、维护者、配置、开发与验证方法
-├── README.zh-CN.md       # 可选：同一插件的简体中文说明
+├── README.md             # 中文默认：用途、维护者、配置、开发与验证方法
+├── README.en.md          # 可选：同一插件的英文说明
 ├── src/                  # 实现
 └── dist/                 # 构建产物；须被最终安装制品包含
 ```
@@ -80,9 +80,9 @@ packages/my-plugin/       # 独立项目也可直接放在项目根
 
 ### 描述与 README 的语言
 
-插件只有一份 `plugin.yaml`、一个稳定 pluginId、一套版本和能力声明，不按语言复制插件。简短描述沿现有 `description.default` 与 `description.translations` 提供翻译，例如 `translations.zh-CN`；这不是完整使用说明。
+插件只有一份 `plugin.yaml`、一个稳定 pluginId、一套版本和能力声明，不按语言复制插件。简短描述继续使用现有 `description.default` 与 `description.translations`：当前默认说明用中文，英文可放在 `translations.en`，已有 `translations.zh-CN` 可保留。这不是完整使用说明，也不引入语言配置。
 
-完整说明并列放在同一包中：`README.md` 是默认文档，`README.zh-CN.md` 是简体中文版本；两份互相链接。按 Host 的语言读取约定，UI locale 优先选择 exact 文件名，再找 language 文件名，最后回到 `README.md`，例如 `zh-CN` 依次尝试 `README.zh-CN.md`、`README.zh.md`、`README.md`。没有对应译文就显示默认文档，不要求为每种语言都生成文件。这是文档文件约定，不增加 manifest 字段；实际 Host 支持范围按其版本验证。
+完整说明并列放在同一包中：`README.md` 是当前中文默认文档，`README.en.md` 是英文平行版，两份互相链接。当前系统没有语言设置，Host 继续读取 `README.md`；不新增 locale 参数、query 或 Accept-Language 协商，也不宣称会自动选择译文。未来真正引入系统语言设置时，再单独设计和验证文档选择能力。
 
 将语言文档明确列入 `package.json.files`（也可使用 `README*.md`），并检查实际 tarball 同时包含默认文档和译文；文件只在源码目录里不算交付。各语言应说明同一套实际功能、配置、权限及未验证范围，不能一份宣称可用、另一份还写待实现。维护者、安装与开发说明放 README，不把内部路由 ID 当成用户要逐项配置的功能。
 

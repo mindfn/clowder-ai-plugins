@@ -3,9 +3,10 @@ version: 0.1.0-alpha.16
 contractVersion: 0.1.0
 name: GitHub Operations
 description:
-  default: Track GitHub reviews, checks, conflicts, issues, comments, and repository reconciliation.
+  default: 跟踪 GitHub PR 审查、CI 检查、冲突、Issue 和评论，并同步仓库协作动态。
   translations:
     zh-CN: 跟踪 GitHub PR 审查、CI 检查、冲突、Issue 和评论，并同步仓库协作动态。
+    en: Track GitHub reviews, checks, conflicts, issues, comments, and repository reconciliation.
 icon:
   type: svg
   src: assets/icon.svg
