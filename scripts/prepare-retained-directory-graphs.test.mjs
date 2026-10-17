@@ -56,7 +56,7 @@ test('an independent source lock and physical dependency directory are not overw
 });
 
 test('legacy beta.12 and direct GitHub beta.19/35 keep separate authenticated contracts',async()=>{
- for(const [sdk,contract] of [['0.2.0-beta.12','0.1.0-beta.29'],['0.2.0-beta.19','0.1.0-beta.35']]) {
+ for(const [sdk,contract] of [['0.2.0-beta.12','0.1.0-beta.29'],['0.2.0-beta.12.1','0.1.0-beta.29.1'],['0.2.0-beta.19','0.1.0-beta.35']]) {
   const {root,directory}=await fixture();
   try {
    const pkg={name:'test-plugin',version:'1.0.0',dependencies:{'@clowder-ai/plugin-sdk':sdk,...(sdk.endsWith('.19')?{'@clowder-ai/plugin-contract':contract}:{})}};

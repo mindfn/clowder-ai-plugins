@@ -199,14 +199,14 @@ importers:
   packages/enterprise-workflow:
     dependencies:
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.12
+        specifier: 0.2.0-beta.12.1
         version: link:../plugin-sdk
       ajv:
         specifier: 8.20.0
         version: 8.20.0
     devDependencies:
       '@clowder-ai/plugin-contract':
-        specifier: 0.1.0-beta.29
+        specifier: 0.1.0-beta.29.1
         version: link:../plugin-contract
       '@types/node':
         specifier: ^20.17.0
@@ -354,10 +354,10 @@ importers:
   packages/personal-chrome-companion:
     dependencies:
       '@clowder-ai/plugin-contract':
-        specifier: 0.1.0-beta.29
+        specifier: 0.1.0-beta.29.1
         version: link:../plugin-contract
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.12
+        specifier: 0.2.0-beta.12.1
         version: link:../plugin-sdk
     devDependencies:
       '@types/node':
@@ -486,7 +486,7 @@ importers:
   packages/wechat-visible-reader:
     dependencies:
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.12
+        specifier: 0.2.0-beta.12.1
         version: link:../plugin-sdk
       zod:
         specifier: 3.25.76
@@ -508,7 +508,7 @@ importers:
   packages/weixin-mp:
     dependencies:
       '@clowder-ai/plugin-sdk':
-        specifier: 0.2.0-beta.12
+        specifier: 0.2.0-beta.12.1
         version: link:../plugin-sdk
     devDependencies:
       '@types/node':

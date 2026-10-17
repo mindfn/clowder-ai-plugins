@@ -6,9 +6,12 @@ import { fileURLToPath } from 'node:url';
 
 // Frozen canonical inputs; provenance lives in fixtures/retained-sdk/README.md.
 // Derive dependency identity from authenticated archives, never from the lock under test.
-export async function readRetainedSdkClosure(version = '0.2.0-beta.12') {
+export async function readRetainedSdkClosure(version = '0.2.0-beta.12.1') {
   const identities = [];
-  const rows = version === '0.2.0-beta.12' ? [
+  const rows = version === '0.2.0-beta.12.1' ? [
+    ['plugin-sdk', '0.2.0-beta.12.1', 55753, '4766cb318410f01c2d60cb9c1ba11daa3ccbfba583f65f7b013d629eb2da3e94'],
+    ['plugin-contract', '0.1.0-beta.29.1', 228040, '1c8de1173eb07b89d3c7737cc6f284dd90650cf8dc4418910b3eedb892d61e96'],
+  ] : version === '0.2.0-beta.12' ? [
     ['plugin-sdk', '0.2.0-beta.12', 55750, 'af0cd615aa2b2f8f9de994499f541f83163d9637d56fb89406bc1f7aa023ad7b'],
     ['plugin-contract', '0.1.0-beta.29', 228047, '25225f3c1b3f9935c692dbca7f8f001eca70ab7c198165b4e9ef69ca91d9b458'],
   ] : version === '0.2.0-beta.15' ? [
@@ -40,5 +43,5 @@ export async function readRetainedSdkClosure(version = '0.2.0-beta.12') {
 }
 
 export async function readRetainedSdkClosures() {
-  return Promise.all(['0.2.0-beta.12', '0.2.0-beta.15', '0.2.0-beta.19'].map(readRetainedSdkClosure));
+  return Promise.all(['0.2.0-beta.12.1', '0.2.0-beta.15', '0.2.0-beta.19'].map(readRetainedSdkClosure));
 }

@@ -64,7 +64,23 @@ These contributions belong to one plugin, with one manifest, ID, version and cap
 
 The Host owns installation, grants, thread access, storage mechanics and generic message/wake delivery. The plugin owns GitHub reads, filtering, tracking and Community business. Installation does not imply consent to every grant.
 
-Requested capabilities include config/secrets, private state, scheduling, Task/thread access, messaging and the declared custody/deployment ports. Private review verification needs `custody.verify`; reading thread content also requires explicit permission. The complete request is in the same package's `plugin.yaml`, not inferred from README or repository content.
+The plugin requests the following capabilities. The Host still authorizes and checks their scope; README and repository content cannot grant additional access.
+
+| Capability | Purpose |
+| --- | --- |
+| `schedule.register` | Poll registered work and recover pending collection and notifications. |
+| `plugin.config.read` | Read this plugin's settings. |
+| `secret.read` | Read tokens and webhook secrets configured for this plugin. |
+| `plugin.state.get`, `plugin.state.set` | Read and persist private tracking state, cursors, deduplication and delivery progress. |
+| `task.read`, `task.write` | Read tasks and update tracking/wait projections within Host-checked scope. |
+| `thread.listMetadata` | Read authorized thread metadata to check delivery destinations. |
+| `thread.readContent` | Read authorized thread content; this requires explicit content-access consent. |
+| `thread.write` | Perform declared writes to authorized threads. |
+| `messaging.send` | Deliver notifications and triage briefings to authorized destinations. |
+| `custody.invoke` | Submit declared collaboration operations to the Host, without granting approval or completion authority. |
+| `custody.verify` | Supply evidence for private Host review verification, not an ordinary tool or user button. |
+| `deployment.read` | Read the deployed cat catalog to check a triage target's availability. |
+| `frustration.read`, `frustration.link` | Read confirmed issue sources and associate their issue drafts. |
 
 Tool arguments, comments, repository text and message metadata never supply caller identity, owner authority, approval or publication permission. Native MCP uses the SDK's authenticated action transport; it does not revive the retired external GitHub MCP integration. Private verifier methods are not ordinary tools or actions.
 

@@ -58,16 +58,16 @@ function retained12Overrides(retainedSdk, retainedContract) {
   return ['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow'].map(name => [
     `@clowder-ai/${name}`, {
       // Chrome imports contract directly; the SDK-only edge cannot supply it.
-      ...(name === 'personal-chrome-companion' ? { '@clowder-ai/plugin-contract@0.1.0-beta.29': retainedContract } : {}),
-      '@clowder-ai/plugin-sdk@0.2.0-beta.12': { '.': retainedSdk,
-      '@clowder-ai/plugin-contract@0.1.0-beta.29': retainedContract } },
+      ...(name === 'personal-chrome-companion' ? { '@clowder-ai/plugin-contract@0.1.0-beta.29.1': retainedContract } : {}),
+      '@clowder-ai/plugin-sdk@0.2.0-beta.12.1': { '.': retainedSdk,
+      '@clowder-ai/plugin-contract@0.1.0-beta.29.1': retainedContract } },
   ]);
 }
 
 test('Chrome direct retained contract installs beside the current SDK in a fresh consumer', async () => {
   await readRetainedSdkClosure();
-  const retainedSdk = new URL('./fixtures/retained-sdk/clowder-ai-plugin-sdk-0.2.0-beta.12.tgz', import.meta.url).href;
-  const retainedContract = new URL('./fixtures/retained-sdk/clowder-ai-plugin-contract-0.1.0-beta.29.tgz', import.meta.url).href;
+  const retainedSdk = new URL('./fixtures/retained-sdk/clowder-ai-plugin-sdk-0.2.0-beta.12.1.tgz', import.meta.url).href;
+  const retainedContract = new URL('./fixtures/retained-sdk/clowder-ai-plugin-contract-0.1.0-beta.29.1.tgz', import.meta.url).href;
   const root = await mkdtemp(join(tmpdir(), 'clowder-chrome-direct-consumer-'));
   const packs = join(root, 'packs');
   const consumer = join(root, 'consumer');
@@ -96,10 +96,10 @@ test('Chrome direct retained contract installs beside the current SDK in a fresh
         { cwd: directory, encoding: 'utf8' }));
       const chromeEntry = fileURLToPath(import.meta.resolve('@clowder-ai/personal-chrome-companion'));
       const version = entry => JSON.parse(readFileSync(join(dirname(entry), '../package.json'), 'utf8')).version;
-      assert.equal(version(resolveFrom(dirname(chromeEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.29');
+      assert.equal(version(resolveFrom(dirname(chromeEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.29.1');
       const retainedSdkEntry = resolveFrom(dirname(chromeEntry), '@clowder-ai/plugin-sdk');
-      assert.equal(version(retainedSdkEntry), '0.2.0-beta.12');
-      assert.equal(version(resolveFrom(dirname(retainedSdkEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.29');
+      assert.equal(version(retainedSdkEntry), '0.2.0-beta.12.1');
+      assert.equal(version(resolveFrom(dirname(retainedSdkEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.29.1');
       const currentSdkEntry = fileURLToPath(import.meta.resolve('@clowder-ai/plugin-sdk'));
       assert.equal(version(currentSdkEntry), '0.2.0-beta.20');
       assert.equal(version(resolveFrom(dirname(currentSdkEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.36');
@@ -314,26 +314,26 @@ test('packed public packages install and import in a fresh npm consumer', async 
       stagedVideoPackage,
     );
 
-    // Retained packages still require beta.12, which was delivered in Batch9
-    // archives rather than npm. Supply those exact frozen bytes, never relabel
-    // the current SDK or change a production manifest to make the test pass.
-    const retainedSdk = fileURLToPath(new URL('./fixtures/retained-sdk/clowder-ai-plugin-sdk-0.2.0-beta.12.tgz', import.meta.url));
+    // These four packages retain the beta.12 implementation under the explicit
+    // 12.1/29.1 release identities. The original 12/29 archives stay historical;
+    // registry beta.29 is a different, incompatible published implementation.
+    const retainedSdk = fileURLToPath(new URL('./fixtures/retained-sdk/clowder-ai-plugin-sdk-0.2.0-beta.12.1.tgz', import.meta.url));
     const retainedBytes = await readFile(retainedSdk);
-    assert.equal(retainedBytes.length, 55750);
+    assert.equal(retainedBytes.length, 55753);
     assert.equal(createHash('sha256').update(retainedBytes).digest('hex'),
-      'af0cd615aa2b2f8f9de994499f541f83163d9637d56fb89406bc1f7aa023ad7b');
+      '4766cb318410f01c2d60cb9c1ba11daa3ccbfba583f65f7b013d629eb2da3e94');
     const retainedSri = `sha512-${createHash('sha512').update(retainedBytes).digest('base64')}`;
-    const retainedContract = fileURLToPath(new URL('./fixtures/retained-sdk/clowder-ai-plugin-contract-0.1.0-beta.29.tgz', import.meta.url));
+    const retainedContract = fileURLToPath(new URL('./fixtures/retained-sdk/clowder-ai-plugin-contract-0.1.0-beta.29.1.tgz', import.meta.url));
     const retainedContractBytes = await readFile(retainedContract);
-    assert.equal(retainedContractBytes.length, 228047);
+    assert.equal(retainedContractBytes.length, 228040);
     assert.equal(createHash('sha256').update(retainedContractBytes).digest('hex'),
-      '25225f3c1b3f9935c692dbca7f8f001eca70ab7c198165b4e9ef69ca91d9b458');
+      '1c8de1173eb07b89d3c7737cc6f284dd90650cf8dc4418910b3eedb892d61e96');
     const retainedContractSri = `sha512-${createHash('sha512').update(retainedContractBytes).digest('base64')}`;
     for (const directory of ['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow']) {
       const lock = JSON.parse(await readFile(join(repoRoot, 'packages', directory, 'npm-shrinkwrap.json'), 'utf8'));
-      assert.equal(lock.packages['node_modules/@clowder-ai/plugin-sdk'].version, '0.2.0-beta.12');
+      assert.equal(lock.packages['node_modules/@clowder-ai/plugin-sdk'].version, '0.2.0-beta.12.1');
       assert.equal(lock.packages['node_modules/@clowder-ai/plugin-sdk'].integrity, retainedSri);
-      assert.equal(lock.packages['node_modules/@clowder-ai/plugin-contract'].version, '0.1.0-beta.29');
+      assert.equal(lock.packages['node_modules/@clowder-ai/plugin-contract'].version, '0.1.0-beta.29.1');
       assert.equal(lock.packages['node_modules/@clowder-ai/plugin-contract'].integrity, retainedContractSri);
     }
     const retained15 = await readRetainedSdkClosure('0.2.0-beta.15');
@@ -493,7 +493,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
     );
     assert.equal(companionPackage.version, '0.1.0-alpha.4');
     assert.equal(companionPackage.private, undefined);
-    assert.equal(companionPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12');
+    assert.equal(companionPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12.1');
     assert.doesNotMatch(JSON.stringify(companionPackage), /"workspace:/u);
     assert.deepEqual(companionPackage.bin, {
       'clowder-personal-chrome-host': 'native-host/native-host-cli.mjs',
@@ -508,19 +508,19 @@ test('packed public packages install and import in a fresh npm consumer', async 
       'clowder-video-generation-mcp': './dist/mcp-entrypoint.js',
     });
     assert.equal(weixinMpPackage.version, '0.1.0-alpha.3');
-    assert.equal(weixinMpPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12');
+    assert.equal(weixinMpPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12.1');
     assert.doesNotMatch(JSON.stringify(weixinMpPackage), /"workspace:/u);
     assert.equal(wechatReaderPackage.version, '0.1.0-alpha.3');
-    assert.equal(wechatReaderPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12');
+    assert.equal(wechatReaderPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12.1');
     assert.doesNotMatch(JSON.stringify(wechatReaderPackage), /"workspace:/u);
     assert.deepEqual(wechatReaderPackage.os, ['darwin']);
     assert.equal(enterprisePackage.version, '0.1.0-alpha.2');
-    assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12');
+    assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.12.1');
     assert.doesNotMatch(JSON.stringify(enterprisePackage), /"workspace:/u);
     // Resolve from each installed consumer, not the top-level SDK: npm must
     // really preserve the two dependency identities in one fresh installation.
     for (const [directory, expected] of [
-      ...['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow'].map(name => [name, '0.2.0-beta.12']),
+      ...['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow'].map(name => [name, '0.2.0-beta.12.1']),
       ...connectorPackages.map(({ name }) => [name.slice('@clowder-ai/'.length), '0.2.0-beta.15']),
       ['github-operations', '0.2.0-beta.19'],
     ]) {
@@ -533,7 +533,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       const resolvedContractUrl = run(process.execPath, ['--input-type=module', '--eval',
         "console.log(import.meta.resolve('@clowder-ai/plugin-contract'));"], resolvedSdkRoot).trim();
       const resolvedContract = JSON.parse(await readFile(join(dirname(dirname(fileURLToPath(resolvedContractUrl))), 'package.json'), 'utf8'));
-      const expectedContract = { '0.2.0-beta.12': '0.1.0-beta.29', '0.2.0-beta.15': '0.1.0-beta.30',
+      const expectedContract = { '0.2.0-beta.12.1': '0.1.0-beta.29.1', '0.2.0-beta.15': '0.1.0-beta.30',
         '0.2.0-beta.19': '0.1.0-beta.35' }[expected];
       assert.equal(resolvedContract.version, expectedContract,
         `${directory} SDK must load its declared contract identity`);

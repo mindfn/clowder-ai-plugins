@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -17,7 +17,7 @@ import {
   readRegistryIntegrity,
 } from './registry-publish-compatibility.mjs';
 import { prepareRetainedPublication } from './prepare-retained-publish-artifact.mjs';
-import { readRetainedSdkClosures } from './retained-sdk-fixture.mjs';
+import { readRetainedSdkClosure, readRetainedSdkClosures } from './retained-sdk-fixture.mjs';
 
 const workflowSource = `
 jobs:
@@ -82,6 +82,40 @@ test('retained preparation copies six pinned archives unchanged and rejects path
   await assert.rejects(prepareRetainedPublication({ ...first, destination: join(root, 'refused'), root: alteredRoot }),
     /archive integrity mismatch/);
   await assert.rejects(readFile(join(root, 'refused', first.artifactPath.split('/').at(-1))), { code: 'ENOENT' });
+});
+
+test('12.1/29.1 release identities preserve every historical implementation and type byte', async t => {
+  await readRetainedSdkClosure('0.2.0-beta.12');
+  await readRetainedSdkClosure('0.2.0-beta.12.1');
+  const root = await mkdtemp(join(tmpdir(), 'clowder-reidentified-prerequisites-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const [name, before, after] of [
+    ['plugin-contract', '0.1.0-beta.29', '0.1.0-beta.29.1'],
+    ['plugin-sdk', '0.2.0-beta.12', '0.2.0-beta.12.1'],
+  ]) {
+    const directories = [];
+    for (const version of [before, after]) {
+      const destination = join(root, name, version);
+      await mkdir(destination, { recursive: true });
+      const archive = new URL(`./fixtures/retained-sdk/clowder-ai-${name}-${version}.tgz`, import.meta.url);
+      const extracted = spawnSync('tar', ['-xzf', archive.pathname, '-C', destination], { encoding: 'utf8' });
+      assert.equal(extracted.status, 0, extracted.stderr);
+      directories.push(join(destination, 'package'));
+    }
+    const members = await readdir(directories[0], { recursive: true, withFileTypes: true });
+    const files = members.filter(member => member.isFile()).map(member =>
+      join(member.parentPath, member.name).slice(directories[0].length + 1)).sort();
+    const afterMembers = await readdir(directories[1], { recursive: true, withFileTypes: true });
+    assert.deepEqual(afterMembers.filter(member => member.isFile()).map(member =>
+      join(member.parentPath, member.name).slice(directories[1].length + 1)).sort(), files);
+    for (const file of files.filter(file => file !== 'package.json')) {
+      assert.deepEqual(await readFile(join(directories[1], file)), await readFile(join(directories[0], file)), file);
+    }
+    const expected = JSON.parse(await readFile(join(directories[0], 'package.json'), 'utf8'));
+    expected.version = after;
+    if (name === 'plugin-sdk') expected.dependencies['@clowder-ai/plugin-contract'] = '0.1.0-beta.29.1';
+    assert.deepEqual(JSON.parse(await readFile(join(directories[1], 'package.json'), 'utf8')), expected);
+  }
 });
 
 test('registry gate refuses a conflicting published retained identity before packing current releases', async () => {

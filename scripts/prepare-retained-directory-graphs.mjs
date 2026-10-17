@@ -9,7 +9,7 @@ import { readRetainedSdkClosure } from './retained-sdk-fixture.mjs';
 
 const repository = fileURLToPath(new URL('../', import.meta.url));
 const namespace = '.clowder-local-directory';
-const retained = new Set(['0.2.0-beta.12', '0.2.0-beta.15', '0.2.0-beta.19']);
+const retained = new Set(['0.2.0-beta.12', '0.2.0-beta.12.1', '0.2.0-beta.15', '0.2.0-beta.19']);
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 async function optionalStat(path) { try { return await lstat(path); } catch(e) { if(e.code==='ENOENT') return undefined; throw e; } }
 // Every generated destination is below the selected package. Existing parents

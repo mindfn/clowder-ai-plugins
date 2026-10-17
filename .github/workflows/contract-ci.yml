@@ -281,19 +281,19 @@ jobs:
           pnpm --filter @clowder-ai/genoffice-docx prepack
 
       # Current consumers retain these exact dependency identities. Publish
-      # authenticated original archives first; later current releases own next.
-      - name: Publish retained contract beta.29
+      # authenticated frozen release archives first; later current releases own next.
+      - name: Publish retained contract beta.29.1
         uses: ./.github/actions/publish-prerelease
         with:
           package-directory: packages/plugin-contract
-          retained-artifact: scripts/fixtures/retained-sdk/clowder-ai-plugin-contract-0.1.0-beta.29.tgz
+          retained-artifact: scripts/fixtures/retained-sdk/clowder-ai-plugin-contract-0.1.0-beta.29.1.tgz
           npm-token: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish retained SDK beta.12
+      - name: Publish retained SDK beta.12.1
         uses: ./.github/actions/publish-prerelease
         with:
           package-directory: packages/plugin-sdk
-          retained-artifact: scripts/fixtures/retained-sdk/clowder-ai-plugin-sdk-0.2.0-beta.12.tgz
+          retained-artifact: scripts/fixtures/retained-sdk/clowder-ai-plugin-sdk-0.2.0-beta.12.1.tgz
           npm-token: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish retained contract beta.30

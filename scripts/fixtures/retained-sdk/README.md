@@ -72,8 +72,9 @@ installation proof. Existing beta.12/beta.15 fixtures remain unchanged.
 
 ## Protected publication of retained prerequisites
 
-The main-only publisher also admits these six exact archives so unchanged production
-shrinkwraps can resolve their retained SDK/contract identities from npm. The helper
+The main-only publisher admits the selected six release prerequisite archives.
+The original beta.12/beta.29 pair remains historical; current consumers use the
+explicit beta.12.1/beta.29.1 release identities described below. The helper
 `prepare-retained-publish-artifact.mjs` authenticates the allowlisted pair, original
 hash and SDK-to-contract edge, then copies the archive unchanged. It rejects an
 arbitrary path, mismatched package or changed archive; it does not rebuild old
@@ -84,3 +85,28 @@ current versions so they do not leave `next` pointing at an older version.
 PR validation performs preparation and registry checks only. Actual publication
 requires the existing validated main/maintainer path. No archive here is reported
 as published merely because local tests or CI pass.
+
+## Collision-free beta.12.1 / beta.29.1 release identities
+
+On 2026-10-17 npm already held `@clowder-ai/plugin-contract@0.1.0-beta.29`
+from upstream commit `b2c3992792a8b36607f5472b653bb442e7f29039`, with integrity
+`sha512-D/P67HEfG/KfilU9cVLIcqvqIvc2ZE5OwslPW2OFXivcJupnkogUDf4OxemGYH/tYyAgNINJwg8ZuKd2jB/4Pg==`.
+That public archive differs from the historical beta.29 above. Loading the original
+SDK beta.12 against it fails because `LIFECYCLE_REJECT_REASONS` is absent.
+Historical packed acceptance never authorized overwriting that published identity.
+
+The new archives preserve every original member byte except `package/package.json`:
+Contract changes its package version to `0.1.0-beta.29.1`; SDK changes its version to
+`0.2.0-beta.12.1` and its contract dependency to `0.1.0-beta.29.1`. No implementation,
+types, schema, fixture or export changes. A regression compares every archive member.
+The original six archives and their original hashes remain unchanged.
+
+- Contract beta.29.1: 228040 bytes, SHA256 `1c8de1173eb07b89d3c7737cc6f284dd90650cf8dc4418910b3eedb892d61e96`.
+- SDK beta.12.1: 55753 bytes, SHA256 `4766cb318410f01c2d60cb9c1ba11daa3ccbfba583f65f7b013d629eb2da3e94`.
+
+Only enterprise-workflow, wechat-visible-reader, weixin-mp and personal-chrome-companion
+change their production declarations/shrinkwraps to these explicit identities.
+The beta.15/beta.30 and beta.19/beta.35 consumers remain unchanged. The protected
+publisher selects the new pair before consuming packages; the registry integrity
+check still rejects any published collision. A local archive or green PR is not
+proof that either new identity has been published.

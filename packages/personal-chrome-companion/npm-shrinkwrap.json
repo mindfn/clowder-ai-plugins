@@ -9,14 +9,14 @@
       "version": "0.1.0-alpha.4",
       "license": "MIT",
       "dependencies": {
-        "@clowder-ai/plugin-contract": "0.1.0-beta.29",
-        "@clowder-ai/plugin-sdk": "0.2.0-beta.12"
+        "@clowder-ai/plugin-contract": "0.1.0-beta.29.1",
+        "@clowder-ai/plugin-sdk": "0.2.0-beta.12.1"
       }
     },
     "node_modules/@clowder-ai/plugin-contract": {
-      "version": "0.1.0-beta.29",
-      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.1.0-beta.29.tgz",
-      "integrity": "sha512-77p2pQyLZvbC+kv7yOOzIdsXNYeUblxy50H6VQVQYx2CB6vwySSux2LvUXzPLvdVZCNuJkFHpY04mZ3vHmnXgQ==",
+      "version": "0.1.0-beta.29.1",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.1.0-beta.29.1.tgz",
+      "integrity": "sha512-kU103yIhwh3au6U8mtaaU+Qtb5ZsRTVYKLRbokIIYUak4soAgUnW/jkr+F/fNV6IsmbNmcYyuIrjsLNiqYK3jA==",
       "license": "MIT",
       "dependencies": {
         "ajv": "^8.17.0",
@@ -27,12 +27,12 @@
       }
     },
     "node_modules/@clowder-ai/plugin-sdk": {
-      "version": "0.2.0-beta.12",
-      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.12.tgz",
-      "integrity": "sha512-OWaRO97kFIs5X3RDo+PlIN0C80oLvH7CPp/+55fXOi1NqJxUIB6cuhReQnXU0mvCX0/gDgQjsFLNOPpJHWur1w==",
+      "version": "0.2.0-beta.12.1",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.12.1.tgz",
+      "integrity": "sha512-6TmVTPzIfA2Q5/a0uTuQLj+YaSCLI5NOAY8GQfEfEWroaqfIEtfhOn2TPcg2//OJQ5E/nLHn8W+tBUb1G5DVfA==",
       "license": "MIT",
       "dependencies": {
-        "@clowder-ai/plugin-contract": "0.1.0-beta.29"
+        "@clowder-ai/plugin-contract": "0.1.0-beta.29.1"
       },
       "engines": {
         "node": ">=20.0.0"

@@ -48,8 +48,8 @@
     "yaml": "2.9.0"
   },
   "dependencies": {
-    "@clowder-ai/plugin-contract": "0.1.0-beta.29",
-    "@clowder-ai/plugin-sdk": "0.2.0-beta.12"
+    "@clowder-ai/plugin-contract": "0.1.0-beta.29.1",
+    "@clowder-ai/plugin-sdk": "0.2.0-beta.12.1"
   },
   "keywords": [
     "clowder-ai",

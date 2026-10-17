@@ -64,7 +64,23 @@ MCP、skill 和调度是用户或猫直接使用的能力；插件也需要声�
 
 Host 管理安装、授权、thread 访问、存储机制和普通消息/唤醒；插件管理 GitHub 读取、过滤、跟踪和社区业务。安装不等于自动同意所有权限。
 
-插件请求配置与密钥读取、私有状态、调度、Task/thread 访问、消息投递，以及已声明的协作与部署目录能力。`custody.verify` 用于私有审查验证；读取 thread 内容也需明确授权。完整清单以同包 `plugin.yaml` 为准，不从 README 或仓库内容推导额外 grant。
+插件实际请求的权限及用途如下；访问范围仍由 Host 授权和校验，不从 README 或仓库内容推导额外 grant。
+
+| 权限 | 用途 |
+| --- | --- |
+| `schedule.register` | 定时检查已登记事项，恢复待处理的采集和通知。 |
+| `plugin.config.read` | 读取本插件的设置。 |
+| `secret.read` | 读取配置给本插件的 token 和 Webhook 密钥。 |
+| `plugin.state.get`、`plugin.state.set` | 读取和保存私有跟踪状态、游标、去重记录与投递进度。 |
+| `task.read`、`task.write` | 读取任务并更新跟踪、等待投影；范围由 Host 校验。 |
+| `thread.listMetadata` | 读取获准对话的基本信息，确认投递目标。 |
+| `thread.readContent` | 读取获准对话内容；这是需要明确同意的内容访问权限。 |
+| `thread.write` | 对获准对话执行已声明的写入操作。 |
+| `messaging.send` | 向获准目标投递通知与分诊简报。 |
+| `custody.invoke` | 向 Host 提交已声明的协作操作，不自行授予批准或完成权。 |
+| `custody.verify` | 为 Host 的私有审查验证提供证据，不是普通工具或用户按钮。 |
+| `deployment.read` | 读取部署中的猫目录，确认分诊对象可用。 |
+| `frustration.read`、`frustration.link` | 读取已确认的问题来源，并关联相应 Issue 草稿。 |
 
 工具参数、评论、仓库文本及消息元数据都不能充当当前猫身份、owner 权限、批准或发布授权。原生 MCP 通过 SDK 的认证调用通路进入本插件；不会恢复已退役的外部 GitHub MCP 集成。私有验证方法不是普通工具或 action。
 
