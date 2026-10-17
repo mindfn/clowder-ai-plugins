@@ -2,198 +2,78 @@
 
 [简体中文](README.md) · English
 
-`README.md` is the current Chinese default. This `README.en.md` is its parallel
-English document; automatic system-language selection is not implemented.
+`@clowder-ai/github-operations` tracks PR reviews, CI checks, merge conflicts, issues and comments, collects repository activity, and provides Community triage and issue drafts that require publication confirmation.
 
-`@clowder-ai/github-operations` runs GitHub tracking and repository collection
-inside an installed builtin plugin. This source is a local C1 migration candidate,
-not a public release or proof of complete installed acceptance.
+## Get started
 
-## What it provides
+1. Install through Clowder AI Settings. Authenticate the canonical GitHub CLI (`gh`) on the machine running Clowder AI.
+2. Optionally configure a Personal Access Token in the plugin secret field, or use the machine's existing `gh` login. Never put credentials in conversations, tool arguments or repository content.
+3. Enable the plugin and use its installed GitHub Operations skill and tools. Saving configuration and enabling runtime work are separate actions; tracking and background polling require the plugin to be running.
 
-Track PR reviews, CI checks, merge conflicts, issues and comments; collect
-repository activity; and use Community triage and issue drafts with explicit
-publication confirmation. Registration starts tracking. It does not approve a
-review, merge a PR, or authorize publishing on your behalf.
+Other settings are optional, not installation prerequisites:
 
-The installed package includes MCP tools, a GitHub Operations skill and scheduled
-polling. Other manifest contributions connect these functions to the Host:
-
-| Contribution | Purpose |
+| Setting | Purpose |
 | --- | --- |
-| Native tools / `github-tracking` MCP | Register, inspect and stop tracking; perform the declared Community actions. |
-| Skill | Explain when and how the installed tools should be used. |
-| Schedules | Poll registered work and retry pending collection or delivery. |
-| `community-http-01`–`29` | Owner-authenticated Community page endpoints; these are internal route IDs, not 29 GitHub webhooks to configure. |
-| `github/events` | Optional external GitHub repository webhook, using a separately configured secret. |
-| `github/pr-title` | Read a current PR title for display without registering tracking or refreshing the repository index. |
-| `review-predicate` | Private review freshness/completion verification for the Host, not a tool or a manual “complete verification” button. |
-| `github-notification` / `github-wait` identities | Attribute plugin notifications and waits; they do not create GitHub accounts or grant caller authority. |
+| Noise Bot Login List | Filter known setup-only comment noise. |
+| GitHub Webhook Secret | Configure only when using the optional repository webhook, with the exact callback URL exposed by the Host. |
+| Repositories allowed for public issue drafts | Comma-separated `owner/repository` names. Empty disables new drafts and publishing. |
+| Community narrator cat / thread | Set both to an available cat and an accessible existing thread for manual triage briefings. Empty disables new requests. |
 
-These contributions belong to one plugin with one manifest, ID and version.
-They are not additional plugins or separate setup steps. This package does not
-declare a limb. Displaying an internal contribution ID does not make it a user
-action; the Host controls how capabilities are presented.
+The legacy `mcpToken` key remains for inventory continuity; it is not a current action credential and is not needed to use native MCP. Fresh installation requires no old configuration, permissions or cursor import. Existing stored metadata is not implicitly deleted.
 
-## Use
+## Track PRs and issues
 
-Install and enable through Settings. Configure an optional Personal Access Token
-in the secret field, or use the machine's existing authenticated canonical
-`gh` session. Never paste credentials into a conversation or tracking arguments.
-The optional setup-noise login list filters known setup-only conversation noise.
+The native `github-tracking` MCP server exposes:
 
-The plugin declares its native `github-tracking` MCP server. Use
-`cat_cafe_register_pr_tracking`, `cat_cafe_register_issue_tracking` and
-`cat_cafe_unregister_tracking` with their advertised schemas. A registration
-takes repository, number and a unique `registrationId`; reuse that ID and the
-same arguments after an unknown response. Host authenticates the current cat,
-thread and invocation; these identities are not tool arguments. A fresh live
-baseline is silent; subsequent matching changes become ordinary messages.
-Repository registration separately enables the repository inbox.
+- `cat_cafe_register_pr_tracking` to register a PR.
+- `cat_cafe_register_issue_tracking` to register an issue.
+- `cat_cafe_unregister_tracking` to stop tracking while retaining history.
 
-Tracking state, cursors, deduplication, Community facts and projections belong to
-the package's private SDK storage. No registration means no GitHub poll requests.
-Closing or merging a tracked subject retires tracking after the final collection
-and delivery. Unregistering preserves history. Disabling the plugin aborts
-provider work and waits for cleanup.
+Use their advertised schemas. A registration takes a repository, number and unique `registrationId`; reuse the same ID and arguments after an unknown response. The Host authenticates the cat, thread and invocation. Those identities are not tool arguments.
 
-## Webhooks and resources
+The first live baseline is silent. Later matching changes become ordinary messages. Repository inbox collection has its own registration. Installing alone does not start GitHub polling for unregistered subjects. An on-demand title read for display does not register tracking or refresh the repository index.
 
-The optional repository webhook uses the declared `github/events` path and a
-separate `webhookSecret`. Use the exact callback URL exposed by the Host.
-The package checks HMAC over the original request bytes and accepts only
-registered repositories. It shares event identities with polling.
+Closing or merging a subject retires tracking after final collection and delivery. Failed collection does not advance cursors; pending messages remain recoverable. Disable cancels provider work and joins cleanup, while re-enable recovers from durable state.
 
-Five declared schedules drive tracking and repository collection. One PR poll
-reads the complete snapshot for all armed predicates; issue tracking has its own
-poll. The plugin's native MCP process calls its active module through the SDK's
-authenticated action transport. Background work uses in-process SDK ports.
-The retired external GitHub MCP integration is not revived. The legacy `mcpToken`
-configuration key remains for inventory continuity and is not an action credential.
+## Community triage and publishing
+
+Community pages read repository facts and expose the declared collaboration and draft operations. Public issue publication requires explicit confirmation and an allowed target repository. Empty publication settings cannot be bypassed.
+
+With narrator cat and thread configured, manual triage saves a frozen target and briefing before the existing schedule materializes its delivery. Changing either setting pauses the old delivery instead of redirecting it. Restore the original settings to retry. Enabling later does not automatically wake historical cases.
+
+Submit external-review results through `github_record_external_review_verdict`. `pending_verification` means the submission is durable, **not** that delivery or lease completion has been approved. Missing trusted publisher association returns `insufficient`; a matching GitHub object alone is not completion evidence.
+
+## Understand capability names
+
+MCP, the skill and schedules are directly used features. Other contributions connect those features to Host pages, messages and verification:
+
+| Name | Purpose |
+| --- | --- |
+| Tools / `github-tracking` MCP | Register, inspect and stop tracking, and perform declared Community actions. |
+| Skill | Explain the tools' intended use. |
+| Schedules | Poll registered work and recover pending collection or delivery. |
+| `community-http-01`–`29` | Internal Community page route IDs, not 29 GitHub webhooks that users must configure. |
+| `github/events` | Optional external repository webhook. It verifies HMAC over original request bytes and accepts registered repositories only. |
+| `github/pr-title` | Read a current PR title for display without changing tracking state. |
+| `review-predicate` / completion verification | A private Host review verifier, not a manual verification button or completion authority. |
+| `github-notification` / `github-wait` identities | Attribute plugin notifications and waits, not new GitHub accounts or caller permissions. |
+
+These contributions belong to one plugin, with one manifest, ID, version and capability declaration. They are not extra plugins or setup steps. This package declares no limb. The Host controls their presentation; removing real wiring is not a display fix.
 
 ## Authority and recovery
 
-The Host owns installation grants, thread access, storage mechanics and generic
-message/wake delivery. The plugin owns GitHub fetch/filter/decision/tracking
-business. Repository content, tool arguments and message metadata never become
-caller identity, action custody, approval or merge/publish authority.
+The Host owns installation, grants, thread access, storage mechanics and generic message/wake delivery. The plugin owns GitHub reads, filtering, tracking and Community business. Installation does not imply consent to every grant.
 
-Polling uses canonical `gh` without a shell. Failed event collection does not
-advance tracking cursors or retire a terminal subject; pending message delivery
-is retained for retry. Historical Host state is not deleted or imported
-implicitly. Host cutover must separately prove replacement and no double-run
-before retiring old consumers.
+Requested capabilities include config/secrets, private state, scheduling, Task/thread access, messaging and the declared custody/deployment ports. Private review verification needs `custody.verify`; reading thread content also requires explicit permission. The complete request is in the same package's `plugin.yaml`, not inferred from README or repository content.
 
-Provider predicates, baselines, registration receipts and renewal remain private
-to the plugin. Before sending a wait notification, the module publishes the
-neutral generation/outcome through `tasks.setWait`. A failed projection retains
-the outbox. The Host supplies instance and invocation identity and consumes that
-projection for continuation; the plugin cannot supply authority fields.
+Tool arguments, comments, repository text and message metadata never supply caller identity, owner authority, approval or publication permission. Native MCP uses the SDK's authenticated action transport; it does not revive the retired external GitHub MCP integration. Private verifier methods are not ordinary tools or actions.
 
-The private review predicate provider requires the owner-visible L2
-`custody.verify` grant. It checks the assigned reviewer against private state and
-reads the current open PR HEAD; its methods are not tools or ordinary actions.
-The Host still selects the installation, binds each lease generation and commits
-completion. Current migrated review records lack an authenticated publisher
-association, so delivery verification returns `insufficient` even when the exact
-GitHub review exists. No successful review completion is claimed by this source
-checkpoint. The full installed review-completion journey remains unverified.
+A PR poll admits at most 20 waits using shared CI base facts. Each PR's deeper read has a 10-second deadline within the 30-second poll budget. Failure preserves its baseline and generation. Registration/cancellation is rechecked before consuming results; pending notifications can recover even when new batch facts are unavailable.
 
-Fresh installation uses the normal configuration and repository registration.
-It does not require importing old configuration, metadata or delivery cursors.
-Existing stored metadata remains readable; this migration does not delete it.
+## Development and validation notes
 
-## Acceptance
+After dependency preparation at the repository root, run the package's `typecheck`, `test` and `build`. Its production graph retains Contract `0.1.0-beta.35`, SDK `0.2.0-beta.19` and the pinned Fastify closure. Current workspace SDK source is not a substitute for those retained artifacts; directory preparation does not rewrite the old archives.
 
-Current migration acceptance is an isolated Host worktree with a local-directory
-installation: native MCP registration → provider change → notification and Host
-continuation → disable/reload → no duplicate old caller. Archive integrity alone
-does not prove this journey. Local-directory acceptance also does not establish
-npm or Git distribution, public release, or soak.
+`README.md` is the current Chinese default, with `README.en.md` as the parallel English document. Relative links connect the repository documents; they are not a Host language selector. The Host currently reads only the default README, with no automatic language-selection mechanism or duplicate manifest.
 
-Requested Host capabilities (from `plugin.yaml`): `schedule.register`,
-`plugin.config.read`, `secret.read`, `plugin.state.get`, `plugin.state.set`,
-`task.read`, `task.write`, `thread.listMetadata`, `thread.readContent`,
-`thread.write`, `messaging.send`, `custody.invoke`, `custody.verify`, `deployment.read`,
-`frustration.read`, `frustration.link`. The last three are separate explicit L2
-grants; no grant is inferred from installing the plugin. `thread.readContent` is an
-explicit L2 grant required by the current Host's reliable thread point lookup;
-installation must display and obtain it rather than infer consent.
-
-
-### Community HTTP composition
-
-The source module now activates the embedded Community router with 33 method/path
-pairs in 29 owner-only webhook declarations. The dispatcher is not a tool, MCP
-action or Settings operation; native-context calls to it are rejected. It shares
-the collector's projection queue and uses guarded SDK thread/source ports.
-Publishing repositories are read from `publishRepositories` on each request and
-again at the publication journal boundary. An empty list disables new drafts
-and publishing while durable drafts remain readable.
-
-This is source composition, not installed acceptance. Review settlement/publisher association, final
-real Host identity/CAS/browser journeys remain
-open. Owner HTTP does not mint a native caller for callback-only routes. The six
-Community callbacks are now separately declared in native MCP and use the Host
-second context. They cannot perform owner resolve or lease completion. Report
-checks the exact public issue comment through the bounded repository-authorized
-reader; this is issue closure evidence, not review publisher authentication. Missing
-Host source ports fail explicitly; no source or deployment catalog is fabricated.
-
-### Community narrator
-
-Set both `narratorCatId` and `narratorThreadId` in plugin settings to opt into
-manual dispatch triage. The cat must be available in the Host deployment catalog
-and the thread must be accessible through the granted thread read capability.
-The Host owns the cat's model and execution policy; the plugin does not import
-roster roles, invent a model, or mint a native invocation.
-
-Dispatch commits `discussing` and the frozen target/briefing in one private CAS.
-The existing Community reconciler schedule materializes the durable message
-outbox; Settings also exposes delivery status and retry. Failed outbox writes,
-lost replies and module recreation retain the same source/idempotency key.
-Changing either target setting pauses existing delivery, never redirects it;
-restore the original settings and retry to resume. Empty settings disable new
-intents; enabling later does not wake historical or disabled dispatches. Closed
-or otherwise non-discussing cases do not admit new narrator sends. Stop joins
-in-flight SDK sends and leaves uncertain outcomes for idempotent recovery.
-
-Briefings name the declared native `github_community_triage_complete` callback.
-The briefing is a request for triage, not authority for owner resolve, code
-changes or lease completion. This source checkpoint covers manual dispatch and
-recovery, not installed Host messaging or a real cat response journey. The fixed
-migration source (`bb9f9f08`) only wired manual dispatch: its automatic eligibility
-helper had no production caller. The package retains that pure helper and does
-not add automatic admission or wake historical cases.
-
-Native external-review submissions use `github_record_external_review_verdict`
-with the assigned exact HEAD and lease generation. The current Host invocation
-supplies identity; the tool does not publish a review or accept identity/time
-fields. A delivered candidate is saved before the Host independently verifies
-completion. `pending_verification` means the submission is durable, **not** that
-review delivery or lease completion succeeded. Retry the identical submission
-under a fresh native invocation after the missing verification becomes available;
-background schedules never borrow the stored reviewer identity. The current
-publisher association is unavailable, so matching GitHub objects alone remain
-insufficient. This source integration requires the explicit `custody.invoke`
-grant and is not an installed-acceptance claim.
-
-
-PR notification polling admits at most 20 waits per tick using one scoped CI
-base-fact batch. Required-check diagnostics and truncated rollup reads run inside
-each PR's own 10-second deadline within the 30-second poll budget; failure leaves
-that wait's baseline and generation unchanged. Configured credentials are resolved
-again for each batch and per-PR CI read. Concurrent registration/cancellation is
-rechecked before consuming the batch; pending notifications can recover even when
-new batch facts are unavailable. These package regressions do not establish the
-upstream distributable gate or installed Host acceptance.
-
-### Artifact dependency closure
-
-The alpha.16 production shrinkwrap pins contract beta.35, SDK beta.19 and the
-embedded Fastify router with their transitive dependencies. Development archives
-use the exact reviewed local contract/SDK bytes; their registry coordinates do
-not claim those versions are published. A fresh consumer must resolve the packed
-module and its production dependencies without workspace links. Archive checks
-and isolated module fixtures do not replace real Host grant, identity, CAS or
-browser acceptance.
+Release and verification note: this source remains an unpublished local C1 candidate. Package tests and archive integrity do not prove real-account, Host page, notification/continuation or full journey acceptance. Installation acceptance, public distribution and soak are recorded separately.
