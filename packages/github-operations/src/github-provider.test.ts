@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { GitHubProvider } from './github-provider.js';
+import { executeGitHubRequest } from './business/infrastructure/github/request-budget.js';
 import type { GitHubRequestOptions } from './business/infrastructure/github/request-budget.js';
 import { publicationBody, type NativeIssueDraft } from './native-issue-drafts.js';
 import { createRepoCommentPoller } from './business/infrastructure/connectors/github-repo-event/RepoCommentPollTaskSpec.js';
@@ -280,4 +281,32 @@ test('public report verification reads the exact GitHub comment and rejects mism
   }
   assert.equal(await provider.verifyPublicIssueComment({ ...input, url: 'https://attacker.test/example/project/issues/7#issuecomment-123' }), false);
   assert.equal(reads, 5);
+});
+
+
+test('CI batch can wait beyond the old five-second credential queue limit while caller cancellation still fences admission', { timeout: 12_000 }, async () => {
+  let release!: () => void; let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const token = 'isolated-ci-main-9690'; let batches = 0;
+  const older = executeGitHubRequest(['api', 'credential-queue-fixture'], { ghToken: token,
+    execFileAsync: async () => { entered(); await blocked; return { stdout: '{}' }; } });
+  await started;
+  const provider = new GitHubProvider({ token: async () => token, log: { warn() {} },
+    execFileAsync: async (_file, args, options) => {
+      assert.equal(args[1], 'graphql'); assert.equal(options.signal?.aborted, false); batches++;
+      return { stdout: JSON.stringify({ data: { r0: { p0: { headRefOid: 'a'.repeat(40), state: 'OPEN',
+        commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: [], pageInfo: { hasNextPage: false } } } } }] } } } } }) };
+    } });
+  const gate = new AbortController();
+  const pending = provider.forCiBatch([target], gate.signal);
+  try {
+    await new Promise(resolve => setTimeout(resolve, 5_100));
+    assert.equal(batches, 0);
+    release(); await older;
+    assert.equal(typeof (await pending).read, 'function'); assert.equal(batches, 1);
+    gate.abort(new Error('caller gate closed'));
+    await assert.rejects(provider.forCiBatch([target], gate.signal), /caller gate closed/);
+    assert.equal(batches, 1, 'cancelled caller cannot launch another batch');
+  } finally { release(); await Promise.allSettled([older, pending]); }
 });

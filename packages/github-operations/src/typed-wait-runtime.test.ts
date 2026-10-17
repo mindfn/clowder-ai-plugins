@@ -370,3 +370,26 @@ test('cancellation during shared CI admission prevents PR-local reads and wake',
     assert.equal((await runtime.store.get(task.id))!.automationState!.waitOutcome!.reason, 'user_cancel');
   } finally { await runtime.stop(); }
 });
+
+
+test('terminal CI observation with lost private writes is not delivered and retries without consuming its baseline', async () => {
+  const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
+  try {
+    const task = await runtime.registerPr({ ...input, when: [{ kind: 'pr_ci_terminal' }] }, f.caller);
+    const before = structuredClone(Object.fromEntries(f.rows));
+    f.setSnapshot({ ...f.snapshot(), state: 'merged' });
+    const cas = f.context.storage.compareAndSet;
+    f.context.storage.compareAndSet = async () => ({ applied: false });
+    await runtime.poll('pr');
+    assert.deepEqual(Object.fromEntries(f.rows), before);
+    assert.equal(f.sent.length, 0);
+    assert.equal(f.tasks.get(task.id)?.pluginWait?.waitOutcome, undefined);
+    assert.ok(f.tasks.get(task.id)?.pluginWait?.await, 'registration remains active for retry');
+    f.context.storage.compareAndSet = cas;
+    await runtime.poll('pr');
+    assert.equal(f.sent.length, 1);
+    assert.equal(f.tasks.get(task.id)?.pluginWait?.waitOutcome?.reason, 'subject_terminal');
+    await runtime.poll('pr');
+    assert.equal(f.sent.length, 1, 'no duplicate terminal delivery after the committed retry');
+  } finally { await runtime.stop(); }
+});

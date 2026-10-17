@@ -4,7 +4,7 @@ import type { PluginStorageHost, PluginMessagingDraft } from '@clowder-ai/plugin
 import { GitHubWaitStorage } from './typed-wait-storage.js';
 import { GitHubWaitLifecycleService } from './business/domains/github-signals/GitHubWaitLifecycleService.js';
 import { WaitLifecycleRecoverySweep } from './business/domains/ball-custody/WaitLifecycleRecoverySweep.js';
-import type { TaskItem } from './business/model/index.js';
+import type { TaskItem, GitHubWaitOutcomeV1 } from './business/model/index.js';
 
 function fixture() {
   const rows = new Map<string, { revision: number; value: unknown }>();
@@ -81,4 +81,52 @@ test('failed SDK delivery survives recreation and recovery uses the same outcome
   assert.deepEqual(f.messages[0]?.wake, { catId: 'astra' });
   assert.equal((await recreated.get('task1'))?.automationState?.waitOutcome?.delivery, 'delivered');
   assert.equal((await recreated.get('task1'))?.automationState?.await?.generation, 4);
+});
+
+// Main b59cd583's terminal collector must match the generation retained by a
+// completed receipt; this uses the package's real private CAS store.
+for (const kind of ['pr_tracking', 'issue_tracking'] as const) {
+  test(`${kind}: terminal collection preserves a completed receipt and never notifies it twice`, async () => {
+    const f = fixture();
+    const subject = kind === 'pr_tracking' ? 'pr:owner/repo#7' : 'issue:owner/repo#7';
+    const receipt: GitHubWaitOutcomeV1 = { v: 1 as const, outcomeId: `wait:${subject}:g3:expired`, generation: 3,
+      subjectRef: subject, ownerFence: { kind: 'containing_task' as const, generation: 3 },
+      reason: 'expired' as const, at: 90, delivery: 'delivered' as const, actor: { kind: 'system' as const } };
+    const task: TaskItem = { ...f.task, kind, subjectKey: subject, status: 'done',
+      automationState: { waitOutcome: receipt } };
+    await f.store.create(task);
+    const patch = kind === 'pr_tracking' ? { ci: { prState: 'merged' as const, terminalObservedAt: 500 } }
+      : { issue: { lastCommentCursor: 40 } };
+    const input = { taskId: task.id, facts: {}, subjectState: kind === 'pr_tracking' ? 'merged' as const : 'closed' as const,
+      collectorPatch: patch };
+    assert.equal((await f.lifecycle().observe(input)).kind, 'state_only');
+    const stored = await f.store.get(task.id);
+    assert.equal(stored?.status, 'done');
+    assert.deepEqual(stored?.automationState?.waitOutcome, receipt);
+    for (const [key, value] of Object.entries(patch)) assert.deepEqual(stored?.automationState?.[key as 'ci' | 'issue'], value);
+    await f.lifecycle().observe(input);
+    assert.deepEqual((await f.store.get(task.id))?.automationState?.waitOutcome, receipt);
+    assert.equal(f.messages.length, 0);
+  });
+}
+
+test('a lost terminal collector write is unrecorded, preserves receipt bytes and succeeds on a fresh retry', async () => {
+  const f = fixture();
+  const receipt: GitHubWaitOutcomeV1 = { v: 1 as const, outcomeId: 'wait:pr:owner/repo#7:g3:subject_terminal', generation: 3,
+    subjectRef: 'pr:owner/repo#7', ownerFence: { kind: 'containing_task' as const, generation: 3 },
+    reason: 'subject_terminal' as const, terminalSubjectState: 'merged' as const,
+    at: 90, delivery: 'delivered' as const, actor: { kind: 'system' as const } };
+  await f.store.create({ ...f.task, status: 'done', automationState: { waitOutcome: receipt } });
+  const before = await f.store.get(f.task.id);
+  const cas = f.storage.compareAndSet;
+  f.storage.compareAndSet = async () => ({ applied: false });
+  const input = { taskId: f.task.id, facts: {}, subjectState: 'merged' as const,
+    collectorPatch: { ci: { prState: 'merged' as const, terminalObservedAt: 500 } } };
+  assert.deepEqual(await f.lifecycle().observe(input), { kind: 'unrecorded', reason: 'generation_changed_concurrently' });
+  assert.deepEqual(await f.store.get(f.task.id), before);
+  assert.equal(f.messages.length, 0);
+  f.storage.compareAndSet = cas;
+  assert.equal((await f.lifecycle().observe(input)).kind, 'state_only');
+  assert.deepEqual((await f.store.get(f.task.id))?.automationState?.waitOutcome, receipt);
+  assert.equal(f.messages.length, 0);
 });
