@@ -1,57 +1,42 @@
-# DingTalk Connector
+# 钉钉连接器
 
-`@clowder-ai/connector-dingtalk` packages DingTalk Stream ingress and OpenAPI/AI Card egress for a Clowder AI
-Host. It parses direct and group messages, preserves provider message IDs and media download codes, sends
-bounded text/markdown/media replies, and shuts down the Stream client during Host drain.
+简体中文 · [English](README.en.md)
 
-## Authority boundary
+将钉钉企业应用的私聊和群聊接入 Clowder AI，支持 Stream 收消息、文本和 Markdown 回复、媒体传输与 AI 卡片。
 
-The Host owns installation, grants, configuration and secrets, connector-to-thread bindings, admission,
-wake routing, retry/dead-letter policy, and lifecycle supervision. The package never parses `@` text to
-invent wake authority and never mints a connector-binding handle. It requires the Host to supply a verified
-opaque `connector_binding` handle for inbound delivery and the corresponding external DingTalk coordinate
-for outbound delivery and restart recovery.
+## 开始使用
 
-## Configuration
+1. 在钉钉创建企业应用，取得 `appKey` 和 `appSecret`。
+2. 在插件设置中填写应用凭据并保存，再启用插件建立 Stream 连接。密钥由宿主保管，不要放进聊天或仓库文件。
+3. 向应用发送消息；使用下方命令查看或切换关联的对话。
 
-- `appKey` is the DingTalk enterprise application App Key.
-- `appSecret` is a secret and must be projected only from the manifest-declared Host configuration.
+群白名单、管理员及群命令限制在正常配置页设置。默认白名单与群命令限制关闭，管理员列表为空。群管理命令始终要求明确配置的管理员，空列表不会授予任何人管理权。
 
-The package does not read a repository `.env` file and does not persist credentials. DingTalk access tokens
-remain runtime-ephemeral. Group conversation identifiers may be checkpointed only through a Host-owned
-store injected into the adapter.
+## 消息与恢复
 
-Inbound provider media locators are retained only in the package's manifest-declared private state. The
-public message carries a `pmr_*` reference and `sourceEventId`; the Host reads bounded chunks through the
-declared media source, then settlement removes the private locator.
+保留钉钉消息标识，按平台限制分段发送回复。媒体通过宿主授权的引用读取；私有下载坐标不会进入公开消息。停用时关闭 Stream 连接；再次启用沿用宿主持久状态，避免与另一份连接器同时消费消息。
 
-## Safety and recovery
+## 对话命令
 
-Provider HTTP errors fail closed. Media upload and download responses are bounded by the provider contract;
-error text must not include credentials. Disabling or draining the plugin closes the Stream connection before
-the preserved Core adapter can be restored, preventing double consumption.
+可使用 `/where`、`/new`、`/threads`、`/use`、`/thread`、`/commands`、`/cats`、`/status`、`/history`、`/unbind`、`/focus` 和 `/ask` 查看位置、切换对话或发起请求。`/thread`、`/ask` 只有显式携带正文时才请求猫执行，宿主接受投递后才确认成功。`/use` 会遍历可见对话，列表不完整时不猜测选择。
 
-The Host-loadable builtin runtime is implemented in this package and consumes only the existing Host-owned
-config/secret, binding, state, and messaging surfaces. Adapter exports are usable for isolated provider
-conformance tests without claiming that synthetic handles constitute production activation.
+`/allow-group`、`/deny-group` 仅适用于支持群聊且已配置管理员的连接器，不能通过普通私聊文本取得管理权。
 
-## Exposed capability
+## 安装权限
 
-This package requests these Host capabilities, verbatim from its manifest
-(`plugin.yaml` — kept in sync by `pnpm test:train-c1-inventory`): `plugin.config.read`,
-`plugin.state.get`, `plugin.state.set`, `media.read`, `message.event.subscribe`, `messaging.send`,
-`secret.read`, `thread.readContent`, `thread.listMetadata`, `thread.write`.
+以下能力均来自同一份 `plugin.yaml`，由宿主决定是否授权；说明文件不授予额外权限。
 
-## Commands and configuration
+| 权限 | 用途 |
+| --- | --- |
+| `plugin.config.read` | 读取本插件保存的设置。 |
+| `plugin.state.get` | 读取宿主保管的私有业务状态。 |
+| `plugin.state.set` | 保存私有业务状态、进度与去重记录。 |
+| `media.read` | 读取当前调用获准的媒体引用。 |
+| `message.event.subscribe` | 接收获准的对话消息与生命周期事件。 |
+| `messaging.send` | 向获准目标发送消息和回复。 |
+| `secret.read` | 读取明确授权给本插件的凭据。 |
+| `thread.listMetadata` | 列出可访问对话的基本信息。 |
+| `thread.readContent` | 读取获准对话内容；范围由宿主核验。 |
+| `thread.write` | 创建或更新获准的对话关联。 |
 
-The builtin entrypoint intercepts `/where`, `/new`, `/threads`, `/use`, `/thread`, `/commands`, `/cats`,
-`/status`, `/history`, `/unbind`, `/allow-group`, `/deny-group`, `/focus`, and `/ask` before ordinary ingress.
-Commands reply through the provider and keep their audit quiet. Only an explicit body in `/thread` or
-`/ask` requests Agent invocation; successful delivery is acknowledged only after the Host accepts it.
-`/use` traverses the owner-visible live thread inventory beyond the first 50 rows, deduplicates IDs and
-rejects a non-progressing or exhausted traversal instead of selecting from an incomplete list.
-
-Group whitelist, administrators and the group-command restriction keep their original configuration semantics.
-Use normal configuration controls; no permission JSON, separate initialization or legacy import is required.
-The initial group whitelist and command restriction are off and the administrator list is empty.
-Group management commands still require an explicitly configured administrator; an empty list grants nobody administration.
+宿主管理安装、授权、凭据和启停；配置保存不自动改变启用意图。英文文档是独立文件，互链不代表页面已支持自动语言切换。

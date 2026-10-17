@@ -10,7 +10,8 @@
     "manifest.json",
     "LICENSE",
     "NOTICE",
-    "source-lock.json"
+    "source-lock.json",
+    "README.en.md"
   ],
   "exports": {
     "./manifest": "./manifest.json"

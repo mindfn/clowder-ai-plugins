@@ -1,31 +1,20 @@
-# GenOffice DOCX
+# Word 文档编辑
 
-`@clowder-ai/genoffice-docx` is the Host-governed DOCX renderer provider for
-Clowder AI: it contributes a `content-editor-provider` surface so a compatible
-Host can open Word documents (`application/vnd.openxmlformats-officedocument.wordprocessingml.document`)
-for collaborative editing — load, settle, comment, and tracked-change
-operations — inside a dedicated-origin sandboxed iframe with a semantic
-materializer worker.
+简体中文 · [English](README.en.md)
 
-## What the plugin declares
+在兼容的 Clowder AI 宿主中打开 Word 文档，进行协作编辑、评论和修订。
 
-- One feature, `edit-docx`, contributing the `genoffice-docx` content editor
-  provider (`renderer/index.html`, integrity-bound entrypoint,
-  `sandbox: dedicated-origin-iframe`, `navigationPolicy: navigation-api-deny`,
-  bridge version 1.0.0).
-- `manifest.json` is a generated package export and must remain mechanically
-  identical to `plugin.yaml`.
+## 开始使用
 
-## Authority boundary
+1. 安装并启用 `@clowder-ai/genoffice-docx`。
+2. 在宿主提供的文档入口打开 DOCX 文件，使用文档编辑器完成加载、编辑、评论和修订操作。
 
-The Host owns installation, grants, configuration and secrets, document
-access policy, and lifecycle supervision. The package declares a renderer
-surface and ships only renderer/worker assets; it never mints handles, never
-reads ambient Host state, and never reaches outside its dedicated origin.
+支持的文件类型为 `application/vnd.openxmlformats-officedocument.wordprocessingml.document`。需要宿主支持对应的内容编辑器界面及文档访问控制；单独安装包不会生成一份独立文档授权。
 
-## Exposed capabilities
+## 文档与权限
 
-This package requests **no Host capabilities** — its feature declares
-`capabilities: []` verbatim in `plugin.yaml` (kept in sync by
-`pnpm test:train-c1-inventory`). It operates entirely inside the surface the
-Host grants at admission time.
+编辑器在独立来源的沙箱 iframe 中运行，携带语义物化工作线程。宿主管理安装、文档访问、窗口与生命周期；包只提供编辑器和工作线程资源，不读取宿主环境或越过隔离来源。
+
+本插件没有申请额外宿主能力（`capabilities: []`），只在宿主已授权的编辑界面内工作。每个安装只有一份规范声明；生成的 `manifest.json` 与 `plugin.yaml` 保持一致。
+
+宿主管理安装、授权和启停。英文文档是独立文件，互链不代表页面已支持自动语言切换。

@@ -1,54 +1,42 @@
-# WeCom Agent Connector
+# 企业微信应用连接器
 
-`@clowder-ai/connector-wecom-agent` packages WeCom custom-application callback verification, AES-256-CBC
-decryption, normalized text/media ingress, token refresh, message sending, media transfer, and byte-bounded
-reply chunking for a Clowder AI Host.
+简体中文 · [English](README.en.md)
 
-## Configuration
+将企业微信自建应用接入 Clowder AI，支持回调验证、加密消息解密、私聊文本与媒体消息以及分段回复。
 
-- `corpId` and `agentId`: WeCom enterprise and application identifiers.
-- `agentSecret`: secret used only to obtain short-lived provider access tokens.
-- `callbackToken`: secret used to authenticate callback signatures.
-- `encodingAesKey`: secret used to decrypt callback bodies and URL-verification challenges.
+## 开始使用
 
-The package does not read repository `.env` files or ambient Host configuration.
+1. 创建企业微信自建应用，在插件设置填写企业标识 `corpId` 和应用标识 `agentId`。
+2. 保存应用密钥 `agentSecret`、回调令牌 `callbackToken` 和加密密钥 `encodingAesKey`。
+3. 按宿主提供的回调地址完成企业微信端配置，然后启用插件并发送私聊消息。
 
-## Security and authority
+仅在签名、解密和企业身份校验通过后接收回调。此连接器只支持私聊，不提供群设置或权限初始化。
 
-The Host owns installation, grants, configuration, secrets, webhook admission, connector bindings, wake
-policy, delivery, and durable state. Callback bodies are accepted only after signature, decryption, and corp
-identity verification. Ordinary message text, including `@`, cannot mint a binding or wake an Agent.
+## 消息与恢复
 
-## Lifecycle and recovery
+短期访问令牌只缓存在当前进程。媒体标识保存在私有状态，对话只携带受限媒体引用。停用或切换实现时先停止回调消费，避免同一事件被两份连接器处理。包不从仓库环境文件读取凭据，也不保存原始回调正文。
 
-Provider access tokens are short-lived process caches. Host webhook routing must drain before rollback so
-the package and preserved Core callback handler never consume the same event concurrently. The package does
-not persist callback bodies or credentials.
+## 对话命令
 
-The Host-loadable builtin runtime is implemented in this package and uses only the existing authenticated
-binding and declared configuration/secret surfaces. No package-local environment or persistence fallback is
-provided.
+可使用 `/where`、`/new`、`/threads`、`/use`、`/thread`、`/commands`、`/cats`、`/status`、`/history`、`/unbind`、`/focus` 和 `/ask` 查看位置、切换对话或发起请求。`/thread`、`/ask` 只有显式携带正文时才请求猫执行，宿主接受投递后才确认成功。`/use` 会遍历可见对话，列表不完整时不猜测选择。
 
-Inbound provider media IDs remain in manifest-declared private plugin state. Public messages expose only a
-`pmr_*` reference plus `sourceEventId`; the declared media source returns bounded chunks and settlement
-deletes the private locator.
+`/allow-group`、`/deny-group` 仅适用于支持群聊且已配置管理员的连接器，不能通过普通私聊文本取得管理权。
 
-## Exposed capability
+## 安装权限
 
-The connector contributes one authenticated webhook, one WeCom message subscription, and one media source,
-and requests `plugin.config.read`, `plugin.state.get`, `plugin.state.set`, `media.read`,
-`message.event.subscribe`, `messaging.send`, `secret.read`, `thread.readContent`, `thread.listMetadata`, `thread.write`. It does not
-expose C2 audio/AI services, mention parsing, UI slots, or generic public hooks.
+以下能力均来自同一份 `plugin.yaml`，由宿主决定是否授权；说明文件不授予额外权限。
 
-## Commands and configuration
+| 权限 | 用途 |
+| --- | --- |
+| `plugin.config.read` | 读取本插件保存的设置。 |
+| `plugin.state.get` | 读取宿主保管的私有业务状态。 |
+| `plugin.state.set` | 保存私有业务状态、进度与去重记录。 |
+| `media.read` | 读取当前调用获准的媒体引用。 |
+| `message.event.subscribe` | 接收获准的对话消息与生命周期事件。 |
+| `messaging.send` | 向获准目标发送消息和回复。 |
+| `secret.read` | 读取明确授权给本插件的凭据。 |
+| `thread.listMetadata` | 列出可访问对话的基本信息。 |
+| `thread.readContent` | 读取获准对话内容；范围由宿主核验。 |
+| `thread.write` | 创建或更新获准的对话关联。 |
 
-The builtin entrypoint intercepts `/where`, `/new`, `/threads`, `/use`, `/thread`, `/commands`, `/cats`,
-`/status`, `/history`, `/unbind`, `/allow-group`, `/deny-group`, `/focus`, and `/ask` before ordinary ingress.
-Commands reply through the provider and keep their audit quiet. Only an explicit body in `/thread` or
-`/ask` requests Agent invocation; successful delivery is acknowledged only after the Host accepts it.
-`/use` traverses the owner-visible live thread inventory beyond the first 50 rows, deduplicates IDs and
-rejects a non-progressing or exhausted traversal instead of selecting from an incomplete list.
-
-This adapter supports direct conversations only. Configure the original account/login fields and receive messages;
-there is no group-permission page, permission initialization or legacy-import step. Group management commands
-do not grant a direct-message sender administrator authority. Existing stored data is not deleted.
+宿主管理安装、授权、凭据和启停；配置保存不自动改变启用意图。英文文档是独立文件，互链不代表页面已支持自动语言切换。

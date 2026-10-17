@@ -1,6 +1,6 @@
 # GitHub Operations
 
-[简体中文](README.md) · English
+[Chinese](README.md) · English
 
 `@clowder-ai/github-operations` tracks PR reviews, CI checks, merge conflicts, issues and comments, collects repository activity, and provides Community triage and issue drafts that require publication confirmation.
 
@@ -86,10 +86,4 @@ Tool arguments, comments, repository text and message metadata never supply call
 
 A PR poll admits at most 20 waits using shared CI base facts. Each PR's deeper read has a 10-second deadline within the 30-second poll budget. Failure preserves its baseline and generation. Registration/cancellation is rechecked before consuming results; pending notifications can recover even when new batch facts are unavailable.
 
-## Development and validation notes
-
-After dependency preparation at the repository root, run the package's `typecheck`, `test` and `build`. Its production graph retains Contract `0.1.0-beta.35`, SDK `0.2.0-beta.19` and the pinned Fastify closure. Current workspace SDK source is not a substitute for those retained artifacts; directory preparation does not rewrite the old archives.
-
-`README.md` is the current Chinese default, with `README.en.md` as the parallel English document. Relative links connect the repository documents; they are not a Host language selector. The Host currently reads only the default README, with no automatic language-selection mechanism or duplicate manifest.
-
-Release and verification note: this source remains an unpublished local C1 candidate. Package tests and archive integrity do not prove real-account, Host page, notification/continuation or full journey acceptance. Installation acceptance, public distribution and soak are recorded separately.
+Release note: this is an unpublished local candidate. Real-account journeys and public distribution require separate acceptance.

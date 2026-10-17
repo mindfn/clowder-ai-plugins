@@ -1,51 +1,41 @@
-# Telegram Connector
+# Telegram 连接器
 
-`@clowder-ai/connector-telegram` packages Telegram Bot long-poll ingress and Bot API egress for a Clowder AI
-Host. It accepts private human messages, preserves Telegram message and file IDs, renders safe Telegram HTML,
-splits messages without cutting surrogate pairs or HTML entities, and drains polling before shutdown.
+简体中文 · [English](README.en.md)
 
-## Authority boundary
+通过 Telegram Bot 与 Clowder AI 私聊，支持长轮询收消息、文本与媒体回复，以及安全的 Telegram HTML 排版。
 
-The Host owns the bot token, connector/thread bindings, admission and wake routing, durable polling cursor,
-delivery retry/dead-letter state, grants, and lifecycle. The package never derives wake authority from `@`
-text and never writes an undeclared local cursor. Provider updates are sent only through a Host-issued opaque
-`connector_binding` address.
+## 开始使用
 
-## Configuration
+1. 使用 BotFather 创建机器人，取得 `botToken`。
+2. 在插件设置保存这个密钥，然后启用插件。
+3. 在 Telegram 私聊机器人。只接收人类用户的私聊，不接收机器人消息或群聊。
 
-`botToken` is a required secret issued by BotFather. The Host must project only this manifest-declared value;
-the package does not read repository `.env` files or log the token.
+此连接器没有群权限设置或额外初始化步骤。群管理命令不会为私聊发送者授予管理员权限。
 
-## Safety and recovery
+## 消息与恢复
 
-Only private, non-bot messages enter the connector. Long polling has bounded conflict backoff and closes the
-Bot API session on drain. A Host-owned cursor is committed only after accepted delivery so restart and
-rollback do not double-run the package and preserved Core poller.
+回复按 Telegram 限制分段，避免截断 Unicode 字符或 HTML 实体。轮询游标在宿主确认接收后才提交；停用停止轮询并关闭会话。网络冲突采用有界退避。媒体文件标识仅存于私有状态，对外只提供受限引用，读取结算后清理。
 
-The Host-loadable builtin runtime is implemented in this package and uses only the existing Host
-config/secret, connector-binding, messaging, and state surfaces. Adapter exports remain testable with
-isolated fixtures.
+## 对话命令
 
-Inbound Telegram file IDs remain in manifest-declared private plugin state. Public messages contain only a
-`pmr_*` reference and `sourceEventId`; the declared media source serves bounded chunks and settlement deletes
-the private locator.
+可使用 `/where`、`/new`、`/threads`、`/use`、`/thread`、`/commands`、`/cats`、`/status`、`/history`、`/unbind`、`/focus` 和 `/ask` 查看位置、切换对话或发起请求。`/thread`、`/ask` 只有显式携带正文时才请求猫执行，宿主接受投递后才确认成功。`/use` 会遍历可见对话，列表不完整时不猜测选择。
 
-## Exposed capability
+`/allow-group`、`/deny-group` 仅适用于支持群聊且已配置管理员的连接器，不能通过普通私聊文本取得管理权。
 
-This package requests these Host capabilities, verbatim from its manifest
-(`plugin.yaml` — kept in sync by `pnpm test:train-c1-inventory`): `media.read`, `plugin.state.get`,
-`plugin.state.set`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.readContent`, `thread.listMetadata`,
-`thread.write`.
+## 安装权限
 
-## Commands and configuration
+以下能力均来自同一份 `plugin.yaml`，由宿主决定是否授权；说明文件不授予额外权限。
 
-The builtin entrypoint intercepts `/where`, `/new`, `/threads`, `/use`, `/thread`, `/commands`, `/cats`,
-`/status`, `/history`, `/unbind`, `/allow-group`, `/deny-group`, `/focus`, and `/ask` before ordinary ingress.
-Commands reply through the provider and keep their audit quiet. Only an explicit body in `/thread` or
-`/ask` requests Agent invocation; successful delivery is acknowledged only after the Host accepts it.
-`/use` traverses the owner-visible live thread inventory beyond the first 50 rows, deduplicates IDs and
-rejects a non-progressing or exhausted traversal instead of selecting from an incomplete list.
+| 权限 | 用途 |
+| --- | --- |
+| `media.read` | 读取当前调用获准的媒体引用。 |
+| `plugin.state.get` | 读取宿主保管的私有业务状态。 |
+| `plugin.state.set` | 保存私有业务状态、进度与去重记录。 |
+| `message.event.subscribe` | 接收获准的对话消息与生命周期事件。 |
+| `messaging.send` | 向获准目标发送消息和回复。 |
+| `secret.read` | 读取明确授权给本插件的凭据。 |
+| `thread.listMetadata` | 列出可访问对话的基本信息。 |
+| `thread.readContent` | 读取获准对话内容；范围由宿主核验。 |
+| `thread.write` | 创建或更新获准的对话关联。 |
 
-This adapter supports direct conversations only. Configure the original account/login fields and receive messages;
-there is no group-permission page, permission initialization or legacy-import step. Group management commands
-do not grant a direct-message sender administrator authority. Existing stored data is not deleted.
+宿主管理安装、授权、凭据和启停；配置保存不自动改变启用意图。英文文档是独立文件，互链不代表页面已支持自动语言切换。

@@ -1,48 +1,33 @@
-# WeChat Visible Reader
+# 微信可见内容读取
 
-`@clowder-ai/wechat-visible-reader` packages a macOS-only limb that reads text currently visible in the
-desktop WeChat application. The package owns the native Swift reader, typed result validation, bounded local
-authorization state, and privacy-safe outcome metrics. The Host owns installation, invocation leases,
-trusted owner-message provenance, grants, and the user-facing authorization surface.
+简体中文 · [English](README.en.md)
 
-## Capabilities
+在 macOS 上读取桌面微信当前可见的文字，或按准确联系人名读取最近可见消息。读取结果进入当前请求的猫的上下文和调用记录。
 
-- `wechat_visible_reader.read_visible_conversation` reads only the currently selected conversation page
-  after a local owner arms a short-lived authorization lease.
-- `wechat_visible_reader.read_conversation_recent` navigates to one uniquely and exactly matched contact,
-  reads 1–30 recent visible messages, and attempts to restore the prior conversation and foreground app.
-  Each call requires trusted current-owner-message provenance plus explicit acknowledgement that WeChat will
-  be foregrounded and the target conversation may be marked read.
+## 开始使用
 
-The reader does not send messages, click links, query the WeChat database, scan the full conversation list,
-or retain screenshots. Returned text enters the requesting Agent's invocation context and trace.
+1. 确保本机已安装微信和编译原生读取器所需工具，并按系统提示授予屏幕录制、辅助功能权限。
+2. 启用插件后，由本地 owner 在设置中开启一次短期读取授权，期限为 1–30 分钟，可随时撤销。
+3. 使用 `wechat_visible_reader.read_visible_conversation` 读取当前选中的会话页面。
+4. 若需按联系人读取，使用 `wechat_visible_reader.read_conversation_recent`，提供唯一、完全匹配的联系人名和 1–30 条的数量，并明确确认微信将被前置、会话可能被标为已读。
 
-## Local authorization and privacy
+按联系人读取要求当前 owner 消息的可信来源，尝试在结束后恢复原会话与前台应用。开启授权不等于允许任意读取。
 
-The arm lease is stored in Host plugin state as a scope and expiry only: it carries no operator identity,
-expires after 1–30 minutes, is cleared on runtime start/stop, and can be revoked immediately. The package
-trusts the Host's local-owner guard for arm/disarm operations, not any identity field in caller input.
-At installation, `plugin.state.get` lets the package read that authorization record, and
-`plugin.state.set` lets it write or revoke the record. The record contains only the
-`visible-conversation` authorization scope and its expiry time—never an operator identity,
-message text, or screenshot. An expired or unreadable record cannot authorize a read.
-Screenshot bytes exist only inside the native process. Metrics retain success/failure outcomes and typed error counts, never
-OCR text, message hashes, screenshots, contacts, or conversation identifiers.
+## 隐私与限制
 
-## Runtime boundary
+不发送消息、不点击链接、不查询微信数据库、不扫描完整会话列表，也不保留截图。授权记录只包含范围和到期时间，运行启动或停止时清除；不可读或过期的记录不能授权。
 
-The package compiles its package-owned Swift sources into a source-digest-keyed executable in the operating
-system temporary directory. That cache contains code only. Native execution is bounded by time and output
-size; malformed, oversized, or semantically inconsistent JSON fails closed. macOS Screen Recording and
-Accessibility permissions may be required, and WeChat layout changes can cause a typed refusal.
+截图仅在原生进程内使用；指标只记录成功、失败和错误类型，不保留 OCR 文字、联系人、会话标识、消息摘要或截图。原生程序在系统临时目录按源码摘要缓存，可见读取最多 200 个结构块、20,000 个 Unicode 码点。
 
-## Limits and failure behavior
+仅支持 macOS。权限缺失、微信布局变化、OCR 不确定、重名、标题不符、恢复失败、超时或无效输出都会明确拒绝，不把部分文字伪装成完整结果。
 
-- Visible reads accept at most 200 structured blocks and 20,000 Unicode code points.
-- Named reads require a 1–128-code-point contact without control characters and a limit of 1–30.
-- OCR/layout uncertainty, ambiguous contacts, header mismatch, restore failure, missing permission, missing
-  WeChat, expired authorization, compile failure, timeout, and invalid native output return closed failures.
-- The package never treats partial text as complete text.
+## 安装权限
 
-This package is an alpha release. Acceptance must use a dedicated local WeChat test conversation with no
-sensitive production history.
+以下能力均来自同一份 `plugin.yaml`，由宿主决定是否授权；说明文件不授予额外权限。
+
+| 权限 | 用途 |
+| --- | --- |
+| `plugin.state.get` | 仅保存或读取授权范围和到期时间，不含消息、截图或用户身份。 |
+| `plugin.state.set` | 仅保存或读取授权范围和到期时间，不含消息、截图或用户身份。 |
+
+宿主管理安装、授权、凭据和启停；配置保存不自动改变启用意图。英文文档是独立文件，互链不代表页面已支持自动语言切换。

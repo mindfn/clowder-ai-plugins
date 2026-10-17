@@ -1,72 +1,43 @@
----
-feature_ids: [F202]
-topics: [plugins, feishu, meeting-intake]
-doc_kind: guide
-created: 2026-10-13
----
+# 飞书会议纪要
 
-# Feishu Meeting Intake
+简体中文 · [English](README.en.md)
 
-A generated meeting artifact becomes a retained record and one ordinary thread notification.
-The installed MCP lets a cat read the source in that same authenticated thread. People retain
-account authorization, destination choice and the interpretation of the meeting.
+把飞书生成的会议资料保存为可追溯记录，并向选定对话发送一条普通通知。猫可在同一认证对话中读取会议来源，账号授权与目标选择由你控制。
 
-The current alpha.11 C1 candidate is under review. Local fixtures and a packed consumer do not
-certify an actual Feishu account, Host installation or completion of C1.
+## 开始使用
 
-## Settings journey
+本包目前是未获公开发行许可的本地候选。确认使用已批准且与宿主平台匹配的制品后：
 
-1. Select the approved local archive in Manager, grant the capabilities below, then enable it.
-   First enable starts only the control plane: no login, CLI process, collection or provider request.
-2. Save your Feishu app ID and secret and an existing accessible notification thread.
-3. Select **Authorize Feishu**, open its Feishu URL, then **Check authorization**.
-   Authorization alone does not start collection. Each check has a fresh owner operation.
-4. Select **Start collection**. **Pause collection** stops it without removing records or credentials.
-   Restart keeps the requested intent but remains stopped until you explicitly start again.
-5. To import an existing Minute, save its token/Minutes URL and select **Import Minutes reference**.
-   **Meeting records** shows retained metadata and retry actions for unsettled notifications.
-6. For an interrupted/ambiguous authorization, use **Verify existing account** first.
-   The previous exchange is not silently repeated. The explicit reset action preserves its evidence
-   and pauses collection before a fresh attempt. A corrupted credential compartment is refused.
-   Confirmed account refusal is durably `expired` before the error; uncertain checks are `unknown`.
-   An expired device challenge is `unknown`, since it does not prove the old credentials expired.
-7. Historical catch-up requires a preview and an explicit future-only or replay decision tied to
-   that exact preview; opening status never starts collection or historical replay.
+1. 在插件管理器安装并授权，启用后只启动控制面板，不自动登录、采集或发起平台请求。
+2. 保存飞书 App ID、App Secret 和一个已有且可访问的通知对话。
+3. 选择授权飞书，打开返回的飞书链接，再检查授权。授权成功不会自动开始采集。
+4. 明确选择开始采集。暂停会停止采集但保留记录和凭据；重启保留原意图，但仍需你再次明确开始。
+5. 导入已有妙记时，保存 token 或妙记链接并使用导入操作。会议记录页显示元信息，并允许重试未结算的通知。
 
-No specialized Host meeting-intake/Needs Me/sourceGrant backend or external stdio broker is used
-by the production module. Credentials and records remain in the Host-provisioned private instance
-directory. No TTL is applied. Stop/revoke cancels owned process groups and rejects late commits.
+授权中断或结果不明时先验证已有账号，不静默重做交换。明确重置会保留原证据、暂停采集，再允许新的尝试。凭据损坏时拒绝运行；确定失效与尚不能确定的状态分别显示。历史补录必须先预览，再针对该次预览明确选择仅未来或重放。
 
-## Install consent
+## 读取与恢复
 
-- `data.directory`: private account, cursor, source records, notification receipts and recovery evidence.
-- `plugin.config.read`: your app ID, notification destination and saved Minutes reference.
-- `secret.read`: the app secret saved through Settings; never returned to MCP or process arguments.
-- `thread.readContent`: Host-filtered verification of the saved notification destination.
-- `messaging.send`: one ordinary notification using a durable fixed target/body/idempotency key.
+`cat_cafe_meeting_records_list` 按有界页读取记录；`cat_cafe_meeting_records_read` 按记录 ID、偏移和数量读取。宿主另行提供当前用户、对话、猫与调用身份，工具参数不能冒充身份或指定任意路径、来源 URL 和目标。
 
-The pinned official CLI1.0.85 runner is checksum-verified at build and packaged with this local
-platform artifact. Its declared binary member retains executable permissions in the archive and installed consumer.
-Runtime does not download a runner or borrow the operator's HOME/profile.
-macOS uses an owned fallback file master; Linux uses its owned file backend. Existing encrypted
-credentials must authenticate locally before starting any CLI. Windows credential isolation is
-not supported by this module. Artifact platform/architecture must match the Host.
+来源版本表示资料生成批次，不是假定逐次转录编辑版本。读取会校验生成批次与当前飞书授权，另报文字 SHA-256 和读取时间，并把会议文本标为不可信材料，不伪造不可变历史文字。
 
-## Installed MCP
+账号、游标、记录、通知回执与恢复证据保留在授权的私有目录，不设置过期删除。停用或撤销会取消所属进程并拒绝迟到提交；超时不代表已经撤销先前业务写入。
 
-`cat_cafe_meeting_records_list` accepts only bounded pagination. `cat_cafe_meeting_records_read`
-accepts only recordId/offset/limit. Host supplies user/thread/cat/invocation separately; a body
-cannot supply identity, URL, filesystem path or destination. The MCP child gets no account home
-or record-directory access and calls only the two declared module methods.
+## 平台限制
 
-The original normalized revision denotes artifact generation, not a transcript edit version.
-Reads verify that generation and current Feishu authorization, report a separate text SHA-256 and
-read time, and label source text as untrusted data. They do not invent immutable historical text.
+官方 CLI 1.0.85 随本地平台制品打包并校验摘要，运行时不下载其他程序，也不借用系统账号的 HOME。macOS 和 Linux 使用隔离的文件凭据后端；Windows 凭据隔离尚不支持。制品平台和架构必须匹配宿主。包内替身测试不等于真实飞书账号、完整安装或长期使用验收通过。
 
-## Verification
+## 安装权限
 
-`pnpm --filter @clowder-ai/feishu-meeting-intake test` includes the retained source/cursor/catch-up
-regressions plus the actual module/credential/process fixtures. `node --test
-packages/feishu-meeting-intake/test/installed-directory.test.mjs` uses the repository's canonical
-packer and an empty consumer, then starts the actual MCP and packaged runner's local version
-probe. Provider I/O and Host identity in the module journey are controlled fixtures, not dogfood.
+以下能力均来自同一份 `plugin.yaml`，由宿主决定是否授权；说明文件不授予额外权限。
+
+| 权限 | 用途 |
+| --- | --- |
+| `data.directory` | 使用宿主提供的私有目录保存此安装的数据。 |
+| `plugin.config.read` | 读取本插件保存的设置。 |
+| `secret.read` | 读取明确授权给本插件的凭据。 |
+| `thread.readContent` | 读取获准对话内容；范围由宿主核验。 |
+| `messaging.send` | 向获准目标发送消息和回复。 |
+
+宿主管理安装、授权、凭据和启停；配置保存不自动改变启用意图。英文文档是独立文件，互链不代表页面已支持自动语言切换。

@@ -1,48 +1,41 @@
-# XiaoYi Connector
+# 小艺连接器
 
-`@clowder-ai/connector-xiaoyi` packages XiaoYi OpenClaw dual-WebSocket ingress and A2A egress for a Clowder
-AI Host. It preserves provider authentication, heartbeat, bounded reconnect, session task ordering, duplicate
-suppression, append accumulation, and explicit completion or failure frames.
+简体中文 · [English](README.en.md)
 
-## Configuration
+将小艺 OpenClaw 的消息与 Clowder AI 连接，支持主备 WebSocket、心跳、有界重连、会话任务排序、去重与明确的完成或失败回执。
 
-- `accessKey`: XiaoYi OpenClaw access key.
-- `secretKey`: XiaoYi OpenClaw secret key. The Host stores and projects it as a secret.
-- `agentId`: XiaoYi agent identity used for authentication and session addressing.
+## 开始使用
 
-The package does not read repository `.env` files or ambient Host configuration.
+1. 在插件设置填写 `accessKey`、`secretKey` 和 `agentId`。
+2. 保存配置，再启用插件建立主备连接。
+3. 通过小艺发送私聊消息。此连接器不提供群权限页或额外权限初始化。
 
-## Security and authority
+密钥只用于平台握手，由宿主保管，不写入消息内容。插件不会读取仓库中的环境文件。
 
-The Host owns installation, grants, configuration, secrets, connector bindings, wake policy, and durable
-checkpoint data. Inbound provider messages target only an authenticated Host-issued `connector_binding`;
-message text, including `@`, cannot mint a binding or wake an Agent. Credentials are used only for the
-provider WebSocket handshake and are never emitted in message payloads.
+## 消息与恢复
 
-## Lifecycle and recovery
+启用后才打开连接；停用关闭两个通道和所有定时器。消息接收确认后，由宿主保存恢复与去重检查点。不使用包目录文件、外部 Redis 或环境变量作为状态替代。
 
-The adapter opens primary and backup WebSocket channels only after Host activation, stops both channels and
-all timers during drain, and keeps provider retry bounded. WebSocket resume and deduplication watermarks must
-be committed through a Host-owned, manifest-declared checkpoint namespace after accepted delivery.
+## 对话命令
 
-The Host-loadable builtin runtime is implemented in this package and uses only the existing authenticated
-binding, declared configuration/secret, state, and messaging surfaces. The package intentionally provides no
-local-file, ambient Redis, or environment fallback.
+可使用 `/where`、`/new`、`/threads`、`/use`、`/thread`、`/commands`、`/cats`、`/status`、`/history`、`/unbind`、`/focus` 和 `/ask` 查看位置、切换对话或发起请求。`/thread`、`/ask` 只有显式携带正文时才请求猫执行，宿主接受投递后才确认成功。`/use` 会遍历可见对话，列表不完整时不猜测选择。
 
-## Exposed capability
+`/allow-group`、`/deny-group` 仅适用于支持群聊且已配置管理员的连接器，不能通过普通私聊文本取得管理权。
 
-The connector contributes XiaoYi messaging and requests `plugin.config.read`, `plugin.state.get`, `plugin.state.set`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.readContent`, `thread.listMetadata`, `thread.write`. It does not expose audio
-capture, ASR, TTS, embedding, LLM post-processing, mention parsing, public UI slots, or generic public hooks.
+## 安装权限
 
-## Commands and configuration
+以下能力均来自同一份 `plugin.yaml`，由宿主决定是否授权；说明文件不授予额外权限。
 
-The builtin entrypoint intercepts `/where`, `/new`, `/threads`, `/use`, `/thread`, `/commands`, `/cats`,
-`/status`, `/history`, `/unbind`, `/allow-group`, `/deny-group`, `/focus`, and `/ask` before ordinary ingress.
-Commands reply through the provider and keep their audit quiet. Only an explicit body in `/thread` or
-`/ask` requests Agent invocation; successful delivery is acknowledged only after the Host accepts it.
-`/use` traverses the owner-visible live thread inventory beyond the first 50 rows, deduplicates IDs and
-rejects a non-progressing or exhausted traversal instead of selecting from an incomplete list.
+| 权限 | 用途 |
+| --- | --- |
+| `plugin.config.read` | 读取本插件保存的设置。 |
+| `plugin.state.get` | 读取宿主保管的私有业务状态。 |
+| `plugin.state.set` | 保存私有业务状态、进度与去重记录。 |
+| `message.event.subscribe` | 接收获准的对话消息与生命周期事件。 |
+| `messaging.send` | 向获准目标发送消息和回复。 |
+| `secret.read` | 读取明确授权给本插件的凭据。 |
+| `thread.listMetadata` | 列出可访问对话的基本信息。 |
+| `thread.readContent` | 读取获准对话内容；范围由宿主核验。 |
+| `thread.write` | 创建或更新获准的对话关联。 |
 
-This adapter supports direct conversations only. Configure the original account/login fields and receive messages;
-there is no group-permission page, permission initialization or legacy-import step. Group management commands
-do not grant a direct-message sender administrator authority. Existing stored data is not deleted.
+宿主管理安装、授权、凭据和启停；配置保存不自动改变启用意图。英文文档是独立文件，互链不代表页面已支持自动语言切换。

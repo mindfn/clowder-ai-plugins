@@ -1,151 +1,43 @@
-# Personal Chrome companion (F247)
+# 个人 Chrome 伴侣
 
-`@clowder-ai/personal-chrome-companion` is the public, packable source closure
-for F247's narrow Chrome MV3 and Native Messaging companion. It exports the
-static extension, the POSIX helper CLI, and a
-declarative Clowder module plugin (`plugin.yaml`, plugin id
-`official.companion.personal-chrome`) that hosts authorized ChatGPT
-conversations for the cloud cat.
+简体中文 · [English](README.en.md)
 
-The Host-loadable builtin runtime is implemented in this package:
-`runtime.transport: builtin` with entrypoint `dist/plugin-entrypoint.js`. The
-plugin declares `runtime.dataDirectory: personal-chrome-host`, so the Host
-provisions `<projectRoot>/.cat-cafe/plugin-host/personal-chrome-host` (0700)
-and grants it to the feature through the `data.directory` capability.
+将你明确授权的 ChatGPT 网页对话接入 Clowder AI。插件提供 Chrome 扩展和本机 Native Messaging 辅助程序；授权精确到单个对话。
 
-## Module plugin surface
+## 开始使用
 
-Installation requests two declared capabilities:
+1. 打开“设置 → 插件 → Personal Chrome → Chrome connection”，选择安装操作并确认注册本机辅助程序。启用插件本身不会授予浏览器注册权限。
+2. 首次安装时，在 Chrome 扩展管理页开启开发者模式，选择“加载已解压的扩展”，使用设置卡片给出的固定扩展目录。无需复制扩展 ID、密钥或终端命令。
+3. 返回设置运行连接测试，保持 Chrome 和扩展运行。显示已安装只证明本地文件与注册存在，不代表连接正常或对话已授权。
+4. 打开你想授权的准确 ChatGPT 对话，点击扩展工具栏按钮。设置中会列出这条授权，可逐条撤销。
 
-- `data.directory` supplies only this installation's private project data directory.
-- `cloud.conversation.host` exposes the declared conversation-host contribution;
-  it does not authorize a conversation or grant OS browser registration.
+此发布不提供 Chrome 应用商店交付或无人值守安装。辅助程序支持 macOS、Linux，不支持 Windows；初始宿主集成以 macOS 为目标。
 
-For the C1 local-directory checkpoint, the generic Host setup and directory-selection
-journey remain unverified. Prior archive/setup-runner checks do not establish those
-Host flows. The setup sequence below describes the intended paired integration;
-the retired Chrome-specific Host service/card is not its acceptance evidence.
+## 授权与状态
 
-The `personal-chrome-host` feature owns one `cloud-conversation-host`
-contribution (`provider: chatgpt`). Its three conversation methods use the
-package's native-host socket client and the helper's v2 protocol:
+最多保存 32 条授权。“刷新标题”从已连接扩展读取已授权对话的标题，不新增授权。授权列表、撤销和状态读取独立于运行启用状态，使用同一份私有数据。
 
-- `personal-chrome-host.append-message` sends to an authorized conversation.
-- `personal-chrome-host.assistant-returns.list` fetches at most one pending reply.
-- `personal-chrome-host.assistant-returns.ack` acknowledges that reply; listing
-  alone never removes it.
+状态显示最近观察到的辅助程序连接，不会自动探测网络：用连接测试检查当前健康。`unknown` 表示尚未观察；`not_installed` 表示缺少配对；`invalid_installation` 表示配对记录无效；`unreachable` 表示连接不可达；`connected` 只表示曾成功接受连接。辅助程序可达不等于扩展或对话已就绪。
 
-The `personalChromeAuthorizations` operation lists the authorized
-conversations as Host-rendered rows (one `revoke` row action each), revokes one
-authorization by `conversationId`, and reports authorization status. The
-underlying store holds at most 32 authorizations; the operation surfaces that
-ceiling through the status action.
+辅助程序不可达时，后续宿主轮询采用 2、4、8、16、32、最多 60 秒的退避，不建立后台重试定时器。发送、确认、测试和刷新标题可立即尝试。回复列出后仍须确认才移除；停止不会删除授权或待确认回复。
 
-Use **Refresh titles** to ask the connected extension for readable titles of
-the currently authorized conversations. The result reports how many titles
-were updated, or why refreshing was unavailable; the conversation list then
-reloads. Refreshing never grants authorization or clears the extension reload
-reminder. Keep Chrome and the paired extension running for this action.
+## 更新与卸除
 
-Status also shows the **last observed** helper connection state. It never opens
-a socket: use **Test** for a live health probe. Authorization and helper
-reachability are reported separately; a connected helper does not by itself
-mean the extension is ready or a conversation is authorized.
+升级或回退会刷新固定扩展目录的文件。请在 Chrome 中重新加载已加载的扩展，再测试；只有对应版本的关联回复确认后才清除重新加载提示。未安装辅助程序时，单纯重新加载扩展不能完成注册。
 
-| Helper state | Meaning and next action |
+重试安装不轮换有效配对身份；属于其他安装的注册不会被静默覆盖。损坏配对需移除后重建。移除辅助程序前先关闭 Chrome；它只移除此安装的注册、启动器和配对，保留授权、标题、扩展文件及投递历史。需要时另行撤销授权并在 Chrome 移除扩展。
+
+## 隐私边界
+
+扩展只绑定明确点击的 `https://chatgpt.com/c/<id>` 对话。发送在准确的后台标签中完成，不主动切换、导航、刷新或读取 Cookie，也不调用私人 ChatGPT API。宿主发放配对身份和受限私有目录，包不会自行生成密钥或猜测安装位置。完整宿主安装和账号旅程需分别验收。
+
+## 安装权限
+
+以下能力均来自同一份 `plugin.yaml`，由宿主决定是否授权；说明文件不授予额外权限。
+
+| 权限 | 用途 |
 | --- | --- |
-| `unknown` | No connection observation since this start; run Test. |
-| `invalid_installation` | Pairing record validation failed; use **Chrome connection** in Settings to repair it, then run Test. Record contents are never shown. This state does not delay list attempts; the next successful connection restores `connected`. |
-| `not_installed` | No pairing record; use **Chrome connection** in Settings, then run Test. |
-| `unreachable` | Socket missing or connection refused; check Chrome and the extension, then run Test to retry now. Status includes the outage start, failure count and earliest next list attempt. |
-| `connected` | A socket connection was accepted; status includes the last contact time. Run Test to check current helper/extension health. |
+| `data.directory` | 使用宿主提供的私有目录保存此安装的数据。 |
+| `cloud.conversation.host` | 提供已声明的云端对话通路；不自行授予对话或浏览器权限。 |
 
-When the helper is unavailable, list returns `{ returns: [] }` and retries only
-on a later Host poll after 2, 4, 8, 16, 32, then at most every 60 seconds. There
-is no background retry timer. Append, acknowledge, Test and Refresh titles bypass this delay;
-any accepted connection resets it, even when the helper returns a business
-failure. Errors after a write are never treated as pre-send unavailability.
-Only connection-state changes produce logs. Stop clears these observations and
-cancels pending requests; it does not delete authorizations or pending replies.
-
-## Set up Chrome from Settings
-
-Open **Settings → Plugins → Personal Chrome → Chrome connection**. Choose the
-setup action and confirm registration of the local helper. The Host verifies
-the exact trusted release before invoking its fixed setup runner. Installation
-creates the pairing identity privately; you do not copy an extension ID, secret,
-or terminal command. Enabling a plugin alone never grants browser registration.
-
-The card gives you the stable extension folder. For the first installation,
-open Chrome's Extensions menu → Manage Extensions, enable Developer mode,
-and choose **Load unpacked**, selecting that folder. Chrome requires this
-browser-side action for an unpacked extension; an ordinary webpage cannot link
-to `chrome://extensions`. This release does not claim Chrome Web Store delivery
-or unattended extension installation.
-
-Return to the card and run **Test connection**. “Installed” only confirms the
-local registration and files. It does not mean Chrome is connected or that a
-conversation is authorized. Keep Chrome running; the extension reconnects to
-the helper. Test checks the real helper/extension revisions. Then open the exact
-ChatGPT conversation you want to authorize and click the extension's toolbar
-action. Its authorization will appear in Settings; use the row's revoke action
-to remove it, or Refresh titles to retrieve its readable title.
-
-The stable folder is `<projectRoot>/.cat-cafe/plugin-host/personal-chrome-host/extension/`.
-On updates or rollbacks the package refreshes these bytes; **Reload** the already
-loaded extension in Chrome, then run Test. If the helper has not been installed,
-use setup first: reloading Chrome cannot create its registration. The reload
-reminder clears only after a correlated reply proves the current revisions.
-
-Setup can be retried without rotating a valid pairing identity. A registration
-owned by another installation is a conflict, never silently overwritten. A broken
-pairing record is reported honestly; removing and setting up again creates a new
-identity. Setup removal refuses while the helper is active: close Chrome before
-retrying. It removes only this installation's registration, launcher and pairing,
-retaining authorizations, titles, extension files and delivery history. Revoke
-individual authorizations explicitly when desired, and remove the extension in
-Chrome if you no longer want it loaded.
-
-The fixed protocol and authority boundary for Host integrators are documented in
-[native-host/setup-protocol.md](native-host/setup-protocol.md). macOS and Linux
-helper installation are supported; Windows setup is explicitly unsupported.
-The initial Host product integration targets macOS.
-
-## Helper entrypoint
-
-```sh
-clowder-personal-chrome-host --help
-```
-
-The executable is POSIX-only. It requires either a Cat Café-created
-`--pairing-record /absolute/path.json` or all three Host-supplied variables:
-
-```text
-CAT_CAFE_PERSONAL_CHROME_SOCKET
-CAT_CAFE_PERSONAL_CHROME_LEDGER
-CAT_CAFE_PERSONAL_CHROME_PAIRING_SECRET
-```
-
-## Authority boundary
-
-Cat Café remains responsible for catalog/SRI/admission, pairing-secret
-issuance and rotation, lifecycle supervision, Settings/onboarding, and
-user-visible status. The installed helper receives a complete Host-supplied
-pairing record or environment configuration; it never generates a secret or
-chooses an install path.
-
-The extension may bind only an explicitly clicked exact
-`https://chatgpt.com/c/<id>` conversation. Normal dispatch finds that exact
-background tab and sends the append request without focusing, navigating,
-reloading, activating, selecting, moving, highlighting, reading cookies, or
-calling a private ChatGPT API.
-
-## Release status
-
-This package is a review candidate only. It does not publish to npm or the
-Chrome Web Store. Signed Chrome Web Store identity/admission and Windows support remain open; Windows is explicitly
-unsupported.
-
-Reading or revoking existing conversation authorizations is independent of runtime
-enablement and uses the same data directory. These settings operations do not
-install a helper, copy extension files or register a conversation runtime.
+宿主管理安装、授权、凭据和启停；配置保存不自动改变启用意图。英文文档是独立文件，互链不代表页面已支持自动语言切换。

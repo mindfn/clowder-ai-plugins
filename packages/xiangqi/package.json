@@ -18,7 +18,8 @@
     "README.md",
     "assets",
     "LICENSE",
-    "npm-shrinkwrap.json"
+    "npm-shrinkwrap.json",
+    "README.en.md"
   ],
   "engines": {
     "node": ">=20.0.0"

@@ -319,6 +319,39 @@ test('installable package README discloses every capability declared across all 
   }
 });
 
+test('installer READMEs use a Chinese default and independent packaged English guide', async () => {
+  const installable = inventory.repositoryPackages.filter(entry => entry.managerInstallable);
+  for (const entry of installable) {
+    const root = new URL(`../packages/${entry.directory}/`, import.meta.url);
+    const [chinese, english, pkgText] = await Promise.all([
+      readFile(new URL('README.md', root), 'utf8'),
+      readFile(new URL('README.en.md', root), 'utf8'),
+      readFile(new URL('package.json', root), 'utf8'),
+    ]);
+    assert.match(chinese.split('\n')[0], /\p{Script=Han}/u,
+      `${entry.directory} installer title must use the Chinese default`);
+    for (const [filename, text, other] of [
+      ['README.md', chinese, 'README.en.md'], ['README.en.md', english, 'README.md'],
+    ]) {
+      assert.ok(!text.startsWith('---\n'), `${entry.directory}/${filename} exposes internal frontmatter`);
+      assert.ok(text.includes(`](${other})`), `${entry.directory}/${filename} must link the other guide`);
+      const prose = text.replace(/```[\s\S]*?```|`[^`]*`/gu, '');
+      if (filename === 'README.en.md') {
+        assert.doesNotMatch(prose, /\p{Script=Han}/u, `${entry.directory} English guide contains Chinese prose`);
+      } else {
+        assert.doesNotMatch(prose, /^[A-Za-z][A-Za-z ,/()-]{30,}[.!]?$/mu,
+          `${entry.directory} default guide contains untranslated English prose`);
+      }
+      for (const capability of await declaredCapabilities(entry.directory)) {
+        assert.ok(text.includes(`\`${capability}\``), `${entry.directory}/${filename} omits ${capability}`);
+      }
+    }
+    const pkg = JSON.parse(pkgText);
+    assert.ok(pkg.files?.includes('README.en.md') || pkg.files?.includes('README*.md'),
+      `${entry.directory} must package the parallel English file`);
+  }
+});
+
 test('build readiness includes every manifest entrypoint, including nested runtime contributions', async () => {
   const report = JSON.parse(await readFile(
     new URL('../migration/f202-c1-build-readiness.json', import.meta.url), 'utf8',

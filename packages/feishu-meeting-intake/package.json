@@ -20,7 +20,8 @@
     "manifest.json",
     "schemas",
     "plugin.yaml",
-    "scripts"
+    "scripts",
+    "README.en.md"
   ],
   "engines": {
     "node": ">=20.0.0"

@@ -1,63 +1,44 @@
-# WeCom Bot Connector
+# 企业微信智能机器人连接器
 
-`@clowder-ai/connector-wecom-bot` packages WeCom intelligent-bot WebSocket ingress, proactive replies,
-frame-bound streaming, template cards, and encrypted media transfer for a Clowder AI Host.
+简体中文 · [English](README.en.md)
 
-## Configuration
+通过企业微信智能机器人的 WebSocket 接收消息，支持主动回复、流式回复、模板卡片与加密媒体。
 
-- `botId`: WeCom intelligent-bot identity.
-- `botSecret`: secret used only to authenticate the provider WebSocket session.
+## 开始使用
 
-Both fields are user-pasted in the plugin configuration (the package has no QR login). The
-`wecom_validate` operation (`测试并连接` / `断开连接`) tests the credentials against the provider
-without starting a messaging stream. The Host saves successful credentials and preserves enable intent:
-enabled instances reload their connection; disabled instances stay stopped. The package does not read repository `.env` files or
-ambient Host configuration.
+1. 在企业微信取得 `botId` 和 `botSecret`，在插件设置中填写。
+2. 点击“测试并连接”验证输入并保存凭据；本插件不提供扫码登录。
+3. 启用插件后建立消息连接。停用状态也能测试配置，但测试不会启动消息流或改变启用意图。
 
-## 迁移已知差异
+验证失败保留已保存的配置，修改后可重试。断开操作通过宿主清空对应凭据；是否正在连接应以实时连接测试为准。
 
-- **面板里填好即可直接「测试并连接」**：未保存的输入优先；验证成功后凭据由 Host 持久化。操作不改变启用意图，停用时不建立消息连接，已启用时由 Host 重载新配置。
-- **validate 失败不再回滚已存凭据**：旧版 stream 起不来会自动清空已写入的凭据；新版验证失败只是不连接，已保存的配置值保留，需 owner 自行修改。
-- **凭据只经由 operation target 写入**：`wecom_validate` 的 `targetValues` 回写 botId/botSecret（disconnect 置空），包内不写 `context.storage`、不打印凭据。
-- **「已连接」展示依赖 Host W2-2c**：判断依据是 operation target 是否有值（配置级）；实时连接状态请使用 `wecom-bot.test`（WebSocket connected 才返回 ok）。
+群白名单、管理员和群命令限制通过正常配置控件管理。初始白名单与限制关闭，管理员为空；管理命令只接受已配置管理员。
 
-## Security and authority
+## 消息与恢复
 
-The Host owns installation, grants, secrets, connector bindings, wake policy, delivery, and durable state.
-Inbound provider messages target only an authenticated Host-issued `connector_binding`. Group `@bot` text
-may be normalized as provider syntax, but package text never decides Host admission or wake authority.
+停用清理 WebSocket、定时器、缓存帧和活动流。去重及恢复状态由宿主持久保存。加密媒体定位信息只在私有状态中保留，按受限分块解密读取后清理；普通消息文本不能授予对话绑定或唤醒权限。
 
-## Lifecycle and recovery
+## 对话命令
 
-Disable and rollback drain the WebSocket, timers, cached frames, and active streams before another runtime
-starts. Resume state and deduplication watermarks must use a Host-owned, manifest-declared checkpoint after
-accepted delivery; package-local files, ambient Redis, and inventory snapshots are not substitutes.
+可使用 `/where`、`/new`、`/threads`、`/use`、`/thread`、`/commands`、`/cats`、`/status`、`/history`、`/unbind`、`/focus` 和 `/ask` 查看位置、切换对话或发起请求。`/thread`、`/ask` 只有显式携带正文时才请求猫执行，宿主接受投递后才确认成功。`/use` 会遍历可见对话，列表不完整时不猜测选择。
 
-The Host-loadable builtin runtime is implemented in this package and uses only the existing authenticated
-binding, declared configuration/secret, state, and messaging surfaces; C1 does not add another public wire.
+`/allow-group`、`/deny-group` 仅适用于支持群聊且已配置管理员的连接器，不能通过普通私聊文本取得管理权。
 
-Inbound encrypted-media locators remain in manifest-declared private plugin state. Public messages carry
-only a `pmr_*` reference and `sourceEventId`; the declared media source decrypts into bounded chunks and
-settlement removes the locator.
+## 安装权限
 
-## Exposed capability
+以下能力均来自同一份 `plugin.yaml`，由宿主决定是否授权；说明文件不授予额外权限。
 
-The connector contributes WeCom messaging and a media source, and requests `plugin.config.read`,
-`plugin.state.get`, `plugin.state.set`, `media.read`, `message.event.subscribe`, `messaging.send`,
-`secret.read`, `thread.readContent`, `thread.listMetadata`, `thread.write`. It also declares the
-`wecom_validate` operation (`测试并连接` / `断开连接`) and a `wecom-bot.test` connection check. It does not expose C2 audio
-services, mention parsing, public UI slots, or generic public hooks.
+| 权限 | 用途 |
+| --- | --- |
+| `plugin.config.read` | 读取本插件保存的设置。 |
+| `plugin.state.get` | 读取宿主保管的私有业务状态。 |
+| `plugin.state.set` | 保存私有业务状态、进度与去重记录。 |
+| `media.read` | 读取当前调用获准的媒体引用。 |
+| `message.event.subscribe` | 接收获准的对话消息与生命周期事件。 |
+| `messaging.send` | 向获准目标发送消息和回复。 |
+| `secret.read` | 读取明确授权给本插件的凭据。 |
+| `thread.listMetadata` | 列出可访问对话的基本信息。 |
+| `thread.readContent` | 读取获准对话内容；范围由宿主核验。 |
+| `thread.write` | 创建或更新获准的对话关联。 |
 
-## Commands and configuration
-
-The builtin entrypoint intercepts `/where`, `/new`, `/threads`, `/use`, `/thread`, `/commands`, `/cats`,
-`/status`, `/history`, `/unbind`, `/allow-group`, `/deny-group`, `/focus`, and `/ask` before ordinary ingress.
-Commands reply through the provider and keep their audit quiet. Only an explicit body in `/thread` or
-`/ask` requests Agent invocation; successful delivery is acknowledged only after the Host accepts it.
-`/use` traverses the owner-visible live thread inventory beyond the first 50 rows, deduplicates IDs and
-rejects a non-progressing or exhausted traversal instead of selecting from an incomplete list.
-
-Group whitelist, administrators and the group-command restriction keep their original configuration semantics.
-Use normal configuration controls; no permission JSON, separate initialization or legacy import is required.
-The initial group whitelist and command restriction are off and the administrator list is empty.
-Group management commands still require an explicitly configured administrator; an empty list grants nobody administration.
+宿主管理安装、授权、凭据和启停；配置保存不自动改变启用意图。英文文档是独立文件，互链不代表页面已支持自动语言切换。

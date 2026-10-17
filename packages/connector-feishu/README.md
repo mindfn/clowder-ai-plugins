@@ -1,54 +1,43 @@
-# Feishu / Lark Connector
+# 飞书连接器
 
-`@clowder-ai/connector-feishu` packages authenticated Feishu/Lark webhook and long-connection message
-parsing, interactive cards, media transfer, token refresh, and QR credential setup for a Clowder AI Host.
+简体中文 · [English](README.en.md)
 
-## Configuration
+将飞书或 Lark 消息接入 Clowder AI，支持 Webhook 与长连接、交互卡片、媒体传输和扫码配置。
 
-The Host projects only the declared App ID, App Secret, connection mode, optional verification token, and
-optional group mention aliases. The package does not read repository `.env` files or ambient Host state.
+## 开始使用
 
-## 迁移已知差异
+1. 在飞书创建应用，选择连接模式，配置相应的回调或长连接。
+2. 在插件设置填写 `appId`、`appSecret`；也可使用扫码操作取得应用凭据。扫码可在停用状态完成，保存不会自行改变启用意图。
+3. 使用 Webhook 时，填写 `verificationToken`。它通过普通配置保存，不由扫码回写。
+4. 保存后启用插件建立消息连接；使用连接测试检查当前状态。保存了凭据不等于连接正在运行。
 
-- **配置与启用独立**：App ID / App Secret 保留原必填约束；扫码可在停用时完成，challenge 由 Host operation state 保存，轮询不依赖运行实例。成功后 Host 保存凭据，保持原启用意图；启用时才运行消息连接。
-- **`groupBotMentionsJson` 没有 owner 入口**：群 @bot 别名映射只能通过包配置调整，配置面板不暴露该项。
-- **扫码的 target 去掉了 `verificationToken`**：QR 登录回写的 targetValues 不再包含 verificationToken（webhook 校验 token 走普通配置项）。
-- **「已连接」展示依赖 Host W2-2c**：判断依据是 operation target 是否有值，而不是旧 Hub 的实时连接状态；实时状态请使用 `feishu.test`。
+群白名单、管理员和群命令限制使用正常配置控件。初始白名单和限制关闭，管理员为空；群管理命令仍只接受已配置管理员。群内机器人别名映射 `groupBotMentionsJson` 是隐藏设置，不在普通页面提供编辑入口。
 
-## Security and authority
+## 消息与恢复
 
-The Host owns installation, grants, secrets, webhook admission, connector bindings, wake policy, delivery,
-and durable state. Ordinary message text, including `@`, cannot mint a binding or wake an Agent.
+应用令牌和下载媒体是临时运行数据。宿主保存配置、对话绑定和检查点；停用先清理连接再允许其他连接器接管。媒体定位信息只在私有状态中保存，通过受限分块读取后清理，不写入对话正文。
 
-## Lifecycle and recovery
+## 对话命令
 
-Tenant tokens and downloaded media are transient runtime data. Rollback drains the package connection before
-the preserved Core adapter starts, while Host-owned bindings and configuration remain unchanged.
+可使用 `/where`、`/new`、`/threads`、`/use`、`/thread`、`/commands`、`/cats`、`/status`、`/history`、`/unbind`、`/focus` 和 `/ask` 查看位置、切换对话或发起请求。`/thread`、`/ask` 只有显式携带正文时才请求猫执行，宿主接受投递后才确认成功。`/use` 会遍历可见对话，列表不完整时不猜测选择。
 
-The Host-loadable builtin runtime is implemented in this package and uses only the existing authenticated
-binding and declared configuration/secret surfaces. No package-local persistence fallback is provided.
+`/allow-group`、`/deny-group` 仅适用于支持群聊且已配置管理员的连接器，不能通过普通私聊文本取得管理权。
 
-Inbound provider media locators remain in manifest-declared private plugin state. Public messages expose
-only a `pmr_*` reference plus `sourceEventId`; the declared media source serves bounded chunks and removes
-the locator when the Host settles the import.
+## 安装权限
 
-## Exposed capability
+以下能力均来自同一份 `plugin.yaml`，由宿主决定是否授权；说明文件不授予额外权限。
 
-The connector contributes one Feishu identity, message subscription, media source, and verified webhook,
-and requests `plugin.config.read`, `plugin.state.get`, `plugin.state.set`, `media.read`,
-`message.event.subscribe`, `messaging.send`, `secret.read`, `thread.readContent`, `thread.listMetadata`, `thread.write`. QR setup
-obtains credentials but does not transfer Host configuration authority.
+| 权限 | 用途 |
+| --- | --- |
+| `plugin.config.read` | 读取本插件保存的设置。 |
+| `plugin.state.get` | 读取宿主保管的私有业务状态。 |
+| `plugin.state.set` | 保存私有业务状态、进度与去重记录。 |
+| `media.read` | 读取当前调用获准的媒体引用。 |
+| `message.event.subscribe` | 接收获准的对话消息与生命周期事件。 |
+| `messaging.send` | 向获准目标发送消息和回复。 |
+| `secret.read` | 读取明确授权给本插件的凭据。 |
+| `thread.readContent` | 读取获准对话内容；范围由宿主核验。 |
+| `thread.listMetadata` | 列出可访问对话的基本信息。 |
+| `thread.write` | 创建或更新获准的对话关联。 |
 
-## Commands and configuration
-
-The builtin entrypoint intercepts `/where`, `/new`, `/threads`, `/use`, `/thread`, `/commands`, `/cats`,
-`/status`, `/history`, `/unbind`, `/allow-group`, `/deny-group`, `/focus`, and `/ask` before ordinary ingress.
-Commands reply through the provider and keep their audit quiet. Only an explicit body in `/thread` or
-`/ask` requests Agent invocation; successful delivery is acknowledged only after the Host accepts it.
-`/use` traverses the owner-visible live thread inventory beyond the first 50 rows, deduplicates IDs and
-rejects a non-progressing or exhausted traversal instead of selecting from an incomplete list.
-
-Group whitelist, administrators and the group-command restriction keep their original configuration semantics.
-Use normal configuration controls; no permission JSON, separate initialization or legacy import is required.
-The initial group whitelist and command restriction are off and the administrator list is empty.
-Group management commands still require an explicitly configured administrator; an empty list grants nobody administration.
+宿主管理安装、授权、凭据和启停；配置保存不自动改变启用意图。英文文档是独立文件，互链不代表页面已支持自动语言切换。

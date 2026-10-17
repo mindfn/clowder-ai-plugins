@@ -1,51 +1,32 @@
-# WeChat Official Account
+# 微信公众号
 
-`@clowder-ai/weixin-mp` packages the WeChat Official Account publishing limb and its Agent skill. It can
-check account connectivity, convert Markdown to WeChat-compatible HTML, upload images and permanent media,
-manage drafts, submit publication, inspect publication status, and list or delete provider-owned content.
+简体中文 · [English](README.en.md)
 
-## What it does
+让猫检查公众号连接、把 Markdown 转为微信兼容 HTML、上传图片和永久素材、管理草稿、提交发布并查询结果。
 
-The package exposes a declarative limb at `limbs/weixin-mp.yml`, package-owned invoke handlers, and an Agent
-skill that explains the safe publishing journey. The Host owns installation, configuration, secret storage,
-grants, invocation leases, and audit records. Draft, article, media, and publication identifiers remain
-provider-owned results; the package does not mirror them into Host inventory.
+## 开始使用
 
-## Configuration
+1. 在插件设置填写公众号 App ID 和 App Secret，密钥由宿主保存。
+2. 可在停用状态运行连接测试；测试使用同一个账号状态处理器，不会启用发布能力，缺少凭据会返回 `not_configured`。
+3. 启用后使用随包的公众号 skill 和 limb，按需转换内容、上传素材、建立草稿，再明确提交发布。
 
-Configure the package through the Clowder AI Manager with a WeChat Official Account App ID and App Secret.
-The App Secret is declared as a secret and must be projected only into the verified package runtime. WeChat
-account type, verification, API quotas, review policy, and publication eligibility are controlled by WeChat.
+账号类型、认证状态、额度、审核和发布资格由微信决定。平台返回的文章、草稿、素材和发布 ID 是后续操作的依据，不会另行镜像为宿主库存。
 
-## Local content boundary
+## 本地内容与安全
 
-Local Markdown, HTML, and image reads are restricted to the operating-system temporary directory after
-canonical path resolution. Symlink and traversal escapes are rejected. Text reads are capped at 2 MiB and
-image reads at 10 MiB. Converted HTML is always written to a new package-selected temporary path.
+本地 Markdown、HTML 和图片只允许读取系统临时目录内的真实路径，拒绝符号链接或路径穿越。文本最多 2 MiB，图片最多 10 MiB，转换后的 HTML 写入新的临时路径。
 
-Remote image downloads accept only public HTTP(S) destinations, pin the resolved address for the request,
-reject credentials and private/reserved address space, reject redirects, enforce a 30-second timeout, and
-cap the response at 10 MiB.
+远程图片只接受公共 HTTP(S) 地址，固定已解析的目标地址，拒绝凭据、私网、保留网段和重定向；请求超时 30 秒，最多下载 10 MiB。HTML 和链接属性会转义，不安全协议被移除。
 
-## Security and failure behavior
+访问令牌只在进程内按过期时间缓存；令牌失效时清除缓存后最多重试一次。无效路径、超限内容、异常类型、HTTP 或平台业务错误均明确失败。真实发布会改变公众号内容，应先用测试账号和临时内容验收。
 
-- Host-projected credentials are consumed only by the verified package runtime; its access-token cache is
-  process-local, bounded by provider expiry, and discarded when the runtime stops.
-- API token expiry is retried once only after invalidating the cached token.
-- Markdown HTML and URL attributes are escaped; unsafe URL schemes are omitted.
-- Missing inputs, oversized files, unsafe paths or URLs, unexpected content types, HTTP failures, and
-  provider business errors fail closed.
-- The package requests only configuration and secret-read capabilities. It has no messaging, wake, thread,
-  memory, schedule, or filesystem-wide authority.
+## 安装权限
 
-This package is an alpha release. Use a non-production Official Account and temporary content during
-acceptance before enabling it for real publication.
+以下能力均来自同一份 `plugin.yaml`，由宿主决定是否授权；说明文件不授予额外权限。
 
-## Exposed capability
+| 权限 | 用途 |
+| --- | --- |
+| `plugin.config.read` | 读取本插件保存的设置。 |
+| `secret.read` | 读取明确授权给本插件的凭据。 |
 
-This package requests these Host capabilities, verbatim from its manifest
-(`plugin.yaml` — kept in sync by `pnpm test:train-c1-inventory`): `plugin.config.read`, `secret.read`.
-
-The connection test is available independently of runtime enablement. It uses the
-same account status handler; missing credentials report `not_configured`. Testing
-does not activate the publishing limb.
+宿主管理安装、授权、凭据和启停；配置保存不自动改变启用意图。英文文档是独立文件，互链不代表页面已支持自动语言切换。

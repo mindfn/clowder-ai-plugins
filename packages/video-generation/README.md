@@ -1,69 +1,30 @@
-# Video Generation
+# 视频与图片生成
 
-`@clowder-ai/video-generation` gives a Clowder AI Agent MCP tools for submitting and tracking image or
-video generation jobs through a configured provider. The package owns the provider protocol templates and
-request signing; the Host owns installation, configuration, secret storage, grants, and process lifecycle.
+简体中文 · [English](README.en.md)
 
-## What it does
+让猫向配置的提供方提交生成任务，并查询异步结果。支持的能力取决于提供方，包括文生视频、图生视频，以及即梦文生图。
 
-The toolset exposes `video_gen_submit` and `video_gen_poll` for asynchronous providers. `submit` accepts a
-declared capability plus its template variables and returns a provider task ID. `poll` resumes the same task
-until it succeeds, fails, or reaches the provider-specific attempt bound. Supported capabilities vary by
-provider and currently include text-to-video, image-to-video, and Jimeng text-to-image.
+## 开始使用
 
-The package does not generate media locally, download completed media into Host storage, or retain provider
-jobs as package inventory. A successful poll returns the provider result URL and best-effort projects a file
-rich block when invocation-scoped callback credentials are available.
+1. 在插件设置选择 `zhipu`、`kling` 或 `jimeng`。
+2. 选择认证方式：`apikey` 需要 `apiKey`；`jwt-hs256` 和 `hmac-sha256-v4` 需要 `accessKey`、`secretKey`。按需设置可信的 HTTPS `baseUrl` 和 `model`。
+3. 保存并启用后，让猫使用 `video_gen_submit` 提交能力及模板变量；取得任务 ID 后用 `video_gen_poll` 查询同一个任务。
 
-## Configuration
+认证方式缺少必要凭据时，运行会拒绝启动。平台支持的模型、额度、费用、内容规则与保留政策由提供方决定。
 
-Configure the package through the Clowder AI Manager.
+## 结果与取消
 
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `provider` | Yes | `zhipu`, `kling`, or `jimeng`. |
-| `authType` | Yes | `apikey`, `jwt-hs256`, or `hmac-sha256-v4`. |
-| `apiKey` | Conditional | Required by `apikey`. |
-| `accessKey` | Conditional | Required by JWT and HMAC authentication. |
-| `secretKey` | Conditional | Required by JWT and HMAC authentication. |
-| `baseUrl` | No | HTTPS provider-compatible API origin; defaults to the selected template. |
-| `model` | No | Provider model override. |
+成功时返回提供方的结果 URL；调用上下文提供有效回调凭据时，会尽力附上文件展示块。插件不在本地生成媒体，不自动下载成品，也不把提供方任务另存为宿主库存。
 
-The manifest keeps credential fields optional because its v0.1 configuration schema cannot express
-cross-field conditional requiredness. Runtime startup fails closed when the selected authentication strategy
-lacks its required credentials.
+每个请求超时 30 秒，网络错误及 HTTP 429/500/502/503/504 最多重试两次。轮询间隔和次数受各平台协议约束；取消会停止后续请求和等待。未知提供方、缺失凭据、不安全地址和异常响应会明确失败。密钥、JWT、签名及带认证的查询参数不会出现在错误展示中。
 
-## Providers and capabilities
+## 安装权限
 
-- Zhipu: text-to-video and image-to-video through CogVideoX-compatible asynchronous jobs.
-- Kling: text-to-video and image-to-video.
-- Jimeng: text-to-video, image-to-video, and text-to-image through Volcengine signing.
+以下能力均来自同一份 `plugin.yaml`，由宿主决定是否授权；说明文件不授予额外权限。
 
-Provider model availability, quotas, billing, content policy, and retention are governed by that provider.
+| 权限 | 用途 |
+| --- | --- |
+| `plugin.config.read` | 读取本插件保存的设置。 |
+| `secret.read` | 读取明确授权给本插件的凭据。 |
 
-## Security and data flow
-
-Prompts, input image URLs, and generation options are sent only to the configured provider. Base URLs must
-use HTTPS; loopback HTTP is accepted only for isolated local fixtures, and embedded URL credentials are
-rejected. API keys, access keys, secret keys, derived JWTs, HMAC signatures, and signed-query artifacts are
-scrubbed from surfaced errors.
-
-The plugin requests only `plugin.config.read` and `secret.read`. It does not request message, thread, memory,
-file, schedule, or wake authority.
-
-## Limits and failure behavior
-
-- Provider requests have a 30-second timeout.
-- Network failures and HTTP 429/500/502/503/504 responses retry twice.
-- Poll intervals and attempt limits are package-owned protocol facts.
-- Unknown providers, invalid templates, missing credentials, unsafe base URLs, malformed responses, and
-  provider business errors fail closed.
-- Poll cancellation stops further provider requests and wait intervals.
-
-This package is an alpha release. Verify provider compatibility and data policy in an isolated environment
-before relying on it for sensitive workloads.
-
-## Exposed capability
-
-This package requests these Host capabilities, verbatim from its manifest
-(`plugin.yaml` — kept in sync by `pnpm test:train-c1-inventory`): `plugin.config.read`, `secret.read`.
+宿主管理安装、授权、凭据和启停；配置保存不自动改变启用意图。英文文档是独立文件，互链不代表页面已支持自动语言切换。

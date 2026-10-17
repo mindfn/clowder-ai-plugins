@@ -24,7 +24,8 @@
     "README.md",
     "LICENSE",
     "NOTICE",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "README.en.md"
   ],
   "engines": {
     "node": ">=22.12.0"

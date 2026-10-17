@@ -1,54 +1,45 @@
-# WeChat Personal Connector
+# 微信个人号连接器
 
-`@clowder-ai/connector-weixin` packages iLink long polling, message normalization, QR login, media transfer,
-typing, and reply delivery for a Clowder AI Host.
+简体中文 · [English](README.en.md)
 
-## Configuration
+通过 iLink 将微信私聊接入 Clowder AI，支持扫码登录、消息收发、媒体传输和输入状态提示。
 
-The Host projects the Bot Token and optional media behavior explicitly from the manifest. The Bot Token is
-written only by the `weixin_qr_login` operation target. It remains hidden and required for runtime
-readiness; QR setup is available while the plugin is disabled. Saving a token preserves the Host enable intent. Relative Host media URLs have no package-side base URL override
-anymore: outbound media with a relative URL fails closed with a clear error instead of being silently sent.
+## 开始使用
 
-## Security and authority
+1. 在插件设置打开扫码登录，使用微信扫描生成的二维码并完成确认。
+2. 确认登录结果，保存由扫码取得的凭据；需要接收消息时再启用插件。
 
-The Host owns installation, grants, credentials, connector bindings, wake policy, delivery, and durable
-checkpoint state. Ordinary message text, including `@`, cannot mint a binding or wake an Agent.
+扫码在停用状态也可完成，保存不会自行启用插件。机器人令牌由宿主保存，无需手动复制令牌、编辑 JSON 或初始化另一份权限。本插件只支持私聊，没有群权限页。
 
-## Lifecycle and recovery
+连接状态请使用实时连接测试检查。保存了扫码凭据不等于消息轮询正在运行。断开操作清除对应登录凭据，不删除其他已保存数据。
 
-The iLink polling cursor and context tokens use the existing Host-owned state surface. They must not be stored
-in package-local files or ambient Redis. Rollback drains polling before the preserved Core adapter starts.
+## 消息与恢复
 
-Inbound CDN locators share that manifest-declared private state surface but never enter the Host envelope,
-logs, or transcript. Public messages carry only a `pmr_*` reference plus `sourceEventId`; the declared media
-source serves bounded chunks and settlement deletes the locator.
+iLink 轮询游标及上下文令牌通过宿主保存；停用时停止轮询。媒体只接受宿主授权的引用，不读取任意本地路径或裸 URL。入站下载坐标保存在私有状态，对话只携带受限引用与来源标识，读取结算后清理。
 
-The Host-loadable builtin runtime is implemented in this package and uses only the existing Host-owned
-binding, configuration/secret, state, and messaging surfaces.
+语音处理使用当前已保存的隐藏设置 `voiceItemMode`、`enableUnsafeVoiceModes`、`captureInboundVoiceMedia`；未配置模式具有独立含义。普通设置页不提供这些高级字段，也不读取运行时环境变量覆盖值。
 
-## Exposed capability
+## 对话命令
 
-The package contributes one WeChat identity and message subscription and requests `plugin.config.read`, `plugin.state.get`, `plugin.state.set`, `media.read`, `message.event.subscribe`, `messaging.send`, `secret.read`, `thread.readContent`, `thread.listMetadata`, `thread.write`. It also declares the `weixin_qr_login` operation (`qr-generate` / `qr-status` / `disconnect`) and a `weixin.test` connection check. QR login
-obtains a Bot Token but leaves credential persistence and activation under Host control.
+可使用 `/where`、`/new`、`/threads`、`/use`、`/thread`、`/commands`、`/cats`、`/status`、`/history`、`/unbind`、`/focus` 和 `/ask` 查看位置、切换对话或发起请求。`/thread`、`/ask` 只有显式携带正文时才请求猫执行，宿主接受投递后才确认成功。`/use` 会遍历可见对话，列表不完整时不猜测选择。
 
-## 迁移已知差异
+`/allow-group`、`/deny-group` 仅适用于支持群聊且已配置管理员的连接器，不能通过普通私聊文本取得管理权。
 
-- **配置与启用独立**：保留原扫码配置流程，不增加权限初始化、旧权限导入或手动配置 JSON 的步骤；Host 侧配置/扫码可用性与启用意图分别验收。
-- **语音三项 lost runtime env override**：`voiceItemMode`（保持无默认值——未设置本身有独立语义）、`enableUnsafeVoiceModes`、`captureInboundVoiceMedia` 现在全部 hidden，只能通过包配置 A/B 调整，不再有运行时环境变量覆盖入口。
-- **`apiBaseUrl` 已删除**：出站媒体只接受 Host 授权的 `hmr_*` 引用，并在 outbound action 返回前通过 `media.read` 读完；旧的相对 URL、绝对路径与裸引用不再读取，改为向用户显示媒体不可用提示。
-- **凭据只经由 operation target 写入**：Bot Token 仅通过 `weixin_qr_login` 的 `targetValues` 由 Host 持久化，包内不写 `context.storage`、不打印凭据。
-- **「已连接」展示依赖 Host W2-2c**：判断依据是 operation target 是否有值，而不是旧 Hub 的实时连接状态；实时状态请使用 `weixin.test`（有 token 且轮询活跃才返回 ok）。
+## 安装权限
 
-## Commands and configuration
+以下能力均来自同一份 `plugin.yaml`，由宿主决定是否授权；说明文件不授予额外权限。
 
-The builtin entrypoint intercepts `/where`, `/new`, `/threads`, `/use`, `/thread`, `/commands`, `/cats`,
-`/status`, `/history`, `/unbind`, `/allow-group`, `/deny-group`, `/focus`, and `/ask` before ordinary ingress.
-Commands reply through the provider and keep their audit quiet. Only an explicit body in `/thread` or
-`/ask` requests Agent invocation; successful delivery is acknowledged only after the Host accepts it.
-`/use` traverses the owner-visible live thread inventory beyond the first 50 rows, deduplicates IDs and
-rejects a non-progressing or exhausted traversal instead of selecting from an incomplete list.
+| 权限 | 用途 |
+| --- | --- |
+| `plugin.config.read` | 读取本插件保存的设置。 |
+| `plugin.state.get` | 读取宿主保管的私有业务状态。 |
+| `plugin.state.set` | 保存私有业务状态、进度与去重记录。 |
+| `media.read` | 读取当前调用获准的媒体引用。 |
+| `message.event.subscribe` | 接收获准的对话消息与生命周期事件。 |
+| `messaging.send` | 向获准目标发送消息和回复。 |
+| `secret.read` | 读取明确授权给本插件的凭据。 |
+| `thread.readContent` | 读取获准对话内容；范围由宿主核验。 |
+| `thread.listMetadata` | 列出可访问对话的基本信息。 |
+| `thread.write` | 创建或更新获准的对话关联。 |
 
-This adapter supports direct conversations only. Configure the original account/login fields and receive messages;
-there is no group-permission page, permission initialization or legacy-import step. Group management commands
-do not grant a direct-message sender administrator authority. Existing stored data is not deleted.
+宿主管理安装、授权、凭据和启停；配置保存不自动改变启用意图。英文文档是独立文件，互链不代表页面已支持自动语言切换。

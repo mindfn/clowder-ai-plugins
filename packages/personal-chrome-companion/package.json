@@ -24,7 +24,8 @@
     "plugin.yaml",
     "npm-shrinkwrap.json",
     "README.md",
-    "assets"
+    "assets",
+    "README.en.md"
   ],
   "engines": {
     "node": ">=20.0.0"

@@ -18,7 +18,8 @@
     "dist",
     "plugin.yaml",
     "README.md",
-    "skills"
+    "skills",
+    "README.en.md"
   ],
   "engines": {
     "node": ">=24.0.0"

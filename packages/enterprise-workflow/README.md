@@ -1,46 +1,28 @@
-# Enterprise Workflow
+# 企业工作流
 
-`@clowder-ai/enterprise-workflow` exposes governed WeCom and Lark actions as two
-Host-managed direct tools. It does not open an HTTP callback endpoint and it never
-receives or stores a callback token. The Host authenticates the calling cat and
-rechecks the live plugin instance before `plugin_call` reaches the package action.
+简体中文 · [English](README.en.md)
 
-## Operator setup
+通过两个受宿主管理的工具调用企业微信和飞书工作流，执行供应商 CLI 支持的操作并返回明确的资源标识。
 
-Install and authenticate `wecom-cli` and/or `lark-cli` on the Host machine, then set:
+## 开始使用
 
-- `wecomCliPath`: executable name or absolute path for `wecom-cli`.
-- `larkCliPath`: executable name or absolute path for `lark-cli`.
+1. 在运行 Clowder AI 的机器上安装并登录 `wecom-cli` 或 `lark-cli`。
+2. 在插件设置填写需要使用的 `wecomCliPath`、`larkCliPath`。可以使用可执行文件名或绝对路径；这些路径不是密钥，平台凭据仍由各 CLI 管理。
+3. 启用插件，让猫通过 `plugin_list_tools` 查看本插件的实际参数说明。
+4. 按说明调用 `wecom-actions/wecom_action` 或 `lark-actions/lark_action`，经 `plugin_call` 执行。
 
-The paths are ordinary configuration, not secrets. Vendor credentials remain owned
-by each local CLI. The plugin requests only `plugin.config.read`.
+随包的企业工作流 skill 提供分支示例。直接绕过工具运行 CLI 不会经过宿主的调用身份、授权和审计。
 
-## Agent journey
+## 数据与停用
 
-1. Confirm `official.enterprise-workflow` is installed, configured, enabled, and running.
-2. Call `plugin_list_tools` for that plugin.
-3. Select exactly `wecom-actions/wecom_action` or `lark-actions/lark_action` and construct
-   arguments from the returned schema.
-4. Call `plugin_call`; the returned value is the resource handle for the selected action.
+插件不开放 HTTP 回调，也不接收或保存回调令牌。宿主认证调用者并检查当前实例；插件负责参数转换、子进程和结果解析。停用或卸载阻止新调用；已创建的平台资源仍保留在企业租户，使用返回的资源标识管理。
 
-The packaged `skills/enterprise-workflow/SKILL.md` contains branch examples. Do not invoke
-the CLI directly: doing so bypasses Host invocation identity, liveness, grants, and audit.
+## 安装权限
 
-## Package ownership and recovery
+以下能力均来自同一份 `plugin.yaml`，由宿主决定是否授权；说明文件不授予额外权限。
 
-The package owns provider argument adaptation, CLI process execution, output parsing, and
-resource handles. The Host owns installation, configuration, grants, invocation identity,
-audit, enable/disable, and uninstall. Disable or uninstall stops new tool calls; created
-vendor resources remain in the vendor tenant and are returned as explicit handles.
+| 权限 | 用途 |
+| --- | --- |
+| `plugin.config.read` | 读取本机 CLI 路径，不读取平台账号密钥。 |
 
-## Development artifact
-
-Dev-wave self-contained artifacts are produced with the repository script:
-
-```sh
-node scripts/pack-self-contained-artifact.mjs packages/enterprise-workflow /absolute/path/to/f202-w1-tarballs
-```
-
-The script takes SDK and contract bytes from the current checkout, verifies the actual
-`runtime.entrypoint` after relocation, and publishes an immutable content-addressed filename.
-Handoffs identify the artifact by full SHA-256, never by path alone.
+宿主管理安装、授权、凭据和启停；配置保存不自动改变启用意图。英文文档是独立文件，互链不代表页面已支持自动语言切换。

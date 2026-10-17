@@ -149,7 +149,7 @@ async function verifyCatalogEntry(catalogEntry) {
         `packed ${catalogEntry.pluginId} artifact is missing README.md`,
       );
       const connectorReadme = await readFile(
-        join(unpackedDirectory, 'package', 'README.md'),
+        join(unpackedDirectory, 'package', 'README.en.md'),
         'utf8',
       );
       assert.match(
@@ -185,7 +185,7 @@ async function verifyCatalogEntry(catalogEntry) {
       }
       assert.match(
         await readFile(join(unpackedDirectory, 'package', 'README.md'), 'utf8'),
-        /^# Video Analysis\n/m,
+        /^# 视频分析\n/m,
       );
     }
 
@@ -206,7 +206,7 @@ async function verifyCatalogEntry(catalogEntry) {
       }
       assert.match(
         await readFile(join(unpackedDirectory, 'package', 'README.md'), 'utf8'),
-        /^# Video Generation\n/m,
+        /^# 视频与图片生成\n/m,
       );
     }
 
@@ -232,7 +232,7 @@ async function verifyCatalogEntry(catalogEntry) {
       }
       assert.match(
         await readFile(join(unpackedDirectory, 'package', 'README.md'), 'utf8'),
-        /^# WeChat Official Account\n/m,
+        /^# 微信公众号\n/m,
       );
     }
 
@@ -257,7 +257,7 @@ async function verifyCatalogEntry(catalogEntry) {
       }
       assert.match(
         await readFile(join(unpackedDirectory, 'package', 'README.md'), 'utf8'),
-        /^# Enterprise Workflow\n/m,
+        /^# 企业工作流\n/m,
       );
     }
 
@@ -285,8 +285,23 @@ async function verifyCatalogEntry(catalogEntry) {
       }
       assert.match(
         await readFile(join(unpackedDirectory, 'package', 'README.md'), 'utf8'),
-        /^# WeChat Visible Reader\n/m,
+        /^# 微信可见内容读取\n/m,
       );
+    }
+
+    // Installation consumes the Chinese default; the independent English file must
+    // survive the same pack boundary. Compare bytes so source-only translations
+    // or a stale staged README cannot pass catalog verification.
+    for (const [filename, other] of [
+      ['README.md', 'README.en.md'], ['README.en.md', 'README.md'],
+    ]) {
+      assert.ok(artifact.files.some(file => file.path === filename),
+        `packed ${catalogEntry.pluginId} is missing ${filename}`);
+      const packedReadme = await readFile(join(unpackedDirectory, 'package', filename), 'utf8');
+      const sourceReadme = await readFile(new URL(`../${version.artifact.provenance.sourceDirectory}/${filename}`, import.meta.url), 'utf8');
+      assert.equal(packedReadme, sourceReadme, `${catalogEntry.pluginId} ${filename} must match source bytes`);
+      assert.ok(!packedReadme.startsWith('---\n'), `${filename} must not expose internal frontmatter`);
+      assert.ok(packedReadme.includes(`](${other})`), `${filename} must link its parallel document`);
     }
 
     const contributions = manifestValidation.manifest.contributions ?? [];
