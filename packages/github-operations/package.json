@@ -17,6 +17,7 @@
     "dist",
     "plugin.yaml",
     "README.md",
+    "README.zh-CN.md",
     "assets",
     "skills",
     "npm-shrinkwrap.json"

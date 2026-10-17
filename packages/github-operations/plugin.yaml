@@ -5,7 +5,7 @@ name: GitHub Operations
 description:
   default: Track GitHub reviews, checks, conflicts, issues, comments, and repository reconciliation.
   translations:
-    zh-CN: 跟踪 GitHub 审查、检查、冲突、Issue、评论与仓库一致性。
+    zh-CN: 跟踪 GitHub PR 审查、CI 检查、冲突、Issue 和评论，并同步仓库协作动态。
 icon:
   type: svg
   src: assets/icon.svg

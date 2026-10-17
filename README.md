@@ -63,11 +63,11 @@ Host Broker ─────┐
 
 当前迁移包中有保留旧 SDK 版本的消费者。仓内源码目录交付前先看 [C1 本地目录准备](migration/2026-10-12-f202-local-directory-preparation.md)，不要把 workspace 自动链接到的新 SDK 当成旧版本的验证结果。
 
-## 插件类型（capability contributions）
+## 插件提供什么能力（contributions）
 
-`input-source`（感知采集）· `surface`（展示表达）· `connector`（消息渠道）· `service`（本地服务，如 ASR/TTS 模型）· `tool-provider`（给猫加工具）· `skin`（形象资产）· `local-brain`（端上反射）
+常见声明有 `mcp`（MCP 工具服务）、`skill`（使用指引）、`schedule`（调度）、`limb`（工具接入）、`connector`（消息渠道）和 `desktop-window`（桌面窗口）。一个包按实际需要选择，不要求每种都声明。
 
-一个插件包可声明多种 contribution。
+`tool`、`webhook`、`identity`、`terminal-predicate-provider` 等也可能是功能与 Host 之间的接线；内部路由或验证编号不等于用户要逐项设置的功能。完整机器字段以 Contract 为准，用户说明放在每个插件的 README 中。
 
 ## 已有插件源码
 

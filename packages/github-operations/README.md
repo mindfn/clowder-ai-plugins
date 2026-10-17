@@ -1,9 +1,36 @@
 # GitHub Operations
 
+[简体中文](README.zh-CN.md) · English
+
 `@clowder-ai/github-operations` runs GitHub tracking and repository collection
-inside an installed builtin plugin. Development status and the remaining C1
-migration evidence are in `migration/STATUS.md`; this W3 work is not yet a
-release or a completed local installation acceptance.
+inside an installed builtin plugin. This source is a local C1 migration candidate,
+not a public release or proof of complete installed acceptance.
+
+## What it provides
+
+Track PR reviews, CI checks, merge conflicts, issues and comments; collect
+repository activity; and use Community triage and issue drafts with explicit
+publication confirmation. Registration starts tracking. It does not approve a
+review, merge a PR, or authorize publishing on your behalf.
+
+The installed package includes MCP tools, a GitHub Operations skill and scheduled
+polling. Other manifest contributions connect these functions to the Host:
+
+| Contribution | Purpose |
+| --- | --- |
+| Native tools / `github-tracking` MCP | Register, inspect and stop tracking; perform the declared Community actions. |
+| Skill | Explain when and how the installed tools should be used. |
+| Schedules | Poll registered work and retry pending collection or delivery. |
+| `community-http-01`–`29` | Owner-authenticated Community page endpoints; these are internal route IDs, not 29 GitHub webhooks to configure. |
+| `github/events` | Optional external GitHub repository webhook, using a separately configured secret. |
+| `github/pr-title` | Read a current PR title for display without registering tracking or refreshing the repository index. |
+| `review-predicate` | Private review freshness/completion verification for the Host, not a tool or a manual “complete verification” button. |
+| `github-notification` / `github-wait` identities | Attribute plugin notifications and waits; they do not create GitHub accounts or grant caller authority. |
+
+These contributions belong to one plugin with one manifest, ID and version.
+They are not additional plugins or separate setup steps. This package does not
+declare a limb. Displaying an internal contribution ID does not make it a user
+action; the Host controls how capabilities are presented.
 
 ## Use
 
@@ -67,7 +94,7 @@ The Host still selects the installation, binds each lease generation and commits
 completion. Current migrated review records lack an authenticated publisher
 association, so delivery verification returns `insufficient` even when the exact
 GitHub review exists. No successful review completion is claimed by this source
-checkpoint. The Host installation journey remains pending.
+checkpoint. The full installed review-completion journey remains unverified.
 
 Fresh installation uses the normal configuration and repository registration.
 It does not require importing old configuration, metadata or delivery cursors.
@@ -78,8 +105,8 @@ Existing stored metadata remains readable; this migration does not delete it.
 Current migration acceptance is an isolated Host worktree with a local-directory
 installation: native MCP registration → provider change → notification and Host
 continuation → disable/reload → no duplicate old caller. Archive integrity alone
-does not prove this journey. npm, remote Git, public release and soak are later
-distribution work, not prerequisites for fresh local acceptance.
+does not prove this journey. Local-directory acceptance also does not establish
+npm or Git distribution, public release, or soak.
 
 Requested Host capabilities (from `plugin.yaml`): `schedule.register`,
 `plugin.config.read`, `secret.read`, `plugin.state.get`, `plugin.state.set`,
