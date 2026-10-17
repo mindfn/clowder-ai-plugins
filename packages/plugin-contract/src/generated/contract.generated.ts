@@ -774,7 +774,7 @@ export type DesktopWindowContribution = {
     readonly entrypoint: PackageRelativePath & `${string}.html`;
     readonly integrity: string;
   };
-  readonly bridgeVersion: '1.0.0' | '1.1.0' | '1.2.0' | '1.3.0' | '1.4.0';
+  readonly bridgeVersion: '1.0.0' | '1.1.0' | '1.2.0' | '1.3.0' | '1.4.0' | '1.5.0' | '1.6.0';
   readonly presentation: {
     readonly width: number;
     readonly height: number;
@@ -1564,7 +1564,11 @@ export type DocxMaterializationResponse = {
 export type CompanionSelectionId = string;
 export type CompanionCallId = string;
 export type CompanionClientMessageId = string;
+export type CompanionAppAssistRef = string;
+export type CompanionAppAssistAction = 'dismiss' | 'timeout' | 'accept';
 export type CompanionCorrelatableId = string;
+export type CompanionOpaqueReadReference = string;
+export type CompanionConversationScopeRef = string;
 export type CompanionPresentationReference = {
   readonly kind: 'message';
   readonly messageId: CompanionCorrelatableId;
@@ -1645,9 +1649,16 @@ export type CompanionCommand = {
   readonly expanded: boolean;
 } | {
   readonly kind: 'view.layout';
-  readonly panel: 'none' | 'bubble' | 'actions' | 'menu' | 'chat' | 'decisions' | 'transcript' | 'settings';
+  readonly panel: 'none' | 'bubble' | 'actions' | 'menu' | 'chat' | 'decisions' | 'transcript' | 'settings' | 'app-assist';
   readonly width: number;
   readonly height: number;
+  readonly call?: {
+    readonly presentation: 'lite' | 'controls';
+    readonly bubble?: {
+      readonly width: number;
+      readonly height: number;
+    };
+  };
 } | {
   readonly kind: 'view.drag';
   readonly phase: 'start' | 'end';
@@ -1686,11 +1697,50 @@ export type CompanionCommand = {
   readonly field: 'householdReadsAllowed';
   readonly value: boolean;
 } | {
+  readonly kind: 'settings.update';
+  readonly field: 'appAssistEnabled';
+  readonly value: boolean;
+} | {
+  readonly kind: 'app-assist.settle';
+  readonly scopeRef: CompanionAppAssistRef;
+  readonly offerRef: CompanionAppAssistRef;
+  readonly action: CompanionAppAssistAction;
+} | {
   readonly kind: 'companion.disable';
 } | {
   readonly kind: 'conversation.read';
 } | {
+  readonly kind: 'conversation.read';
+  readonly v: 2;
+  readonly before?: CompanionOpaqueReadReference;
+  readonly limit?: number;
+} | {
+  readonly kind: 'conversation.body.read';
+  readonly v: 2;
+  readonly continuation: CompanionOpaqueReadReference;
+} | {
+  readonly kind: 'conversation.draft.read';
+  readonly v: 1;
+} | {
+  readonly kind: 'conversation.draft.save';
+  readonly v: 1;
+  readonly scopeRef: CompanionConversationScopeRef;
+  readonly expectedRevision: number;
+  readonly text: string;
+} | {
+  readonly kind: 'conversation.delivery.read';
+  readonly v: 1;
+  readonly scopeRef: CompanionConversationScopeRef;
+  readonly clientMessageId: CompanionClientMessageId;
+} | {
   readonly kind: 'transcript.read';
+} | {
+  readonly kind: 'text';
+  readonly v: 2;
+  readonly scopeRef: CompanionConversationScopeRef;
+  readonly text: string;
+  readonly clientMessageId: CompanionClientMessageId;
+  readonly submissionRevision: number;
 };
 export type CompanionActor = {
   readonly catId: string;
@@ -1798,6 +1848,28 @@ export type CompanionMeetingState = {
   readonly paused: false;
   readonly sourceLabel: null;
 };
+export type CompanionAppAssistState = {
+  readonly scopeRef: CompanionAppAssistRef;
+  readonly revision: number;
+  readonly status: 'ready';
+  readonly offer: null | {
+    readonly offerRef: CompanionAppAssistRef;
+    readonly appName: string;
+  };
+} | {
+  readonly scopeRef: CompanionAppAssistRef;
+  readonly revision: number;
+  readonly status: 'off' | 'suspended' | 'unsupported' | 'source_unavailable' | 'permission_required' | 'timezone_required' | 'identity_unavailable';
+  readonly offer: null;
+};
+export type CompanionAppAssistSettlement = {
+  readonly kind: 'app-assist-settlement';
+  readonly scopeRef: CompanionAppAssistRef;
+  readonly revision: number;
+  readonly offerRef: CompanionAppAssistRef;
+  readonly action: CompanionAppAssistAction;
+  readonly outcome: 'settled' | 'stale_offer';
+};
 export type CompanionState = {
   readonly kind: 'state';
   readonly phase: 'idle' | 'preparing' | 'ready' | 'connecting' | 'talking' | 'closed' | 'failed';
@@ -1812,6 +1884,7 @@ export type CompanionState = {
   readonly liveTransport: CompanionLiveTransport;
   readonly audio?: CompanionAudioState;
   readonly meeting: CompanionMeetingState;
+  readonly appAssist: CompanionAppAssistState;
   readonly nativeWork: CompanionNativeWork;
 };
 export type CompanionDecisionNavigationTarget = 'origin' | 'approval_card' | 'action';
@@ -1888,7 +1961,7 @@ export type CompanionDecisionTrial = {
   readonly kind: 'decision-trial';
   readonly status: 'dismissed' | 'trial_confirmed' | 'stale' | 'unavailable';
 };
-export type CompanionSettingField = 'dutyCatProfileId' | 'skin' | 'ballSize' | 'behaviorEnabled' | 'proactivePolicy' | 'personaTone' | 'householdReadsAllowed';
+export type CompanionSettingField = 'dutyCatProfileId' | 'skin' | 'ballSize' | 'behaviorEnabled' | 'proactivePolicy' | 'personaTone' | 'householdReadsAllowed' | 'appAssistEnabled';
 export type CompanionSettingsValues = {
   readonly dutyCatProfileId: string;
   readonly skin: 'yarn-ball' | 'ragdoll-v1' | 'yanyan-codex' | 'xianxian-codex';
@@ -1897,6 +1970,7 @@ export type CompanionSettingsValues = {
   readonly proactivePolicy: 'ambient' | 'quiet-badge';
   readonly personaTone: string;
   readonly householdReadsAllowed: boolean;
+  readonly appAssistEnabled: boolean;
 };
 export type CompanionSettingsRosterEntry = {
   readonly catProfileId: string;
@@ -1978,13 +2052,105 @@ export type CompanionDeliveryReceipt = {
   readonly messageId: null;
   readonly callId: CompanionCallId | null;
 };
+export type CompanionDeliveryAcceptedV2 = {
+  readonly kind: 'delivery';
+  readonly v: 2;
+  readonly delivery: 'accepted';
+  readonly clientMessageId: CompanionClientMessageId;
+  readonly messageId: CompanionCorrelatableId;
+  readonly callId: CompanionCallId | null;
+};
+export type CompanionDeliveryUnconfirmedV2 = {
+  readonly kind: 'delivery';
+  readonly v: 2;
+  readonly delivery: 'unconfirmed';
+  readonly clientMessageId: CompanionClientMessageId;
+  readonly messageId: null;
+  readonly callId: CompanionCallId | null;
+};
+export type CompanionDeliveryRejectedV2 = {
+  readonly kind: 'delivery';
+  readonly v: 2;
+  readonly delivery: 'rejected';
+  readonly clientMessageId: CompanionClientMessageId;
+  readonly reason: 'draft_changed' | 'unsupported_draft' | 'pending_limit';
+  readonly draftRevision: number;
+};
+export type CompanionDeliveryReceiptV2 = CompanionDeliveryAcceptedV2 | CompanionDeliveryUnconfirmedV2 | CompanionDeliveryRejectedV2;
+export type CompanionConversationDraftSubmissionV1 = {
+  readonly clientMessageId: CompanionClientMessageId;
+  readonly text: string;
+  readonly submissionRevision: number;
+  readonly receipt: CompanionDeliveryAcceptedV2 | CompanionDeliveryUnconfirmedV2;
+};
+export type CompanionConversationDraftV1 = {
+  readonly kind: 'conversation-draft';
+  readonly v: 1;
+  readonly status: 'available';
+  readonly scopeRef: CompanionConversationScopeRef;
+  readonly revision: number;
+  readonly text: string;
+  readonly writable: boolean;
+  readonly submissions: readonly CompanionConversationDraftSubmissionV1[];
+} | {
+  readonly kind: 'conversation-draft';
+  readonly v: 1;
+  readonly status: 'conflict' | 'readonly';
+  readonly revision: number;
+};
+export type CompanionConversationResponsePhase = 'processing' | 'completed' | 'failed' | 'canceled' | 'interrupted' | null;
+export type CompanionConversationBodyProjection = {
+  readonly revision: CompanionCorrelatableId;
+  readonly complete: true;
+  readonly continuation: null;
+} | {
+  readonly revision: CompanionCorrelatableId;
+  readonly complete: false;
+  readonly continuation: CompanionOpaqueReadReference;
+};
+export type CompanionConversationRowV2 = {
+  readonly id: CompanionCorrelatableId;
+  readonly role: 'user' | 'assistant';
+  readonly name: string;
+  readonly text: string;
+  readonly companionIdentity?: CompanionIdentitySnapshotV1;
+  readonly inputMessageIds: readonly CompanionCorrelatableId[];
+  readonly responsePhase: CompanionConversationResponsePhase;
+  readonly body: CompanionConversationBodyProjection;
+  readonly deliveryReceipt?: CompanionDeliveryAcceptedV2;
+};
+export type CompanionConversationPageV2 = {
+  readonly kind: 'conversation';
+  readonly v: 2;
+  readonly status: 'available';
+  readonly threadTitle: string;
+  readonly messages: readonly CompanionConversationRowV2[];
+  readonly hasMoreOlder: boolean;
+  readonly olderCursor: CompanionOpaqueReadReference | null;
+} | {
+  readonly kind: 'conversation';
+  readonly v: 2;
+  readonly status: 'stale';
+};
+export type CompanionConversationBodyV2 = {
+  readonly kind: 'conversation-body';
+  readonly v: 2;
+  readonly status: 'available';
+  readonly messageId: CompanionCorrelatableId;
+  readonly text: string;
+  readonly body: CompanionConversationBodyProjection;
+} | {
+  readonly kind: 'conversation-body';
+  readonly v: 2;
+  readonly status: 'stale' | 'withdrawn';
+};
 export type CompanionErrorCode = 'invalid_request' | 'permission_required' | 'unavailable' | 'session_required' | 'busy' | 'selection_changed' | 'carrier_unavailable' | 'cancelled' | 'unconfirmed';
 export type CompanionReply = {
   readonly kind: 'ok';
-} | CompanionState | CompanionWorkOverview | CompanionDecisions | CompanionDecisionTrial | CompanionDeliveryReceipt | CompanionSettings | CompanionSettingsUpdateReceipt | CompanionLifecycleReceipt | {
+} | CompanionState | CompanionWorkOverview | CompanionDecisions | CompanionDecisionTrial | CompanionDeliveryReceipt | CompanionDeliveryReceiptV2 | CompanionConversationDraftV1 | CompanionSettings | CompanionSettingsUpdateReceipt | CompanionLifecycleReceipt | CompanionAppAssistSettlement | {
   readonly kind: 'selection';
   readonly selectionId: CompanionSelectionId;
-} | {
+} | CompanionConversationPageV2 | CompanionConversationBodyV2 | {
   readonly kind: 'navigation';
   readonly delivery: 'requested' | 'applied' | 'queued' | 'blocked' | 'unconfirmed';
 } | {
@@ -1997,6 +2163,12 @@ export type CompanionReply = {
     readonly y: number;
   };
   readonly panel: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
+  readonly bubble?: {
     readonly x: number;
     readonly y: number;
     readonly width: number;

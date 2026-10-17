@@ -19,7 +19,7 @@
  * generated from the contract types it mirrors.
  */
 
-import type { DecodedNdjsonFrame, JsonObject } from '../conformance/index.js';
+import type { DecodedNdjsonFrame, JsonObject } from '../conformance/stdio-harness/ndjson-frame.js';
 
 import type { DispositionClass } from './disposition.js';
 import type { RequestSnapshot } from './disposition-fixtures.js';

@@ -1,6 +1,6 @@
 {
   "pluginId": "official.companion",
-  "version": "0.1.0-alpha.26",
+  "version": "0.1.0-alpha.32",
   "contractVersion": "0.1.0",
   "name": "猫猫球",
   "icon": {
@@ -37,10 +37,10 @@
       "type": "desktop-window",
       "id": "companion",
       "role": "companion",
-      "bridgeVersion": "1.4.0",
+      "bridgeVersion": "1.6.0",
       "surface": {
         "entrypoint": "renderer/index.html",
-        "integrity": "sha256-EFERDKvXnOw6Mbk1Kq7ZyX7w4FdswfX5W/B0w/KTLE8="
+        "integrity": "sha256-dR1cqLYEPsY28TJ6ureljiV5CP23wubn70G7pePPkNg="
       },
       "presentation": {
         "width": 300,

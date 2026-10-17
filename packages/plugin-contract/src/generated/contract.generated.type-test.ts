@@ -1,5 +1,6 @@
 import type {
   BehaviorCase,
+  CompanionAppAssistState,
   ConfigurationField,
   DataDeclaration,
   ExpectedVerdict,
@@ -39,6 +40,34 @@ const _messagingErrorCodeValues: ExactStringUnion<
 > = true;
 
 void [_subscribeInputKeys, _ackInputKeys, _messagingErrorCodeValues];
+
+const readyAppAssist: CompanionAppAssistState = {
+  scopeRef: 'scope-a',
+  revision: 1,
+  status: 'ready',
+  offer: { offerRef: 'offer-a', appName: 'Fixture Writer' },
+};
+
+const suspendedAppAssist: CompanionAppAssistState = {
+  scopeRef: 'scope-a',
+  revision: 2,
+  status: 'suspended',
+  offer: null,
+};
+
+function appAssistLabel(state: CompanionAppAssistState): string | null {
+  if (state.status !== 'ready' || !state.offer) return null;
+  return state.offer.appName;
+}
+
+// @ts-expect-error app-assist status is a closed public union.
+const invalidAppAssistStatus: CompanionAppAssistState = { scopeRef: 'scope-a', revision: 1, status: 'arbitrary', offer: null };
+
+// @ts-expect-error app-assist revision is numeric.
+const invalidAppAssistRevision: CompanionAppAssistState = { scopeRef: 'scope-a', revision: 'one', status: 'ready', offer: null };
+
+// @ts-expect-error a non-ready state cannot carry an offer.
+const invalidSuspendedAppAssistOffer: CompanionAppAssistState = { scopeRef: 'scope-a', revision: 1, status: 'suspended', offer: { offerRef: 'offer-a', appName: 'Fixture Writer' } };
 
 const lifecycleCache: DataDeclaration = {
   name: 'compiled-cache',
@@ -224,6 +253,12 @@ void [
   operationResult,
   pluginTestResult,
   staticOnlyManifest,
+  readyAppAssist,
+  suspendedAppAssist,
+  appAssistLabel,
+  invalidAppAssistStatus,
+  invalidAppAssistRevision,
+  invalidSuspendedAppAssistOffer,
   lifecycleCache,
   retainedUserData,
   invalidLifecycleUserData,
