@@ -379,6 +379,29 @@ test('packed public packages install and import in a fresh npm consumer', async 
       consumer,
     );
 
+    const guidePackages = [
+      'feishu-meeting-intake', 'personal-chrome-companion', 'video-analysis',
+      'video-generation', 'weixin-mp', 'wechat-visible-reader', 'genoffice-docx',
+      'enterprise-workflow', 'github-operations', 'xiangqi',
+      ...connectorPackages.map(({ name }) => name.slice('@clowder-ai/'.length)),
+    ];
+    for (const name of guidePackages) {
+      const installedRoot = join(consumer, 'node_modules/@clowder-ai', name);
+      for (const filename of ['README.md', 'README.en.md']) {
+        assert.equal(
+          await readFile(join(installedRoot, filename), 'utf8'),
+          await readFile(join(repoRoot, 'packages', name, filename), 'utf8'),
+          `${name}/${filename} must survive packing and installation unchanged`,
+        );
+      }
+      const chinese = await readFile(join(installedRoot, 'README.md'), 'utf8');
+      const english = await readFile(join(installedRoot, 'README.en.md'), 'utf8');
+      assert.match(chinese, /^# [^\n]*\p{Script=Han}/mu, `${name}: Chinese default guide`);
+      assert.doesNotMatch(english, /\p{Script=Han}/u, `${name}: independent English guide`);
+      assert.match(chinese, /\]\(README\.en\.md\)/);
+      assert.match(english, /\]\(README\.md\)/);
+    }
+
     const contractPackage = JSON.parse(
       await readFile(join(consumer, 'node_modules/@clowder-ai/plugin-contract/package.json'), 'utf8'),
     );
@@ -609,7 +632,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       join(consumer, 'node_modules/@clowder-ai/video-analysis/README.md'),
       'utf8',
     );
-    assert.match(videoReadme, /^# Video Analysis\n/m);
+    assert.match(videoReadme, /^# 视频分析\n/m);
     const videoGenerationManifestText = await readFile(
       join(consumer, 'node_modules/@clowder-ai/video-generation/plugin.yaml'),
       'utf8',
@@ -632,7 +655,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
         join(consumer, 'node_modules/@clowder-ai/video-generation/README.md'),
         'utf8',
       ),
-      /^# Video Generation\n/m,
+      /^# 视频与图片生成\n/m,
     );
     const weixinMpManifestText = await readFile(
       join(consumer, 'node_modules/@clowder-ai/weixin-mp/plugin.yaml'),
@@ -659,7 +682,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
     assert.equal(typeof weixinMpEntrypoint.create(weixinMpManifest).start, 'function');
     assert.match(
       await readFile(join(consumer, 'node_modules/@clowder-ai/weixin-mp/README.md'), 'utf8'),
-      /^# WeChat Official Account\n/m,
+      /^# 微信公众号\n/m,
     );
     const wechatReaderManifestText = await readFile(
       join(consumer, 'node_modules/@clowder-ai/wechat-visible-reader/plugin.yaml'),
@@ -689,7 +712,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
         join(consumer, 'node_modules/@clowder-ai/wechat-visible-reader/README.md'),
         'utf8',
       ),
-      /^# WeChat Visible Reader\n/m,
+      /^# 微信可见内容读取\n/m,
     );
     const enterpriseRoot = join(consumer, 'node_modules/@clowder-ai/enterprise-workflow');
     const enterpriseManifestText = await readFile(join(enterpriseRoot, 'plugin.yaml'), 'utf8');
