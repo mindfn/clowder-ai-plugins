@@ -42,7 +42,13 @@ test('manifest and package metadata remain one exact package truth', async () =>
   for (const member of ['README.md', 'plugin.yaml', 'assets', 'limbs', 'native', 'dist']) {
     assert.ok(packageJson.files.includes(member), `package omits ${member}`);
   }
-  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  const readme = await readFile(new URL('../README.en.md', import.meta.url), 'utf8');
+  const chinese = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  assert.ok(packageJson.files.includes('README.en.md'));
+  assert.match(chinese, /短期读取授权/u);
+  assert.match(chinese, /授权记录只包含范围和到期时间/u);
+  assert.match(chinese, /不含消息、截图或用户身份/u);
+  assert.match(chinese, /不可读或过期的记录不能授权/u);
   assert.match(readme, /short-lived authorization/i);
   assert.match(readme, /scope and expiry only/i);
   for (const capability of manifest.features[0]?.capabilities ?? []) {
