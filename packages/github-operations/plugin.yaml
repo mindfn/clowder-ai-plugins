@@ -472,11 +472,17 @@ contributions:
     path: github/community-repo-configs/:repo
     methods: [DELETE]
     action: { method: github.community.http }
+  - type: webhook
+    id: pr-title-http
+    path: github/pr-title
+    methods: [GET]
+    action: { method: github.pr-title.http }
 features:
   - id: github-collaboration
     name: GitHub collaboration operations
     resources: []
     contributions:
+      - { type: webhook, id: pr-title-http }
       - { type: webhook, id: community-http-01 }
       - { type: webhook, id: community-http-02 }
       - { type: webhook, id: community-http-03 }

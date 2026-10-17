@@ -18,6 +18,7 @@ import { GitHubPrIndexProvider } from './pr-index-provider.js';
 import { ReviewTriggerReader } from './review-trigger-observation.js';
 import { CommunityReviewPredicateRuntime } from './community-review-verifier.js';
 import { CommunityCollectionRuntime, SdkCommunityCollectionStore } from './community-collection.js';
+import { GitHubPrTitleReader, prTitleHttp } from './pr-title-reader.js';
 
 // Host declared webhook dispatch nests the request under action params. The
 // webhook handlers declare no static params; flat requests are invalid.
@@ -33,6 +34,7 @@ export interface GitHubPluginOptions {
   readonly createIssuePublisher?: (context: FeatureContext) => NativeIssuePublisher;
   readonly createPrIndexProvider?: (context: FeatureContext) => PrIndexProvider;
   readonly createReviewTriggerReader?: (context: FeatureContext) => ReviewTriggerReader;
+  readonly createPrTitleReader?: (context: FeatureContext) => GitHubPrTitleReader;
 }
 
 async function activate(context: FeatureContext, options: GitHubPluginOptions) {
@@ -41,6 +43,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
     log: { warn: (message, fields) => context.log('warn', message, fields) },
   });
   const provider = options.createProvider?.(context) ?? transport;
+  const prTitles = options.createPrTitleReader?.(context) ?? new GitHubPrTitleReader({ token: () => context.secrets.get('token') });
   const reviewTriggers = options.createReviewTriggerReader?.(context) ?? new ReviewTriggerReader({
     token: () => context.secrets.get('token'),
   });
@@ -89,6 +92,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   return {
     predicateVerifiers: reviewPredicates.predicateVerifiers,
     actions: {
+      'github.pr-title.http': prTitleHttp(prTitles),
       [REVIEW_VERDICT_METHOD]: (input: unknown, caller?: PluginActionContext) => reviewVerdicts.record(input, caller),
       ...Object.fromEntries(communityNativeMethods.map(method => [method, (input: unknown, caller?: PluginActionContext) => {
         if (!caller) throw new Error('Host native action context required');
@@ -143,7 +147,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.draft.cancel': (value: unknown) => drafts.cancel(value),
       'github.triage.recommend': recommendTriage,
     },
-    dispose: async () => { reviewPredicates.stop(); await Promise.all([reviewVerdicts.stop(), narrator.stop(), http.stop(), collection.stop(), tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
+    dispose: async () => { reviewPredicates.stop(); await Promise.all([prTitles.stop(), reviewVerdicts.stop(), narrator.stop(), http.stop(), collection.stop(), tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
   };
 }
 

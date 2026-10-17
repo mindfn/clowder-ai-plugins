@@ -16,8 +16,69 @@ import { copyLegacyIssueProgress } from './legacy-issue-progress.js';
 import { copyLegacyIssueObservations } from './legacy-issue-observations.js';
 import { SdkCommunityIssueStore } from './business/domains/community/CommunityIssueStore.js';
 import { ReviewTriggerReader } from './review-trigger-observation.js';
+import { GitHubPrTitleReader } from './pr-title-reader.js';
 
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
+
+test('declared owner PR title HTTP reads immediately, is side-effect free and stops with its module', async t => {
+  const f = host(); let calls = 0;
+  const module = createGitHubPluginModule({ createPrTitleReader: () => new GitHubPrTitleReader({
+    token: async () => 'isolated-module-title', execFileAsync: async () => {
+      calls++; return { stdout: JSON.stringify({ number: 12, repository: 'example/project', title: ' Real title ' }) };
+    },
+  }) });
+  const contribution = manifest.contributions.find((value: any) => value.type === 'webhook' && value.path === 'github/pr-title');
+  assert.ok(contribution, 'title requires a non-anonymous HTTP contribution');
+  assert.notEqual(contribution.anonymous, true); assert.deepEqual(contribution.methods, ['GET']);
+  assert.ok(validateManifest(manifest).valid);
+  assert.ok(!manifest.contributions.some((value: any) => value.type === 'tool' && value.action?.method === contribution.action.method));
+  const active = await module.create(manifest).start(f.runtimeHost); t.after(() => active.stop());
+  const action = active.actions[contribution.action.method]!;
+  const before = await f.runtimeHost.storage.list();
+  const signal = new AbortController().signal;
+  const httpContext = { kind: 'owner-http-request' as const, userId: 'owner', pluginInstanceId: 'instance', operation: 'read' as const,
+    signal, assertCurrent: async () => {} };
+  const request = { method: 'GET', path: 'github/pr-title', query: { ref: 'example/project#12' }, principal: { kind: 'owner', id: 'owner' } };
+  // Current Host ordinary invoke already supplies its authenticated context as arg3;
+  // retained SDK19 leaves action handlers intact and needs no archive rewrite.
+  const call = action as (input: unknown, native?: PluginActionContext, owner?: typeof httpContext) => Promise<any>;
+  await assert.rejects(call({ request }), /owner HTTP/);
+  await assert.rejects(call({ request }, caller, httpContext), /owner HTTP/);
+  await assert.rejects(call({ request: { ...request, principal: { kind: 'owner', id: 'other' } } }, undefined, httpContext), /owner HTTP/);
+  await assert.rejects(call({ request: { ...request, method: 'POST' } }, undefined, httpContext));
+  await assert.rejects(call({ request: { ...request, query: { ref: 'example/project#12', token: 'untrusted' } } }, undefined, httpContext));
+  assert.equal(calls, 0);
+  const result = await call({ request }, undefined, httpContext);
+  assert.deepEqual(result, { status: 200, headers: { 'content-type': 'application/json' }, body: { title: 'Real title' } });
+  assert.deepEqual((await call({ request: { ...request, query: { ref: 'invalid' } } }, undefined, httpContext)).body, { title: null });
+  await call({ request }, undefined, httpContext); assert.equal(calls, 1);
+  await assert.rejects(call({ request }, undefined, { ...httpContext, assertCurrent: async () => { throw new Error('owner revoked'); } }), /revoked/);
+  assert.deepEqual(await f.runtimeHost.storage.list(), before); assert.equal(f.deliveries.length, 0);
+  await active.stop(); await assert.rejects(call({ request }, undefined, httpContext), /stopped/);
+});
+
+test('owner HTTP cancellation reaches the title transport through ordinary module invocation', async t => {
+  const f = host(); let entered!: () => void;
+  const began = new Promise<void>(resolve => { entered = resolve; });
+  const active = await createGitHubPluginModule({ createPrTitleReader: context => new GitHubPrTitleReader({
+    token: () => context.secrets.get('token'), execFileAsync: async (_file, _args, options) => {
+      entered();
+      await new Promise<void>((_resolve, reject) => {
+        options.signal!.addEventListener('abort', () => reject(options.signal!.reason), { once: true });
+      });
+      return { stdout: '' };
+    },
+  }) }).create(manifest).start(f.runtimeHost);
+  t.after(() => active.stop());
+  const signal = new AbortController();
+  const owner = { kind: 'owner-http-request', userId: 'owner', pluginInstanceId: 'instance', operation: 'read',
+    signal: signal.signal, assertCurrent: async () => {} };
+  const action = active.actions['github.pr-title.http']! as (...args: unknown[]) => Promise<unknown>;
+  const pending = action({ request: { method: 'GET', path: 'github/pr-title', query: { ref: 'example/project#12' },
+    principal: { kind: 'owner', id: 'owner' } } }, undefined, owner);
+  const rejected = assert.rejects(pending, /HTTP caller cancelled/);
+  await began; signal.abort(new Error('HTTP caller cancelled')); await rejected;
+});
 
 test('ordinary installed module does not expose migration-only import actions', async () => {
   const fixture = host();
