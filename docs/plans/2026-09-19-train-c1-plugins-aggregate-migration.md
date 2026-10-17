@@ -158,27 +158,49 @@ trees beyond32MiB. Host directory UI/build and package build/closure/redesign ga
 Local acceptance precedes publication; old archive or old-version green is not its substitute. No W3 pin or runtime
 changed in this audit.
 
+## Current delivery status — 2026-10-17 UTC
+
+This section supersedes the older implementation checkpoint and local-directory gap wording below when deciding
+whether C1 development is complete.
+
+- Plugins PR [#54](https://github.com/zts212653/clowder-ai-plugins/pull/54) is a draft at
+  `1814ef050a4009742c6cff36e57ad57d5dee439a`; paired Host PR
+  [clowder-ai#1487](https://github.com/zts212653/clowder-ai/pull/1487) is a draft at
+  `fa4eaed4aaf3af7e8358b2ed93e31a8f9bf8e193`.
+- The original C1 package set is implemented and cataloged. The seven connectors, GitHub Operations,
+  Collective/GenOffice and Feishu meeting intake have crossed the paired Host/package boundary. Dot remains
+  Host-bundled by explicit operator decision; Tripo is outside C1. Those two decisions are not open W2 work.
+- The current contract is `0.1.0-beta.36`, the SDK is `0.2.0-beta.20`, and Companion is
+  `0.1.0-alpha.33`. The fixed Node 24.18.0/npm 11.16.0/zlib 1.3.1-e00f703 local gate passed all 30 steps
+  on the current Plugins source.
+- All 19 user-facing packages ship a Chinese `README.md` and a separate `README.en.md`. The current 17
+  catalog entries point at the newly packed bytes without rewriting an already-published version.
+- Source synchronization is not installed-copy synchronization. An existing Host installation remains on its
+  admitted immutable bytes until Plugin Manager explicitly replaces it; Host restart alone does not update
+  the README or runtime.
+- The remaining path is delivery acceptance: install/replace the exact current package in the single Host
+  experience worktree, run the operator's final basic journey, then complete the agreed integration/soak and
+  maintainer review. This is not another C1 implementation wave.
+
 ## Implementation checkpoint
 
-> **Current as of 2026-09-26. If you are picking this up without having followed the thread, read this
-> section first.** Earlier checkpoint texts (2026-09-20, 2026-09-23) are recoverable from git history. The
+> **Historical checkpoint from 2026-09-26. Read “Current delivery status — 2026-10-17 UTC” first.** Earlier
+> checkpoint texts (2026-09-20, 2026-09-23) are recoverable from git history. The
 > Host ledger remains the truth source for per-slice specs, review verdicts and artifact sha256 (see "Where the
 > truth lives").
 
 ### Where things stand
 
-PR #54 is a **draft** served from the fork (`mindfn/clowder-ai-plugins`, branch
-`feat/f202-train-c1-plugins-migration`). **Do not merge or publish it yet**: it leaves draft only when it and the
-Host PR zts212653/clowder-ai#1487 can merge together (owner decision, 2026-09-23). The contract is at
-`0.1.0-beta.27` and the SDK at `0.2.0-beta.11`; neither is published to npm, and neither needs to be for the dev
-wave, because the Host installs owner-supplied self-contained artifacts (Host S10).
+At this historical checkpoint, PR #54 was a draft served from the fork and the contract/SDK line was
+`0.1.0-beta.27` / `0.2.0-beta.11`. Those coordinates are retained only to explain the work that followed;
+they are not current installation or merge coordinates.
 
 | Wave | Scope | State |
 |---|---|---|
 | a / b step | contract + SDK; the seven connectors moved to the A2 shape (`message-subscription`, `context.messaging.*`, `{ params, invocation }` envelope) | done, cross-individually reviewed |
 | W1 | video-generation, video-analysis, weixin-mp, enterprise-workflow (new package), wechat-visible-reader | **5/5 done on both sides**; Host copies deleted |
-| W2 | the seven connectors + ChatGPT Pro | **package side done for the seven connectors**; ChatGPT Pro not started; non-blocking follow-ups queued — see below |
-| W3 / W4 | GitHub cluster / collective + GenOffice docx | not started (Host side) |
+| W2 | the seven connectors + the then-proposed ChatGPT Pro extraction | **seven connector packages done**; Dot/ChatGPT Pro extraction was later removed from C1 scope and the existing Host-bundled implementation retained |
+| W3 / W4 | GitHub cluster / Collective + GenOffice docx | historical checkpoint only; both were completed later in the paired Host/package delivery |
 
 ### Contract / SDK line
 
@@ -196,7 +218,7 @@ Each version's shape was frozen in the Host ledger before it was implemented her
 | contract `0.1.0-beta.26` / SDK `0.2.0-beta.10` | synchronized main #64's real F221 proposal-id grammar and #67's companion identity/geometry work; SDK behavior is unchanged and its version advances only to pin beta.26 |
 | contract `0.1.0-beta.27` / SDK `0.2.0-beta.11` | synchronized main #68/#69's F317 receive-only audio and preserved companion-history identities; SDK behavior follows #68/#69 and its version advances to pin beta.27 |
 
-### W2 on the package side
+### W2 on the package side (closed; historical slice detail follows)
 
 - **W2-1** (done): feishu + wecom-agent webhook actions aligned to the Host S6b forwarding contract, with a
   stable provider idempotency key on every accepted inbound path. Its Host-side wecom-agent end-to-end run met
@@ -215,15 +237,15 @@ Each version's shape was frozen in the Host ledger before it was implemented her
     cannot drop a blocked recovery message; settled records kept as tombstones and swept after 24 hours;
     delivery to every binding of a thread with per-binding isolation; the Telegram placeholder correlation
     keyed by lifecycle and chat and persisted across restarts.
-  - Non-blocking follow-ups from the last review are queued in the thread (the outbound failure predicate,
-    Telegram consumed-marker cleanup, "message is not modified" edits, missing tests).
-- **W2-3** (not started): ChatGPT Pro as an installable wrapper around the existing `personal-chrome-companion`
-  closure, not a second copy of its code.
-- **W2-4** (Host side): removal of the connector-specific framework and IM pages, plus a generic
-  thread-to-external-conversation binding list.
-- The Host-side slices that consume these packages — the outbound media materializer (W2-5b), vendoring
-  contract beta.22 (W2-5c-p2) and the real-artifact gate against the packed connectors — wait for a Host
-  developer.
+  - At this historical checkpoint, the last review still listed an outbound failure predicate, Telegram
+    consumed-marker cleanup, "message is not modified" handling and missing tests. Those items were closed
+    in later W2 stabilization; this list is provenance, not a current queue.
+- **W2-3 / Dot**: the proposed ChatGPT Pro extraction was deliberately removed from the C1 finish line. Dot
+  remains Host-bundled; this is a scope decision, not missing implementation.
+- **W2-4** (done on the Host side): the connector-specific framework and IM pages were removed; generic
+  Plugin Manager configuration, binding and lifecycle surfaces remain.
+- The Host consumer slices are complete: W2-5b outbound media/TTS, W2-5c-p2 and the real-artifact connector
+  gate all landed and passed their scoped review/validation.
 
 ### Cutover gate on this PR (met 2026-09-23)
 
@@ -245,7 +267,11 @@ installing cleanly did not satisfy it, and neither did green CI.
   packages already deliver to every binding, so nothing changes when a Host flow starts binding a second
   conversation.
 
-### Dev-wave artifacts
+### Historical dev-wave artifacts
+
+The paths and batches in this section are provenance for the earlier development waves, not current delivery
+coordinates. Use the exact current PR head, generated catalog and prepared local-directory artifact described
+in the 2026-10-17 status above for the final experience pass.
 
 Built outside the repo under `/Users/lang/workspace/github-lab/f202-w1-tarballs/`. Two kinds, kept apart on
 purpose, because the Host's local admission does not compare catalog integrity and installing the wrong one
@@ -276,7 +302,11 @@ they are not repeated here because they go stale.
   paths
 - fresh-consumer default-export guard: the entrypoint must expose the Host-loadable module shape
 
-### Merge-time step — every version this PR claims is provisional
+### Historical merge-time version notes
+
+The concrete version list below records the 2026-09-26 state and is superseded by the 2026-10-17 current
+delivery status. The invariant remains current: published bytes are immutable, and final merge must use free,
+registry-compatible versions and matching catalog integrity.
 
 PR #54 changes two upstream-owned packages outside F202, both because its own install-consent gate requires a
 README consent surface on every Manager-installable package: `packages/companion` (README, plus the round-3 fix
