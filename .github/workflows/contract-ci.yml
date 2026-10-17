@@ -257,8 +257,8 @@ jobs:
       - name: Build companion package
         run: pnpm --filter @clowder-ai/companion build
 
-      - name: Build Feishu intake package
-        run: pnpm --filter @clowder-ai/feishu-meeting-intake build
+      - name: Build Xiangqi package
+        run: pnpm --filter @clowder-ai/xiangqi build
 
       - name: Build video analysis package
         run: pnpm --filter @clowder-ai/video-analysis build
@@ -426,10 +426,10 @@ jobs:
           package-directory: packages/genoffice-docx
           npm-token: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish Feishu intake prerelease
+      - name: Publish Xiangqi prerelease
         uses: ./.github/actions/publish-prerelease
         with:
-          package-directory: packages/feishu-meeting-intake
+          package-directory: packages/xiangqi
           npm-token: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish GitHub operations prerelease

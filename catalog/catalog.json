@@ -232,6 +232,49 @@
       ]
     },
     {
+      "pluginId": "dev.clowder.xiangqi",
+      "name": "Xiangqi",
+      "description": {
+        "default": "Analyze Chinese chess positions; a companion board requires a compatible Host binding.",
+        "translations": {
+          "zh-CN": "分析中国象棋局面；棋搭子棋盘需兼容的宿主会话绑定。"
+        }
+      },
+      "icon": {
+        "type": "svg",
+        "src": "assets/icon.svg"
+      },
+      "publisher": {
+        "id": "clowder-ai",
+        "name": "Clowder AI"
+      },
+      "keywords": [
+        "chinese-chess",
+        "clowder-ai",
+        "plugin",
+        "xiangqi"
+      ],
+      "versions": [
+        {
+          "version": "0.1.0-alpha.1",
+          "contractVersion": "0.1.0",
+          "manifestPath": "plugin.yaml",
+          "artifact": {
+            "kind": "npm",
+            "packageName": "@clowder-ai/xiangqi",
+            "version": "0.1.0-alpha.1",
+            "tarballUrl": "https://registry.npmjs.org/@clowder-ai/xiangqi/-/xiangqi-0.1.0-alpha.1.tgz",
+            "integrity": "sha512-SRpwc9DVeHdhOQGRJ3owPjBdB1Oj1EjwEyGwTHWtltKjSQoqInpaJqz9l+dlZja/lAaUeQUPATeZaq4SubG3+g==",
+            "shasum": "27b56773746aaf29b595b113caffbaf2f82e6cbc",
+            "provenance": {
+              "repository": "https://github.com/zts212653/clowder-ai-plugins",
+              "sourceDirectory": "packages/xiangqi"
+            }
+          }
+        }
+      ]
+    },
+    {
       "pluginId": "official.companion",
       "name": "猫猫球",
       "description": {
@@ -1537,6 +1580,51 @@
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/enterprise-workflow"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pluginId": "official.github-operations",
+      "name": "GitHub Operations",
+      "description": {
+        "default": "跟踪 GitHub PR 审查、CI 检查、冲突、Issue 和评论，并同步仓库协作动态。",
+        "translations": {
+          "zh-CN": "跟踪 GitHub PR 审查、CI 检查、冲突、Issue 和评论，并同步仓库协作动态。",
+          "en": "Track GitHub reviews, checks, conflicts, issues, comments, and repository reconciliation."
+        }
+      },
+      "icon": {
+        "type": "svg",
+        "src": "assets/icon.svg"
+      },
+      "publisher": {
+        "id": "clowder-ai",
+        "name": "Clowder AI"
+      },
+      "keywords": [
+        "clowder-ai",
+        "collaboration",
+        "events",
+        "github",
+        "schedule"
+      ],
+      "versions": [
+        {
+          "version": "0.1.0-alpha.16",
+          "contractVersion": "0.1.0",
+          "manifestPath": "plugin.yaml",
+          "artifact": {
+            "kind": "npm",
+            "packageName": "@clowder-ai/github-operations",
+            "version": "0.1.0-alpha.16",
+            "tarballUrl": "https://registry.npmjs.org/@clowder-ai/github-operations/-/github-operations-0.1.0-alpha.16.tgz",
+            "integrity": "sha512-UNe2bX1PZ2cziVHiog8ZJD7VeLS1csWTbubTBWOI88TAjvcjoFW3wgXxDKoaEWuZ8zUmBjRuS7Kk+PL1pEcz5w==",
+            "shasum": "123fbcc992e6d72a000136ba6b21e057a7dc5210",
+            "provenance": {
+              "repository": "https://github.com/zts212653/clowder-ai-plugins",
+              "sourceDirectory": "packages/github-operations"
             }
           }
         }

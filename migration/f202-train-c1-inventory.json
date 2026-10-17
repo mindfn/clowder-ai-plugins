@@ -168,7 +168,7 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "package.json declares 0.2.0-beta.12; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
+      "sdkClosure": "explicit SDK0.2.0-beta.12.1 / Contract0.1.0-beta.29.1 release identities preserve all beta.12/beta.29 implementation/type members; only package metadata differs; historical archives unchanged, registry publication not yet performed",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin module entrypoint exposes two Host-governed direct tools backed by locally configured CLI paths",
       "catalogClosure": "listed as official.enterprise-workflow",
@@ -197,7 +197,7 @@
       "sdkClosure": "package.json declares 0.2.0-beta.19; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "reviewed builtin alpha.16 at frozen5dd199e; installed r6 and source360/browser369 are scoped receipts; current raw repository directory and Host successor integration remain unaccepted",
-      "catalogClosure": "required; pending deterministic catalog generation",
+      "catalogClosure": "exact alpha.16 candidate in catalog/catalog.json; publication and current installed acceptance remain separate",
       "freshConsumerClosure": "W3 r6 actual archive admission and r8 real UI upload are historical scoped passes, not selection of the raw plugin repository directory; current audit records missing aggregate-WT builds and raw-directory size refusal",
       "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
@@ -233,7 +233,7 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "package.json declares 0.2.0-beta.12; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
+      "sdkClosure": "explicit SDK0.2.0-beta.12.1 / Contract0.1.0-beta.29.1 release identities preserve all beta.12/beta.29 implementation/type members; only package metadata differs; historical archives unchanged, registry publication not yet performed",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin limb/native members and module entrypoint are packed; S9 limb envelope and arm operation are package-owned",
       "catalogClosure": "listed as official.wechat-visible-reader",
@@ -246,7 +246,7 @@
       "classification": "manager-installable-official-public",
       "managerInstallable": true,
       "contractClosure": "plugin.yaml contractVersion 0.1.0",
-      "sdkClosure": "package.json declares 0.2.0-beta.12; retain this exact consumer dependency line; no implicit upgrade to local beta.20; current directory build/dependency status is separately audited",
+      "sdkClosure": "explicit SDK0.2.0-beta.12.1 / Contract0.1.0-beta.29.1 release identities preserve all beta.12/beta.29 implementation/type members; only package metadata differs; historical archives unchanged, registry publication not yet performed",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "builtin module entrypoint exposes six limb handlers through the frozen { params, invocation? } action envelope plus a Manager test action",
       "catalogClosure": "listed as official.weixin-mp",
@@ -262,7 +262,7 @@
       "sdkClosure": "no direct @clowder-ai/plugin-sdk dependency; the hosted board module is imported directly",
       "yamlClosure": "plugin.yaml is the sole manifest truth",
       "runtimeClosure": "packed tarball carries the hosted board/game runtime, web assets, and MCP entrypoint, verified by the staged npm ci and import journey",
-      "catalogClosure": "not yet listed in catalog/catalog.json (landed upstream via PR #65)",
+      "catalogClosure": "exact alpha.1 candidate in catalog/catalog.json with existing protected prerelease publisher; not evidence of registry publication",
       "freshConsumerClosure": "covered by repository fresh-consumer install/import journey",
       "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim"
     },
@@ -293,7 +293,7 @@
       "directoryAcceptance": "see migration/f202-c1-local-directory-audit.json; no current Host directory-UI acceptance claim",
       "fullInstalledAcceptance": false,
       "contractClosure": "canonical plugin.yaml contractVersion0.1.0; source alpha.3 is a Manager candidate, not a legacy manifest-only baseline",
-      "sdkClosure": "exact SDK0.2.0-beta.12 dependency; no implicit beta.20 upgrade",
+      "sdkClosure": "explicit SDK0.2.0-beta.12.1 / Contract0.1.0-beta.29.1 release identities preserve all beta.12/beta.29 implementation/type members; only package metadata differs; historical archives unchanged, registry publication not yet performed",
       "yamlClosure": "plugin.yaml is sole manifest truth",
       "runtimeClosure": "builtin dist/plugin-entrypoint.js declared; raw aggregate checkout lacks built entry and SDK dependency; package archive tests do not prove generic maintenance/OS authority or real Chrome connection",
       "catalogClosure": "official.companion.personal-chrome is present in repository catalog; not a registry/publication/connected acceptance claim",
@@ -616,7 +616,7 @@
         ]
       },
       "rollback": "Disable package schedules before restoring Core factories against unchanged Host schedule state.",
-      "catalogAdmission": "pending-final-catalog-generation"
+      "catalogAdmission": "candidate-generated-pending-publication"
     },
     {
       "id": "video-gen",

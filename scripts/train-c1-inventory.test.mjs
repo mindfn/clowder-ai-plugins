@@ -10,6 +10,17 @@ const catalog = JSON.parse(
   await readFile(new URL('../catalog/catalog.json', import.meta.url), 'utf8'),
 );
 
+test('release catalog covers admitted Manager packages and excludes held candidates', async () => {
+  const mismatches = [];
+  for (const entry of inventory.repositoryPackages.filter(row => row.managerInstallable)) {
+    const manifest = parse(await readFile(new URL(`../packages/${entry.directory}/plugin.yaml`, import.meta.url), 'utf8'));
+    const expected = entry.classification === 'manager-installable-official-public' && entry.releaseAdmission !== false;
+    const present = catalog.plugins.some(row => row.pluginId === manifest.pluginId);
+    if (present !== expected) mismatches.push({ directory: entry.directory, expected, present });
+  }
+  assert.deepEqual(mismatches, [], 'catalog must reflect the existing release disposition');
+});
+
 const expectedMigrationIds = [
   'dingtalk',
   'feishu',
@@ -216,7 +227,7 @@ test('GitHub Operations keeps reviewed implementation separate from catalog and 
     github.implementationStatus,
     'reviewed-alpha16-package-delivered-current-directory-host-pairing-open',
   );
-  assert.equal(github.catalogAdmission, 'pending-final-catalog-generation');
+  assert.equal(github.catalogAdmission, 'candidate-generated-pending-publication');
   assert.equal(inventory.localDirectoryAcceptance.directoryUiJourneyAccepted, false);
 });
 
@@ -224,13 +235,12 @@ test('every migration target is a package-owned, cataloged artifact', async () =
   const catalogIds = new Set(catalog.plugins.map(entry => entry.pluginId));
 
   const migrationEntries = inventory.entries.filter(candidate => candidate.disposition === 'migrate');
-  // The reviewed W3 implementation has landed locally, while its final catalog
-  // row remains pending. Keep that separate disposition pinned to exactly one
-  // entry; source review must not silently exempt other migration artifacts.
+  // A generated candidate catalog is distinct from registry publication and
+  // installed acceptance, but it no longer exempts a migrated package.
   const pendingCheckpointIds = migrationEntries
     .filter(candidate => candidate.catalogAdmission === 'pending-final-catalog-generation')
     .map(candidate => candidate.id);
-  assert.deepEqual(pendingCheckpointIds, ['github']);
+  assert.deepEqual(pendingCheckpointIds, []);
 
   for (const entry of migrationEntries) {
     const packageDirectory = new URL(`../packages/${entry.targetPackage.split('/').at(-1)}/`, import.meta.url);
@@ -358,7 +368,7 @@ test('initial installation selects exactly the original seventeen packages witho
   }
 });
 
-test('every public initial C1 package is covered by the protected main publisher', async () => {
+test('every admitted public initial C1 package is covered by the protected main publisher', async () => {
   const selection = JSON.parse(await readFile(new URL('../catalog/initial-plugins.json', import.meta.url), 'utf8'));
   const selected = new Set(selection.plugins.map(item => item.pluginId));
   const workflow = parse(await readFile(new URL('../.github/workflows/contract-ci.yml', import.meta.url), 'utf8'));
@@ -372,7 +382,7 @@ test('every public initial C1 package is covered by the protected main publisher
     const root = new URL(`../packages/${entry.directory}/`, import.meta.url);
     const pkg = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
     const manifest = parse(await readFile(new URL('plugin.yaml', root), 'utf8'));
-    if (selected.has(manifest.pluginId) && pkg.private !== true && !directories.has(`packages/${entry.directory}`))
+    if (selected.has(manifest.pluginId) && pkg.private !== true && entry.releaseAdmission !== false && !directories.has(`packages/${entry.directory}`))
       missing.push(`packages/${entry.directory}`);
   }
   assert.deepEqual(missing.sort(), [], 'selected public packages cannot stop at local pack without a main publication path');

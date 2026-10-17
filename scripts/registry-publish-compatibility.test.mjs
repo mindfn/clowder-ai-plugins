@@ -35,6 +35,19 @@ test('publish inventory comes from the workflow publish action inputs', () => {
   assert.deepEqual(collectPublishPackageDirectories(workflowSource), ['packages/example']);
 });
 
+test('publisher covers catalog packages and never uploads a held Manager candidate', async () => {
+  const source = await readFile(new URL('../.github/workflows/contract-ci.yml', import.meta.url), 'utf8');
+  const directories = new Set(collectPublishPackageDirectories(source));
+  const inventory = JSON.parse(await readFile(new URL('../migration/f202-train-c1-inventory.json', import.meta.url), 'utf8'));
+  const catalog = JSON.parse(await readFile(new URL('../catalog/catalog.json', import.meta.url), 'utf8'));
+  for (const entry of inventory.repositoryPackages.filter(row => row.managerInstallable && row.releaseAdmission === false)) {
+    assert.equal(directories.has(`packages/${entry.directory}`), false, `${entry.directory} has no release admission`);
+  }
+  for (const plugin of catalog.plugins) {
+    assert.ok(directories.has(plugin.versions[0].artifact.provenance.sourceDirectory), `${plugin.pluginId} has no publisher`);
+  }
+});
+
 test('protected workflow publishes all authenticated retained pairs before current and consuming packages', async () => {
   const source = await readFile(new URL('../.github/workflows/contract-ci.yml', import.meta.url), 'utf8');
   const steps = parse(source).jobs.publish.steps;
