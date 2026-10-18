@@ -6,37 +6,34 @@
  * T-C through T-L. T-A (transport) and T-B (JSON parse) are handled
  * by the NDJSON decoder layer, not the dispatch classifier.
  *
- * All fixture vectors consumed from @clowder-ai/plugin-contract — no
+ * All fixture vectors consumed from this package's wire module — no
  * fixture data is redefined here (Fable's S1 boundary).
  */
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-// Test-only relative import: disposition fixtures are not part of the
-// published beta.4 public surface. SDK tests consume them directly from
-// contract source (tsx resolves .ts at runtime; test files are excluded
-// from the SDK dist artifact). See Fable ruling on F1/beta.4 immutability.
+// Disposition fixtures are co-located in this package's wire module.
 import {
   DISPOSITION_FIXTURE_VECTORS,
   type DispositionFixtureVector,
-} from '../../plugin-contract/src/wire/disposition-fixtures.js';
+} from './disposition-fixtures.js';
 
 import type {
   DecodedNdjsonFrame,
   JsonObject,
-} from '@clowder-ai/plugin-contract/conformance';
+} from '../conformance/index.js';
 
 import {
   HANDSHAKE_REJECTED_CODE,
   HANDSHAKE_REJECTED_MESSAGE,
-} from '@clowder-ai/plugin-contract';
+} from './index.js';
 
 import {
   classifyFrame,
   type DispatchResult,
   type InFlightEntry,
-} from './wire-dispatch.js';
+} from './dispatch.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -259,56 +256,9 @@ test('valid broker.hello reaches T-M once the handshake row is ready', () => {
   assert.equal(result.response, undefined);
 });
 
-test('valid events.publish reaches T-M while authority-bearing input is T-G', () => {
-  const input = {
-    signalType: 'feishu.meeting_artifact.generated.v1',
-    eventId: 'feishu-minute-om_abc123-v7',
-    idempotencyKey: 'feishu:minute:om_abc123:7',
-    occurredAt: '2026-08-09T04:12:31Z',
-    payload: { artifactId: 'om_abc123', revision: '7' },
-    source: { handle: 'feishu://minutes/om_abc123?revision=7' },
-  };
 
-  for (const [candidate, expected] of [
-    [input, 'T-M'],
-    [{ ...input, destination: { threadId: 'thread-1' } }, 'T-G'],
-  ] as const) {
-    const rawFrame = JSON.stringify({
-      jsonrpc: '2.0',
-      id: 'publish-1',
-      method: 'events.publish',
-      params: { meta: { deadlineUnixMs: 1 }, input: candidate },
-    });
-    const result = classifyFrame({
-      raw: Buffer.from(rawFrame, 'utf8'),
-      value: JSON.parse(rawFrame) as JsonObject,
-    }, NO_IN_FLIGHT);
 
-    assert.equal(result.disposition, expected);
-    assert.equal(result.outcome, expected === 'T-M' ? 'accept' : 'respond');
-  }
-});
 
-test('events.publish accepts only closed Host receipts and standard errors', () => {
-  const inFlight = new Map<string, InFlightEntry>([
-    ['publish-1', { method: 'events.publish' }],
-  ]);
-
-  for (const [settlement, disposition] of [
-    [{ result: { publicationId: 'publication-1', disposition: 'accepted' } }, 'T-L'],
-    [{ result: { publicationId: 'publication-1', disposition: 'accepted', destination: 'thread-1' } }, 'T-H'],
-    [{ error: { code: -32602, message: 'Invalid params' } }, 'T-L'],
-    [{ error: { code: -32093, message: 'deadline expired', data: {} } }, 'T-H'],
-  ] as const) {
-    const rawFrame = JSON.stringify({ jsonrpc: '2.0', id: 'publish-1', ...settlement });
-    const result = classifyFrame({
-      raw: Buffer.from(rawFrame, 'utf8'),
-      value: JSON.parse(rawFrame) as JsonObject,
-    }, inFlight);
-    assert.equal(result.disposition, disposition);
-    assert.equal(result.outcome, disposition === 'T-L' ? 'accept' : 'close');
-  }
-});
 
 test('Host-owned fields injected into either handshake request are authority violations', () => {
   const authorityFields = [
@@ -821,20 +771,6 @@ test('subscribe result:null is T-H (must be {subscriptionId:string})', () => {
   assert.equal(result.outcome, 'close');
 });
 
-test('drain result:{} is T-H (drain result must be null)', () => {
-  const rawFrame = '{"jsonrpc":"2.0","id":"r1","result":{}}';
-  const frame: DecodedNdjsonFrame = {
-    raw: Buffer.from(rawFrame, 'utf8'),
-    value: JSON.parse(rawFrame) as JsonObject,
-  };
-  const inFlight = new Map<string, InFlightEntry>([
-    ['r1', { method: 'host.lifecycle.drain' }],
-  ]);
-  const result = classifyFrame(frame, inFlight);
-  assert.equal(result.disposition, 'T-H', 'non-null result for drain must reject');
-  assert.equal(result.outcome, 'close');
-});
-
 test('error with unknown code 123 is T-H (closed error code set)', () => {
   const rawFrame = '{"jsonrpc":"2.0","id":"r1","error":{"code":123,"message":"whatever"}}';
   const frame: DecodedNdjsonFrame = {
@@ -946,20 +882,6 @@ test('valid ack result null is T-L', () => {
   ]);
   const result = classifyFrame(frame, inFlight);
   assert.equal(result.disposition, 'T-L', 'valid ack null result must accept');
-  assert.equal(result.outcome, 'accept');
-});
-
-test('valid drain result null is T-L', () => {
-  const rawFrame = '{"jsonrpc":"2.0","id":"r1","result":null}';
-  const frame: DecodedNdjsonFrame = {
-    raw: Buffer.from(rawFrame, 'utf8'),
-    value: JSON.parse(rawFrame) as JsonObject,
-  };
-  const inFlight = new Map<string, InFlightEntry>([
-    ['r1', { method: 'host.lifecycle.drain' }],
-  ]);
-  const result = classifyFrame(frame, inFlight);
-  assert.equal(result.disposition, 'T-L', 'valid drain null result must accept');
   assert.equal(result.outcome, 'accept');
 });
 
@@ -1319,7 +1241,7 @@ test('request with deadlineUnixMs:1.5 is T-C (fractional token violates WireUInt
   assert.equal(result.outcome, 'close');
 });
 
-test('notification with grantRevision:-1 is T-C (negative token at WireUInt53 position)', () => {
+test('removed grant notification with a negative payload token is rejected', () => {
   const rawFrame = '{"jsonrpc":"2.0","method":"host.grants.changed","params":{"meta":{"deadlineUnixMs":1},"input":{"grantRevision":-1,"effectiveGrants":[]}}}';
   const parsed = JSON.parse(rawFrame) as JsonObject;
   const frame: DecodedNdjsonFrame = {
@@ -1327,7 +1249,7 @@ test('notification with grantRevision:-1 is T-C (negative token at WireUInt53 po
     value: parsed,
   };
   const result = classifyFrame(frame, NO_IN_FLIGHT);
-  assert.equal(result.disposition, 'T-C', 'negative grantRevision must be T-C');
+  assert.equal(result.disposition, 'T-K', 'removed notifications must close before payload dispatch');
   assert.equal(result.outcome, 'close');
 });
 
@@ -1343,39 +1265,6 @@ test('notification with deadlineUnixMs:0.5 is T-C (fractional meta token)', () =
   assert.equal(result.outcome, 'close');
 });
 
-test('drain input with deadlineUnixMs:-100 is T-C (negative drain deadline)', () => {
-  const rawFrame = '{"jsonrpc":"2.0","id":"r1","method":"host.lifecycle.drain","params":{"meta":{"deadlineUnixMs":1},"input":{"deadlineUnixMs":-100}}}';
-  const parsed = JSON.parse(rawFrame) as JsonObject;
-  const frame: DecodedNdjsonFrame = {
-    raw: Buffer.from(rawFrame, 'utf8'),
-    value: parsed,
-  };
-  const result = classifyFrame(frame, NO_IN_FLIGHT);
-  assert.equal(result.disposition, 'T-C', 'negative drain input deadline must be T-C');
-  assert.equal(result.outcome, 'close');
-});
-
-// ---------------------------------------------------------------------------
-// P1-2: Per-method error code restriction
-// (maintainer requirement — application errors only allowed on their
-// designated rows, standard-only rows reject application errors)
-// ---------------------------------------------------------------------------
-
-test('drain response with deadline_expired is T-L (row 12 allows deadline)', () => {
-  // Maintainer probe: drain + canonical DEADLINE_EXPIRED must be T-L.
-  const rawFrame = '{"jsonrpc":"2.0","id":"r1","error":{"code":-32093,"message":"deadline expired","data":{}}}';
-  const frame: DecodedNdjsonFrame = {
-    raw: Buffer.from(rawFrame, 'utf8'),
-    value: JSON.parse(rawFrame) as JsonObject,
-  };
-  const inFlight = new Map<string, InFlightEntry>([
-    ['r1', { method: 'host.lifecycle.drain' }],
-  ]);
-  const result = classifyFrame(frame, inFlight);
-  assert.equal(result.disposition, 'T-L', 'deadline_expired on drain must accept');
-  assert.equal(result.outcome, 'accept');
-});
-
 test('deliver response with delivery_rejected is T-L (row 9 allows it)', () => {
   // Maintainer probe: deliver + canonical DELIVERY_REJECTED must be T-L.
   const rawFrame = '{"jsonrpc":"2.0","id":"d1","error":{"code":-32091,"message":"delivery rejected","data":{"reason":"PLUGIN_BUSY"}}}';
@@ -1389,21 +1278,6 @@ test('deliver response with delivery_rejected is T-L (row 9 allows it)', () => {
   const result = classifyFrame(frame, inFlight);
   assert.equal(result.disposition, 'T-L', 'delivery_rejected on deliver must accept');
   assert.equal(result.outcome, 'accept');
-});
-
-test('drain response with handshake_rejected is T-H (wrong-row error)', () => {
-  // Negative: HANDSHAKE_REJECTED only allowed on rows 1-2, not row 12.
-  const rawFrame = '{"jsonrpc":"2.0","id":"r1","error":{"code":-32090,"message":"handshake rejected","data":{"reason":"MALFORMED_HELLO"}}}';
-  const frame: DecodedNdjsonFrame = {
-    raw: Buffer.from(rawFrame, 'utf8'),
-    value: JSON.parse(rawFrame) as JsonObject,
-  };
-  const inFlight = new Map<string, InFlightEntry>([
-    ['r1', { method: 'host.lifecycle.drain' }],
-  ]);
-  const result = classifyFrame(frame, inFlight);
-  assert.equal(result.disposition, 'T-H', 'handshake_rejected on drain must reject');
-  assert.equal(result.outcome, 'close');
 });
 
 test('deliver response with domain_error is T-H (wrong-row error)', () => {
@@ -1448,20 +1322,6 @@ test('ping response with deadline_expired is T-H (row 11 standard-only)', () => 
   ]);
   const result = classifyFrame(frame, inFlight);
   assert.equal(result.disposition, 'T-H', 'application error on standard-only row must reject');
-  assert.equal(result.outcome, 'close');
-});
-
-test('drain response with domain_error is T-H (row 12 standard-only)', () => {
-  const rawFrame = '{"jsonrpc":"2.0","id":"r1","error":{"code":-32092,"message":"domain error","data":{"code":"VALIDATION"}}}';
-  const frame: DecodedNdjsonFrame = {
-    raw: Buffer.from(rawFrame, 'utf8'),
-    value: JSON.parse(rawFrame) as JsonObject,
-  };
-  const inFlight = new Map<string, InFlightEntry>([
-    ['r1', { method: 'host.lifecycle.drain' }],
-  ]);
-  const result = classifyFrame(frame, inFlight);
-  assert.equal(result.disposition, 'T-H', 'application error on drain must reject');
   assert.equal(result.outcome, 'close');
 });
 
@@ -1577,14 +1437,14 @@ test('M0-C valid requests reach T-M and malformed requests reach T-G', () => {
     ],
     [
       'host.messaging.deliver',
-      {
+      {kind:'message' as const,
         deliveryId: 'delivery-1',
-        threadHandle: { kind: 'thread_handle', handle: 'thread-handle-1' },
+        threadId: (M0C_ENVELOPE).threadId,
         envelope: M0C_ENVELOPE,
       },
-      {
+      {kind:'message' as const,
         deliveryId: 'delivery-1',
-        threadHandle: { kind: 'thread_handle', handle: 'thread-handle-1' },
+        threadId: ({ ...M0C_ENVELOPE, occurredAt: '2026-08-18T03:00:00Z' }).threadId,
         envelope: { ...M0C_ENVELOPE, occurredAt: '2026-08-18T03:00:00Z' },
       },
     ],
@@ -1856,4 +1716,11 @@ test('the same raw frame classified as T-H without in-flight and T-L with in-fli
   const withInFlight = classifyFrame(frame, inFlight);
   assert.equal(withInFlight.disposition, 'T-L');
   assert.equal(withInFlight.outcome, 'accept');
+});
+
+test("retired events and lifecycle dispatch rows are not admitted",()=>{
+ for(const method of ["events.publish","host.messaging.lifecycle"]){
+  const value={jsonrpc:"2.0",id:"retired-1",method,params:{meta:{deadlineUnixMs:Date.now()+10000},input:{}}};
+  assert.equal(classifyFrame({raw:Buffer.from(JSON.stringify(value)),value},NO_IN_FLIGHT).outcome,"respond");
+ }
 });

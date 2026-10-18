@@ -11,62 +11,88 @@
  * outcome='accept', indicating a valid request that should be dispatched
  * to a method handler.
  *
- * This module defines nothing new — every classification rule traces to
- * the frozen disposition table in @clowder-ai/plugin-contract.
+ * This module lives in @clowder-ai/plugin-contract (F202 C1: the wire
+ * frame classifier was moved here from @clowder-ai/plugin-sdk so the
+ * dependency arrow is 插件 → SDK → contract ← Host). It defines nothing
+ * new — every classification rule traces to the frozen disposition table
+ * in this package, and every key set it uses is co-located with or
+ * generated from the contract types it mirrors.
  */
 
-import type { DecodedNdjsonFrame, JsonObject } from '@clowder-ai/plugin-contract/conformance';
+import type { DecodedNdjsonFrame, JsonObject } from '../conformance/stdio-harness/ndjson-frame.js';
 
+import type { DispositionClass } from './disposition.js';
+import type { RequestSnapshot } from './disposition-fixtures.js';
+import type {
+  AppendResult,
+  DeliverResult,
+  ReadResult,
+  SnapshotResult,
+} from './row-shapes.js';
 import {
-  type DispositionClass,
-  type AppendResult,
-  type DeliverResult,
-  type MessagingRowMethod,
-  type ReadResult,
-  type RequestSnapshot,
-  type SnapshotResult,
-  type WireMethodName,
-  validateRequestId,
-  hasHandshakeAuthorityInjection,
-  validateCandidateHello,
-  validateBrokerReadyParams,
-  validateSessionBinding,
-  validateEffectiveGrants,
-  validateEventsPublishInput,
-  validateEventsPublishResult,
-  validateMessagingRowInput,
-  validateMessagingRowResult,
-  isWireMethod,
-  isWireUInt53,
-  isCanonicalUInt53Token,
-  NOTIFICATION_METHODS,
-  MESSAGING_ROW_METHODS,
-  WIRE_METHOD_REGISTRY,
-  INVALID_REQUEST_CODE,
-  INVALID_REQUEST_MESSAGE,
-  METHOD_NOT_FOUND_CODE,
-  METHOD_NOT_FOUND_MESSAGE,
-  INVALID_PARAMS_CODE,
-  INVALID_PARAMS_MESSAGE,
   PING_NONCE_MIN_LENGTH,
   PING_NONCE_MAX_LENGTH,
-  ALL_ERROR_CODES,
-  APPLICATION_ERROR_CODES,
-  ERROR_CODE_TO_MESSAGE,
-  // Per-arm application error codes (for data schema dispatch)
+  PING_INPUT_KEYS,
+  PING_RESULT_KEYS,
+} from './row-shapes.js';
+import {
+  ERROR_BODY_APPLICATION_KEYS,
+  ERROR_BODY_STANDARD_KEYS,
+  REASON_DATA_KEYS,
+  CODE_DATA_KEYS,
   HANDSHAKE_REJECTED_CODE,
   HANDSHAKE_REJECTED_MESSAGE,
   DELIVERY_REJECTED_CODE,
   DOMAIN_ERROR_CODE,
   DEADLINE_EXPIRED_CODE,
   SNAPSHOT_UNAVAILABLE_CODE,
-  // Standard error code (ParseError null-id arm validation)
   PARSE_ERROR_CODE,
-  // Reject-reason closed enums (application error data validation)
+  INVALID_REQUEST_CODE,
+  INVALID_REQUEST_MESSAGE,
+  METHOD_NOT_FOUND_CODE,
+  METHOD_NOT_FOUND_MESSAGE,
+  INVALID_PARAMS_CODE,
+  INVALID_PARAMS_MESSAGE,
+  ALL_ERROR_CODES,
+  APPLICATION_ERROR_CODES,
+  ERROR_CODE_TO_MESSAGE,
   HANDSHAKE_REJECT_REASONS,
   DELIVERY_REJECT_REASONS,
+  LIFECYCLE_REJECT_REASONS,
   SNAPSHOT_UNAVAILABLE_REASONS,
-} from '@clowder-ai/plugin-contract';
+} from './errors.js';
+import {
+  REQUEST_ALLOWED_KEYS,
+  NOTIFICATION_ALLOWED_KEYS,
+  RESPONSE_SUCCESS_KEYS,
+  RESPONSE_ERROR_KEYS,
+  PARAMS_ALLOWED_KEYS,
+  META_ALLOWED_KEYS,
+} from './envelope.js';
+import {
+  hasHandshakeAuthorityInjection,
+  validateCandidateHello,
+  validateBrokerReadyParams,
+  validateSessionBinding,
+} from './handshake.js';
+import { validateEffectiveGrants } from './grants.js';
+import { validateRequestId } from './request-id.js';
+import { isWireUInt53, isCanonicalUInt53Token } from './wire-uint53.js';
+import {
+  WIRE_METHOD_REGISTRY,
+  NOTIFICATION_METHODS,
+  isWireMethod,
+  type WireMethodName,
+} from './registry.js';
+import {
+  MESSAGING_ROW_METHODS,
+  validateMessagingRowInput,
+  validateMessagingRowResult,
+  type MessagingRowMethod,
+} from '../validation/messaging-wire.js';
+import {
+} from '../validation/signals.js';
+import { MESSAGING_ERROR_CODE_VALUES } from '../generated/contract.generated.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -74,7 +100,7 @@ import {
 
 // Re-export the contract-owned snapshot so an in-flight response classifier
 // cannot drift from the published conformance vectors.
-export type { RequestSnapshot } from '@clowder-ai/plugin-contract';
+export type { RequestSnapshot } from './disposition-fixtures.js';
 
 export interface InFlightEntry {
   readonly method: WireMethodName;
@@ -238,8 +264,6 @@ function containsNonScalarString(value: unknown): boolean {
  *
  * WireUInt53 positions in the frozen schema:
  *   - params.meta.deadlineUnixMs  (every request/notification)
- *   - params.input.deadlineUnixMs (host.lifecycle.drain input)
- *   - params.input.grantRevision  (host.grants.changed input)
  *   - params.input.baseRevision   (messaging.appendElements input)
  *   - params.input.limit          (messaging.read input)
  *   - params.input.maxItems       (messaging.snapshot input)
@@ -275,12 +299,8 @@ function hasNonCanonicalUInt53Token(
     const input = paramsObj.input;
     if (input !== null && typeof input === 'object' && !Array.isArray(input)) {
       const inputObj = input as Record<string, unknown>;
-      if (requestMethod === 'host.lifecycle.drain' && typeof inputObj.deadlineUnixMs === 'number') {
-        if (!isCanonicalUInt53Token(String(inputObj.deadlineUnixMs))) return true;
-      }
-      if (requestMethod === 'host.grants.changed' && typeof inputObj.grantRevision === 'number') {
-        if (!isCanonicalUInt53Token(String(inputObj.grantRevision))) return true;
-      }
+
+
 
       // ── M0-C messaging request WireUInt53 leaves ──
       if (requestMethod === 'messaging.appendElements' && typeof inputObj.baseRevision === 'number') {
@@ -370,30 +390,15 @@ function hasNonCanonicalUInt53Token(
 }
 
 // ---------------------------------------------------------------------------
-// Contract-mirror imports (key sets from contract-mirror.ts)
+// Closed-set constants derived from contract runtime exports
 //
-// These mirror contract type-level constraints (additionalProperties: false)
-// that lack runtime exports. Each is drift-tested in contract-mirror.test.ts.
-// See contract-mirror.ts for deletion schedule and anchoring.
+// Every key set below is co-located with or generated from the contract
+// type it mirrors (F202 C1: former contract-mirror.ts moved into the
+// contract). MESSAGING_ERROR_CODE_SET is a performance wrapper over the
+// generated MESSAGING_ERROR_CODE_VALUES array.
 // ---------------------------------------------------------------------------
 
-import {
-  MESSAGING_ERROR_CODE_SET,
-  RESPONSE_SUCCESS_KEYS,
-  RESPONSE_ERROR_KEYS,
-  NOTIFICATION_ALLOWED_KEYS,
-  REQUEST_ALLOWED_KEYS,
-  PARAMS_ALLOWED_KEYS,
-  META_ALLOWED_KEYS,
-  PING_INPUT_KEYS,
-  DRAIN_INPUT_KEYS,
-  GRANTS_CHANGED_INPUT_KEYS,
-  PING_RESULT_KEYS,
-  ERROR_BODY_STANDARD_KEYS,
-  ERROR_BODY_APPLICATION_KEYS,
-  REASON_DATA_KEYS,
-  CODE_DATA_KEYS,
-} from './contract-mirror.js';
+const MESSAGING_ERROR_CODE_SET = new Set<string>(MESSAGING_ERROR_CODE_VALUES);
 
 // ---------------------------------------------------------------------------
 // Derived constants (built from contract runtime imports, NOT mirrors)
@@ -406,6 +411,7 @@ const APPLICATION_CODES = new Set<number>(APPLICATION_ERROR_CODES);
 // Reason enum sets (built from contract arrays).
 const HANDSHAKE_REASONS = new Set<string>(HANDSHAKE_REJECT_REASONS);
 const DELIVERY_REASONS = new Set<string>(DELIVERY_REJECT_REASONS);
+const LIFECYCLE_REASONS = new Set<string>(LIFECYCLE_REJECT_REASONS);
 const SNAPSHOT_REASONS = new Set<string>(SNAPSHOT_UNAVAILABLE_REASONS);
 const MESSAGING_METHODS = new Set<WireMethodName>(MESSAGING_ROW_METHODS);
 
@@ -431,10 +437,7 @@ const NULL_ID_ERROR_CODES = new Set<number>([PARSE_ERROR_CODE]);
 //   Rows 3-7 (messaging send/append/sub/read/ack): DOMAIN_ERROR, DEADLINE_EXPIRED
 //   Row 8  (messaging.snapshot):              DOMAIN_ERROR, DEADLINE_EXPIRED, SNAPSHOT_UNAVAILABLE
 //   Row 9  (host.messaging.deliver):          DELIVERY_REJECTED
-//   Row 10 (host.grants.changed):             notification-only (no response)
 //   Row 11 (host.lifecycle.ping):             standard only (no application errors)
-//   Row 12 (host.lifecycle.drain):            DEADLINE_EXPIRED
-//   Row 13 (events.publish):                   standard only (Host policy errors stay transport-owned)
 //
 // Standard errors are always allowed on every row. Application error
 // codes NOT in the per-row allowlist → T-H.
@@ -456,10 +459,8 @@ const METHOD_APPLICATION_ERROR_ALLOW: Readonly<Record<WireMethodName, ReadonlySe
   'messaging.ack': MESSAGING_ERROR_SET,
   'messaging.snapshot': SNAPSHOT_ERROR_SET,
   'host.messaging.deliver': DELIVERY_ERROR_SET,
-  'host.grants.changed': EMPTY_ERROR_SET, // notification-only
   'host.lifecycle.ping': EMPTY_ERROR_SET,  // standard only
-  'host.lifecycle.drain': DEADLINE_ONLY_SET,
-  'events.publish': EMPTY_ERROR_SET,
+  'streams.read': MESSAGING_ERROR_SET,
 };
 
 // ---------------------------------------------------------------------------
@@ -529,6 +530,7 @@ function classifyResponseCandidate(
       const dataCheck = validateApplicationErrorData(
         errObj.code,
         errObj.data as Record<string, unknown>,
+        inFlightEntry.method,
       );
       if (dataCheck !== null) return dataCheck;
     } else {
@@ -576,15 +578,15 @@ function classifyResponseCandidate(
  * 5 arms: HandshakeRejected, DeliveryRejected, DomainError,
  * DeadlineExpired, SnapshotUnavailable.
  *
- * Contract seam: DomainError.data.code (MessagingErrorCode) has no
- * runtime enum in the contract public surface — only the TypeScript
- * type union exists. We validate structure (key + string type) but
- * skip enum validation to avoid a second truth source (P15).
- * See Sol R3 F1 → Fable escalation.
+ * Contract seam: DomainError.data.code (MessagingErrorCode) is validated
+ * against MESSAGING_ERROR_CODE_SET, which wraps the generated
+ * MESSAGING_ERROR_CODE_VALUES projected from messaging.schema.json —
+ * a single truth source (P15), no hand-maintained mirror.
  */
 function validateApplicationErrorData(
   code: number,
   data: Record<string, unknown>,
+  method: WireMethodName,
 ): DispatchResult | null {
   switch (code) {
     case HANDSHAKE_REJECTED_CODE: {
@@ -598,19 +600,21 @@ function validateApplicationErrorData(
     }
 
     case DELIVERY_REJECTED_CODE: {
-      // data: { reason: DeliveryRejectReason } — closed
+      // data: { reason: DeliveryRejectReason | LifecycleRejectReason } —
+      // closed and selected by the in-flight row.
       for (const key of Object.keys(data)) {
         if (!REASON_DATA_KEYS.has(key)) return close('T-H');
       }
       if (typeof data.reason !== 'string') return close('T-H');
-      if (!DELIVERY_REASONS.has(data.reason)) return close('T-H');
+      const reasons = DELIVERY_REASONS;
+      if (!reasons.has(data.reason)) return close('T-H');
       return null;
     }
 
     case DOMAIN_ERROR_CODE: {
       // data: { code: MessagingErrorCode } — closed keys + enum
-      // MESSAGING_ERROR_CODE_SET from contract-mirror.ts (drift-tested
-      // against messaging.schema.json enum, Fable ruling on R3 seam).
+      // MESSAGING_ERROR_CODE_SET wraps the generated MESSAGING_ERROR_CODE_VALUES
+      // (projected from messaging.schema.json, F202 C1).
       for (const key of Object.keys(data)) {
         if (!CODE_DATA_KEYS.has(key)) return close('T-H');
       }
@@ -712,7 +716,7 @@ function validateResponseResult(
       const deliveryId = entry.requestSnapshot?.deliveryId;
       if (
         deliveryId === undefined ||
-        !validateMessagingRowResult('host.messaging.deliver', { deliveryId }).valid ||
+        !validateMessagingRowResult(method, { deliveryId }).valid ||
         (validated.value as DeliverResult).deliveryId !== deliveryId
       ) {
         return close('T-H');
@@ -771,21 +775,10 @@ function validateResponseResult(
       return null;
     }
 
-    case 'host.lifecycle.drain': {
-      // DrainResult: null
-      if (result !== null) return close('T-H');
-      return null;
-    }
 
-    case 'events.publish': {
-      return validateEventsPublishResult(result).valid ? null : close('T-H');
-    }
 
-    case 'host.grants.changed': {
-      // Notification-only — should never be in in-flight.
-      // Direction gate prevents this; defense-in-depth.
-      return close('T-H');
-    }
+
+
 
     default: {
       // Unreachable for CLOSED rows (all covered above).
@@ -799,73 +792,7 @@ function validateResponseResult(
 // Notification sub-classifier (T-J / T-K)
 // ---------------------------------------------------------------------------
 
-function classifyNotification(value: JsonObject): DispatchResult {
-  const method = value.method as string;
-
-  // Closed outer keys: {jsonrpc, method, params} only
-  for (const key of Object.keys(value)) {
-    if (!NOTIFICATION_ALLOWED_KEYS.has(key)) return close('T-K');
-  }
-
-  // Missing params → T-K
-  if (!('params' in value)) return close('T-K');
-
-  // Only row 10 (host.grants.changed) is a legal notification in v0
-  const isLegalNotification = (NOTIFICATION_METHODS as readonly string[]).includes(method);
-  if (!isLegalNotification) return close('T-K');
-
-  // Validate params structure
-  const params = value.params;
-  if (params === null || typeof params !== 'object' || Array.isArray(params)) {
-    return close('T-K');
-  }
-  const paramsObj = params as Record<string, unknown>;
-
-  // Closed params keys: {meta, input} only
-  for (const key of Object.keys(paramsObj)) {
-    if (!PARAMS_ALLOWED_KEYS.has(key)) return close('T-K');
-  }
-
-  // meta.deadlineUnixMs
-  if (!('meta' in paramsObj)) return close('T-K');
-  const meta = paramsObj.meta;
-  if (meta === null || typeof meta !== 'object' || Array.isArray(meta)) {
-    return close('T-K');
-  }
-  const metaObj = meta as Record<string, unknown>;
-
-  // Closed meta keys: {deadlineUnixMs} only
-  for (const key of Object.keys(metaObj)) {
-    if (!META_ALLOWED_KEYS.has(key)) return close('T-K');
-  }
-
-  const notifDeadline = metaObj.deadlineUnixMs;
-  if (typeof notifDeadline !== 'number' || !isWireUInt53(notifDeadline)) return close('T-K');
-  if (notifDeadline === 0) return close('T-K');
-
-  // input validation for row 10 (grants.changed)
-  if (!('input' in paramsObj)) return close('T-K');
-  const input = paramsObj.input;
-  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
-    return close('T-K');
-  }
-  const inputObj = input as Record<string, unknown>;
-
-  // Closed input keys: {grantRevision, effectiveGrants} only
-  for (const key of Object.keys(inputObj)) {
-    if (!GRANTS_CHANGED_INPUT_KEYS.has(key)) return close('T-K');
-  }
-
-  // grantRevision must be WireUInt53 (≥0)
-  const grantRev = inputObj.grantRevision;
-  if (typeof grantRev !== 'number' || !isWireUInt53(grantRev)) return close('T-K');
-
-  // effectiveGrants must pass authorization boundary validation
-  if (!Array.isArray(inputObj.effectiveGrants)) return close('T-K');
-  if (!validateEffectiveGrants(inputObj.effectiveGrants as string[])) return close('T-K');
-
-  return accept('T-J');
-}
+function classifyNotification(_value: JsonObject): DispatchResult {return close('T-K');}
 
 // ---------------------------------------------------------------------------
 // Request sub-classifier (T-E / T-F / T-G / T-I / accept)
@@ -987,10 +914,6 @@ function validateClosedRowInput(
     case 'broker.ready':
       if (hasHandshakeAuthorityInjection(input)) return respondHandshakeAuthorityViolation(id);
       return validateBrokerReadyParams(input) ? null : respondInvalidParamsValue(id);
-    case 'events.publish':
-      return validateEventsPublishInput(input).valid
-        ? null
-        : respondInvalidParamsValue(id);
     case 'host.lifecycle.ping': {
       // Closed input keys: {nonce} only
       for (const key of Object.keys(input)) {
@@ -1004,18 +927,7 @@ function validateClosedRowInput(
       }
       return null;
     }
-    case 'host.lifecycle.drain': {
-      // Closed input keys: {deadlineUnixMs} only
-      for (const key of Object.keys(input)) {
-        if (!DRAIN_INPUT_KEYS.has(key)) return respondInvalidParamsValue(id);
-      }
-      // input.deadlineUnixMs must be positive WireUInt53
-      const drainDeadline = input.deadlineUnixMs;
-      if (typeof drainDeadline !== 'number' || !isWireUInt53(drainDeadline)) return respondInvalidParamsValue(id);
-      if (drainDeadline === 0) return respondInvalidParamsValue(id);
-      return null;
-    }
-    // host.grants.changed (row 10) is notification-only — direction gate
+
     // in classifyRequest rejects it before reaching this function.
     default:
       return null;
