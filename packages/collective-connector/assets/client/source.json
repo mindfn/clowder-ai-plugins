@@ -1,0 +1,24 @@
+{
+  "repository": "zts212653/clowder-ai",
+  "sourceBaseHead": "b1b362431b4420af8c19faea284fa7470d25e01d",
+  "sourceState": "base-with-recorded-input-overrides",
+  "package": "packages/collective-client",
+  "buildEntrypoint": "packages/collective-client/scripts/build.mjs#buildRetainedClient",
+  "assetDigest": "1527291757654b289d4b9fae3dd457f41bc925af13ba483d38be3f8567622bee",
+  "buildInputsSha256": "84460e07f7d4c0c31168ad270dc5816af94534460fc9779ba839830da40e0161",
+  "manifestSha256": "3ec7cf0e951310705ea2d840813b09d3961af4293d212bfc709461eee7566ea1",
+  "inputOverrides": [
+    {
+      "path": "packages/shared/src/types/action-successor.ts",
+      "sha256": "16edda90bb8fd53666266cab6def6b970697bd6a77f844815b7b5513879c4bb9"
+    },
+    {
+      "path": "packages/shared/src/types/frustration-issue.ts",
+      "sha256": "5abfc6335bcc4e25e2321223882ad3b60c58f1abfcdc52d02be5d9953b546b5e"
+    },
+    {
+      "path": "packages/shared/src/types/plugin.ts",
+      "sha256": "1b44f0c511f5ba5a9b2fa052e699fd39d21ac1e2846b15f05751ec0a0d992368"
+    }
+  ]
+}
