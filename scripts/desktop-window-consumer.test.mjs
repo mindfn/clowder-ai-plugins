@@ -13,7 +13,7 @@ function run(command, args, cwd) {
   return result.stdout;
 }
 
-test('packed desktop window contract and SDK work in a consumer without workspace links', { timeout: 240_000 }, async () => {
+test('packed static desktop window declarations and current SDK work without workspace links', { timeout: 240_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'clowder-window-consumer-'));
   const packs = join(root, 'packs');
   const consumer = join(root, 'consumer');
@@ -64,7 +64,7 @@ test('packed desktop window contract and SDK work in a consumer without workspac
       import assert from 'node:assert/strict';
       import { validateManifest } from '@clowder-ai/plugin-contract';
       import companion from '@clowder-ai/companion/manifest' with { type: 'json' };
-      import { createFeatureContextSession, FeatureContextRevokedError } from '@clowder-ai/plugin-sdk';
+      import { activateDefinedFeature, createFeatureContextSession, definePlugin, FeatureContextRevokedError } from '@clowder-ai/plugin-sdk';
       import { createCompanionClient } from '@clowder-ai/plugin-sdk/companion';
       import { validateCompanionCommand, validateCompanionReply } from '@clowder-ai/plugin-contract';
       assert.equal(validateManifest(companion).valid, true);
@@ -82,21 +82,29 @@ test('packed desktop window contract and SDK work in a consumer without workspac
         features: [{ id: 'pet', name: 'Pet', resources: [], contributions: [{ type: window.type, id: window.id }], capabilities: ['windows.create'] }] };
       assert.equal(validateManifest(manifest).valid, true);
       assert.equal(validateManifest({ ...manifest, contributions: [{ ...window, ownerUserId: 'forged' }] }).valid, false);
-      let registered = 0;
+      let started = 0;
       let disposed = 0;
       const binding = { pluginInstanceId: 'fixture', featureId: 'pet', packageRevision: 'fixture', integrityEpoch: 1,
         activationRevision: 1, grantRevision: 1, grantedCapabilities: ['windows.create'], executionLease: 'host-fixture-only' };
       const session = createFeatureContextSession(binding, {
-        readConfig: async () => null, readSecret: async () => '', readState: async () => null, writeState: async () => {},
-        registerContribution: async (actual, input) => { assert.equal(actual, binding); assert.deepEqual(input, window); registered++; return { registrationId: 'receipt', registryRevision: 1 }; },
-        disposeContribution: async () => { disposed++; }
+        readConfig: async () => null, readSecret: async () => '',
+        storage: {}, tasks: {}, threads: {}, streams: { read: async function* () {} },
       });
-      const { type, ...input } = window;
-      const first = await session.context.windows.register(input);
-      assert.equal(await session.context.windows.register(input), first);
+      const plugin = definePlugin({ manifest, activate: { pet: context => {
+        started++;
+        assert.equal(Object.hasOwn(context, 'windows'), false);
+        return { dispose() { disposed++; } };
+      } } });
+      assert.deepEqual(plugin.manifest.contributions, [window]);
+      assert.deepEqual(plugin.manifest.features[0].contributions, [{ type: window.type, id: window.id }]);
+      const active = await activateDefinedFeature(plugin, 'pet', session.context);
+      assert.equal(await session.context.config.get('test'), null);
+      assert.deepEqual(Object.keys(active.actions), []);
+      await active.dispose();
+      await active.dispose();
       await session.revoke();
-      await assert.rejects(session.context.windows.register(input), FeatureContextRevokedError);
-      assert.equal(registered, 1);
+      await assert.rejects(session.context.config.get('test'), FeatureContextRevokedError);
+      assert.equal(started, 1);
       assert.equal(disposed, 1);
       assert.equal(validateCompanionCommand({ kind: 'prepare', catId: 'forged' }), false);
       const observation = { event: 'first_text_visible', observedAt: 1791804000123,

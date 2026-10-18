@@ -80,13 +80,22 @@ test('owner HTTP cancellation reaches the title transport through ordinary modul
   await began; signal.abort(new Error('HTTP caller cancelled')); await rejected;
 });
 
-test('ordinary installed module does not expose migration-only import actions', async () => {
+test('module lifecycle preserves existing private state without importing or replaying it', async () => {
   const fixture = host();
-  const active = await createGitHubPluginModule().create(manifest).start(fixture.runtimeHost);
-  try {
-    assert.deepEqual(Object.keys(active.actions).filter(method => /^github\.legacy-.*\.import$/.test(method)), []);
-  } finally {
-    await active.stop({reason:'test'});
+  const storage = fixture.runtimeHost.storage;
+  const saved = { cursor: 'existing-cursor', receipt: 'already-delivered', body: 'private-history' };
+  await storage.set('legacy-state', saved);
+  const before = await storage.get('legacy-state');
+  for (let restart = 0; restart < 2; restart++) {
+    const active = await createGitHubPluginModule().create(manifest).start(fixture.runtimeHost);
+    try {
+      assert.deepEqual(Object.keys(active.actions).filter(method => /^github\.legacy-.*\.import$/.test(method)), []);
+      assert.deepEqual(await storage.get('legacy-state'), before);
+      assert.deepEqual(fixture.deliveries, []);
+    } finally {
+      await active.stop({ reason: 'test' });
+    }
+    assert.deepEqual(await storage.get('legacy-state'), before);
   }
 });
 function stoppedModule(error: unknown): boolean {
