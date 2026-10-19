@@ -10,6 +10,7 @@ import {reconcileCollectiveMessageWorkResult, resumeCollectiveMessageWork, admit
 import {createCollectiveMessageWorkActions} from './collective-message-work-actions.js';
 import {createCollectiveMessageWorkMaterials, WORK_MATERIAL_RECEIVER} from './collective-message-work-materials.js';
 import {createCollectiveMessageWorkArtifacts} from './collective-message-work-artifacts.js';
+import { collectiveOwnerOperationInput } from './owner-operation-input.js';
 
 interface Backend {
   readonly connector: CollectiveConnector;
@@ -89,7 +90,7 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
   };
   handlers['collective.work.owner.connections'] = async (unsafe, native, caller) => {
     assertActive();if (native) throw new Error('Owner Work operation required');const owner = ownerOperation(caller);
-    z.object({input: z.object({}).strict()}).strict().parse(unsafe);
+    z.object({input: z.object({}).strict()}).strict().parse(collectiveOwnerOperationInput(unsafe));
     owner.signal.throwIfAborted();await owner.assertCurrent();assertActive();
     const rows = [];
     for (const connection of await connector.listConnections()) {
@@ -97,11 +98,11 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
         rows.push({key: connection.connectionId, label: connection.endpointLabel, detail: connection.authorityStatus,
           actions: [operationRowAction('sync', {connectionId: connection.connectionId})]});
     }
-    owner.signal.throwIfAborted();await owner.assertCurrent();assertActive();return rowsResult(rows, {empty: 'No owner-paired Collective connections'});
+    owner.signal.throwIfAborted();await owner.assertCurrent();assertActive();return rowsResult(rows, {empty: 'No owner-paired Collective connections. Open Collective to finish account setup and pair a connection.'});
   };
   handlers['collective.work.owner.sync'] = async (unsafe, native, caller) => {
     assertActive();if (native) throw new Error('Owner Work operation required');const owner = ownerOperation(caller);
-    const {input} = z.object({input: syncSchema}).strict().parse(unsafe);
+    const {input} = z.object({input: syncSchema}).strict().parse(collectiveOwnerOperationInput(unsafe));
     const current = async () => {assertActive();owner.signal.throwIfAborted();await owner.assertCurrent();assertActive();};
     await current();const route = await connector.getHostRoute(input.connectionId);await current();
     if (!route || route.localOwnerUserId !== owner.userId) throw new Error('Connection belongs to another owner');

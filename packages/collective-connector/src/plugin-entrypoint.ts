@@ -185,7 +185,8 @@ async function activateService(context: FeatureContext,
         const metadata = opened.store.getMetadata();
         const setupState = metadata.bootstrapNeeded ? 'owner bootstrap required'
           : metadata.onboardingComplete ? 'onboarding complete' : 'onboarding pending';
-        return { render: 'status', label: `Collective service running · ${setupState} · ${origin}`,
+        return { render: 'status', label: `Collective service running · ${setupState} · ${origin}${!metadata.onboardingComplete
+          ? ' · Open Collective to finish account setup and pair a connection.' : ''}`,
           data: { state: 'running', url: origin, ...metadata, connections: await connector.listConnections() } };
       },
     },

@@ -167,6 +167,29 @@ try {
   active = await plugin.start(host);
   const status = (await active.actions['collective.service.status']({})).data;
   assert.equal(status.url, base);
+  assert.equal(status.bootstrapNeeded, true, 'fresh installation cannot depend on a retained bootstrap');
+  for (const [operationKey, method] of [['recovery', 'collective.recovery.list'],
+    ['participation', 'collective.owner.connections'], ['work', 'collective.work.owner.connections']]) {
+    const caller = {kind: 'owner-operation', userId: 'installed-owner', pluginInstanceId: host.pluginInstanceId,
+      operationKey, actionId: 'list', requestId: 'fresh-installed-list', signal: new AbortController().signal,
+      async assertCurrent() {}};
+    const input = {input: {servicePort: String(port)}, operationState: {currentAction: 'list', updatedAt: Date.now()}};
+    const result = await active.actions[method](input, undefined, caller);
+    assert.equal(result.render, 'rows'); assert.deepEqual(result.data.rows, []);
+    await assert.rejects(async () => active.actions[method]({...input, input: {...input.input, userId: 'forged'}}, undefined, caller));
+  }
+  const provision = manifest.contributions.find(item => item.type === 'webhook' && item.path === 'service/provision');
+  const launch = await active.actions['collective.control.http']({request: {method: 'POST', path: 'service/provision',
+    headers: {origin: base}, principal: {kind: 'owner', id: 'installed-owner'}}}, undefined,
+  {kind: 'owner-http-request', userId: 'installed-owner', pluginInstanceId: host.pluginInstanceId, operation: 'write',
+    signal: new AbortController().signal, async assertCurrent() {}, requestIdentity: {kind: 'owner_http',
+      userId: 'installed-owner', pluginId: manifest.pluginId, pluginInstanceId: host.pluginInstanceId,
+      requestId: 'fresh-installed-provision', contributionId: provision.id, declaredPath: provision.path,
+      path: 'service/provision', method: 'POST'}});
+  assert.equal(launch.status, 200);
+  assert.equal(launch.body.service.bootstrapNeeded, true);
+  assert.ok(launch.body.launchUrl.startsWith(base + '#bootstrap='), 'fresh owner receives the actionable setup URL');
+  assert.equal(JSON.stringify(status).includes('#bootstrap='), false, 'private bootstrap is never public status data');
   assert.equal(active.actions['collective.http.dispatch'], undefined);
   assert.equal((await request('/api/health')).status, 200);
   const clientManifest = JSON.parse(await readFile(join(packageRoot, 'assets/client/manifest.json'), 'utf8'));

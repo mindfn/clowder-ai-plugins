@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { PluginActionHandler } from '@clowder-ai/plugin-sdk';
 import type { CollectiveConnector } from './business/connector/connector.js';
 import { readCollectiveAccountabilityAttentionSource } from './accountability-attention.js';
+import { collectiveOwnerOperationInput } from './owner-operation-input.js';
 
 /** Dot uses the ordinary authenticated owner operation; source decisions remain here. */
 export function createAccountabilityAttentionAction(
@@ -12,7 +13,7 @@ export function createAccountabilityAttentionAction(
     if (native || caller?.kind !== 'owner-operation' ||
         caller.operationKey !== 'accountability' || caller.actionId !== 'attention')
       throw new Error('Accountability attention requires its authenticated owner operation');
-    z.object({ input: z.object({}).strict() }).strict().parse(input);
+    z.object({ input: z.object({}).strict() }).strict().parse(collectiveOwnerOperationInput(input));
     const current = async () => {
       assertActive(); caller.signal.throwIfAborted();
       await caller.assertCurrent();

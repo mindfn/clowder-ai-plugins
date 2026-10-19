@@ -4,7 +4,7 @@ import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import type {ModulePluginHostShape, PluginModuleActivationShape, PluginOwnerHttpContext} from '@clowder-ai/plugin-sdk';
+import type {ModulePluginHostShape, PluginModuleActivationShape, PluginOwnerHttpContext, PluginOwnerOperationContext} from '@clowder-ai/plugin-sdk';
 import {parse} from 'yaml';
 import entrypoint from '../src/plugin-entrypoint.js';
 const manifest=parse(await readFile(new URL('../plugin.yaml',import.meta.url),'utf8'));
@@ -30,6 +30,24 @@ async function status(active:PluginModuleActivationShape) {
   return (await active.actions['collective.service.status']!({}) as {data:{url:string;serviceInstanceId:string;bootstrapNeeded:boolean}}).data;
 }
 function owner():PluginOwnerHttpContext {return {kind:'owner-http-request',userId:'owner',pluginInstanceId:'installed-instance',operation:'write',signal:new AbortController().signal,async assertCurrent(){}};}
+
+test('fresh owner lists accept Host configuration and persisted operation state before bootstrap', async () => {
+  const directory=await mkdtemp(join(tmpdir(),'collective-fresh-settings-'));const port=await freePort();
+  const active=await entrypoint.create(manifest).start(host(directory,port));
+  try {
+    assert.equal((await status(active)).bootstrapNeeded,true);
+    for(const [operationKey,method] of [['recovery','collective.recovery.list'],['participation','collective.owner.connections'],['work','collective.work.owner.connections']]) {
+      const caller:PluginOwnerOperationContext={...owner(),kind:'owner-operation',operationKey:operationKey!,actionId:'list',requestId:'fresh-list'};
+      const input={input:{servicePort:String(port)},operationState:{currentAction:'list',updatedAt:Date.now()}};
+      const result=await active.actions[method!]!(input,undefined,caller) as {render:string;data:{rows:unknown[];empty?:string}};
+      assert.equal(result.render,'rows');assert.deepEqual(result.data.rows,[]);
+      for(const field of ['userId','connectionId','credential'])
+        await assert.rejects(Promise.resolve().then(()=>active.actions[method!]!({...input,input:{...input.input,[field]:'forged'}},undefined,caller)));
+      await assert.rejects(Promise.resolve().then(()=>active.actions[method!]!(input)),/owner/i);
+      await assert.rejects(Promise.resolve().then(()=>active.actions[method!]!(input,undefined,{...caller,actionId:'foreign'})),/tuple|owner/i);
+    }
+  } finally {await active.stop({reason:'test'});await rm(directory,{recursive:true,force:true});}
+});
 
 test('plugin serves the existing page/assets and login callback from its own listener',async()=>{
   const directory=await mkdtemp(join(tmpdir(),'collective-service-'));const port=await freePort();

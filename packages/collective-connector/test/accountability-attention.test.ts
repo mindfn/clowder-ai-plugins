@@ -11,8 +11,20 @@ import { createAccountabilityAttentionAction } from '../src/accountability-owner
 import type { PluginOwnerOperationContext } from '@clowder-ai/plugin-sdk';
 import { readFile } from 'node:fs/promises';
 import YAML from 'yaml';
+import { collectiveOwnerOperationInput } from '../src/owner-operation-input.js';
 
 const ownerUserId = 'owner-user';
+
+test('owner envelope separates only known Manager fields without mutating input or dropping operation arguments', () => {
+  const input = {input: {servicePort: '5813', connectionId: 'connection', expectedRevision: 7},
+    operationState: {currentAction: 'sync', updatedAt: 123}};
+  const before = structuredClone(input);
+  assert.deepEqual(collectiveOwnerOperationInput(input), {input: {connectionId: 'connection', expectedRevision: 7}});
+  assert.deepEqual(input, before);
+  for (const bad of [{...input, userId: 'forged'}, {...input, operationState: {...input.operationState, userId: 'forged'}},
+    {...input, operationState: {currentAction: 'sync', updatedAt: -1}}])
+    assert.throws(() => collectiveOwnerOperationInput(bad));
+});
 const serviceInstanceId = 'svc_aaaaaaaa';
 const collectiveId = 'col_aaaaaaaa';
 const sourceSnapshot = `sha256:${'a'.repeat(64)}`;

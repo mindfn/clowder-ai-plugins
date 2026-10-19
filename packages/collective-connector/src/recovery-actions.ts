@@ -1,9 +1,11 @@
 import { rowsResult, operationRowAction, type PluginActionHandler, type PluginHostActionContext } from '@clowder-ai/plugin-sdk';
 import { z } from 'zod';
 import type { CollectiveConnector } from './business/connector/connector.js';
+import { collectiveOwnerOperationInput } from './owner-operation-input.js';
 const actionInput = z.object({ connectionId: z.string().min(1).max(240), operationId: z.string().regex(/^[a-f0-9]{64}$/), expectedRevision: z.number().int().positive() }).strict();
 const listInput = z.object({ after: z.string().max(500).optional() }).strict();
 function inputOf(input: unknown): unknown {
+  input = collectiveOwnerOperationInput(input);
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => key !== 'input')) throw new Error('Recovery input is invalid');
   return 'input' in input ? input.input : {};
 }

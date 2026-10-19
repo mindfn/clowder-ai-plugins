@@ -8,6 +8,7 @@ import { createCollectivePublicNativeActions } from './collective-public-native-
 import { openCollectiveContextReferences } from './collective-context-refs.js';
 import { COLLECTIVE_NATIVE_ID, COLLECTIVE_PUBLIC_METHODS } from './public-native-methods.js';
 import { createAccountabilityAttentionAction } from './accountability-owner-action.js';
+import { collectiveOwnerOperationInput } from './owner-operation-input.js';
 
 const syncInput = z.object({ connectionId: z.string().trim().min(1).max(240) }).strict();
 export async function activateCollectivePublicNative(context: FeatureContext, connector: CollectiveConnector, assertActive: () => void) {
@@ -18,7 +19,7 @@ export async function activateCollectivePublicNative(context: FeatureContext, co
     native: { contributionId: COLLECTIVE_NATIVE_ID, methods: COLLECTIVE_PUBLIC_METHODS },
     messaging: context.messaging,
     pluginInstanceId: context.pluginInstanceId, threads: context.threads });
-  const inputOf = <T>(value: unknown, schema: z.ZodType<T>) => schema.parse(z.object({ input: z.unknown() }).strict().parse(value).input);
+  const inputOf = <T>(value: unknown, schema: z.ZodType<T>) => schema.parse(z.object({ input: z.unknown() }).strict().parse(collectiveOwnerOperationInput(value)).input);
   const list: PluginActionHandler = async (input, native, caller) => {
     if (native || caller?.kind !== 'owner-operation') throw new Error('Collective connections require the authenticated owner operation');
     inputOf(input, z.object({}).strict());
@@ -30,7 +31,7 @@ export async function activateCollectivePublicNative(context: FeatureContext, co
         detail: `${connection.authorityStatus} · ${connection.liveStatus}`, actions: [operationRowAction('sync', { connectionId: connection.connectionId })] });
     }
     await caller.assertCurrent(); caller.signal.throwIfAborted(); assertActive();
-    return rowsResult(rows, { empty: 'No owner-paired Collective connections' });
+    return rowsResult(rows, { empty: 'No owner-paired Collective connections. Open Collective to finish account setup and pair a connection.' });
   };
   const sync: PluginActionHandler = async (input, native, caller) => {
     if (native || caller?.kind !== 'owner-operation') throw new Error('Collective sync requires the authenticated owner operation');
