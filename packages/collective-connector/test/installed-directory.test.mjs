@@ -79,24 +79,30 @@ test('packed dependency closure runs the real SDK lifecycle without consumer-pro
       await assert.rejects(readFile(join(consumer, 'node_modules/@clowder-ai', name, 'package.json')), { code: 'ENOENT' });
     }
     console.log(run(process.execPath, ['journey.mjs'], consumer, testEnvironment).trim());
-    if (process.env.F202_COLLECTIVE_HOST_ROOT || process.env.F202_COLLECTIVE_ARTIFACT_DIR) {
+    if (process.env.F202_COLLECTIVE_ARTIFACT_DIR) {
       const candidate = join(temporary, 'host-candidate');
       await cp(installedRoot, candidate, { recursive: true });
-      if (process.env.F202_COLLECTIVE_ARTIFACT_DIR) {
-        const destination = process.env.F202_COLLECTIVE_ARTIFACT_DIR;
-        await mkdir(destination, { recursive: true });
-        for (const path of packed) await cp(path, join(destination, path.slice(path.lastIndexOf('/') + 1)));
-        const archive = join(destination, 'collective-connector-self-contained.tgz');
-        const release = join(temporary, 'release');
-        await mkdir(release);
-        await cp(candidate, join(release, 'package'), { recursive: true });
-        run('tar', ['-czf', archive, '-C', release, 'package'], root, testEnvironment);
-        const bytes = await readFile(archive);
-        console.log(JSON.stringify({ materializedArchive: archive, sha256: createHash('sha256').update(bytes).digest('hex'),
-          shasum: createHash('sha1').update(bytes).digest('hex'), integrity: 'sha512-' + createHash('sha512').update(bytes).digest('base64') }));
-      }
-      if (process.env.F202_COLLECTIVE_HOST_ROOT) console.log(run(process.execPath, [fileURLToPath(new URL('./host-directory-journey.mjs', import.meta.url)),
-        process.env.F202_COLLECTIVE_HOST_ROOT, candidate], root, testEnvironment).trim());
+      const destination = process.env.F202_COLLECTIVE_ARTIFACT_DIR;
+      await mkdir(destination, { recursive: true });
+      for (const path of packed) await cp(path, join(destination, path.slice(path.lastIndexOf('/') + 1)));
+      const archive = join(destination, 'collective-connector-self-contained.tgz');
+      const release = join(temporary, 'release');
+      await mkdir(release);
+      await cp(candidate, join(release, 'package'), { recursive: true });
+      run('tar', ['-czf', archive, '-C', release, 'package'], root, testEnvironment);
+      const bytes = await readFile(archive);
+      console.log(JSON.stringify({ materializedArchive: archive, sha256: createHash('sha256').update(bytes).digest('hex'),
+        shasum: createHash('sha1').update(bytes).digest('hex'), integrity: 'sha512-' + createHash('sha512').update(bytes).digest('base64') }));
+    }
+    if (process.env.F202_COLLECTIVE_HOST_ROOT) {
+      // The Host probe consumes an explicitly selected, unchanged distribution
+      // archive. The freshly assembled directory above is not a source checkout.
+      const archive = process.env.F202_COLLECTIVE_HOST_ARCHIVE;
+      const digest = process.env.F202_COLLECTIVE_HOST_ARCHIVE_SHA256;
+      assert.ok(archive, 'opt-in Host journey requires F202_COLLECTIVE_HOST_ARCHIVE');
+      assert.match(digest ?? '', /^[a-f0-9]{64}$/, 'opt-in Host journey requires its exact archive SHA256');
+      console.log(run(process.execPath, [fileURLToPath(new URL('./host-directory-journey.mjs', import.meta.url)),
+        process.env.F202_COLLECTIVE_HOST_ROOT, archive, digest], root, testEnvironment).trim());
     }
   } finally { await rm(temporary, { recursive: true, force: true }); }
 });
