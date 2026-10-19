@@ -36,7 +36,14 @@ test('local directory installs into an empty consumer and runs the real SDK life
       packed.push(join(artifacts, result[0].filename));
       console.log(JSON.stringify({ packed: result[0].filename, shasum: result[0].shasum, integrity: result[0].integrity }));
       if (name === 'collective-connector') {
-        assert.equal(result[0].files.some(file=>/obsolete-entry|reconsideration|owner-work-manual-caller|collective-work-admission-caller/.test(file.path)),false,'fresh build cannot republish retired entrypoints');
+        // The migrated Service/Connector business still owns Work reconsideration.
+        // Only the retired Host-composition entrypoints at the dist root are banned.
+        assert.equal(result[0].files.some(file => /^dist\/(?:obsolete-entry|[^/]*reconsideration[^/]*|owner-work-manual-caller[^/]*|collective-work-admission-caller[^/]*)$/.test(file.path)), false,
+          'fresh build cannot republish retired root entrypoints');
+        assert.ok(result[0].files.some(file => file.path === 'dist/business/connector/work-reconsideration.js'),
+          'the current Connector reconsideration owner must remain packaged');
+        assert.equal(result[0].files.some(file => file.path === 'dist/business/service/cli.js'), false,
+          'module installation must not ship the old standalone Service launcher');
         assert.ok(result[0].files.some(file => file.path === 'plugin.yaml'));
         assert.ok(result[0].files.some(file => file.path === 'dist/plugin-entrypoint.js'));
         assert.ok(result[0].files.some(file => file.path === 'skills/collective-participation/SKILL.md'));
