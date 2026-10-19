@@ -10,8 +10,9 @@ import { parse } from 'yaml';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const packageRoot = join(root, 'packages/collective-connector');
-function run(command, args, cwd) {
-  const env = { ...process.env };
+function run(command, args, cwd, isolatedEnvironment) {
+  assert.ok(isolatedEnvironment?.C1_ISOLATED_CONSUMER_ROOT, 'every child requires an isolated consumer environment');
+  const env = { ...isolatedEnvironment };
   delete env.NODE_PATH;
   delete env.NODE_OPTIONS;
   if (command === 'tar') env.COPYFILE_DISABLE = '1';
@@ -23,6 +24,17 @@ function run(command, args, cwd) {
 test('local directory installs into an empty consumer and runs the real SDK lifecycle', async () => {
   const temporary = await mkdtemp(join(tmpdir(), 'collective-directory-consumer-'));
   try {
+    const home = join(temporary, 'home');
+    await mkdir(home);
+    const testEnvironment = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
+      !/^(?:COLLECTIVE_|REDIS|CAT_CAFE|CALLBACK|GH_|GITHUB_|NPM_TOKEN|NODE_AUTH_TOKEN|npm_config_)/i.test(key)));
+    Object.assign(testEnvironment, {
+      HOME: home, XDG_CONFIG_HOME: join(home, '.config'), XDG_CACHE_HOME: join(home, '.cache'),
+      XDG_DATA_HOME: join(home, '.local/share'), npm_config_cache: join(home, '.npm'),
+      npm_config_userconfig: '/dev/null', C1_ISOLATED_CONSUMER_ROOT: temporary,
+      COLLECTIVE_SERVICE_HOST: '127.0.0.1', COLLECTIVE_SERVICE_PORT: '0',
+      COLLECTIVE_SERVICE_DATA_DIR: join(temporary, 'unexpected-launcher-data'),
+    });
     const artifacts = join(temporary, 'artifacts');
     const consumer = join(temporary, 'consumer');
     await mkdir(artifacts); await mkdir(consumer);
@@ -30,8 +42,8 @@ test('local directory installs into an empty consumer and runs the real SDK life
     const packed = [];
     for (const name of packages) {
       if(name==='collective-connector'){await mkdir(join(packageRoot,'dist'),{recursive:true});await writeFile(join(packageRoot,'dist','obsolete-entry.js'),'throw new Error("retired build output");');}
-      run('pnpm', ['--filter', '@clowder-ai/' + name, 'build'], root);
-      const result = JSON.parse(run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', artifacts], join(root, 'packages', name)));
+      run('pnpm', ['--filter', '@clowder-ai/' + name, 'build'], root, testEnvironment);
+      const result = JSON.parse(run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', artifacts], join(root, 'packages', name), testEnvironment));
       assert.equal(result.length, 1);
       packed.push(join(artifacts, result[0].filename));
       console.log(JSON.stringify({ packed: result[0].filename, shasum: result[0].shasum, integrity: result[0].integrity }));
@@ -54,8 +66,8 @@ test('local directory installs into an empty consumer and runs the real SDK life
     await cp(new URL('./installed-consumer-journey.mjs', import.meta.url), join(consumer, 'journey.mjs'));
     // SDK and contract are exact local artifacts: neither needs to be published.
     run('npm', ['install', '--ignore-scripts', '--install-links', '--no-audit', '--no-fund', '--package-lock=false',
-      '--registry=https://registry.npmjs.org', packageRoot, ...packed.slice(0, 2)], consumer);
-    console.log(run(process.execPath, ['journey.mjs'], consumer).trim());
+      '--registry=https://registry.npmjs.org', packageRoot, ...packed.slice(0, 2)], consumer, testEnvironment);
+    console.log(run(process.execPath, ['journey.mjs'], consumer, testEnvironment).trim());
     if (process.env.F202_COLLECTIVE_HOST_ROOT || process.env.F202_COLLECTIVE_ARTIFACT_DIR) {
       const candidate = join(temporary, 'host-candidate');
       const installedRoot = join(consumer, 'node_modules/@clowder-ai/collective-connector');
@@ -71,13 +83,13 @@ test('local directory installs into an empty consumer and runs the real SDK life
         const release = join(temporary, 'release');
         await mkdir(release);
         await cp(candidate, join(release, 'package'), { recursive: true });
-        run('tar', ['-czf', archive, '-C', release, 'package'], root);
+        run('tar', ['-czf', archive, '-C', release, 'package'], root, testEnvironment);
         const bytes = await readFile(archive);
         console.log(JSON.stringify({ materializedArchive: archive, sha256: createHash('sha256').update(bytes).digest('hex'),
           shasum: createHash('sha1').update(bytes).digest('hex'), integrity: 'sha512-' + createHash('sha512').update(bytes).digest('base64') }));
       }
       if (process.env.F202_COLLECTIVE_HOST_ROOT) console.log(run(process.execPath, [fileURLToPath(new URL('./host-directory-journey.mjs', import.meta.url)),
-        process.env.F202_COLLECTIVE_HOST_ROOT, candidate], root).trim());
+        process.env.F202_COLLECTIVE_HOST_ROOT, candidate], root, testEnvironment).trim());
     }
   } finally { await rm(temporary, { recursive: true, force: true }); }
 });

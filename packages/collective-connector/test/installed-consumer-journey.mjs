@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { lstat, mkdtemp, readFile, readdir, realpath, rm, stat } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { createHash } from 'node:crypto';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { validateManifest } from '@clowder-ai/plugin-contract';
@@ -25,6 +25,13 @@ for (const path of ['business/connector', 'business/service', 'business/contract
 }
 
 const consumer = process.cwd();
+const isolationRoot = process.env.C1_ISOLATED_CONSUMER_ROOT;
+assert.ok(isolationRoot, 'installed journey must run inside the parent test isolation');
+assert.equal(await realpath(homedir()), await realpath(join(isolationRoot, 'home')));
+assert.equal(process.env.COLLECTIVE_SERVICE_DATA_DIR, join(isolationRoot, 'unexpected-launcher-data'));
+assert.equal(process.env.COLLECTIVE_SERVICE_PORT, '0');
+assert.deepEqual(Object.keys(process.env).filter(key => /^(?:COLLECTIVE_|REDIS|CAT_CAFE|CALLBACK|GH_|GITHUB_)/.test(key)).sort(),
+  ['COLLECTIVE_SERVICE_DATA_DIR', 'COLLECTIVE_SERVICE_HOST', 'COLLECTIVE_SERVICE_PORT']);
 const packageRoot = join(consumer, 'node_modules/@clowder-ai/collective-connector');
 assert.equal((await lstat(packageRoot)).isSymbolicLink(), false, 'directory installation must materialize the package');
 for (const name of ['collective-connector', 'plugin-sdk', 'plugin-contract']) {
@@ -200,6 +207,7 @@ try {
     manifest: 'valid', lifecycle: 'start/bootstrap/create/disable/re-enable', statePreserved: true,
     reservedPortsUsed: false, pluginOwnsListener: true, packagedAssetsVerified: true,
     hostAcceptance: 'isolated SDK caller, not actual Host installed acceptance', oldCliExcluded: true,
+    isolatedHome: true, inheritedServiceCredentialsRemoved: true,
     rejectedPrivateRootImports: privateImports, rejectedInternalSubpaths: 4 }));
 } finally {
   await active?.stop({reason:'test'});
