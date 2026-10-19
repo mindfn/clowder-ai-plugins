@@ -7,6 +7,7 @@ import { createCollectivePublicSourceCaller } from './collective-public-source.j
 import { createCollectivePublicNativeActions } from './collective-public-native-context.js';
 import { openCollectiveContextReferences } from './collective-context-refs.js';
 import { COLLECTIVE_NATIVE_ID, COLLECTIVE_PUBLIC_METHODS } from './public-native-methods.js';
+import { createAccountabilityAttentionAction } from './accountability-owner-action.js';
 
 const syncInput = z.object({ connectionId: z.string().trim().min(1).max(240) }).strict();
 export async function activateCollectivePublicNative(context: FeatureContext, connector: CollectiveConnector, assertActive: () => void) {
@@ -70,5 +71,7 @@ export async function activateCollectivePublicNative(context: FeatureContext, co
           pluginInstanceId: context.pluginInstanceId, signal, assertCurrent: current});
       }
     },
-    actions: { ...createCollectivePublicNativeActions({ connector, sourceCaller, references }), 'collective.owner.sync': sync, 'collective.owner.connections': list } };
+    actions: { ...createCollectivePublicNativeActions({ connector, sourceCaller, references }),
+      'collective.owner.accountability-attention': createAccountabilityAttentionAction(connector, assertActive),
+      'collective.owner.sync': sync, 'collective.owner.connections': list } };
 }

@@ -6,6 +6,8 @@ import {collectiveContextError} from './collective-context-refs.js';
 import {publishCollectiveProgress} from './owner-work-progress.js';
 import type {createCollectiveMessageWorkArtifacts} from './collective-message-work-artifacts.js';
 import {collectiveWorkNativeTools} from './work-native-methods.js';
+import {collectiveArtifactCommandSchema} from './business/contracts/index.js';
+import {executeCollectiveArtifactCommand} from './collective-artifact-command.js';
 
 /** Same declared Work MCP methods over an ordinary Registry-authenticated call.
  * The original Connector owns reply preparation, replay and Service receipts. */
@@ -30,7 +32,9 @@ export function createCollectiveMessageWorkActions(connector: CollectiveConnecto
         }
         const context = await connector.readParticipationContext(binding.source, 0, 1);await current();
         const artifactSelection = await artifacts.current(binding);
+        const artifactRequests = await connector.readArtifactContext(binding.source);await current();
         return {artifactSelection, time: binding.time, kind: 'collective', authority: 'owner_admitted_work', actor: binding.source.actor,
+          artifactRequests,
           location: binding.source.location, participant: binding.displayName, request: context.source,
           workRef: {subjectRef: `task:${binding.resultKey}`, revision: binding.work.revision},
           contextRef: refs.opaqueRef(identity, 'context', binding.refScope),
@@ -42,6 +46,10 @@ export function createCollectiveMessageWorkActions(connector: CollectiveConnecto
             ...(operation.failureCode ? {code: operation.failureCode} : {})}};
       };
       if (method === 'collective.work.context.current') return currentReply();
+      if (method === 'collective.work.artifact.command') {
+        refs.verifyRef(identity, input.contextRef as string, 'context', binding.refScope);
+        return executeCollectiveArtifactCommand(connector, binding, binding.auth, collectiveArtifactCommandSchema.parse(input.command));
+      }
       if (method === 'collective.work.context.read') {
         refs.verifyRef(identity, input.contextRef as string, 'context', binding.refScope);await current();
         const source = await connector.readParticipationContext(binding.source, input.afterSequence as number ?? 0, input.limit as number ?? 30);
@@ -74,7 +82,8 @@ export function createCollectiveMessageWorkActions(connector: CollectiveConnecto
         await current();
         await connector.submitReply(binding.source, binding.sourceRef, binding.resultKey, operation.outboxId, input.body as string,
           {catId: binding.auth.catId, agentId: binding.auth.catId, displayName: binding.displayName, sessionRef: binding.auth.invocationId},
-          selected?.snapshot, binding.work.resultRevision, {revision: binding.work.executionRevision, assignmentEventId: binding.work.assignmentEventId});
+          selected?.snapshot, binding.work.resultRevision, {revision: binding.work.executionRevision, assignmentEventId: binding.work.assignmentEventId},
+          selected?.file);
         await current();await connector.sync(binding.source.connectionId);await current();return currentReply();
       }
       throw collectiveContextError('WORK_ARTIFACT_UNAVAILABLE', 'Unknown Work method');

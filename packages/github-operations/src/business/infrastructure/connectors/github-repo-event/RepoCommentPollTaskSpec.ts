@@ -188,7 +188,7 @@ async function pollSingleRepo(opts: RepoCommentPollTaskSpecOptions, repo: string
 export function createRepoCommentPoller(opts: RepoCommentPollTaskSpecOptions) {
   let nextRepoIndex = 0;
   return async (signal: AbortSignal): Promise<void> => {
-    const ctx = gitHubPollBudget(signal, opts);
+    const ctx = gitHubPollBudget(signal, {pollBudgetMs: 30_000, objectTimeoutMs: 30_000, ...opts});
         signal?.throwIfAborted();
         const progress = await opts.readProgress?.();
         const priorIndex = progress === undefined ? -1 : opts.repoAllowlist.indexOf(progress);

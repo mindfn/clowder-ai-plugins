@@ -8,10 +8,26 @@ import { SdkCommunityEventLog } from './business/domains/community/CommunityEven
 import { SdkCommunityObjectStore } from './business/domains/community/CommunityObjectStore.js';
 import { CommunityProjector } from './business/domains/community/community-projector.js';
 import { memoryStorage } from '../test/memory-storage.js';
+import { gitHubAdmissionCanContinue } from './business/infrastructure/github/admission-budget.js';
+import { readFile } from 'node:fs/promises';
+import YAML from 'yaml';
 
 const log = { info() {}, warn() {}, error() {} };
 const dedup = { isNotified: async () => false, markNotified: async () => {},
   isBaselineEstablished: async () => true, markBaselineEstablished: async () => {} };
+
+test('admission reserves canonical child-process cleanup and scan grants one snapshot budget', async () => {
+  assert.equal(gitHubAdmissionCanContinue({now: () => 0, deadlineMs: 1_200}), false);
+  const seen: (AbortSignal | undefined)[] = [];
+  const scan = createRepoScanner({repoAllowlist: ['example/one'], log, reconciliationDedup: dedup,
+    fetchOpenPRs: async (_repo, signal) => {seen.push(signal);return [];},
+    fetchOpenIssues: async (_repo, signal) => {seen.push(signal);return [];}, deliver: async () => {}});
+  await scan(new AbortController().signal);
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0], seen[1], 'PR and issue pages form one repository observation');
+  const manifest = YAML.parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
+  assert.equal(manifest.contributions.find((row: {id: string}) => row.id === 'repo-scan').policy.timeoutMs, 90_000);
+});
 
 function delayedRead(trace: string[], signal?: AbortSignal): Promise<[]> {
   return new Promise(resolve => {

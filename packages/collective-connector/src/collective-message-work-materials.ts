@@ -3,8 +3,9 @@ import {isDeepStrictEqual} from 'node:util';
 import {z} from 'zod';
 import type {FeatureContext, PluginMessage, PluginMessagingDelivery} from '@clowder-ai/plugin-sdk';
 import type {CollectiveConnector} from './business/connector/connector.js';
-import {collectiveSourceIdentitySchema} from './business/contracts/index.js';
+import {collectiveSourceIdentitySchema, collectiveWorkAssignmentMatches, collectiveWorkExecutionMatches} from './business/contracts/index.js';
 import {collectiveContextError} from './collective-context-refs.js';
+import {readCollectiveWorkWake} from './collective-work-wake.js';
 
 export const WORK_MATERIAL_SUBSCRIPTION = 'collective-work-materials';
 export const WORK_MATERIAL_RECEIVER = 'collective.work.material.receive';
@@ -65,12 +66,24 @@ export function createCollectiveMessageWorkMaterials(connector: CollectiveConnec
       const parsed = collectiveSourceIdentitySchema.safeParse(trigger?.source?.meta?.participation);
       if (!trigger || trigger.userId !== message.userId || trigger.threadId !== message.threadId ||
         trigger.catId !== null || trigger.source?.connector !== 'collective' || !parsed.success || parsed.data.catId !== message.catId) return;
-      const source = parsed.data, meta = trigger.source.meta;
-      const notice = meta?.workExecutionNotice ?? meta?.workAcceptanceNotice;
-      const work = source.actor.kind === 'human'
+      let source = parsed.data;
+      const meta = trigger.source.meta;
+      const wake = meta?.workRequest === 'resume' ? await readCollectiveWorkWake(connector, context,
+        source.connectionId, source.eventId, message.userId, async () => {assertActive();}) : undefined;
+      if (wake) source = wake.source;
+      const notice = wake ? wake.item.event.workExecutionNotice ?? wake.item.event.workAcceptanceNotice
+        : meta?.workExecutionNotice ?? meta?.workAcceptanceNotice;
+      const work = wake?.work ?? (source.actor.kind === 'human'
         ? await connector.readAssignedWorkByAssignment(source.connectionId, source.eventId)
-        : object(notice) && typeof notice.workId === 'string' ? await connector.readAssignedWork(source.connectionId, notice.workId) : undefined;
+        : object(notice) && typeof notice.workId === 'string' ? await connector.readAssignedWork(source.connectionId, notice.workId) : undefined);
       if (!work || (work.executionAuthority?.eventId ?? work.assignmentEventId) !== source.eventId) return;
+      const route = await connector.getHostRoute(source.connectionId);assertActive();
+      const connection = await connector.getProjection(source.connectionId);assertActive();
+      if (route?.localOwnerUserId !== message.userId || connection.authorityStatus !== 'connected' ||
+          connection.authorizedHumanId !== work.accountableHumanId ||
+          ((wake?.item.event.workRequest ?? meta?.workRequest) === 'continue'
+            ? !collectiveWorkExecutionMatches(source, work, notice)
+            : !collectiveWorkAssignmentMatches(source, work, notice))) throw changed();
       const task = await context.tasks.get({ subjectKey: `collective-work:${source.connectionId}:${work.workId}` });assertActive();
       if (!task || task.threadId !== message.threadId || task.ownerCatId !== message.catId ||
         (task.userId !== null && task.userId !== message.userId)) return;
@@ -98,6 +111,12 @@ export function createCollectiveMessageWorkMaterials(connector: CollectiveConnec
           ? {...file, unavailable: true} : {...file, text, contentDigest: 'sha256:' + digest(text)});
       }
       if (!isDeepStrictEqual(await get(message.id), message) || !isDeepStrictEqual(await get(trigger.id), trigger)) throw changed();
+      const latestWork = await connector.readAssignedWork(source.connectionId, work.workId);assertActive();
+      const latestRoute = await connector.getHostRoute(source.connectionId);assertActive();
+      const latestTask = await context.tasks.get({id: task.id});assertActive();
+      if (!isDeepStrictEqual(latestWork, work) || latestRoute?.localOwnerUserId !== message.userId ||
+          latestRoute.revision !== route.revision || !latestTask || latestTask.threadId !== task.threadId ||
+          latestTask.ownerCatId !== task.ownerCatId || latestTask.userId !== task.userId) throw changed();
       const resultRevision = work.executionAuthority?.resultRevision ?? (work.lifecycle === 'result_ready'
         ? work.resultRevision ?? 1 : work.resultEventId ? (work.resultRevision ?? 1) + 1 : 1);
       const value = captureSchema.parse({v: 1, taskRef: `task:work:${task.id}`, message, trigger, workId: work.workId,

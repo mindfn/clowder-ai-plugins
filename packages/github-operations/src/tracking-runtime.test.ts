@@ -388,3 +388,37 @@ test('a known dismissed review reaches Community collection even after its HEAD 
   assert.equal(collected[0]?.reviews[0]?.state, 'DISMISSED');
   await runtime.stop();
 });
+
+test('tracking leaves the child cleanup reserve before starting another remote cohort', async () => {
+  const f=fixture();let now=0, polling=false, reads=0;
+  const runtime=new GitHubTrackingRuntime({...f.deps,now:()=>now,pollBudgetMs:2_000,provider:{
+    async read(){if(polling){reads++;now+=600;}return f.snapshot();},
+  }});
+  for(const number of [1,2,3])await runtime.register({...target,number});
+  polling=true;
+  await runtime.poll('review-feedback');
+  assert.equal(reads,1,'remaining 1400ms must cover TERM/KILL plus return, not a second read');
+  await runtime.stop();
+});
+
+test('a failed CI cohort member retains earlier committed facts and its own retryable baseline',async()=>{
+  const f=fixture();let polling=false, failed=0;
+  const runtime=new GitHubTrackingRuntime({...f.deps,provider:{
+    async read(){return f.snapshot();},
+    async forCiBatch(){return {async read(input:typeof target){
+      if(polling&&failed===0){failed=input.number;throw new Error('one remote cohort timed out');}
+      return {...f.snapshot(),ci:'pass' as const};
+    }};},
+  }});
+  for(const number of [1,2,3])await runtime.register({...target,number});
+  polling=true;
+  await assert.rejects(runtime.poll('cicd-check'),/one remote cohort timed out/);
+  const records=[...f.records.entries()].filter(([key])=>key.startsWith('github.tracking.v1.')).map(([,entry])=>entry.value as {
+    target:{number:number};baselines:{'cicd-check':{ci:string}};active:boolean});
+  assert.equal(records.find(row=>row.target.number===failed)!.baselines['cicd-check'].ci,'pending');
+  assert.equal(records.filter(row=>row.target.number!==failed&&row.baselines['cicd-check'].ci==='pass').length,2);
+  assert.equal(f.messages.length,2);
+  await runtime.poll('cicd-check');
+  assert.equal(f.messages.length,3,'retry delivers only the uncommitted member');
+  await runtime.stop();
+});

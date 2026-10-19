@@ -44,6 +44,8 @@ Host 调用 action 时，将 `PluginActionContext` 作为 handler 第二参数�
 | `context.dataPath` | Host 启动上下文注入的稳定实例数据目录 | 实例；无单独 grant；路径复用 runtime.dataDirectory 声明 | 插件管理内容，卸载按声明的数据策略处理 |
 | `context.log(level,message,fields?)` | 输出诊断；日志字段由调用者显式提供 | 实例 | 不输出密钥；作用域随 feature 生命周期 |
 
+模块 Host 可向经验证的 Collective 安装实例提供可选 `collectiveArtifactOwner` 接缝，结构见 [owner port 类型](../packages/plugin-sdk/src/collective-artifact-owner.ts)。它不属于通用 FeatureContext，不是内容 CRUD：Host 保留内容／审核／媒体／custody 状态，绑定 activation 并逐次复核来源授权；尚未 compose 时明确 owner_unavailable，可重试。
+
 ## 3. Host → Plugin
 
 | 接口／调用 | 输入、结果与用途 | 身份、声明与取消 |

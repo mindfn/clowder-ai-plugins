@@ -8,6 +8,8 @@ export interface StartCollectiveServerOptions {
   readonly store: CollectiveServiceStore;
   readonly host?: string;
   readonly port?: number;
+  /** Canonical browser-facing URL when TLS terminates before this listener. */
+  readonly publicUrl?: string;
   readonly allowedHostOrigins?: readonly string[] | ReadonlySet<string>;
   readonly clientAssets?: CollectiveClientAssets;
   readonly bootstrapLinkPath?: string;
@@ -33,6 +35,7 @@ export async function startCollectiveServer(options: StartCollectiveServerOption
   const allowedHostOrigins = options.allowedHostOrigins instanceof Set ? options.allowedHostOrigins : new Set(options.allowedHostOrigins ?? []);
   const handler = createCollectiveHttpHandler({
     store: options.store,
+    ...(options.publicUrl ? { serviceOrigin: new URL(options.publicUrl).origin } : {}),
     clientAssets: options.clientAssets,
     allowedHostOrigins,
     bootstrapLinkPath: options.bootstrapLinkPath,
@@ -53,12 +56,16 @@ export async function startCollectiveServer(options: StartCollectiveServerOption
   }
   const url = `http://${host}:${address.port}`;
   allowedHostOrigins.add(url);
+  options.store.startArtifactOwnerRelay();
   return {
     host,
     port: address.port,
     url,
     server,
-    close: () => closeServer(server),
+    close: () => {
+      options.store.stopArtifactOwnerRelay();
+      return closeServer(server);
+    },
   };
 }
 

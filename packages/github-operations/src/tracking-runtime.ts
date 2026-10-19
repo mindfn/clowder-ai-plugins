@@ -1,3 +1,4 @@
+import {gitHubAdmissionCanContinue, gitHubObjectSignal} from './business/infrastructure/github/admission-budget.js';
 import { createHash, randomUUID } from 'node:crypto';
 import type { PluginMessagingDraft, PluginStorageHost, PluginThreadHost } from '@clowder-ai/plugin-sdk';
 import { createGitHubFeedbackFilter } from './business/infrastructure/email/github-feedback-filter.js';
@@ -153,8 +154,8 @@ export class GitHubTrackingRuntime {
   private readonly objectTimeoutMs: number;
   constructor(private readonly deps: GitHubTrackingDependencies) {
     this.now = deps.now ?? Date.now;
-    this.pollBudgetMs = deps.pollBudgetMs ?? 25_000;
-    this.objectTimeoutMs = deps.objectTimeoutMs ?? 10_000;
+    this.pollBudgetMs = deps.pollBudgetMs ?? 30_000;
+    this.objectTimeoutMs = deps.objectTimeoutMs ?? 30_000;
     if (![this.pollBudgetMs, this.objectTimeoutMs].every(value => Number.isSafeInteger(value) && value > 0)) {
       throw new TypeError('GitHub polling budgets must be positive integer milliseconds');
     }
@@ -273,7 +274,7 @@ export class GitHubTrackingRuntime {
       // Bound GraphQL query size and rotate the remaining subjects next tick.
       ordered = ordered.slice(0, 20);
       const targets = ordered.map(key => recordOf(entries[key]!.value).target);
-      const signal = AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(Math.min(this.objectTimeoutMs, Math.max(1, deadline - this.now())))]);
+      const signal = gitHubObjectSignal({signal:this.lifecycle.signal,deadlineMs:deadline,now:this.now,objectTimeoutMs:this.objectTimeoutMs})!;
       try {
         provider = await provider.forCiBatch(targets, signal);
         signal.throwIfAborted();
@@ -283,9 +284,9 @@ export class GitHubTrackingRuntime {
         throw error;
       }
     }
-    for (const key of ordered) {
+    for (const [index,key] of ordered.entries()) {
       this.lifecycle.signal.throwIfAborted();
-      if (this.now() >= deadline) break;
+      if (this.now() >= deadline || (index > 0 && !gitHubAdmissionCanContinue({deadlineMs:deadline,now:this.now}))) break;
       try { await this.serialize(key, () => this.pollTarget(key, channel, deadline, provider)); }
       catch (error) { this.lifecycle.signal.throwIfAborted(); failures.push(error); }
       // Failed remote targets also advance fairness. Their registration and
@@ -310,7 +311,7 @@ export class GitHubTrackingRuntime {
       // All terminal observations collect the remaining comments before retiring.
       const feedback = record.baselines[record.target.kind === 'pr' ? 'review-feedback' : 'issue-tracking']!;
       if (this.now() >= deadline) return;
-      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(Math.min(this.objectTimeoutMs, Math.max(1, deadline - this.now())))]);
+      const signal = gitHubObjectSignal({signal:controller.signal,deadlineMs:deadline,now:this.now,objectTimeoutMs:this.objectTimeoutMs})!;
       // Await the actual provider child cleanup on abort; never race away from
       // a still-running child and release this registration's serialized lease.
       const read = await provider.read(record.target, signal, feedback);

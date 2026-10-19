@@ -303,7 +303,7 @@ contributions:
     id: repo-scan
     schedule: { kind: interval, everyMs: 300000 }
     action: { method: github.repo-scan }
-    policy: { overlap: skip, timeoutMs: 30000 }
+    policy: { overlap: skip, timeoutMs: 90000 }
   - type: schedule
     id: issue-tracking
     schedule: { kind: interval, everyMs: 60000 }

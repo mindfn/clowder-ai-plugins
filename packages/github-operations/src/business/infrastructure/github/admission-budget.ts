@@ -1,3 +1,7 @@
+import { KILL_GRACE_MS } from './gh-process.js';
+
+// Cancellation retains ownership until TERM→KILL cleanup has completed.
+const SETTLE_MS = KILL_GRACE_MS + 500;
 /** Package-local poll budget; this is not a Host action or caller protocol. */
 interface PollBudget { readonly signal?: AbortSignal; readonly deadlineMs?: number; readonly now?: () => number; readonly objectTimeoutMs?: number }
 
@@ -24,13 +28,13 @@ export function gitHubPollBudget(signal: AbortSignal, options: GitHubPollOptions
 /** Reserve room to return already collected durable work before the whole-gate
  * deadline. A slow remote object may fail independently of other ready items. */
 export function gitHubAdmissionCanContinue(ctx: PollBudget | undefined): boolean {
-  return ctx?.deadlineMs === undefined || (ctx.now ?? Date.now)() + 1000 < ctx.deadlineMs;
+  return ctx?.deadlineMs === undefined || (ctx.now ?? Date.now)() + SETTLE_MS < ctx.deadlineMs;
 }
 
 export function gitHubObjectSignal(ctx: PollBudget | undefined): AbortSignal | undefined {
   if (!ctx?.signal) return undefined;
   const timeout = ctx.objectTimeoutMs ?? 10_000;
-  const remaining = ctx.deadlineMs === undefined ? timeout : Math.max(1, ctx.deadlineMs - (ctx.now ?? Date.now)() - 500);
+  const remaining = ctx.deadlineMs === undefined ? timeout : Math.max(1, ctx.deadlineMs - (ctx.now ?? Date.now)() - SETTLE_MS);
   return AbortSignal.any([ctx.signal, AbortSignal.timeout(Math.min(timeout, remaining))]);
 }
 

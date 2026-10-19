@@ -1,25 +1,28 @@
 import {isDeepStrictEqual} from 'node:util';
 import type {FeatureContext} from '@clowder-ai/plugin-sdk';
-import type {CollectiveConnector} from './business/connector/connector.js';
+import type {AssignedWorkAuthorityScope, CollectiveConnector} from './business/connector/connector.js';
+import type {CollectiveWorkResultPublication} from './business/connector/work-result-publication.js';
 import {workResultArtifactSnapshotSchema} from './business/connector/state.js';
 import {collectiveContextError} from './collective-context-refs.js';
 import type {createCollectiveMessageWorkCaller} from './collective-message-work.js';
 import type {createCollectiveMessageWorkMaterials} from './collective-message-work-materials.js';
 import {collectiveWorkArtifactRefsSchema} from './work-native-methods.js';
+import { collectiveWorkResultTextSourceSchema } from './business/contracts/index.js';
+import { collectiveDocumentFileName, isCollectiveDocumentFile } from './collective-document-scope.js';
 
 type Binding = Parameters<Parameters<ReturnType<typeof createCollectiveMessageWorkCaller>['withCurrentMessage']>[1]>[0];
 const changed = () => collectiveContextError('WORK_ARTIFACT_UNAVAILABLE', 'Explicitly selected Work material is unavailable or changed');
-const taskRefOf = (binding: Binding) => `task:${binding.resultKey}`;
+const taskRefOf = (binding: {resultKey:string}) => `task:${binding.resultKey}`;
 
 /** Original explicit selection belongs to the same canonical Task as Schedule.
  * Private captured publication bytes are data, never another selection owner. */
-export function createCollectiveMessageWorkArtifacts(context: Pick<FeatureContext, 'threads'>,
+export function createCollectiveMessageWorkArtifacts(context: Pick<FeatureContext, 'threads' | 'tasks'>,
   materials: ReturnType<typeof createCollectiveMessageWorkMaterials>) {
   async function selection(binding: Binding) {
     await binding.revalidate();
     return {revision: binding.work.revision, artifactRefs: binding.artifactRefs};
   }
-  async function locate(binding: Binding, artifactRef: string) {
+  async function locate(binding: {auth:{threadId:string;userId:string;catId:string};resultKey:string;work:{workId:string};revalidate():Promise<void>}, artifactRef: string) {
     let before: {timestamp: number; id: string} | undefined;
     const matches: {capture: NonNullable<Awaited<ReturnType<typeof materials.read>>>;
       file: NonNullable<Awaited<ReturnType<typeof materials.read>>>['files'][number]}[] = [];
@@ -36,24 +39,36 @@ export function createCollectiveMessageWorkArtifacts(context: Pick<FeatureContex
       if (before?.id === last.id && before.timestamp === last.timestamp) throw changed();
       before = {timestamp: last.timestamp, id: last.id};
     }
-    if (matches.length !== 1) throw changed();
-    return matches[0]!;
+    if (matches.length > 1) throw changed();
+    return matches[0];
   }
   async function readSelected(binding: Binding) {
     const selected = await selection(binding);
     if (!selected.artifactRefs.length) return undefined;
     if (selected.artifactRefs.length !== 1) throw changed();
     const artifactRef = selected.artifactRefs[0]!;
-    const {capture, file} = await locate(binding, artifactRef);
+    const found = await locate(binding, artifactRef);
+    if (!found) throw changed();
+    const {capture, file} = found;
     if (file.unavailable) throw changed();
     const message = capture.message, revision = String(message.timestamp);
     const sourceRef = `message:${message.threadId}:${message.id}`;
-    const textPublication = file.text === undefined ? undefined : {v: 1 as const,
+    const originalFileName = artifactRef.slice('/uploads/'.length);
+    const messageWork = /^\/uploads\/doc-[A-Za-z0-9._-]+\.md$/i.test(artifactRef);
+    const supportedText = messageWork || originalFileName.startsWith('cwork-') ? file.text : undefined;
+    const scope = {userId: binding.auth.userId, taskId: binding.resultKey.slice('work:'.length),
+      executionRevision: binding.work.executionRevision, resultRevision: binding.work.resultRevision};
+    if (messageWork && (capture.resultRevision !== scope.resultRevision || capture.executionRevision !== scope.executionRevision)) throw changed();
+    const fileName = messageWork && supportedText !== undefined
+      ? collectiveDocumentFileName(scope, Buffer.from(supportedText)) : originalFileName;
+    if (supportedText !== undefined && !isCollectiveDocumentFile(scope, fileName, Buffer.from(supportedText))) throw changed();
+    const publicationVersion = messageWork ? 2 as const : 1 as const;
+    const textPublication = supportedText === undefined ? undefined : {v: publicationVersion,
       taskId: binding.resultKey.slice('work:'.length), resultRevision: capture.resultRevision,
       executionRevision: capture.executionRevision, sourceMessageId: message.id, sourceMessageRevision: message.sourceRevision,
       triggerMessageId: capture.triggerMessageId, publisherCatId: message.catId!, invocationId: capture.invocationId,
       item: {kind: 'rich-file' as const, blockId: String(file.block.id)}, contentDigest: file.contentDigest!,
-      byteLength: Buffer.byteLength(file.text), mediaType: file.block.mimeType};
+      byteLength: Buffer.byteLength(supportedText), mediaType: file.block.mimeType};
     const snapshot = workResultArtifactSnapshotSchema.parse({taskRef: taskRefOf(binding), taskRevision: binding.work.revision,
       artifactRef, artifactRevision: revision, completenessRef: `${sourceRef}#available:${revision}`,
       previewRef: `${sourceRef}#preview:${revision}`,
@@ -64,7 +79,13 @@ export function createCollectiveMessageWorkArtifacts(context: Pick<FeatureContex
     if (!isDeepStrictEqual(latest, selected)) throw changed();
     // Re-read publication/trigger/bytes after the last Service/lifetime waits.
     if (!isDeepStrictEqual(await materials.read(message.id), capture)) throw changed();
-    return {snapshot, ...(file.text === undefined ? {} : {text: file.text, mediaType: file.block.mimeType})};
+    const publicationFile = supportedText === undefined ? undefined : collectiveWorkResultTextSourceSchema.parse({
+      v: publicationVersion, sourceHref: artifactRef, fileName,
+      mediaType: file.block.mimeType, contentDigest: file.contentDigest,
+      byteLength: Buffer.byteLength(supportedText), contentBase64: Buffer.from(supportedText).toString('base64'),
+    });
+    return {snapshot, ...(supportedText === undefined ? {} : {text: supportedText, mediaType: file.block.mimeType}),
+      ...(publicationFile ? {file: publicationFile} : {})};
   }
   return {
     async current(binding: Binding) {return selection(binding);},
@@ -77,6 +98,59 @@ export function createCollectiveMessageWorkArtifacts(context: Pick<FeatureContex
       return selection(binding);
     },
     readSelected,
+    /** Backfill from the original selected message and HMR capture, never from a guessed Host path. */
+    async sealAccepted(scope: AssignedWorkAuthorityScope, publication: CollectiveWorkResultPublication,
+      current: () => Promise<void>) {
+      const original = publication.artifactSnapshot;
+      if (!original || !publication.taskRef.startsWith('task:work:') || !publication.localOwnerUserId ||
+        scope.hostRoute?.localOwnerUserId !== publication.localOwnerUserId ||
+        scope.connection.authorizedHumanId !== publication.authorizedHumanId ||
+        scope.work.workId !== publication.workId ||
+        !/^\/uploads\/(?:doc-[A-Za-z0-9._-]+\.md|cwork-[A-Za-z0-9._-]+\.(?:md|txt))$/i.test(original.artifactRef)) return undefined;
+      const taskId = publication.taskRef.slice('task:work:'.length);
+      const task = await context.tasks.get({id:taskId});await current();
+      if (!task || task.subjectKey !== `collective-work:${publication.connectionId}:${publication.workId}` ||
+        task.ownerCatId !== publication.catId || (task.userId !== null && task.userId !== publication.localOwnerUserId)) return undefined;
+      const initialWork = scope.work;
+      const revalidate = async () => {
+        await current();
+        if (!isDeepStrictEqual(await scope.readCurrentWork(), initialWork)) throw changed();
+        const freshTask = await context.tasks.get({id:taskId});await current();
+        if (!freshTask || freshTask.threadId !== task.threadId || freshTask.ownerCatId !== task.ownerCatId ||
+          freshTask.userId !== task.userId || freshTask.subjectKey !== task.subjectKey) throw changed();
+      };
+      await revalidate();
+      const found = await locate({auth:{userId:publication.localOwnerUserId,threadId:task.threadId,catId:publication.catId},
+        resultKey:`work:${taskId}`,work:scope.work,revalidate},original.artifactRef);
+      if (!found) return undefined;
+      const {capture,file} = found;
+      if (file.unavailable || file.text === undefined || !file.contentDigest ||
+        capture.resultRevision !== publication.resultRevision ||
+        capture.executionRevision !== (publication.executionRevision ?? 1) ||
+        original.taskRef !== publication.taskRef || original.taskRevision !== publication.taskRevision ||
+        original.artifactRevision !== String(capture.message.timestamp) ||
+        original.completenessRef !== `message:${task.threadId}:${capture.message.id}#available:${capture.message.timestamp}`) throw changed();
+      const bytes = Buffer.from(file.text);
+      const messageWork = /^\/uploads\/doc-[A-Za-z0-9._-]+\.md$/i.test(original.artifactRef);
+      const name = messageWork ? collectiveDocumentFileName({userId:publication.localOwnerUserId,taskId,
+        executionRevision:capture.executionRevision,resultRevision:capture.resultRevision},bytes)
+        : original.artifactRef.slice('/uploads/'.length);
+      if (!isCollectiveDocumentFile({userId:publication.localOwnerUserId,taskId,
+        executionRevision:capture.executionRevision,resultRevision:capture.resultRevision},name,bytes)) throw changed();
+      const version = messageWork ? 2 as const : 1 as const;
+      const textPublication = {v:version,taskId,resultRevision:capture.resultRevision,executionRevision:capture.executionRevision,
+        sourceMessageId:capture.message.id,sourceMessageRevision:capture.message.sourceRevision,
+        triggerMessageId:capture.triggerMessageId,publisherCatId:publication.catId,invocationId:capture.invocationId,
+        item:{kind:'rich-file' as const,blockId:String(file.block.id)},contentDigest:file.contentDigest,
+        byteLength:bytes.length,mediaType:file.block.mimeType};
+      if (original.textPublication && !isDeepStrictEqual(original.textPublication,textPublication)) throw changed();
+      const artifactSnapshot = workResultArtifactSnapshotSchema.parse({...original,textPublication});
+      const source = collectiveWorkResultTextSourceSchema.parse({v:version,sourceHref:original.artifactRef,fileName:name,
+        mediaType:file.block.mimeType,contentDigest:file.contentDigest,byteLength:bytes.length,contentBase64:bytes.toString('base64')});
+      await revalidate();
+      if (!isDeepStrictEqual(await materials.read(capture.message.id),capture)) throw changed();
+      return {artifactSnapshot,source};
+    },
     async readPrevious(connector: CollectiveConnector, binding: Binding) {
       const witness = () => connector.withAssignedWorkAuthority(binding.source.connectionId, binding.work.workId, async scope => {
         const work = scope.work;

@@ -15,7 +15,9 @@ This package remains a private candidate, not a public catalog release. It needs
 
 ## Work and materials
 
-Work continues through ordinary messages in the original private child thread. Progress does not complete Work. Continuation retains the same Task and source while rechecking the current Service grant; an old execution receipt is not new approval.
+The current authorized source can expose shared artifacts, modification proposals and Project task suggestions. The responsible Human still decides; a proposal neither applies changes nor grants private Work execution. Shared images and video use the current authenticated connection. Disable, revocation or disconnect ends reads.
+
+Work comments and prerequisite completion notices reuse the existing Task. Work continues through ordinary messages in the original private child thread. Progress does not complete Work. Continuation retains the same Task and source while rechecking the current Service grant; an old execution receipt is not new approval.
 
 A received file retains its bytes and publication association but is not automatically selected. Explicit registration requires exactly one normalized reference and the current Task contract revision. Dates, selection and closure share that Task revision; Service execution has a separate revision. Body-only results remain available when no material was registered.
 

@@ -1,18 +1,21 @@
 import {createHash} from 'node:crypto';
 import {expect, test} from 'vitest';
+import {collectiveDocumentFileName} from '../../../collective-document-scope.js';
 import type {FeatureContext} from '@clowder-ai/plugin-sdk';
 import {createCollectiveMessageWorkArtifacts} from '../../../collective-message-work-artifacts.js';
 import type {createCollectiveMessageWorkMaterials} from '../../../collective-message-work-materials.js';
 
-function fixture() {
+function fixture(legacy = false) {
   let active = true;
   const entries = new Map<string, {revision: number; value: unknown}>();let revision = 0;
   const text = '# Original document\n';
+  const fileName = legacy ? 'report.md' : collectiveDocumentFileName({userId: 'owner', taskId: 'task', executionRevision: 1, resultRevision: 1}, Buffer.from(text));
+  const artifactRef = '/uploads/' + fileName;
   const capture = {v: 1 as const, taskRef: 'task:work:task', workId: 'work', resultRevision: 1, executionRevision: 1,
     invocationId: 'publisher', triggerMessageId: 'trigger', trigger: {},
     message: {id: 'publication', threadId: 'private', userId: 'owner', catId: 'cat', content: 'Published',
       timestamp: 2, sourceRevision: 'published-1', mentions: []},
-    files: [{index: 0, block: {id: 'file', url: '/uploads/report.md', mimeType: 'text/markdown'}, text,
+    files: [{index: 0, block: {id: 'file', url: artifactRef, mimeType: 'text/markdown'}, text,
       contentDigest: 'sha256:' + createHash('sha256').update(text).digest('hex')}]};
   let available = true;
   const context = {storage: {get: async (key: string) => structuredClone(entries.get(key)),
@@ -31,35 +34,37 @@ function fixture() {
       binding.work = {...binding.work, revision: expected + 1};binding.artifactRefs = [...artifactRefs];
     },
     revalidate: async () => {if (!active) throw Error('stopped');}} as unknown as Parameters<typeof artifacts.current>[0];
-  return {artifacts, binding, capture, text, remove: () => {available = false;}, stop: () => {active = false;}};
+  return {artifacts, binding, capture, text, artifactRef, fileName, remove: () => {available = false;}, stop: () => {active = false;}};
 }
 
 test('received file stays unselected; explicit registration uses the canonical Task revision', async () => {
   const f = fixture();
   expect(await f.artifacts.readSelected(f.binding)).toBeUndefined();
-  expect(await f.artifacts.register(f.binding, 1234, ['/uploads/report.md'])).toEqual({revision: 1235, artifactRefs: ['/uploads/report.md']});
+  expect(await f.artifacts.register(f.binding, 1234, [f.artifactRef])).toEqual({revision: 1235, artifactRefs: [f.artifactRef]});
   const result = await f.artifacts.readSelected(f.binding);
   expect(result?.text).toBe(f.text);expect(result?.snapshot.taskRevision).toBe(1235);
   expect(result?.snapshot.textPublication).toMatchObject({publisherCatId: 'cat', invocationId: 'publisher', triggerMessageId: 'trigger'});
+  expect(result).toMatchObject({file: {sourceHref: f.artifactRef, fileName: f.fileName,
+    mediaType: 'text/markdown', contentBase64: Buffer.from(f.text).toString('base64')}});
 });
 
 test('stale registration cannot overwrite a newer explicit choice', async () => {
-  const f = fixture();await f.artifacts.register(f.binding, 1234, ['/uploads/report.md']);
+  const f = fixture();await f.artifacts.register(f.binding, 1234, [f.artifactRef]);
   await expect(f.artifacts.register(f.binding, 1234, ['/uploads/other.md'])).rejects.toMatchObject({code: 'WORK_ARTIFACT_REVISION_CONFLICT'});
-  expect((await f.artifacts.current(f.binding)).artifactRefs).toEqual(['/uploads/report.md']);
+  expect((await f.artifacts.current(f.binding)).artifactRefs).toEqual([f.artifactRef]);
 });
 
 test('missing publication and multiple explicit refs refuse rather than choose or downgrade', async () => {
-  const f = fixture();await f.artifacts.register(f.binding, 1234, ['/uploads/report.md']);f.remove();
+  const f = fixture();await f.artifacts.register(f.binding, 1234, [f.artifactRef]);f.remove();
   await expect(f.artifacts.readSelected(f.binding)).rejects.toThrow();
-  await expect(f.artifacts.register(f.binding, 1235, ['/uploads/report.md', '/uploads/other.md'])).rejects.toThrow();
-  expect(f.binding.work.revision).toBe(1235);expect(f.binding.artifactRefs).toEqual(['/uploads/report.md']);
+  await expect(f.artifacts.register(f.binding, 1235, [f.artifactRef, '/uploads/other.md'])).rejects.toThrow();
+  expect(f.binding.work.revision).toBe(1235);expect(f.binding.artifactRefs).toEqual([f.artifactRef]);
 });
 
 test('explicitly retained publication is data across later results; another Task or stopped invocation cannot satisfy it', async () => {
-  const f = fixture();await f.artifacts.register(f.binding, 1234, ['/uploads/report.md']);
+  const f = fixture();await f.artifacts.register(f.binding, 1234, [f.artifactRef]);
   f.binding.work = {...f.binding.work, resultRevision: 2, executionRevision: 2};
-  expect((await f.artifacts.readSelected(f.binding))?.text).toBe(f.text);
+  await expect(f.artifacts.readSelected(f.binding)).rejects.toThrow();
   f.capture.taskRef = 'task:work:foreign';await expect(f.artifacts.readSelected(f.binding)).rejects.toThrow();
   f.stop();await expect(f.artifacts.current(f.binding)).rejects.toThrow('stopped');
 });
@@ -70,7 +75,13 @@ test('internal explicit registration rejects empty, multiple and duplicate refs 
     await expect(f.artifacts.register(f.binding, 1234, refs)).rejects.toThrow();
     expect(f.binding.work.revision).toBe(1234);expect(f.binding.artifactRefs).toEqual([]);
   }
-  const selected = await f.artifacts.register(f.binding, 1234, [' /uploads/report.md ']);
-  expect(selected).toEqual({revision: 1235, artifactRefs: ['/uploads/report.md']});
+  const selected = await f.artifacts.register(f.binding, 1234, [' ' + f.artifactRef + ' ']);
+  expect(selected).toEqual({revision: 1235, artifactRefs: [f.artifactRef]});
   expect((await f.artifacts.readSelected(f.binding))?.text).toBe(f.text);
+});
+
+test('legacy uploaded text remains metadata-only without a current Task-scoped publication seal', async () => {
+  const f = fixture(true); await f.artifacts.register(f.binding, 1234, [f.artifactRef]);
+  const value = await f.artifacts.readSelected(f.binding);
+  expect(value?.snapshot.textPublication).toBeUndefined(); expect(value?.file).toBeUndefined();expect(value?.text).toBeUndefined();
 });

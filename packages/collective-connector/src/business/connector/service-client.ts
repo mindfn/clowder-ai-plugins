@@ -1,19 +1,27 @@
 import {
+  type CollectiveAccountabilityAttentionReadRequest,
   type CollectiveAgentMessageRequest,
   type CollectiveAgentWorkProposalRequest,
   type CollectiveEventEnvelope,
   type CollectivePairingIntent,
   type CollectiveParticipationDeclaration,
   type CollectiveSourceIdentity,
+  type CollectiveWorkResultFileBindingRequest,
+  type CollectiveWorkResultFileBindingResponse,
+  collectiveAccountabilityAttentionReadResponseSchema,
   collectiveEventEnvelopeSchema,
   collectiveEventIdSchema,
   collectiveParticipationDeclarationSchema,
   collectiveWorkIdSchema,
   collectiveWorkProjectionSchema,
+  collectiveWorkResultFileBindingResponseSchema,
 } from '../contracts/index.js';
 import { z } from 'zod';
 import type { ConnectorConnectionState } from './state.js';
 import type { LocalRecoverySnapshot } from './recovery-proof.js';
+import { CollectiveArtifactCustodyClient } from './artifact-custody-client.js';
+import { CollectiveArtifactMediaClient } from './artifact-media-client.js';
+import { CollectiveArtifactOwnerClient } from './artifact-owner-client.js';
 import { CollectiveWorkAuthorityClient } from './work-authority-client.js';
 
 const connectionResponseSchema = z
@@ -31,6 +39,10 @@ const metadataResponseSchema = z
   .object({
     serviceInstanceId: z.string(),
     clientBuildId: z.string().trim().min(1).max(120),
+    capabilities: z
+      .object({ workResultFiles: z.literal(1).optional() })
+      .strict()
+      .optional(),
   })
   .passthrough();
 
@@ -84,12 +96,17 @@ export class ConnectorTransportError extends Error {
 }
 
 export class CollectiveServiceClient {
+  readonly custody = new CollectiveArtifactCustodyClient((url, path, options) => this.request(url, path, options));
+  readonly artifacts = new CollectiveArtifactOwnerClient((url, path, options) => this.request(url, path, options));
+  readonly media: CollectiveArtifactMediaClient;
   readonly workAuthority = new CollectiveWorkAuthorityClient((url, path, options) => this.request(url, path, options));
   constructor(
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly timeoutMs = 10_000,
     private readonly localTransport?: CollectiveLocalTransport,
-  ) {}
+  ) {
+    this.media = new CollectiveArtifactMediaClient((url, path, options) => this.request(url, path, options), fetchImpl);
+  }
 
   usesLocalTransport(serviceUrl: string): boolean { return this.localTransport?.matches(serviceUrl) ?? false; }
   async readLocalRecovery(connection: ConnectorConnectionState, clientEventId?: string): Promise<LocalRecoverySnapshot> {
@@ -104,12 +121,17 @@ export class CollectiveServiceClient {
   }
   async assertLocalCurrent(): Promise<void> { await this.localTransport?.assertCurrent(); }
 
-  async readMetadata(serviceUrl: string): Promise<{ serviceInstanceId: string; clientBuildId: string }> {
+  async readMetadata(serviceUrl: string): Promise<{
+    serviceInstanceId: string;
+    clientBuildId: string;
+    capabilities?: { workResultFiles?: 1 };
+  }> {
     const parsed = metadataResponseSchema.safeParse(await this.request(serviceUrl, '/api/meta'));
     if (!parsed.success) throw new ConnectorTransportError('Service metadata is invalid');
     return {
       serviceInstanceId: parsed.data.serviceInstanceId,
       clientBuildId: parsed.data.clientBuildId,
+      ...(parsed.data.capabilities ? { capabilities: parsed.data.capabilities } : {}),
     };
   }
 
@@ -146,6 +168,19 @@ export class CollectiveServiceClient {
     return collectiveEventEnvelopeSchema.parse(payload);
   }
 
+  async bindAcceptedWorkResultFile(
+    serviceUrl: string,
+    endpointCredential: string,
+    input: CollectiveWorkResultFileBindingRequest,
+  ): Promise<CollectiveWorkResultFileBindingResponse> {
+    const payload = await this.request(serviceUrl, '/api/collaboration/work-result-files/bind', {
+      method: 'POST',
+      credential: endpointCredential,
+      body: input,
+    });
+    return collectiveWorkResultFileBindingResponseSchema.parse(payload);
+  }
+
   async proposeWork(serviceUrl: string, endpointCredential: string, input: CollectiveAgentWorkProposalRequest) {
     const payload = await this.request(serviceUrl, '/api/collaboration/work/propose-agent', {
       method: 'POST',
@@ -174,6 +209,25 @@ export class CollectiveServiceClient {
       throw new ConnectorTransportError('Assigned Work response does not match the requested Work');
     }
     return work;
+  }
+
+  async readPendingAccountabilityRequests(
+    serviceUrl: string,
+    endpointCredential: string,
+    input: CollectiveAccountabilityAttentionReadRequest,
+  ) {
+    const query = new URLSearchParams({
+      serviceInstanceId: input.serviceInstanceId,
+      collectiveId: input.collectiveId,
+      connectionId: input.connectionId,
+      offset: String(input.offset),
+      limit: String(input.limit),
+      ...(input.snapshot ? { snapshot: input.snapshot } : {}),
+    });
+    const payload = await this.request(serviceUrl, `/api/collaboration/work/accountability/pending?${query}`, {
+      credential: endpointCredential,
+    });
+    return collectiveAccountabilityAttentionReadResponseSchema.parse(payload);
   }
 
   async readAssignedWorkByAssignment(

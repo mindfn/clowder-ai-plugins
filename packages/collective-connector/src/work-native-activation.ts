@@ -109,6 +109,16 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
     const rows = [];
     for (const item of await connector.listInbox(input.connectionId)) {
       const identity = collectiveEventSourceIdentity(item.event);
+      if (item.event.workWakeNotice && item.event.workRequest === 'resume') {
+        await current();
+        try {
+          const sent = await messageCaller.wake(input.connectionId, item.event.eventId, owner.userId, current);
+          rows.push({key: item.event.eventId, label: 'Work resumed', detail: `Message ${sent.messageId} sent to the existing Work thread.`});
+        } catch (error) {
+          await current();rows.push({key: item.event.eventId, label: 'Work resume unavailable', detail: error instanceof Error ? error.message.slice(0, 500) : 'Current Work unavailable'});
+        }
+        continue;
+      }
       if (!identity || !['entrust', 'continue'].includes(String(item.event.workRequest))) continue;
       await current();
       try {
@@ -118,6 +128,7 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
         await current();rows.push({key: item.event.eventId, label: 'Private execution unavailable', detail: error instanceof Error ? error.message.slice(0, 500) : 'Current Work is unavailable'});
       }
     }
+    await connector.reconcileAcceptedWorkResultFiles(input.connectionId, (scope, publication) => messageArtifacts.sealAccepted(scope, publication, current));
     return rowsResult(rows, {empty: 'No committed Work sources or current execution notices'});
   };
   backend.startBackground(async (connectionId, current) => {
@@ -125,12 +136,19 @@ export async function activateCollectiveWork(context: FeatureContext, backend: B
     const route = await connector.getHostRoute(connectionId);await current();
     if (!route) return;
     for (const item of await connector.listInbox(connectionId)) {
+      if (item.event.workWakeNotice && item.event.workRequest === 'resume') {
+        assertActive();await current();
+        try {await messageCaller.wake(connectionId, item.event.eventId, route.localOwnerUserId, current);}
+        catch {assertActive();await current();}
+        continue;
+      }
       const source = collectiveEventSourceIdentity(item.event);
       if (!source || !['entrust', 'continue'].includes(String(item.event.workRequest))) continue;
       assertActive();await current();
       try {await messageCaller.send(connectionId, item.event.eventId, route.localOwnerUserId, current);}
       catch {assertActive();await current();}
     }
+    await connector.reconcileAcceptedWorkResultFiles(connectionId, (scope, publication) => messageArtifacts.sealAccepted(scope, publication, current));
   });
   return {actions: handlers, async dispose() {live = false;await materials.dispose();}};
 }

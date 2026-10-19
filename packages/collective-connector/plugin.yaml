@@ -77,6 +77,16 @@ configuration:
         render: row
         resultRender: rows
         action: { method: collective.work.owner.sync }
+  - key: accountability
+    label: Collective accountability
+    kind: operation
+    required: false
+    actions:
+      - id: attention
+        label: Pending responsibility requests
+        render: button
+        resultRender: status
+        action: { method: collective.owner.accountability-attention }
   - key: servicePort
     label: Local service port
     kind: string
@@ -121,6 +131,14 @@ features:
         id: collective-participation-view
       - type: webhook
         id: collective-participation-reconcile
+      - type: webhook
+        id: collective-media-context
+      - type: webhook
+        id: collective-media-retained
+      - type: webhook
+        id: collective-media-share
+      - type: webhook
+        id: collective-media-read
       - type: identity
         id: collective
       - type: skill
@@ -178,6 +196,8 @@ contributions:
     actions:
       - { method: collective.context.current }
       - { method: collective.context.read }
+      - { method: collective.artifact.command }
+      - { method: collective.work.suggest-project }
       - { method: collective.participation.set-interest }
       - { method: collective.reply.submit }
       - { method: collective.work.propose }
@@ -282,6 +302,7 @@ contributions:
       - { method: collective.work.context.read }
       - { method: collective.work.progress }
       - { method: collective.work.artifact.read }
+      - { method: collective.work.artifact.command }
       - { method: collective.work.artifact.register }
       - { method: collective.work.reply.submit }
   - type: webhook
@@ -299,3 +320,27 @@ contributions:
     path: connections/:connectionId/work/result/accepted
     methods: [ POST ]
     action: { method: collective.work.control.http }
+
+  - type: webhook
+    id: collective-media-context
+    path: connections/:connectionId/artifacts/share-media/context
+    methods: [ POST ]
+    action: { method: collective.media.http }
+
+  - type: webhook
+    id: collective-media-retained
+    path: connections/:connectionId/artifacts/retained-media
+    methods: [ GET ]
+    action: { method: collective.media.http }
+
+  - type: webhook
+    id: collective-media-share
+    path: connections/:connectionId/artifacts/share-media
+    methods: [ POST ]
+    action: { method: collective.media.http }
+
+  - type: webhook
+    id: collective-media-read
+    path: connections/:connectionId/artifacts/:artifactId/media/:ownerRevision
+    methods: [ GET ]
+    action: { method: collective.media.http }

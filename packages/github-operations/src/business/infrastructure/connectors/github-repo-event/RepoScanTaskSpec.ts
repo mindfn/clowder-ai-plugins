@@ -58,7 +58,8 @@ export function createRepoScanner(opts: RepoScannerOptions): (signal: AbortSigna
 
   async function collect(abortSignal: AbortSignal): Promise<ScanAdmission> {
         const signal = abortSignal;
-        const budget = gitHubPollBudget(signal, opts);
+        // Queue-bound PR and issue pages share the complete snapshot window.
+        const budget = gitHubPollBudget(signal, {pollBudgetMs: 90_000, objectTimeoutMs: 90_000, ...opts});
         signal?.throwIfAborted();
         if (opts.repoAllowlist.length === 0) {
           return { run: false, reason: 'no repos in allowlist' };
@@ -83,7 +84,12 @@ export function createRepoScanner(opts: RepoScannerOptions): (signal: AbortSigna
               !skipHistoricalOnFirstRun || (await opts.reconciliationDedup.isBaselineEstablished(repo));
 
             signal?.throwIfAborted();
-            const prs = await readGitHubObject(budget, objectSignal => opts.fetchOpenPRs(repo, objectSignal));
+            const {prs, issues} = await readGitHubObject(budget, async objectSignal => {
+              const prs = await opts.fetchOpenPRs(repo, objectSignal);
+              objectSignal?.throwIfAborted();
+              const issues = await opts.fetchOpenIssues(repo, objectSignal);
+              return {prs, issues};
+            });
             signal?.throwIfAborted();
             for (const pr of prs) {
               signal?.throwIfAborted();
@@ -108,7 +114,6 @@ export function createRepoScanner(opts: RepoScannerOptions): (signal: AbortSigna
             }
 
             signal?.throwIfAborted();
-            const issues = await readGitHubObject(budget, objectSignal => opts.fetchOpenIssues(repo, objectSignal));
             signal?.throwIfAborted();
             for (const issue of issues) {
               signal?.throwIfAborted();
@@ -132,6 +137,7 @@ export function createRepoScanner(opts: RepoScannerOptions): (signal: AbortSigna
             }
 
             signal?.throwIfAborted();
+            opts.log.info(`[repo-scan] Scanned ${repo}: ${prs.length} PRs, ${issues.length} issues, ${repoWorkItems.length} candidates`);
             if (!baselineEstablished) {
               await Promise.all(
                 repoWorkItems.map((item) =>

@@ -1,9 +1,13 @@
 import { z } from 'zod';
+import { collectiveArtifactCallbackCommandSchema } from './business/contracts/index.js';
 
 export const COLLECTIVE_WORK_NATIVE_ID = 'collective-work-native';
 /** Explicit selection is one canonical material; absence of registration still permits body-only results. */
 export const collectiveWorkArtifactRefsSchema = z.array(z.string().trim().min(1).max(1000)).length(1);
 export const collectiveWorkNativeTools = [
+  {method: 'collective.work.artifact.command', name: 'cat_cafe_collective_work_artifact_command',
+    description: 'Read or propose a response to this private Work source shared artifact request using its current contextRef. Humans retain apply authority.',
+    schema: collectiveArtifactCallbackCommandSchema},
   {method: 'collective.work.context.current', name: 'cat_cafe_collective_work_current_context',
     description: 'Use when starting or reopening this authenticated private Collective Work. Returns its original source, current context/return/reply/progress references and artifactSelection revision/refs. Not for public participation, granting permission or completing Work.',
     schema: z.object({}).strict()},

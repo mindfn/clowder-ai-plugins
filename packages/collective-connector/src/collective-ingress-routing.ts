@@ -103,6 +103,7 @@ export function collectiveSource(
       ...(event.workRevisionNotice ? { workRevisionNotice: event.workRevisionNotice } : {}),
       ...(event.workAcceptanceNotice ? { workAcceptanceNotice: event.workAcceptanceNotice } : {}),
       ...(event.workExecutionNotice ? { workExecutionNotice: event.workExecutionNotice } : {}),
+      ...(event.workWakeNotice ? { workWakeNotice: event.workWakeNotice } : {}),
       ...(sourceIdentity ? { participation: sourceIdentity } : {}),
     },
   };
@@ -119,6 +120,7 @@ export function emitConnectorMessage(
     threadId,
     message: {
       id: messageId,
+      from: { kind: 'external', connectorId: source.connector, sender: collectiveSender(event) },
       type: 'connector',
       content: event.body,
       source,

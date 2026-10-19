@@ -1,4 +1,4 @@
-import {expect, test} from 'vitest';
+import {expect, test, vi} from 'vitest';
 import type {FeatureContext, PluginActionContext, PluginTaskReadItem, PluginOwnerHttpContext} from '@clowder-ai/plugin-sdk';
 import {fixture} from './communication-work-custody.fixture.js';
 import {collectiveEventSourceIdentity} from '../../contracts/index.js';
@@ -95,6 +95,42 @@ async function setup(mode: 'agent' | 'human-standing' | 'human-manual' = 'agent'
   return {...f, work, source, auth, action, context, caller, consume,
     task, records, ownerHttp, ownerInput, expire: () => {active = false;}, wakes: () => wakes, updates: () => updates};
 }
+
+test('Service comment wakes the one existing private Task and its actual native call keeps current source authority', async () => {
+  const f = await setup();
+  try {
+    const originalGet = f.context.messaging.get.bind(f.context.messaging);
+    const messages = new Map<string, Awaited<ReturnType<typeof originalGet>>>();
+    const byKey = new Map<string, {messageId: string; threadId: string}>();
+    const create = vi.spyOn(f.context.tasks, 'create');
+    vi.spyOn(f.context.messaging, 'get').mockImplementation(async id => messages.get(id) ?? originalGet(id));
+    vi.spyOn(f.context.messaging, 'send').mockImplementation(async (threadId, draft) => {
+      const prior = byKey.get(draft.idempotencyKey!);if(prior) return prior;
+      const messageId = 'wake-message-' + byKey.size;
+      messages.set(messageId, {id: messageId, threadId, userId: f.auth.userId, catId: null,
+        content: (draft.payload.elements[0]!.payload as {text: string}).text,
+        source: {connector: 'collective', label:'Collective', icon:'collective', meta: draft.meta}, mentions: [], timestamp: 5, sourceRevision: 'wake-revision'});
+      const receipt = {messageId, threadId};byKey.set(draft.idempotencyKey!, receipt);return receipt;
+    });
+    await f.store.postHumanMessage(f.owner.sessionToken, {serviceInstanceId: f.connection.serviceInstanceId,
+      collectiveId: f.connection.collectiveId, clientEventId: 'ordinary-work-comment',
+      location: {channelId:'general', rootEventId:f.work.sourceEventId}, recipient:{kind:'channel'},
+      replyToEventId:f.work.assignmentEventId, body:'Keep the original material and continue.'});
+    await f.connector.sync(f.connection.connectionId);
+    const event = (await f.connector.listInbox(f.connection.connectionId)).find(row => row.event.workWakeNotice?.workId === f.work.workId)!.event;
+    const sent = await f.caller.wake(f.connection.connectionId, event.eventId, f.auth.userId, async()=>{});
+    expect(sent.threadId).toBe(f.task.threadId);
+    expect(await f.caller.wake(f.connection.connectionId,event.eventId,f.auth.userId,async()=>{})).toEqual(sent);
+    expect(byKey.size).toBe(1);expect(create).not.toHaveBeenCalled();
+    const binding = await f.caller.withCurrentMessage({...f.action,originTriggerMessageId:sent.messageId}, async binding=>({
+      sourceEventId:binding.source.eventId, workId:binding.work.workId, resultRevision:binding.work.resultRevision}));
+    expect(binding).toEqual({sourceEventId:f.work.assignmentEventId, workId:f.work.workId, resultRevision:1});
+    await expect(f.caller.wake(f.connection.connectionId,event.eventId,'foreign-owner',async()=>{})).rejects.toThrow();
+    Object.assign(f.task,{status:'done'});
+    await expect(f.caller.wake(f.connection.connectionId,event.eventId,f.auth.userId,async()=>{})).rejects.toThrow();
+    expect(byKey.size).toBe(1);
+  } finally {vi.restoreAllMocks();await f.close();}
+});
 
 test('browser acceptance closes only the same current Service result and repeats without another Task mutation', async () => {
   const f = await setup();

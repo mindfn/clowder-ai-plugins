@@ -268,6 +268,8 @@ export type ModulePluginSettingsHost = Pick<ModulePluginHostShape, 'pluginInstan
 
 /** Structural mirror of the Host-owned in-process module surface. */
 export interface ModulePluginHostShape {
+  /** Optional Host-owned seam, supplied only to its verified installed Collective instance. */
+  readonly collectiveArtifactOwner?: import('./collective-artifact-owner.js').CollectiveArtifactOwnerPort;
   /** Installation attribution supplied by the Host, never the manifest's package id. */
   readonly pluginInstanceId: string;
   readonly members?: import('./members.js').PluginMemberHost;

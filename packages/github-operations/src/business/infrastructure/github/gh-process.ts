@@ -8,7 +8,7 @@ export interface GitHubProcessOptions {
   signal?: AbortSignal;
 }
 
-const KILL_GRACE_MS = 1000;
+export const KILL_GRACE_MS = 1000;
 
 /** execFile's AbortError callback can precede process close. Completion here
  * joins the real child, escalating an ignored SIGTERM within a bounded grace. */

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { collectiveArtifactCallbackCommandSchema } from './business/contracts/index.js';
 
 export const COLLECTIVE_NATIVE_ID = 'collective-native';
 export const collectivePublicNativeTools = [
@@ -8,6 +9,14 @@ export const collectivePublicNativeTools = [
   { method: 'collective.context.read', name: 'cat_cafe_collective_read_context',
     description: 'Read bounded original Collective context using the contextRef returned by current context.',
     schema: z.object({ contextRef: z.string().min(1).max(256), afterSequence: z.number().int().nonnegative().optional(), limit: z.number().int().min(1).max(100).optional() }).strict() },
+  { method: 'collective.artifact.command', name: 'cat_cafe_collective_artifact_command',
+    description: 'Read or propose a response to the shared artifact request in this authenticated Collective source. Humans retain apply authority.',
+    schema: collectiveArtifactCallbackCommandSchema },
+  { method: 'collective.work.suggest-project', name: 'cat_cafe_collective_suggest_project_work',
+    description: 'Suggest a Project task or prerequisite from current public context. The suggestion awaits a Human decision and grants no private execution.',
+    schema: z.object({contextRef: z.string().min(1).max(256), projectRef: z.string().min(1).max(2000),
+      prerequisiteForWorkRef: z.string().min(1).max(2000).optional(), title: z.string().trim().min(1).max(200),
+      intendedOutcome: z.string().trim().min(1).max(32000)}).strict() },
   { method: 'collective.participation.set-interest', name: 'cat_cafe_collective_set_interest',
     description: 'Set this named participant’s listening interest for the current channel; this does not grant Work authority.',
     schema: z.object({ contextRef: z.string().min(1).max(256), state: z.enum(['listen', 'withdraw']) }).strict() },

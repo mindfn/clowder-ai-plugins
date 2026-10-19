@@ -3,7 +3,10 @@ import type { PluginActionContext, PluginActionHandler } from '@clowder-ai/plugi
 import type { CollectiveConnector } from './business/connector/connector.js';
 import { resolveMaterializedParticipation } from './business/connector/participation-custody.js';
 import { collectiveContextError, type CollectiveContextReferences } from './collective-context-refs.js';
-import { continueWorkFromSource, currentWorkSourceContext } from './collective-work-source-context.js';
+import { continueWorkFromSource, currentWorkSourceContext, suggestProjectWorkFromSource } from './collective-work-source-context.js';
+import { collectiveArtifactCallbackCommandSchema } from './business/contracts/index.js';
+import { collectivePublicNativeTools } from './public-native-methods.js';
+import { executeCollectiveArtifactCommand } from './collective-artifact-command.js';
 import type { createCollectivePublicSourceCaller } from './collective-public-source.js';
 
 // These schemas preserve ca5 callback-collective-participation-routes.ts byte semantics.
@@ -25,7 +28,7 @@ const continueSchema = z.object({ contextRef: z.string().min(1).max(256), workRe
 const interestSchema = z.object({ contextRef: z.string().min(1).max(256), state: z.enum(['listen', 'withdraw']) }).strict();
 interface Options {
   readonly connector: Pick<CollectiveConnector, 'prepareReply' | 'submitReply' | 'sync' | 'getHostRoute' | 'getProjection' |
-    'readParticipationContext' | 'setStandingInterest' | 'currentWorkDecision' | 'readWorkSourceContext' | 'proposeWork' | 'acceptWork' | 'continueWork'>;
+    'readParticipationContext' | 'readArtifactContext' | 'requestArtifactForAgent' | 'setStandingInterest' | 'currentWorkDecision' | 'readWorkSourceContext' | 'proposeWork' | 'acceptWork' | 'continueWork'>;
   readonly sourceCaller: Pick<ReturnType<typeof createCollectivePublicSourceCaller>, 'resolveNative'>;
   readonly references: CollectiveContextReferences;
 }
@@ -69,7 +72,9 @@ export function createCollectivePublicNativeActions(options: Options): Readonly<
     }
     const workDecision = await connector.currentWorkDecision(binding.source); await binding.revalidate();
     const workSourceContext = await currentWorkSourceContext(connector, refs, binding.identity, binding); await binding.revalidate();
+    const artifactRequests = await connector.readArtifactContext(binding.source); await binding.revalidate();
     return { kind: 'collective' as const, authority: 'public_participation' as const, workDecision, workSourceContext,
+      artifactRequests,
       actor: binding.source.actor, location: binding.source.location, participant: binding.displayName, request: binding.context.source,
       contextRef: refs.opaqueRef(binding.identity, 'context', binding.refScope),
       returnRef: refs.opaqueRef(binding.identity, 'return', binding.refScope),
@@ -79,7 +84,7 @@ export function createCollectivePublicNativeActions(options: Options): Readonly<
         ...(operation.acceptedEventId ? { eventId: operation.acceptedEventId } : {}),
         ...(operation.failureCode ? { code: operation.failureCode } : {}) } };
   };
-  const handler = <T>(method: string, schema: z.ZodType<T>, consume: (binding: Binding, input: T) => Promise<unknown>): PluginActionHandler =>
+  const handler = <T>(method: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>, consume: (binding: Binding, input: T) => Promise<unknown>): PluginActionHandler =>
     async (unsafe, action, hostContext) => {
       if (!action || hostContext) throw collectiveContextError('NOT_COLLECTIVE_ORIGIN', 'Authenticated native context is required');
       const parsed = schema.safeParse(unsafe ?? {});
@@ -90,6 +95,16 @@ export function createCollectivePublicNativeActions(options: Options): Readonly<
       return result;
     };
   return Object.freeze({
+    'collective.artifact.command': handler('collective.artifact.command', collectiveArtifactCallbackCommandSchema, async (binding, input) => {
+      refs.verifyRef(binding.identity, input.contextRef, 'context', binding.refScope);
+      return executeCollectiveArtifactCommand(connector, binding, binding.identity, input.command);
+    }),
+    'collective.work.suggest-project': handler('collective.work.suggest-project',
+      collectivePublicNativeTools.find(tool => tool.method === 'collective.work.suggest-project')!.schema,
+      async (binding, input) => {
+        refs.verifyRef(binding.identity, input.contextRef, 'context', binding.refScope);
+        return suggestProjectWorkFromSource(connector, refs, binding.identity, binding, input, binding.revalidate);
+      }),
     'collective.context.current': handler('collective.context.current', currentSchema, binding => current(binding)),
     'collective.context.read': handler('collective.context.read', readSchema, async (binding, input) => {
       refs.verifyRef(binding.identity, input.contextRef, 'context', binding.refScope); await binding.revalidate();

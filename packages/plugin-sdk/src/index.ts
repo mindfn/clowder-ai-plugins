@@ -13,6 +13,8 @@
  * The dispatch classifier gates every method before standalone callbacks or
  * Host-bound transport behavior can run.
  */
+export type { CollectiveArtifactOwnerPort, CollectiveArtifactOwnerResult, CollectiveArtifactCustodyTransferPort,
+  CollectiveArtifactMediaReadPort, CollectiveArtifactMediaResult } from './collective-artifact-owner.js';
 export {
   NdjsonFrameError,
   StdioRuntimeFatalError,

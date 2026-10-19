@@ -16,6 +16,7 @@ import { createCollectiveParticipationCaller } from './participation-reconciler.
 import { COLLECTIVE_NATIVE_ID } from './public-native-methods.js';
 import { createLocalServiceTransport } from './local-service-transport.js';
 import { createRecoveryActions } from './recovery-actions.js';
+import { createCollectiveMediaHttp } from './collective-media-http.js';
 import { createOwnerControlHttp, type CollectiveLocalServiceStatus } from './owner-control-http.js';
 import { CollectiveConnector } from './business/connector/connector.js';
 import { GitHubAppManifestSetup } from './business/service/github-app-manifest-setup.js';
@@ -63,7 +64,8 @@ interface WorkBackend {
   startBackground(workSync: (connectionId: string, current: () => Promise<void>) => Promise<void>): void;
 }
 async function activateService(context: FeatureContext,
-  ready: (backend: WorkBackend) => void, expectsWork: boolean): Promise<FeatureActivation> {
+  ready: (backend: WorkBackend) => void, expectsWork: boolean,
+  artifactOwner?: import('@clowder-ai/plugin-sdk').CollectiveArtifactOwnerPort): Promise<FeatureActivation> {
   let stopped = false;
   const assertActive = () => { if (stopped) throw new Error('Collective module is stopped'); void context.dataPath; };
   const portValue = await context.config.get('servicePort');
@@ -110,6 +112,7 @@ async function activateService(context: FeatureContext,
   const verification = createCollectiveAgentVerification(assertActive);
   const connector = await CollectiveConnector.open({ dataDirectory: join(context.dataPath, 'connector'),
     verifyAgent: verification.verifyAgent, localTransport: createLocalServiceTransport(origin, assertActive, opened.store) });
+  connector.setArtifactOwner(artifactOwner);
   const server = await startCollectiveServer({store: opened.store, port, allowedHostOrigins, bootstrapLinkPath, githubAppSetup, clientAssets: client.files});
   const background = new AbortController();
   let stopBackground: (() => Promise<void>) | undefined;
@@ -174,6 +177,7 @@ async function activateService(context: FeatureContext,
       'collective.connector.send': createCollectiveOwnerSendAction({ connector, roster, verification, assertActive }),
       ...createRecoveryActions(connector, async () => assertActive()),
       'collective.control.http': ownerControl,
+      'collective.media.http': createCollectiveMediaHttp({connector, owner:artifactOwner, assertActive}) as PluginActionHandler,
       'collective.service.status': async () => {
         if (stopped) throw new Error('Collective module is stopped');
         // Access is revoked by the same SDK session on disable.
@@ -188,14 +192,16 @@ async function activateService(context: FeatureContext,
     async dispose() {
       stopped = true;
       background.abort();
-      try { await stopBackground?.(); } finally { await server.close(); }
+      try { await stopBackground?.(); } finally {
+        try { await connector.stopMediaReads(); } finally { await server.close(); }
+      }
 
       if (!opened.store.getMetadata().bootstrapNeeded) await rm(bootstrapSecretPath, { force: true });
     },
   };
   } catch (error) {
     stopped = true; background.abort();
-    await Promise.allSettled([stopBackground?.(), server.close()]);
+    await Promise.allSettled([stopBackground?.(), connector.stopMediaReads(), server.close()]);
     throw error;
   }
 }
@@ -205,12 +211,14 @@ function validOrigin(value: string): boolean {
 }
 
 export function createCollectivePluginModule(_options: CollectivePluginModuleOptions = {}): PluginModuleEntrypoint {
-  return definePluginModule(manifest => {
+  return {create(manifest) {
+    let artifactOwner: import('@clowder-ai/plugin-sdk').CollectiveArtifactOwnerPort | undefined;
+    const entrypoint = definePluginModule(manifest => {
     const plugin = definePlugin({ manifest });
     let backend: WorkBackend | undefined;
     return definePlugin({ manifest, activate: {
       'collective-backend': context => activateService(context, current => {backend = current;},
-        plugin.manifest.features.some(feature => feature.id === 'collective-work')),
+        plugin.manifest.features.some(feature => feature.id === 'collective-work'), artifactOwner),
       ...(plugin.manifest.features.some(feature => feature.id === 'collective-work') ? {
         'collective-work': async (context: FeatureContext) => {
           if (!backend) throw new Error('Collective backend must be active before Work');
@@ -219,7 +227,13 @@ export function createCollectivePluginModule(_options: CollectivePluginModuleOpt
         },
       } : {}),
     } });
-  });
+    });
+    const definition = entrypoint.create(manifest);
+    return {...definition, start(host) {
+      artifactOwner = host.collectiveArtifactOwner;
+      return definition.start(host);
+    }};
+  }};
 }
 
 export default createCollectivePluginModule();

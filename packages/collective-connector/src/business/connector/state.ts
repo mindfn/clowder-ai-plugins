@@ -1,14 +1,18 @@
 import {
+  type CollectiveArtifactPublication,
   type CollectiveEventEnvelope,
   type CollectiveLocation,
   type CollectiveSourceIdentity,
   type CollectiveParticipationDeclaration,
   collectiveParticipationDeclarationSchema,
   type CollectiveTarget,
+  type CollectiveWorkResultFile,
+  collectiveArtifactPublicationRecordSchema,
   collectiveEventEnvelopeSchema,
   collectiveLocationSchema,
   collectiveSourceIdentitySchema,
   collectiveTargetSchema,
+  collectiveWorkResultFileBindingSchema,
 } from '../contracts/index.js';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
@@ -74,6 +78,7 @@ const outboxItemSchema = z
         assignmentEventId: z.string().startsWith('evt_').optional(),
         progressKey: z.string().length(64).optional(),
         artifactSnapshot: workResultArtifactSnapshotSchema.optional(),
+        resultFile: collectiveWorkResultFileBindingSchema.optional(),
       })
       .strict()
       .optional(),
@@ -162,6 +167,7 @@ const connectionSchema = z
     authorizedHumanId: z.string().optional(),
     endpointLabel: z.string(),
     endpointCredential: z.string().optional(),
+    custodyRecoveryCredential: z.string().optional(),
     initialExcludedCatIds: z.array(z.string().trim().min(1).max(120)).max(100).optional(),
     authorityStatus: z.enum(['connected', 'revoking', 'revoked']),
     revocationReason: z.enum(['owner_revoked', 'identity_rebind_required', 'service_revoked']).optional(),
@@ -170,6 +176,17 @@ const connectionSchema = z
     pendingAckSequence: z.number().int().positive().optional(),
     outbox: z.array(outboxItemSchema),
     workCustody: workCustodySchema.optional(),
+    publicationRecoveries: z
+      .record(
+        z.string(),
+        z
+          .object({
+            publication: collectiveArtifactPublicationRecordSchema,
+            endpointCredential: z.string().min(1),
+          })
+          .strict(),
+      )
+      .optional(),
     inbox: z.array(inboxItemSchema),
     createdAt: z.string().datetime(),
     localAttempts: z.array(localAttemptSchema).optional(),
@@ -276,6 +293,7 @@ export interface ConnectorOutboxItem {
     readonly assignmentEventId?: string;
     readonly progressKey?: string;
     readonly artifactSnapshot?: WorkResultArtifactSnapshot;
+    readonly resultFile?: CollectiveWorkResultFile;
   };
   readonly replyToEventId?: string;
   readonly body: string;
@@ -312,6 +330,7 @@ export interface ConnectorConnectionState {
   readonly authorizedHumanId?: string;
   readonly endpointLabel: string;
   readonly endpointCredential?: string;
+  readonly custodyRecoveryCredential?: string;
   readonly initialExcludedCatIds?: string[];
   readonly authorityStatus: 'connected' | 'revoking' | 'revoked';
   readonly revocationReason?: 'owner_revoked' | 'identity_rebind_required' | 'service_revoked';
@@ -320,6 +339,10 @@ export interface ConnectorConnectionState {
   readonly pendingAckSequence?: number;
   readonly outbox: ConnectorOutboxItem[];
   readonly workCustody?: ConnectorWorkCustody;
+  readonly publicationRecoveries?: Record<
+    string,
+    { readonly publication: CollectiveArtifactPublication; readonly endpointCredential: string }
+  >;
   readonly inbox: ConnectorInboxItem[];
   readonly createdAt: string;
   readonly localAttempts?: LocalAttempt[];

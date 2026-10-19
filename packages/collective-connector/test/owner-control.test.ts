@@ -63,8 +63,8 @@ test('retained connections and provision callers resolve non-anonymous owner dec
   } finally { await active.stop({reason:'test'}); await rm(directory, { recursive: true, force: true }); }
 });
 
-test('implemented owner method/path pairs and seven ordinary native methods are advertised', () => {
-  const expected = ['GET connections', 'GET connections/:connectionId/inbox', 'GET connections/:connectionId/route', 'PUT connections/:connectionId/route',
+test('implemented owner method/path pairs and ordinary native methods are advertised', () => {
+  const expected = ['POST connections/:connectionId/artifacts/share-media/context', 'GET connections/:connectionId/artifacts/retained-media', 'POST connections/:connectionId/artifacts/share-media', 'GET connections/:connectionId/artifacts/:artifactId/media/:ownerRevision', 'GET connections', 'GET connections/:connectionId/inbox', 'GET connections/:connectionId/route', 'PUT connections/:connectionId/route',
     'POST connections/:connectionId/reconnect', 'POST connections/:connectionId/revoke',
     'GET connections/:connectionId/listening', 'POST connections/:connectionId/listening',
     'GET connections/:connectionId/work-policy', 'POST connections/:connectionId/work-policy/adopt',
@@ -73,9 +73,10 @@ test('implemented owner method/path pairs and seven ordinary native methods are 
   const owned = new Set(backend.contributions.filter((item: {type: string}) => item.type === 'webhook').map((item: {id: string}) => item.id));
   const webhooks = manifest.contributions.filter((item: { type: string; id: string }) => item.type === 'webhook' && owned.has(item.id));
   assert.deepEqual(webhooks.flatMap((item: { path: string; methods: string[] }) => item.methods.map(method => method + ' ' + item.path)).sort(), expected.sort());
-  for (const item of webhooks) { assert.equal(item.verificationSecretRef, undefined); assert.equal(item.action.method, 'collective.control.http'); }
+  for (const item of webhooks) { assert.equal(item.verificationSecretRef, undefined); assert.equal(item.action.method, item.id.startsWith('collective-media-') ? 'collective.media.http' : 'collective.control.http'); }
   assert.deepEqual(manifest.contributions.find((item: { type: string; id: string }) => item.type === 'mcp' && item.id === 'collective-native').actions.map((item: { method: string }) => item.method).sort(),
-    ['collective.context.current', 'collective.context.read', 'collective.participation.set-interest', 'collective.reply.submit', 'collective.work.propose', 'collective.work.accept', 'collective.work.continue'].sort());
+    ['collective.context.current', 'collective.context.read', 'collective.artifact.command', 'collective.work.suggest-project',
+      'collective.participation.set-interest', 'collective.reply.submit', 'collective.work.propose', 'collective.work.accept', 'collective.work.continue'].sort());
 });
 function controlledPort() {
   const calls: unknown[] = []; let owner = 'fixture-owner'; let stale = false;

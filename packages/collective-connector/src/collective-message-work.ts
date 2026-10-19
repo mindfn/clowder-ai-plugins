@@ -12,6 +12,7 @@ import {assertSettledCollectiveSource, collectiveSource, ingressIdempotencyKey} 
 import {resolveHumanMessageWork} from './collective-human-message-work.js';
 import {resolveCollectiveWorkThread} from './collective-work-thread.js';
 import {collectiveWorkArtifactRefsSchema} from './work-native-methods.js';
+import {readCollectiveWorkWake} from './collective-work-wake.js';
 
 const changed = () => collectiveContextError('WORK_EXECUTION_NOT_CURRENT', 'The Collective source or current Service permission changed');
 const subjectKey = (connectionId: string, workId: string) => `collective-work:${connectionId}:${workId}`;
@@ -58,11 +59,15 @@ export function createCollectiveMessageWorkCaller(connector: CollectiveConnector
     if (auth.source.catId !== null || auth.source.source?.connector !== 'collective') throw changed();
     const parsed = collectiveSourceIdentitySchema.safeParse(auth.source.source!.meta?.participation);
     if (!parsed.success || parsed.data.catId !== auth.catId) throw changed();
-    const source = parsed.data;
-    const item = (await connector.listInbox(source.connectionId)).find(row => row.event.eventId === source.eventId);
+    let source = parsed.data;
+    let item = (await connector.listInbox(source.connectionId)).find(row => row.event.eventId === source.eventId);
     if (!item || !isDeepStrictEqual(collectiveEventSourceIdentity(item.event), source) || item.event.body !== auth.source.content ||
       !isDeepStrictEqual(collectiveSource(item.event, source).meta, auth.source.source!.meta) ||
-      !['entrust', 'continue'].includes(String(item.event.workRequest))) throw changed();
+      !['entrust', 'continue', 'resume'].includes(String(item.event.workRequest))) throw changed();
+    if (item.event.workRequest === 'resume') {
+      const wake = await readCollectiveWorkWake(connector, context, source.connectionId, source.eventId, auth.userId, action.assertCurrent);
+      source = wake.source;item = wake.item;
+    }
     const workId = source.actor.kind === 'agent'
       ? item.event.workExecutionNotice?.workId ?? item.event.workAcceptanceNotice?.workId
       : (await connector.readAssignedWorkByAssignment(source.connectionId, source.eventId)).workId;
@@ -118,6 +123,31 @@ export function createCollectiveMessageWorkCaller(connector: CollectiveConnector
       refScope: `${receiptRef}:work:${workId}:result:${resultRevision}:execution:${executionRevision}`};
   }
   return Object.freeze({
+    async wake(connectionId: string, eventId: string, ownerUserId: string, current: () => Promise<void>) {
+      const binding = await readCollectiveWorkWake(connector, context, connectionId, eventId, ownerUserId, current);
+      const {source, message, task, work, wake, hostRoute} = binding;
+      if (source.actor.kind === 'human')
+        await resolveHumanMessageWork(connector, context.storage, source, message, ownerUserId, current,
+          {mode: 'read', hasTask: true, time: task.entrustedWork!.time});
+      else {
+        const grant = await connector.resolveAcceptedWorkGrant(source);await current();
+        if (grant.work.workId !== work.workId || !isDeepStrictEqual(grant.work, work)) throw changed();
+      }
+      await current();await options?.beforeWake(task.threadId);await current();
+      const projected = collectiveSource(wake.event);
+      await connector.beginInboxRouting(connectionId, eventId, hostRoute.revision);await current();
+      const sent = await context.messaging.send(task.threadId, {idempotencyKey: `collective-work-wake:${wake.event.eventId}`,
+        identity: 'collective', sender: projected.sender, meta: projected.meta, wake: {catId: source.catId},
+        payload: {provenance: {origin: {kind: 'plugin', instanceId: context.pluginInstanceId}, epistemicStatus: 'observation'},
+          elements: [{elementId: 'collective-source', kind: 'text', payload: {text: wake.event.body}}]}});
+      if (sent.threadId !== task.threadId) throw changed();
+      await current();
+      const latest = await readCollectiveWorkWake(connector, context, connectionId, eventId, ownerUserId, current);
+      if (!isDeepStrictEqual(latest.work, work) || !isDeepStrictEqual(latest.task, task)) throw changed();
+      await connector.completeInboxRouting(connectionId, eventId, hostRoute.revision,
+        {kind: 'thread_message', threadId: sent.threadId, messageId: sent.messageId, catId: source.catId});
+      await current();return sent;
+    },
     async withCurrentMessage<T>(action: PluginActionContext, consume: (binding: Awaited<ReturnType<typeof read>> &
       {revalidate(): Promise<void>; registerArtifactRefs(expectedRevision: number, artifactRefs: readonly string[]): Promise<void>}) => Promise<T>) {
       let initial = await read(action);

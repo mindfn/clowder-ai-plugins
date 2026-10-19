@@ -37,6 +37,8 @@ describe('Collective Service HTTP process boundary', () => {
     await expect(client.json()).resolves.toMatchObject({ error: { code: 'CLIENT_UNAVAILABLE' } });
     expect((await fetch(`${server.url}/collective-client/app.js`)).status).toBe(404);
     expect((await fetch(`${server.url}/collective-client/app.css`)).status).toBe(404);
+    expect((await fetch(`${server.url}/collective-client/collective-landing-A.png`)).status).toBe(404);
+
 
     const owner = await post(server.url, '/api/bootstrap', {
       secret: opened.bootstrapSecret,
