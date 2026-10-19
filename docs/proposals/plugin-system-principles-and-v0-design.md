@@ -51,7 +51,7 @@ doc_kind: governing-design
 ## 范围与验证
 
 公开接口、数据保留和生命周期见[接口基线](../plugin-development.md)，构建与安装验证见
-[开发指南](../plugin-projects.md)；官方可安装版本以 [catalog](../../catalog/catalog.json) 和包声明为准。
+[开发指南](../plugin-projects.md)；官方已激活版本以 [catalog](../../catalog/catalog.json) 为准，未发布源码候选见 [candidate](../../catalog/candidate.json)。目录在包发布并核验后通过普通 PR 更新。
 公开方法的类型、schema、实际消费者和开发者说明必须一致；制品还须验证生产依赖、公开入口与安装后的生命周期。
 普通 CI、发布与实际用户体验分别核验，不能相互替代。
 

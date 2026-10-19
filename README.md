@@ -61,7 +61,7 @@ Host Broker ─────┐
 - **开发独立插件或团队 Git 仓**：直接依赖可获取的 SDK npm 版本，也可按公开 module 契约实现不依赖 SDK 的插件；不必复制本仓 SDK 源码或先发布自己的插件。
 - **同时修改 SDK**：SDK 在本仓独立 package 中开发；插件通过包名导入其公开 API。workspace 联调与最终制品依赖分别验证。
 
-插件按[接口基线](docs/plugin-development.md)与[源码开发和安装指南](docs/plugin-projects.md)验证。workspace 联调与最终安装制品须分别核实；当前可发行范围、版本和摘要以 [catalog](catalog/catalog.json) 为准。
+插件按[接口基线](docs/plugin-development.md)与[源码开发和安装指南](docs/plugin-projects.md)验证。workspace 联调与最终安装制品须分别核实；已激活的官方版本和摘要见 [catalog](catalog/catalog.json)，源码候选见 [candidate](catalog/candidate.json)。包发布并验证可获取后，再通过普通 PR 更新官方目录；候选不直接参与发现。
 
 ## 插件提供什么能力（contributions）
 

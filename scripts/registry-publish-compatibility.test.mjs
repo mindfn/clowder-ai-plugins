@@ -35,7 +35,7 @@ test('publish inventory comes from the workflow publish action inputs', () => {
 test('publisher covers catalog packages and never uploads a held Manager candidate', async () => {
   const source = await readFile(new URL('../.github/workflows/contract-ci.yml', import.meta.url), 'utf8');
   const directories = new Set(collectPublishPackageDirectories(source));
-  const catalog = JSON.parse(await readFile(new URL('../catalog/catalog.json', import.meta.url), 'utf8'));
+  const catalog = JSON.parse(await readFile(new URL('../catalog/candidate.json', import.meta.url), 'utf8'));
   for (const directory of await readdir(new URL('../packages/', import.meta.url))) {
     let manifest;
     try { manifest = parse(await readFile(new URL(`../packages/${directory}/plugin.yaml`, import.meta.url), 'utf8')); }

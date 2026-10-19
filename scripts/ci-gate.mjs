@@ -132,6 +132,7 @@ export function buildGateSteps() {
     { name: 'Git guards', command: 'pnpm test:guards' },
     { name: 'Fresh consumer install', command: 'pnpm test:fresh-consumer' },
     { name: 'Package inventory', command: 'pnpm --filter @clowder-ai/collective-connector build && pnpm test:package-inventory && pnpm --filter @clowder-ai/collective-connector test:source' },
+    { name: 'Live catalog availability', command: 'pnpm catalog:live-check' },
     { name: 'Machine catalog', command: 'pnpm catalog:check' },
     { name: 'Immutable registry compatibility', command: 'pnpm registry:check' },
     { name: 'Pack gate (prepack must pass with lifecycle scripts)', command: 'pnpm pack:gate' },

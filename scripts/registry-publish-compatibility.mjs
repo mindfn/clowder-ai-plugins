@@ -213,7 +213,7 @@ export async function assertRegistryCompatibility({
 }
 
 async function main() {
-  const catalog = JSON.parse(await readFile(join(repoRoot, 'catalog/catalog.json'), 'utf8'));
+  const catalog = JSON.parse(await readFile(join(repoRoot, 'catalog/candidate.json'), 'utf8'));
   const workflowSource = await readFile(
     join(repoRoot, '.github/workflows/contract-ci.yml'),
     'utf8',

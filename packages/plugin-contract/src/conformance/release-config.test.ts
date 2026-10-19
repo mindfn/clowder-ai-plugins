@@ -43,7 +43,7 @@ const releaseWorkflow = readFileSync(
 const localGate = readFileSync(new URL('../../../../scripts/ci-gate.mjs', import.meta.url), 'utf8');
 
 const pluginCatalog = JSON.parse(
-  readFileSync(new URL('../../../../catalog/catalog.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../../../catalog/candidate.json', import.meta.url), 'utf8'),
 ) as PluginCatalog;
 
 function publishedPackageDirectories(workflow: string): string[] {

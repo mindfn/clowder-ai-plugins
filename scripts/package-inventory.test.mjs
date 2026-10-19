@@ -6,7 +6,7 @@ import { validateManifest, validatePluginCatalog } from '../packages/plugin-cont
 import { collectPublishPackageDirectories } from './registry-publish-compatibility.mjs';
 
 const root = new URL('../', import.meta.url);
-const catalog = JSON.parse(await readFile(new URL('catalog/catalog.json', root), 'utf8'));
+const catalog = JSON.parse(await readFile(new URL('catalog/candidate.json', root), 'utf8'));
 const workflowSource = await readFile(new URL('.github/workflows/contract-ci.yml', root), 'utf8');
 const publishers = new Set(collectPublishPackageDirectories(workflowSource));
 const plugins = [];

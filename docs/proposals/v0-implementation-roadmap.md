@@ -61,7 +61,7 @@ Console 与 Agent 管理同一份 inventory，不维护第二安装状态。
 | Train C2：后续能力 | 音频／managed-service、插件自带界面、Collective／Meeting 后续产品化与保留的物理硬件产品；以对应真实消费者与权限边界验证，不算作 C1 已交付 |
 | 正式版 | 相关迁移、真实使用、数据处置、文档、版本和 registry 证据齐备；Host 与官方插件消费同一发布批次 |
 
-C1 已收尾。当前官方发行范围、版本和摘要以 [catalog](../../catalog/catalog.json) 为准，各包 manifest 定义实际能力。
+C1 业务迁移的源码范围已收尾；对应新 Host 与新插件仍须完成成对分发和实际安装验收。已激活版本与摘要以 [catalog](../../catalog/catalog.json) 为准，源码候选见 [candidate](../../catalog/candidate.json)，各包 manifest 定义实际能力。包发布并核验后才通过普通 PR 激活目录。
 [初始选择](../../catalog/initial-plugins.json)保存选择与启用意图，不证明所选包已发布或可从官方目录安装。
 Collective 与 Meeting 的源码及本地候选不属于当前官方目录，其后续产品化归入 C2／独立后续，不能作为未关闭的 C1 尾项。
 构建及安装按[开发指南](../plugin-projects.md)验证。Dot 仍由 Host 提供，留待单独迁移。

@@ -24,7 +24,7 @@ import { assertPackedRuntimeEntrypoints } from './catalog-runtime-entrypoints.mj
 const workspaceSdk = JSON.parse(
   await readFile(new URL('../packages/plugin-sdk/package.json', import.meta.url), 'utf8'),
 );
-const catalog = JSON.parse(await readFile(new URL('../catalog/catalog.json', import.meta.url), 'utf8'));
+const catalog = JSON.parse(await readFile(new URL('../catalog/candidate.json', import.meta.url), 'utf8'));
 const workspaceContract = JSON.parse(
   await readFile(new URL('../packages/plugin-contract/package.json', import.meta.url), 'utf8'),
 );
@@ -409,4 +409,4 @@ assert.equal(
 assert.equal(weixinMpChecks, 1, 'weixin-mp package-owned metadata checks must run exactly once');
 assert.equal(connectorChecks, 7, 'connector package-owned metadata checks must run exactly once');
 
-console.log('catalog validation, list/search/get, and exact packed artifact: ok');
+console.log('candidate catalog validation, list/search/get, and exact packed artifact: ok');

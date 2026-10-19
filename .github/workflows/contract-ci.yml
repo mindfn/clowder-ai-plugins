@@ -200,6 +200,9 @@ jobs:
           path: ${{ runner.temp }}/plugin-sdk-pack-evidence.json
           if-no-files-found: error
 
+  # Publication does not change live discovery. Candidate coordinates are in
+  # catalog/candidate.json; after publication a normal reviewed catalog update
+  # is prepared with pnpm catalog:activate.
   publish:
     name: Publish to npm
     needs: validate

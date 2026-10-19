@@ -2,7 +2,7 @@
 
 ## Catalog artifact toolchain（重生成 catalog hash 前必读）
 
-`catalog/catalog.json` 里每个 artifact 的 `shasum`/`integrity` 元组是**打包字节的哈希**，只在精确工具链下可复现：**Node 24.18.0 + npm 11.16.0**（CI 通过 `ARTIFACT_NODE_VERSION`/`ARTIFACT_NPM_VERSION` 钉死；仓库根 `.nvmrc` 已固定 `24.18.0`）。homebrew 等其他 Node 版本打出的 tarball 字节不同，hash 必然对不上。凡改动任何包的 `src`/`README`/`plugin.yaml`（改变 tarball 字节），重生成该包 `versions[0].artifact.*` 元组前必须先切到存放在**持久目录**里的工具链（例如 `export PATH=/Users/<you>/workspace/github-lab/f202-toolchain/node-v24.18.0-darwin-arm64/bin:$PATH` 并设置 `CLOWDER_ARTIFACT_NPM_CLI`），用 `node scripts/pack-publish-artifact.mjs packages/<name> <dest>` 取新元组，然后 `pnpm catalog:check` 必须 ok。不要把唯一工具链安装在 `/tmp`：macOS 会清理该目录，导致后续验证缺文件或退回系统 npm。不要改各包 `engines` 字段去强制这一点——那会影响消费者。
+`catalog/candidate.json` 里每个候选 artifact 的 `shasum`/`integrity` 元组是**打包字节的哈希**，只在精确工具链下可复现：**Node 24.18.0 + npm 11.16.0**（CI 通过 `ARTIFACT_NODE_VERSION`/`ARTIFACT_NPM_VERSION` 钉死；仓库根 `.nvmrc` 已固定 `24.18.0`）。homebrew 等其他 Node 版本打出的 tarball 字节不同，hash 必然对不上。凡改动任何包的 `src`/`README`/`plugin.yaml`（改变 tarball 字节），重生成该包 `versions[0].artifact.*` 元组前必须先切到存放在**持久目录**里的工具链（例如 `export PATH=/Users/<you>/workspace/github-lab/f202-toolchain/node-v24.18.0-darwin-arm64/bin:$PATH` 并设置 `CLOWDER_ARTIFACT_NPM_CLI`），用 `node scripts/pack-publish-artifact.mjs packages/<name> <dest>` 取新元组，然后 `pnpm catalog:check` 必须 ok。不要把唯一工具链安装在 `/tmp`：macOS 会清理该目录，导致后续验证缺文件或退回系统 npm。不要改各包 `engines` 字段去强制这一点——那会影响消费者。
 
 插件、SDK 与 Contract 已分别在 `packages/` 中维护。新增插件或修改已有插件，先按[插件开发指南](docs/plugin-development.md)完成源码目录与实际制品验证。
 
@@ -42,4 +42,4 @@ GitHub 对同一条 CODEOWNERS 规则只要求其中任一 owner 的 approval，
 - required status context 为 `Typecheck + Conformance`（workflow：`Contract CI`），且该 workflow 对所有 pull request 上报；
 - 不把管理员 bypass 当常规合入路径。
 
-各包独立维护版本，以相应 package.json 和 npm registry 中实际发布的版本为准，不能把仓内 SDK 候选版本当成已发布版本。当前发布 workflow 由通过 validate 的 main push 触发；实际发布包、版本和 dist-tag 以 workflow 为准。独立插件应固定验证过的可获取 SDK 版本，并提交锁文件。行为夹具与插件 manifest 中的 `contractVersion` 仍是签字协议版本 `0.1.0`，不随 npm artifact 的 beta 后缀变化。完整插件系统改造与验收完成后，才发布正式 `0.1.0` 并推进 `latest`。K-1 shape-approved、另一方对 final HEAD 的 approval、required CI、npm scope/`NPM_TOKEN` 与 registry 精确 version+integrity 验证全部完成前，不得合入或消费本 prerelease。
+各包独立维护版本，以相应 package.json 和 npm registry 中实际发布的版本为准，不能把仓内 SDK 候选版本当成已发布版本。当前发布 workflow 由通过 validate 的 main push 触发；实际发布包、版本和 dist-tag 以 workflow 为准。源码集成时仅更新 `catalog/candidate.json`；包发布成功后用 `pnpm catalog:activate` 核验并通过独立普通 PR 更新 live `catalog/catalog.json`，不要将未发布坐标提前激活。独立插件应固定验证过的可获取 SDK 版本，并提交锁文件。行为夹具与插件 manifest 中的 `contractVersion` 仍是签字协议版本 `0.1.0`，不随 npm artifact 的 beta 后缀变化。完整插件系统改造与验收完成后，才发布正式 `0.1.0` 并推进 `latest`。K-1 shape-approved、另一方对 final HEAD 的 approval、required CI、npm scope/`NPM_TOKEN` 与 registry 精确 version+integrity 验证全部完成前，不得合入或消费本 prerelease。
