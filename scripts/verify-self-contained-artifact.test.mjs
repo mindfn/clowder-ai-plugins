@@ -358,9 +358,16 @@ test('self-contained archive bytes ignore staging timestamps', async (t) => {
   const stage = join(root, 'stage');
   await mkdir(join(stage, 'package/nested'), { recursive: true });
   await writeFile(join(stage, 'package/nested/value.txt'), 'stable bytes\n');
+  if (process.platform === 'darwin') {
+    await execFileAsync('xattr', ['-w', 'com.clowder.archive-test', 'fixture-metadata',
+      join(stage, 'package/nested/value.txt')]);
+  }
   const first = join(root, 'first.tgz');
   const second = join(root, 'second.tgz');
   await createDeterministicArchive(stage, first);
+  const { stdout } = await execFileAsync('tar', ['-tzf', first]);
+  assert.deepEqual(stdout.trim().split('\n'), ['package/', 'package/nested/', 'package/nested/value.txt'],
+    'the archive must contain exactly the staged members, without implicit AppleDouble metadata');
   await utimes(join(stage, 'package/nested/value.txt'), new Date(), new Date());
   await utimes(join(stage, 'package/nested'), new Date(), new Date());
   await createDeterministicArchive(stage, second);

@@ -31,7 +31,7 @@ const archiveTimestamp = new Date('1985-10-26T08:15:00.000Z');
 function run(command, args, cwd) {
   const result = spawnSync(command, args, {
     cwd,
-    env: { ...process.env, NODE_ENV: 'development' },
+    env: { ...process.env, NODE_ENV: 'development', ...(command === 'tar' ? { COPYFILE_DISABLE: '1' } : {}) },
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
   });
