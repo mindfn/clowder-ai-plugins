@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { OperationActionResult } from '@clowder-ai/plugin-contract';
 import type { PluginActionHandler } from '@clowder-ai/plugin-sdk';
 import type { CollectiveConnector } from './business/connector/connector.js';
 import { readCollectiveAccountabilityAttentionSource } from './accountability-attention.js';
@@ -9,7 +10,7 @@ export function createAccountabilityAttentionAction(
   connector: CollectiveConnector,
   assertActive: () => void,
 ): PluginActionHandler {
-  return async (input, native, caller) => {
+  return async (input, native, caller): Promise<OperationActionResult> => {
     if (native || caller?.kind !== 'owner-operation' ||
         caller.operationKey !== 'accountability' || caller.actionId !== 'attention')
       throw new Error('Accountability attention requires its authenticated owner operation');
@@ -22,6 +23,6 @@ export function createAccountabilityAttentionAction(
     await current();
     const data = await readCollectiveAccountabilityAttentionSource(connector, caller.userId, current);
     await current();
-    return { data };
+    return { render: 'status', data };
   };
 }

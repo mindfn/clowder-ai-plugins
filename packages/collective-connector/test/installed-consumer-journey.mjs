@@ -40,6 +40,27 @@ function resolveModule(name) {
 }
 const { validateManifest } = await import(resolveModule('@clowder-ai/plugin-contract'));
 const { requirePluginModuleEntrypoint } = await import(resolveModule('@clowder-ai/plugin-sdk'));
+// Validate the raw plugin envelope against the installed Contract, before the
+// Host adds its own `ok` wrapper. Checking only `.data` misses Manager 502s.
+const fromContract = createRequire(resolveModule('@clowder-ai/plugin-contract'));
+const Ajv = fromContract('ajv/dist/2020');
+const ajv = new Ajv({ allErrors: true, strict: false });
+fromContract('ajv-formats')(ajv);
+let manifestSchema;
+for (const name of ['plugin-metadata', 'signals', 'messaging', 'manifest']) {
+  const schema = JSON.parse(await readFile(fileURLToPath(resolveModule('@clowder-ai/plugin-contract/schemas/' + name)), 'utf8'));
+  ajv.addSchema(schema, schema.$id);
+  if (name === 'manifest') manifestSchema = schema;
+}
+const operationResult = ajv.getSchema(manifestSchema.$id + '#/$defs/OperationActionResult');
+assert.ok(operationResult);
+for (const invalid of [{data: {}}, {render: 'status', data: {}, ok: true}])
+  assert.equal(operationResult(invalid), false, 'raw owner result must respect the formal Contract');
+function assertOperationResult(result) {
+  assert.equal(operationResult(result), true, JSON.stringify(operationResult.errors));
+  assert.ok(result.render.length > 0, 'Manager additionally requires a nonempty render string');
+}
+
 assert.equal((await lstat(packageRoot)).isSymbolicLink(), false, 'directory installation must materialize the package');
 for (const name of ['collective-connector', 'plugin-sdk', 'plugin-contract']) {
   const resolved = await realpath(fileURLToPath(resolveModule('@clowder-ai/' + name)));
@@ -165,7 +186,9 @@ async function request(path, init = {}) {
 try {
   const plugin = entrypoint.create(manifest);
   active = await plugin.start(host);
-  const status = (await active.actions['collective.service.status']({})).data;
+  const statusResult = await active.actions['collective.service.status']({});
+  assertOperationResult(statusResult);
+  const status = statusResult.data;
   assert.equal(status.url, base);
   assert.equal(status.bootstrapNeeded, true, 'fresh installation cannot depend on a retained bootstrap');
   for (const [operationKey, method] of [['recovery', 'collective.recovery.list'],
@@ -175,9 +198,26 @@ try {
       async assertCurrent() {}};
     const input = {input: {servicePort: String(port)}, operationState: {currentAction: 'list', updatedAt: Date.now()}};
     const result = await active.actions[method](input, undefined, caller);
+    assertOperationResult(result);
     assert.equal(result.render, 'rows'); assert.deepEqual(result.data.rows, []);
     await assert.rejects(async () => active.actions[method]({...input, input: {...input.input, userId: 'forged'}}, undefined, caller));
   }
+  const attentionOperation = manifest.configuration.find(item => item.key === 'accountability');
+  const attentionAction = attentionOperation.actions.find(item => item.id === 'attention');
+  const attention = await active.actions[attentionAction.action.method]({input: {servicePort: String(port)},
+    operationState: {currentAction: 'attention', updatedAt: Date.now()}}, undefined,
+  {kind: 'owner-operation', userId: 'installed-owner', pluginInstanceId: host.pluginInstanceId,
+    operationKey: attentionOperation.key, actionId: attentionAction.id, requestId: 'fresh-installed-attention',
+    signal: new AbortController().signal, async assertCurrent() {}});
+  assertOperationResult(attention);
+  assert.equal(attention.render, attentionAction.resultRender);
+  assert.deepEqual(attention.data.items, []);
+  assert.deepEqual(attention.data.reasons, []);
+  assert.equal(attention.data.state.status, 'available');
+  assert.equal(attention.data.state.exhaustiveness, 'complete');
+  assert.equal(attention.data.state.coverage, 'pending_f290_collective_accountability_requests');
+  assert.equal(typeof attention.data.state.startedAt, 'number');
+  assert.equal(typeof attention.data.state.observedAt, 'number');
   const provision = manifest.contributions.find(item => item.type === 'webhook' && item.path === 'service/provision');
   const launch = await active.actions['collective.control.http']({request: {method: 'POST', path: 'service/provision',
     headers: {origin: base}, principal: {kind: 'owner', id: 'installed-owner'}}}, undefined,

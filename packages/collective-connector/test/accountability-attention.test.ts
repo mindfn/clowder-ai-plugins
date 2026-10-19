@@ -45,7 +45,9 @@ test('ordinary owner action declares the exact Dot coordinates and refuses other
   for (const authority of [undefined, { ...caller(), actionId: 'other' }, { ...caller(), operationKey: 'other' }])
     await assert.rejects(async () => action({input: {}}, undefined, authority), /authenticated owner operation/);
   assert.equal(reads, 0);
-  const result = await action({input: {}}, undefined, caller()) as {data: {items: unknown[]; state: {status: string; exhaustiveness: string}}};
+  const result = await action({input: {}}, undefined, caller()) as {render: string; data: {items: unknown[]; state: {status: string; exhaustiveness: string}}};
+  assert.equal(result.render, 'status', 'owner operation must have the formal rendering envelope');
+  assert.deepEqual(Object.keys(result).sort(), ['data', 'render']);
   assert.deepEqual(result.data.items, []);
   assert.equal(result.data.state.status, 'available');
   assert.equal(result.data.state.exhaustiveness, 'complete');
@@ -56,6 +58,31 @@ test('owner expiry during a read cannot disclose rows or become empty-complete',
   let expired = false;
   const action = createAccountabilityAttentionAction({async listConnections() { expired = true; return []; }} as unknown as CollectiveConnector, () => {});
   await assert.rejects(async () => action({input: {}}, undefined, caller(async () => {if(expired) throw new Error('owner expired');})), /owner expired/);
+});
+
+test('abort or deactivation during attention read cannot return a result envelope', async () => {
+  for (const revoke of ['abort', 'deactivate']) {
+    const controller = new AbortController();
+    let active = true;
+    const action = createAccountabilityAttentionAction({async listConnections() {
+      if (revoke === 'abort') controller.abort(new Error('owner request aborted'));
+      else active = false;
+      return [];
+    }} as unknown as CollectiveConnector, () => {if (!active) throw new Error('plugin deactivated');});
+    await assert.rejects(async () => action({input: {}}, undefined, {...caller(), signal: controller.signal}),
+      /owner request aborted|plugin deactivated/);
+  }
+});
+
+test('attention status envelope preserves unavailable source data for Dot', async (t) => {
+  t.mock.method(Date, 'now', () => 123456);
+  const connector = {async listConnections() {throw new Error('index unavailable');}} as unknown as CollectiveConnector;
+  const expected = await readCollectiveAccountabilityAttentionSource(connector, ownerUserId);
+  const action = createAccountabilityAttentionAction(connector, () => {});
+  const result = await action({input: {servicePort: '5813'}, operationState: {currentAction: 'attention', updatedAt: 123}}, undefined, caller()) as {render: string; data: unknown};
+  assert.equal(result.render, 'status');
+  assert.deepEqual(result.data, expected);
+  assert.deepEqual(Object.keys(result).sort(), ['data', 'render']);
 });
 
 test('missing plugin and failed connection index remain unknown and unavailable', async () => {
@@ -184,7 +211,8 @@ test('reads every page only from connections owned by this Host principal', asyn
   assert.deepEqual(read.reasons, []);
 });
 
-test('keeps successful rows but marks the source partial when any owned connection fails', async () => {
+test('keeps successful rows but marks the source partial when any owned connection fails', async (t) => {
+  t.mock.method(Date, 'now', () => 123456);
   const first = connection('con_owned0000', 'human_owned0000');
   const second = connection('con_owned0001', 'human_owned0001');
   const routes = new Map([
@@ -221,6 +249,10 @@ test('keeps successful rows but marks the source partial when any owned connecti
   assert.equal(read.state.exhaustiveness, 'partial');
   assert.deepEqual(read.items, [item(first.connectionId)]);
   assert.ok(read.reasons.includes('collective_accountability_connection_read_failed'));
+  const action = createAccountabilityAttentionAction(connector, () => {});
+  const result = await action({input: {}}, undefined, caller()) as {render: string; data: unknown};
+  assert.equal(result.render, 'status');
+  assert.deepEqual(result.data, read);
 });
 
 test('drops a late response when the endpoint Human or Host route changes before projection', async () => {
