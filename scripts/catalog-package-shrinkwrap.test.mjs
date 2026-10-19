@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { parse } from 'yaml';
 
 import {
   assertProductionDependencyClosure,
@@ -19,20 +20,19 @@ const workspaceContract = JSON.parse(
 const workspaceSdk = JSON.parse(
   await readFile(new URL('../packages/plugin-sdk/package.json', import.meta.url), 'utf8'),
 );
-const productionTrainC1Consumers = [
-  'connector-dingtalk',
-  'connector-feishu',
-  'connector-telegram',
-  'connector-wecom-agent',
-  'connector-wecom-bot',
-  'connector-weixin',
-  'connector-xiaoyi',
-  'enterprise-workflow',
-  'github-operations',
-  'personal-chrome-companion',
-  'wechat-visible-reader',
-  'weixin-mp',
-];
+// Inventory the actual installable packages, including held/private modules and
+// editor providers. A presentation contribution does not erase Node dependencies.
+const productionConsumers = [];
+for (const directory of (await readdir(new URL('../packages/', import.meta.url))).sort()) {
+  const root = new URL(`../packages/${directory}/`, import.meta.url);
+  let manifest;
+  try { manifest = parse(await readFile(new URL('plugin.yaml', root), 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+  const pkg = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
+  if (manifest.runtime && !pkg.bundledDependencies?.length &&
+      Object.keys({ ...pkg.dependencies, ...pkg.optionalDependencies }).length > 0)
+    productionConsumers.push({ directory, pkg });
+}
 
 async function packWorkspacePackage(packageDirectory) {
   const destination = await mkdtemp(join(tmpdir(), 'clowder-shrinkwrap-identity-'));
@@ -61,16 +61,15 @@ async function packWorkspacePackage(packageDirectory) {
   }
 }
 
-test('every production Train C1 SDK consumer closes over its authenticated contract', async () => {
-  for (const directory of productionTrainC1Consumers) {
-    const shrinkwrap = JSON.parse(
-      await readFile(new URL(`../packages/${directory}/npm-shrinkwrap.json`, import.meta.url), 'utf8'),
-    );
-    assertWorkspaceSdkContractClosure(shrinkwrap, {
-      sdkVersion: workspaceSdk.version,
-      contractVersion: workspaceContract.version,
-    });
-  }
+for (const { directory, pkg } of productionConsumers) test(`${directory} ships a locked production dependency closure`, async () => {
+  const shrinkwrap = JSON.parse(
+    await readFile(new URL(`../packages/${directory}/npm-shrinkwrap.json`, import.meta.url), 'utf8'),
+  );
+  assertProductionDependencyClosure(pkg, shrinkwrap);
+  assertWorkspaceSdkContractClosure(shrinkwrap, {
+    sdkVersion: workspaceSdk.version,
+    contractVersion: workspaceContract.version,
+  });
 });
 
 test('current workspace contract and SDK shrinkwrap entries pin exact-head packed bytes', async () => {
@@ -80,7 +79,7 @@ test('current workspace contract and SDK shrinkwrap entries pin exact-head packe
   };
   const mismatches = [];
 
-  for (const directory of productionTrainC1Consumers) {
+  for (const { directory } of productionConsumers) {
     const shrinkwrap = JSON.parse(
       await readFile(new URL(`../packages/${directory}/npm-shrinkwrap.json`, import.meta.url), 'utf8'),
     );

@@ -7,8 +7,6 @@ import { createHash } from 'node:crypto';
 import { homedir, tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { validateManifest } from '@clowder-ai/plugin-contract';
-import { requirePluginModuleEntrypoint } from '@clowder-ai/plugin-sdk';
 import module from '@clowder-ai/collective-connector';
 
 // An installed caller must enter through the authorized module, never import domain implementation.
@@ -33,9 +31,18 @@ assert.equal(process.env.COLLECTIVE_SERVICE_PORT, '0');
 assert.deepEqual(Object.keys(process.env).filter(key => /^(?:COLLECTIVE_|REDIS|CAT_CAFE|CALLBACK|GH_|GITHUB_)/.test(key)).sort(),
   ['COLLECTIVE_SERVICE_DATA_DIR', 'COLLECTIVE_SERVICE_HOST', 'COLLECTIVE_SERVICE_PORT']);
 const packageRoot = join(consumer, 'node_modules/@clowder-ai/collective-connector');
+const fromPackage = createRequire(join(packageRoot, 'package.json'));
+function resolveModule(name) {
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval',
+    'process.stdout.write(import.meta.resolve(process.argv[1]))', name], { cwd: packageRoot, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout;
+}
+const { validateManifest } = await import(resolveModule('@clowder-ai/plugin-contract'));
+const { requirePluginModuleEntrypoint } = await import(resolveModule('@clowder-ai/plugin-sdk'));
 assert.equal((await lstat(packageRoot)).isSymbolicLink(), false, 'directory installation must materialize the package');
 for (const name of ['collective-connector', 'plugin-sdk', 'plugin-contract']) {
-  const resolved = await realpath(fileURLToPath(import.meta.resolve('@clowder-ai/' + name)));
+  const resolved = await realpath(fileURLToPath(resolveModule('@clowder-ai/' + name)));
   assert.ok(!relative(consumer, resolved).startsWith('..'), 'dependency must resolve inside the empty consumer: ' + name);
 }
 const manifest = JSON.parse(await readFile('manifest.json', 'utf8'));
@@ -62,7 +69,6 @@ async function importTree(directory) {
 // Refuse an accidentally carried executable before the import-closure probe can run it.
 await assert.rejects(stat(join(packageRoot, 'dist/business/service/cli.js')), { code: 'ENOENT' });
 await importTree(join(packageRoot, 'dist'));
-const fromPackage = createRequire(join(packageRoot, 'package.json'));
 const { Client } = await import(pathToFileURL(fromPackage.resolve('@modelcontextprotocol/sdk/client/index.js')).href);
 const { StdioClientTransport } = await import(pathToFileURL(fromPackage.resolve('@modelcontextprotocol/sdk/client/stdio.js')).href);
 const native = manifest.contributions.find(item => item.type === 'mcp' && item.id === 'collective-native');

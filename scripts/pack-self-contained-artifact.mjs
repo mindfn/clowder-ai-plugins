@@ -58,11 +58,11 @@ function runBinary(command, args, cwd) {
   return result.stdout;
 }
 
-function runAsync(command, args, cwd) {
+function runAsync(command, args, cwd, env = process.env) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, {
       cwd,
-      env: { ...process.env, NODE_ENV: 'development' },
+      env: { ...env, NODE_ENV: 'development' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const output = { stderr: '', stdout: '' };
@@ -198,6 +198,7 @@ export async function installProductionDependencies({
   localPacks = new Map(),
   packageRoot,
   registry = 'https://registry.npmjs.org',
+  env = process.env,
 }) {
   const manifestPath = join(packageRoot, 'package.json');
   const shrinkwrapPath = join(packageRoot, 'npm-shrinkwrap.json');
@@ -229,7 +230,7 @@ export async function installProductionDependencies({
       'ci', '--omit=dev', '--ignore-scripts', '--no-bin-links', '--no-audit', '--no-fund',
       '--replace-registry-host=always',
       `--registry=${registry}`,
-    ], packageRoot);
+    ], packageRoot, env);
   } finally {
     await writeFile(manifestPath, manifestBytes);
     await writeFile(shrinkwrapPath, shrinkwrapBytes);

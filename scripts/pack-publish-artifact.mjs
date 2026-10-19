@@ -129,6 +129,19 @@ async function main() {
       assertProductionDependencyClosure(packageJson, shrinkwrap);
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error;
+      // Core libraries can be ordinary npm packages. A plugin, including a
+      // private module or editor provider, must also be materializable by Host.
+      // Installing it beside workspace dependencies is not an installation closure.
+      if (Object.keys({ ...packageJson.dependencies, ...packageJson.optionalDependencies }).length > 0) {
+        let plugin = false;
+        try {
+          await readFile(join(packageRoot, 'plugin.yaml'));
+          plugin = true;
+        } catch (manifestError) {
+          if (manifestError?.code !== 'ENOENT') throw manifestError;
+        }
+        if (plugin) throw new Error(`${packageJson.name}: plugin runtime dependencies require npm-shrinkwrap.json`);
+      }
     }
     const output = runNpm(
         ['pack', '--json', '--ignore-scripts', '--pack-destination', destinationRoot, packageRoot],

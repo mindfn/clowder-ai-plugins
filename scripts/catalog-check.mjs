@@ -303,15 +303,18 @@ async function verifyCatalogEntry(catalogEntry) {
     }
 
     const contributions = manifestValidation.manifest.contributions ?? [];
+    const packageJson = JSON.parse(
+      await readFile(join(unpackedDirectory, 'package', 'package.json'), 'utf8'),
+    );
     const staticSurfaces = contributions.length > 0 &&
       contributions.every(entry => ['content-editor-provider', 'desktop-window'].includes(entry.type));
-    if (!staticSurfaces) {
+    const runtimeDependencies = Object.keys({
+      ...packageJson.dependencies, ...packageJson.optionalDependencies,
+    }).length > 0;
+    if (!staticSurfaces || runtimeDependencies) {
       assert.ok(
         artifact.files.some((file) => file.path === 'npm-shrinkwrap.json'),
         'packed artifact is missing npm-shrinkwrap.json',
-      );
-      const packageJson = JSON.parse(
-        await readFile(join(unpackedDirectory, 'package', 'package.json'), 'utf8'),
       );
       assert.doesNotMatch(JSON.stringify(packageJson), /"workspace:/u);
       const shrinkwrap = JSON.parse(

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
+import { installProductionDependencies } from '../../../scripts/pack-self-contained-artifact.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const packageRoot = join(root, 'packages/collective-connector');
@@ -21,7 +22,7 @@ function run(command, args, cwd, isolatedEnvironment) {
   return result.stdout;
 }
 
-test('local directory installs into an empty consumer and runs the real SDK lifecycle', async () => {
+test('packed dependency closure runs the real SDK lifecycle without consumer-provided dependencies', async () => {
   const temporary = await mkdtemp(join(tmpdir(), 'collective-directory-consumer-'));
   try {
     const home = join(temporary, 'home');
@@ -64,17 +65,23 @@ test('local directory installs into an empty consumer and runs the real SDK life
     await writeFile(join(consumer, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
     await writeFile(join(consumer, 'manifest.json'), JSON.stringify(parse(await readFile(join(packageRoot, 'plugin.yaml'), 'utf8'))));
     await cp(new URL('./installed-consumer-journey.mjs', import.meta.url), join(consumer, 'journey.mjs'));
-    // SDK and contract are exact local artifacts: neither needs to be published.
-    run('npm', ['install', '--ignore-scripts', '--install-links', '--no-audit', '--no-fund', '--package-lock=false',
-      '--registry=https://registry.npmjs.org', packageRoot, ...packed.slice(0, 2)], consumer, testEnvironment);
+    const stage = join(temporary, 'stage');
+    await mkdir(stage);
+    run('tar', ['-xzf', packed[2], '-C', stage], root, testEnvironment);
+    const installedRoot = join(consumer, 'node_modules/@clowder-ai/collective-connector');
+    await cp(join(stage, 'package'), installedRoot, { recursive: true });
+    // Produce the distributed closure from its publisher lock and same-batch
+    // core archives. The consumer supplies no hoisted SDK/Contract or symlinks.
+    const localPacks = new Map(packages.slice(0, 2).map((name, index) => ['@clowder-ai/' + name, packed[index]]));
+    await installProductionDependencies({ packageRoot: installedRoot, localPacks, env: testEnvironment });
+    await rm(join(installedRoot, 'node_modules/.package-lock.json'), { force: true });
+    for (const name of ['plugin-sdk', 'plugin-contract']) {
+      await assert.rejects(readFile(join(consumer, 'node_modules/@clowder-ai', name, 'package.json')), { code: 'ENOENT' });
+    }
     console.log(run(process.execPath, ['journey.mjs'], consumer, testEnvironment).trim());
     if (process.env.F202_COLLECTIVE_HOST_ROOT || process.env.F202_COLLECTIVE_ARTIFACT_DIR) {
       const candidate = join(temporary, 'host-candidate');
-      const installedRoot = join(consumer, 'node_modules/@clowder-ai/collective-connector');
       await cp(installedRoot, candidate, { recursive: true });
-      await cp(join(consumer, 'node_modules'), join(candidate, 'node_modules'), {
-        recursive: true, dereference: true, filter: source => source !== installedRoot,
-      });
       if (process.env.F202_COLLECTIVE_ARTIFACT_DIR) {
         const destination = process.env.F202_COLLECTIVE_ARTIFACT_DIR;
         await mkdir(destination, { recursive: true });

@@ -25,7 +25,8 @@
     "LICENSE",
     "NOTICE",
     "THIRD_PARTY_NOTICES.md",
-    "README.en.md"
+    "README.en.md",
+    "npm-shrinkwrap.json"
   ],
   "engines": {
     "node": ">=22.12.0"
