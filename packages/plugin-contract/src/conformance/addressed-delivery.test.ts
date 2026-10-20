@@ -14,3 +14,9 @@ test('addressed delivery is an explicit optional closed action pointer',()=>{
     assert.equal(validateManifest({...base,addressedDelivery}).valid,false,JSON.stringify(addressedDelivery));
   }
 });
+
+test('non-UI migration is a separate closed action declaration',()=>{
+  assert.equal(validateManifest({...base,migration:{method:'dot.import'}}).valid,true);
+  for(const migration of [{},{method:''},{method:'dot.import',autoEnable:true},null])
+    assert.equal(validateManifest({...base,migration}).valid,false);
+});

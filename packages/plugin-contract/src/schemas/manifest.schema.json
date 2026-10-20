@@ -2254,6 +2254,22 @@
         "method"
       ],
       "additionalProperties": false
+    },
+    "MigrationAction": {
+      "type": "object",
+      "description": "Non-UI, Host-only migration action. Invoked through the dormant settings carrier only after local owner authentication, with installed package identity/integrity, instance lifetime and owner-operation fencing. The package owns migration payload schemas; declaring this action does not grant tools, external HTTP access or automatic activation.",
+      "properties": {
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "additionalProperties": false
     }
   },
   "type": "object",
@@ -2326,6 +2342,9 @@
     },
     "addressedDelivery": {
       "$ref": "#/$defs/AddressedDelivery"
+    },
+    "migration": {
+      "$ref": "#/$defs/MigrationAction"
     }
   },
   "required": [

@@ -506,6 +506,9 @@ export type RuntimeDeclaration = ExternalRuntimeDeclaration | BuiltinRuntimeDecl
 export type AddressedDelivery = {
   readonly method: string;
 };
+export type MigrationAction = {
+  readonly method: string;
+};
 
 export type PluginManifest = {
   readonly pluginId: string;
@@ -524,6 +527,7 @@ export type PluginManifest = {
   readonly steps?: readonly SetupStep[];
   readonly signals?: SignalContribution;
   readonly addressedDelivery?: AddressedDelivery;
+  readonly migration?: MigrationAction;
 };
 
 export type CatalogSemVer = string;
