@@ -2238,6 +2238,22 @@
           "$ref": "#/$defs/BuiltinRuntimeDeclaration"
         }
       ]
+    },
+    "AddressedDelivery": {
+      "type": "object",
+      "description": "Explicit opt-in to addressed input delivery. The method names an activation action; the Host verifies the live handler. Identity and alias remain Host instance facts. A delivery receipt acknowledges input only.",
+      "properties": {
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "additionalProperties": false
     }
   },
   "type": "object",
@@ -2307,6 +2323,9 @@
     },
     "signals": {
       "$ref": "https://clowder-ai.dev/schemas/signals/v0.2#/$defs/SignalContribution"
+    },
+    "addressedDelivery": {
+      "$ref": "#/$defs/AddressedDelivery"
     }
   },
   "required": [

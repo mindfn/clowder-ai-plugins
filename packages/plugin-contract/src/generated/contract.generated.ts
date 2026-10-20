@@ -503,6 +503,9 @@ export type BuiltinRuntimeDeclaration = {
   readonly dataDirectory?: string;
 };
 export type RuntimeDeclaration = ExternalRuntimeDeclaration | BuiltinRuntimeDeclaration;
+export type AddressedDelivery = {
+  readonly method: string;
+};
 
 export type PluginManifest = {
   readonly pluginId: string;
@@ -520,6 +523,7 @@ export type PluginManifest = {
   readonly permissions?: ConnectorPermissions;
   readonly steps?: readonly SetupStep[];
   readonly signals?: SignalContribution;
+  readonly addressedDelivery?: AddressedDelivery;
 };
 
 export type CatalogSemVer = string;
