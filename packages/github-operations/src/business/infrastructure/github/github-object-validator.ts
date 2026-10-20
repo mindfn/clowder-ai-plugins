@@ -1,4 +1,5 @@
 import { buildGhCliEnv, withHiddenGhCliWindow } from './gh-cli-env.js';
+import { executeGitHubProcess } from './gh-process.js';
 
 export type GitHubObjectLookupResult<T> = { readonly found: true; readonly value: T } | { readonly found: false };
 
@@ -116,13 +117,7 @@ export async function readGitHubApiResource(
   jqExpression: string,
   options: GitHubApiResourceValidationOptions = {},
 ): Promise<string | null> {
-  const execFileAsync =
-    options.execFileAsync ??
-    (async (file, args, execOptions) => {
-      const { execFile } = await import('node:child_process');
-      const { promisify } = await import('node:util');
-      return promisify(execFile)(file, args, execOptions);
-    });
+  const execFileAsync = options.execFileAsync ?? executeGitHubProcess;
 
   try {
     const { stdout } = await execFileAsync(
@@ -130,6 +125,7 @@ export async function readGitHubApiResource(
       ['api', endpoint, '--jq', jqExpression],
       withHiddenGhCliWindow({
         timeout: options.timeoutMs ?? 10_000,
+        maxBuffer: 1024 * 1024,
         env: buildGhCliEnv({ token: options.token, baseEnv: options.baseEnv }),
       }),
     );

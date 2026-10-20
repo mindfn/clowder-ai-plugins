@@ -45,6 +45,23 @@ function fixture() {
 
 const target = { kind: 'pr' as const, repoFullName: 'example/project', number: 12, threadId: 'thread-1', catId: 'cat-1' };
 
+test('conflict observation notifies once per merge-state change without an automatic rebase executor', async () => {
+  const f = fixture();
+  const runtime = new GitHubTrackingRuntime(f.deps);
+  await runtime.register(target);
+  f.set({ ...f.snapshot(), mergeState: 'DIRTY' });
+  await runtime.poll('conflict-check');
+  assert.equal(f.messages.length, 1);
+  assert.match(JSON.stringify(f.messages[0]), /Merge state DIRTY/);
+  await runtime.poll('conflict-check');
+  assert.equal(f.messages.length, 1, 'unchanged conflict must not redeliver');
+  f.set({ ...f.snapshot(), mergeState: 'CLEAN' });
+  await runtime.poll('conflict-check');
+  assert.equal(f.messages.length, 2);
+  assert.match(JSON.stringify(f.messages[1]), /Merge state CLEAN/);
+  await runtime.stop();
+});
+
 test('issue copy serializes with registration and a failed registration CAS leaves inert retryable progress', async () => {
   const f = fixture(), runtime = new GitHubTrackingRuntime(f.deps);
   const tasks = { old: { id: 'old', kind: 'issue_tracking', subjectKey: 'issue:example/project#12', status: 'doing',
