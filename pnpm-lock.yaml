@@ -18,7 +18,7 @@ importers:
   packages/chatgpt-dot:
     dependencies:
       '@clowder-ai/plugin-contract':
-        specifier: 0.1.0-beta.39
+        specifier: 0.1.0-beta.40
         version: link:../plugin-contract
       '@clowder-ai/plugin-sdk':
         specifier: 0.2.0-beta.22
@@ -481,7 +481,7 @@ importers:
   packages/plugin-sdk:
     dependencies:
       '@clowder-ai/plugin-contract':
-        specifier: 0.1.0-beta.39
+        specifier: 0.1.0-beta.40
         version: link:../plugin-contract
     devDependencies:
       '@types/node':

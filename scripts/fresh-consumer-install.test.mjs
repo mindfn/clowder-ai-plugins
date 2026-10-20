@@ -87,7 +87,7 @@ test('Chrome retains its declared pair alongside the current SDK in a fresh cons
       assert.equal(version(resolveFrom(dirname(resolvedSdkEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.37');
       const currentSdkEntry = fileURLToPath(import.meta.resolve('@clowder-ai/plugin-sdk'));
       assert.equal(version(currentSdkEntry), '0.2.0-beta.22');
-      assert.equal(version(resolveFrom(dirname(currentSdkEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.39');
+      assert.equal(version(resolveFrom(dirname(currentSdkEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.40');
       assert.equal(typeof (await import(pathToFileURL(chromeEntry).href)).default.create, 'function');
     `], consumer);
   } finally {
