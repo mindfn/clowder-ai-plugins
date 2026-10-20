@@ -440,11 +440,9 @@ test('packed public packages install and import in a fresh npm consumer', async 
     assert.equal(contractPackage.version, sourceContract.version);
     assert.equal(sdkPackage.version, sourceSdk.version);
     assert.equal(sdkPackage.dependencies['@clowder-ai/plugin-contract'], sourceContract.version);
-    assert.equal(
-      feishuPackage.dependencies['@clowder-ai/plugin-contract'],
-      sourceContract.version,
-    );
-    assert.equal(feishuPackage.dependencies['@clowder-ai/plugin-sdk'], sourceSdk.version);
+    const sourceFeishu = JSON.parse(await readFile(join(repoRoot, 'packages/feishu-meeting-intake/package.json'), 'utf8'));
+    assert.equal(feishuPackage.dependencies['@clowder-ai/plugin-contract'], sourceFeishu.dependencies['@clowder-ai/plugin-contract']);
+    assert.equal(feishuPackage.dependencies['@clowder-ai/plugin-sdk'], sourceFeishu.dependencies['@clowder-ai/plugin-sdk']);
     assert.equal(feishuPackage.dependencies['@larksuite/cli'], '1.0.85');
     assert.deepEqual(
       [...feishuPackage.bundledDependencies].sort(),
