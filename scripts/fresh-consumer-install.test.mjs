@@ -54,18 +54,21 @@ function runNpm(args, cwd) {
 }
 
 function currentPairOverrides(sdk, contract) {
-  // Only the two migrated consumers (connector-feishu here; video-generation
-  // carries no clowder pair dependency) resolve the unpublished workspace pair
-  // through overrides. Every other consumer still declares the last published
-  // pair (sdk 0.2.0-beta.21 / contract 0.1.0-beta.37), which npm fetches from
-  // the registry like any other dependency.
-  return {
-    '@clowder-ai/connector-feishu': {
-      '@clowder-ai/plugin-contract@0.2.0': contract,
-      '@clowder-ai/plugin-sdk@0.2.0-beta.22': { '.': sdk,
-        '@clowder-ai/plugin-contract@0.2.0': contract },
-    },
-  };
+  // Every consumer resolves the unpublished workspace SDK 0.2.0-beta.22, which
+  // depends on contract 0.2.0, through overrides. Other consumers keep their
+  // direct contract dependency on the last published 0.1.0-beta.37, which npm
+  // fetches from the registry; connector-feishu declares 0.2.0 directly and
+  // receives the same workspace pack.
+  return Object.fromEntries([
+    ...['personal-chrome-companion','weixin-mp','wechat-visible-reader','enterprise-workflow','github-operations','feishu-meeting-intake',...connectorPackages.map(({name})=>name.slice('@clowder-ai/'.length))].map(name => [
+      `@clowder-ai/${name}`, {
+        '@clowder-ai/plugin-contract@0.2.0': contract,
+        '@clowder-ai/plugin-sdk@0.2.0-beta.22': { '.': sdk,
+          '@clowder-ai/plugin-contract@0.2.0': contract },
+      },
+    ]),
+    ['@clowder-ai/genoffice-docx', { '@clowder-ai/plugin-contract@0.2.0': contract }],
+  ]);
 }
 
 test('Chrome and the current SDK resolve the same current contract in a fresh consumer', async () => {
@@ -99,8 +102,8 @@ test('Chrome and the current SDK resolve the same current contract in a fresh co
       const version = entry => JSON.parse(readFileSync(join(dirname(entry), '../package.json'), 'utf8')).version;
       assert.equal(version(resolveFrom(dirname(chromeEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.37');
       const resolvedSdkEntry = resolveFrom(dirname(chromeEntry), '@clowder-ai/plugin-sdk');
-      assert.equal(version(resolvedSdkEntry), '0.2.0-beta.21');
-      assert.equal(version(resolveFrom(dirname(resolvedSdkEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.37');
+      assert.equal(version(resolvedSdkEntry), '0.2.0-beta.22');
+      assert.equal(version(resolveFrom(dirname(resolvedSdkEntry), '@clowder-ai/plugin-contract')), '0.2.0');
       const currentSdkEntry = fileURLToPath(import.meta.resolve('@clowder-ai/plugin-sdk'));
       assert.equal(version(currentSdkEntry), '0.2.0-beta.22');
       assert.equal(version(resolveFrom(dirname(currentSdkEntry), '@clowder-ai/plugin-contract')), '0.2.0');
@@ -332,7 +335,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
     // which cannot be byte-compared against the workspace pack.
     for (const directory of ['personal-chrome-companion','weixin-mp','wechat-visible-reader','enterprise-workflow','github-operations',...connectorPackages.map(({directory})=>directory.slice('packages/'.length)).filter(name => name !== 'connector-feishu')]) {
       const lock = JSON.parse(await readFile(join(repoRoot,'packages',directory,'npm-shrinkwrap.json'),'utf8'));
-      for (const [name, version] of [['plugin-sdk','0.2.0-beta.21'],['plugin-contract','0.1.0-beta.37']]) {
+      for (const [name, version] of [['plugin-sdk','0.2.0-beta.22'],['plugin-contract','0.1.0-beta.37']]) {
         const entry=lock.packages[`node_modules/@clowder-ai/${name}`];
         assert.equal(entry.version,version);
         assert.match(entry.resolved, /^https:\/\/registry\.npmjs\.org\//u);
@@ -488,9 +491,9 @@ test('packed public packages install and import in a fresh npm consumer', async 
       join(consumer, 'node_modules/@clowder-ai/feishu-meeting-intake', feishuManifest.runtime.entrypoint),
       'utf8',
     );
-    assert.equal(companionPackage.version, '0.1.0-alpha.4');
+    assert.equal(companionPackage.version, '0.1.0-alpha.5');
     assert.equal(companionPackage.private, undefined);
-    assert.equal(companionPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.21');
+    assert.equal(companionPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.22');
     assert.doesNotMatch(JSON.stringify(companionPackage), /"workspace:/u);
     assert.deepEqual(companionPackage.bin, {
       'clowder-personal-chrome-host': 'native-host/native-host-cli.mjs',
@@ -504,25 +507,22 @@ test('packed public packages install and import in a fresh npm consumer', async 
     assert.deepEqual(videoGenerationPackage.bin, {
       'clowder-video-generation-mcp': './dist/mcp-entrypoint.js',
     });
-    assert.equal(weixinMpPackage.version, '0.1.0-alpha.3');
-    assert.equal(weixinMpPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.21');
+    assert.equal(weixinMpPackage.version, '0.1.0-alpha.4');
+    assert.equal(weixinMpPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.22');
     assert.doesNotMatch(JSON.stringify(weixinMpPackage), /"workspace:/u);
-    assert.equal(wechatReaderPackage.version, '0.1.0-alpha.3');
-    assert.equal(wechatReaderPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.21');
+    assert.equal(wechatReaderPackage.version, '0.1.0-alpha.4');
+    assert.equal(wechatReaderPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.22');
     assert.doesNotMatch(JSON.stringify(wechatReaderPackage), /"workspace:/u);
     assert.deepEqual(wechatReaderPackage.os, ['darwin']);
-    assert.equal(enterprisePackage.version, '0.1.0-alpha.2');
-    assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.21');
+    assert.equal(enterprisePackage.version, '0.1.0-alpha.3');
+    assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.22');
     assert.doesNotMatch(JSON.stringify(enterprisePackage), /"workspace:/u);
     // Resolve from each installed consumer, not the top-level SDK: npm must
     // really use the same current dependency pair in one fresh installation.
     for (const [directory, expected, expectedContract] of [
-      ...['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow'].map(name => [name, '0.2.0-beta.21', '0.1.0-beta.37']),
-      ...connectorPackages
-        .filter(({ name }) => name !== '@clowder-ai/connector-feishu')
-        .map(({ name }) => [name.slice('@clowder-ai/'.length), '0.2.0-beta.21', '0.1.0-beta.37']),
-      ['connector-feishu', '0.2.0-beta.22', '0.2.0'],
-      ['github-operations', '0.2.0-beta.21', '0.1.0-beta.37'],
+      ...['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow'].map(name => [name, '0.2.0-beta.22', '0.2.0']),
+      ...connectorPackages.map(({ name }) => [name.slice('@clowder-ai/'.length), '0.2.0-beta.22', '0.2.0']),
+      ['github-operations', '0.2.0-beta.22', '0.2.0'],
     ]) {
       const installedRoot = join(consumer, 'node_modules/@clowder-ai', directory);
       const resolvedUrl = run(process.execPath, ['--input-type=module', '--eval',
