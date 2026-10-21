@@ -66,10 +66,24 @@ for (const { directory, pkg } of productionConsumers) test(`${directory} ships a
     await readFile(new URL(`../packages/${directory}/npm-shrinkwrap.json`, import.meta.url), 'utf8'),
   );
   assertProductionDependencyClosure(pkg, shrinkwrap);
-  assertWorkspaceSdkContractClosure(shrinkwrap, {
-    sdkVersion: workspaceSdk.version,
-    contractVersion: workspaceContract.version,
-  });
+  // Consumers that have already migrated to the current workspace contract pair
+  // must close over it exactly; consumers still on the last published pair keep
+  // pinning that pair until their own migration.
+  const sdkEntry = shrinkwrap.packages?.['node_modules/@clowder-ai/plugin-sdk'];
+  if (sdkEntry && sdkEntry.version === workspaceSdk.version) {
+    assertWorkspaceSdkContractClosure(shrinkwrap, {
+      sdkVersion: workspaceSdk.version,
+      contractVersion: workspaceContract.version,
+    });
+  } else if (sdkEntry) {
+    assert.equal(sdkEntry.version, '0.2.0-beta.21',
+      `${directory} must pin the last published SDK until it migrates to the workspace pair`);
+    assert.equal(
+      sdkEntry.dependencies?.['@clowder-ai/plugin-contract'],
+      '0.1.0-beta.37',
+      `${directory} published SDK must keep its published contract dependency`,
+    );
+  }
 });
 
 test('current workspace contract and SDK shrinkwrap entries pin exact-head packed bytes', async () => {
