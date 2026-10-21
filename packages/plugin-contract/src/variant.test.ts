@@ -2,10 +2,18 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import AjvPkg from 'ajv';
+import type { ValidateFunction } from 'ajv';
+
+const AjvCtor = AjvPkg as unknown as new (options?: Record<string, unknown>) => {
+  compile: (schema: unknown) => ValidateFunction;
+};
+
 import type { PluginManifest } from './generated/contract.generated.js';
 import {
   buildVariantValidationSchema,
   computeEffectiveConfiguration,
+  evaluateFieldRequiredness,
   resolveConfigurationVariant,
 } from './variant.js';
 
@@ -242,7 +250,7 @@ test('buildVariantValidationSchema compiles oneOf branches with discriminator-re
   assert.deepEqual(webhook['required'], ['connectionMode', 'verificationToken']);
   const webhookProperties = webhook['properties'] as Record<string, unknown>;
   assert.deepEqual(webhookProperties['connectionMode'], { const: 'webhook' });
-  assert.deepEqual(webhookProperties['verificationToken'], { minLength: 1 });
+  assert.deepEqual(webhookProperties['verificationToken'], { type: 'string', minLength: 1 });
 
   const websocket = oneOf[1]!;
   assert.deepEqual(websocket['required'], ['connectionMode']);
@@ -268,6 +276,7 @@ test('buildVariantValidationSchema keeps required:false branch fields optional',
   );
   assert.ok(apikeyBranch);
   assert.deepEqual((apikeyBranch!['properties'] as Record<string, unknown>)['apiKey'], {
+    type: 'string',
     minLength: 1,
   });
   assert.equal(
@@ -277,28 +286,43 @@ test('buildVariantValidationSchema keeps required:false branch fields optional',
   );
 });
 
-test('buildVariantValidationSchema resolves requiredWhen against the discriminator statically', () => {
+test('buildVariantValidationSchema compiles requiredWhen discriminator gates as if/then in the owning branch', () => {
   const manifest = structuredClone(videoGenLike) as PluginManifest;
   const apiKey = manifest.configuration!.find((field) => field.key === 'apiKey')!;
   (apiKey as { required: boolean; requiredWhen?: unknown }).required = false;
   (apiKey as { requiredWhen?: unknown }).requiredWhen = { key: 'authType', value: 'apikey' };
   const oneOf = buildVariantValidationSchema(manifest)['oneOf'] as Array<Record<string, unknown>>;
-  const apikeyBranch = oneOf.find((branch) =>
-    (branch['required'] as string[]).includes('apiKey'),
-  );
+  const apikeyBranch = oneOf.find((branch) => branch['allOf'] !== undefined);
   assert.ok(apikeyBranch);
-  assert.equal(
-    (oneOf.find((branch) => !((branch['required'] as string[]).includes('apiKey'))) !==
-      undefined),
-    true,
+  assert.deepEqual(apikeyBranch!['required'], ['authType']);
+  const allOf = apikeyBranch!['allOf'] as Array<Record<string, unknown>>;
+  assert.equal(allOf.length, 1);
+  assert.deepEqual(allOf[0]!['if'], {
+    properties: { authType: { enum: ['apikey'] } },
+    required: ['authType'],
+  });
+  assert.deepEqual((allOf[0]!['then'] as Record<string, unknown>)['required'], ['apiKey']);
+  // The other branches keep their own plain required fields and carry no gate.
+  const jwtBranch = oneOf.find((branch) =>
+    (branch['required'] as string[]).includes('accessKey'),
   );
+  assert.ok(jwtBranch);
+  assert.equal('allOf' in jwtBranch!, false);
 });
 
-test('buildVariantValidationSchema returns an empty oneOf for legacy manifests', () => {
+test('buildVariantValidationSchema returns common-field constraints for legacy manifests', () => {
   const legacy = structuredClone(feishuLike) as Record<string, unknown>;
   delete legacy['configurationVariants'];
   const schema = buildVariantValidationSchema(legacy as unknown as PluginManifest);
-  assert.deepEqual(schema, { type: 'object', oneOf: [] });
+  assert.equal(schema['type'], 'object');
+  assert.deepEqual(schema['properties'], {
+    appId: { type: 'string', minLength: 1 },
+    connectionMode: { type: 'string' },
+    verificationToken: { type: 'string', minLength: 1 },
+    groupBotMentionsJson: { type: 'string', minLength: 1 },
+  });
+  assert.deepEqual(schema['required'], ['appId', 'connectionMode', 'verificationToken']);
+  assert.equal('oneOf' in schema, false);
 });
 
 test('variant module stays browser-safe: no ajv or node: imports', async () => {
@@ -306,4 +330,148 @@ test('variant module stays browser-safe: no ajv or node: imports', async () => {
   assert.doesNotMatch(source, /from\s+['"](?:node:|\.)[^'"]*ajv/);
   assert.doesNotMatch(source, /from\s+['"]node:/);
   assert.doesNotMatch(source, /require\(/);
+});
+
+test('evaluateFieldRequiredness: requiredWhen replaces the required flag with strict matching', () => {
+  const base = { key: 'token', label: 'T', kind: 'secret', required: true } as const;
+  const conditional = {
+    ...base,
+    requiredWhen: { key: 'mode', value: ['a', 1] as const },
+  } as unknown as Parameters<typeof evaluateFieldRequiredness>[0];
+
+  assert.equal(evaluateFieldRequiredness(conditional, { mode: 'a' }), true);
+  assert.equal(evaluateFieldRequiredness(conditional, { mode: 1 }), true);
+  assert.equal(evaluateFieldRequiredness(conditional, { mode: 'b' }), false);
+  assert.equal(evaluateFieldRequiredness(conditional, { mode: undefined }), false);
+  // No stringification: '1' must not satisfy the numeric condition 1.
+  assert.equal(evaluateFieldRequiredness(conditional, { mode: '1' }), false);
+  // required:true is fully overridden while the condition does not hold.
+  assert.equal(evaluateFieldRequiredness(conditional, {}), false);
+
+  const plain = { key: 'appId', label: 'A', kind: 'string', required: true } as const;
+  assert.equal(
+    evaluateFieldRequiredness(plain as unknown as Parameters<typeof evaluateFieldRequiredness>[0], {}),
+    true,
+  );
+  const optional = { key: 'x', label: 'X', kind: 'string', required: false } as const;
+  assert.equal(
+    evaluateFieldRequiredness(optional as unknown as Parameters<typeof evaluateFieldRequiredness>[0], {}),
+    false,
+  );
+});
+
+const enumBranchManifest = {
+  pluginId: 'dev.clowder.fixture.enum-branch',
+  version: '0.1.0',
+  contractVersion: '0.2.0',
+  name: 'Enum branch',
+  features: [{ id: 'echo', name: 'Echo', resources: [], capabilities: [] }],
+  runtime: { transport: 'builtin' },
+  configuration: [
+    {
+      key: 'mode',
+      label: 'Mode',
+      kind: 'select',
+      required: true,
+      options: [
+        { value: 'a', label: 'A' },
+        { value: 'b', label: 'B' },
+      ],
+    },
+    {
+      key: 'token',
+      label: 'Token',
+      kind: 'secret',
+      required: false,
+      requiredWhen: { key: 'mode', value: 'a' },
+    },
+  ],
+  configurationVariants: {
+    discriminator: 'mode',
+    branches: [
+      {
+        id: 'ab',
+        when: { properties: { mode: { enum: ['a', 'b'] } } },
+        fields: ['token'],
+      },
+    ],
+  },
+} as unknown as PluginManifest;
+
+const crossFieldManifest = {
+  ...enumBranchManifest,
+  pluginId: 'dev.clowder.fixture.cross-field',
+  configuration: [
+    {
+      key: 'mode',
+      label: 'Mode',
+      kind: 'select',
+      required: true,
+      default: 'webhook',
+      options: [
+        { value: 'webhook', label: 'Webhook' },
+        { value: 'websocket', label: 'Websocket' },
+      ],
+    },
+    { key: 'enabled', label: 'Enabled', kind: 'boolean', required: true },
+    {
+      key: 'token',
+      label: 'Token',
+      kind: 'secret',
+      required: false,
+      requiredWhen: { key: 'enabled', value: true },
+    },
+  ],
+  configurationVariants: {
+    discriminator: 'mode',
+    branches: [
+      {
+        id: 'webhook',
+        when: { properties: { mode: { const: 'webhook' } } },
+        fields: ['token'],
+      },
+      {
+        id: 'websocket',
+        when: { properties: { mode: { const: 'websocket' } } },
+        fields: [],
+      },
+    ],
+  },
+} as unknown as PluginManifest;
+
+function validates(manifest: PluginManifest, effectiveValues: Record<string, unknown>): boolean {
+  const ajv = new AjvCtor();
+  const validate = ajv.compile(buildVariantValidationSchema(manifest));
+  return validate(effectiveValues) === true;
+}
+
+test('counterexample: enum branch covering a/b does not require the a-only token under b', () => {
+  // Review-found case: an enum branch spanning several discriminator values
+  // must not merge those values into a blanket "required" verdict.
+  assert.equal(validates(enumBranchManifest, { mode: 'b' }), true);
+  assert.equal(validates(enumBranchManifest, { mode: 'a' }), false);
+  assert.equal(validates(enumBranchManifest, { mode: 'a', token: 'tok' }), true);
+});
+
+test('counterexample: null is rejected for a required secret', () => {
+  assert.equal(validates(enumBranchManifest, { mode: 'a', token: null }), false);
+  assert.equal(validates(enumBranchManifest, { mode: 'a', token: '' }), false);
+});
+
+test('counterexample: requiredWhen keyed on another field is enforced at validation time', () => {
+  assert.equal(validates(crossFieldManifest, { mode: 'webhook', enabled: true }), false);
+  assert.equal(validates(crossFieldManifest, { mode: 'webhook', enabled: true, token: 't' }), true);
+  assert.equal(validates(crossFieldManifest, { mode: 'webhook', enabled: false }), true);
+  assert.equal(
+    validates(crossFieldManifest, { mode: 'websocket', enabled: true }),
+    true,
+  );
+});
+
+test('counterexample: required:true is overridden while the requiredWhen condition does not hold', () => {
+  const manifest = structuredClone(crossFieldManifest) as PluginManifest;
+  const token = manifest.configuration!.find((field) => field.key === 'token')!;
+  (token as { required: boolean }).required = true;
+  assert.equal(validates(manifest, { mode: 'webhook', enabled: false }), true);
+  assert.equal(validates(manifest, { mode: 'webhook', enabled: true }), false);
 });

@@ -252,6 +252,19 @@ export function validateManifest(value: unknown): ManifestValidationResult {
         }
         branchIds.add(branch.id);
 
+        const whenKeys =
+          typeof branch.when === 'object' && branch.when !== null
+            ? Object.keys(branch.when)
+            : [];
+        if (whenKeys.length !== 1 || whenKeys[0] !== 'properties') {
+          return semanticError(
+            `/configurationVariants/branches/${branchIndex}/when`,
+            '#/$defs/ConfigurationVariantBranch/whenConstrainedKeywords',
+            'whenConstrainedKeywords',
+            'configurationVariants branch when must contain only a properties object (unsupported JSON Schema keywords such as not/anyOf are rejected)',
+          );
+        }
+
         const properties = branch.when['properties'];
         if (typeof properties !== 'object' || properties === null) {
           return semanticError(

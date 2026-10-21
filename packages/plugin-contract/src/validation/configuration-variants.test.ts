@@ -220,3 +220,30 @@ test('legacy 0.1.0 manifests without variants keep validating unchanged', () => 
   assert.equal(result.valid, true, JSON.stringify(result.errors));
   assert.equal((result as { manifest: PluginManifest }).manifest.contractVersion, '0.1.0');
 });
+
+test('branch when rejects unsupported JSON Schema keywords such as not', () => {
+  const manifest = variantManifest();
+  const variants = manifest['configurationVariants'] as {
+    branches: Array<{ when: Record<string, unknown> }>;
+  };
+  variants.branches[0]!.when = {
+    not: {},
+    properties: { connectionMode: { const: 'webhook' } },
+  };
+  const error = singleError(manifest);
+  assert.equal(error.keyword, 'whenConstrainedKeywords');
+  assert.equal(error.instancePath, '/configurationVariants/branches/0/when');
+});
+
+test('branch when rejects a non-object when fragment', () => {
+  const manifest = variantManifest();
+  const variants = manifest['configurationVariants'] as {
+    branches: Array<{ when: Record<string, unknown> }>;
+  };
+  variants.branches[0]!.when = null as unknown as Record<string, unknown>;
+  // The generated contract schema rejects non-object `when` at the structural
+  // layer before semantic variant checks run.
+  const error = singleError(manifest);
+  assert.equal(error.keyword, 'type');
+  assert.equal(error.instancePath, '/configurationVariants/branches/0/when');
+});

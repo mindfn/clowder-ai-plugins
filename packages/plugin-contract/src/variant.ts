@@ -138,29 +138,89 @@ export function computeEffectiveConfiguration(
   return { resolution, effectiveValues };
 }
 
-function isStringLike(field: ConfigurationField): boolean {
-  return field.kind === 'string' || field.kind === 'secret' || field.kind === 'url';
+/**
+ * The single source of truth for whether a field is required, given an
+ * effective (or drafted) configuration object.
+ *
+ * When `requiredWhen` is present it fully replaces the `required` flag: the
+ * field is required iff the referenced field's current value strictly
+ * (`===`, no stringification) equals one of the declared conditions. When
+ * `requiredWhen` is absent, the plain `required` flag decides. Branch
+ * membership never influences requiredness — it only decides whether a field
+ * is active at all.
+ */
+export function evaluateFieldRequiredness(
+  field: ConfigurationField,
+  values: StoredValues,
+): boolean {
+  const requiredWhen = field.requiredWhen;
+  if (requiredWhen === undefined) return field.required === true;
+  const conditions = Array.isArray(requiredWhen.value)
+    ? requiredWhen.value
+    : [requiredWhen.value];
+  const actual = values[requiredWhen.key];
+  return conditions.some((condition) => condition === actual);
 }
 
-function requiredWhenSatisfiedByBranch(
+function fieldValueConstraint(field: ConfigurationField): Record<string, unknown> {
+  switch (field.kind) {
+    case 'string':
+    case 'secret':
+    case 'url':
+      return { type: 'string', minLength: 1 };
+    case 'select':
+      return { type: 'string' };
+    case 'number':
+      return { type: 'number' };
+    case 'boolean':
+      return { type: 'boolean' };
+    default:
+      return {};
+  }
+}
+
+function conditionalRequirement(
   field: ConfigurationField,
-  branchValues: readonly unknown[],
-): boolean {
-  if (field.requiredWhen === undefined) return false;
-  const conditions = Array.isArray(field.requiredWhen.value)
-    ? field.requiredWhen.value
-    : [field.requiredWhen.value];
-  return conditions.some((condition) => branchValues.some((value) => value === condition));
+): Record<string, unknown> | undefined {
+  const requiredWhen = field.requiredWhen;
+  if (requiredWhen === undefined) return undefined;
+  const conditions = Array.isArray(requiredWhen.value)
+    ? requiredWhen.value
+    : [requiredWhen.value];
+  const constraint = fieldValueConstraint(field);
+  return {
+    if: {
+      properties: { [requiredWhen.key]: { enum: conditions } },
+      required: [requiredWhen.key],
+    },
+    then: {
+      required: [field.key],
+      ...(Object.keys(constraint).length > 0 ? { properties: { [field.key]: constraint } } : {}),
+    },
+  };
 }
 
 /**
- * Compiles the constrained branch `when` fragments into a standard JSON
- * Schema (`{type:'object', oneOf:[...]}`) for validating the *effective*
- * configuration object (see {@link computeEffectiveConfiguration}), not the
- * raw stored object. Required string-like fields get `minLength: 1` so a
- * present-but-empty value does not count as configured. Fields with
- * `required: false` stay optional; a `requiredWhen` keyed on the
- * discriminator is resolved statically against the branch's own values.
+ * Compiles the manifest into a standard JSON Schema for validating the
+ * *effective* configuration object (see {@link computeEffectiveConfiguration}),
+ * not the raw stored object.
+ *
+ * - Common fields (not claimed by any branch) are constrained at the top
+ *   level: unconditionally required fields land in `required` and get a kind
+ *   constraint (e.g. `{type:'string', minLength:1}` for string-likes, so a
+ *   present `null` or empty string does not count as configured);
+ *   `requiredWhen` fields become top-level `if/then` clauses keyed on the
+ *   referenced field's runtime value.
+ * - Each branch compiles to one `oneOf` member containing the cloned `when`
+ *   fragment, the discriminator in `required`, and its active fields handled
+ *   the same way (static `required` for plain `required: true`, `if/then` for
+ *   `requiredWhen`). A field that is `requiredWhen`-gated against the
+ *   discriminator therefore stays optional in a member whose discriminator
+ *   values do not satisfy the condition — enum branches covering several
+ *   options keep working without merging values.
+ *
+ * Requiredness semantics are exactly {@link evaluateFieldRequiredness}; this
+ * schema is the ajv-executable form of that function plus kind constraints.
  */
 export function buildVariantValidationSchema(
   manifest: PluginManifest,
@@ -170,39 +230,58 @@ export function buildVariantValidationSchema(
   const configByKey = new Map<string, ConfigurationField>();
   for (const field of configuration) configByKey.set(field.key, field);
 
-  const oneOf = (variants?.branches ?? []).map((branch) => {
-    const discriminatorConstraint = (branch.when['properties'] as Record<string, unknown> | undefined)?.[
-      variants!.discriminator
-    ];
-    const branchValues =
-      typeof discriminatorConstraint === 'object' && discriminatorConstraint !== null
-        ? 'const' in discriminatorConstraint
-          ? [(discriminatorConstraint as Record<string, unknown>)['const']]
-          : Array.isArray((discriminatorConstraint as Record<string, unknown>)['enum'])
-            ? ((discriminatorConstraint as Record<string, unknown>)['enum'] as unknown[])
-            : []
-        : [];
+  const branchFieldKeys = new Set<string>();
+  for (const branch of variants?.branches ?? []) {
+    for (const key of branch.fields) branchFieldKeys.add(key);
+  }
 
-    const properties: Record<string, unknown> = structuredClone(
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+  const commonConditionals: Record<string, unknown>[] = [];
+  for (const field of configuration) {
+    if (branchFieldKeys.has(field.key)) continue;
+    const constraint = fieldValueConstraint(field);
+    if (Object.keys(constraint).length > 0) properties[field.key] = constraint;
+    const conditional = conditionalRequirement(field);
+    if (conditional !== undefined) {
+      commonConditionals.push(conditional);
+    } else if (field.required === true) {
+      required.push(field.key);
+    }
+  }
+
+  const oneOf = (variants?.branches ?? []).map((branch) => {
+    const memberProperties: Record<string, unknown> = structuredClone(
       (branch.when['properties'] ?? {}) as Record<string, unknown>,
     );
-    const required: string[] = [variants!.discriminator];
+    const memberRequired: string[] = [variants!.discriminator];
+    const memberConditionals: Record<string, unknown>[] = [];
 
     for (const key of branch.fields) {
       const field = configByKey.get(key);
       if (field === undefined) continue;
-      const isRequired =
-        field.required === true ||
-        requiredWhenSatisfiedByBranch(field, branchValues);
-      if (!isRequired) continue;
-      required.push(key);
-      if (isStringLike(field)) {
-        properties[key] = { minLength: 1 };
+      const constraint = fieldValueConstraint(field);
+      if (Object.keys(constraint).length > 0) memberProperties[key] = constraint;
+      const conditional = conditionalRequirement(field);
+      if (conditional !== undefined) {
+        memberConditionals.push(conditional);
+      } else if (field.required === true) {
+        memberRequired.push(key);
       }
     }
 
-    return { properties, required };
+    return {
+      properties: memberProperties,
+      required: memberRequired,
+      ...(memberConditionals.length > 0 ? { allOf: memberConditionals } : {}),
+    };
   });
 
-  return { type: 'object', oneOf };
+  return {
+    type: 'object',
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+    ...(commonConditionals.length > 0 ? { allOf: commonConditionals } : {}),
+    ...(oneOf.length > 0 ? { oneOf } : {}),
+  };
 }
