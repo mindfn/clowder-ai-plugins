@@ -7,19 +7,28 @@
 ## 开始使用
 
 1. 在 Clowder AI 设置中安装插件。GitHub CLI `gh` 应在运行 Clowder AI 的机器上完成登录。
-2. 如需指定凭据，在插件的 Personal Access Token 密钥字段填写；也可使用机器已有的 `gh` 登录。不要把 token 放进聊天、工具参数或仓库内容。
-3. 启用插件，使用已安装的 GitHub Operations skill 和工具。配置保存与启用意图是两件事；跟踪和后台轮询需要插件实际运行。
+2. 已有本机 `gh` 登录时无需填写令牌；否则在「GitHub 访问令牌（可选）」填写。保存配置后点击「测试连接」，确认当前 GitHub 账号。此检测只读账号，不启动轮询，也不保证所有仓库权限。
+3. 启用插件，使用已安装的 GitHub Operations skill 和工具登记跟踪。配置保存、连接成功与插件实际运行是不同状态；跟踪和后台轮询需要插件实际运行。
 
 其余配置按需填写，不是安装前置步骤：
 
 | 配置 | 用途 |
 | --- | --- |
-| Noise Bot Login List | 过滤已知的纯设置评论噪声。 |
-| GitHub Webhook Secret | 仅在启用仓库 Webhook 时配置；使用 Host 提供的准确回调地址。 |
-| Repositories allowed for public issue drafts | 允许发布 Issue 草稿的 `owner/repository`，以逗号分隔；留空时不允许新建或发布这类草稿。 |
-| Community narrator cat / thread | 同时指定接收手动分诊简报的猫和已有 thread；留空不发起新请求。 |
+| 仓库 Webhook 签名密钥（可选） | 仅在启用仓库 Webhook 时配置；使用 Host 提供的准确回调地址。定时跟踪无需此项。 |
+| 公开 Issue 草稿允许的仓库（可选） | 允许发布 Issue 草稿的 `owner/repository`，以逗号分隔；留空时不允许新建或发布这类草稿。 |
+| 社区简报接收猫 / 会话（可选） | 同时指定接收手动分诊简报的猫 ID 和已有 thread ID；留空不发起新请求。 |
 
-`mcpToken` 是为旧 inventory 保留的配置键，不是当前工具调用的凭据，无需为使用原生 MCP 另行填写。新安装不要求导入旧配置、旧权限或历史游标；现有数据不会被本次迁移隐式删除。
+`mcpToken` 是为旧 inventory 保留的配置键，不是当前工具调用的凭据。它与 `setupNoiseBotLogins`、`cloudReviewerLogins` 两个内部策略字段不再展示在普通设置中；原键、密钥类型、已存值和运行时读取均保留。隐藏不代表删除或重置。专项功能仍保留可编辑的设置和操作；当前通用契约不支持按组折叠，不能把这些字段全部隐藏后让用户失去配置入口。新安装不要求导入旧配置、旧权限或历史游标。
+
+## 本地更新与验收
+
+本地候选包不需要等待 catalog 上架。交付证据提供 exact archive、SHA256 和 SHA512 SRI；核对后解包，在插件设置的「从目录安装」选择解包后的 `package` 目录（有 `plugin.yaml` 和 `package.json` 的那层）。选择同一 pluginId 的本地目录会走原实例更新路径，保留实例、密钥和持久跟踪状态；无需先卸载。首次离线安装可直接上传自包含 `.tgz`。
+
+**已有 catalog/npm 安装请使用目录更新**：当前 Host 的 archive 更新要求新旧 provenance 同为 local-archive，直接上传可能返回已安装冲突。不要为绕过冲突卸载旧实例。目录方式可替换 catalog/npm 安装；若原实例启用，Host 会按既有生命周期暂停并恢复该插件。
+
+更新后核对版本 `0.1.0-alpha.17`：三个内部字段不再显示，所有可见配置均非必填。保存并测试连接，再确认插件运行状态。让猫调用 `github_list_tracking` 读取既有登记，再对已登记 PR 使用 `github_inspect_subject` 读取本地观察；必要时对一个明确授权的 PR 登记跟踪，保持相同 registrationId 重试。`github_refresh_pull_requests` + `github_repository_observations` 可验证仓库 provider 读取。首次登记只建立基线，不能把“暂无新通知”当作失败；观察下一次真实审查/CI 变化再确认消息投递。
+
+回滚时选择原验证包的解包目录更新，不清除实例、配置或历史。真实账号的登记与通知仍须在实际安装后验收，包内隔离测试不等同于运行实例已经恢复。
 
 ## 跟踪 PR 和 Issue
 

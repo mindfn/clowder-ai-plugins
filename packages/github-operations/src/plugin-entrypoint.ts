@@ -17,6 +17,8 @@ import { GitHubPrIndexProvider } from './pr-index-provider.js';
 import { ReviewTriggerReader } from './review-trigger-observation.js';
 import { CommunityCollectionRuntime, SdkCommunityCollectionStore } from './community-collection.js';
 import { GitHubPrTitleReader, prTitleHttp } from './pr-title-reader.js';
+import { createGitHubSettings } from './settings.js';
+import type { GitHubRequestOptions } from './business/infrastructure/github/request-budget.js';
 
 // Host declared webhook dispatch nests the request under action params. The
 // webhook handlers declare no static params; flat requests are invalid.
@@ -24,6 +26,7 @@ const webhookEnvelope = z.object({ request: z.record(z.unknown()) }).strict();
 
 interface Provider extends GitHubTrackingProvider { selfLogin(): string | undefined }
 export interface GitHubPluginOptions {
+  readonly settingsExecFileAsync?: GitHubRequestOptions['execFileAsync'];
   readonly now?: () => number;
   readonly createReviewEvidenceProvider?: (context: FeatureContext) => Pick<GitHubProvider, 'observeReviewHead' | 'observeReviewDelivery'>;
   /** Test the real carrier with an isolated provider; production uses the migrated gh transport. */
@@ -36,6 +39,7 @@ export interface GitHubPluginOptions {
 }
 
 async function activate(context: FeatureContext, options: GitHubPluginOptions) {
+  const connectionSettings = createGitHubSettings(context, options.settingsExecFileAsync);
   const transport = new GitHubProvider({
     token: () => context.secrets.get('token'),
     log: { warn: (message, fields) => context.log('warn', message, fields) },
@@ -85,6 +89,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   };
   return {
     actions: {
+      ...connectionSettings.actions,
       'github.pr-title.http': prTitleHttp(prTitles),
       [REVIEW_VERDICT_METHOD]: (input: unknown, caller?: PluginActionContext) => reviewVerdicts.record(input, caller),
       ...Object.fromEntries(communityNativeMethods.map(method => [method, (input: unknown, caller?: PluginActionContext) => {
@@ -140,7 +145,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.draft.cancel': (value: unknown) => drafts.cancel(value),
       'github.triage.recommend': recommendTriage,
     },
-    dispose: async () => { await Promise.all([prTitles.stop(), reviewVerdicts.stop(), narrator.stop(), http.stop(), collection.stop(), tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
+    dispose: async () => { await Promise.all([connectionSettings.dispose(), prTitles.stop(), reviewVerdicts.stop(), narrator.stop(), http.stop(), collection.stop(), tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },
   };
 }
 
@@ -156,9 +161,12 @@ function repoInput(value: unknown, register: boolean): Record<string, unknown> {
 }
 
 export function createGitHubPluginModule(options: GitHubPluginOptions = {}): PluginModuleEntrypoint {
-  return definePluginModule(manifest => definePlugin({
+  const runtimeModule = definePluginModule(manifest => definePlugin({
     manifest, activate: { 'github-collaboration': context => activate(context, options) },
   }));
+  return { create: manifest => ({ ...runtimeModule.create(manifest),
+    settings: host => createGitHubSettings(host, options.settingsExecFileAsync),
+  }) };
 }
 
 export default createGitHubPluginModule();
