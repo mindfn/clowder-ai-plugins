@@ -817,6 +817,8 @@ function host() {
 }
 
 test('real manifest → SDK builtin activation → tracking → schedule → message → terminal → stop', async () => {
+  assert.equal(manifest.features[0].capabilities.includes('thread.readContent'), false,
+    'tracking must run without access to conversation content');
   const f = host();
   let snapshot: GitHubSnapshot = { state: 'open', headSha: 'a'.repeat(40), ci: 'pending', comments: [], reviews: [] };
   let reads = 0;

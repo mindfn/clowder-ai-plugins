@@ -21,7 +21,7 @@
 
 ## 本地更新与验收
 
-恢复完整线程预览与原生 tracking 需要 Host [修复 #232](https://github.com/mindfn/clowder-ai/pull/232)。若 MCP 返回 `Plugin action credentials are unavailable for this exact turn`，这是 Host 权限或调用凭据问题，重复卸载插件、填写 GitHub PAT 都无法补齐。先采用经过验收的 Host 修复，再更新插件并登记 tracking；登记成功后才触发要测试的在线 review。
+恢复完整线程预览与原生 tracking 需要 Host [修复 #232](https://github.com/mindfn/clowder-ai/pull/232)。若 MCP 返回 `Plugin action credentials are unavailable for this exact turn`，这是 Host 权限或调用凭据问题，重复卸载插件、填写 GitHub PAT 都无法补齐。跟踪业务数据由插件私有存储维护；Host 仅通过既有通用 Task 接口保存归属和等待状态，不新增 tracking 管理接口。本包不请求会话内容读取权限。先采用经过验收的 Host 通用 Task 授权修复，再更新插件并登记 tracking；登记成功后才触发要测试的在线 review。
 
 本地候选包不需要等待 catalog 上架。交付证据提供 exact archive、SHA256 和 SHA512 SRI；核对后解包，在插件设置的「从目录安装」选择解包后的 `package` 目录（有 `plugin.yaml` 和 `package.json` 的那层）。选择同一 pluginId 的本地目录会走原实例更新路径，保留实例、密钥和持久跟踪状态；无需先卸载。首次离线安装可直接上传自包含 `.tgz`。
 

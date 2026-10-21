@@ -21,7 +21,7 @@ Ordinary settings show only the optional GitHub token, webhook secret and public
 
 ## Local update and verification
 
-Restoring the complete thread preview and native tracking requires [Host fix #232](https://github.com/mindfn/clowder-ai/pull/232). `Plugin action credentials are unavailable for this exact turn` concerns Host grants or native invocation credentials; reinstalling the plugin or adding a GitHub PAT does not repair it. Adopt the reviewed Host fix, update this plugin, register tracking successfully, then trigger the review event being tested.
+Restoring the complete thread preview and native tracking requires [Host fix #232](https://github.com/mindfn/clowder-ai/pull/232). `Plugin action credentials are unavailable for this exact turn` concerns Host grants or native invocation credentials; reinstalling the plugin or adding a GitHub PAT does not repair it. Tracking business records remain in plugin-private storage; the Host stores ownership and wait projection through the existing generic Task API, with no new tracking-management interface. This package does not request conversation-content reads. Adopt the reviewed Host Task-grant fix, update this plugin, register tracking successfully, then trigger the review event being tested.
 
 Use the delivered exact archive with its SHA256 and SHA512 SRI. Extract it and select the resulting `package` directory through Settings' directory installation. Updating the same pluginId through a local directory preserves the instance, credentials and durable tracking state; do not uninstall first. An enabled plugin follows the Host's ordinary suspend/update/resume lifecycle. A fresh installation can upload the self-contained `.tgz` directly.
 

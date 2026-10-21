@@ -533,7 +533,6 @@ features:
         task.read,
         task.write,
         thread.listMetadata,
-        thread.readContent,
         thread.write,
         messaging.send
       ]
