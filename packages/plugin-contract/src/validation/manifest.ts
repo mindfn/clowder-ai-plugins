@@ -173,38 +173,39 @@ export function validateManifest(value: unknown): ManifestValidationResult {
     }
 
     for (const [index, field] of configuration.entries()) {
-      if (field.requiredWhen === undefined) continue;
+      for (const clauseName of ['requiredWhen', 'visibleWhen'] as const) {
+        const clause = field[clauseName];
+        if (clause === undefined) continue;
 
-      const conditionField = configByKey.get(field.requiredWhen.key);
-      if (conditionField === undefined) {
-        return semanticError(
-          `/configuration/${index}/requiredWhen/key`,
-          '#/$defs/ConfigurationField/requiredWhenDeclaredKey',
-          'requiredWhenDeclaredKey',
-          'requiredWhen key must reference a declared configuration field',
-        );
-      }
+        const conditionField = configByKey.get(clause.key);
+        if (conditionField === undefined) {
+          return semanticError(
+            `/configuration/${index}/${clauseName}/key`,
+            `#/$defs/ConfigurationField/${clauseName}DeclaredKey`,
+            `${clauseName}DeclaredKey`,
+            `${clauseName} key must reference a declared configuration field`,
+          );
+        }
 
-      const scalarType = requiredWhenScalarType(conditionField);
-      if (scalarType === undefined) {
-        return semanticError(
-          `/configuration/${index}/requiredWhen/key`,
-          '#/$defs/ConfigurationField/requiredWhenScalarKey',
-          'requiredWhenScalarKey',
-          'requiredWhen key must reference a non-operation scalar configuration field',
-        );
-      }
+        const scalarType = requiredWhenScalarType(conditionField);
+        if (scalarType === undefined) {
+          return semanticError(
+            `/configuration/${index}/${clauseName}/key`,
+            `#/$defs/ConfigurationField/${clauseName}ScalarKey`,
+            `${clauseName}ScalarKey`,
+            `${clauseName} key must reference a non-operation scalar configuration field`,
+          );
+        }
 
-      const conditionValues = Array.isArray(field.requiredWhen.value)
-        ? field.requiredWhen.value
-        : [field.requiredWhen.value];
-      if (!conditionValues.every((value) => typeof value === scalarType)) {
-        return semanticError(
-          `/configuration/${index}/requiredWhen/value`,
-          '#/$defs/ConfigurationField/requiredWhenCompatibleValue',
-          'requiredWhenCompatibleValue',
-          `requiredWhen value must match the referenced ${scalarType} configuration field`,
-        );
+        const conditionValues = Array.isArray(clause.value) ? clause.value : [clause.value];
+        if (!conditionValues.every((value) => typeof value === scalarType)) {
+          return semanticError(
+            `/configuration/${index}/${clauseName}/value`,
+            `#/$defs/ConfigurationField/${clauseName}CompatibleValue`,
+            `${clauseName}CompatibleValue`,
+            `${clauseName} value must match the referenced ${scalarType} configuration field`,
+          );
+        }
       }
     }
 

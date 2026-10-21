@@ -35,6 +35,9 @@ configuration:
     requiredWhen:
       key: connectionMode
       value: webhook
+    visibleWhen:
+      key: connectionMode
+      value: webhook
   - key: groupBotMentionsJson
     label: Group Bot Mentions (JSON, .env-only)
     kind: string

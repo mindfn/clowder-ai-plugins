@@ -363,6 +363,10 @@
           "$ref": "#/$defs/RequiredWhen",
           "description": "Overrides required and makes this field required only when the referenced field's effective value (stored value, otherwise default) strictly equals value, or any member when value is an array."
         },
+        "visibleWhen": {
+          "$ref": "#/$defs/RequiredWhen",
+          "description": "Makes this field visible only when the referenced field's effective value (stored value, otherwise default) strictly equals value, or any member when value is an array. When the condition is unmet the Host treats the field as hidden: it is not rendered, validated, or saved."
+        },
         "default": {
           "type": [
             "string",
@@ -540,7 +544,8 @@
             "properties": {
               "default": false,
               "hidden": false,
-              "requiredWhen": false
+              "requiredWhen": false,
+              "visibleWhen": false
             }
           },
           "else": {

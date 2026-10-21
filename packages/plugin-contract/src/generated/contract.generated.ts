@@ -90,6 +90,7 @@ export type ConfigurationField = {
   readonly required: boolean;
   readonly hidden?: boolean;
   readonly requiredWhen?: RequiredWhen;
+  readonly visibleWhen?: RequiredWhen;
   readonly default?: string;
   readonly options?: never;
   readonly target?: never;
@@ -102,6 +103,7 @@ export type ConfigurationField = {
   readonly required: boolean;
   readonly hidden?: boolean;
   readonly requiredWhen?: RequiredWhen;
+  readonly visibleWhen?: RequiredWhen;
   readonly default?: never;
   readonly options?: never;
   readonly target?: never;
@@ -114,6 +116,7 @@ export type ConfigurationField = {
   readonly required: boolean;
   readonly hidden?: boolean;
   readonly requiredWhen?: RequiredWhen;
+  readonly visibleWhen?: RequiredWhen;
   readonly default?: string;
   readonly options: readonly ConfigurationOption[];
   readonly target?: never;
@@ -126,6 +129,7 @@ export type ConfigurationField = {
   readonly required: boolean;
   readonly hidden?: boolean;
   readonly requiredWhen?: RequiredWhen;
+  readonly visibleWhen?: RequiredWhen;
   readonly default?: boolean;
   readonly options?: never;
   readonly target?: never;
@@ -138,6 +142,7 @@ export type ConfigurationField = {
   readonly required: boolean;
   readonly hidden?: boolean;
   readonly requiredWhen?: RequiredWhen;
+  readonly visibleWhen?: RequiredWhen;
   readonly default?: number;
   readonly options?: never;
   readonly target?: never;
@@ -150,6 +155,7 @@ export type ConfigurationField = {
   readonly required: boolean;
   readonly hidden?: boolean;
   readonly requiredWhen?: RequiredWhen;
+  readonly visibleWhen?: RequiredWhen;
   readonly default?: string;
   readonly options?: never;
   readonly target?: never;
@@ -162,6 +168,7 @@ export type ConfigurationField = {
   readonly required: boolean;
   readonly hidden?: never;
   readonly requiredWhen?: never;
+  readonly visibleWhen?: never;
   readonly default?: never;
   readonly options?: never;
   readonly target?: readonly string[];
