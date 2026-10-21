@@ -15,7 +15,7 @@ import {
 import { parse } from 'yaml';
 import {
   assertProductionDependencyClosure,
-  assertWorkspaceSdkContractClosure,
+  assertSdkContractPair,
 } from './catalog-package-shrinkwrap.mjs';
 import { assertStaticPackageDependencies } from './catalog-static-package.mjs';
 import { assertPackedRuntimeEntrypoints } from './catalog-runtime-entrypoints.mjs';
@@ -329,7 +329,7 @@ async function verifyCatalogEntry(catalogEntry) {
         packageJson.optionalDependencies ?? {},
       );
       assertProductionDependencyClosure(packageJson, shrinkwrap);
-      assertWorkspaceSdkContractClosure(shrinkwrap, {
+      assertSdkContractPair(shrinkwrap, {
         sdkVersion: workspaceSdk.version,
         contractVersion: workspaceContract.version,
       });

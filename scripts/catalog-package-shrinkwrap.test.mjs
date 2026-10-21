@@ -8,8 +8,10 @@ import { parse } from 'yaml';
 
 import {
   assertProductionDependencyClosure,
+  assertSdkContractPair,
   assertWorkspaceSdkContractClosure,
   collectWorkspacePackageIntegrityMismatches,
+  lastPublishedSdkContractPair,
 } from './catalog-package-shrinkwrap.mjs';
 
 
@@ -68,22 +70,12 @@ for (const { directory, pkg } of productionConsumers) test(`${directory} ships a
   assertProductionDependencyClosure(pkg, shrinkwrap);
   // Consumers that have already migrated to the current workspace contract pair
   // must close over it exactly; consumers still on the last published pair keep
-  // pinning that pair until their own migration.
-  const sdkEntry = shrinkwrap.packages?.['node_modules/@clowder-ai/plugin-sdk'];
-  if (sdkEntry && sdkEntry.version === workspaceSdk.version) {
-    assertWorkspaceSdkContractClosure(shrinkwrap, {
-      sdkVersion: workspaceSdk.version,
-      contractVersion: workspaceContract.version,
-    });
-  } else if (sdkEntry) {
-    assert.equal(sdkEntry.version, '0.2.0-beta.21',
-      `${directory} must pin the last published SDK until it migrates to the workspace pair`);
-    assert.equal(
-      sdkEntry.dependencies?.['@clowder-ai/plugin-contract'],
-      '0.1.0-beta.37',
-      `${directory} published SDK must keep its published contract dependency`,
-    );
-  }
+  // pinning that pair until their own migration. One shared rule for both the
+  // test entry and the catalog check entry.
+  assertSdkContractPair(shrinkwrap, {
+    sdkVersion: workspaceSdk.version,
+    contractVersion: workspaceContract.version,
+  });
 });
 
 test('current workspace contract and SDK shrinkwrap entries pin exact-head packed bytes', async () => {
@@ -108,8 +100,55 @@ test('current workspace contract and SDK shrinkwrap entries pin exact-head packe
   assert.deepEqual(mismatches, []);
 });
 
-test('rejects a workspace SDK shrinkwrap that still pins the previous contract', () => {
+test('shared pair rule rejects an SDK version that is neither workspace nor last published', () => {
   assert.throws(
+    () => assertSdkContractPair(
+      {
+        packages: {
+          'node_modules/@clowder-ai/plugin-sdk': {
+            version: '0.2.0-beta.3',
+            dependencies: { '@clowder-ai/plugin-contract': '0.1.0-beta.37' },
+          },
+        },
+      },
+      { sdkVersion: '0.2.0-beta.22', contractVersion: '0.2.0' },
+    ),
+    /unrecognized SDK identity/u,
+  );
+});
+
+test('shared pair rule rejects the last published SDK pinned through a stale contract', () => {
+  assert.throws(
+    () => assertSdkContractPair(
+      {
+        packages: {
+          'node_modules/@clowder-ai/plugin-sdk': {
+            version: lastPublishedSdkContractPair.sdkVersion,
+            dependencies: { '@clowder-ai/plugin-contract': '0.1.0-beta.36' },
+          },
+        },
+      },
+      { sdkVersion: '0.2.0-beta.22', contractVersion: '0.2.0' },
+    ),
+    /stale @clowder-ai\/plugin-contract dependency/u,
+  );
+});
+
+test('shared pair rule accepts the last published SDK keeping its published contract', () => {
+  assert.doesNotThrow(() => assertSdkContractPair(
+    {
+      packages: {
+        'node_modules/@clowder-ai/plugin-sdk': {
+          version: lastPublishedSdkContractPair.sdkVersion,
+          dependencies: { '@clowder-ai/plugin-contract': lastPublishedSdkContractPair.contractVersion },
+        },
+      },
+    },
+    { sdkVersion: '0.2.0-beta.22', contractVersion: '0.2.0' },
+  ));
+});
+
+test('rejects a workspace SDK shrinkwrap that still pins the previous contract', () => {  assert.throws(
     () => assertWorkspaceSdkContractClosure(
       {
         packages: {

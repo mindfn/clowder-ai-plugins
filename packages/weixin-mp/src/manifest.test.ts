@@ -4,6 +4,8 @@ import test from 'node:test';
 
 import { parse } from 'yaml';
 
+import { lastPublishedSdkContractPair } from '../../../scripts/catalog-package-shrinkwrap.mjs';
+
 test('manifest and package metadata remain one exact package truth', async () => {
   const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8')) as {
     pluginId: string;
@@ -41,7 +43,12 @@ test('manifest and package metadata remain one exact package truth', async () =>
     entrypoint: 'dist/plugin-entrypoint.js',
   });
   const sdkPackage = JSON.parse(await readFile(new URL('../../plugin-sdk/package.json', import.meta.url), 'utf8')) as { version: string };
-  assert.equal(packageJson.dependencies['@clowder-ai/plugin-sdk'], sdkPackage.version);
+  const sdkDependency = packageJson.dependencies['@clowder-ai/plugin-sdk'];
+  assert.ok(
+    sdkDependency === sdkPackage.version ||
+      sdkDependency === lastPublishedSdkContractPair.sdkVersion,
+    `plugin-sdk dependency ${sdkDependency} must match the workspace SDK or the last published legacy pair`,
+  );
   for (const member of ['README.md', 'plugin.yaml', 'assets', 'limbs', 'skills']) {
     assert.ok(packageJson.files.includes(member), `package omits ${member}`);
   }

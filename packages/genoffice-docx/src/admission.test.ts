@@ -7,6 +7,8 @@ import test from 'node:test';
 import { validateManifest } from '@clowder-ai/plugin-contract';
 import { parse as parseYaml } from 'yaml';
 
+import { lastPublishedSdkContractPair } from '../../../scripts/catalog-package-shrinkwrap.mjs';
+
 import {
   assertArchiveEntries,
   assertExtractedSource,
@@ -16,12 +18,18 @@ import {
 
 const packageRoot = join(import.meta.dirname, '..');
 
-test('pins the current exact contract dependency for the packed consumer', async () => {
+test('pins an exact contract dependency for the packed consumer', async () => {
   const packageJson = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'));
-  // This unpublished candidate follows the current pair. Published alpha.1
+  // Migrated consumers follow the workspace pair; unmigrated ones keep the
+  // last published pair until their own migration. Published alpha.1
   // archives remain immutable; protocol compatibility is checked below.
   const contractPackage = JSON.parse(await readFile(join(packageRoot, '..', 'plugin-contract', 'package.json'), 'utf8'));
-  assert.equal(packageJson.dependencies['@clowder-ai/plugin-contract'], contractPackage.version);
+  const dependency = packageJson.dependencies['@clowder-ai/plugin-contract'];
+  assert.ok(
+    dependency === contractPackage.version ||
+      dependency === lastPublishedSdkContractPair.contractVersion,
+    `expected ${contractPackage.version} or ${lastPublishedSdkContractPair.contractVersion}, got ${dependency}`,
+  );
 });
 
 test('freezes the exact public GenOffice source and a valid provider manifest', async () => {

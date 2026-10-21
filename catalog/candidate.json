@@ -196,6 +196,23 @@
       ],
       "versions": [
         {
+          "version": "0.1.0-alpha.2",
+          "contractVersion": "0.2.0",
+          "manifestPath": "plugin.yaml",
+          "artifact": {
+            "kind": "npm",
+            "packageName": "@clowder-ai/video-generation",
+            "version": "0.1.0-alpha.2",
+            "tarballUrl": "https://registry.npmjs.org/@clowder-ai/video-generation/-/video-generation-0.1.0-alpha.2.tgz",
+            "integrity": "sha512-/xbqkgYvby+8zPLJT2IGXN1ANgl9TnWd4G5MXo1hGM14sWRWwrGS0UB0EDhugu6GGx7MuxntZBFOqFGPMRT3kA==",
+            "shasum": "6cb3b7a51bc91a4f05a1fc32d21c9c7f3f3c6ada",
+            "provenance": {
+              "repository": "https://github.com/zts212653/clowder-ai-plugins",
+              "sourceDirectory": "packages/video-generation"
+            }
+          }
+        },
+        {
           "version": "0.1.0-alpha.1",
           "contractVersion": "0.1.0",
           "manifestPath": "plugin.yaml",
@@ -886,6 +903,23 @@
         "messaging"
       ],
       "versions": [
+        {
+          "version": "0.1.0-alpha.6",
+          "contractVersion": "0.2.0",
+          "manifestPath": "plugin.yaml",
+          "artifact": {
+            "kind": "npm",
+            "packageName": "@clowder-ai/connector-feishu",
+            "version": "0.1.0-alpha.6",
+            "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-feishu/-/connector-feishu-0.1.0-alpha.6.tgz",
+            "integrity": "sha512-1aMJ5GwW9PzmR0pj4kuAUf5NbE0Wq8Ca/DnkDX+iWitaf2AKB4esX1u3cl02/B8GBizt9GO+vm+H96gLOsL3fA==",
+            "shasum": "6a01b9e30cb86fdb4c73a25fd0e8e03e19785dfc",
+            "provenance": {
+              "repository": "https://github.com/zts212653/clowder-ai-plugins",
+              "sourceDirectory": "packages/connector-feishu"
+            }
+          }
+        },
         {
           "version": "0.1.0-alpha.5",
           "contractVersion": "0.1.0",

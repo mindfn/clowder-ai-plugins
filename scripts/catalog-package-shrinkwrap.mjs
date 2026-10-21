@@ -98,6 +98,37 @@ export function assertProductionDependencyClosure(packageJson, shrinkwrap) {
   }
 }
 
+// The last published SDK/contract pair that unmigrated consumers may keep
+// pinning until their own migration. New consumers must close over the
+// workspace pair exactly. Single definition shared by catalog-check and tests.
+export const lastPublishedSdkContractPair = Object.freeze({
+  sdkVersion: '0.2.0-beta.21',
+  contractVersion: '0.1.0-beta.37',
+});
+
+// One dependency-compatibility rule for every consumer: a shrinkwrap at the
+// workspace SDK version must close over the workspace contract; any other
+// SDK version must be exactly the last published pair.
+export function assertSdkContractPair(shrinkwrap, { sdkVersion, contractVersion }) {
+  const sdkEntry = shrinkwrap.packages?.['node_modules/@clowder-ai/plugin-sdk'];
+  if (!sdkEntry) return;
+
+  if (sdkEntry.version === sdkVersion) {
+    assertWorkspaceSdkContractClosure(shrinkwrap, { sdkVersion, contractVersion });
+    return;
+  }
+  assert.equal(
+    sdkEntry.version,
+    lastPublishedSdkContractPair.sdkVersion,
+    `npm-shrinkwrap.json has an unrecognized SDK identity: ${sdkEntry.version}`,
+  );
+  assert.equal(
+    sdkEntry.dependencies?.['@clowder-ai/plugin-contract'],
+    lastPublishedSdkContractPair.contractVersion,
+    `npm-shrinkwrap.json pins ${sdkEntry.version} through a stale @clowder-ai/plugin-contract dependency`,
+  );
+}
+
 export function assertWorkspaceSdkContractClosure(
   shrinkwrap,
   { sdkVersion, contractVersion },
