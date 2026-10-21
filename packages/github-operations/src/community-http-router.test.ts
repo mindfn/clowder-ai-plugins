@@ -118,10 +118,10 @@ test('concurrent routers freeze one publication and reconcile uncertain results 
   t.after(async () => { release(); await a.stop(); await b.stop(); });
   const request = { principal, method: 'POST', path: `github/community-issue-drafts/by-id/${draft.draftId}/publish`, body: {} };
   const pending = a.forwardOwner(request); await creating;
-  assert.equal((await b.forwardOwner(request)).status, 202);
+  assert.equal((await b.forwardOwner(request)).status, 409);
   await assert.rejects(store.cancel(draft.draftId), /not draft/);
   await assert.rejects(store.updateContent(draft.draftId, 'other', 'other'), /not draft/);
-  release(); assert.equal((await pending).status, 202);
+  release(); assert.equal((await pending).status, 409);
   found = true;
   assert.equal((await b.forwardOwner(request)).body.draft.status, 'published');
   assert.equal(creates, 1);
@@ -369,7 +369,9 @@ test('native thread publication survives an uncertain response and freezes edits
   assert.equal((await router.forwardOwner({ principal, method: 'GET', path })).body.draft.title, 'Previously saved');
   const request = { principal, method: 'POST', path: `${path}/publish`, body: {} };
   const uncertain = await router.forwardOwner(request);
-  assert.equal(uncertain.status, 202); assert.equal(uncertain.body.draft.status, 'publishing'); assert.equal(creates, 1);
+  assert.equal(uncertain.status, 409, 'an unconfirmed publication must not be HTTP-success for existing Host previews');
+  assert.match(uncertain.body.error, /uncertain/i);
+  assert.equal(uncertain.body.draft.status, 'publishing'); assert.equal(creates, 1);
   assert.equal((await router.forwardOwner({ ...request, body: { title: 'Changed after POST' } })).status, 409);
   assert.equal((await router.forwardOwner({ principal, method: 'POST', path: `${path}/cancel` })).status, 409);
   await router.stop(); router = await createCommunityHttpRouter(deps);

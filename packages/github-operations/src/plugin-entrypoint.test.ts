@@ -402,7 +402,7 @@ test('preexisting issue metadata remains readable without adopting governance or
   assert.equal(JSON.stringify(snapshot), before, 'copy must not mutate the old snapshot');
   assert.doesNotMatch(JSON.stringify(await f.runtimeHost.storage.list()), /private-thread|secret|guardian|signoff|assignedThread|accepted/);
   assert.equal(f.deliveries.length, 0);
-  assert.deepEqual(await active.actions['github.tracking.list']!({}), { data: { tracking: [] } });
+  assert.deepEqual(await active.actions['github.tracking.list']!({}), { data: { tracking: [], diagnostics: [] } });
   await active.stop({reason:'test'});
   active = await module.create(manifest).start(f.runtimeHost);
   const again = await copyLegacyIssueObservations(envelope, new SdkCommunityIssueStore(f.runtimeHost.storage), new AbortController().signal);
@@ -455,6 +455,25 @@ test('native draft owner operation publishes once and recovers partial success a
   await active.stop({reason:'test'});
 });
 
+for (const length of [0, 10001, 65000]) test(`native thread confirmation accepts the stored native body limit (${length})`, async () => {
+  const f = host(); f.runtimeHost.config.get = async () => 'example/project';
+  const published: string[] = [];
+  const active = await createGitHubPluginModule({ createIssuePublisher: () => ({
+    create: async draft => { published.push(draft.bodyMarkdown); return { number: 7, url: 'https://github.com/example/project/issues/7' }; },
+    find: async () => null,
+  }) }).create(manifest).start(f.runtimeHost);
+  try {
+    const draft = await active.actions['github.draft.create']!({ requestId: `body-${length}`, repo: 'example/project',
+      title: 'Public issue', bodyMarkdown: 'x'.repeat(length) }) as { data: { id: string; bodyMarkdown: string } };
+    const result = await active.actions['github.community.http']!({ request: { method: 'POST',
+      path: `github/community-issue-drafts/by-id/${draft.data.id}/publish`, principal: { kind: 'owner', id: 'user-1' },
+      body: { title: 'Public issue', bodyMarkdown: draft.data.bodyMarkdown } } }) as any;
+    assert.equal(result.status, 200);
+    assert.equal(result.body.draft.status, 'published');
+    assert.deepEqual(published, [draft.data.bodyMarkdown]);
+  } finally { await active.stop({ reason: 'test' }); }
+});
+
 test('native draft ambiguous publication never retries POST, and stop waits for provider cleanup', async () => {
   const f = host();
   f.runtimeHost.config.get = async () => 'example/project';
@@ -484,7 +503,7 @@ test('native draft ambiguous publication never retries POST, and stop waits for 
   release(); await pending; await stop;
   active = await module.create(manifest).start(f.runtimeHost);
   const result = await publish();
-  assert.equal(result.status, 202); assert.equal(result.body.draft.status, 'publishing');
+  assert.equal(result.status, 409); assert.equal(result.body.draft.status, 'publishing');
   assert.equal(creates, 1);
   await active.stop({reason:'test'});
 });

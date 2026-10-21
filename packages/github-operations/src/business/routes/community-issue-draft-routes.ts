@@ -14,7 +14,7 @@ import type { ICommunityIssueDraftStore } from '../domains/community/ports/Commu
 import type { CommunityIssueDraft } from '../model/index.js';
 import { sanitize } from '../domains/community/issue-analysis/CommunityIssueSanitizer.js';
 import type { CommunityRequestContext } from './community-request-context.js';
-import { ownerDraftInput, ownerNativeDraftAction, threadDraft, type OwnerNativeDrafts } from '../../owner-issue-drafts.js';
+import { ownerDraftInput, ownerDraftEditsSchema, ownerNativeDraftAction, threadDraft, type OwnerNativeDrafts } from '../../owner-issue-drafts.js';
 
 // ── Options ───────────────────────────────────────────────────
 
@@ -140,20 +140,22 @@ export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRo
       return { error: 'Invalid params', details: paramsParse.error.issues };
     }
 
+    const { draftId } = paramsParse.data;
+    if (/^[a-f0-9]{64}$/.test(draftId)) {
+      if (!opts.requestContext.requireOwner(reply)) return;
+      const nativeBody = ownerDraftEditsSchema.safeParse(request.body);
+      if (!nativeBody.success) return reply.code(400).send({ error: 'Invalid body', details: nativeBody.error.issues });
+      const result = await ownerNativeDraftAction(opts.nativeDrafts, draftId, 'publish', nativeBody.data);
+      return reply.code(result.status).send(result.body);
+    }
+
     const bodyParse = publishBodySchema.safeParse(request.body);
     if (!bodyParse.success) {
       reply.status(400);
       return { error: 'Invalid body', details: bodyParse.error.issues };
     }
 
-    const { draftId } = paramsParse.data;
     const edits = bodyParse.data;
-
-    if (/^[a-f0-9]{64}$/.test(draftId)) {
-      if (!opts.requestContext.requireOwner(reply)) return;
-      const result = await ownerNativeDraftAction(opts.nativeDrafts, draftId, 'publish', edits);
-      return reply.code(result.status).send(result.body);
-    }
 
     // Get current draft
     let draft = await communityIssueDraftStore.getById(draftId);
@@ -176,7 +178,7 @@ export const communityIssueDraftRoutes: FastifyPluginAsync<CommunityIssueDraftRo
       // process before entering the durable publication journal.
       draft = await communityIssueDraftStore.beginPublish(draftId, sanitized.title, sanitized.bodyMarkdown);
       const result = await publication.publish(draft);
-      if (!result.issue) return reply.code(202).send({ draft, warning: 'Publication outcome uncertain. Retry reconciles the original issue without creating another.' });
+      if (!result.issue) return reply.code(409).send({ draft, error: 'Publication outcome uncertain. Retry reconciles the original issue without creating another.' });
       const published = await communityIssueDraftStore.publish({ draftId, githubIssueNumber: result.issue.number, githubIssueUrl: result.issue.url });
       return { draft: published, githubIssueUrl: result.issue.url };
     } catch (err: unknown) {

@@ -115,7 +115,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.typed-wait.unregister': (value: unknown, caller?: PluginActionContext) => tracking.unregister(value, caller),
       'github.tracking.list': async () => ({ data: { tracking: [
         ...await tracking.store.listByKind('pr_tracking'), ...await tracking.store.listByKind('issue_tracking'),
-      ] } }),
+      ], diagnostics: await tracking.diagnostics() } }),
       'github.pr-tracking': () => poll('pr'),
       'github.issue-tracking': () => poll('issue'),
       'github.repo-scan': async () => { await community.run('repo-scan'); return { data: { completed: true } }; },

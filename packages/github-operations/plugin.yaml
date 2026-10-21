@@ -230,8 +230,8 @@ contributions:
   - type: tool
     id: list-tracking
     name: github_list_tracking
-    description: List this installation's PR and issue tracking status and pending
-      deliveries.
+    description: List this installation's PR and issue tracking status, pending deliveries
+      and the latest 25 safe registration diagnostics. Includes phase, failure code and original exception detail with credentials redacted.
     inputSchema: { type: object, additionalProperties: false, properties: {} }
     action: { method: github.tracking.list }
   - type: schedule

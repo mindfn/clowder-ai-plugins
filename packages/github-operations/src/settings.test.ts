@@ -1,11 +1,19 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { createGitHubSettings } from './settings.js';
 import { parse } from 'yaml';
 import { validateManifest } from '@clowder-ai/plugin-contract';
 import { createGitHubPluginModule } from './plugin-entrypoint.js';
-import { createGitHubSettings } from './settings.js';
 
+for (const login of ['alice_acme', 'octo_admin']) test(`connection probe accepts an authenticated managed-user login (${login})`, async () => {
+  const settings = createGitHubSettings({ secrets: { get: async () => undefined } },
+    async () => ({ stdout: login }));
+  try {
+    const result = await settings.actions['github.connection.test']({ input: {} });
+    assert.equal(result.ok, true); assert.equal(result.details?.login, login);
+  } finally { await settings.dispose(); }
+});
 const manifest = parse(await readFile(new URL('../plugin.yaml', import.meta.url), 'utf8'));
 
 test('ordinary settings omit internal policies and obsolete credentials without deleting their declarations', () => {

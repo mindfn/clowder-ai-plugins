@@ -8,6 +8,9 @@ const content = {
   bodyMarkdown: z.string().max(65000),
   labels: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
 };
+export const ownerDraftEditsSchema = z.object({
+  title: content.title.optional(), bodyMarkdown: content.bodyMarkdown.optional(),
+}).strict().optional();
 const repo = z.string().max(200).regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
 const explicit = z.object({ ...content, requestId: z.string().regex(/^[A-Za-z0-9_.:-]{1,128}$/), repo }).strict();
 const card = z.object({
@@ -43,9 +46,11 @@ export async function ownerNativeDraftAction(drafts: OwnerNativeDrafts, id: stri
     if (action === 'publish') uncertain = (await drafts.publish({ input: { draftId: id } }, edits)).data.status === 'uncertain';
     if (action === 'cancel') await drafts.cancel({ input: { draftId: id } });
     const draft = threadDraft((await drafts.get({ draftId: id })).data);
-    return { status: uncertain ? 202 : 200, body: { draft,
+    // Existing Host previews equate every 2xx response with published. Keep
+    // unknown publication outside that range; retries reconcile the same ID.
+    return { status: uncertain ? 409 : 200, body: { draft,
       ...(draft.githubIssueUrl ? { githubIssueUrl: draft.githubIssueUrl } : {}),
-      ...(uncertain ? { warning: 'Publication outcome uncertain. Retry to look for the original issue without creating another.' } : {}),
+      ...(uncertain ? { error: 'Publication outcome uncertain. Retry to look for the original issue without creating another.' } : {}),
     } };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Draft operation failed';

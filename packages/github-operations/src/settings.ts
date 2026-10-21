@@ -17,7 +17,7 @@ export function createGitHubSettings(host: Pick<ModulePluginSettingsHost, 'secre
       const { stdout } = await executeGitHubRequest(['api', 'user', '--hostname', 'github.com', '--jq', '.login'],
         { ghToken: token, signal: lifecycle.signal, timeoutMs: 10_000, ...(execFileAsync ? { execFileAsync } : {}) });
       const login = stdout.trim();
-      if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(login)) throw new Error('Invalid account response');
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,38}$/.test(login)) throw new Error('Invalid account response');
       return { ok: true, details: { status: 'connected', login },
         message: `已连接 GitHub（${login}），使用${token ? '插件访问令牌' : '本机 gh 登录'}。连接成功不代表已登记跟踪或具备所有仓库权限。` };
     } catch {

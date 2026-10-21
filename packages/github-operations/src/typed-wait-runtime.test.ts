@@ -23,6 +23,7 @@ function fixture() {
         rows.set(key, { revision: ++revision, value: structuredClone(value) }); return { applied: true, revision };
       },
     },
+    secrets: { get: async () => undefined },
     tasks: { get: forbiddenTask, list: forbiddenTask, create: forbiddenTask, update: forbiddenTask },
     threads: { get: async () => threadAvailable ? { id: 'thread' } : null },
     messaging: { get: async () => { throw new Error('Message reads forbidden'); }, send: async (_thread: string, draft: unknown) => {
@@ -41,17 +42,64 @@ function fixture() {
 }
 const input = { registrationId: 'registration', repoFullName: 'owner/repo', prNumber: 1 };
 
-test('subscriptions are private and native identity cannot replace a different user, owner or thread', async () => {
+for (const authors of [['alice', 'bot[bot]'], ['bot[bot]', 'alice'], ['alice', 'bob', 'bot[bot]']]) {
+  test(`mixed review authors are filtered independently before the poll is consumed (${authors.join(',')})`, async () => {
+    const f = fixture();
+    f.config.set('notificationAllowlist', 'alice,bob'); f.config.set('notificationBlocklist', 'bot[bot]');
+    const runtime = new TypedWaitRuntime(f.options);
+    try {
+      const task = await runtime.registerPr(input, f.caller);
+      const reviews = authors.map((author, index) => ({ id: index + 7, author, commitId: f.snapshot().headSha,
+        state: author === 'bot[bot]' ? 'COMMENTED' as const : 'CHANGES_REQUESTED' as const }));
+      f.setSnapshot({ ...f.snapshot(), reviews });
+      await runtime.poll('pr'); assert.equal(f.sent.length, 1);
+      const notification = JSON.stringify(f.sent[0]);
+      for (const review of reviews) {
+        if (review.author !== 'bot[bot]') assert.ok(notification.includes(`review:${review.id}`), 'every allowed review has its own source');
+        else assert.ok(!notification.includes(`review:${review.id}`), 'blocked review has no notification delta');
+      }
+      assert.equal((await runtime.store.get(task.id))?.automationState?.review?.lastDecisionCursor, reviews.at(-1)!.id);
+      f.config.clear(); await runtime.poll('pr');
+      assert.equal(f.sent.length, 1, 'relaxing policy must not replay consumed reviews');
+    } finally { await runtime.stop(); }
+  });
+}
+
+for (const kind of ['pr', 'issue'] as const) test(`${kind}: cancelled subscription history does not block a new authenticated thread`, async () => {
   const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
-  const task = await runtime.registerPr(input, f.caller);
-  const before = structuredClone([...f.rows]);
-  for (const change of [{ userId: 'other' }, { catId: 'other' }, { threadId: 'other' }]) {
-    await assert.rejects(runtime.registerPr({ ...input, registrationId: 'new' }, { ...f.caller, ...change }), /owner|thread|user/);
-    await assert.rejects(runtime.unregister({ subjectKey: task.subjectKey }, { ...f.caller, ...change }), /owner|thread|user/);
-  }
-  assert.deepEqual([...f.rows], before); assert.equal(f.hostTaskCalls(), 0);
-  assert.equal(task.ownerCatId, 'astra'); assert.equal(task.userId, 'owner');
-  await runtime.stop();
+  const args = kind === 'pr' ? input : { registrationId: 'issue-request', repoFullName: 'owner/repo', issueNumber: 1 };
+  const register = (value: any, who: PluginActionContext) => kind === 'pr' ? runtime.registerPr(value, who) : runtime.registerIssue(value, who);
+  try {
+    const old = await register(args, f.caller);
+    await runtime.unregister({ subjectKey: old.subjectKey }, f.caller);
+    const cancelled = await runtime.store.get(old.id);
+    const nextCaller = { ...f.caller, threadId: 'new-thread' };
+    const retry = { ...args, registrationId: 'new-thread-stable-request' };
+    const next = await register(retry, nextCaller);
+    assert.notEqual(next.id, old.id); assert.equal(next.threadId, 'new-thread');
+    assert.ok(next.automationState?.await);
+    assert.deepEqual(await register(retry, nextCaller), next, 'unknown responses replay the same committed registration');
+    assert.deepEqual(await runtime.store.get(old.id), cancelled, 'old cancellation history remains unchanged');
+    await runtime.unregister({ subjectKey: old.subjectKey }, f.caller);
+    assert.deepEqual(await runtime.store.get(next.id), next, 'old owner cannot cancel the new thread subscription');
+    assert.equal(f.hostTaskCalls(), 0);
+  } finally { await runtime.stop(); }
+});
+
+test('independent authenticated subscribers never replace each other or consume each other’s replay', async () => {
+  const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
+  try {
+    const first = await runtime.registerPr(input, f.caller);
+    for (const change of [{ userId: 'other' }, { catId: 'other' }, { threadId: 'other' }]) {
+      const who = { ...f.caller, ...change };
+      const other = await runtime.registerPr(input, who);
+      assert.notEqual(other.id, first.id);
+      await runtime.unregister({ subjectKey: first.subjectKey }, who);
+      assert.deepEqual(await runtime.store.get(first.id), first);
+    }
+    assert.equal(first.ownerCatId, 'astra'); assert.equal(first.userId, 'owner');
+    assert.equal(f.hostTaskCalls(), 0);
+  } finally { await runtime.stop(); }
 });
 
 test('pending delivery recovers after restart with an ordinary message and no Host projection', async () => {
@@ -76,11 +124,11 @@ test('unknown private registration result replays its durable receipt without a 
   let lost = false;
   f.context.storage.compareAndSet = async (...args) => {
     const result = await cas(...args);
-    if (result.applied && !lost) { lost = true; throw new Error('response lost'); }
+    if (args[0].startsWith('github.typed-wait.v1.') && result.applied && !lost) { lost = true; throw new Error('response lost'); }
     return result;
   };
   await assert.rejects(runtime.registerPr(input, f.caller), /response lost/);
-  assert.equal(f.rows.size, 1); assert.equal(f.reads(), 1);
+  assert.equal([...f.rows.keys()].filter(key => key.startsWith('github.typed-wait.v1.')).length, 1); assert.equal(f.reads(), 1);
   f.context.storage.compareAndSet = cas;
   f.defer(async () => { throw new Error('provider offline'); });
   const replay = await runtime.registerPr(input, f.caller);
@@ -110,7 +158,8 @@ test('typed runtime freezes baseline, uses Host identity and replays registratio
     assert.equal(f.sent.length, 0); assert.equal(f.reads(), 1);
     f.defer(async () => { throw new Error('offline'); });
     assert.deepEqual(await runtime.registerPr(input, f.caller), registered); assert.equal(f.reads(), 1);
-    await assert.rejects(runtime.registerPr(input, { ...f.caller, catId: 'other' }), /owner/);
+    await assert.rejects(runtime.registerPr(input, { ...f.caller, catId: 'other' }), /offline/);
+    assert.deepEqual(await runtime.store.get(registered.id), registered);
   } finally { await runtime.stop(); }
 });
 
@@ -118,7 +167,7 @@ test('stale invocation after provider work creates neither task nor private wait
   const f = fixture(); f.defer(async () => { f.stale(); return f.snapshot(); });
   const runtime = new TypedWaitRuntime(f.options);
   await assert.rejects(runtime.registerPr(input, f.caller), /stale invocation/);
-  assert.equal(f.hostTaskCalls(), 0); assert.equal(f.rows.size, 0); await runtime.stop();
+  assert.equal(f.hostTaskCalls(), 0); assert.equal((await runtime.store.listByKind('pr_tracking')).length, 0); await runtime.stop();
 });
 
 test('replaying an old receipt never resurrects a cancelled task or changes its notification coverage', async () => {
@@ -402,7 +451,7 @@ test('blocked review decisions are quiet while CI status uses ordinary notificat
 test('existing private records keep legacy Host-derived IDs and replay without Host access', async () => {
   const f = fixture(); let runtime = new TypedWaitRuntime(f.options);
   const first = await runtime.registerPr(input, f.caller); await runtime.stop();
-  const [oldKey, entry] = [...f.rows][0]!;
+  const [oldKey, entry] = [...f.rows].find(([key]) => key.startsWith('github.typed-wait.v1.'))!;
   const record = structuredClone(entry.value) as any;
   record.task.id = 'legacy-host-task';
   for (const receipt of Object.values(record.registrations) as any[]) receipt.result.id = 'legacy-host-task';
@@ -412,7 +461,7 @@ test('existing private records keep legacy Host-derived IDs and replay without H
   f.defer(async () => { throw new Error('provider offline'); });
   runtime = new TypedWaitRuntime(f.options);
   const replay = await runtime.registerPr(input, f.caller);
-  assert.equal(replay.id, 'legacy-host-task'); assert.equal(f.rows.size, 1);
+  assert.equal(replay.id, 'legacy-host-task'); assert.equal([...f.rows.keys()].filter(key => key.startsWith('github.typed-wait.v1.')).length, 1);
   assert.deepEqual(replay.automationState, first.automationState);
   assert.equal(f.reads(), 1); assert.equal(f.hostTaskCalls(), 0);
   assert.equal((await runtime.unregister({ subjectKey: 'pr:owner/repo#1' }, f.caller)).unregistered, true);
@@ -427,6 +476,33 @@ test('native subscription registration needs no Host thread metadata reads', asy
   const runtime = new TypedWaitRuntime(f.options);
   const task = await runtime.registerPr(input, f.caller);
   assert.ok(task.automationState?.await);
-  assert.equal(f.reads(), 1); assert.equal(f.rows.size, 1); assert.equal(f.hostTaskCalls(), 0);
+  assert.equal(f.reads(), 1); assert.equal([...f.rows.keys()].filter(key => key.startsWith('github.typed-wait.v1.')).length, 1); assert.equal(f.hostTaskCalls(), 0);
   await runtime.stop();
+});
+
+test('registration diagnostics retain original exception details across restart and redact credentials', async () => {
+  const f = fixture(); let runtime = new TypedWaitRuntime(f.options);
+  (f.context.secrets as any).get = async (key: string) => key === 'token' ? 'SECRET_TOKEN' : undefined;
+  f.defer(async () => { throw Object.assign(new Error('SECRET_TOKEN GitHub request failed', { cause: new Error('getaddrinfo ENOTFOUND api.github.com') }),
+    { code: 403, stderr: 'gh: Forbidden (HTTP 403)\nAuthorization: Bearer other-credential\nX-Callback-Token: callback-credential' }); });
+  await assert.rejects(runtime.registerPr(input, f.caller), /SECRET_TOKEN/);
+  await runtime.stop(); runtime = new TypedWaitRuntime(f.options);
+  try {
+    const diagnostics = await runtime.diagnostics();
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0]?.phase, 'read_github');
+    assert.equal(diagnostics[0]?.status, 'failed');
+    assert.equal(diagnostics[0]?.code, 'provider_read_failed');
+    assert.equal(diagnostics[0]?.threadId, 'thread');
+    assert.doesNotMatch(JSON.stringify(diagnostics), /SECRET_TOKEN|other-credential|callback-credential|registrationId|invocationId/);
+    assert.equal(diagnostics[0]?.error?.message, '[redacted] GitHub request failed');
+    assert.equal(diagnostics[0]?.error?.code, 403);
+    assert.match(diagnostics[0]?.error?.stderr ?? '', /Forbidden \(HTTP 403\)/);
+    assert.match(diagnostics[0]?.error?.stack ?? '', /typed-wait-runtime.test/);
+    assert.equal(diagnostics[0]?.error?.cause?.message, 'getaddrinfo ENOTFOUND api.github.com');
+    assert.equal((await runtime.store.listByKind('pr_tracking')).length, 0);
+    f.defer(async () => f.snapshot());
+    await runtime.registerPr(input, f.caller);
+    assert.equal((await runtime.diagnostics())[0]?.status, 'registered');
+  } finally { await runtime.stop(); }
 });

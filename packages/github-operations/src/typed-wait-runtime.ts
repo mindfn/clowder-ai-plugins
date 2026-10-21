@@ -11,6 +11,7 @@ import { issueBaseline, prBaseline, waitObservation, waitTarget, waitEventSnapsh
 import type { GitHubSnapshot, GitHubTarget, GitHubTrackingProvider } from './tracking-runtime.js';
 import { copyLegacyIssueProgress } from './legacy-issue-progress.js';
 import { legacyIssueOperationInput } from './legacy-issue-observations.js';
+import { readRegistrationDiagnostics, writeRegistrationDiagnostic, registrationFailureCode, diagnosticError, type DiagnosticError, type RegistrationDiagnostic } from './tracking-diagnostics.js';
 import { readNotificationFilter } from './notification-filter.js';
 
 export interface TypedWaitRuntimeOptions {
@@ -91,46 +92,68 @@ export class TypedWaitRuntime {
       when?: { kind: string; reviewThreadIds?: readonly string[] }[] };
     const number = (kind === 'pr' ? value.prNumber : value.issueNumber)!;
     const subject = `${kind}:${value.repoFullName.toLowerCase()}#${number}`;
+    const registrationId = (input as { registrationId: string }).registrationId;
     return this.run(subject, async signal => {
-      const check = async () => { this.assertRunning(); signal.throwIfAborted(); await caller.assertCurrent(); };
-      await check();
-      let task: TaskItem | null = await this.store.getBySubject(subject);
-      if (task) this.assertOwner(task, caller);
-      await check();
-      const target: GitHubTarget = { kind, number, repoFullName: value.repoFullName, threadId: caller.threadId, catId: caller.catId,
-        reviewThreadIds: value.when?.flatMap(predicate => predicate.reviewThreadIds ?? []) ?? [] };
-      let observation: Promise<GitHubSnapshot> | undefined;
-      const read = () => observation ??= this.options.provider.read(target, signal);
-      const deps = {
-        identity: async () => (await read()).trackingIdentity ?? {},
-        baseline: async (repo: string, number: number, when: Parameters<typeof prBaseline>[3]) =>
-          prBaseline(await read(), repo, number, when, this.now),
-        coverage: this.options.coverage, now: this.now,
+      let phase: RegistrationDiagnostic['phase'] = 'load_subscription';
+      const diagnostic = async (status: RegistrationDiagnostic['status'], code: RegistrationDiagnostic['code'], statusCode?: number, error?: DiagnosticError) => {
+        try { await writeRegistrationDiagnostic(this.options.context.storage, caller, registrationId, subject,
+          { phase, status, code, at: this.now(), ...(statusCode !== undefined ? { statusCode } : {}), ...(error ? { error } : {}) }); }
+        catch { this.options.context.log('warn', 'GitHub registration diagnostic could not be persisted'); }
       };
-      const issueDeps = { ...deps, baseline: async (repo: string, number: number) => issueBaseline(await read(), repo, number, this.now) };
-      const existingTask = task;
-      const store = this.guardedStore(async () => { await check(); if (existingTask) await this.currentSubscription(existingTask); });
-      let installed: TaskItem;
-      if (task) {
-        const owned = { ...task, userId: caller.userId };
-        installed = kind === 'pr' ? await registerPrWait(store, owned, input, deps) : await registerIssueWait(store, owned, input, issueDeps);
-      } else {
-        const plan = kind === 'pr' ? await preparePrWait(input, deps) : await prepareIssueWait(input, issueDeps);
+      try {
+        const check = async () => {
+          try { this.assertRunning(); signal.throwIfAborted(); await caller.assertCurrent(); }
+          catch (error) { phase = 'verify_authority'; throw error; }
+        };
         await check();
-        // The deterministic private ID serializes competing first registrations with CAS.
-        // Older records retain their original IDs and are found by subject above.
-        const at = this.now();
-        task = { id: 'github-subscription-' + createHash('sha256').update(subject).digest('hex'),
-          kind: plan.kind, subjectKey: plan.subjectKey, threadId: caller.threadId,
-          ownerCatId: caller.catId, userId: caller.userId,
-          title: `${kind === 'pr' ? 'PR' : 'Issue'} tracking: ${value.repoFullName}#${number}`,
-          why: '', status: 'todo', createdBy: caller.catId, createdAt: at, updatedAt: at };
-        installed = await installPreparedWait(store, { ...task, userId: caller.userId }, plan);
+        await diagnostic('started', 'started');
+        let task: TaskItem | null = await this.store.getBySubject(subject, caller);
+        if (task) this.assertOwner(task, caller);
+        await check();
+        const target: GitHubTarget = { kind, number, repoFullName: value.repoFullName, threadId: caller.threadId, catId: caller.catId,
+          reviewThreadIds: value.when?.flatMap(predicate => predicate.reviewThreadIds ?? []) ?? [] };
+        let observation: Promise<GitHubSnapshot> | undefined;
+        const read = () => { phase = 'read_github'; return observation ??= this.options.provider.read(target, signal); };
+        const deps = {
+          identity: async () => (await read()).trackingIdentity ?? {},
+          baseline: async (repo: string, number: number, when: Parameters<typeof prBaseline>[3]) =>
+            prBaseline(await read(), repo, number, when, this.now),
+          coverage: this.options.coverage, now: this.now,
+        };
+        const issueDeps = { ...deps, baseline: async (repo: string, number: number) => issueBaseline(await read(), repo, number, this.now) };
+        const existingTask = task;
+        const store = this.guardedStore(async () => { phase = 'save_subscription'; await check(); if (existingTask) await this.currentSubscription(existingTask); });
+        let installed: TaskItem;
+        if (task) {
+          const owned = { ...task, userId: caller.userId };
+          installed = kind === 'pr' ? await registerPrWait(store, owned, input, deps) : await registerIssueWait(store, owned, input, issueDeps);
+        } else {
+          const plan = kind === 'pr' ? await preparePrWait(input, deps) : await prepareIssueWait(input, issueDeps);
+          await check();
+          // The deterministic private ID serializes competing first registrations with CAS.
+          // Existing records retain their IDs; lookup is scoped to authenticated user/cat/thread.
+          const at = this.now();
+          task = { id: 'github-subscription-' + createHash('sha256').update(JSON.stringify([subject, caller.userId, caller.catId, caller.threadId])).digest('hex'),
+            kind: plan.kind, subjectKey: plan.subjectKey, threadId: caller.threadId,
+            ownerCatId: caller.catId, userId: caller.userId,
+            title: `${kind === 'pr' ? 'PR' : 'Issue'} tracking: ${value.repoFullName}#${number}`,
+            why: '', status: 'todo', createdBy: caller.catId, createdAt: at, updatedAt: at };
+          installed = await installPreparedWait(store, { ...task, userId: caller.userId }, plan);
+        }
+        await check();
+        phase = 'complete'; await diagnostic('registered', 'registered');
+        return installed;
+      } catch (error) {
+        const code = registrationFailureCode(phase, error instanceof TrackingRegistrationError);
+        const detail = await diagnosticError(error, this.options.context.secrets);
+        await diagnostic('failed', code, error instanceof TrackingRegistrationError ? error.status : undefined, detail);
+        this.options.context.log('warn', `GitHub tracking registration failed (${code}, ${phase})`, { error: detail });
+        throw error;
       }
-      await check();
-      return installed;
     });
   }
+
+  diagnostics() { return readRegistrationDiagnostics(this.options.context.storage); }
 
   private lifecycle(task: TaskItem, check: () => Promise<void>) {
     const store = this.guardedStore(check);
@@ -151,7 +174,7 @@ export class TypedWaitRuntime {
     return this.run(value.subjectKey.toLowerCase(), async signal => {
       const check = async () => { this.assertRunning(); signal.throwIfAborted(); await caller.assertCurrent(); };
       await check();
-      const task = await this.store.getBySubject(value.subjectKey.toLowerCase());
+      const task = await this.store.getBySubject(value.subjectKey.toLowerCase(), caller);
       if (!task) return { unregistered: false };
       this.assertOwner(task, caller);
       const result = await this.lifecycle(task, check).cancel(task.id, { kind: 'cat', catId: caller.catId, invocationId: caller.invocationId });
