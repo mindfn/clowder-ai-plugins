@@ -18,23 +18,21 @@
 
 ## 一、待发布制品（npm 上均尚不存在，已用 `npm view` 核实）
 
-全部用正式打包脚本 `node scripts/pack-publish-artifact.mjs <sourceDir> <outDir>` 打出，且全部使用 **CI 固定工具链**（Node 24.18.0 / npm 11.16.0，与上游 `contract-ci.yml` 的 `ARTIFACT_NODE_VERSION` / `NPM_VERSION` 一致；本机默认 shell 是 Node 24.15.0 / npm 11.12.1，用它打包会产生字节级哈希漂移，已实证）。**R9 起该脚本的非 bundled 分支输出完全跨平台确定**（npm pack 到临时目录后按排序成员重建 tar：DFS 目录序、固定 mtime/uid/gid、gzip -n、OS 字节归一，逻辑与 self-contained 链路共用 `createDeterministicArchive`）；下表哈希即 CI 发布值（macOS 连打两次一致，CI Ubuntu 重打必然同字节）。
+全部用正式打包脚本 `node scripts/pack-publish-artifact.mjs <sourceDir> <outDir>` 打出，且全部使用 **CI 固定工具链**（Node 24.18.0 / npm 11.16.0，与上游 `contract-ci.yml` 的 `ARTIFACT_NODE_VERSION` / `NPM_VERSION` 一致；本机默认 shell 是 Node 24.15.0 / npm 11.12.1，用它打包会产生字节级哈希漂移，已实证）。该脚本将 gzip OS 字节规范化为 Ubuntu 发布机值，同工具链下输出跨机器确定；下表哈希即 CI 发布值（astra 用同一脚本重打验证通过）。
 
-| 包 | 新版本 | 字节 | sha512 integrity | sha1 shasum | sha256 |
-|---|---|---|---|---|---|
-| `@clowder-ai/connector-feishu` | 0.1.0-alpha.6 | 93233 | `sha512-dZkoHX9wKwhR596dlcXqFzMSJ0M5CenHNwuvYl3Vaw9KBUJaYFo4qUdxgRMIIp8i+/Q+Ox7lxu3g8a7BBcPqmg==` | `b377d6a72a2961a9f70980287ae51eb6a32f81cb` | `f65662d2273d0402f384ec16c41dc57556d8653278035454783ea4664c77d19a` |
-| `@clowder-ai/video-generation` | 0.1.0-alpha.2 | 50980 | `sha512-OcML2o3UNk7TML7kCfCFUTs6HLh72nBcFjc7/QIVilG244m0k/KUf/mJ46wJwFZI1edmNHEiLmvEZKJX+2AXYw==` | `2ebe35f6118f19bc07fc28993ef4533ed2ecfd90` | `414ade6907335c066b2d4c6bea1b8888b0f95205cefa4fc7a748edb3145bbe64` |
-| `@clowder-ai/plugin-sdk` | 0.2.0-beta.22 | 97022 | `sha512-9QWwzGfWk+m9C61KFgzvRnRodC8/O+GS5lCjNJGWHfSRmBeojmTTdYszZ5qz35SxtqzzZ+q84y46sn5KYurozQ==` | `a0b3657aa6b06abe1d7b002cfc61508b7ed68a42` | `0d8c71a4a09c64f9834e9bee81a4ce0f40f24d8f72bdb6f83dbd0ec1ce9d2850` |
-| `@clowder-ai/plugin-contract` | 0.2.0 | 241617 | `sha512-SFmj5xrakQ8XzVVpAOrK6JrsRspVuruzLmzs/IiHKae8v+KZWaKEo8mLU8WS5Pk8NftT3wVnes/sgkRazY7rMQ==` | `a883cc095cdadf63a69b21ab5b06a719bee22534` | `379b0476c7c0e3f4b0a5884fdae637dcc70245b16fc793383ee6970894df13bd` |
+| 包 | 新版本 | 字节 | sha512 integrity | sha1 shasum |
+|---|---|---|---|---|
+| `@clowder-ai/connector-feishu` | 0.1.0-alpha.6 | 86606 | `sha512-1aMJ5GwW9PzmR0pj4kuAUf5NbE0Wq8Ca/DnkDX+iWitaf2AKB4esX1u3cl02/B8GBizt9GO+vm+H96gLOsL3fA==` | `6a01b9e30cb86fdb4c73a25fd0e8e03e19785dfc` |
+| `@clowder-ai/video-generation` | 0.1.0-alpha.2 | 47195 | `sha512-/xbqkgYvby+8zPLJT2IGXN1ANgl9TnWd4G5MXo1hGM14sWRWwrGS0UB0EDhugu6GGx7MuxntZBFOqFGPMRT3kA==` | `6cb3b7a51bc91a4f05a1fc32d21c9c7f3f3c6ada` |
+| `@clowder-ai/plugin-sdk` | 0.2.0-beta.22 | 88833 | `sha512-5REqBhJbwJ3iLSRgfLufV7y48RpKv1h2Rc9KfkGjx0bv9mvyqw/X44Bik7L0vqwS/5u45U+MFoHlWxbn/Re1DQ==` | `ffac91a777736b4370643fad7bfabef71463a956` |
+| `@clowder-ai/plugin-contract` | 0.2.0 | 233868 | `sha512-iFhuTFs/ol09W3n5iF583LuFaLGBQ8nBkdaGrntILSf6Zk40ghKU+lFw1uo97z/NUddoZLDp6x+rkGlHsPYbJg==` | `cadacf79b6dbef0a83c1580978479b079774964b` |
 
 本地 tgz 源（CI 工具链 + 正式脚本产物，验收环境将用同一字节安装）：
 
-- `/tmp/ci-packs-r9/clowder-ai-connector-feishu-0.1.0-alpha.6.tgz`（含更新后的 npm-shrinkwrap，内嵌 contract `SFmj…` / SDK `9QWw…` pin）
-- `/tmp/ci-packs-r9/clowder-ai-video-generation-0.1.0-alpha.2.tgz`
-- `/tmp/ci-packs-r9/clowder-ai-plugin-sdk-0.2.0-beta.22.tgz`
-- `/tmp/ci-packs-r9/clowder-ai-plugin-contract-0.2.0.tgz`，同时作为 fixture 提交在 `packages/plugin-contract/clowder-ai-plugin-contract-0.2.0.tgz`（`artifact-consistency.test.ts` 逐字节守护）
-
-> R8 表（86606/`1aMJ…`、47195/`/xbq…`、88833/`5REq…`、233868/`iFhu…`）已作废：那批是 macOS 本机工具链 + 非确定性 npm pack 的产物，CI（Ubuntu）重打必然不同字节，见"五点六 R9"。
+- `/tmp/ci-packs-final/clowder-ai-connector-feishu-0.1.0-alpha.6.tgz`（含更新后的 npm-shrinkwrap）
+- `/tmp/ci-packs/clowder-ai-video-generation-0.1.0-alpha.2.tgz`
+- `/tmp/ci-packs/clowder-ai-plugin-sdk-0.2.0-beta.22.tgz`
+- contract 0.2.0 制品同时作为 fixture 提交在 `packages/plugin-contract/clowder-ai-plugin-contract-0.2.0.tgz`（`artifact-consistency.test.ts` 逐字节守护）
 
 plugin-sdk / plugin-contract 是库，不进 catalog（catalog 只列 17 个插件）；但它们是飞书 alpha.6 的运行时依赖，必须随源码 PR 的 CI 一并发布。
 
@@ -67,21 +65,7 @@ plugin-sdk / plugin-contract 是库，不进 catalog（catalog 只列 17 个插�
 1. **撤回 15 个历史 pin 改写。** `catalog/candidate.json` 相对 HEAD 恢复为纯新增：只加飞书 0.1.0-alpha.6 与 video-generation 0.1.0-alpha.2 两个版本条目，其余插件历史 pin 一律不动。正确工具链（Node 24.18.0/npm 11.16.0）下重打包验证：15 个历史 pin 与声明一致（如 dingtalk 与 npm 已发布字节相符），漂移纯属本机默认工具链（24.15.0/11.12.1）造成。
 2. **统一依赖兼容校验规则。** 根因是 `catalog-check.mjs` 无条件强制所有插件使用 workspace SDK β22，而 11 个已发布插件合法固定 legacy 组合（SDK β21 / contract β37）。现抽出共享函数 `lastPublishedSdkContractPair` + `assertSdkContractPair`（`scripts/catalog-package-shrinkwrap.mjs`）：workspace SDK 条目走严格闭包；否则必须恰好是 legacy 对（β21/β37）。`catalog-check.mjs` 与测试文件均改调该函数，并新增 3 个测试（未知 SDK 拒 / legacy SDK 配错 contract 拒 / legacy 正确对收），保留错误组合的拒绝测试。`node --test scripts/catalog-package-shrinkwrap.test.mjs` 35/35 通过。
 3. **全部制品改用 CI 固定工具链按依赖顺序重打。** contract 0.2.0 → SDK β22 → 更新飞书 `npm-shrinkwrap.json` 两处 integrity（contract→iFhuTF…、SDK→5REqBh…）→ 重打飞书 alpha.6 → candidate 哈希更新为最终值。`packages/plugin-contract/clowder-ai-plugin-contract-0.2.0.tgz` fixture 同步替换为 CI 工具链字节（`artifact-consistency.test.ts` 守护通过）。weixin-mp 的 manifest 测试原本也强制插件依赖等于 workspace SDK β22，与 legacy 固定 β21 矛盾，已改为与共享规则同源的"workspace 版本或冻结 legacy 对"断言。
-4. **contract 0.2.0 最终哈希与 Host vendor 不同**（R8 值 `iFhuTF…` vs vendor 旧值）：已通知 sol，待制品最终确定后由 Host 侧同步 vendor 与锁文件，不在本 PR 范围。
-
-## 五点六、R9 修正记录（PR #101 CI 挂 gate 5/35 后的根因修复）
-
-**根因（两个叠加）：**
-
-1. **非 bundled 打包路径跨平台不确定。** `pack-publish-artifact.mjs` 的非 bundled 分支直接透传 `npm pack` 字节，只归一化了 gzip OS 字节。但 npm pack 的 tar 成员序来自 packlist 的 fs readdir 遍历序（实测 250 成员与排序序不同，`.gitkeep` 打头），APFS 与 ext4 序不同 → tar payload 与 deflate 流整体不同 → 跨平台哈希完全不同。R8 时"只差 gzip OS 一字节"是从 size 相等推断的，**推断错误**（size 相同纯属巧合）。四个包（飞书、video-generation、SDK、contract）全部无 `bundledDependencies`，都走这条路径；bundled 路径（pnpm pack）本就有归一化且 CI 实证跨平台稳定。
-2. **pin 校验规则单一。** `catalog-check.mjs` 对所有插件无条件本地重打并要求 == pin。确定性重打 ≠ 已发布 npm 字节，15 个历史插件（pin = 已发布字节）必然失败。
-
-**修复：**
-
-1. `pack-publish-artifact.mjs` 非 bundled 分支改为确定性重打：npm pack → 解压 stage → `createDeterministicArchive`（从 `pack-self-contained-artifact.mjs` 导入；DFS 按目录序排序成员、固定 mtime 1985-10-26、owner/group=0、tar -cf + gzip -n + byte9=3）→ 读回算 size/integrity/shasum。该 tar 跨平台一致性已被 self-contained 链路 CI 实证；macOS 连打两次哈希一致。
-2. `catalog-check.mjs` 规则二分（astra R8 语义落地）：**已发布版本**（npm registry 上已存在该版本，经 `readRegistryIntegrity` 判定）下载 registry tarball，校验 pin == 实际发布字节 == registry dist.integrity，并用发布字节做 manifest/entrypoint 内容检查——workspace 重打永不能覆盖已发布 pin；**未发布新版本**（飞书 alpha.6、video alpha.2）以本地确定性重打为 pin 源，即 CI 将发布的字节。`pnpm gate:ci` step 35（Machine catalog）实证全绿。
-3. 全链路 repin：contract 0.2.0 fixture tgz → 飞书 `npm-shrinkwrap.json` 两处 integrity（contract→`SFmj…`、SDK→`9QWw…`）→ 重打飞书 → `candidate.json` 两插件哈希。最终值见第一节表（含 sha256，供 Host vendor 同步）。
-4. **contract 0.2.0 R9 最终哈希 `SFmj5xr…`（sha256 `379b0476…`）与 Host vendor 旧包不同**：sol 侧按此最终值同步 vendor + 锁文件 + 测试 pin（R8 的临时 `iFhuTF…` 作废，不作最终 pin）。
+4. **contract 0.2.0 最终哈希与 Host vendor 不同**（`iFhuTF…` vs vendor 旧值）：已通知 sol，待制品最终确定后由 Host 侧同步 vendor 与锁文件，不在本 PR 范围。
 
 ## 六、当前已验证资产（不随本清单改变）
 
