@@ -61,7 +61,7 @@ configurationVariants:
 }
 ```
 
-  `required` 由 Host 装配：discriminator key + 该分支 `fields` 中**未标 `required: false` 语义**的字段（即分支内字段默认必填，字段上可显式 `optionalInVariant: true` 保留选填——见 §2.5）。stored 配置对象校验走这一条标准 oneOf，即"标准验证结构"。
+  **必填性只有一个来源：字段自己的 `required`／`requiredWhen`。** 分支 `fields` 只决定字段是否适用（applicability），不隐含必填。装配出的标准 schema 由**契约包拥有并生成**（`buildVariantValidationSchema(manifest)`），Host 只消费、不各自实现；完整校验不只有 `required`——string-like 必填字段编译出 `minLength: 1`，键存在但值为空不算配置齐全。
 
 - 契约语义校验（`validation/manifest.ts`）对 `when` 施加**结构化约束**，使其只承担"模式单选"，而不是任意 JSON Schema：
   1. `when.properties` 只允许出现 discriminator 这一个 key；
@@ -74,6 +74,7 @@ configurationVariants:
 - `fields: string[]` 引用顶层 `configuration` 已声明的 key，契约校验引用存在性。
 - **一个字段可以属于多个分支**（分支互斥不要求字段集合互斥）。video-generation 的 accessKey/secretKey 同时属于 jwt 与 hmac 分支即合法用例。
 - 分支不覆写字段的 label/description/kind——展示定义单一来源。
+- `fields` 不只是表单元数据：它决定运行时有效配置包含哪些字段，是领域语义。
 
 ### 2.4 三态解析：`resolveConfigurationVariant`
 
@@ -89,6 +90,11 @@ type VariantResolution =
 - 实现只做 `const`/`enum` 等值匹配，**不依赖 ajv / Node validator**，浏览器与服务器共用同一份代码。
 - 主包入口（含 ajv 的校验器）不进入浏览器依赖图；子路径独立导出。
 
+契约包同时拥有并导出（同一子路径或主路径，均不依赖 Node）：
+
+- `computeEffectiveConfiguration(manifest, storedValues)`：先跑三态解析，再产出**有效配置**——公共字段 + 当前分支字段的值；**无存值时所有消费者统一使用字段声明的 `default`**（不等"保存时物化"）；**stored 有非法值时不回退任何值**；保留的非活跃分支旧值**不参与**有效配置与就绪判断。返回 `{ resolution, effectiveValues }`。
+- `buildVariantValidationSchema(manifest)`：把受约束的 `when` 编译成标准 JSON Schema（`{type:'object', oneOf:[...]}`，active 必填字段带 `minLength: 1`），供 ajv 校验**统一计算出的有效配置对象**，而不是直接校验原始 stored 对象。
+
 ### 2.5 无有效模式时的行为（统一规则）
 
 | 场景 | 行为 |
@@ -96,11 +102,11 @@ type VariantResolution =
 | 设置页 | 仍显示公共字段 + discriminator 选择器，让用户修正；不显示任何分支字段 |
 | 就绪检查 | 返回未就绪 |
 | 运行时 | 拒绝启动（fail-closed） |
-| stored 无 discriminator 值 | 可用字段声明的 `default`（default 在保存时物化，解析器只看 stored 值） |
+| stored 无 discriminator 值 | 所有消费者统一使用字段声明的 `default`（`computeEffectiveConfiguration` 内应用，不依赖保存时物化） |
 | stored 有非法值 | **不得悄悄回退 default**；不回退任何值 |
 | 隐式默认 | **禁止**把 select 第一项当作隐式默认 |
 
-分支内字段的必填性：进入 `fields` 默认视为该模式下必填；字段上可加 `optionalInVariant: true` 声明"此字段在该分支内仍为选填"（保留旧式选填语义）。
+分支内选填：直接写 `required: false`（或 `requiredWhen`），**不引入新开关**——必填性永远只有 `required`/`requiredWhen` 一个来源。
 
 ## 3. 四条消费路径消费同一模型
 
@@ -111,12 +117,14 @@ web 不自行解释分支，调用 §2.4 的同一个纯函数，输入为**已�
 ### 3.2 保存与就绪（api）
 
 - 保存：API 接受对已声明字段的**显式更新**并做格式校验；普通表单只提交当前活跃分支字段的修改，**其余草稿字段原样保留**；discriminator 与该分支字段**一次保存**（同一次请求内完成装配校验）。非活跃分支的已存值**保留在存储中**，不删除。
-- 就绪：`requiredFieldsReady` 等就绪判断消费 §2.2 装配出的标准 oneOf：stored 配置对象整体通过 oneOf 且公共必填字段齐全 ⇒ 就绪。`unselected`/`invalid` ⇒ 未就绪。
+- 就绪：`requiredFieldsReady` 等就绪判断消费契约包 `computeEffectiveConfiguration` + `buildVariantValidationSchema`：有效配置对象整体通过标准 oneOf 且公共必填字段齐全 ⇒ 就绪。`unselected`/`invalid` ⇒ 未就绪。保留的非活跃旧值不参与就绪判断。
 - operation 字段（kind: operation）的 `configured` 语义**不变**：仍是"该 operation 全部 target 是否已有值"，不感知分支、不过滤 target；空 target 集合不视为成功。
 
 ### 3.3 运行时投影（module / external runtime）
 
-`resolveManifestConfiguration`（`packages/api/src/domains/plugin/.../manifest-configuration-projection.ts`）已同时服务 in-process 与 external runtime 两条路径。扩展为：先跑 `resolveConfigurationVariant`，`selected` ⇒ 只投递**公共字段 + 当前分支字段**的有效值（非活跃分支的已存值不投递）；`unselected`/`invalid` ⇒ fail-closed 拒绝启动。无 `configurationVariants` 的插件走原路径，行为逐字节不变。
+`resolveManifestConfiguration`（`packages/api/src/domains/plugin/.../manifest-configuration-projection.ts`）已同时服务 in-process 与 external runtime 两条路径。扩展为：先跑 `computeEffectiveConfiguration`，`selected` ⇒ 只投递有效配置的值（非活跃分支的已存值不投递）；`unselected`/`invalid` ⇒ fail-closed 拒绝启动。无 `configurationVariants` 的插件走原路径，行为逐字节不变。
+
+**module 的实际 getter 也必须走同一规则（astra 二轮 P1）。** `module-plugin-settings.ts` 的 `read()`（module-plugin-settings.ts:132）目前直读存储，`config.get/secrets.get` 绕过统一解析——飞书 WebSocket 模式仍能读到旧 Token。改法：**运行中的插件 getter 消费 `computeEffectiveConfiguration` 的结果**；同时区分用途——settings/dormant host 还服务扫码配置（operation action）与卸载，**管理性读取不得因"尚未选择模式"而不可用**（unselected/invalid 时管理读取按存储原值放行，仅运行时读取 fail-closed）；grant 检查（`plugin.config.read`/`secret.read`）保持不变。验收必须观察插件真实调用 getter 的返回值，不能只测启动解析器。
 
 ### 3.4 declared MCP 环境变量（第三条真实路径，v1 遗漏项）
 
@@ -168,7 +176,7 @@ configuration:
   - key: verificationToken
     label: Verification Token
     kind: secret
-    required: false
+    required: true
   - key: groupBotMentionsJson
     label: Group Bot Mentions (JSON, .env-only)
     kind: string
@@ -267,7 +275,7 @@ runtime:
 
 变化点：`requiredWhen` 移除（0.2.0 下由 variants 接管必填语义）；`connectionMode` 改 `required: true`（discriminator 必须显式）；其余结构与 alpha.5 逐字段对齐。
 
-**遗留开放点（提交 astra 决定）**：webhook contribution 的 `verificationSecretRef: verificationToken` 与模式联动——websocket 模式下该 contribution 无可用 secret。候选：(a) 运行时对该 contribution 明确报错/禁用并给出可读原因；(b) 契约允许 contributions 复用 `when` 形状声明条件启用。不在本草案擅自选定。
+**webhook contribution 开放点（已由 astra 定案）：沿用现有明确跳过行为，不新增 contribution 条件引擎。** 两条直接证据：Host 只用 `verificationSecretRef` 的存在标记 webhook 路由性质，没有"缺对应 secret 就启动失败"的检查；飞书 runtime（`packages/connector-feishu/src/runtime.ts:676`）在 WebSocket 模式下先返回 `skipped: websocket_mode`，不会继续验证 Token 或处理事件。因此无需选择"缺 Token 报错"，也无需扩展 contribution 契约。
 
 ### 4.2 video-generation（contractVersion 0.2.0，演示字段跨分支共享）
 
@@ -315,15 +323,15 @@ configuration:
   - key: apiKey
     label: API Key
     kind: secret
-    required: false
+    required: true
   - key: accessKey
     label: Access Key
     kind: secret
-    required: false
+    required: true
   - key: secretKey
     label: Secret Key
     kind: secret
-    required: false
+    required: true
   - key: baseUrl
     label: Base URL
     kind: url
@@ -410,7 +418,8 @@ runtime:
   │
   └─ 用户填 Token 点保存
         → 一次请求提交 { connectionMode: webhook, verificationToken: *** }
-        → 服务端用装配后的标准 oneOf 校验 stored 对象
+        → 服务端 computeEffectiveConfiguration + buildVariantValidationSchema
+          校验统一计算出的有效配置对象
         → 保存成功；切回 websocket 时 Token 仍留存于存储，
           表单与运行时均不显示/不投递，再切回 webhook 恢复生效
 ```
@@ -448,10 +457,12 @@ Host 启动 contribution video-generation-toolset（stdio MCP）
 2. 填完保存 → 就绪；切换模式（未保存）→ 字段即时跟随；保存 → 运行时只收到当前分支值。
 3. 重载页面 / 重启 Host → 状态恢复；切回旧模式 → 旧值恢复生效。
 4. 插件实际收到的配置（module / external runtime / declared MCP 三条路径逐一验证）只含公共 + 当前分支字段。
-5. 当前模式下分支内选填字段（`optionalInVariant: true`）仍可编辑、保存、投递。
-6. 反例：非法/缺失 discriminator → 设置页可修复、就绪=未就绪、运行时拒绝启动、不悄悄回退 default。
+5. 当前模式下分支内选填字段（`required: false`）仍可编辑、保存、投递——分支成员资格不得把选填变成必填。
+6. 反例：非法/缺失 discriminator → 设置页可修复、就绪=未就绪、运行时拒绝启动、不悄悄回退 default；**default 未物化时所有消费者（表单/就绪/运行时）统一使用声明的 default**。
 7. 旧插件（无 variants）在新 Host 上行为不变。
 8. 旧 Host 装 0.2.0 插件被拒。
+9. **module 实际 getter**：WebSocket 模式下插件 `secrets.get('verificationToken')` 返回 undefined（观察真实 getter 调用，不只测启动解析器）；管理读取（扫码配置、卸载）在 unselected/invalid 下仍可用。
+10. **飞书 webhook 跳过**：WebSocket 模式无 Token 正常启动；webhook 请求返回 `skipped: websocket_mode` 不投递消息；切回 Webhook 必须先满足 Token 必填才能就绪。
 
 ## 8. 对 astra v1 驳回的逐条回应
 
@@ -469,3 +480,7 @@ Host 启动 contribution video-generation-toolset（stdio MCP）
 | 决策：operation configured | §3.2 保持原义，不按分支过滤 target |
 | 验收：新 Host+旧插件不变 / 版本绑定 | §6 两条均列为硬验收 |
 | 删除"旧插件依赖模式外值就是 bug" | 本文不出现该论断；旧契约允许即合法 |
+| 二轮 P1 删除 `optionalInVariant`，必填性唯一来源 | §2.2/§2.5：分支只管适用性；凭据字段 `required: true`；选填直接 `required: false` |
+| 二轮 P1 module 实际 getter 绕过解析 | §3.3：运行中插件 getter 消费 `computeEffectiveConfiguration`；管理读取不被未选模式阻塞；grant 不变 |
+| 二轮 P1 schema 装配与有效值计算归契约包 | §2.4：`buildVariantValidationSchema` + `computeEffectiveConfiguration` 由契约包拥有，Host 消费；空值≠存在；default 即时应用、不回退；校验对象是有效配置而非原始 stored |
+| 二轮 webhook 开放点定案 | §4.1：沿用 `skipped: websocket_mode` 现有跳过行为，不新增 contribution 条件引擎；验收第 10 条覆盖 |
