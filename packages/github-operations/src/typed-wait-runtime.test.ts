@@ -26,7 +26,7 @@ function fixture() {
     tasks: { get: forbiddenTask, list: forbiddenTask, create: forbiddenTask, update: forbiddenTask },
     threads: { get: async () => threadAvailable ? { id: 'thread' } : null },
     messaging: { get: async () => { throw new Error('Message reads forbidden'); }, send: async (_thread: string, draft: unknown) => {
-      if (sendFailure) throw new Error('delivery unavailable'); sent.push(draft); return { messageId: 'message', threadId: 'thread' };
+      if (sendFailure || !threadAvailable) throw new Error('delivery unavailable'); sent.push(draft); return { messageId: 'message', threadId: 'thread' };
     } }, config: { get: async (key: string) => config.get(key) }, log: () => {},
   } as unknown as FeatureContext;
   const caller: PluginActionContext = { catId: 'astra', userId: 'owner', threadId: 'thread', invocationId: 'turn',
@@ -207,7 +207,7 @@ test('an unavailable thread pauses delivery without retiring private tracking', 
   f.threadAvailable(false);
   f.setSnapshot({ ...f.snapshot(), comments: [{ id: 5, author: 'reviewer', body: 'result', commentType: 'conversation' }] });
   await runtime.poll('pr');
-  assert.equal(f.sent.length, 0); assert.equal(f.reads(), 1);
+  assert.equal(f.sent.length, 0); assert.equal(f.reads(), 2);
   assert.ok((await runtime.store.get(task.id))?.automationState?.await);
   f.threadAvailable(true); await runtime.poll('pr'); assert.equal(f.sent.length, 1);
   assert.equal(f.hostTaskCalls(), 0); await runtime.stop();
@@ -420,10 +420,13 @@ test('existing private records keep legacy Host-derived IDs and replay without H
   await runtime.stop();
 });
 
-test('a missing thread rejects a fresh registration before provider reads or private writes', async () => {
-  const f = fixture(); f.threadAvailable(false);
+test('native subscription registration needs no Host thread metadata reads', async () => {
+  const f = fixture();
+  (f.context.threads as any).get = async () => { throw new Error('content permission forbidden'); };
+  (f.context.threads as any).list = async () => { throw new Error('metadata reads unnecessary'); };
   const runtime = new TypedWaitRuntime(f.options);
-  await assert.rejects(runtime.registerPr(input, f.caller), /thread unavailable/);
-  assert.equal(f.reads(), 0); assert.equal(f.rows.size, 0); assert.equal(f.hostTaskCalls(), 0);
+  const task = await runtime.registerPr(input, f.caller);
+  assert.ok(task.automationState?.await);
+  assert.equal(f.reads(), 1); assert.equal(f.rows.size, 1); assert.equal(f.hostTaskCalls(), 0);
   await runtime.stop();
 });

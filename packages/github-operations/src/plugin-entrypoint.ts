@@ -18,6 +18,7 @@ import { ReviewTriggerReader } from './review-trigger-observation.js';
 import { CommunityCollectionRuntime, SdkCommunityCollectionStore } from './community-collection.js';
 import { GitHubPrTitleReader, prTitleHttp } from './pr-title-reader.js';
 import { createGitHubSettings } from './settings.js';
+import { findThreadMetadata } from './metadata-thread.js';
 import type { GitHubRequestOptions } from './business/infrastructure/github/request-budget.js';
 
 // Host declared webhook dispatch nests the request under action params. The
@@ -39,6 +40,10 @@ export interface GitHubPluginOptions {
 }
 
 async function activate(context: FeatureContext, options: GitHubPluginOptions) {
+  // Host get() currently requires content access even for summaries. Package-owned
+  // Community mappings need only an owner-visible metadata lookup.
+  const threads = context.threads;
+  context = { ...context, threads: { ...threads, get: id => findThreadMetadata(threads, id) } };
   const connectionSettings = createGitHubSettings(context, options.settingsExecFileAsync);
   const transport = new GitHubProvider({
     token: () => context.secrets.get('token'),

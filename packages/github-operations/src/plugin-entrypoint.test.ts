@@ -344,12 +344,12 @@ test('legacy repository progress stays inert until registration and resumes base
   assert.doesNotMatch(JSON.stringify(await f.runtimeHost.storage.list()), /secret-config|guardThreadId|guardian/);
   await active.stop({reason:'test'});
   active = await module.create(manifest).start(f.runtimeHost);
-  const originalGet = f.runtimeHost.threads.get;
-  f.runtimeHost.threads.get = async () => { throw new Error('Host access denied'); };
+  const originalList = f.runtimeHost.threads.list;
+  f.runtimeHost.threads.list = async () => { throw new Error('Host access denied'); };
   const beforeRegistration = await f.runtimeHost.storage.list();
   await assert.rejects(async () => active.actions['github.repository.register']!({ repo, guardThreadId: 'foreign', guardCatId: target.catId }), /Host access denied/);
   assert.deepEqual(await f.runtimeHost.storage.list(), beforeRegistration, 'no progress restoration before Host authorization');
-  f.runtimeHost.threads.get = originalGet;
+  f.runtimeHost.threads.list = originalList;
   await active.actions['github.repository.register']!({ repo, guardThreadId: target.threadId, guardCatId: target.catId });
   await active.actions['github.repo-scan']!({});
   assert.equal(f.deliveries.length, 1, 'already notified7 skipped; undelivered8 delivered instead of silently re-baselined');
@@ -808,7 +808,7 @@ function host() {
     threads: {
       get: async id => ({ id, title: null, createdAt: 1, lastActiveAt: 1,
         preferredCats: [], featureRefs: [], deepLinkUrl: `https://host.example/thread/${encodeURIComponent(id)}` }),
-      list: unusedThreadCall, readMessages: unusedThreadCall, getCats: unusedThreadCall,
+      list: async () => [await runtimeHost.threads.get('thread-1')].filter(Boolean) as any, readMessages: unusedThreadCall, getCats: unusedThreadCall,
       create: unusedThreadCall, update: unusedThreadCall, addParticipants: unusedThreadCall,
     },
     messaging: {

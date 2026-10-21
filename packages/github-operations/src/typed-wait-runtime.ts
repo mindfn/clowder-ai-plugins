@@ -96,7 +96,6 @@ export class TypedWaitRuntime {
       await check();
       let task: TaskItem | null = await this.store.getBySubject(subject);
       if (task) this.assertOwner(task, caller);
-      if (!await this.options.context.threads.get(caller.threadId)) throw new Error('Tracking thread unavailable');
       await check();
       const target: GitHubTarget = { kind, number, repoFullName: value.repoFullName, threadId: caller.threadId, catId: caller.catId,
         reviewThreadIds: value.when?.flatMap(predicate => predicate.reviewThreadIds ?? []) ?? [] };
@@ -194,7 +193,7 @@ export class TypedWaitRuntime {
         for (const task of selected) {
           const wait = task.automationState?.await;
           if (!wait || (wait.expiresAt !== undefined && wait.expiresAt <= this.now())) continue;
-          if (task.status === 'done' || !await this.options.context.threads.get(task.threadId)) continue;
+          if (task.status === 'done') continue;
           targets.push(waitTarget(task)); batchGenerations.set(task.id, wait.generation);
         }
         if (targets.length) {
@@ -211,7 +210,6 @@ export class TypedWaitRuntime {
           const check = async () => { this.assertRunning(); signal.throwIfAborted(); taskSignal.throwIfAborted(); };
           const current = await this.store.get(task.id); if (!current) return;
           const lifecycle = this.lifecycle(current, check);
-          if (!await this.options.context.threads.get(current.threadId)) return;
           await lifecycle.recoverOutcome(task.id); await check();
           if (!current.automationState?.await) return;
           if (current.automationState.await.expiresAt !== undefined && current.automationState.await.expiresAt <= this.now()) {

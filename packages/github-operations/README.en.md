@@ -23,7 +23,7 @@ Ordinary settings show the optional GitHub token, notification author allowlist/
 
 ## Local update and verification
 
-Tracking subscriptions, predicates, cursors, receipts and notification outboxes stay in plugin-private storage. Declared schedules poll GitHub; changes become ordinary messages through `messaging.send` and the existing conversation route. Tracking creates no Host Task, writes no wait projection and resumes no previous invocation. It requests no task.read/task.write/thread.readContent; the existing eight-grant Host policy suffices.
+Tracking subscriptions, predicates, cursors, receipts and notification outboxes stay in plugin-private storage. Declared schedules poll GitHub; changes become ordinary messages through `messaging.send` and the existing conversation route. Tracking creates no Host Task, writes no wait projection and resumes no previous invocation. Native admission authenticates the registrant and messaging validates the destination. Community summary lookup uses owner-visible metadata, not content reads. It requests no task.read/task.write/thread.readContent; the existing eight-grant Host policy suffices.
 
 [Host fix #232](https://github.com/mindfn/clowder-ai/pull/232) restores the original inline draft preview only; the Task-grant proposal has been withdrawn. If native credentials are still unavailable, retain the error and inspect the installed package and native invocation context. A GitHub PAT does not replace native identity. Register tracking successfully before triggering a review event being tested.
 

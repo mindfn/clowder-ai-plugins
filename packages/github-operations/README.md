@@ -23,7 +23,7 @@
 
 ## 本地更新与验收
 
-PR / Issue 跟踪的登记、条件、游标、回执和通知队列全部由插件私有存储维护。插件通过已声明的 schedule 拉取变化，生成普通消息，再调用 `messaging.send` 进入现有消息路由；不创建 Host Task、不写等待投影、不恢复原 invocation，也不请求 task.read/task.write/thread.readContent。现有 Host 的八项授权即可运行这条路径，无需为 tracking 安装 Host 权限补丁。
+PR / Issue 跟踪的登记、条件、游标、回执和通知队列全部由插件私有存储维护。插件通过已声明的 schedule 拉取变化，生成普通消息，再调用 `messaging.send` 进入现有消息路由；不创建 Host Task、不写等待投影、不恢复原 invocation，也不请求 task.read/task.write/thread.readContent。登记身份由原生入口认证；投递目标由消息接口校验。社区流程需要线程摘要时，只使用 owner 可见的元数据列表。现有 Host 的八项授权即可运行这条路径，无需为 tracking 安装 Host 权限补丁。
 
 Host [修复 #232](https://github.com/mindfn/clowder-ai/pull/232) 仅用于恢复原有线程内草稿预览与确认；其 Task 扩权方案已经撤回。MCP 若仍返回 `Plugin action credentials are unavailable for this exact turn`，保留错误并检查当前安装包与原生调用凭据；GitHub PAT 不代替原生身份。登记成功后才触发要测试的在线 review。
 
