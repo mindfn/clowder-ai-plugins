@@ -12,6 +12,7 @@ const AjvCtor = AjvPkg as unknown as new (options?: Record<string, unknown>) => 
 import type { PluginManifest } from './generated/contract.generated.js';
 import {
   buildVariantValidationSchema,
+  coerceStoredValues,
   computeEffectiveConfiguration,
   evaluateFieldRequiredness,
   resolveConfigurationVariant,
@@ -474,4 +475,37 @@ test('counterexample: required:true is overridden while the requiredWhen conditi
   (token as { required: boolean }).required = true;
   assert.equal(validates(manifest, { mode: 'webhook', enabled: false }), true);
   assert.equal(validates(manifest, { mode: 'webhook', enabled: true }), false);
+});
+
+test('coerceStoredValues converts string storage to declared scalar types', () => {
+  assert.deepEqual(
+    coerceStoredValues(crossFieldManifest, { enabled: 'true', retries: '3', mode: 'webhook' }),
+    { enabled: true, retries: '3', mode: 'webhook' },
+  );
+  assert.deepEqual(coerceStoredValues(crossFieldManifest, { enabled: 'false' }), { enabled: false });
+  // Unknown keys and non-string values pass through untouched.
+  assert.deepEqual(coerceStoredValues(crossFieldManifest, { other: 'x', enabled: true }), {
+    other: 'x',
+    enabled: true,
+  });
+  // Garbage stays a string: downstream validation must fail closed, never silently coerce.
+  assert.deepEqual(coerceStoredValues(crossFieldManifest, { enabled: 'yes' }), { enabled: 'yes' });
+});
+
+test('counterexample: string-stored boolean values satisfy the strict contract (review round three P1)', () => {
+  // Host storage transports every scalar as a string. A legally-saved boolean
+  // "true" must validate and must satisfy requiredWhen, not report incomplete.
+  const stored = { mode: 'webhook', enabled: 'true', token: 't' };
+  const { resolution, effectiveValues } = computeEffectiveConfiguration(crossFieldManifest, stored);
+  assert.equal(resolution.status, 'selected');
+  assert.equal(typeof effectiveValues.enabled, 'boolean');
+  assert.equal(validates(crossFieldManifest, effectiveValues), true);
+  const token = crossFieldManifest.configuration!.find((field) => field.key === 'token')!;
+  assert.equal(evaluateFieldRequiredness(token, effectiveValues), true);
+});
+
+test('counterexample: string-stored boolean still fails closed for a missing conditional token', () => {
+  const stored = { mode: 'webhook', enabled: 'true' };
+  const { effectiveValues } = computeEffectiveConfiguration(crossFieldManifest, stored);
+  assert.equal(validates(crossFieldManifest, effectiveValues), false);
 });

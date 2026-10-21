@@ -55,6 +55,56 @@ function effectiveFieldValue(
 }
 
 /**
+ * The single string→type coercion boundary (round-three review P1).
+ *
+ * Host storage and web drafts transport every scalar as a string, while the
+ * contract's requiredness (`===` against declared `const`/`enum`), branch
+ * matching, and validation schema (`type: 'boolean'` / `type: 'number'`)
+ * are strictly typed. Consumers feed raw stored/drafted strings through this
+ * function before calling any other entry point in this module, so both sides
+ * evaluate identical values without stringifying the contract's predicates.
+ *
+ * Rules, per declared non-operation field:
+ * - `boolean`: `'true'`/`'false'` become the real booleans; any other string
+ *   stays a string, so downstream validation fails closed instead of
+ *   silently coercing garbage.
+ * - `number`: a string that trims non-empty and parses to a finite number
+ *   becomes that number; anything else stays a string (same fail-closed).
+ * - every other kind (and every non-string input, which passes through
+ *   untouched) keeps its value as-is.
+ *
+ * Keys that no declared field owns are passed through unchanged.
+ */
+export function coerceStoredValues(
+  manifest: PluginManifest,
+  values: StoredValues,
+): Record<string, unknown> {
+  const kinds = new Map<string, ConfigurationField['kind']>();
+  for (const field of manifest.configuration ?? []) {
+    if (field.kind !== 'operation') kinds.set(field.key, field.kind);
+  }
+  const coerced: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(values)) {
+    const kind = kinds.get(key);
+    if (typeof value !== 'string' || kind === undefined) {
+      coerced[key] = value;
+      continue;
+    }
+    if (kind === 'boolean') {
+      coerced[key] = value === 'true' ? true : value === 'false' ? false : value;
+      continue;
+    }
+    if (kind === 'number') {
+      const trimmed = value.trim();
+      coerced[key] = trimmed.length > 0 && Number.isFinite(Number(trimmed)) ? Number(trimmed) : value;
+      continue;
+    }
+    coerced[key] = value;
+  }
+  return coerced;
+}
+
+/**
  * Three-state variant resolution for a stored (or drafted) configuration.
  *
  * - `unselected`: no discriminator value present — neither stored nor declared
@@ -72,7 +122,7 @@ export function resolveConfigurationVariant(
   const variants = manifest.configurationVariants;
   if (variants === undefined) return { status: 'unselected' };
 
-  let value = values[variants.discriminator];
+  let value = coerceStoredValues(manifest, values)[variants.discriminator];
   if (value === undefined) {
     const discriminatorField = (manifest.configuration ?? []).find(
       (field) => field.key === variants.discriminator,
@@ -103,7 +153,8 @@ export function computeEffectiveConfiguration(
 ): EffectiveConfiguration {
   const configuration = manifest.configuration ?? [];
   const variants = manifest.configurationVariants;
-  const resolution = resolveConfigurationVariant(manifest, storedValues);
+  const stored = coerceStoredValues(manifest, storedValues);
+  const resolution = resolveConfigurationVariant(manifest, stored);
 
   const branchFieldKeys = new Set<string>();
   if (variants !== undefined) {
@@ -129,10 +180,10 @@ export function computeEffectiveConfiguration(
       variants !== undefined &&
       field.key === variants.discriminator
     ) {
-      effectiveValues[field.key] = storedValues[field.key];
+      effectiveValues[field.key] = stored[field.key];
       continue;
     }
-    effectiveValues[field.key] = effectiveFieldValue(field, storedValues);
+    effectiveValues[field.key] = effectiveFieldValue(field, stored);
   }
 
   return { resolution, effectiveValues };
@@ -148,6 +199,11 @@ export function computeEffectiveConfiguration(
  * `requiredWhen` is absent, the plain `required` flag decides. Branch
  * membership never influences requiredness — it only decides whether a field
  * is active at all.
+ *
+ * `values` must already be typed: pass the product of
+ * {@link computeEffectiveConfiguration} or run raw string storage/drafts
+ * through {@link coerceStoredValues} first. This function does not coerce —
+ * a string `"true"` against a declared `true` condition is *not* a match.
  */
 export function evaluateFieldRequiredness(
   field: ConfigurationField,
