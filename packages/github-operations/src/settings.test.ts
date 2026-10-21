@@ -14,7 +14,7 @@ test('ordinary settings omit internal policies and obsolete credentials without 
     assert.equal(manifest.configuration.find((field: any) => field.key === key)?.hidden, true, key);
   }
   const visible = manifest.configuration.filter((field: any) => !field.hidden);
-  assert.deepEqual(visible.map((field: any) => field.key), ['token', 'webhookSecret', 'publishRepositories']);
+  assert.deepEqual(visible.map((field: any) => field.key), ['token', 'notificationAllowlist', 'notificationBlocklist', 'webhookSecret', 'publishRepositories']);
   assert.equal(visible.some((field: any) => field.kind === 'operation'), false, 'publishing belongs to the thread preview');
   assert.equal(visible.filter((field: any) => field.kind === 'secret').length, 2);
   assert.ok(visible.every((field: any) => field.required === false));

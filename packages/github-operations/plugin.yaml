@@ -23,6 +23,16 @@ configuration:
     description: 已有本机 gh 登录时留空。填写后，插件的 GitHub 请求优先使用此令牌；不要填写 MCP 凭据。
     kind: secret
     required: false
+  - key: notificationAllowlist
+    label: 通知作者白名单（可选）
+    description: 评论和审查通知仅接收这些 GitHub 登录名，以逗号或空格分隔。留空不额外限制；仍遵守登记时的过滤条件。
+    kind: string
+    required: false
+  - key: notificationBlocklist
+    label: 通知作者黑名单（可选）
+    description: 忽略这些 GitHub 登录名的评论和审查通知，以逗号或空格分隔，不区分大小写。黑名单优先；CI、合并和冲突状态不受影响。
+    kind: string
+    required: false
   - key: webhookSecret
     label: 仓库 Webhook 签名密钥（可选）
     description: 仅接收 GitHub 仓库推送事件时填写，并使用 Host 提供的回调地址。定时跟踪不需要此项。
@@ -530,8 +540,6 @@ features:
         secret.read,
         plugin.state.get,
         plugin.state.set,
-        task.read,
-        task.write,
         thread.listMetadata,
         thread.write,
         messaging.send

@@ -14,20 +14,26 @@
 
 | 配置 | 用途 |
 | --- | --- |
+| 通知作者白名单（可选） | 只接收指定 GitHub 登录名的评论和审查通知；留空不额外限制。 |
+| 通知作者黑名单（可选） | 忽略指定登录名的评论和审查通知，不区分大小写，黑名单优先。CI、合并和冲突状态不受影响。 |
 | 仓库 Webhook 签名密钥（可选） | 仅在启用仓库 Webhook 时配置；使用 Host 提供的准确回调地址。定时跟踪无需此项。 |
 | 公开 Issue 草稿允许的仓库（可选） | 允许发布 Issue 草稿的 `owner/repository`，以逗号分隔；留空时不允许新建或发布这类草稿。 |
 
-普通设置只显示访问令牌、Webhook 密钥和允许发布 Issue 的仓库；全部可选。内部策略、遗留 `mcpToken` 和社区简报接收坐标保留原声明及已存值，不在普通设置展示。草稿的编辑、确认发布和取消回到原会话内的预览卡片；设置页不再提供草稿或简报操作按钮。已有草稿、密钥和轮询记录不删除。新安装不要求导入旧配置、旧权限或历史游标。
+普通设置显示访问令牌、通知作者白名单和黑名单，以及 Webhook 密钥与允许发布 Issue 的仓库；全部可选。内部策略、遗留 `mcpToken` 和社区简报接收坐标保留原声明及已存值，不在普通设置展示。草稿的编辑、确认发布和取消回到原会话内的预览卡片；设置页不再提供草稿或简报操作按钮。已有草稿、密钥和轮询记录不删除。新安装不要求导入旧配置、旧权限或历史游标。
 
 ## 本地更新与验收
 
-恢复完整线程预览与原生 tracking 需要 Host [修复 #232](https://github.com/mindfn/clowder-ai/pull/232)。若 MCP 返回 `Plugin action credentials are unavailable for this exact turn`，这是 Host 权限或调用凭据问题，重复卸载插件、填写 GitHub PAT 都无法补齐。跟踪业务数据由插件私有存储维护；Host 仅通过既有通用 Task 接口保存归属和等待状态，不新增 tracking 管理接口。本包不请求会话内容读取权限。先采用经过验收的 Host 通用 Task 授权修复，再更新插件并登记 tracking；登记成功后才触发要测试的在线 review。
+PR / Issue 跟踪的登记、条件、游标、回执和通知队列全部由插件私有存储维护。插件通过已声明的 schedule 拉取变化，生成普通消息，再调用 `messaging.send` 进入现有消息路由；不创建 Host Task、不写等待投影、不恢复原 invocation，也不请求 task.read/task.write/thread.readContent。现有 Host 的八项授权即可运行这条路径，无需为 tracking 安装 Host 权限补丁。
+
+Host [修复 #232](https://github.com/mindfn/clowder-ai/pull/232) 仅用于恢复原有线程内草稿预览与确认；其 Task 扩权方案已经撤回。MCP 若仍返回 `Plugin action credentials are unavailable for this exact turn`，保留错误并检查当前安装包与原生调用凭据；GitHub PAT 不代替原生身份。登记成功后才触发要测试的在线 review。
+
+作者名单以逗号或空格分隔，不区分大小写，作为登记条件之外的额外过滤。过滤不修改 GitHub 事实或收集游标；放开名单不会补发此前过滤掉的历史通知。已生成的持久通知队列保留用于失败恢复。
 
 本地候选包不需要等待 catalog 上架。交付证据提供 exact archive、SHA256 和 SHA512 SRI；核对后解包，在插件设置的「从目录安装」选择解包后的 `package` 目录（有 `plugin.yaml` 和 `package.json` 的那层）。选择同一 pluginId 的本地目录会走原实例更新路径，保留实例、密钥和持久跟踪状态；无需先卸载。首次离线安装可直接上传自包含 `.tgz`。
 
 **已有 catalog/npm 安装请使用目录更新**：当前 Host 的 archive 更新要求新旧 provenance 同为 local-archive，直接上传可能返回已安装冲突。不要为绕过冲突卸载旧实例。目录方式可替换 catalog/npm 安装；若原实例启用，Host 会按既有生命周期暂停并恢复该插件。
 
-更新后核对版本 `0.1.0-alpha.18`：只显示三个可选配置项，不出现草稿操作按钮。保存并测试连接，再确认插件运行状态。让猫调用 `github_list_tracking` 读取既有登记，再对已登记 PR 使用 `github_inspect_subject` 读取本地观察；必要时对一个明确授权的 PR 登记跟踪，保持相同 registrationId 重试。`github_refresh_pull_requests` + `github_repository_observations` 可验证仓库 provider 读取。首次登记只建立基线，不能把“暂无新通知”当作失败；观察下一次真实审查/CI 变化再确认消息投递。
+更新后核对版本 `0.1.0-alpha.18`：核对五个可选配置项，不出现草稿操作按钮。保存并测试连接，再确认插件运行状态。让猫调用 `github_list_tracking` 读取既有登记，再对已登记 PR 使用 `github_inspect_subject` 读取本地观察；必要时对一个明确授权的 PR 登记跟踪，保持相同 registrationId 重试。`github_refresh_pull_requests` + `github_repository_observations` 可验证仓库 provider 读取。首次登记只建立基线，不能把“暂无新通知”当作失败；观察下一次真实审查/CI 变化再确认消息投递。
 
 回滚时选择原验证包的解包目录更新，不清除实例、配置或历史。真实账号的登记与通知仍须在实际安装后验收，包内隔离测试不等同于运行实例已经恢复。
 

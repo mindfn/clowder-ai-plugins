@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import type { FeatureContext, PluginActionContext, PluginTaskItem, PluginStorageEntry } from '@clowder-ai/plugin-sdk';
 import { TypedWaitRuntime } from './typed-wait-runtime.js';
@@ -6,12 +7,11 @@ import type { GitHubSnapshot } from './tracking-runtime.js';
 import type { GitHubPrAwaitStateV1 } from './business/model/types/github-wait.js';
 
 function fixture() {
-  const rows = new Map<string, PluginStorageEntry>(); const tasks = new Map<string, PluginTaskItem>();
-  const sent: unknown[] = []; let revision = 0; let reads = 0; let current = true; let sendFailure = false;
-  let projectionFailure = false;
-  let reassignOnWrite = false;
-  const raceOwner = (id: string) => { const task = tasks.get(id);
-    if (reassignOnWrite && task) { reassignOnWrite = false; tasks.set(id, { ...task, ownerCatId: 'other' }); } };
+  const rows = new Map<string, PluginStorageEntry>();
+  const config = new Map<string, unknown>();
+  const sent: unknown[] = []; let revision = 0; let reads = 0; let current = true;
+  let sendFailure = false, threadAvailable = true, hostTaskCalls = 0;
+  const forbiddenTask = async () => { hostTaskCalls++; throw new Error('Host Tasks forbidden'); };
   let snapshot: GitHubSnapshot = { state: 'open', headSha: 'a'.repeat(40), ci: 'pending', comments: [], reviews: [],
     commentsComplete: true, trackingIdentity: { selfLogin: 'self', subjectAuthorLogin: 'self' } };
   let read: (() => Promise<GitHubSnapshot>) | undefined;
@@ -23,110 +23,81 @@ function fixture() {
         rows.set(key, { revision: ++revision, value: structuredClone(value) }); return { applied: true, revision };
       },
     },
-    tasks: {
-      get: async (selector: {id?: string; subjectKey?: string}) => structuredClone(selector.id ? tasks.get(selector.id) ?? null : [...tasks.values()].find(task => task.subjectKey === selector.subjectKey) ?? null),
-      list: async (filter: {threadId?: string; kind?: string}) => structuredClone([...tasks.values()].filter(task => (!filter.threadId || task.threadId===filter.threadId) && (!filter.kind || task.kind===filter.kind))),
-      create: async (value: Record<string, unknown>, options?: {onConflict?: string}) => {
-        const existing=[...tasks.values()].find(task => value.subjectKey && task.subjectKey===value.subjectKey);
-        if(existing) {if(options?.onConflict==='update')return structuredClone(existing);throw new Error('subject conflict');}
-        const task = { ...value, id: 'task-' + tasks.size, createdAt: 1, updatedAt: 1, createdBy: 'system', why: '', status: 'todo' } as unknown as PluginTaskItem;
-        tasks.set(task.id, task); return structuredClone(task);
-      },
-      update: async (id: string, patch: any, conditions?: {expectedThreadId?: string}) => {
-        if ('wait' in patch && Object.keys(patch).some(key=>key!=='wait'))throw new Error('wait patch cannot mix fields');
-        if (patch.wait && projectionFailure) return null;
-        raceOwner(id);
-        const old = tasks.get(id);
-        if (!old || conditions?.expectedThreadId!==undefined && old.threadId!==conditions.expectedThreadId) return null;
-        if(patch.wait) {
-          const input=patch.wait;
-          if(old.ownerCatId!=='astra')throw new Error('different owner');
-          if(((old as any).pluginWait?.generation??null)!==input.expectedGeneration)return null;
-          const task = { ...old, status: input.active ? 'doing' as const : input.outcome ? 'done' as const : old.status, pluginWait: { pluginInstanceId: 'instance', generation: input.generation,
-            ...(input.active ? { await: { generation: input.generation, ...input.active } } : {}),
-            ...(input.outcome ? { waitOutcome: structuredClone(input.outcome) } : {}) } };
-          tasks.set(id, task); return structuredClone(task);
-        }
-        const task = { ...old, ...patch }; tasks.set(id, task); return structuredClone(task);
-      },
-    },
-    messaging: {get: async () => null, send: async (_thread: string, draft: unknown) => {
+    tasks: { get: forbiddenTask, list: forbiddenTask, create: forbiddenTask, update: forbiddenTask },
+    threads: { get: async () => threadAvailable ? { id: 'thread' } : null },
+    messaging: { get: async () => { throw new Error('Message reads forbidden'); }, send: async (_thread: string, draft: unknown) => {
       if (sendFailure) throw new Error('delivery unavailable'); sent.push(draft); return { messageId: 'message', threadId: 'thread' };
-    } }, config: { get: async () => undefined }, log: () => {},
+    } }, config: { get: async (key: string) => config.get(key) }, log: () => {},
   } as unknown as FeatureContext;
   const caller: PluginActionContext = { catId: 'astra', userId: 'owner', threadId: 'thread', invocationId: 'turn',
     assertCurrent: async () => { if (!current) throw new Error('stale invocation'); } };
   const options = { context, provider: { read: async () => { reads++; return read ? read() : structuredClone(snapshot); } },
     coverage: async () => ({ covered: true }), now: () => 1000 };
-  return { context, caller, options, tasks, rows, sent, reads: () => reads, setSnapshot: (value: GitHubSnapshot) => { snapshot = value; },
+  return { context, caller, options, config, rows, sent, reads: () => reads, hostTaskCalls: () => hostTaskCalls,
+    setSnapshot: (value: GitHubSnapshot) => { snapshot = value; },
     defer: (value: () => Promise<GitHubSnapshot>) => { read = value; }, stale: () => { current = false; },
-    failSend: (value: boolean) => { sendFailure = value; }, failProjection: (value: boolean) => { projectionFailure = value; },
-    raceOwnerOnWrite: () => { reassignOnWrite = true; }, snapshot: () => snapshot };
+    failSend: (value: boolean) => { sendFailure = value; }, threadAvailable: (value: boolean) => { threadAvailable = value; },
+    snapshot: () => snapshot };
 }
 const input = { registrationId: 'registration', repoFullName: 'owner/repo', prNumber: 1 };
 
-test('same-thread reassignment cannot let an old registration overwrite the new owner status', async () => {
+test('subscriptions are private and native identity cannot replace a different user, owner or thread', async () => {
   const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
-  f.raceOwnerOnWrite();
-  await assert.rejects(runtime.registerPr(input, f.caller), /owner/);
-  const task = [...f.tasks.values()][0]!;
-  assert.equal(task.ownerCatId, 'other'); assert.equal(task.status, 'todo');
-  assert.equal(task.pluginWait, undefined); assert.equal(f.sent.length, 0);
+  const task = await runtime.registerPr(input, f.caller);
+  const before = structuredClone([...f.rows]);
+  for (const change of [{ userId: 'other' }, { catId: 'other' }, { threadId: 'other' }]) {
+    await assert.rejects(runtime.registerPr({ ...input, registrationId: 'new' }, { ...f.caller, ...change }), /owner|thread|user/);
+    await assert.rejects(runtime.unregister({ subjectKey: task.subjectKey }, { ...f.caller, ...change }), /owner|thread|user/);
+  }
+  assert.deepEqual([...f.rows], before); assert.equal(f.hostTaskCalls(), 0);
+  assert.equal(task.ownerCatId, 'astra'); assert.equal(task.userId, 'owner');
   await runtime.stop();
 });
 
-test('Host projection failure retains the outbox; recovery projects active N+1 and pending N before sending', async () => {
-  const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
+test('pending delivery recovers after restart with an ordinary message and no Host projection', async () => {
+  const f = fixture(); let runtime = new TypedWaitRuntime(f.options);
   const task = await runtime.registerPr(input, f.caller);
-  f.failProjection(true);
+  f.failSend(true);
   f.setSnapshot({ ...f.snapshot(), comments: [{ id: 5, author: 'reviewer', body: 'result', commentType: 'conversation' }] });
   await runtime.poll('pr');
   assert.equal(f.sent.length, 0);
   assert.equal((await runtime.store.get(task.id))?.automationState?.waitOutcome?.delivery, 'pending');
-  f.failProjection(false);
-  const send = f.context.messaging.send;
-  (f.context.messaging as any).send = async (...args: any[]) => {
-    const projection = (f.tasks.get(task.id) as any).pluginWait;
-    assert.equal(projection.await.generation, 2);
-    assert.equal(projection.waitOutcome.generation, 1);
-    assert.equal(projection.waitOutcome.delivery, 'pending');
-    return (send as any)(...args);
-  };
-  await runtime.recover();
+  await runtime.stop(); f.failSend(false);
+  runtime = new TypedWaitRuntime(f.options); await runtime.recover();
   assert.equal(f.sent.length, 1);
-  assert.equal((f.tasks.get(task.id) as any).pluginWait.waitOutcome.delivery, 'delivered');
-  await runtime.stop();
+  assert.doesNotMatch(JSON.stringify(f.sent), /waitContinuationCarrier|holdTaskId|invocationId|ownerFence/);
+  assert.equal((await runtime.store.get(task.id))?.automationState?.waitOutcome?.delivery, 'delivered');
+  assert.equal(f.hostTaskCalls(), 0); await runtime.stop();
 });
 
-test('unknown initial projection result is repairable by exact authenticated replay without a new baseline', async () => {
+test('unknown private registration result replays its durable receipt without a new baseline', async () => {
   const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
-  f.failProjection(true);
-  await assert.rejects(runtime.registerPr(input, f.caller), /projection/);
-  assert.equal(f.tasks.size, 1); assert.equal(f.reads(), 1);
-  f.setSnapshot({ ...f.snapshot(), comments: [{ id: 5, author: 'reviewer', body: 'arrived', commentType: 'conversation' }] });
-  await runtime.poll('pr'); assert.equal(f.reads(), 1); assert.equal(f.sent.length, 0);
-  f.failProjection(false);
-  const task = await runtime.registerPr(input, f.caller);
-  assert.equal(f.reads(), 1); assert.equal(task.automationState?.await?.generation, 1);
-  assert.equal(f.tasks.get(task.id)?.pluginWait?.generation, 1);
-  await runtime.poll('pr'); assert.equal(f.sent.length, 1);
-  await runtime.stop();
-});
-
-test('a failed delivered projection repairs during offline polling without resending the message', async () => {
-  const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
-  const task = await runtime.registerPr(input, f.caller);
-  const send = f.context.messaging.send;
-  (f.context.messaging as any).send = async (...args: any[]) => {
-    const result = await (send as any)(...args); f.failProjection(true); return result;
+  const cas = f.context.storage.compareAndSet;
+  let lost = false;
+  f.context.storage.compareAndSet = async (...args) => {
+    const result = await cas(...args);
+    if (result.applied && !lost) { lost = true; throw new Error('response lost'); }
+    return result;
   };
-  f.setSnapshot({ ...f.snapshot(), comments: [{ id: 5, author: 'reviewer', body: 'result', commentType: 'conversation' }] });
-  await runtime.poll('pr');
-  assert.equal(f.sent.length, 1); assert.equal(f.tasks.get(task.id)?.pluginWait?.waitOutcome?.delivery, 'pending');
-  f.failProjection(false); f.defer(async () => { throw new Error('offline'); });
-  await runtime.poll('pr');
-  assert.equal(f.sent.length, 1); assert.equal(f.tasks.get(task.id)?.pluginWait?.waitOutcome?.delivery, 'delivered');
+  await assert.rejects(runtime.registerPr(input, f.caller), /response lost/);
+  assert.equal(f.rows.size, 1); assert.equal(f.reads(), 1);
+  f.context.storage.compareAndSet = cas;
+  f.defer(async () => { throw new Error('provider offline'); });
+  const replay = await runtime.registerPr(input, f.caller);
+  assert.equal(replay.automationState?.await?.generation, 1);
+  assert.equal(f.reads(), 1); assert.equal(f.hostTaskCalls(), 0);
   await runtime.stop();
+});
+
+test('delivered private outcome is not resent during offline polling', async () => {
+  const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
+  const task = await runtime.registerPr(input, f.caller);
+  f.setSnapshot({ ...f.snapshot(), comments: [{ id: 5, author: 'reviewer', body: 'result', commentType: 'conversation' }] });
+  await runtime.poll('pr'); assert.equal(f.sent.length, 1);
+  f.defer(async () => { throw new Error('offline'); }); await runtime.poll('pr');
+  assert.equal(f.sent.length, 1);
+  assert.equal((await runtime.store.get(task.id))?.automationState?.waitOutcome?.delivery, 'delivered');
+  assert.equal(f.hostTaskCalls(), 0); await runtime.stop();
 });
 
 test('typed runtime freezes baseline, uses Host identity and replays registration without provider reads', async () => {
@@ -147,17 +118,17 @@ test('stale invocation after provider work creates neither task nor private wait
   const f = fixture(); f.defer(async () => { f.stale(); return f.snapshot(); });
   const runtime = new TypedWaitRuntime(f.options);
   await assert.rejects(runtime.registerPr(input, f.caller), /stale invocation/);
-  assert.equal(f.tasks.size, 0); assert.equal(f.rows.size, 0); await runtime.stop();
+  assert.equal(f.hostTaskCalls(), 0); assert.equal(f.rows.size, 0); await runtime.stop();
 });
 
 test('replaying an old receipt never resurrects a cancelled task or changes its notification coverage', async () => {
   const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
   const first = await runtime.registerPr(input, f.caller);
   await runtime.unregister({ subjectKey: 'pr:owner/repo#1' }, f.caller);
-  assert.equal(f.tasks.get(first.id)?.status, 'done');
+  assert.equal((await runtime.store.get(first.id))?.status, 'done');
   f.defer(async () => { throw new Error('offline'); });
   assert.deepEqual(await runtime.registerPr(input, f.caller), first);
-  assert.equal(f.tasks.get(first.id)?.status, 'done');
+  assert.equal((await runtime.store.get(first.id))?.status, 'done');
   assert.equal((await runtime.store.get(first.id))?.automationState?.await, undefined);
   assert.ok((first as any).notification?.perspective);
   await runtime.stop();
@@ -223,25 +194,24 @@ test('issue default audience ignores self, renews from the matched snapshot, and
   await runtime.poll('issue'); assert.equal(f.sent.length, 1);
   f.setSnapshot({ ...f.snapshot(), state: 'closed', comments: [...f.snapshot().comments, comment(3, 'reviewer')] });
   await runtime.poll('issue'); assert.equal(f.sent.length, 2);
-  assert.equal(f.tasks.get(first.id)?.status, 'done');
+  assert.equal((await runtime.store.get(first.id))?.status, 'done');
   assert.equal((await runtime.store.get(first.id))?.automationState?.await, undefined);
   const reads = f.reads(); await runtime.poll('issue'); assert.equal(f.reads(), reads);
   assert.doesNotMatch(JSON.stringify(f.sent), /private body/);
   await runtime.stop();
 });
 
-test('unregister rejects a different user and owner changes terminate without notifying the old destination', async () => {
+test('an unavailable thread pauses delivery without retiring private tracking', async () => {
   const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
   const task = await runtime.registerPr(input, f.caller);
-  await assert.rejects(runtime.unregister({ subjectKey: 'pr:owner/repo#1' }, { ...f.caller, userId: 'other' }), /user/);
-  const host = f.tasks.get(task.id)!; f.tasks.set(task.id, { ...host, ownerCatId: 'other' });
+  f.threadAvailable(false);
+  f.setSnapshot({ ...f.snapshot(), comments: [{ id: 5, author: 'reviewer', body: 'result', commentType: 'conversation' }] });
   await runtime.poll('pr');
   assert.equal(f.sent.length, 0); assert.equal(f.reads(), 1);
-  assert.equal((await runtime.store.get(task.id))?.automationState?.await, undefined);
-  assert.equal(f.tasks.get(task.id)?.ownerCatId, 'other');
-  await runtime.stop();
+  assert.ok((await runtime.store.get(task.id))?.automationState?.await);
+  f.threadAvailable(true); await runtime.poll('pr'); assert.equal(f.sent.length, 1);
+  assert.equal(f.hostTaskCalls(), 0); await runtime.stop();
 });
-
 
 test('production typed polling consumes one scoped CI batch and retains healthy sibling wake idempotency', async () => {
   const f = fixture(); let batches = 0, scopedReads = 0; const healthy = { ...f.snapshot(), ci: 'pass' as const };
@@ -386,13 +356,74 @@ test('terminal CI observation with lost private writes is not delivered and retr
     await runtime.poll('pr');
     assert.deepEqual(Object.fromEntries(f.rows), before);
     assert.equal(f.sent.length, 0);
-    assert.equal(f.tasks.get(task.id)?.pluginWait?.waitOutcome, undefined);
-    assert.ok(f.tasks.get(task.id)?.pluginWait?.await, 'registration remains active for retry');
+    assert.equal((await runtime.store.get(task.id))?.automationState?.waitOutcome, undefined);
+    assert.ok((await runtime.store.get(task.id))?.automationState?.await, 'private subscription remains active for retry');
     f.context.storage.compareAndSet = cas;
     await runtime.poll('pr');
     assert.equal(f.sent.length, 1);
-    assert.equal(f.tasks.get(task.id)?.pluginWait?.waitOutcome?.reason, 'subject_terminal');
+    assert.equal((await runtime.store.get(task.id))?.automationState?.waitOutcome?.reason, 'subject_terminal');
     await runtime.poll('pr');
     assert.equal(f.sent.length, 1, 'no duplicate terminal delivery after the committed retry');
   } finally { await runtime.stop(); }
+});
+
+
+test('notification allowlist and blocklist filter actors without replaying filtered history', async () => {
+  const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
+  const task = await runtime.registerPr(input, f.caller);
+  f.config.set('notificationAllowlist', 'Alice, Blocked');
+  f.config.set('notificationBlocklist', 'blocked');
+  const comment = (id: number, author: string) => ({ id, author, body: 'not copied', commentType: 'conversation' as const });
+  f.setSnapshot({ ...f.snapshot(), comments: [comment(1, 'BLOCKED'), comment(2, 'bob')] });
+  await runtime.poll('pr'); assert.equal(f.sent.length, 0);
+  assert.equal((await runtime.store.get(task.id))?.automationState?.await?.generation, 1);
+  f.config.set('notificationAllowlist', ''); f.config.set('notificationBlocklist', '');
+  await runtime.poll('pr'); assert.equal(f.sent.length, 0, 'changing policy must not replay filtered history');
+  f.config.set('notificationAllowlist', 'alice');
+  f.setSnapshot({ ...f.snapshot(), comments: [...f.snapshot().comments, comment(3, 'ALICE')] });
+  await runtime.poll('pr'); assert.equal(f.sent.length, 1);
+  assert.equal(f.hostTaskCalls(), 0); await runtime.stop();
+});
+
+test('blocked review decisions are quiet while CI status uses ordinary notification delivery', async () => {
+  const f = fixture(); const runtime = new TypedWaitRuntime(f.options);
+  const task = await runtime.registerPr(input, f.caller);
+  f.config.set('notificationBlocklist', 'review-bot[bot]');
+  f.setSnapshot({ ...f.snapshot(), reviews: [{ id: 7, author: 'review-bot[bot]', state: 'CHANGES_REQUESTED', commitId: 'a'.repeat(40) }] });
+  await runtime.poll('pr'); assert.equal(f.sent.length, 0);
+  f.setSnapshot({ ...f.snapshot(), ci: 'pass' });
+  await runtime.poll('pr'); assert.equal(f.sent.length, 1);
+  assert.equal((await runtime.store.get(task.id))?.automationState?.waitOutcome?.delivery, 'delivered');
+  assert.doesNotMatch(JSON.stringify(f.sent), /waitContinuationCarrier|holdTaskId|invocationId/);
+  await runtime.stop();
+});
+
+
+test('existing private records keep legacy Host-derived IDs and replay without Host access', async () => {
+  const f = fixture(); let runtime = new TypedWaitRuntime(f.options);
+  const first = await runtime.registerPr(input, f.caller); await runtime.stop();
+  const [oldKey, entry] = [...f.rows][0]!;
+  const record = structuredClone(entry.value) as any;
+  record.task.id = 'legacy-host-task';
+  for (const receipt of Object.values(record.registrations) as any[]) receipt.result.id = 'legacy-host-task';
+  f.rows.delete(oldKey);
+  const key = 'github.typed-wait.v1.' + createHash('sha256').update('legacy-host-task').digest('hex');
+  f.rows.set(key, { ...entry, value: record });
+  f.defer(async () => { throw new Error('provider offline'); });
+  runtime = new TypedWaitRuntime(f.options);
+  const replay = await runtime.registerPr(input, f.caller);
+  assert.equal(replay.id, 'legacy-host-task'); assert.equal(f.rows.size, 1);
+  assert.deepEqual(replay.automationState, first.automationState);
+  assert.equal(f.reads(), 1); assert.equal(f.hostTaskCalls(), 0);
+  assert.equal((await runtime.unregister({ subjectKey: 'pr:owner/repo#1' }, f.caller)).unregistered, true);
+  assert.equal((await runtime.store.get('legacy-host-task'))?.status, 'done');
+  await runtime.stop();
+});
+
+test('a missing thread rejects a fresh registration before provider reads or private writes', async () => {
+  const f = fixture(); f.threadAvailable(false);
+  const runtime = new TypedWaitRuntime(f.options);
+  await assert.rejects(runtime.registerPr(input, f.caller), /thread unavailable/);
+  assert.equal(f.reads(), 0); assert.equal(f.rows.size, 0); assert.equal(f.hostTaskCalls(), 0);
+  await runtime.stop();
 });

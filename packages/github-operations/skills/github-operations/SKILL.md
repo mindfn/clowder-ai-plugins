@@ -19,6 +19,16 @@ arrive as ordinary messages. Read the returned wait and notification coverage. U
 when requested; terminal PR/issue state also retires tracking automatically.
 Unregistering retains historical records.
 
+Tracking is a package-private notification subscription. Declared schedules poll
+GitHub and use `messaging.send` to post ordinary thread messages; the normal message
+route wakes the recipient. Do not create or update Host Tasks, register a second
+callback/continuation, or claim that a previous invocation is resumed. This package
+needs no Task or conversation-content grants. Optional notification author allowlist
+and blocklist are configured in Settings; blocklist wins and both further narrow
+registered comment/review conditions. CI/merge/conflict state notifications are
+unaffected. Filter changes do not backfill suppressed history; pending deliveries
+retain their durable recovery path.
+
 Before triggering a review or another event whose notification is being tested,
 register tracking first and verify the successful receipt. A failed registration
 is not coverage: retain the error and do not trigger the event yet. In particular,

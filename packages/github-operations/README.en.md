@@ -14,14 +14,20 @@ Other settings are optional, not installation prerequisites:
 
 | Setting | Purpose |
 | --- | --- |
+| Notification author allowlist | Optional additional filter for comment/review notifications. Empty adds no restriction. |
+| Notification author blocklist | Suppress named comment/review authors, case-insensitively. Blocklist wins. CI, merge and conflict state notifications are unaffected. |
 | GitHub Webhook Secret | Configure only when using the optional repository webhook, with the exact callback URL exposed by the Host. |
 | Repositories allowed for public issue drafts | Comma-separated `owner/repository` names. Empty disables new drafts and publishing. |
 
-Ordinary settings show only the optional GitHub token, webhook secret and publication repository allowlist. Internal policies, the legacy `mcpToken` and narrator target coordinates retain their declarations and saved values. Draft editing, explicit publication and cancellation belong to the existing thread preview; Settings has no draft or narrator operation buttons. Existing drafts, credentials and tracking records remain intact. Fresh installation requires no legacy import.
+Ordinary settings show the optional GitHub token, notification author allowlist/blocklist, webhook secret and publication repository allowlist. Internal policies, the legacy `mcpToken` and narrator target coordinates retain their declarations and saved values. Draft editing, explicit publication and cancellation belong to the existing thread preview; Settings has no draft or narrator operation buttons. Existing drafts, credentials and tracking records remain intact. Fresh installation requires no legacy import.
 
 ## Local update and verification
 
-Restoring the complete thread preview and native tracking requires [Host fix #232](https://github.com/mindfn/clowder-ai/pull/232). `Plugin action credentials are unavailable for this exact turn` concerns Host grants or native invocation credentials; reinstalling the plugin or adding a GitHub PAT does not repair it. Tracking business records remain in plugin-private storage; the Host stores ownership and wait projection through the existing generic Task API, with no new tracking-management interface. This package does not request conversation-content reads. Adopt the reviewed Host Task-grant fix, update this plugin, register tracking successfully, then trigger the review event being tested.
+Tracking subscriptions, predicates, cursors, receipts and notification outboxes stay in plugin-private storage. Declared schedules poll GitHub; changes become ordinary messages through `messaging.send` and the existing conversation route. Tracking creates no Host Task, writes no wait projection and resumes no previous invocation. It requests no task.read/task.write/thread.readContent; the existing eight-grant Host policy suffices.
+
+[Host fix #232](https://github.com/mindfn/clowder-ai/pull/232) restores the original inline draft preview only; the Task-grant proposal has been withdrawn. If native credentials are still unavailable, retain the error and inspect the installed package and native invocation context. A GitHub PAT does not replace native identity. Register tracking successfully before triggering a review event being tested.
+
+Actor lists accept comma/whitespace-separated logins, case-insensitively, as additional filters on registered conditions. Filtering preserves provider evidence and collection cursors; widening a list does not replay filtered history. Already admitted durable notifications remain available for delivery recovery.
 
 Use the delivered exact archive with its SHA256 and SHA512 SRI. Extract it and select the resulting `package` directory through Settings' directory installation. Updating the same pluginId through a local directory preserves the instance, credentials and durable tracking state; do not uninstall first. An enabled plugin follows the Host's ordinary suspend/update/resume lifecycle. A fresh installation can upload the self-contained `.tgz` directly.
 

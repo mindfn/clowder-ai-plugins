@@ -656,6 +656,9 @@ test('real generic triage tool computes a recommendation without persisting acce
 
 test('real builtin projects provider HEAD and CI without accepting or writing a governance verdict', async () => {
   const f = host();
+  for (const method of ['get', 'list', 'create', 'update'] as const) {
+    (f.runtimeHost.tasks as any)[method] = async () => { throw new Error('Host Task access forbidden for tracking'); };
+  }
   let snapshot: GitHubSnapshot = { state: 'open', headSha: 'a'.repeat(40), ci: 'pending', comments: [], reviews: [] };
   const active = await createGitHubPluginModule({ createProvider: () => ({
     read: async () => completeSnapshot(snapshot), selfLogin: () => 'owner',
@@ -816,9 +819,11 @@ function host() {
   return { runtimeHost, deliveries };
 }
 
-test('real manifest → SDK builtin activation → tracking → schedule → message → terminal → stop', async () => {
-  assert.equal(manifest.features[0].capabilities.includes('thread.readContent'), false,
-    'tracking must run without access to conversation content');
+test('real manifest → SDK builtin activation → tracking → schedule → ordinary message → terminal → stop without Host Tasks', async () => {
+  for (const capability of ['task.read', 'task.write', 'thread.readContent']) {
+    assert.equal(manifest.features[0].capabilities.includes(capability), false,
+      'GitHub notifications must not require Host Task or content access');
+  }
   const f = host();
   let snapshot: GitHubSnapshot = { state: 'open', headSha: 'a'.repeat(40), ci: 'pending', comments: [], reviews: [] };
   let reads = 0;
@@ -839,6 +844,7 @@ test('real manifest → SDK builtin activation → tracking → schedule → mes
   snapshot = { ...snapshot, state: 'merged' };
   await active.actions['github.pr-tracking']!({});
   assert.equal(f.deliveries.length, 2);
+  assert.doesNotMatch(JSON.stringify(f.deliveries), /waitContinuationCarrier|holdTaskId|invocationId|ownerFence/);
   const before = reads;
   await active.actions['github.pr-tracking']!({});
   assert.equal(reads, before);
