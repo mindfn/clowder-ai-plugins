@@ -73,7 +73,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
     storage: context.storage, threads: context.threads, projectionOperations: community.projectionOperations,
     provider: { token: () => context.secrets.get('token') },
     issues: { narrator },
-    drafts: { publisher, createDraft: input => drafts.create(input), config: async () => {
+    drafts: { publisher, config: async () => {
       const value = await context.config.get('publishRepositories');
       if (value !== undefined && typeof value !== 'string') throw new TypeError('Invalid publish repository configuration');
       const repos = [...new Set((value ?? '').split(/[\s,]+/).filter(Boolean).map(repo => repo.toLowerCase()))];
@@ -98,14 +98,6 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       }])),
       // Only the owner-authenticated Host HTTP forwarder may call this method.
       // It is deliberately absent from tools, MCP actions and operations.
-      'github.narrator.status': async (_value: unknown, caller?: PluginActionContext) => {
-        if (caller) throw new Error('Narrator settings require owner operation');
-        return { data: { deliveries: await narrator.status() } };
-      },
-      'github.narrator.retry': async (_value: unknown, caller?: PluginActionContext) => {
-        if (caller) throw new Error('Narrator settings require owner operation');
-        return { data: { deliveries: await narrator.reconcile() } };
-      },
       'github.community.http': (value: unknown, caller?: PluginActionContext) => {
         if (caller) throw new Error('Community owner HTTP cannot be invoked as a native action');
         return http.forwardOwner(webhookEnvelope.parse(value).request);
@@ -140,9 +132,6 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.legacy-history.inspect': (value: unknown) => community.inspectLegacyHistory(value),
       'github.draft.create': (value: unknown) => drafts.create(value),
       'github.draft.get': (value: unknown) => drafts.get(value),
-      'github.draft.list': () => drafts.list(),
-      'github.draft.publish': (value: unknown) => drafts.publish(value),
-      'github.draft.cancel': (value: unknown) => drafts.cancel(value),
       'github.triage.recommend': recommendTriage,
     },
     dispose: async () => { await Promise.all([connectionSettings.dispose(), prTitles.stop(), reviewVerdicts.stop(), narrator.stop(), http.stop(), collection.stop(), tracking.stop(), community.stop(), drafts.stop(), reviewTriggers.stop(), prIndex.stop()]); },

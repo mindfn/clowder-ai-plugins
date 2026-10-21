@@ -16,17 +16,18 @@ Other settings are optional, not installation prerequisites:
 | --- | --- |
 | GitHub Webhook Secret | Configure only when using the optional repository webhook, with the exact callback URL exposed by the Host. |
 | Repositories allowed for public issue drafts | Comma-separated `owner/repository` names. Empty disables new drafts and publishing. |
-| Community narrator cat / thread | Set both to an available cat and an accessible existing thread for manual triage briefings. Empty disables new requests. |
 
-The legacy `mcpToken` credential and internal `setupNoiseBotLogins` / `cloudReviewerLogins` policies are hidden from ordinary settings. Their declarations, stored values and runtime reads remain compatible. Specialized webhook, draft and narrator settings remain editable and optional. The generic contract does not currently support collapsible groups. Fresh installation requires no old configuration, permissions or cursor import.
+Ordinary settings show only the optional GitHub token, webhook secret and publication repository allowlist. Internal policies, the legacy `mcpToken` and narrator target coordinates retain their declarations and saved values. Draft editing, explicit publication and cancellation belong to the existing thread preview; Settings has no draft or narrator operation buttons. Existing drafts, credentials and tracking records remain intact. Fresh installation requires no legacy import.
 
 ## Local update and verification
+
+Restoring the complete thread preview and native tracking requires [Host fix #232](https://github.com/mindfn/clowder-ai/pull/232). `Plugin action credentials are unavailable for this exact turn` concerns Host grants or native invocation credentials; reinstalling the plugin or adding a GitHub PAT does not repair it. Adopt the reviewed Host fix, update this plugin, register tracking successfully, then trigger the review event being tested.
 
 Use the delivered exact archive with its SHA256 and SHA512 SRI. Extract it and select the resulting `package` directory through Settings' directory installation. Updating the same pluginId through a local directory preserves the instance, credentials and durable tracking state; do not uninstall first. An enabled plugin follows the Host's ordinary suspend/update/resume lifecycle. A fresh installation can upload the self-contained `.tgz` directly.
 
 For an existing catalog/npm installation, use the directory update: the current Host's archive replacement requires matching local-archive provenance and may reject a direct upload as already installed. Do not work around that by uninstalling.
 
-After updating, confirm `0.1.0-alpha.17`, the hidden internal fields, and optional visible fields. Save, test the account, and confirm runtime health. Read existing registrations with `github_list_tracking` and local observations with `github_inspect_subject`. Register an explicitly authorized PR if needed, reusing its registrationId after an ambiguous response. `github_refresh_pull_requests` followed by `github_repository_observations` checks the provider read path. Initial registration is silent; verify delivery on a subsequent real review or CI change. Isolated package tests do not establish that the live installation has recovered. To roll back, install the extracted previous verified package without clearing the instance or history.
+After updating, confirm `0.1.0-alpha.18`, the hidden internal fields, and optional visible fields. Save, test the account, and confirm runtime health. Read existing registrations with `github_list_tracking` and local observations with `github_inspect_subject`. Register an explicitly authorized PR if needed, reusing its registrationId after an ambiguous response. `github_refresh_pull_requests` followed by `github_repository_observations` checks the provider read path. Initial registration is silent; verify delivery on a subsequent real review or CI change. Isolated package tests do not establish that the live installation has recovered. To roll back, install the extracted previous verified package without clearing the instance or history.
 
 ## Track PRs and issues
 

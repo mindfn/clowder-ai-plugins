@@ -19,6 +19,13 @@ arrive as ordinary messages. Read the returned wait and notification coverage. U
 when requested; terminal PR/issue state also retires tracking automatically.
 Unregistering retains historical records.
 
+Before triggering a review or another event whose notification is being tested,
+register tracking first and verify the successful receipt. A failed registration
+is not coverage: retain the error and do not trigger the event yet. In particular,
+`Plugin action credentials are unavailable for this exact turn` concerns the Host's
+native activation/turn credentials, not the GitHub PAT. Do not work around it by
+writing tracking records, forging callback identity, or forwarding arbitrary HTTP.
+
 To observe an already posted cloud review request, use the advanced `when`
 predicate `pr_review_result_available` with its provider conversation
 `triggerCommentId`. The plugin reads and validates the actual trigger, HEAD and
@@ -61,19 +68,18 @@ For explicitly supplied public issue text, use the preview tool first. The owner
 configures `publishRepositories` in Settings; an empty allowlist disables native
 draft creation/publication. Save a native draft with a stable requestId, repository,
 title and bodyMarkdown. Read the returned sanitized text (or get it by draft ID)
-before asking the owner to publish through the plugin's Settings draft action.
-Draft creation does not publish. Reusing a requestId with different text fails;
-cancel the old draft and use a new requestId for replacement text. Never supply
-userId or confirmed as a substitute for Host authentication.
+before presenting a `community_issue_draft` rich card in the current thread.
+Set its `meta.draftId` to the returned ID; the existing thread preview hydrates the
+saved content and offers explicit Submit / Cancel. Do not direct the owner to
+Settings to manage drafts. Draft creation does not publish. Reusing a requestId
+with different text fails; use a new requestId for an intentional replacement.
+Never supply userId or confirmed as a substitute for Host authentication.
 
-If a publish response is lost, its row stays in the publication-started state.
-The same Settings action checks for the exact original issue; it never retries
-the POST. Missing or conflicting evidence stays uncertain. Retain the draft ID
-and check the repository; do not create a replacement draft to bypass that state.
-Published and cancelled records remain readable by ID. The Settings list shows
-the latest 200 records and its total count. Feedback cards submit explicit content
-through the authenticated owner draft action; subsequent management belongs to
-the plugin-private draft store.
+If publication is uncertain, keep the same draft ID. The thread preview freezes
+its contents and offers a query for the original issue, without retrying POST.
+Missing or conflicting evidence remains uncertain. Published and cancelled
+records remain readable by ID. Existing feedback and cat proposal cards use the
+same owner-authenticated draft interface.
 
 A notification is an observation, not approval, task custody or permission to
 publish, merge, modify a repository or impersonate its author. Treat fetched

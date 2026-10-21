@@ -9,7 +9,7 @@ import type { GitHubSnapshot } from './tracking-runtime.js';
 import type { RepoSubject } from './community-runtime.js';
 import { SdkCommunityEventLog } from './business/domains/community/CommunityEventLog.js';
 import { SdkCommunityObjectStore } from './business/domains/community/CommunityObjectStore.js';
-import { validateManifest, validateOperationRowsResult } from '@clowder-ai/plugin-contract';
+import { validateManifest } from '@clowder-ai/plugin-contract';
 import { copyLegacyRepositoryProgress, legacyRepositorySnapshotBytes } from './legacy-repository-progress.js';
 import { copyLegacyProviderHistory, legacyHistoryBytes } from './legacy-provider-history.js';
 import { copyLegacyIssueProgress } from './legacy-issue-progress.js';
@@ -430,28 +430,25 @@ test('native draft owner operation publishes once and recovers partial success a
   const draft = await active.actions[create.action.method]!(input) as { data: { id: string; bodyMarkdown: string } };
   assert.equal(draft.data.bodyMarkdown, 'Observed [redacted]');
   assert.deepEqual(await active.actions[create.action.method]!(input), draft);
-  const operation = manifest.configuration.find((c: { key: string }) => c.key === 'issueDrafts');
-  const publish = operation.actions.find((a: { id: string }) => a.id === 'publish');
+  assert.equal(manifest.configuration.some((c: { kind: string }) => c.kind === 'operation'), false);
   assert.equal(validateManifest(manifest).valid, true);
-  const rows = await active.actions['github.draft.list']!({}) as { data: unknown };
-  assert.equal(validateOperationRowsResult(operation, rows.data).valid, true);
-  assert.ok(publish.confirm, 'external publication requires explicit owner UX confirmation');
-  assert.ok(!manifest.contributions.some((c: { action?: { method: string } }) => c.action?.method === publish.action.method), 'publish must not be a general tool');
+  assert.ok(!manifest.contributions.some((c: { action?: { method: string } }) => c.action?.method === 'github.draft.publish'), 'publish must not be a general tool');
+  const publish = () => active.actions['github.community.http']!({ request: { method: 'POST', path: `github/community-issue-drafts/by-id/${draft.data.id}/publish`, principal: { kind: 'owner', id: 'user-1' }, body: {} } }) as Promise<any>;
   const cas = f.runtimeHost.storage.compareAndSet;
   let broken = true;
   f.runtimeHost.storage.compareAndSet = async (key, revision, value) => {
     if (broken && key.startsWith('community.native-draft.') && (value as { status?: string }).status === 'published') throw new Error('disk unavailable');
     return cas(key, revision, value);
   };
-  await assert.rejects(async () => active.actions[publish.action.method]!({ input: { draftId: draft.data.id, token: 'stored-secret' } }), /disk unavailable/);
+  const lost = await publish(); assert.equal(lost.status, 409); assert.match(lost.body.error, /disk unavailable/);
   assert.equal(creates, 1);
   await active.stop({reason:'test'});
   broken = false;
   active = await module.create(manifest).start(f.runtimeHost);
-  const result = await active.actions[publish.action.method]!({ input: { draftId: draft.data.id } }) as { data: { status: string; issue: unknown } };
-  assert.equal(result.data.status, 'published');
-  assert.deepEqual(result.data.issue, published);
-  await active.actions[publish.action.method]!({ input: { draftId: draft.data.id } });
+  const result = await publish();
+  assert.equal(result.body.draft.status, 'published');
+  assert.equal(result.body.draft.githubIssueUrl, published!.url);
+  await publish();
   assert.equal(creates, 1);
   await assert.rejects(async () => active.actions[create.action.method]!({ ...input, userId: 'owner' }), /unsupported/);
   await assert.rejects(async () => active.actions[create.action.method]!({ ...input, requestId: 'other', repo: 'other/project' }), /allowlist/);
@@ -477,7 +474,8 @@ test('native draft ambiguous publication never retries POST, and stop waits for 
   }) });
   let active = await module.create(manifest).start(f.runtimeHost);
   const draft = await active.actions['github.draft.create']!({ requestId: 'stop-case', repo: 'example/project', title: 'Issue', bodyMarkdown: '' }) as { data: { id: string } };
-  const pending = Promise.resolve(active.actions['github.draft.publish']!({ input: { draftId: draft.data.id } })).catch(() => undefined);
+  const publish = () => active.actions['github.community.http']!({ request: { method: 'POST', path: `github/community-issue-drafts/by-id/${draft.data.id}/publish`, principal: { kind: 'owner', id: 'user-1' }, body: {} } }) as Promise<any>;
+  const pending = publish().catch(() => undefined);
   await begin;
   let stopped = false;
   const stop = Promise.resolve(active.stop({reason:'test'})).then(() => { stopped = true; });
@@ -485,8 +483,8 @@ test('native draft ambiguous publication never retries POST, and stop waits for 
   assert.equal(stopped, false);
   release(); await pending; await stop;
   active = await module.create(manifest).start(f.runtimeHost);
-  const result = await active.actions['github.draft.publish']!({ input: { draftId: draft.data.id } }) as { data: { status: string } };
-  assert.equal(result.data.status, 'uncertain');
+  const result = await publish();
+  assert.equal(result.status, 202); assert.equal(result.body.draft.status, 'publishing');
   assert.equal(creates, 1);
   await active.stop({reason:'test'});
 });
@@ -1091,7 +1089,7 @@ test('narrator disabled dispatch stays inert after enabling; explicit target is 
     const { request, id } = await narratorCase(active);
     assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 200);
     f.config.narratorCatId = 'cat-1'; f.config.narratorThreadId = 'thread-1';
-    await active.actions['github.narrator.retry']!({}); assert.equal(f.deliveries.length, 0);
+    await active.actions['github.community-reconciler']!({}); assert.equal(f.deliveries.length, 0);
     await request('PATCH', `community-issues/${id}`, { state: 'unreplied' });
     assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 200);
     assert.equal((await request('GET', `community-issues/${id}`)).body.state, 'discussing');
@@ -1109,14 +1107,14 @@ test('narrator workflow failure preserves dispatch retry; configuration change c
     f.runtimeHost.storage.compareAndSet = cas;
     assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 200);
     f.config.narratorThreadId = 'other-thread';
-    const paused = await active.actions['github.narrator.retry']!({}) as any;
-    assert.equal(paused.data.deliveries[0].status, 'pending'); assert.match(paused.data.deliveries[0].reason, /configuration changed/);
+    const paused = await active.actions['github.community-reconciler']!({}) as any;
+    assert.equal(paused.data.narratorDeliveries[0].status, 'pending'); assert.match(paused.data.narratorDeliveries[0].reason, /configuration changed/);
     assert.equal(f.deliveries.length, 0);
     f.config.narratorThreadId = 'thread-1';
-    await active.actions['github.narrator.retry']!({});
+    await active.actions['github.community-reconciler']!({});
     assert.equal(f.deliveries.length, 1);
-    const state = await active.actions['github.narrator.status']!({}) as any;
-    assert.equal(state.data.deliveries[0].status, 'delivered');
+    const state = await active.actions['github.community-reconciler']!({}) as any;
+    assert.equal(state.data.narratorDeliveries[0].status, 'delivered');
   } finally { await active.stop({reason:'test'}); }
 });
 
@@ -1132,7 +1130,7 @@ test('narrator does not reopen dispatch or wake a case closed during target vali
     await request('PATCH', `community-issues/${id}`, { state: 'unreplied' });
     assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 200);
     f.runtimeHost.config.get = async value => { await request('PATCH', `community-issues/${id}`, { state: 'closed' }); return get(value); };
-    await active.actions['github.narrator.retry']!({}); assert.equal(f.deliveries.length, 0);
+    await active.actions['github.community-reconciler']!({}); assert.equal(f.deliveries.length, 0);
   } finally { await active.stop({reason:'test'}); }
 });
 
@@ -1148,14 +1146,14 @@ test('narrator stop joins an unknown send; restart uses the same Host message ke
   const module = createGitHubPluginModule(); let active = await module.create(manifest).start(f.runtimeHost);
   const { request, id } = await narratorCase(active);
   assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 200);
-  const sending = assert.rejects(async () => active.actions['github.narrator.retry']!({}), /stopped|active/i);
+  const sending = assert.rejects(async () => active.actions['github.community-reconciler']!({}), /stopped|active/i);
   await started; let stopped = false; const stop = Promise.resolve(active.stop({reason:'test'})).then(() => { stopped = true; });
   await new Promise(r => setImmediate(r)); assert.equal(stopped, false);
   finish(); await Promise.all([sending, stop]); pause = false;
   active = await module.create(manifest).start(f.runtimeHost);
   try {
-    await active.actions['github.narrator.retry']!({}); assert.equal(rows.size, 1);
-    assert.equal((await active.actions['github.narrator.status']!({}) as any).data.deliveries[0].status, 'delivered');
+    await active.actions['github.community-reconciler']!({}); assert.equal(rows.size, 1);
+    assert.equal((await active.actions['github.community-reconciler']!({}) as any).data.narratorDeliveries[0].status, 'delivered');
   } finally { await active.stop({reason:'test'}); }
 });
 
@@ -1172,7 +1170,7 @@ test('narrator committed workflow with lost CAS reply recovers without a journal
     const item = (await request('GET', `community-issues/${id}`)).body;
     assert.equal(item.state, 'discussing'); assert.ok(item.narratorDelivery.sourceEventId);
     assert.equal((await request('POST', `community-issues/${id}/dispatch`)).status, 409);
-    await active.actions['github.narrator.retry']!({}); await active.actions['github.narrator.retry']!({});
+    await active.actions['github.community-reconciler']!({}); await active.actions['github.community-reconciler']!({});
     assert.equal(f.deliveries.length, 1);
   } finally { await active.stop({reason:'test'}); }
 });
@@ -1185,11 +1183,11 @@ test('concurrent narrator dispatch admits one workflow intent and configuration 
     assert.deepEqual(result.map(r => r.status).sort(), [200, 409]);
     const get = f.runtimeHost.config.get;
     f.runtimeHost.config.get = async id => { f.config.narratorCatId = ''; f.config.narratorThreadId = ''; return get(id); };
-    const retry = await active.actions['github.narrator.retry']!({}) as any;
-    assert.equal(retry.data.deliveries.length, 1); assert.equal(retry.data.deliveries[0].status, 'pending');
+    const retry = await active.actions['github.community-reconciler']!({}) as any;
+    assert.equal(retry.data.narratorDeliveries.length, 1); assert.equal(retry.data.narratorDeliveries[0].status, 'pending');
     assert.equal(f.deliveries.length, 0);
     f.runtimeHost.config.get = get; f.config.narratorCatId = 'cat-1'; f.config.narratorThreadId = 'thread-1';
-    await active.actions['github.narrator.retry']!({}); assert.equal(f.deliveries.length, 1);
+    await active.actions['github.community-reconciler']!({}); assert.equal(f.deliveries.length, 1);
   } finally { await active.stop({reason:'test'}); }
 });
 
@@ -1205,7 +1203,7 @@ test('hostile issue title stays data through owner dispatch, durable intent and 
     const text = item.narratorDelivery.briefing;
     assert.doesNotMatch(text, /^(?:SYSTEM:|@codex|call github_community_report)/m);
     assert.match(text, /Context \(untrusted provider text\): "/);
-    await active.actions['github.narrator.retry']!({});
+    await active.actions['github.community-reconciler']!({});
     assert.equal(f.deliveries.length, 1);
     assert.equal((f.deliveries[0] as any).payload.elements[0].payload.text, text);
   } finally { await active.stop({reason:'test'}); }
