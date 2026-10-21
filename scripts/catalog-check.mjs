@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -19,6 +19,7 @@ import {
 } from './catalog-package-shrinkwrap.mjs';
 import { assertStaticPackageDependencies } from './catalog-static-package.mjs';
 import { assertPackedRuntimeEntrypoints } from './catalog-runtime-entrypoints.mjs';
+import { readRegistryIntegrity } from './registry-publish-compatibility.mjs';
 
 
 const workspaceSdk = JSON.parse(
@@ -70,26 +71,91 @@ let wechatVisibleReaderChecks = 0;
 let weixinMpChecks = 0;
 let connectorChecks = 0;
 
+async function fetchPublishedTarball(url) {
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(new DOMException('registry tarball request timed out', 'TimeoutError')),
+      15_000,
+    );
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (response.ok) return Buffer.from(await response.arrayBuffer());
+      if (response.status >= 500 && Date.now() < deadline) continue;
+      throw new Error(`registry tarball download failed: HTTP ${response.status} for ${url}`);
+    } catch (error) {
+      if (error.name === 'TimeoutError' && Date.now() < deadline) continue;
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+// Published versions are pinned to the exact bytes npm serves, so their pins
+// are verified against the registry tarball; repacking a published version in
+// this workspace can never reproduce those bytes and must not overwrite the
+// pin. Versions absent from the registry are new releases whose pin comes
+// from the deterministic local pack, which is what CI will publish.
+async function resolveArtifact(version, destinationDirectory) {
+  const registryFilename = `${version.artifact.packageName.split('/').at(-1)}-${version.version}.tgz`;
+  const registryIntegrity = await readRegistryIntegrity(
+    version.artifact.packageName,
+    version.version,
+  );
+  if (registryIntegrity !== undefined) {
+    const bytes = await fetchPublishedTarball(version.artifact.tarballUrl);
+    const integrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`;
+    assert.equal(
+      integrity,
+      registryIntegrity,
+      `${version.artifact.packageName}@${version.version} registry tarball does not match registry dist.integrity`,
+    );
+    const artifactPath = join(destinationDirectory, registryFilename);
+    await writeFile(artifactPath, bytes);
+    const listed = spawnSync('tar', ['-tzf', artifactPath], {
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    assert.equal(listed.status, 0, [listed.stdout, listed.stderr].filter(Boolean).join('\n'));
+    return {
+      name: version.artifact.packageName,
+      version: version.version,
+      filename: registryFilename,
+      integrity,
+      shasum: createHash('sha1').update(bytes).digest('hex'),
+      files: listed.stdout
+        .split('\n')
+        .filter((line) => line.length > 0 && !line.endsWith('/'))
+        .map((line) => ({ path: line.replace(/^package\//, '') })),
+    };
+  }
+  const packed = spawnSync(
+    process.execPath,
+    ['scripts/pack-publish-artifact.mjs', version.artifact.provenance.sourceDirectory, destinationDirectory],
+    { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
+  );
+  assert.equal(
+    packed.status,
+    0,
+    [packed.stdout, packed.stderr].filter(Boolean).join('\n'),
+  );
+  const [artifact] = JSON.parse(packed.stdout);
+  return artifact;
+}
+
 async function verifyCatalogEntry(catalogEntry) {
   const version = getCatalogPlugin(validation.catalog, catalogEntry.pluginId);
   assert.ok(version);
   const temporaryDirectory = await mkdtemp(join(tmpdir(), 'clowder-catalog-pack-'));
   try {
-    const packed = spawnSync(
-      process.execPath,
-      ['scripts/pack-publish-artifact.mjs', version.artifact.provenance.sourceDirectory, temporaryDirectory],
-      { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
-    );
-    assert.equal(
-      packed.status,
-      0,
-      [packed.stdout, packed.stderr].filter(Boolean).join('\n'),
-    );
-    const [artifact] = JSON.parse(packed.stdout);
+    const artifact = await resolveArtifact(version, temporaryDirectory);
     assert.equal(artifact.name, version.artifact.packageName);
     assert.equal(artifact.version, version.version);
     // Report every stale field in one run: integrity and shasum both come
-    // from CI-packed bytes, so a pin refresh needs both actuals at once.
+    // from the published registry bytes, so a pin refresh needs both actuals
+    // at once.
     const staleFields = [];
     if (artifact.integrity !== version.artifact.integrity) {
       staleFields.push(`integrity\n+ actual - expected\n\n+ '${artifact.integrity}'\n- '${version.artifact.integrity}'`);

@@ -8,6 +8,7 @@ import test from 'node:test';
 import { parse } from 'yaml';
 
 import { normalizeBundledPublishGzip } from './canonical-publish-gzip.mjs';
+import { createDeterministicArchive } from './pack-self-contained-artifact.mjs';
 import {
   OFFICIAL_NPM_REGISTRY,
   addImmutableClaim,
@@ -264,6 +265,110 @@ test('unpublished current versions and matching published history pass together'
   });
   assert.deepEqual(result.published, ['@clowder-ai/example@0.1.0-alpha.1']);
   assert.deepEqual(result.unpublished, ['@clowder-ai/example@0.1.0-alpha.2']);
+});
+
+async function writeTinyPackageTree(stageRoot, { drift = false, extra = false } = {}) {
+  const pkg = join(stageRoot, 'package');
+  await mkdir(join(pkg, 'dist'), { recursive: true });
+  await writeFile(
+    join(pkg, 'package.json'),
+    JSON.stringify({ name: '@clowder-ai/example', version: '0.1.0-alpha.1' }),
+  );
+  await writeFile(join(pkg, 'dist', 'index.js'), `console.log('${drift ? 'drifted' : 'hello'}');\n`);
+  if (extra) await writeFile(join(pkg, 'extra.js'), '1\n');
+  return stageRoot;
+}
+
+async function packTinyExample(t, root, { destination, variant }) {
+  const stageRoot = join(root, `stage-${variant}`);
+  await writeTinyPackageTree(stageRoot, { drift: variant === 'drift', extra: variant === 'extra' });
+  const archive = join(root, `${variant}.tgz`);
+  await createDeterministicArchive(stageRoot, archive);
+  return readFile(archive);
+}
+
+test('published identity accepts deterministic repack bytes when unpacked content matches', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'clowder-repack-content-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const registryBytes = await packTinyExample(t, root, { variant: 'registry' });
+  const repackedBytes = Buffer.from(await packTinyExample(t, root, { variant: 'repacked' }));
+  // Same unpacked content, different archive bytes (gzip header mtime byte).
+  repackedBytes[4] = (repackedBytes[4] + 1) % 256;
+  const registryIntegrity = `sha512-${createHash('sha512').update(registryBytes).digest('base64')}`;
+  const repackedIntegrity = `sha512-${createHash('sha512').update(repackedBytes).digest('base64')}`;
+  assert.notEqual(repackedIntegrity, registryIntegrity);
+  const catalog = {
+    plugins: [{
+      pluginId: 'example',
+      versions: [{
+        version: '0.1.0-alpha.1',
+        artifact: {
+          kind: 'npm',
+          packageName: '@clowder-ai/example',
+          version: '0.1.0-alpha.1',
+          integrity: registryIntegrity,
+        },
+      }],
+    }],
+  };
+  const result = await assertRegistryCompatibility({
+    catalog,
+    workflowSource,
+    registryIntegrity: async () => registryIntegrity,
+    registryTarball: async () => registryBytes,
+    packCurrentPackage: async (_directory, destination) => {
+      const filename = 'clowder-ai-example-0.1.0-alpha.1.tgz';
+      await writeFile(join(destination, filename), repackedBytes);
+      return {
+        name: '@clowder-ai/example',
+        version: '0.1.0-alpha.1',
+        integrity: repackedIntegrity,
+        filename,
+      };
+    },
+  });
+  assert.deepEqual(result.published, ['@clowder-ai/example@0.1.0-alpha.1']);
+});
+
+test('published identity rejects repacked content that drifted from the registry tarball', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'clowder-repack-drift-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const registryBytes = await packTinyExample(t, root, { variant: 'registry' });
+  const driftedBytes = await packTinyExample(t, root, { variant: 'drift' });
+  const registryIntegrity = `sha512-${createHash('sha512').update(registryBytes).digest('base64')}`;
+  const catalog = {
+    plugins: [{
+      pluginId: 'example',
+      versions: [{
+        version: '0.1.0-alpha.1',
+        artifact: {
+          kind: 'npm',
+          packageName: '@clowder-ai/example',
+          version: '0.1.0-alpha.1',
+          integrity: registryIntegrity,
+        },
+      }],
+    }],
+  };
+  await assert.rejects(
+    assertRegistryCompatibility({
+      catalog,
+      workflowSource,
+      registryIntegrity: async () => registryIntegrity,
+      registryTarball: async () => registryBytes,
+      packCurrentPackage: async (_directory, destination) => {
+        const filename = 'clowder-ai-example-0.1.0-alpha.1.tgz';
+        await writeFile(join(destination, filename), driftedBytes);
+        return {
+          name: '@clowder-ai/example',
+          version: '0.1.0-alpha.1',
+          integrity: `sha512-${createHash('sha512').update(driftedBytes).digest('base64')}`,
+          filename,
+        };
+      },
+    }),
+    /published content differs/u,
+  );
 });
 
 

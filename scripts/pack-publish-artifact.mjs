@@ -19,6 +19,7 @@ import { normalizeBundledPublishGzip } from './canonical-publish-gzip.mjs';
 import { assertArchiveBins } from './package-bins.mjs';
 import { materializeLockedDependencies } from './materialize-locked-dependencies.mjs';
 import { ownPublishMembers } from './own-publish-members.mjs';
+import { createDeterministicArchive } from './pack-self-contained-artifact.mjs';
 
 const repoRoot = fileURLToPath(new URL('../', import.meta.url));
 
@@ -143,13 +144,34 @@ async function main() {
         if (plugin) throw new Error(`${packageJson.name}: plugin runtime dependencies require npm-shrinkwrap.json`);
       }
     }
-    const output = runNpm(
-        ['pack', '--json', '--ignore-scripts', '--pack-destination', destinationRoot, packageRoot],
-        repoRoot,
-    );
-    const [artifact] = JSON.parse(output);
-    assertArchiveBins(packageJson, join(destinationRoot, artifact.filename));
-    process.stdout.write(output);
+    // npm pack walks the tree in filesystem readdir order, so the tar member
+    // order (and thus every packed byte) depends on the host filesystem.
+    // Re-archive the packed content deterministically — sorted members, fixed
+    // mtimes/owners, gzip -n, canonical OS byte — so one toolchain has one
+    // immutable package identity on every platform.
+    const temporaryRoot = await mkdtemp(join(tmpdir(), 'clowder-pack-canonical-'));
+    try {
+      const output = runNpm(
+          ['pack', '--json', '--ignore-scripts', '--pack-destination', temporaryRoot, packageRoot],
+          repoRoot,
+      );
+      const [artifact] = JSON.parse(output);
+      const stageRoot = join(temporaryRoot, 'stage');
+      await mkdir(stageRoot);
+      run('tar', ['-xzf', join(temporaryRoot, artifact.filename), '-C', stageRoot], repoRoot);
+      const archivePath = join(destinationRoot, artifact.filename);
+      await createDeterministicArchive(stageRoot, archivePath);
+      assertArchiveBins(packageJson, archivePath);
+      const bytes = await readFile(archivePath);
+      process.stdout.write(`${JSON.stringify([{
+        ...artifact,
+        size: bytes.byteLength,
+        integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}`,
+        shasum: createHash('sha1').update(bytes).digest('hex'),
+      }], null, 2)}\n`);
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
     return;
   }
   if (!Array.isArray(bundled) || !bundled.every(name => typeof name === 'string')) {
