@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import test from 'node:test';
+import { parse as parseYaml } from 'yaml';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -31,11 +32,13 @@ async function packOfficialArtifacts(root) {
       destination,
     ], { cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 });
     const [artifact] = JSON.parse(stdout);
-    const archive = await readFile(join(destination, artifact.filename));
+    const path = join(destination, artifact.filename);
+    const archive = await readFile(path);
     packs.set(SCOPED[name], {
       archive,
       filename: artifact.filename,
       integrity: `sha512-${createHash('sha512').update(archive).digest('base64')}`,
+      path,
       version: artifact.version,
     });
   }
@@ -88,25 +91,27 @@ function registryFixture(t, packs) {
 }
 
 async function feishuConsumer(root, registry, packs) {
+  // The consumer is the UNPACKED publish artifact — not a copy of the worktree —
+  // so the install chain under test is exactly what a Host would receive.
+  const release = packs.get(SCOPED[FEISHU]);
   const consumer = join(root, 'consumer');
-  const source = join(repoRoot, 'packages', FEISHU);
-  await mkdir(join(consumer, 'dist'), { recursive: true });
-  const manifest = JSON.parse(await readFile(join(source, 'package.json'), 'utf8'));
+  await mkdir(consumer, { recursive: true });
+  await execFileAsync('tar', ['-xzf', release.path, '-C', consumer], { timeout: 60_000 });
+  const packageRoot = join(consumer, 'package');
+  const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'));
+  // The published devDependencies are not part of the shrinkwrap; dropping them
+  // is the consumer install context only — the artifact bytes stay untouched.
   delete manifest.devDependencies;
-  await writeFile(join(consumer, 'package.json'), JSON.stringify(manifest, null, 2));
-  for (const member of ['npm-shrinkwrap.json', 'plugin.yaml', 'assets']) {
-    await cp(join(source, member), join(consumer, member), { recursive: true });
-  }
-  await cp(join(source, 'dist'), join(consumer, 'dist'), { recursive: true });
-  const shrinkwrap = JSON.parse(await readFile(join(consumer, 'npm-shrinkwrap.json'), 'utf8'));
+  await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
+  const shrinkwrap = JSON.parse(await readFile(join(packageRoot, 'npm-shrinkwrap.json'), 'utf8'));
   for (const [key, entry] of Object.entries(shrinkwrap.packages)) {
     const pack = packs.get(entry.name ?? key.replace(/^node_modules\//u, ''));
     if (key.startsWith('node_modules/@clowder-ai/') && pack) {
       entry.resolved = `${registry}/${pack.urlName}/-/${pack.filename}`;
     }
   }
-  await writeFile(join(consumer, 'npm-shrinkwrap.json'), JSON.stringify(shrinkwrap, null, 2));
-  return consumer;
+  await writeFile(join(packageRoot, 'npm-shrinkwrap.json'), JSON.stringify(shrinkwrap, null, 2));
+  return packageRoot;
 }
 
 async function npmCi(consumer, cacheDir) {
@@ -142,16 +147,31 @@ test('official feishu artifact installs its full dependency chain through a regi
     'the registry-served bytes are the official publish artifact pinned by the shrinkwrap',
   );
 
-  const probe = async (script) => execFileAsync(process.execPath, ['--input-type=module', '-e', script], {
+  const probe = async (script, ...args) => execFileAsync(process.execPath, ['--input-type=module', '-e', script, ...args], {
     cwd: consumer, timeout: 60_000, maxBuffer: 4 * 1024 * 1024,
   });
+  // The manifest under test is the one shipped inside the artifact; the probe
+  // itself runs only against installed dependencies.
+  const manifestJson = join(root, 'manifest.json');
+  await writeFile(manifestJson, JSON.stringify(parseYaml(await readFile(join(consumer, 'plugin.yaml'), 'utf8'))));
   await probe(
     "const m = await import('@clowder-ai/plugin-contract/variant');"
     + "if (typeof m.coerceStoredValues !== 'function') throw new Error('variant export missing');",
   );
   const entrypoint = join(consumer, 'dist', 'plugin-entrypoint.js');
-  await probe(`const m = await import(${JSON.stringify(entrypoint)});`
-    + "if (m.default === undefined) throw new Error('entrypoint default export missing');");
+  await probe(
+    "const [manifestPath, entrypointPath] = process.argv.slice(1);"
+    + "const manifest = JSON.parse(await (await import('node:fs/promises')).readFile(manifestPath, 'utf8'));"
+    + "const contract = await import('@clowder-ai/plugin-contract');"
+    + "const validation = contract.validateManifest(manifest);"
+    + "if (!validation.valid) throw new Error('manifest rejected: ' + JSON.stringify(validation.errors));"
+    + "const m = await import(entrypointPath);"
+    + "const plugin = m.default.create(validation.manifest);"
+    + "if (typeof plugin.start !== 'function') throw new Error('start missing');"
+    + "if (typeof plugin.settings !== 'function') throw new Error('settings missing');",
+    manifestJson,
+    entrypoint,
+  );
 
   // Tamper with the served contract bytes while the packument keeps the
   // official integrity: a fresh install must be refused.
@@ -161,7 +181,7 @@ test('official feishu artifact installs its full dependency chain through a regi
   await rm(join(consumer, 'node_modules'), { recursive: true, force: true });
   await assert.rejects(npmCi(consumer, caches[1]), (error) => {
     const output = `${error.stderr}\n${error.stdout}`;
-    assert.match(output, /EINTEGRITY|checksum|integrity failed|code 1/u, output);
+    assert.match(output, /EINTEGRITY/u, output);
     return true;
   });
 });
