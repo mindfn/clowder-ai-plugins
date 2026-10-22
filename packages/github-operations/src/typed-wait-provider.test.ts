@@ -60,15 +60,53 @@ test('COMMENTED reviews advance collection without replacing or emitting a forma
     observed.observation.collectorPatch as PrAutomationState, observed.observation.facts, 3000);
   assert.equal(renewed.review?.decisionCursor, 4);
   assert.equal(renewed.review?.decision, 'CHANGES_REQUESTED');
+});
 
+test('a COMMENTED reply and approval in one observation emit only the formal decision', async () => {
+  const when: GitHubPrWaitPredicate[] = [{ kind: 'pr_review_decision_changed' }];
+  const changes = { id: 3, author: 'maintainer', state: 'CHANGES_REQUESTED', commitId: head };
+  const replied = { id: 4, author: 'author', state: 'COMMENTED', commitId: head };
   const approval = { id: 5, author: 'maintainer', state: 'APPROVED', commitId: head };
-  const approved = waitObservation(registered, { ...blank, reviews: [changes, replied, approval] }, 4000, []);
-  assert.deepEqual(matchGitHubWaitPredicates(when, baseline, approved.observation.facts)
+  const registered = await task({ ...blank, reviews: [changes] }, when);
+  const baseline = registered.automationState!.await!.baseline as GitHubPrWaitBaseline;
+  const observed = waitObservation(registered, { ...blank, reviews: [changes, replied, approval] }, 4000, []);
+
+  assert.deepEqual(matchGitHubWaitPredicates(when, baseline, observed.observation.facts)
     .map(match => match.sourceRef), ['review:5']);
-  const afterApproval = renewPrWaitBaseline(baseline as GitHubPrWaitBaseline,
-    approved.observation.collectorPatch as PrAutomationState, approved.observation.facts, 5000);
-  assert.deepEqual(matchGitHubWaitPredicates(when, afterApproval, approved.observation.facts), [],
+  const renewed = renewPrWaitBaseline(baseline, observed.observation.collectorPatch as PrAutomationState,
+    observed.observation.facts, 5000);
+  assert.equal(renewed.review?.decisionCursor, 5);
+  assert.equal(renewed.review?.decision, 'APPROVED');
+  assert.deepEqual(matchGitHubWaitPredicates(when, renewed, observed.observation.facts), [],
     'the consumed approval is not replayed after renewal');
+});
+
+test('a persisted legacy COMMENTED decision baseline converges on the next formal approval', async () => {
+  const when: GitHubPrWaitPredicate[] = [{ kind: 'pr_review_decision_changed' }];
+  const changes = { id: 3, author: 'maintainer', state: 'CHANGES_REQUESTED', commitId: head };
+  const replied = { id: 4, author: 'author', state: 'COMMENTED', commitId: head };
+  const approval = { id: 5, author: 'maintainer', state: 'APPROVED', commitId: head };
+  const registered = await task({ ...blank, reviews: [changes] }, when);
+  const automation = registered.automationState as PrAutomationState;
+  const cleanBaseline = automation.await!.baseline as GitHubPrWaitBaseline;
+  const legacyBaseline: GitHubPrWaitBaseline = { ...cleanBaseline, review: {
+    ...cleanBaseline.review!, decisionCursor: 4, decision: 'COMMENTED',
+  } };
+  const legacy = { ...registered, automationState: { ...automation,
+    review: { ...automation.review, lastDecisionCursor: 4,
+      observedReviews: { ...automation.review?.observedReviews, '4': 'COMMENTED' } },
+    await: { ...automation.await!, baseline: legacyBaseline },
+  } } as TaskItem;
+  const observed = waitObservation(legacy, { ...blank, reviews: [changes, replied, approval] }, 6000, []);
+
+  assert.deepEqual(matchGitHubWaitPredicates(when, legacyBaseline, observed.observation.facts)
+    .map(match => match.sourceRef), ['review:5']);
+  const renewed = renewPrWaitBaseline(legacyBaseline, observed.observation.collectorPatch as PrAutomationState,
+    observed.observation.facts, 7000);
+  assert.equal(renewed.review?.decisionCursor, 5);
+  assert.equal(renewed.review?.decision, 'APPROVED');
+  assert.deepEqual(matchGitHubWaitPredicates(when, renewed, observed.observation.facts), [],
+    'the legacy polluted baseline converges without replaying the approval');
 });
 
 test('explicit result uses the real trigger timestamp and complete provider evidence, never a supplied verdict', async () => {
