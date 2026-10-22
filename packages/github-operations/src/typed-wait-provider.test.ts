@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { GitHubSnapshot } from './tracking-runtime.js';
-import type { GitHubPrWaitPredicate, TaskItem, PrAutomationState } from './business/model/index.js';
+import type { GitHubPrWaitBaseline, GitHubPrWaitPredicate, TaskItem, PrAutomationState } from './business/model/index.js';
 import { prBaseline, waitObservation, waitEventSnapshot } from './typed-wait-provider.js';
 import { matchGitHubWaitPredicates } from './business/domains/github-signals/GitHubWaitPredicateCatalog.js';
+import { renewPrWaitBaseline } from './business/domains/github-signals/GitHubWaitRenewalBaseline.js';
 
 const head = 'a'.repeat(40), oldHead = 'b'.repeat(40);
 const blank: GitHubSnapshot = { state: 'open', headSha: head, ci: 'pending', comments: [], reviews: [], commentsComplete: true };
@@ -48,13 +49,26 @@ test('COMMENTED reviews advance collection without replacing or emitting a forma
   assert.equal(baseline.review?.decisionCursor, 4);
   assert.equal(baseline.review?.decision, 'CHANGES_REQUESTED');
 
-  const observed = waitObservation(await task({ ...blank, reviews: [changes] }, when),
-    { ...blank, reviews: [changes, replied] }, 2000, []);
+  const beforeReply = await task({ ...blank, reviews: [changes] }, when);
+  const observed = waitObservation(beforeReply, { ...blank, reviews: [changes, replied] }, 2000, []);
   assert.deepEqual(observed.observation.facts.review?.decisions?.map(row => row.id), [3]);
-  assert.deepEqual(matchGitHubWaitPredicates(when,
-    (await task({ ...blank, reviews: [changes] }, when)).automationState!.await!.baseline,
+  assert.deepEqual(matchGitHubWaitPredicates(when, beforeReply.automationState!.await!.baseline,
     observed.observation.facts), []);
   assert.equal((observed.observation.collectorPatch as PrAutomationState).review?.lastDecisionCursor, 4);
+
+  const renewed = renewPrWaitBaseline(beforeReply.automationState!.await!.baseline as GitHubPrWaitBaseline,
+    observed.observation.collectorPatch as PrAutomationState, observed.observation.facts, 3000);
+  assert.equal(renewed.review?.decisionCursor, 4);
+  assert.equal(renewed.review?.decision, 'CHANGES_REQUESTED');
+
+  const approval = { id: 5, author: 'maintainer', state: 'APPROVED', commitId: head };
+  const approved = waitObservation(registered, { ...blank, reviews: [changes, replied, approval] }, 4000, []);
+  assert.deepEqual(matchGitHubWaitPredicates(when, baseline, approved.observation.facts)
+    .map(match => match.sourceRef), ['review:5']);
+  const afterApproval = renewPrWaitBaseline(baseline as GitHubPrWaitBaseline,
+    approved.observation.collectorPatch as PrAutomationState, approved.observation.facts, 5000);
+  assert.deepEqual(matchGitHubWaitPredicates(when, afterApproval, approved.observation.facts), [],
+    'the consumed approval is not replayed after renewal');
 });
 
 test('explicit result uses the real trigger timestamp and complete provider evidence, never a supplied verdict', async () => {
