@@ -191,6 +191,34 @@ test('a full object timeout still rotates after cleanup crosses the poll deadlin
   await runtime.stop();
 });
 
+test('an author inline reply does not become a review-decision notification through its COMMENTED review', async () => {
+  const f = fixture();
+  const baselineReview = { id: 3, author: 'maintainer', state: 'CHANGES_REQUESTED', commitId: f.snapshot().headSha };
+  f.setSnapshot({ ...f.snapshot(), reviews: [baselineReview] });
+  const runtime = new TypedWaitRuntime(f.options);
+  try {
+    const tracked = await runtime.registerPr(input, f.caller);
+    const selfReplyReview = { id: 4, author: 'self', state: 'COMMENTED', commitId: f.snapshot().headSha };
+    f.setSnapshot({ ...f.snapshot(),
+      comments: [{ id: 20, author: 'self', body: 'fixed', commentType: 'inline', reviewId: 4 }],
+      reviews: [baselineReview, selfReplyReview] });
+
+    await runtime.poll('pr');
+    assert.equal(f.sent.length, 0, 'the reply and its synthetic COMMENTED review are both self-noise');
+    assert.equal((await runtime.store.get(tracked.id))?.automationState?.review?.lastDecisionCursor, 4,
+      'filtered review history is still consumed');
+    await runtime.poll('pr');
+    assert.equal(f.sent.length, 0, 'consumed self-noise is not replayed');
+
+    const approval = { id: 5, author: 'maintainer', state: 'APPROVED', commitId: f.snapshot().headSha };
+    f.setSnapshot({ ...f.snapshot(), reviews: [baselineReview, selfReplyReview, approval] });
+    await runtime.poll('pr');
+    assert.equal(f.sent.length, 1, 'a formal maintainer verdict still notifies');
+    assert.match(JSON.stringify(f.sent[0]), /review:5/);
+    assert.doesNotMatch(JSON.stringify(f.sent[0]), /review:4/);
+  } finally { await runtime.stop(); }
+});
+
 for (const authors of [['alice', 'bot[bot]'], ['bot[bot]', 'alice'], ['alice', 'bob', 'bot[bot]']]) {
   test(`mixed review authors are filtered independently before the poll is consumed (${authors.join(',')})`, async () => {
     const f = fixture();

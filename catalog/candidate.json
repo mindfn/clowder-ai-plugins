@@ -1696,8 +1696,8 @@
             "packageName": "@clowder-ai/github-operations",
             "version": "0.1.0-alpha.25",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/github-operations/-/github-operations-0.1.0-alpha.25.tgz",
-            "integrity": "sha512-27+4q3gmkwLnXledES4DxZ39Vwr8A/kBwBSOfj+TwDaFAyIz35duzOvTW6EhcCHlq01brnzGn14ZVSiisTMgJA==",
-            "shasum": "3b786a527a9a102e9eb7d29d943377a95495604e",
+            "integrity": "sha512-JcAVIgDqhd6UMLLgsjeCfGm8OCYIl8WvnBkVcKnVHIY5K2+Yj/+fUleG9eHz4i+6DasW3+c8yRQ5NKO1dduhQA==",
+            "shasum": "cbd3528b35bc403dc927dbc3247ebd24b3e23a41",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/github-operations"

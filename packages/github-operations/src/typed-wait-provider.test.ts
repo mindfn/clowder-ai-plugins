@@ -38,6 +38,25 @@ test('late review of an old HEAD is not a current review result or decision', as
   assert.equal(matchGitHubWaitPredicates(when, registered.automationState!.await!.baseline, observe(head).observation.facts).length, 2);
 });
 
+test('COMMENTED reviews advance collection without replacing or emitting a formal decision', async () => {
+  const when: GitHubPrWaitPredicate[] = [{ kind: 'pr_review_decision_changed' }];
+  const changes = { id: 3, author: 'maintainer', state: 'CHANGES_REQUESTED', commitId: head };
+  const replied = { id: 4, author: 'author', state: 'COMMENTED', commitId: head };
+  const registered = await task({ ...blank, reviews: [changes, replied] }, when);
+  const baseline = registered.automationState!.await!.baseline;
+  assert.ok('headSha' in baseline);
+  assert.equal(baseline.review?.decisionCursor, 4);
+  assert.equal(baseline.review?.decision, 'CHANGES_REQUESTED');
+
+  const observed = waitObservation(await task({ ...blank, reviews: [changes] }, when),
+    { ...blank, reviews: [changes, replied] }, 2000, []);
+  assert.deepEqual(observed.observation.facts.review?.decisions?.map(row => row.id), [3]);
+  assert.deepEqual(matchGitHubWaitPredicates(when,
+    (await task({ ...blank, reviews: [changes] }, when)).automationState!.await!.baseline,
+    observed.observation.facts), []);
+  assert.equal((observed.observation.collectorPatch as PrAutomationState).review?.lastDecisionCursor, 4);
+});
+
 test('explicit result uses the real trigger timestamp and complete provider evidence, never a supplied verdict', async () => {
   const trigger = { id: 5, author: 'owner', body: '@codex review', commentType: 'conversation' as const,
     createdAt: '2026-10-09T00:00:00Z' };

@@ -41,6 +41,10 @@ function maxCursor(previous: number, ...observed: (number | undefined)[]): numbe
 const UNOBSERVED_MERGE_STATE = 'UNKNOWN';
 const unobservedCiFingerprint = (headSha: string) => `${headSha}:unobserved`;
 
+function latestReviewDecision(facts: GitHubWaitFacts): string | undefined {
+  return [...(facts.review?.decisions ?? [])].sort((a, b) => a.id - b.id).at(-1)?.state;
+}
+
 export function renewPrWaitBaseline(
   previous: GitHubPrWaitBaseline,
   collector: Pick<PrAutomationState, 'review' | 'ci' | 'conflict'>,
@@ -49,6 +53,7 @@ export function renewPrWaitBaseline(
 ): GitHubPrWaitBaseline {
   const headSha = facts.headSha ?? collector.ci?.headSha ?? previous.headSha;
   const headChanged = headSha !== previous.headSha;
+  const observedDecision = latestReviewDecision(facts);
 
   // Review ids are not head-scoped, so they advance across a push. A late review of the old HEAD is
   // absorbed rather than reported — it is not an approval of the new HEAD — while a review OF the
@@ -69,7 +74,9 @@ export function renewPrWaitBaseline(
           collector.review?.lastDecisionCursor,
           facts.review?.decisionCursor,
         ),
-        ...(facts.review?.decision ? { decision: facts.review.decision } : {}),
+        // `facts.review.decision` may describe an explicit COMMENTED cloud result. Keep the normal
+        // tracking baseline anchored to the latest formal decision instead.
+        ...(observedDecision ? { decision: observedDecision } : {}),
         ...(facts.review?.threads && !headChanged ? { threads: facts.review.threads } : {}),
         ...renewVerdicts(previous.review.verdicts, facts),
       }
