@@ -27,7 +27,7 @@
     },
     "node_modules/@clowder-ai/plugin-contract": {
       "version": "0.2.0",
-      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/clowder-ai-plugin-contract-0.2.0.tgz",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-contract/-/plugin-contract-0.2.0.tgz",
       "integrity": "sha512-iFhuTFs/ol09W3n5iF583LuFaLGBQ8nBkdaGrntILSf6Zk40ghKU+lFw1uo97z/NUddoZLDp6x+rkGlHsPYbJg==",
       "license": "MIT",
       "dependencies": {
@@ -40,7 +40,7 @@
     },
     "node_modules/@clowder-ai/plugin-sdk": {
       "version": "0.2.0-beta.24",
-      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/clowder-ai-plugin-sdk-0.2.0-beta.24.tgz",
+      "resolved": "https://registry.npmjs.org/@clowder-ai/plugin-sdk/-/plugin-sdk-0.2.0-beta.24.tgz",
       "integrity": "sha512-obnziD7d+OHHjQp3eNUKHeZJU5CZ1NC5yonWAak4koXX+Jg8o8wzld3CcBhfGMbZCghIvCFJuXMMTXhNjx7u+g==",
       "license": "MIT",
       "dependencies": {

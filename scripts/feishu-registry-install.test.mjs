@@ -46,7 +46,9 @@ async function packOfficialArtifacts(root) {
 }
 
 function registryFixture(t, packs) {
-  for (const [name, release] of packs) release.urlName = name;
+  for (const [name, release] of packs) {
+    release.tarballPath = `/${name}/-/${name.split('/').at(-1)}-${release.version}.tgz`;
+  }
   const server = createServer((request, response) => {
     const origin = `http://127.0.0.1:${server.address().port}`;
     const packument = [...packs].find(([name]) => request.url === `/${name.replace('/', '%2f')}`);
@@ -62,7 +64,7 @@ function registryFixture(t, packs) {
             version: release.version,
             dist: {
               integrity: release.integrity,
-              tarball: `${origin}/${name}/-/${release.filename}`,
+              tarball: `${origin}${release.tarballPath}`,
             },
           },
         },
@@ -70,7 +72,7 @@ function registryFixture(t, packs) {
       return;
     }
     const tarball = [...packs].find(([, release]) =>
-      request.url === `/${release.urlName}/-/${release.filename}`);
+      request.url === release.tarballPath);
     if (tarball) {
       response.setHeader('content-type', 'application/octet-stream');
       response.end(tarball[1].archive);
@@ -107,7 +109,11 @@ async function feishuConsumer(root, registry, packs) {
   for (const [key, entry] of Object.entries(shrinkwrap.packages)) {
     const pack = packs.get(entry.name ?? key.replace(/^node_modules\//u, ''));
     if (key.startsWith('node_modules/@clowder-ai/') && pack) {
-      entry.resolved = `${registry}/${pack.urlName}/-/${pack.filename}`;
+      const resolved = new URL(entry.resolved);
+      assert.equal(resolved.origin, 'https://registry.npmjs.org');
+      // Preserve the shipped pathname: replacing it with npm pack's local
+      // filename would hide a broken registry URL inside the real artifact.
+      entry.resolved = `${registry}${resolved.pathname}${resolved.search}`;
     }
   }
   await writeFile(join(packageRoot, 'npm-shrinkwrap.json'), JSON.stringify(shrinkwrap, null, 2));
@@ -172,6 +178,34 @@ test('official feishu artifact installs its full dependency chain through a regi
     manifestJson,
     entrypoint,
   );
+
+  // A local npm pack filename is not a registry tarball basename. Keep each
+  // wrong URL in the lock and prove npm itself rejects it, with a fresh cache.
+  const shrinkwrapPath = join(consumer, 'npm-shrinkwrap.json');
+  const validLock = await readFile(shrinkwrapPath, 'utf8');
+  for (const name of ['plugin-contract', 'plugin-sdk']) {
+    await t.test(`registry rejects scope-prefixed local filename for ${name}`, async () => {
+      const wrongLock = JSON.parse(validLock);
+      const key = `node_modules/@clowder-ai/${name}`;
+      const entry = wrongLock.packages[key];
+      const url = new URL(entry.resolved);
+      url.pathname = url.pathname.replace('/-/', '/-/clowder-ai-');
+      entry.resolved = url.href;
+      await writeFile(shrinkwrapPath, JSON.stringify(wrongLock, null, 2));
+      await rm(join(consumer, 'node_modules'), { recursive: true, force: true });
+      const cache = await mkdtemp(join(root, 'npm-cache-wrong-url-'));
+      try {
+        await assert.rejects(npmCi(consumer, cache), (error) => {
+          const output = `${error.stderr}\n${error.stdout}`;
+          assert.match(output, /E404/u, output);
+          assert.ok(output.includes(url.pathname), output);
+          return true;
+        });
+      } finally {
+        await writeFile(shrinkwrapPath, validLock);
+      }
+    });
+  }
 
   // Tamper with the served contract bytes while the packument keeps the
   // official integrity: a fresh install must be refused.
