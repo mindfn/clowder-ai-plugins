@@ -25,6 +25,11 @@ const INSTALL_TIMEOUT_MS = 300_000;
 async function packOfficialArtifacts(root) {
   const packs = new Map();
   for (const name of Object.keys(SCOPED)) {
+    // This fixture also runs directly via test:scripts on clean checkouts.
+    // Build in dependency order; the official pack intentionally skips scripts.
+    await execFileAsync('pnpm', ['--filter', SCOPED[name], 'build'], {
+      cwd: repoRoot, timeout: INSTALL_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024,
+    });
     const destination = join(root, 'packs', name);
     await mkdir(destination, { recursive: true });
     const { stdout } = await execFileAsync(process.execPath, [
@@ -179,6 +184,23 @@ test('official feishu artifact installs its full dependency chain through a regi
     manifestJson,
     entrypoint,
   );
+
+  // Exercise the documented packed mode against the same real installed
+  // artifact, so source-only runs cannot hide stale package/SDK expectations.
+  const packedRoots = Object.fromEntries(
+    ['feishu', 'dingtalk', 'telegram', 'wecom-agent', 'wecom-bot', 'weixin', 'xiaoyi']
+      .map(name => [name, name === 'feishu' ? consumer : join(root, `unused-${name}`)]),
+  );
+  const packedEnv = { ...process.env, CLOWDER_CONNECTOR_PACKED_ROOTS: JSON.stringify(packedRoots) };
+  delete packedEnv.NODE_TEST_CONTEXT;
+  const packedResult = await execFileAsync(process.execPath, [
+    '--import', 'tsx', '--test', '--test-reporter=tap', '--test-name-pattern=^feishu packed entrypoint',
+    'scripts/connector-command-entrypoints.test.mjs',
+  ], {
+    cwd: repoRoot, timeout: INSTALL_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024,
+    env: packedEnv,
+  });
+  assert.match(packedResult.stdout, /^ok \d+ - feishu packed entrypoint /mu);
 
   // A local npm pack filename is not a registry tarball basename. Keep each
   // wrong URL in the lock and prove npm itself rejects it, with a fresh cache.
