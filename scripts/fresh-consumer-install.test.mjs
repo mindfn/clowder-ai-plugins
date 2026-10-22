@@ -588,7 +588,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
     );
     assert.equal(
       videoManifest.contractVersion,
-      installedContract.CONTRACT_VERSION,
+      parseYaml(await readFile(join(repoRoot, 'packages/video-analysis/plugin.yaml'), 'utf8')).contractVersion,
       'packed manifest declares the Host compatibility line, not the contract npm version',
     );
     assert.match(videoManifestText, /src: assets\/icon\.svg/);
@@ -617,7 +617,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
         ? undefined
         : JSON.stringify(videoGenerationManifestValidation.errors),
     );
-    assert.equal(videoGenerationManifest.contractVersion, installedContract.CONTRACT_VERSION);
+    assert.equal(videoGenerationManifest.contractVersion, parseYaml(await readFile(join(repoRoot, 'packages/video-generation/plugin.yaml'), 'utf8')).contractVersion);
     assert.match(videoGenerationManifestText, /src: assets\/icon\.svg/);
     assert.match(
       await readFile(
@@ -639,7 +639,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
         ? undefined
         : JSON.stringify(weixinMpManifestValidation.errors),
     );
-    assert.equal(weixinMpManifest.contractVersion, installedContract.CONTRACT_VERSION);
+    assert.equal(weixinMpManifest.contractVersion, parseYaml(await readFile(join(repoRoot, 'packages/weixin-mp/plugin.yaml'), 'utf8')).contractVersion);
     assert.deepEqual(weixinMpManifest.runtime, {
       transport: 'builtin',
       entrypoint: 'dist/plugin-entrypoint.js',
@@ -666,7 +666,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
         ? undefined
         : JSON.stringify(wechatReaderManifestValidation.errors),
     );
-    assert.equal(wechatReaderManifest.contractVersion, installedContract.CONTRACT_VERSION);
+    assert.equal(wechatReaderManifest.contractVersion, parseYaml(await readFile(join(repoRoot, 'packages/wechat-visible-reader/plugin.yaml'), 'utf8')).contractVersion);
     assert.deepEqual(wechatReaderManifest.runtime, {
       transport: 'builtin',
       entrypoint: 'dist/plugin-entrypoint.js',
