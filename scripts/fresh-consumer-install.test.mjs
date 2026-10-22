@@ -54,21 +54,14 @@ function runNpm(args, cwd) {
 }
 
 function currentPairOverrides(sdk, contract) {
-  // Every consumer resolves the unpublished workspace SDK 0.2.0-beta.22, which
-  // depends on contract 0.2.0, through overrides. Other consumers keep their
-  // direct contract dependency on the last published 0.1.0-beta.37, which npm
-  // fetches from the registry; connector-feishu declares 0.2.0 directly and
-  // receives the same workspace pack.
-  return Object.fromEntries([
-    ...['personal-chrome-companion','weixin-mp','wechat-visible-reader','enterprise-workflow','github-operations','feishu-meeting-intake',...connectorPackages.map(({name})=>name.slice('@clowder-ai/'.length))].map(name => [
-      `@clowder-ai/${name}`, {
-        '@clowder-ai/plugin-contract@0.2.0': contract,
-        '@clowder-ai/plugin-sdk@0.2.0-beta.22': { '.': sdk,
-          '@clowder-ai/plugin-contract@0.2.0': contract },
+  return {
+    '@clowder-ai/connector-feishu': {
+      '@clowder-ai/plugin-contract@0.2.0': contract,
+      '@clowder-ai/plugin-sdk@0.2.0-beta.24': {
+        '.': sdk, '@clowder-ai/plugin-contract@0.2.0': contract,
       },
-    ]),
-    ['@clowder-ai/genoffice-docx', { '@clowder-ai/plugin-contract@0.2.0': contract }],
-  ]);
+    },
+  };
 }
 
 test('Chrome and the current SDK resolve the same current contract in a fresh consumer', async () => {
@@ -102,10 +95,10 @@ test('Chrome and the current SDK resolve the same current contract in a fresh co
       const version = entry => JSON.parse(readFileSync(join(dirname(entry), '../package.json'), 'utf8')).version;
       assert.equal(version(resolveFrom(dirname(chromeEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.37');
       const resolvedSdkEntry = resolveFrom(dirname(chromeEntry), '@clowder-ai/plugin-sdk');
-      assert.equal(version(resolvedSdkEntry), '0.2.0-beta.22');
-      assert.equal(version(resolveFrom(dirname(resolvedSdkEntry), '@clowder-ai/plugin-contract')), '0.2.0');
+      assert.equal(version(resolvedSdkEntry), '0.2.0-beta.23');
+      assert.equal(version(resolveFrom(dirname(resolvedSdkEntry), '@clowder-ai/plugin-contract')), '0.1.0-beta.37');
       const currentSdkEntry = fileURLToPath(import.meta.resolve('@clowder-ai/plugin-sdk'));
-      assert.equal(version(currentSdkEntry), '0.2.0-beta.22');
+      assert.equal(version(currentSdkEntry), '0.2.0-beta.24');
       assert.equal(version(resolveFrom(dirname(currentSdkEntry), '@clowder-ai/plugin-contract')), '0.2.0');
       assert.equal(typeof (await import(pathToFileURL(chromeEntry).href)).default.create, 'function');
     `], consumer);
@@ -318,28 +311,12 @@ test('packed public packages install and import in a fresh npm consumer', async 
       stagedVideoPackage,
     );
 
-    // The migrated consumer pins this exact current workspace pair bytes...
-    const sdkBytes = await readFile(tarballs[1]);
-    const contractBytes = await readFile(tarballs[0]);
-    for (const [directory, expectations] of [
-      ['connector-feishu', [['plugin-sdk', '0.2.0-beta.22', sdkBytes], ['plugin-contract', '0.2.0', contractBytes]]],
-    ]) {
-      const lock = JSON.parse(await readFile(join(repoRoot, 'packages', directory, 'npm-shrinkwrap.json'), 'utf8'));
-      for (const [name, version, bytes] of expectations) {
-        const entry = lock.packages[`node_modules/@clowder-ai/${name}`];
-        assert.equal(entry.version, version);
-        assert.equal(entry.integrity, `sha512-${createHash('sha512').update(bytes).digest('base64')}`);
-      }
-    }
-    // ...while every not-yet-migrated consumer keeps the last published pair,
-    // which cannot be byte-compared against the workspace pack.
-    for (const directory of ['personal-chrome-companion','weixin-mp','wechat-visible-reader','enterprise-workflow','github-operations',...connectorPackages.map(({directory})=>directory.slice('packages/'.length)).filter(name => name !== 'connector-feishu')]) {
-      const lock = JSON.parse(await readFile(join(repoRoot,'packages',directory,'npm-shrinkwrap.json'),'utf8'));
-      for (const [name, version] of [['plugin-sdk','0.2.0-beta.22'],['plugin-contract','0.1.0-beta.37']]) {
-        const entry=lock.packages[`node_modules/@clowder-ai/${name}`];
-        assert.equal(entry.version,version);
-        assert.match(entry.resolved, /^https:\/\/registry\.npmjs\.org\//u);
-      }
+    // The migrated Feishu package consumes the current pair; other packages
+    // retain their published SDK and contract identities from the registry.
+    const feishuLock = JSON.parse(await readFile(join(repoRoot, 'packages/connector-feishu/npm-shrinkwrap.json'), 'utf8'));
+    for (const [name, tarball] of [['plugin-sdk', tarballs[1]], ['plugin-contract', tarballs[0]]]) {
+      assert.equal(feishuLock.packages[`node_modules/@clowder-ai/${name}`].integrity,
+        `sha512-${createHash('sha512').update(await readFile(tarball)).digest('base64')}`);
     }
     await writeFile(join(consumer,'package.json'), JSON.stringify({private:true,
       overrides:currentPairOverrides(pathToFileURL(tarballs[1]).href,pathToFileURL(tarballs[0]).href)}));
@@ -472,9 +449,9 @@ test('packed public packages install and import in a fresh npm consumer', async 
     assert.equal(sdkPackage.dependencies['@clowder-ai/plugin-contract'], sourceContract.version);
     assert.equal(
       feishuPackage.dependencies['@clowder-ai/plugin-contract'],
-      '0.1.0-beta.37',
+      sourceContract.version,
     );
-    assert.equal(feishuPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.21');
+    assert.equal(feishuPackage.dependencies['@clowder-ai/plugin-sdk'], sourceSdk.version);
     assert.equal(feishuPackage.dependencies['@larksuite/cli'], '1.0.85');
     assert.deepEqual(
       [...feishuPackage.bundledDependencies].sort(),
@@ -491,38 +468,38 @@ test('packed public packages install and import in a fresh npm consumer', async 
       join(consumer, 'node_modules/@clowder-ai/feishu-meeting-intake', feishuManifest.runtime.entrypoint),
       'utf8',
     );
-    assert.equal(companionPackage.version, '0.1.0-alpha.5');
+    assert.equal(companionPackage.version, '0.1.0-alpha.6');
     assert.equal(companionPackage.private, undefined);
-    assert.equal(companionPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.22');
+    assert.equal(companionPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.23');
     assert.doesNotMatch(JSON.stringify(companionPackage), /"workspace:/u);
     assert.deepEqual(companionPackage.bin, {
       'clowder-personal-chrome-host': 'native-host/native-host-cli.mjs',
     });
     assert.equal(videoPackage.version, '0.1.0-alpha.3');
-    assert.equal(xiangqiPackage.version, '0.1.0-alpha.1');
+    assert.equal(xiangqiPackage.version, '0.1.0-alpha.2');
     assert.deepEqual(videoPackage.bin, {
       'clowder-video-analysis-mcp': './dist/mcp-entrypoint.js',
     });
-    assert.equal(videoGenerationPackage.version, '0.1.0-alpha.2');
+    assert.equal(videoGenerationPackage.version, '0.1.0-alpha.1');
     assert.deepEqual(videoGenerationPackage.bin, {
       'clowder-video-generation-mcp': './dist/mcp-entrypoint.js',
     });
-    assert.equal(weixinMpPackage.version, '0.1.0-alpha.4');
-    assert.equal(weixinMpPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.22');
+    assert.equal(weixinMpPackage.version, '0.1.0-alpha.5');
+    assert.equal(weixinMpPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.23');
     assert.doesNotMatch(JSON.stringify(weixinMpPackage), /"workspace:/u);
-    assert.equal(wechatReaderPackage.version, '0.1.0-alpha.4');
-    assert.equal(wechatReaderPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.22');
+    assert.equal(wechatReaderPackage.version, '0.1.0-alpha.5');
+    assert.equal(wechatReaderPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.23');
     assert.doesNotMatch(JSON.stringify(wechatReaderPackage), /"workspace:/u);
     assert.deepEqual(wechatReaderPackage.os, ['darwin']);
-    assert.equal(enterprisePackage.version, '0.1.0-alpha.3');
-    assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.22');
+    assert.equal(enterprisePackage.version, '0.1.0-alpha.4');
+    assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.23');
     assert.doesNotMatch(JSON.stringify(enterprisePackage), /"workspace:/u);
     // Resolve from each installed consumer, not the top-level SDK: npm must
     // really use the same current dependency pair in one fresh installation.
-    for (const [directory, expected, expectedContract] of [
-      ...['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow'].map(name => [name, '0.2.0-beta.22', '0.2.0']),
-      ...connectorPackages.map(({ name }) => [name.slice('@clowder-ai/'.length), '0.2.0-beta.22', '0.2.0']),
-      ['github-operations', '0.2.0-beta.22', '0.2.0'],
+    for (const [directory, expected] of [
+      ...['personal-chrome-companion', 'weixin-mp', 'wechat-visible-reader', 'enterprise-workflow'].map(name => [name, '0.2.0-beta.23']),
+      ...connectorPackages.map(({ name }) => [name.slice('@clowder-ai/'.length), name === '@clowder-ai/connector-feishu' ? '0.2.0-beta.24' : '0.2.0-beta.23']),
+      ['github-operations', '0.2.0-beta.23'],
     ]) {
       const installedRoot = join(consumer, 'node_modules/@clowder-ai', directory);
       const resolvedUrl = run(process.execPath, ['--input-type=module', '--eval',
@@ -533,6 +510,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       const resolvedContractUrl = run(process.execPath, ['--input-type=module', '--eval',
         "console.log(import.meta.resolve('@clowder-ai/plugin-contract'));"], resolvedSdkRoot).trim();
       const resolvedContract = JSON.parse(await readFile(join(dirname(dirname(fileURLToPath(resolvedContractUrl))), 'package.json'), 'utf8'));
+      const expectedContract = directory === 'connector-feishu' ? '0.2.0' : '0.1.0-beta.37';
       assert.equal(resolvedContract.version, expectedContract,
         `${directory} SDK must load its declared contract identity`);
     }
@@ -571,13 +549,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
         manifestValidation.valid ? undefined : JSON.stringify(manifestValidation.errors),
       );
       assert.equal(manifest.version, packageJson.version);
-      // The wire CONTRACT_VERSION constant stays at 0.1.0 (frozen #1165 shape);
-      // manifests may declare any published manifest-contract generation the
-      // installed contract package still validates (0.1.0 legacy, 0.2.0 variants).
-      assert.ok(
-        ['0.1.0', '0.2.0'].includes(manifest.contractVersion),
-        `unsupported manifest contractVersion: ${manifest.contractVersion}`,
-      );
+      assert.equal(manifest.contractVersion, installedContract.CONTRACT_VERSION);
       assert.equal(manifest.runtime.transport, 'builtin');
       assert.equal(typeof manifest.runtime.entrypoint, 'string');
       const namespace = await import(
@@ -629,10 +601,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
         ? undefined
         : JSON.stringify(videoGenerationManifestValidation.errors),
     );
-    assert.ok(
-      ['0.1.0', '0.2.0'].includes(videoGenerationManifest.contractVersion),
-      `unsupported manifest contractVersion: ${videoGenerationManifest.contractVersion}`,
-    );
+    assert.equal(videoGenerationManifest.contractVersion, installedContract.CONTRACT_VERSION);
     assert.match(videoGenerationManifestText, /src: assets\/icon\.svg/);
     assert.match(
       await readFile(
