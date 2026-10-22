@@ -1,15 +1,17 @@
 # 插件模式化配置契约设计 v2（configurationVariants）
 
 日期：2026-10-21
-作者：小狸（设计草案，astra 复审中）
-状态：**v2 草案，待 astra 复审，未进入实现**
-前置：v1（`configurationVariants` 初稿）已被 astra 驳回；本文档逐条回应其 P1/P2 与五个已拍板决策点。
+状态：**已实现的 contract 0.2.0 候选设计，待上游审阅与发布；不是已发布版本声明。**
+
+实现与审阅：[插件 PR #101](https://github.com/zts212653/clowder-ai-plugins/pull/101)、[Host 集成 PR #1660](https://github.com/zts212653/clowder-ai/pull/1660)。依赖闭包兼容已在 [PR #105](https://github.com/zts212653/clowder-ai-plugins/pull/105) 独立交付。当前声明以 [Feishu manifest](../../packages/connector-feishu/plugin.yaml)、[video-generation manifest](../../packages/video-generation/plugin.yaml) 和各包 package.json 为准；候选摘要见[发布清单](../../review-notes/2026-10-21-catalog-release-manifest.md)。
+
+配套：[Host 集成指南](../host-implementation-brief.md)与[可复现验收步骤](../../review-notes/2026-10-21-experience-acceptance-prep.md)。
 
 ## 1. 问题与目标
 
 插件交给 Host 一张平铺字段表，只能表达"何时必填"（`requiredWhen`），无法表达"当前选择的是哪套配置"。飞书 Verification Token（webhook 模式必填、websocket 模式不存在）与 video-generation 的三模式凭据是同一类问题。显示、保存、就绪、运行四处各自猜测，必然分叉。
 
-v2 目标：用**标准 JSON Schema 组合结构**表达模式单选，Host 通用解释，四条消费路径（表单 / 保存+就绪 / 运行时投影 / declared MCP）消费**同一份解析结果**。
+设计目标：用**标准 JSON Schema 组合结构**表达模式单选，Host 通用解释，四条消费路径（表单 / 保存+就绪 / 运行时投影 / declared MCP）消费**同一份解析结果**。
 
 ## 2. 契约形状（plugin-contract，新 contractVersion `0.2.0`）
 
@@ -29,7 +31,7 @@ configuration:
     options: [{ value: webhook }, { value: websocket }]
   - key: verificationToken
     kind: secret
-    required: false       # 分支内再判必填
+    required: true        # 仅在该字段所属分支活跃时要求填写
 configurationVariants:
   discriminator: connectionMode
   branches:
@@ -47,7 +49,7 @@ configurationVariants:
 
 ### 2.2 `when` 是标准 JSON Schema 片段，但受约束
 
-- `when` 原样是 JSON Schema（`properties` + `const`/`enum`），**服务端装配**时把它组合进标准 `oneOf` 校验 stored 配置对象：
+- `when` 原样是 JSON Schema（`properties` + `const`/`enum`），**服务端装配**时把它组合进标准 `oneOf` 校验有效配置对象：
 
 ```json
 {
@@ -61,7 +63,7 @@ configurationVariants:
 }
 ```
 
-  **必填性只有一个来源：字段自己的 `required`／`requiredWhen`。** 分支 `fields` 只决定字段是否适用（applicability），不隐含必填。装配出的标准 schema 由**契约包拥有并生成**（`buildVariantValidationSchema(manifest)`），Host 只消费、不各自实现；完整校验不只有 `required`——string-like 必填字段编译出 `minLength: 1`，键存在但值为空不算配置齐全。
+  **必填性只有一个来源：字段自己的 `required`／`requiredWhen`。** 分支 `fields` 只决定字段是否适用（applicability），不隐含必填。装配出的标准 schema 由**契约包拥有并生成**（`buildVariantValidationSchema(manifest)`），Host 只消费、不各自实现；完整校验不只有 `required`——string/secret 字段要求非空且含非空白字符，URL 字段使用标准 URI 格式；键存在但值为空不算配置齐全，secret 原字节不被 trim。
 
 - 契约语义校验（`validation/manifest.ts`）对 `when` 施加**结构化约束**，使其只承担"模式单选"，而不是任意 JSON Schema：
   1. `when.properties` 只允许出现 discriminator 这一个 key；
@@ -69,7 +71,7 @@ configurationVariants:
   3. 每个 option 值**恰被一个分支命中**（完备 + 互斥）。用 ajv 对每个 option 值逐分支试算 `when` 得出结论，不靠字符串比对。
 - 明确边界：我们支持的是"可明确选出分支的模式表单"，**不是**支持任意 JSON Schema 自动生成界面。跨字段条件（"mode=webhook 且开启加密"）、无判别字段的"至少填一组"（真正的 anyOf），本期不做；条件模型演进时接到同一入口。
 
-### 2.3 `fields` 是表单元数据，不是验证结构
+### 2.3 `fields` 声明字段适用性
 
 - `fields: string[]` 引用顶层 `configuration` 已声明的 key，契约校验引用存在性。
 - **一个字段可以属于多个分支**（分支互斥不要求字段集合互斥）。video-generation 的 accessKey/secretKey 同时属于 jwt 与 hmac 分支即合法用例。
@@ -124,13 +126,13 @@ web 不自行解释分支，调用 §2.4 的同一个纯函数，输入为**已�
 
 `resolveManifestConfiguration`（`packages/api/src/domains/plugin/.../manifest-configuration-projection.ts`）已同时服务 in-process 与 external runtime 两条路径。扩展为：先跑 `computeEffectiveConfiguration`，`selected` ⇒ 只投递有效配置的值（非活跃分支的已存值不投递）；`unselected`/`invalid` ⇒ fail-closed 拒绝启动。无 `configurationVariants` 的插件走原路径，行为逐字节不变。
 
-**module 的实际 getter 也必须走同一规则（astra 二轮 P1）。** `module-plugin-settings.ts` 的 `read()`（module-plugin-settings.ts:132）目前直读存储，`config.get/secrets.get` 绕过统一解析——飞书 WebSocket 模式仍能读到旧 Token。改法：**运行中的插件 getter 消费 `computeEffectiveConfiguration` 的结果**；同时区分用途——settings/dormant host 还服务扫码配置（operation action）与卸载，**管理性读取不得因"尚未选择模式"而不可用**（unselected/invalid 时管理读取按存储原值放行，仅运行时读取 fail-closed）；grant 检查（`plugin.config.read`/`secret.read`）保持不变。验收必须观察插件真实调用 getter 的返回值，不能只测启动解析器。
+**module 的实际 getter 也必须走同一规则。** 若 `config.get/secrets.get` 绕过有效配置而直读存储，WebSocket 模式便可能读到非活跃 Token。集成要求：**运行中的插件 getter 消费 `computeEffectiveConfiguration` 的结果**；同时区分用途——settings/dormant host 还服务扫码配置（operation action）与卸载，**管理性读取不得因"尚未选择模式"而不可用**（unselected/invalid 时管理读取按存储原值放行，仅运行时读取 fail-closed）；grant 检查（`plugin.config.read`/`secret.read`）保持不变。验收必须观察插件真实调用 getter 的返回值，不能只测启动解析器。
 
-### 3.4 declared MCP 环境变量（第三条真实路径，v1 遗漏项）
+### 3.4 declared MCP 环境变量
 
-`declared-mcp-resources.ts` 的 `mcpEnvironment`/`environmentValue` 目前独立读 `contribution.environment` 并直接查 `field.required`，**绕过运行时配置解析**——v1 方案下改 `required: true` 会让 apikey 模式因缺 Access/Secret Key 启动失败，旧值又会把非活跃凭据传进 MCP 进程。
+`declared-mcp-resources.ts` 的 `mcpEnvironment`/`environmentValue` 若独立读 `contribution.environment` 并直接查 `field.required`，**绕过运行时配置解析**——仅改 `required: true` 会让 apikey 模式因缺 Access/Secret Key 启动失败，旧值又会把非活跃凭据传进 MCP 进程。
 
-v2 改法：declared MCP 绑定映射前**先消费 §3.3 同一份有效配置解析结果**，再做环境变量映射：
+集成方式：declared MCP 绑定映射前**先消费 §3.3 同一份有效配置解析结果**，再做环境变量映射：
 
 - binding 指向的字段在**当前活跃分支**（或是公共字段）⇒ 保留现有 grant + required 语义，从有效配置取值投递；
 - binding 指向**非活跃分支字段** ⇒ **不投递该 env 项**（不报错、不要求 grant）；
@@ -138,269 +140,14 @@ v2 改法：declared MCP 绑定映射前**先消费 §3.3 同一份有效配置�
 
 验收必须覆盖 module、external runtime、declared MCP 三条路径，各自权限边界（grant、secret.read）保持现状。
 
-## 4. 完整示例（可直接过契约校验）
+## 4. 插件实例
 
-### 4.1 connector-feishu（contractVersion 0.2.0）
+完整声明直接参见 [connector-feishu/plugin.yaml](../../packages/connector-feishu/plugin.yaml) 与 [video-generation/plugin.yaml](../../packages/video-generation/plugin.yaml)，避免文档副本与候选版本漂移。
 
-```yaml
-pluginId: official.connector.feishu
-version: 0.1.0-alpha.6
-contractVersion: 0.2.0
-name: Feishu / Lark Connector
-description:
-  default: Receive and send Feishu or Lark messages through a Host-owned connector binding.
-  translations:
-    zh-CN: 通过宿主所有的连接器绑定接收和发送飞书或 Lark 消息。
-icon:
-  type: svg
-  src: assets/icon.svg
-configuration:
-  - key: appId
-    label: App ID
-    kind: string
-    required: true
-  - key: appSecret
-    label: App Secret
-    kind: secret
-    required: true
-  - key: connectionMode
-    label: 连接模式
-    kind: select
-    required: true
-    default: webhook
-    options:
-      - value: webhook
-        label: Webhook（需公网 URL）
-      - value: websocket
-        label: WebSocket（无需公网，推荐内网）
-  - key: verificationToken
-    label: Verification Token
-    kind: secret
-    required: true
-  - key: groupBotMentionsJson
-    label: Group Bot Mentions (JSON, .env-only)
-    kind: string
-    required: false
-    hidden: true
-  - key: feishu_qr_login
-    label: 飞书扫码授权
-    kind: operation
-    required: false
-    target: [appId, appSecret, connectionMode]
-    actions:
-      - id: qr-generate
-        label: 生成二维码
-        render: button
-        resultRender: img
-        action:
-          method: feishu.qr-generate
-        next: qr-status
-      - id: qr-status
-        label: 等待扫码
-        render: polling
-        action:
-          method: feishu.qr-status
-        timeout: 600
-        rollback: qr-generate
-        next: disconnect
-      - id: disconnect
-        label: 断开连接
-        render: button
-        action:
-          method: feishu.disconnect
-        next: qr-generate
-configurationVariants:
-  discriminator: connectionMode
-  branches:
-    - id: webhook
-      when:
-        properties:
-          connectionMode: { const: webhook }
-      fields: [verificationToken]
-    - id: websocket
-      when:
-        properties:
-          connectionMode: { const: websocket }
-      fields: []
-test:
-  action:
-    method: feishu.test
-permissions:
-  label: 飞书
-steps:
-  - text: "在飞书开放平台创建企业自建应用，获取 App ID 和 App Secret"
-  - text: "选择连接模式：Webhook（需公网 URL）或 WebSocket（无需公网，推荐内网环境）"
-  - text: "在「事件订阅」中配置请求地址并获取 Verification Token"
-    mode: webhook
-  - text: "在「事件订阅」中选择「使用长连接接收事件」，无需 Verification Token"
-    mode: websocket
-contributions:
-  - type: identity
-    id: feishu-bot
-    displayName: Feishu bot
-  - type: message-subscription
-    id: feishu
-    binding: feishu-bot
-    action:
-      method: feishu.outbound
-    presentation: v2
-  - type: media-source
-    id: feishu-media
-    binding: feishu-bot
-  - type: webhook
-    id: feishu-events
-    path: feishu/events
-    methods: [POST]
-    action:
-      method: feishu.webhook
-    verificationSecretRef: verificationToken
-features:
-  - id: feishu-messaging
-    name: Feishu messaging
-    resources: []
-    contributions:
-      - type: identity
-        id: feishu-bot
-      - type: message-subscription
-        id: feishu
-      - type: media-source
-        id: feishu-media
-      - type: webhook
-        id: feishu-events
-    capabilities: [plugin.config.read, plugin.state.get, plugin.state.set, streams.read, message.event.subscribe, messaging.send, secret.read, thread.readContent, thread.listMetadata, thread.write]
-runtime:
-  transport: builtin
-  entrypoint: dist/plugin-entrypoint.js
-```
-
-变化点：`requiredWhen` 移除（0.2.0 下由 variants 接管必填语义）；`connectionMode` 改 `required: true`（discriminator 必须显式）；其余结构与 alpha.5 逐字段对齐。
-
-**webhook contribution 开放点（已由 astra 定案）：沿用现有明确跳过行为，不新增 contribution 条件引擎。** 两条直接证据：Host 只用 `verificationSecretRef` 的存在标记 webhook 路由性质，没有"缺对应 secret 就启动失败"的检查；飞书 runtime（`packages/connector-feishu/src/runtime.ts:676`）在 WebSocket 模式下先返回 `skipped: websocket_mode`，不会继续验证 Token 或处理事件。因此无需选择"缺 Token 报错"，也无需扩展 contribution 契约。
-
-### 4.2 video-generation（contractVersion 0.2.0，演示字段跨分支共享）
-
-```yaml
-pluginId: dev.clowder.video-generation
-version: 0.1.0-alpha.2
-contractVersion: 0.2.0
-name: Video Generation
-description:
-  default: Submit and track image or video generation jobs through a configured provider.
-  translations:
-    zh-CN: 通过已配置的提供商提交并跟踪图片或视频生成任务。
-icon:
-  type: svg
-  src: assets/icon.svg
-configuration:
-  - key: provider
-    label: 视频协议
-    kind: select
-    required: true
-    options:
-      - value: zhipu
-        label: 智谱
-        hint: 在智谱开放平台注册，获取 API Key
-        docsUrl: https://docs.bigmodel.cn/cn/guide/models/video-generation
-      - value: kling
-        label: 可灵
-        hint: 在可灵 AI 开放平台注册，获取 Access Key + Secret Key
-        docsUrl: https://klingapi.com/docs
-      - value: jimeng
-        label: 即梦 (火山引擎)
-        hint: 在火山引擎控制台注册，获取 Access Key + Secret Key
-        docsUrl: https://www.volcengine.com/docs/85621/1777001
-  - key: authType
-    label: 认证方式
-    kind: select
-    required: true
-    options:
-      - value: apikey
-        label: API Key
-      - value: jwt-hs256
-        label: JWT (Access Key + Secret)
-      - value: hmac-sha256-v4
-        label: HMAC-SHA256 V4
-  - key: apiKey
-    label: API Key
-    kind: secret
-    required: true
-  - key: accessKey
-    label: Access Key
-    kind: secret
-    required: true
-  - key: secretKey
-    label: Secret Key
-    kind: secret
-    required: true
-  - key: baseUrl
-    label: Base URL
-    kind: url
-    required: false
-  - key: model
-    label: 模型名称
-    kind: string
-    required: false
-configurationVariants:
-  discriminator: authType
-  branches:
-    - id: apikey
-      when:
-        properties:
-          authType: { const: apikey }
-      fields: [apiKey]
-    - id: jwt
-      when:
-        properties:
-          authType: { enum: [jwt-hs256] }
-      fields: [accessKey, secretKey]
-    - id: hmac
-      when:
-        properties:
-          authType: { enum: [hmac-sha256-v4] }
-      fields: [accessKey, secretKey]
-contributions:
-  - type: mcp
-    id: video-generation-toolset
-    runtime:
-      transport: stdio
-      entrypoint: dist/mcp-entrypoint.js
-    environment:
-      VIDEO_GEN_PROVIDER:
-        source: config
-        key: provider
-      VIDEO_GEN_AUTH_TYPE:
-        source: config
-        key: authType
-      VIDEO_GEN_API_KEY:
-        source: secret
-        key: apiKey
-      VIDEO_GEN_ACCESS_KEY:
-        source: secret
-        key: accessKey
-      VIDEO_GEN_SECRET_KEY:
-        source: secret
-        key: secretKey
-      VIDEO_GEN_BASE_URL:
-        source: config
-        key: baseUrl
-      VIDEO_GEN_MODEL:
-        source: config
-        key: model
-features:
-  - id: generate-media
-    name: Generate media
-    resources: []
-    contributions:
-      - type: mcp
-        id: video-generation-toolset
-    capabilities:
-      - plugin.config.read
-      - secret.read
-runtime:
-  transport: builtin
-```
-
-`accessKey`/`secretKey` 同时属于 jwt 与 hmac 两个分支——示范"字段跨分支共享"合法。`environment` 映射保持不变，投递语义由 §3.4 接管。
+- Feishu：`connectionMode` 默认 `webhook`；Webhook 分支包含必填的 `verificationToken`，WebSocket 分支不包含它。公共 `appId`/`appSecret` 始终必填。分支仅决定字段适用性，必填性仍由字段的 `required`/`requiredWhen` 决定。
+- Feishu 在 WebSocket 模式下沿用已有 webhook 跳过行为，不增加 contribution 条件引擎。
+- Video-generation：`authType=apikey` 使用 `apiKey`；`jwt-hs256` 与 `hmac-sha256-v4` 共用 `accessKey`/`secretKey`。字段跨互斥分支共享是合法的；环境变量映射保留，实际投递按有效字段过滤。
+- HTTP/HTTPS endpoint 支持属于视频插件的请求行为；通用 URL 字段只提供标准 URI 语法校验，不引入统一 HTTPS-only 政策。
 
 ## 5. 两条关键数据流
 
@@ -446,7 +193,7 @@ Host 启动 contribution video-generation-toolset（stdio MCP）
 ## 6. 兼容与版本
 
 - **新 Host + 旧插件**：manifest 无 `configurationVariants` ⇒ 走原 `requiredWhen` 路径，显示/保存/就绪/运行行为逐字节不变（验收项）。
-- **旧 Host + 新插件**：`host-inventory/contract-policy.ts` 的 `PLUGIN_MANIFEST_CONTRACT_VERSIONS` 精确 allowlist 不含 `0.2.0` ⇒ 安装即拒，明确失败。
+- **Host 不支持新协议时**：manifest 声明 `contractVersion: 0.2.0`，不支持该协议的 Host 应在安装时明确拒绝。当前 Host 集成使用显式兼容范围，安装与库存恢复共用同一判断；不再以旧的精确版本 allowlist 描述当前实现。
 - 新能力绑定契约版本 `0.2.0` 发布，**不只靠 Host allowlist**：schema 层面 `configurationVariants` 只在 0.2.0 schema 中出现，0.1.0 manifest 携带该键即校验失败。
 - `requiredWhen` 在 0.2.0 中保留原语义（只管必填），旧式插件可继续只用它。
 - 版本迁移：契约包发 `0.2.0`；SDK 跟随；feishu 与 video-generation 按 §4 迁移后发新版。这是**正常发版链**，不走 hotfix。
@@ -460,27 +207,15 @@ Host 启动 contribution video-generation-toolset（stdio MCP）
 5. 当前模式下分支内选填字段（`required: false`）仍可编辑、保存、投递——分支成员资格不得把选填变成必填。
 6. 反例：非法/缺失 discriminator → 设置页可修复、就绪=未就绪、运行时拒绝启动、不悄悄回退 default；**default 未物化时所有消费者（表单/就绪/运行时）统一使用声明的 default**。
 7. 旧插件（无 variants）在新 Host 上行为不变。
-8. 旧 Host 装 0.2.0 插件被拒。
+8. 不支持 0.2.0 协议的 Host 安装该声明的插件时明确拒绝。
 9. **module 实际 getter**：WebSocket 模式下插件 `secrets.get('verificationToken')` 返回 undefined（观察真实 getter 调用，不只测启动解析器）；管理读取（扫码配置、卸载）在 unselected/invalid 下仍可用。
 10. **飞书 webhook 跳过**：WebSocket 模式无 Token 正常启动；webhook 请求返回 `skipped: websocket_mode` 不投递消息；切回 Webhook 必须先满足 Token 必填才能就绪。
 
-## 8. 对 astra v1 驳回的逐条回应
+## 8. 实现边界
 
-| astra 意见 | v2 回应 |
-|---|---|
-| P1 不能只读服务端 activeNow（未保存切换不生效） | §2.4 + §3.1：前后端共用同一纯解析函数，前端输入安全投影+草稿即时得出字段集 |
-| P1 遗漏 declared MCP env 路径 | §3.4：三条路径统一消费有效配置解析；非活跃分支 env 不投递；验收覆盖三路径 |
-| P2 不是标准 oneOf | §2.2：`when` 为标准 JSON Schema 片段，服务端装配成标准 `oneOf` 用 ajv 校验 stored 对象；`when` 施结构化约束（只限 discriminator + const/enum + option 完备互斥机检）；明确不支持任意 JSON Schema 生成界面 |
-| P2 删除"一字段最多一分支" | §2.3：允许跨分支共享，video-gen 示例即共享场景 |
-| P2 三态解析 + 无有效模式行为 | §2.4/§2.5：selected/unselected/invalid；不回退、不隐式默认、可修复、阻止启动 |
-| 决策：命名 | `configurationVariants` 作领域名；标准结构（oneOf/when）与表单元数据（fields/discriminator）边界见 §2 |
-| 决策：非活跃分支预填/保存 | §3.2：API 允许显式更新并校验格式；表单只提交活跃字段修改、其余草稿保留；模式+分支字段一次保存 |
-| 决策：非法模式值 | §2.5：不回退；可打开设置修复；阻止启动 |
-| 决策：分支覆写 label/description | 不允许（§2.1），展示定义单一来源 |
-| 决策：operation configured | §3.2 保持原义，不按分支过滤 target |
-| 验收：新 Host+旧插件不变 / 版本绑定 | §6 两条均列为硬验收 |
-| 删除"旧插件依赖模式外值就是 bug" | 本文不出现该论断；旧契约允许即合法 |
-| 二轮 P1 删除 `optionalInVariant`，必填性唯一来源 | §2.2/§2.5：分支只管适用性；凭据字段 `required: true`；选填直接 `required: false` |
-| 二轮 P1 module 实际 getter 绕过解析 | §3.3：运行中插件 getter 消费 `computeEffectiveConfiguration`；管理读取不被未选模式阻塞；grant 不变 |
-| 二轮 P1 schema 装配与有效值计算归契约包 | §2.4：`buildVariantValidationSchema` + `computeEffectiveConfiguration` 由契约包拥有，Host 消费；空值≠存在；default 即时应用、不回退；校验对象是有效配置而非原始 stored |
-| 二轮 webhook 开放点定案 | §4.1：沿用 `skipped: websocket_mode` 现有跳过行为，不新增 contribution 条件引擎；验收第 10 条覆盖 |
+- `when` 是受约束的标准 JSON Schema 片段，不支持任意 JSON Schema 表单生成，也不新增多判别字段或贡献项条件引擎。
+- 字段定义保持单一来源；分支可以共享字段，但不覆写 label、description 或 kind。
+- 解析和 schema 生成由契约包拥有，Host 消费相同入口。保存、就绪与运行值投递不能各自推导另一套分支规则。
+- `requiredWhen` 保留条件必填语义，不被偷换为字段隐藏规则；分支 `fields` 明确表示适用性。
+- 无存值时使用声明默认值；非法存值不回退。运行拒绝未完成的配置，但设置与管理操作保留修复入口。
+- 本文描述候选实现与验收要求，不把本地测试或旧候选摘要当成 npm 实发证明。发布状态以对应 PR、CI 与 registry 验证为准。

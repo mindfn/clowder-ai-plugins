@@ -1,6 +1,6 @@
 # configurationVariants 发布候选清单
 
-状态：源码 PR #101 待验证与审阅，未发布、未激活 live catalog。
+状态：[源码 PR #101](https://github.com/zts212653/clowder-ai-plugins/pull/101) 的未发布候选清单；实现及验证证据以 PR 对应提交的检查为准，尚不表示 npm 发布或 live catalog 激活。
 
 ## 范围
 
@@ -12,7 +12,7 @@
 
 ## 候选制品
 
-使用 Node 24.18.0 / npm 11.16.0，先构建再运行原 `scripts/pack-publish-artifact.mjs`；没有新增解包重压缩逻辑。下表等待同 HEAD Ubuntu CI 的制品一致性验收。
+使用 Node 24.18.0 / npm 11.16.0，先构建再运行原 `scripts/pack-publish-artifact.mjs`；没有新增解包重压缩逻辑。下表记录候选字节；修改包内容后须重新验证，并以发布时 registry 实发字节为最终核对依据。
 
 | 包 | 版本 | 字节 | SHA256 |
 |---|---|---:|---|
@@ -34,12 +34,10 @@
 
 飞书隔离 registry 安装已验证正式 tgz、保留包内 resolved 路径的 npm ci、错误 SDK/契约下载地址 E404 拒绝、integrity、manifest 校验、create 入口及 EINTEGRITY 篡改拒绝；整套 gate 与云端结果以精确提交的检查为准。
 
-1. Host 通用逻辑在 Host 线程集成，最终 vendor 须绑定本清单经审阅的契约字节。
-2. 插件源码 PR 合入一次，main CI 发布；遵守 CODEOWNER 与发布权限约束。
-3. 验证 registry 实发的四个版本与字节，另提 catalog activation PR。
-4. operator 自行更新重启 Host，通过目录安装验收；运行实例不由猫自动重启。
-5. Host 上游合入由 Host owner 按验收结果推进。
+本地目录验收与公开发布是两条路径：
 
-旧候选 alpha.6、SDK beta.22 和重压缩路径的 379b0476…制品均不作为本轮交付坐标。不要安装历史 feishu-hotfix-artifacts。
+- 本地目录：安装并构建源码依赖后，可按[验收步骤](2026-10-21-experience-acceptance-prep.md)使用支持该契约的 Host 验证配置，无需先公开发布候选 SDK 或插件。
+- 公开发布：源码经所需 CODEOWNER 审批合入后，main CI 发布；核对 registry 中四个精确版本及字节，再通过独立 PR 激活 live catalog。遵循 [CONTRIBUTING.md](../CONTRIBUTING.md)，不重写已发布身份。
+- Host 集成与兼容验证见 [Host PR #1660](https://github.com/zts212653/clowder-ai/pull/1660)；本清单不代替使用方的构建、运行验收或发布审批。
 
 迁移对照：Host main `ffa73bb8fb`（2026-08-04）的协议引擎与迁移前 `db22707` 均无 HTTPS-only 限制；插件迁移 `a57fa82` / #54 `29595a7` 新增了该限制。本次恢复 HTTP/HTTPS 支持，覆盖普通域名/内网 HTTP、HTTP/HTTPS submit/poll 请求与已有真实本地 HTTP fixture；不把插件 endpoint 规则推广到通用 URL 字段。
