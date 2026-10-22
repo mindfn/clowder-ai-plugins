@@ -7,7 +7,7 @@
 - contract 0.2.0：新增配置分支模型与共享解析；重复分支枚举返回校验错误，存储值只读取自身属性，条件值去重、普通 select 限定选项、每分支只编译一次，字符串/secret 需要非空白内容且保留原值；operation 不进入标量校验，URL 使用标准 URI 格式（Host 注册 ajv-formats）；`contractVersion` 是插件所需协议，不等同于 npm 依赖版本。
 - SDK 0.2.0-beta.24：支持新契约。beta.23 已发布，其他插件继续使用自己的声明版本。
 - connector-feishu 0.1.0-alpha.8：Verification Token 仅属于 Webhook 分支。
-- video-generation 0.1.0-alpha.2：认证字段按 authType 分支选择。
+- video-generation 0.1.0-alpha.2：认证字段按 authType 分支选择；恢复迁移前 HTTP/HTTPS endpoint 均可配置的行为，撤销 #54 新增的非 loopback HTTP 限制。
 - 通用依赖兼容校验另行交付；不批量升级其他插件。
 
 ## 候选制品
@@ -19,14 +19,14 @@
 | plugin-contract | 0.2.0 | 234320 | `1bcd26e0191a5a04e0a7a2be3832368ed06398cce7a4f5110956e22c5c010d45` |
 | plugin-sdk | 0.2.0-beta.24 | 92488 | `06ef52010accb1e9a670df040ccff7258e585c6256d2fcded7afe17244e58e31` |
 | connector-feishu | 0.1.0-alpha.8 | 86602 | `fee9d2fb3f94d7ee98573c3f999c31a65cea0996d892fd46353040cd63c7dd9e` |
-| video-generation | 0.1.0-alpha.2 | 47195 | `07ab11078933f2e709f5f610a99577adf6440c3872f000be835897eb20cad7ab` |
+| video-generation | 0.1.0-alpha.2 | 47037 | `738c0e08d3814042ecff97881fc8491d5419d69b38569f8226b2936ccab69947` |
 
 ### 完整 npm integrity
 
 - plugin-contract@0.2.0: `sha512-pvA/A/s13JLnnYtCacQ3gS+rC3phS5fpNVczmOJemlcLfdCGMQL3VvS8v4TAKEogGVBvHiHEKGeDbwiSmZbCjQ==`；SHA1 `b33346ae02bbecb859839f10ffbb1e4f08a471bc`
 - plugin-sdk@0.2.0-beta.24: `sha512-obnziD7d+OHHjQp3eNUKHeZJU5CZ1NC5yonWAak4koXX+Jg8o8wzld3CcBhfGMbZCghIvCFJuXMMTXhNjx7u+g==`；SHA1 `64cdb7002f4e7abca5d30356a8244ffe123b7aad`
 - connector-feishu@0.1.0-alpha.8: `sha512-9t9SQrgqFxYJtD8sywja2lSdPP/c/JbxOV0JOZZPY+EgpdmAMYNjtfqsBp3OdcXeaOrNBgB+07rGnYWf/dvD9A==`；SHA1 `42ce0f56a2648310dc9edf760f8bea57c5b17287`
-- video-generation@0.1.0-alpha.2: `sha512-/xbqkgYvby+8zPLJT2IGXN1ANgl9TnWd4G5MXo1hGM14sWRWwrGS0UB0EDhugu6GGx7MuxntZBFOqFGPMRT3kA==`；SHA1 `6cb3b7a51bc91a4f05a1fc32d21c9c7f3f3c6ada`
+- video-generation@0.1.0-alpha.2: `sha512-YzEMEKsNFWatYyjDV4WEj/VjpXeaef1bYX4SqjL+Xc8o3OaKvReTzmTVqYUjOZ9+esI6OPPGTi8qGmQOdi48yQ==`；SHA1 `170a6a1ba279776e09f38efac228e72bb1f0a814`
 
 契约包位于 `packages/plugin-contract/clowder-ai-plugin-contract-0.2.0.tgz`；SDK/契约哈希必须与飞书 shrinkwrap 完全相同。两个插件的 candidate 条目必须与官方打包结果完全相同。已发布版本的条目不重写。
 
@@ -41,3 +41,5 @@
 5. Host 上游合入由 Host owner 按验收结果推进。
 
 旧候选 alpha.6、SDK beta.22 和重压缩路径的 379b0476…制品均不作为本轮交付坐标。不要安装历史 feishu-hotfix-artifacts。
+
+迁移对照：Host main `ffa73bb8fb`（2026-08-04）的协议引擎与迁移前 `db22707` 均无 HTTPS-only 限制；插件迁移 `a57fa82` / #54 `29595a7` 新增了该限制。本次恢复 HTTP/HTTPS 支持，覆盖普通域名/内网 HTTP、HTTP/HTTPS submit/poll 请求与已有真实本地 HTTP fixture；不把插件 endpoint 规则推广到通用 URL 字段。
