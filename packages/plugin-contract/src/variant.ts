@@ -226,7 +226,7 @@ function fieldValueConstraint(field: ConfigurationField): Record<string, unknown
   switch (field.kind) {
     case 'string':
     case 'secret':
-      return { type: 'string', minLength: 1 };
+      return { type: 'string', minLength: 1, pattern: '\\S' };
     case 'url':
       return { type: 'string', minLength: 1, format: 'uri' };
     case 'select':

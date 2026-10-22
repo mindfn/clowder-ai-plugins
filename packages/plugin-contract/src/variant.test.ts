@@ -252,7 +252,7 @@ test('buildVariantValidationSchema compiles oneOf branches with discriminator-re
   assert.deepEqual(webhook['required'], ['connectionMode', 'verificationToken']);
   const webhookProperties = webhook['properties'] as Record<string, unknown>;
   assert.deepEqual(webhookProperties['connectionMode'], { const: 'webhook' });
-  assert.deepEqual(webhookProperties['verificationToken'], { type: 'string', minLength: 1 });
+  assert.deepEqual(webhookProperties['verificationToken'], { type: 'string', minLength: 1, pattern: '\\S' });
 
   const websocket = oneOf[1]!;
   assert.deepEqual(websocket['required'], ['connectionMode']);
@@ -280,6 +280,7 @@ test('buildVariantValidationSchema keeps required:false branch fields optional',
   assert.deepEqual((apikeyBranch!['properties'] as Record<string, unknown>)['apiKey'], {
     type: 'string',
     minLength: 1,
+    pattern: '\\S',
   });
   assert.equal(
     requiredOneOf.filter((branch) => (branch['required'] as string[]).includes('apiKey'))
@@ -318,10 +319,10 @@ test('buildVariantValidationSchema returns common-field constraints for legacy m
   const schema = buildVariantValidationSchema(legacy as unknown as PluginManifest);
   assert.equal(schema['type'], 'object');
   assert.deepEqual(schema['properties'], {
-    appId: { type: 'string', minLength: 1 },
+    appId: { type: 'string', minLength: 1, pattern: '\\S' },
     connectionMode: { type: 'string', enum: ['webhook', 'websocket'] },
-    verificationToken: { type: 'string', minLength: 1 },
-    groupBotMentionsJson: { type: 'string', minLength: 1 },
+    verificationToken: { type: 'string', minLength: 1, pattern: '\\S' },
+    groupBotMentionsJson: { type: 'string', minLength: 1, pattern: '\\S' },
   });
   assert.deepEqual(schema['required'], ['appId', 'connectionMode', 'verificationToken']);
   assert.equal('oneOf' in schema, false);
@@ -640,4 +641,30 @@ for (const branchOwned of [false, true]) {
     assert.equal(validates(manifest, { mode: 'b', baseUrl: 'https://example.com/v1?key=value' }), true);
     assert.equal(validates(manifest, { mode: 'b' }), true);
   });
+}
+
+for (const kind of ['string', 'secret'] as const) {
+  for (const branchOwned of [false, true]) {
+    test(`configured ${kind} requires non-whitespace content (${branchOwned ? 'branch' : 'common'})`, () => {
+      const manifest = {
+        ...enumBranchManifest,
+        configuration: [
+          ...enumBranchManifest.configuration!,
+          { key: 'credential', label: 'Credential', kind, required: true },
+        ],
+        configurationVariants: {
+          ...enumBranchManifest.configurationVariants!,
+          branches: enumBranchManifest.configurationVariants!.branches.map((branch) => ({
+            ...branch, fields: branchOwned ? [...branch.fields, 'credential'] : branch.fields,
+          })),
+        },
+      } as PluginManifest;
+      for (const credential of [' ', '\t\r\n', '\u00a0', '\u3000']) {
+        assert.equal(validates(manifest, { mode: 'b', credential }), false, JSON.stringify(credential));
+      }
+      const values = computeEffectiveConfiguration(manifest, { mode: 'b', credential: '  retained secret  ' }).effectiveValues;
+      assert.equal(values['credential'], '  retained secret  ');
+      assert.equal(validates(manifest, values), true);
+    });
+  }
 }
