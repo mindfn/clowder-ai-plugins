@@ -27,7 +27,7 @@
 2. **移除已作废隐藏规则**：`46dc0f8ffd` 的设置页 requiredWhen 隐藏逻辑不得进入新分支。新基点的 main 应该本来就没有它——确认即可。
 3. **贯通全部消费者**（设计 §3）：
    - §3.1 web 表单：用契约纯函数投影安全字段；草稿切换分支时即时增删活跃字段。
-   - §3.2 保存/就绪：用 `buildVariantValidationSchema`（ajv）统一校验 effective 对象（`computeEffectiveConfiguration` 的产物）。
+   - §3.2 保存/就绪：用 `buildVariantValidationSchema`（ajv）统一校验 effective 对象（`computeEffectiveConfiguration` 的产物）。 Ajv 编译前注册 `ajv-formats`，执行 URL 的标准 `uri` 格式约束；operation 控件不属于标量值，由已有 target configured 检查判断其完成状态。
    - §3.3 启动投影：`resolveManifestConfiguration`（路径线索：`packages/api/src/domains/plugin/.../manifest-configuration-projection.ts`，自行定位）在 unselected/invalid 时 fail-closed 阻止启动；module getter `read()`（线索：`packages/api/src/domains/plugin/builtin-runtime/carriers/module-plugin-settings.ts`）消费契约函数——runtime fail-closed / management 接口放行（保留既有分层语义，但判断逻辑改为消费契约函数）。
    - §3.4 declared MCP env：env 占位符解析路径也要走有效配置投影。
    - 契约版本 allowlist：Host 目前只接受旧契约版本、不接受 `0.2.0`——找到 allowlist（自行 grep）并放行 `0.2.0`。

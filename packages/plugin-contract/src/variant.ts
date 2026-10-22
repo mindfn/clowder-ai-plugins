@@ -174,6 +174,7 @@ export function computeEffectiveConfiguration(
 
   const effectiveValues: Record<string, unknown> = {};
   for (const field of configuration) {
+    if (field.kind === 'operation') continue;
     const isBranchField = branchFieldKeys.has(field.key);
     const isActive = activeKeys.has(field.key);
     if (isBranchField && !isActive) continue;
@@ -225,8 +226,9 @@ function fieldValueConstraint(field: ConfigurationField): Record<string, unknown
   switch (field.kind) {
     case 'string':
     case 'secret':
-    case 'url':
       return { type: 'string', minLength: 1 };
+    case 'url':
+      return { type: 'string', minLength: 1, format: 'uri' };
     case 'select':
       return { type: 'string', enum: (field.options ?? []).map((option) => option.value) };
     case 'number':
@@ -262,7 +264,10 @@ function conditionalRequirement(
 /**
  * Compiles the manifest into a standard JSON Schema for validating the
  * *effective* configuration object (see {@link computeEffectiveConfiguration}),
- * not the raw stored object.
+ * not the raw stored object. Consumers must enable standard URI format validation
+ * (for Ajv, register ajv-formats before compiling).
+ * Operation controls have no scalar value and are omitted; their target-based
+ * configured state remains the responsibility of the operation consumer.
  *
  * - Common fields (not claimed by any branch) are constrained at the top
  *   level: unconditionally required fields land in `required` and get a kind
@@ -298,7 +303,7 @@ export function buildVariantValidationSchema(
   const required: string[] = [];
   const commonConditionals: Record<string, unknown>[] = [];
   for (const field of configuration) {
-    if (branchFieldKeys.has(field.key)) continue;
+    if (field.kind === 'operation' || branchFieldKeys.has(field.key)) continue;
     const constraint = fieldValueConstraint(field);
     if (Object.keys(constraint).length > 0) properties[field.key] = constraint;
     const conditional = conditionalRequirement(field);
@@ -318,7 +323,7 @@ export function buildVariantValidationSchema(
 
     for (const key of branch.fields) {
       const field = configByKey.get(key);
-      if (field === undefined) continue;
+      if (field === undefined || field.kind === 'operation') continue;
       const constraint = fieldValueConstraint(field);
       if (Object.keys(constraint).length > 0) memberProperties[key] = constraint;
       const conditional = conditionalRequirement(field);

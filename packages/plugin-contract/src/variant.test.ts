@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import AjvPkg from 'ajv';
+import addFormatsPkg from 'ajv-formats';
 import type { ValidateFunction } from 'ajv';
 
 const AjvCtor = AjvPkg as unknown as new (options?: Record<string, unknown>) => {
@@ -442,6 +443,7 @@ const crossFieldManifest = {
 
 function validates(manifest: PluginManifest, effectiveValues: Record<string, unknown>): boolean {
   const ajv = new AjvCtor();
+  (addFormatsPkg as unknown as (instance: unknown) => void)(ajv);
   const validate = ajv.compile(buildVariantValidationSchema(manifest));
   return validate(effectiveValues) === true;
 }
@@ -589,6 +591,53 @@ for (const branchOwned of [false, true]) {
     } as PluginManifest;
     assert.equal(validates(manifest, { mode: 'b', provider: 'stale-provider' }), false);
     assert.equal(validates(manifest, { mode: 'b', provider: 'valid' }), true);
+    assert.equal(validates(manifest, { mode: 'b' }), true);
+  });
+}
+
+for (const placement of ['legacy', 'common', 'branch'] as const) {
+  test(`operation controls do not become scalar values or requirements (${placement})`, () => {
+    const manifest = {
+      ...enumBranchManifest,
+      configuration: [
+        ...enumBranchManifest.configuration!,
+        { key: 'login', label: 'Login', kind: 'operation', required: true, target: ['botToken'],
+          actions: [{ id: 'login', label: 'Login', render: 'button', action: { method: 'login' } }] },
+        { key: 'botToken', label: 'Bot token', kind: 'secret', required: true },
+      ],
+      configurationVariants: placement === 'legacy' ? undefined : {
+        ...enumBranchManifest.configurationVariants!,
+        branches: enumBranchManifest.configurationVariants!.branches.map((branch) => ({
+          ...branch, fields: placement === 'branch' ? [...branch.fields, 'login', 'botToken'] : branch.fields,
+        })),
+      },
+    } as PluginManifest;
+    const complete = computeEffectiveConfiguration(manifest, { mode: 'b', botToken: 'saved', login: 'stale-control-value' });
+    assert.equal(validates(manifest, { ...complete.effectiveValues, login: undefined }), true);
+    assert.equal(Object.hasOwn(complete.effectiveValues, 'login'), false);
+    assert.equal(validates(manifest, computeEffectiveConfiguration(manifest, { mode: 'b' }).effectiveValues), false);
+  });
+}
+
+for (const branchOwned of [false, true]) {
+  test(`URL fields enforce URI syntax (${branchOwned ? 'branch' : 'common'})`, () => {
+    const manifest = {
+      ...enumBranchManifest,
+      configuration: [
+        ...enumBranchManifest.configuration!,
+        { key: 'baseUrl', label: 'Base URL', kind: 'url', required: false },
+      ],
+      configurationVariants: {
+        ...enumBranchManifest.configurationVariants!,
+        branches: enumBranchManifest.configurationVariants!.branches.map((branch) => ({
+          ...branch, fields: branchOwned ? [...branch.fields, 'baseUrl'] : branch.fields,
+        })),
+      },
+    } as PluginManifest;
+    for (const baseUrl of ['not-a-url', '/relative/path', '', 'https://bad host.example']) {
+      assert.equal(validates(manifest, { mode: 'b', baseUrl }), false, baseUrl);
+    }
+    assert.equal(validates(manifest, { mode: 'b', baseUrl: 'https://example.com/v1?key=value' }), true);
     assert.equal(validates(manifest, { mode: 'b' }), true);
   });
 }
