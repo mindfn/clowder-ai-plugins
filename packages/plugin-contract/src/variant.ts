@@ -50,7 +50,7 @@ function effectiveFieldValue(
   field: ConfigurationField,
   storedValues: StoredValues,
 ): unknown {
-  const stored = storedValues[field.key];
+  const stored = Object.hasOwn(storedValues, field.key) ? storedValues[field.key] : undefined;
   return stored === undefined ? fieldDefault(field) : stored;
 }
 
@@ -122,7 +122,10 @@ export function resolveConfigurationVariant(
   const variants = manifest.configurationVariants;
   if (variants === undefined) return { status: 'unselected' };
 
-  let value = coerceStoredValues(manifest, values)[variants.discriminator];
+  const stored = coerceStoredValues(manifest, values);
+  let value = Object.hasOwn(stored, variants.discriminator)
+    ? stored[variants.discriminator]
+    : undefined;
   if (value === undefined) {
     const discriminatorField = (manifest.configuration ?? []).find(
       (field) => field.key === variants.discriminator,
@@ -214,7 +217,7 @@ export function evaluateFieldRequiredness(
   const conditions = Array.isArray(requiredWhen.value)
     ? requiredWhen.value
     : [requiredWhen.value];
-  const actual = values[requiredWhen.key];
+  const actual = Object.hasOwn(values, requiredWhen.key) ? values[requiredWhen.key] : undefined;
   return conditions.some((condition) => condition === actual);
 }
 

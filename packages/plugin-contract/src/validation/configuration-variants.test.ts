@@ -247,3 +247,15 @@ test('branch when rejects a non-object when fragment', () => {
   assert.equal(error.keyword, 'type');
   assert.equal(error.instancePath, '/configurationVariants/branches/0/when');
 });
+
+test('duplicate branch enum values return an invalid result without throwing', () => {
+  const manifest = variantManifest();
+  const variants = manifest['configurationVariants'] as {
+    branches: Array<{ when: { properties: Record<string, unknown> } }>;
+  };
+  variants.branches[0]!.when.properties = {
+    connectionMode: { enum: ['webhook', 'webhook'] },
+  };
+  const error = singleError(manifest);
+  assert.equal(error.keyword, 'whenUniqueOptions');
+});

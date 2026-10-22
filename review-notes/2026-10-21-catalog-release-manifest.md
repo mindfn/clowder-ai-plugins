@@ -4,7 +4,7 @@
 
 ## 范围
 
-- contract 0.2.0：新增配置分支模型与共享解析；`contractVersion` 是插件所需协议，不等同于 npm 依赖版本。
+- contract 0.2.0：新增配置分支模型与共享解析；重复分支枚举返回校验错误，存储值只读取自身属性；`contractVersion` 是插件所需协议，不等同于 npm 依赖版本。
 - SDK 0.2.0-beta.24：支持新契约。beta.23 已发布，其他插件继续使用自己的声明版本。
 - connector-feishu 0.1.0-alpha.8：Verification Token 仅属于 Webhook 分支。
 - video-generation 0.1.0-alpha.2：认证字段按 authType 分支选择。
@@ -16,16 +16,16 @@
 
 | 包 | 版本 | 字节 | SHA256 |
 |---|---|---:|---|
-| plugin-contract | 0.2.0 | 233868 | `9f8d97bc63647301036cb7b1f37310332cc02b20879352d37fe9c5217bf9c739` |
+| plugin-contract | 0.2.0 | 234010 | `a5df775acac7daeadd331344174c390e1fb6a59f8b3b4a2ad051e144dd52d12f` |
 | plugin-sdk | 0.2.0-beta.24 | 92488 | `06ef52010accb1e9a670df040ccff7258e585c6256d2fcded7afe17244e58e31` |
-| connector-feishu | 0.1.0-alpha.8 | 86603 | `3ec97c208c01e2895c12d63f59585aadbb541a81abd6806f56fa20033ca97dd7` |
+| connector-feishu | 0.1.0-alpha.8 | 86603 | `e0c3cc04ee02180e7270e1d8825e15db6969d51ccffc3ce72373063e28142047` |
 | video-generation | 0.1.0-alpha.2 | 47195 | `07ab11078933f2e709f5f610a99577adf6440c3872f000be835897eb20cad7ab` |
 
 ### 完整 npm integrity
 
-- plugin-contract@0.2.0: `sha512-iFhuTFs/ol09W3n5iF583LuFaLGBQ8nBkdaGrntILSf6Zk40ghKU+lFw1uo97z/NUddoZLDp6x+rkGlHsPYbJg==`；SHA1 `cadcf79b6dbef0a83c1580978479b079774964b7`
+- plugin-contract@0.2.0: `sha512-wQ4dm9VCxlrxPrtyhSFXAGKsen7BPDb33pwRYCE1xMbTXfRCYJCNZtLflbtZTfUE5RnMXy3W26PqjllsUjHmPQ==`；SHA1 `fbb895073e4c78a7016eb3122d779c405c46f68f`
 - plugin-sdk@0.2.0-beta.24: `sha512-obnziD7d+OHHjQp3eNUKHeZJU5CZ1NC5yonWAak4koXX+Jg8o8wzld3CcBhfGMbZCghIvCFJuXMMTXhNjx7u+g==`；SHA1 `64cdb7002f4e7abca5d30356a8244ffe123b7aad`
-- connector-feishu@0.1.0-alpha.8: `sha512-4pwW46+VH7FTSAMaSsw6oNdKbPgQ5hUKLOr9EKmSFSAJMeRfRZjOGBTA/8wDHPglabTAVMRcoeKWPQ+23TZtyw==`；SHA1 `d85d823abe99460238681b4b565cfe7d0c670da2`
+- connector-feishu@0.1.0-alpha.8: `sha512-JDEAq+U6sDGLLcHbOdlsr3QS66i1Y50SRQKqG9Fe3nEB7m/FNGwWTTFiVcqJy/xfPww+EaHQ/EHDZclMEfGXgw==`；SHA1 `7d1f9b967dfd6c402e9b9076c0d4ac4abbef3318`
 - video-generation@0.1.0-alpha.2: `sha512-/xbqkgYvby+8zPLJT2IGXN1ANgl9TnWd4G5MXo1hGM14sWRWwrGS0UB0EDhugu6GGx7MuxntZBFOqFGPMRT3kA==`；SHA1 `6cb3b7a51bc91a4f05a1fc32d21c9c7f3f3c6ada`
 
 契约包位于 `packages/plugin-contract/clowder-ai-plugin-contract-0.2.0.tgz`；SDK/契约哈希必须与飞书 shrinkwrap 完全相同。两个插件的 candidate 条目必须与官方打包结果完全相同。已发布版本的条目不重写。

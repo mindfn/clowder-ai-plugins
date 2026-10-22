@@ -954,8 +954,8 @@
             "packageName": "@clowder-ai/connector-feishu",
             "version": "0.1.0-alpha.8",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-feishu/-/connector-feishu-0.1.0-alpha.8.tgz",
-            "integrity": "sha512-4pwW46+VH7FTSAMaSsw6oNdKbPgQ5hUKLOr9EKmSFSAJMeRfRZjOGBTA/8wDHPglabTAVMRcoeKWPQ+23TZtyw==",
-            "shasum": "d85d823abe99460238681b4b565cfe7d0c670da2",
+            "integrity": "sha512-JDEAq+U6sDGLLcHbOdlsr3QS66i1Y50SRQKqG9Fe3nEB7m/FNGwWTTFiVcqJy/xfPww+EaHQ/EHDZclMEfGXgw==",
+            "shasum": "7d1f9b967dfd6c402e9b9076c0d4ac4abbef3318",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-feishu"

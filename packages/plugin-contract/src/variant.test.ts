@@ -509,3 +509,52 @@ test('counterexample: string-stored boolean still fails closed for a missing con
   const { effectiveValues } = computeEffectiveConfiguration(crossFieldManifest, stored);
   assert.equal(validates(crossFieldManifest, effectiveValues), false);
 });
+
+for (const key of ['constructor', 'toString', 'hasOwnProperty']) {
+  test(`variant values treat ${key} as an own configuration key`, () => {
+    const manifest = {
+      ...feishuLike,
+      configuration: feishuLike.configuration!.map((field) =>
+        field.key === 'connectionMode' ? { ...field, key } : field,
+      ),
+      configurationVariants: {
+        ...feishuLike.configurationVariants!,
+        discriminator: key,
+        branches: feishuLike.configurationVariants!.branches.map((branch) => ({
+          ...branch,
+          when: { properties: { [key]: (branch.when['properties'] as Record<string, unknown>)['connectionMode'] } },
+        })),
+      },
+    } as PluginManifest;
+    assert.deepEqual(resolveConfigurationVariant(manifest, {}), {
+      status: 'selected', branchId: 'webhook',
+    });
+    assert.equal(computeEffectiveConfiguration(manifest, {}).effectiveValues[key], 'webhook');
+    assert.deepEqual(resolveConfigurationVariant(manifest, { [key]: 'websocket' }), {
+      status: 'selected', branchId: 'websocket',
+    });
+    const noDefault = {
+      ...manifest,
+      configuration: manifest.configuration!.map((field) =>
+        field.key === key ? { ...field, default: undefined } : field,
+      ),
+    } as PluginManifest;
+    assert.deepEqual(resolveConfigurationVariant(noDefault, {}), { status: 'unselected' });
+
+    const common = {
+      ...feishuLike,
+      configuration: [
+        ...feishuLike.configuration!,
+        { key, label: key, kind: 'string', default: 'fallback' },
+      ],
+    } as PluginManifest;
+    assert.equal(computeEffectiveConfiguration(common, {}).effectiveValues[key], 'fallback');
+    assert.equal(computeEffectiveConfiguration(common, { [key]: 'saved' }).effectiveValues[key], 'saved');
+    const conditional = {
+      key: 'token', label: 'Token', kind: 'secret',
+      requiredWhen: { key, value: 'saved' },
+    } as NonNullable<PluginManifest['configuration']>[number];
+    assert.equal(evaluateFieldRequiredness(conditional, Object.create({ [key]: 'saved' })), false);
+    assert.equal(evaluateFieldRequiredness(conditional, { [key]: 'saved' }), true);
+  });
+}

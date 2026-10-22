@@ -329,6 +329,15 @@ export function validateManifest(value: unknown): ManifestValidationResult {
           );
         }
 
+        if (new Set(declaredValues).size !== declaredValues.length) {
+          return semanticError(
+            `/configurationVariants/branches/${branchIndex}/when/properties/${variants.discriminator}`,
+            '#/$defs/ConfigurationVariantBranch/whenUniqueOptions',
+            'whenUniqueOptions',
+            'configurationVariants branch enum values must be unique',
+          );
+        }
+
         for (const [fieldIndex, key] of branch.fields.entries()) {
           if (key === variants.discriminator) {
             return semanticError(
