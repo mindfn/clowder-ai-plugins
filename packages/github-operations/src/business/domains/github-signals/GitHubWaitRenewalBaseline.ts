@@ -9,7 +9,7 @@ import type {
   PrAutomationState,
 } from '../../model/index.js';
 import type { WaitRenewalInstruction } from '../ball-custody/wait-state-machine.js';
-import { mergeReviewVerdicts } from './GitHubReviewVerdicts.js';
+import { isGitHubReviewDecisionState, mergeReviewVerdicts } from './GitHubReviewVerdicts.js';
 import type { GitHubWaitFacts } from './GitHubWaitPredicateCatalog.js';
 
 /**
@@ -42,7 +42,9 @@ const UNOBSERVED_MERGE_STATE = 'UNKNOWN';
 const unobservedCiFingerprint = (headSha: string) => `${headSha}:unobserved`;
 
 function latestReviewDecision(facts: GitHubWaitFacts): string | undefined {
-  return [...(facts.review?.decisions ?? [])].sort((a, b) => a.id - b.id).at(-1)?.state;
+  return [...(facts.review?.decisions ?? [])]
+    .filter(review => isGitHubReviewDecisionState(review.state))
+    .sort((a, b) => a.id - b.id).at(-1)?.state;
 }
 
 export function renewPrWaitBaseline(
@@ -54,31 +56,36 @@ export function renewPrWaitBaseline(
   const headSha = facts.headSha ?? collector.ci?.headSha ?? previous.headSha;
   const headChanged = headSha !== previous.headSha;
   const observedDecision = latestReviewDecision(facts);
+  const previousReview = previous.review;
+  const previousReviewWithoutDecision = previousReview && (() => {
+    const { decision: _revokedOrReplacedDecision, ...rest } = previousReview;
+    return rest;
+  })();
 
   // Review ids are not head-scoped, so they advance across a push. A late review of the old HEAD is
   // absorbed rather than reported — it is not an approval of the new HEAD — while a review OF the
   // new HEAD in this poll was already reported by N (the matcher reads `headDecisionCursor`).
   // Thread snapshots differ: N cannot report a thread change across a push, and N+1 re-reads the
   // threads every poll, so after a push N+1 keeps the previous snapshot and reports it next poll.
-  const review = previous.review
+  const review = previousReview && previousReviewWithoutDecision
     ? {
-        ...previous.review,
-        inlineCommentCursor: maxCursor(previous.review.inlineCommentCursor, collector.review?.lastInlineCommentCursor),
+        ...previousReviewWithoutDecision,
+        inlineCommentCursor: maxCursor(previousReview.inlineCommentCursor, collector.review?.lastInlineCommentCursor),
         conversationCommentCursor: maxCursor(
-          previous.review.conversationCommentCursor,
+          previousReview.conversationCommentCursor,
           collector.review?.lastConversationCommentCursor,
           facts.review?.resultConversationCommentCursor,
         ),
         decisionCursor: maxCursor(
-          previous.review.decisionCursor,
+          previousReview.decisionCursor,
           collector.review?.lastDecisionCursor,
           facts.review?.decisionCursor,
         ),
-        // `facts.review.decision` may describe an explicit COMMENTED cloud result. Keep the normal
-        // tracking baseline anchored to the latest formal decision instead.
+        // The observation is a complete provider read. Rebuild the decision from its formal review
+        // list so COMMENTED cannot replace it and a dismissal cannot leave a revoked value behind.
         ...(observedDecision ? { decision: observedDecision } : {}),
         ...(facts.review?.threads && !headChanged ? { threads: facts.review.threads } : {}),
-        ...renewVerdicts(previous.review.verdicts, facts),
+        ...renewVerdicts(previousReview.verdicts, facts),
       }
     : undefined;
 

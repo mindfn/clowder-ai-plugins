@@ -84,8 +84,11 @@ export function waitObservation(task: TaskItem, snapshot: GitHubSnapshot, now: n
   const currentReviews = reviews.filter(row => row.commitId === snapshot.headSha);
   // GitHub creates COMMENTED reviews as containers for inline replies. They advance the review
   // cursor and may prove an explicitly requested cloud result, but they do not hold a PR decision.
-  // DISMISSED is an in-place verdict transition and is matched through `verdicts`, not as a new id.
-  const currentDecisions = currentReviews.filter(row => isGitHubReviewDecisionState(row.state));
+  // A previously observed DISMISSED review is an in-place verdict transition matched through
+  // `verdicts`. A review first observed after it was already dismissed still has a new id, though,
+  // so keep that one reportable instead of advancing the cursor past an event nobody can emit.
+  const currentDecisions = currentReviews.filter(row => isGitHubReviewDecisionState(row.state) ||
+    (row.state === 'DISMISSED' && row.id > (before?.decisionCursor ?? 0) && !before?.verdicts?.[String(row.id)]));
   const latest = [...currentReviews].sort((a, b) => a.id - b.id).at(-1);
   const trigger = snapshot.comments.find(row => row.commentType === 'conversation' && row.id === before?.resultTriggerCommentId);
   const requestedAt = Date.parse(trigger?.createdAt ?? '');

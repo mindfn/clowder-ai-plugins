@@ -109,6 +109,47 @@ test('a persisted legacy COMMENTED decision baseline converges on the next forma
     'the legacy polluted baseline converges without replaying the approval');
 });
 
+test('a newly observed review dismissed between polls remains reportable', async () => {
+  const when: GitHubPrWaitPredicate[] = [{ kind: 'pr_review_decision_changed' }];
+  const registered = await task(blank, when);
+  const dismissed = { id: 3, author: 'maintainer', state: 'DISMISSED', commitId: head };
+  const observed = waitObservation(registered, { ...blank, reviews: [dismissed] }, 8000, []);
+
+  assert.deepEqual(matchGitHubWaitPredicates(when, registered.automationState!.await!.baseline,
+    observed.observation.facts).map(match => match.sourceRef), ['review:3']);
+  assert.equal((observed.observation.collectorPatch as PrAutomationState).review?.lastDecisionCursor, 3);
+  const renewed = renewPrWaitBaseline(registered.automationState!.await!.baseline as GitHubPrWaitBaseline,
+    observed.observation.collectorPatch as PrAutomationState, observed.observation.facts, 8500);
+  assert.equal(renewed.review?.decision, undefined);
+  assert.deepEqual(matchGitHubWaitPredicates(when, renewed, observed.observation.facts), [],
+    'the newly dismissed review is delivered once and not replayed after renewal');
+});
+
+test('renewal clears a formal decision after its review is dismissed', async () => {
+  const when: GitHubPrWaitPredicate[] = [{ kind: 'pr_review_decision_changed' }];
+  const approval = { id: 3, author: 'maintainer', state: 'APPROVED', commitId: head };
+  const registered = await task({ ...blank, reviews: [approval] }, when);
+  const baseline = registered.automationState!.await!.baseline as GitHubPrWaitBaseline;
+  const observed = waitObservation(registered, { ...blank,
+    reviews: [{ ...approval, state: 'DISMISSED' }] }, 9000, []);
+
+  assert.equal(matchGitHubWaitPredicates(when, baseline, observed.observation.facts)[0]?.delta,
+    'review APPROVED → DISMISSED (maintainer)');
+  const renewed = renewPrWaitBaseline(baseline, observed.observation.collectorPatch as PrAutomationState,
+    observed.observation.facts, 10000);
+  assert.equal(renewed.review?.decision, undefined);
+
+  const automation = registered.automationState as PrAutomationState;
+  const renewedTask = { ...registered, automationState: { ...automation,
+    ...observed.observation.collectorPatch as PrAutomationState,
+    await: { ...automation.await!, baseline: renewed } } } as TaskItem;
+  const next = waitObservation(renewedTask,
+  { ...blank, reviews: [{ ...approval, state: 'DISMISSED' },
+    { id: 4, author: 'maintainer', state: 'APPROVED', commitId: head }] }, 11000, []);
+  assert.equal(matchGitHubWaitPredicates(when, renewed, next.observation.facts)[0]?.delta,
+    'review pending → APPROVED (maintainer)');
+});
+
 test('explicit result uses the real trigger timestamp and complete provider evidence, never a supplied verdict', async () => {
   const trigger = { id: 5, author: 'owner', body: '@codex review', commentType: 'conversation' as const,
     createdAt: '2026-10-09T00:00:00Z' };
