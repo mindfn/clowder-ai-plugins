@@ -82,7 +82,18 @@ runs:
           if [[ "$PACKAGE_VERSION" == *-* ]]; then
             PREVIOUS_LATEST=$(node packages/plugin-contract/scripts/classify-prerelease-latest.mjs)
           else
-            PREVIOUS_LATEST=
+            PREVIOUS_LATEST=$(node --input-type=module <<'NODE'
+        import { readFileSync } from 'node:fs';
+        const tags = JSON.parse(readFileSync(process.env.PACKAGE_TAGS_PATH, 'utf8'));
+        if (tags === null || typeof tags !== 'object' || Array.isArray(tags)) {
+          throw new Error('registry dist-tags must be an object');
+        }
+        if (tags.latest !== undefined && (typeof tags.latest !== 'string' || !/^[a-zA-Z0-9.+-]+$/.test(tags.latest))) {
+          throw new Error('invalid registry latest tag');
+        }
+        process.stdout.write(tags.latest ?? '');
+        NODE
+            )
           fi
           printf 'had_previous_latest=%s\n' "$([[ -n "$PREVIOUS_LATEST" ]] && printf true || printf false)" >> "$GITHUB_OUTPUT"
           printf 'previous_latest=%s\n' "$PREVIOUS_LATEST" >> "$GITHUB_OUTPUT"

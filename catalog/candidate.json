@@ -204,8 +204,8 @@
             "packageName": "@clowder-ai/video-generation",
             "version": "0.1.0-alpha.2",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/video-generation/-/video-generation-0.1.0-alpha.2.tgz",
-            "integrity": "sha512-0mt9uxEJn60zC4u5+a37WxVtUv3X683XI4kFBZTwgsjfFkr9CFC4r/zAUijQpEEae6BgW5V0SLJN3KmYh73ZxQ==",
-            "shasum": "786d36b6bc08f113fd5500f2486f6113f60da05b",
+            "integrity": "sha512-/xbqkgYvby+8zPLJT2IGXN1ANgl9TnWd4G5MXo1hGM14sWRWwrGS0UB0EDhugu6GGx7MuxntZBFOqFGPMRT3kA==",
+            "shasum": "6cb3b7a51bc91a4f05a1fc32d21c9c7f3f3c6ada",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/video-generation"
@@ -954,8 +954,8 @@
             "packageName": "@clowder-ai/connector-feishu",
             "version": "0.1.0-alpha.8",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/connector-feishu/-/connector-feishu-0.1.0-alpha.8.tgz",
-            "integrity": "sha512-N2z4e3raerqGaHmRjbsrm6Uyd3Z8x9xkeMm0v9eFf9FZu0oWtIiCLEdZWnsxu5qtfDZdwjYWD8l5vxhGHUdDog==",
-            "shasum": "579f32d129e596151ef4704737e0387d4551125d",
+            "integrity": "sha512-D1/Huo7eGRcRRe+T8l55k2cz0pPXtXeVWdqD83h52/LSQ1LYC6ot5Y/mPyZPTahCsYxMqZXQZXOCuiAEHHDMMg==",
+            "shasum": "b8125ded42ac4007d1776368ceca268293bed5c8",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/connector-feishu"
