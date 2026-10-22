@@ -228,7 +228,7 @@ function fieldValueConstraint(field: ConfigurationField): Record<string, unknown
     case 'url':
       return { type: 'string', minLength: 1 };
     case 'select':
-      return { type: 'string' };
+      return { type: 'string', enum: (field.options ?? []).map((option) => option.value) };
     case 'number':
       return { type: 'number' };
     case 'boolean':
@@ -249,7 +249,7 @@ function conditionalRequirement(
   const constraint = fieldValueConstraint(field);
   return {
     if: {
-      properties: { [requiredWhen.key]: { enum: conditions } },
+      properties: { [requiredWhen.key]: { enum: [...new Set(conditions)] } },
       required: [requiredWhen.key],
     },
     then: {

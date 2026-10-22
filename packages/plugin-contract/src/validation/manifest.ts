@@ -358,16 +358,16 @@ export function validateManifest(value: unknown): ManifestValidationResult {
         }
       }
 
+      const branchValidators = variants.branches.map((branch) => ajv.compile({
+        type: 'object',
+        properties: structuredClone(
+          branch.when['properties'] as Record<string, unknown>,
+        ),
+        required: [variants.discriminator],
+      }));
       for (const optionValue of optionValues) {
         let matched = 0;
-        for (const branch of variants.branches) {
-          const trial = ajv.compile({
-            type: 'object',
-            properties: structuredClone(
-              branch.when['properties'] as Record<string, unknown>,
-            ),
-            required: [variants.discriminator],
-          });
+        for (const trial of branchValidators) {
           if (trial({ [variants.discriminator]: optionValue })) matched += 1;
         }
         if (matched !== 1) {

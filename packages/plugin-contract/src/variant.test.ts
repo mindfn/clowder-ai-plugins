@@ -318,7 +318,7 @@ test('buildVariantValidationSchema returns common-field constraints for legacy m
   assert.equal(schema['type'], 'object');
   assert.deepEqual(schema['properties'], {
     appId: { type: 'string', minLength: 1 },
-    connectionMode: { type: 'string' },
+    connectionMode: { type: 'string', enum: ['webhook', 'websocket'] },
     verificationToken: { type: 'string', minLength: 1 },
     groupBotMentionsJson: { type: 'string', minLength: 1 },
   });
@@ -556,5 +556,39 @@ for (const key of ['constructor', 'toString', 'hasOwnProperty']) {
     } as NonNullable<PluginManifest['configuration']>[number];
     assert.equal(evaluateFieldRequiredness(conditional, Object.create({ [key]: 'saved' })), false);
     assert.equal(evaluateFieldRequiredness(conditional, { [key]: 'saved' }), true);
+  });
+}
+
+for (const branchOwned of [false, true]) {
+  test(`duplicate requiredWhen values preserve semantics for ${branchOwned ? 'branch' : 'common'} fields`, () => {
+    const manifest = {
+      ...enumBranchManifest,
+      configuration: enumBranchManifest.configuration!.map((field) =>
+        field.key === 'token' ? { ...field, requiredWhen: { key: 'mode', value: ['a', 'a'] } } : field,
+      ),
+      ...(branchOwned ? {} : { configurationVariants: undefined }),
+    } as PluginManifest;
+    assert.equal(validates(manifest, { mode: 'a' }), false);
+    assert.equal(validates(manifest, { mode: 'a', token: 'saved' }), true);
+    assert.equal(validates(manifest, { mode: 'b' }), true);
+  });
+
+  test(`select options constrain ${branchOwned ? 'branch' : 'common'} fields`, () => {
+    const manifest = {
+      ...enumBranchManifest,
+      configuration: [
+        ...enumBranchManifest.configuration!,
+        { key: 'provider', label: 'Provider', kind: 'select', required: false, options: [{ label: 'Valid', value: 'valid' }] },
+      ],
+      configurationVariants: {
+        ...enumBranchManifest.configurationVariants!,
+        branches: enumBranchManifest.configurationVariants!.branches.map((branch) => ({
+          ...branch, fields: branchOwned ? [...branch.fields, 'provider'] : branch.fields,
+        })),
+      },
+    } as PluginManifest;
+    assert.equal(validates(manifest, { mode: 'b', provider: 'stale-provider' }), false);
+    assert.equal(validates(manifest, { mode: 'b', provider: 'valid' }), true);
+    assert.equal(validates(manifest, { mode: 'b' }), true);
   });
 }

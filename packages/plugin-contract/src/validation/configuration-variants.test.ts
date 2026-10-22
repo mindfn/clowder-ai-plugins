@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import test from 'node:test';
 
 import type { PluginManifest } from '../generated/contract.generated.js';
@@ -258,4 +259,27 @@ test('duplicate branch enum values return an invalid result without throwing', (
   };
   const error = singleError(manifest);
   assert.equal(error.keyword, 'whenUniqueOptions');
+});
+
+test('manifest admission compiles each branch only once', (t) => {
+  const Ajv2020 = createRequire(import.meta.url)('ajv/dist/2020') as {
+    prototype: { compile: (schema: unknown) => unknown };
+  };
+  const compile = t.mock.method(Ajv2020.prototype, 'compile');
+  const values = Array.from({ length: 8 }, (_, index) => `mode${index}`);
+  const manifest = variantManifest({
+    configuration: [{
+      key: 'mode', kind: 'select', label: 'Mode', required: true,
+      options: values.map((value) => ({ value, label: value })),
+    }],
+    configurationVariants: {
+      discriminator: 'mode',
+      branches: values.map((value) => ({
+        id: value, when: { properties: { mode: { const: value } } }, fields: [],
+      })),
+    },
+  });
+  const result = validateManifest(manifest);
+  assert.equal(result.valid, true, JSON.stringify(result.errors));
+  assert.equal(compile.mock.callCount(), values.length);
 });
