@@ -20,6 +20,7 @@ import { assertStaticPackageDependencies } from './catalog-static-package.mjs';
 import { assertPackedRuntimeEntrypoints } from './catalog-runtime-entrypoints.mjs';
 
 
+const catalog = JSON.parse(await readFile(new URL('../catalog/candidate.json', import.meta.url), 'utf8'));
 const validation = validatePluginCatalog(catalog);
 assert.equal(validation.valid, true, validation.valid ? undefined : JSON.stringify(validation.errors));
 if (!validation.valid) process.exit(1);

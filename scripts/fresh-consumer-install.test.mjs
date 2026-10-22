@@ -417,7 +417,8 @@ test('packed public packages install and import in a fresh npm consumer', async 
       await readFile(join(consumer, 'node_modules/@clowder-ai/enterprise-workflow/package.json'), 'utf8'),
     );
     assert.equal(genofficePackage.version, '0.1.0-alpha.2');
-    assert.equal(genofficePackage.dependencies['@clowder-ai/plugin-contract'], '0.1.0-beta.37');
+    assert.equal(genofficePackage.dependencies['@clowder-ai/plugin-contract'],
+      JSON.parse(await readFile(join(repoRoot, 'packages/genoffice-docx/package.json'), 'utf8')).dependencies['@clowder-ai/plugin-contract']);
     assert.doesNotMatch(JSON.stringify(genofficePackage), /"workspace:/u);
     const sourceLock = JSON.parse(await readFile(join(repoRoot, 'packages/genoffice-docx/source-lock.json'), 'utf8'));
     const docxFixture = join(repoRoot, 'packages/genoffice-docx/.tmp/source', sourceLock.rootDirectory, 'fixtures/generated/simple.docx');
@@ -479,7 +480,8 @@ test('packed public packages install and import in a fresh npm consumer', async 
     );
     assert.equal(companionPackage.version, '0.1.0-alpha.6');
     assert.equal(companionPackage.private, undefined);
-    assert.equal(companionPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.23');
+    assert.equal(companionPackage.dependencies['@clowder-ai/plugin-sdk'],
+      JSON.parse(await readFile(join(repoRoot, 'packages/personal-chrome-companion/package.json'), 'utf8')).dependencies['@clowder-ai/plugin-sdk']);
     assert.doesNotMatch(JSON.stringify(companionPackage), /"workspace:/u);
     assert.deepEqual(companionPackage.bin, {
       'clowder-personal-chrome-host': 'native-host/native-host-cli.mjs',
@@ -494,14 +496,17 @@ test('packed public packages install and import in a fresh npm consumer', async 
       'clowder-video-generation-mcp': './dist/mcp-entrypoint.js',
     });
     assert.equal(weixinMpPackage.version, '0.1.0-alpha.5');
-    assert.equal(weixinMpPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.23');
+    assert.equal(weixinMpPackage.dependencies['@clowder-ai/plugin-sdk'],
+      JSON.parse(await readFile(join(repoRoot, 'packages/weixin-mp/package.json'), 'utf8')).dependencies['@clowder-ai/plugin-sdk']);
     assert.doesNotMatch(JSON.stringify(weixinMpPackage), /"workspace:/u);
     assert.equal(wechatReaderPackage.version, '0.1.0-alpha.5');
-    assert.equal(wechatReaderPackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.23');
+    assert.equal(wechatReaderPackage.dependencies['@clowder-ai/plugin-sdk'],
+      JSON.parse(await readFile(join(repoRoot, 'packages/wechat-visible-reader/package.json'), 'utf8')).dependencies['@clowder-ai/plugin-sdk']);
     assert.doesNotMatch(JSON.stringify(wechatReaderPackage), /"workspace:/u);
     assert.deepEqual(wechatReaderPackage.os, ['darwin']);
     assert.equal(enterprisePackage.version, '0.1.0-alpha.4');
-    assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'], '0.2.0-beta.23');
+    assert.equal(enterprisePackage.dependencies['@clowder-ai/plugin-sdk'],
+      JSON.parse(await readFile(join(repoRoot, 'packages/enterprise-workflow/package.json'), 'utf8')).dependencies['@clowder-ai/plugin-sdk']);
     assert.doesNotMatch(JSON.stringify(enterprisePackage), /"workspace:/u);
     // Resolve from each consumer rather than assuming all chose the workspace SDK.
     for (const directory of [
@@ -547,7 +552,7 @@ test('packed public packages install and import in a fresh npm consumer', async 
       'list',
       'the installed artifact must select the generic Host Settings rows renderer',
     );
-    for (const { name } of connectorPackages) {
+    for (const { name, directory } of connectorPackages) {
       const installedRoot = join(consumer, 'node_modules', name);
       const packageJson = JSON.parse(await readFile(join(installedRoot, 'package.json'), 'utf8'));
       const manifestText = await readFile(join(installedRoot, 'plugin.yaml'), 'utf8');
@@ -559,7 +564,8 @@ test('packed public packages install and import in a fresh npm consumer', async 
         manifestValidation.valid ? undefined : JSON.stringify(manifestValidation.errors),
       );
       assert.equal(manifest.version, packageJson.version);
-      assert.equal(manifest.contractVersion, installedContract.CONTRACT_VERSION);
+      const sourceManifest = parseYaml(await readFile(join(repoRoot, directory, 'plugin.yaml'), 'utf8'));
+      assert.equal(manifest.contractVersion, sourceManifest.contractVersion);
       assert.equal(manifest.runtime.transport, 'builtin');
       assert.equal(typeof manifest.runtime.entrypoint, 'string');
       const namespace = await import(
