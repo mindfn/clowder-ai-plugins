@@ -26,6 +26,12 @@ test('connector-feishu shrinkwrap pins the exact official-publish packed contrac
 
   const destination = mkdtempSync(join(tmpdir(), 'clowder-artifact-consistency-'));
   try {
+    // Standalone tests must not depend on ci-gate having built ignored dist/.
+    // Use the package's real build before the official --ignore-scripts pack.
+    const build = spawnSync('pnpm', ['build'], {
+      cwd: pluginContractDir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
+    });
+    assert.equal(build.status, 0, [build.stdout, build.stderr].filter(Boolean).join('\n'));
     const result = spawnSync(
       process.execPath,
       ['scripts/pack-publish-artifact.mjs', 'packages/plugin-contract', destination],

@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { gunzipSync } from 'node:zlib';
 import test from 'node:test';
 import { parse as parseYaml } from 'yaml';
 
@@ -207,10 +208,16 @@ test('official feishu artifact installs its full dependency chain through a regi
     });
   }
 
-  // Tamper with the served contract bytes while the packument keeps the
-  // official integrity: a fresh install must be refused.
+  // Alter gzip MTIME while keeping a valid archive and identical unpacked tar.
+  // Corrupting compressed data races zlib failure against SRI verification;
+  // this isolates the promised byte-integrity check on every platform.
   const tampered = Buffer.from(contract.archive);
-  tampered[Math.floor(tampered.length / 2)] ^= 0xff;
+  tampered[4] ^= 1;
+  assert.deepEqual(gunzipSync(tampered), gunzipSync(contract.archive));
+  assert.notEqual(
+    `sha512-${createHash('sha512').update(tampered).digest('base64')}`,
+    contract.integrity,
+  );
   packs.get('@clowder-ai/plugin-contract').archive = tampered;
   await rm(join(consumer, 'node_modules'), { recursive: true, force: true });
   await assert.rejects(npmCi(consumer, caches[1]), (error) => {
