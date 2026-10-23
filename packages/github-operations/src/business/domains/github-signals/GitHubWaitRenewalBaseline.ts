@@ -45,9 +45,31 @@ const UNOBSERVED_MERGE_STATE = 'UNKNOWN';
 const unobservedCiFingerprint = (headSha: string) => `${headSha}:unobserved`;
 
 function latestReviewDecision(facts: GitHubWaitFacts): string | undefined {
+  const submittedTransition = [...(facts.review?.stateChanges ?? [])]
+    .filter(change => change.currentHead && change.previousState === 'PENDING' &&
+      isGitHubReviewDecisionState(change.state))
+    .sort((a, b) => {
+      const aTime = Date.parse(a.submittedAt ?? '');
+      const bTime = Date.parse(b.submittedAt ?? '');
+      if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) return aTime - bTime;
+      return a.id - b.id;
+    })
+    .at(-1);
+  if (submittedTransition) return submittedTransition.state;
   return [...(facts.review?.decisions ?? [])]
     .filter(review => isGitHubReviewDecisionState(review.state))
     .sort((a, b) => a.id - b.id).at(-1)?.state;
+}
+
+function sameReviewStateMap(
+  left: GitHubReviewVerdicts | GitHubSubmittedReviewStates | undefined,
+  right: GitHubReviewVerdicts | GitHubSubmittedReviewStates | undefined,
+): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  const leftEntries = Object.entries(left);
+  const rightEntries = Object.entries(right);
+  if (leftEntries.length !== rightEntries.length) return false;
+  return leftEntries.every(([id, value]) => value.state === right[id]?.state && value.author === right[id]?.author);
 }
 
 export function renewPrWaitBaseline(
@@ -191,11 +213,12 @@ export function followPushedHead(
 export function adoptReviewVerdicts(active: AwaitStateV1, facts: GitHubWaitFacts): GitHubPrWaitBaseline | null {
   const baseline = active.baseline;
   if (!('headSha' in baseline) || !baseline.review || !facts.review) return null;
-  const verdicts = baseline.review.verdicts === undefined ? facts.review.verdicts : undefined;
-  const submittedReviewStates = baseline.review.submittedReviewStates === undefined
-    ? facts.review.submittedReviewStates
-    : undefined;
-  if (verdicts === undefined && submittedReviewStates === undefined) return null;
+  const verdicts = mergeReviewVerdicts(baseline.review.verdicts, facts.review.verdicts);
+  const submittedReviewStates = mergeSubmittedReviewStates(
+    baseline.review.submittedReviewStates, facts.review.submittedReviewStates,
+  );
+  if (sameReviewStateMap(baseline.review.verdicts, verdicts) &&
+      sameReviewStateMap(baseline.review.submittedReviewStates, submittedReviewStates)) return null;
   return { ...baseline, review: {
     ...baseline.review,
     ...(verdicts !== undefined ? { verdicts } : {}),

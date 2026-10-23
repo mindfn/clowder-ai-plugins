@@ -4,7 +4,9 @@ import type { GitHubSnapshot } from './tracking-runtime.js';
 import type { GitHubPrWaitBaseline, GitHubPrWaitPredicate, TaskItem, PrAutomationState } from './business/model/index.js';
 import { prBaseline, waitObservation, waitEventSnapshot } from './typed-wait-provider.js';
 import { matchGitHubWaitPredicates } from './business/domains/github-signals/GitHubWaitPredicateCatalog.js';
-import { renewPrWaitBaseline } from './business/domains/github-signals/GitHubWaitRenewalBaseline.js';
+import {
+  quietBaselineUpdate, renewPrWaitBaseline,
+} from './business/domains/github-signals/GitHubWaitRenewalBaseline.js';
 
 const head = 'a'.repeat(40), oldHead = 'b'.repeat(40);
 const blank: GitHubSnapshot = { state: 'open', headSha: head, ci: 'pending', comments: [], reviews: [], commentsComplete: true };
@@ -79,6 +81,54 @@ test('a COMMENTED reply and approval in one observation emit only the formal dec
   assert.equal(renewed.review?.decision, 'APPROVED');
   assert.deepEqual(matchGitHubWaitPredicates(when, renewed, observed.observation.facts), [],
     'the consumed approval is not replayed after renewal');
+});
+
+test('a quiet submitted review advances the wait frontier without blocking a later cloud result', async () => {
+  const trigger = { id: 5, author: 'owner', body: '@codex review', commentType: 'conversation' as const,
+    createdAt: '2026-10-09T00:00:00Z' };
+  const registered = await task({ ...blank, comments: [trigger] }, [
+    { kind: 'pr_review_result_available', triggerCommentId: trigger.id },
+  ]);
+  const automation = registered.automationState as PrAutomationState;
+  const quiet = waitObservation(registered, { ...blank, comments: [trigger], reviews: [
+    { id: 10, author: 'human', state: 'COMMENTED', commitId: head,
+      submittedAt: '2026-10-09T00:00:01Z' },
+  ] }, Date.parse('2026-10-09T00:00:02Z'), ['cloud[bot]']);
+  assert.deepEqual(matchGitHubWaitPredicates(automation.await!.continuation.when,
+    automation.await!.baseline, quiet.observation.facts), []);
+  const advanced = quietBaselineUpdate(automation.await!, quiet.observation.collectorPatch as PrAutomationState,
+    quiet.observation.facts, Date.parse('2026-10-09T00:00:02Z'));
+  assert.equal(advanced?.baseline.review?.submittedReviewStates?.['10']?.state, 'COMMENTED');
+
+  const tracked = { ...registered, automationState: { ...automation,
+    ...quiet.observation.collectorPatch as PrAutomationState,
+    await: { ...automation.await!, baseline: advanced!.baseline },
+  } } as TaskItem;
+  const result = waitObservation(tracked, { ...blank, comments: [trigger], reviews: [
+    { id: 11, author: 'cloud[bot]', state: 'COMMENTED', commitId: head,
+      submittedAt: '2026-10-09T00:00:03Z' },
+  ] }, Date.parse('2026-10-09T00:00:04Z'), ['cloud[bot]']);
+  assert.equal(result.observation.facts.review?.resultSourceRef, 'review:11',
+    'a consumed review omitted by a later complete page does not block the requested result');
+});
+
+test('renewal prefers a newly submitted lower review id over an older higher-id decision', async () => {
+  const pending = { id: 10, author: 'maintainer', state: 'PENDING', commitId: head };
+  const approval = { id: 11, author: 'maintainer', state: 'APPROVED', commitId: head,
+    submittedAt: '2026-10-09T00:00:01Z' };
+  const when: GitHubPrWaitPredicate[] = [{ kind: 'pr_review_decision_changed' }];
+  const registered = await task({ ...blank, reviews: [pending, approval] }, when);
+  const baseline = registered.automationState!.await!.baseline as GitHubPrWaitBaseline;
+  const observed = waitObservation(registered, { ...blank, reviews: [
+    { ...pending, state: 'CHANGES_REQUESTED', submittedAt: '2026-10-09T00:00:02Z' }, approval,
+  ] }, Date.parse('2026-10-09T00:00:03Z'), []);
+
+  assert.deepEqual(matchGitHubWaitPredicates(when, baseline, observed.observation.facts)
+    .map(match => match.sourceRef), ['review:10']);
+  const renewed = renewPrWaitBaseline(baseline, observed.observation.collectorPatch as PrAutomationState,
+    observed.observation.facts, Date.parse('2026-10-09T00:00:04Z'));
+  assert.equal(renewed.review?.decision, 'CHANGES_REQUESTED',
+    'renewal follows the newly submitted decision rather than review creation-id order');
 });
 
 test('a persisted legacy COMMENTED decision baseline converges on the next formal approval', async () => {

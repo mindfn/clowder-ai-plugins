@@ -176,6 +176,7 @@ export interface GitHubWaitFacts {
       readonly state: string;
       readonly author: string;
       readonly currentHead: boolean;
+      readonly submittedAt?: string;
     }[];
     readonly resultTriggerCommentId?: number;
     readonly resultSourceRef?: string;

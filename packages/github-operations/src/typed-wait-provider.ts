@@ -99,7 +99,8 @@ export function waitObservation(task: TaskItem, snapshot: GitHubSnapshot, now: n
     const previousState = seen[String(row.id)];
     return previousState !== undefined && previousState !== row.state
       ? [{ id: row.id, previousState, state: row.state, author: row.author,
-          currentHead: row.commitId === snapshot.headSha }]
+          currentHead: row.commitId === snapshot.headSha,
+          ...(row.submittedAt ? { submittedAt: row.submittedAt } : {}) }]
       : [];
   });
   // GitHub creates COMMENTED reviews as containers for inline replies. They advance the review
