@@ -131,6 +131,56 @@ test('renewal prefers a newly submitted lower review id over an older higher-id 
     'renewal follows the newly submitted decision rather than review creation-id order');
 });
 
+test('renewal compares a same-id transition with a newer review submitted in the same poll', async () => {
+  const pending = { id: 10, author: 'maintainer', state: 'PENDING', commitId: head };
+  const when: GitHubPrWaitPredicate[] = [{ kind: 'pr_review_decision_changed' }];
+  const registered = await task({ ...blank, reviews: [pending] }, when);
+  const baseline = registered.automationState!.await!.baseline as GitHubPrWaitBaseline;
+  const observed = waitObservation(registered, { ...blank, reviews: [
+    { ...pending, state: 'CHANGES_REQUESTED', submittedAt: '2026-10-09T00:01:00Z' },
+    { id: 12, author: 'maintainer', state: 'APPROVED', commitId: head,
+      submittedAt: '2026-10-09T00:02:00Z' },
+  ] }, Date.parse('2026-10-09T00:03:00Z'), []);
+
+  const renewed = renewPrWaitBaseline(baseline, observed.observation.collectorPatch as PrAutomationState,
+    observed.observation.facts, Date.parse('2026-10-09T00:04:00Z'));
+  assert.equal(renewed.review?.decision, 'APPROVED',
+    'the latest submission wins even when another review transitioned in the same observation');
+});
+
+test('legacy verdict evidence prevents replay after an empty submitted frontier was persisted', async () => {
+  const approval = { id: 10, author: 'maintainer', state: 'APPROVED', commitId: head };
+  const when: GitHubPrWaitPredicate[] = [{ kind: 'pr_review_result_available' }];
+  const registered = await task({ ...blank, reviews: [approval] }, when);
+  const automation = registered.automationState as PrAutomationState;
+  const baseline = automation.await!.baseline as GitHubPrWaitBaseline;
+  const { submittedReviewStates: _missing, ...legacyReview } = baseline.review!;
+  const legacyBaseline: GitHubPrWaitBaseline = { ...baseline, review: legacyReview };
+  const legacy = { ...registered, automationState: { ...automation,
+    review: { ...automation.review, observedReviews: { '10': 'PENDING' } },
+    await: { ...automation.await!, baseline: legacyBaseline },
+  } } as TaskItem;
+
+  const pending = waitObservation(legacy, { ...blank, reviews: [
+    { ...approval, state: 'PENDING' },
+  ] }, Date.parse('2026-10-09T00:01:00Z'), []);
+  assert.equal(quietBaselineUpdate({ ...automation.await!, baseline: legacyBaseline },
+    pending.observation.collectorPatch as PrAutomationState,
+    pending.observation.facts, Date.parse('2026-10-09T00:01:00Z')), null,
+  'a PENDING-only observation must not turn a legacy unknown submitted frontier into an empty one');
+
+  const pollutedBaseline: GitHubPrWaitBaseline = { ...legacyBaseline, review: {
+    ...legacyBaseline.review!, submittedReviewStates: {},
+  } };
+  const polluted = { ...legacy, automationState: { ...legacy.automationState!,
+    await: { ...automation.await!, baseline: pollutedBaseline },
+  } } as TaskItem;
+  const recovered = waitObservation(polluted, { ...blank, reviews: [approval] },
+    Date.parse('2026-10-09T00:02:00Z'), []);
+  assert.deepEqual(matchGitHubWaitPredicates(when, pollutedBaseline, recovered.observation.facts), [],
+    'the durable verdict prevents a previously consumed formal result from replaying');
+});
+
 test('a persisted legacy COMMENTED decision baseline converges on the next formal approval', async () => {
   const when: GitHubPrWaitPredicate[] = [{ kind: 'pr_review_decision_changed' }];
   const changes = { id: 3, author: 'maintainer', state: 'CHANGES_REQUESTED', commitId: head };

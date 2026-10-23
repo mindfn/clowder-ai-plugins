@@ -164,7 +164,12 @@ export interface GitHubWaitFacts {
     readonly decision?: string;
     readonly reviewer?: string;
     /** Current-HEAD review objects retain their own source for actor policy. */
-    readonly decisions?: readonly { readonly id: number; readonly state: string; readonly author: string }[];
+    readonly decisions?: readonly {
+      readonly id: number;
+      readonly state: string;
+      readonly author: string;
+      readonly submittedAt?: string;
+    }[];
     /**
      * Raw review states can change without changing their GitHub id. This observation-local delta
      * comes from the durable collector frontier, not the decision cursor, so a PENDING review can
@@ -176,7 +181,6 @@ export interface GitHubWaitFacts {
       readonly state: string;
       readonly author: string;
       readonly currentHead: boolean;
-      readonly submittedAt?: string;
     }[];
     readonly resultTriggerCommentId?: number;
     readonly resultSourceRef?: string;
@@ -405,6 +409,7 @@ export function matchGitHubWaitPredicates(
         const submittedSameIdResult = resultReviewId !== undefined &&
           before?.submittedReviewStates !== undefined &&
           before.submittedReviewStates[resultReviewId] === undefined &&
+          before.verdicts?.[resultReviewId] === undefined &&
           after?.stateChanges?.some(change =>
           change.id === Number(resultReviewId) && change.previousState === 'PENDING' && change.currentHead &&
           change.state === after.decision) === true;
