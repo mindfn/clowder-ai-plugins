@@ -433,6 +433,20 @@ export function matchGitHubWaitPredicates(
             });
           }
         }
+        // GitHub can expose a review before it is submitted. Its PENDING id advances the raw
+        // collector cursor, then that same id later becomes APPROVED or CHANGES_REQUESTED. The
+        // verdict map records a separate frontier: an empty map means this generation explicitly
+        // saw no submitted verdict for that id. Match the first formal state without rolling the id
+        // cursor back. A legacy baseline has no verdict map at all and must still adopt history
+        // quietly rather than replaying every old formal review.
+        if (before?.verdicts !== undefined && after?.decisions) {
+          for (const review of [...after.decisions].sort((a, b) => a.id - b.id)) {
+            if (review.id > before.decisionCursor || before.verdicts[String(review.id)] !== undefined) continue;
+            matches.push({ kind: predicate.kind,
+              delta: `review ${before.decision ?? 'pending'} → ${review.state} (${review.author})`,
+              sourceRef: `review:${review.id}` });
+          }
+        }
         matches.push(...matchDismissedVerdicts(before?.verdicts, after?.verdicts));
         break;
       }

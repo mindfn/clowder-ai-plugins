@@ -219,6 +219,65 @@ test('an author inline reply does not become a review-decision notification thro
   } finally { await runtime.stop(); }
 });
 
+for (const verdict of ['APPROVED', 'CHANGES_REQUESTED'] as const) {
+  test(`a baseline PENDING review notifies when the same id becomes ${verdict}`, async () => {
+    const f = fixture();
+    const pending = { id: 10, author: 'maintainer', state: 'PENDING', commitId: f.snapshot().headSha };
+    f.setSnapshot({ ...f.snapshot(), reviews: [pending] });
+    const runtime = new TypedWaitRuntime(f.options);
+    try {
+      const tracked = await runtime.registerPr({ ...input, when: [{ kind: 'pr_review_decision_changed' }] }, f.caller);
+      f.setSnapshot({ ...f.snapshot(), reviews: [{ ...pending, state: verdict }] });
+
+      await runtime.poll('pr');
+      assert.equal(f.sent.length, 1, 'the first submitted verdict is news even though its review id was already collected');
+      assert.match(JSON.stringify(f.sent[0]), /review:10/);
+      assert.match(JSON.stringify(f.sent[0]), new RegExp(verdict));
+      const renewed = (await runtime.store.get(tracked.id))?.automationState?.await?.baseline;
+      assert.ok(renewed && 'headSha' in renewed);
+      assert.equal(renewed.review?.decisionCursor, 10, 'the raw collector cursor remains monotonic');
+      assert.equal(renewed.review?.verdicts?.['10']?.state, verdict);
+
+      await runtime.poll('pr');
+      assert.equal(f.sent.length, 1, 'the submitted verdict is not replayed after renewal');
+    } finally { await runtime.stop(); }
+  });
+
+  test(`a CI renewal after first seeing PENDING preserves the later same-id ${verdict}`, async () => {
+    const f = fixture();
+    const runtime = new TypedWaitRuntime(f.options);
+    try {
+      const tracked = await runtime.registerPr({ ...input, when: [
+        { kind: 'pr_review_decision_changed' },
+        { kind: 'pr_ci_terminal' },
+      ] }, f.caller);
+      const pending = { id: 10, author: 'maintainer', state: 'PENDING', commitId: f.snapshot().headSha };
+      f.setSnapshot({ ...f.snapshot(), ci: 'pass', reviews: [pending] });
+
+      await runtime.poll('pr');
+      assert.equal(f.sent.length, 1, 'CI is delivered while an unsubmitted review remains quiet');
+      assert.doesNotMatch(JSON.stringify(f.sent[0]), /review:10/);
+      const afterCi = (await runtime.store.get(tracked.id))?.automationState?.await?.baseline;
+      assert.ok(afterCi && 'headSha' in afterCi);
+      assert.equal(afterCi.review?.decisionCursor, 10);
+      assert.deepEqual(afterCi.review?.verdicts, {}, 'renewal remembers that id 10 had no submitted verdict');
+
+      f.setSnapshot({ ...f.snapshot(), reviews: [{ ...pending, state: verdict }] });
+      await runtime.poll('pr');
+      assert.equal(f.sent.length, 2, 'the later submitted verdict survives an unrelated renewal');
+      assert.match(JSON.stringify(f.sent[1]), /review:10/);
+      assert.match(JSON.stringify(f.sent[1]), new RegExp(verdict));
+      const afterVerdict = (await runtime.store.get(tracked.id))?.automationState?.await?.baseline;
+      assert.ok(afterVerdict && 'headSha' in afterVerdict);
+      assert.equal(afterVerdict.review?.decisionCursor, 10);
+      assert.equal(afterVerdict.review?.verdicts?.['10']?.state, verdict);
+
+      await runtime.poll('pr');
+      assert.equal(f.sent.length, 2, 'the submitted verdict is not replayed after renewal');
+    } finally { await runtime.stop(); }
+  });
+}
+
 for (const authors of [['alice', 'bot[bot]'], ['bot[bot]', 'alice'], ['alice', 'bob', 'bot[bot]']]) {
   test(`mixed review authors are filtered independently before the poll is consumed (${authors.join(',')})`, async () => {
     const f = fixture();
