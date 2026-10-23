@@ -189,17 +189,31 @@ function preserveSubmittedReviewFrontier(previous: AutomationState, planned: Aut
     mergeSubmittedReviewStates(previousReviewBaseline?.submittedReviewStates, collectedSubmittedReviewStates),
     plannedBaseline.review?.submittedReviewStates,
   );
+  const decisionCursor = Math.max(after.review?.lastDecisionCursor ?? 0,
+    before.review?.lastDecisionCursor ?? 0, previousReviewBaseline?.decisionCursor ?? 0,
+    plannedBaseline.review?.decisionCursor ?? 0,
+    Object.keys(observedReviews).reduce((max, id) => Math.max(max, Number(id)), 0));
+  const inlineCommentCursor = Math.max(after.review?.lastInlineCommentCursor ?? 0,
+    before.review?.lastInlineCommentCursor ?? 0, previousReviewBaseline?.inlineCommentCursor ?? 0,
+    plannedBaseline.review?.inlineCommentCursor ?? 0);
+  const conversationCommentCursor = Math.max(after.review?.lastConversationCommentCursor ?? 0,
+    before.review?.lastConversationCommentCursor ?? 0, previousReviewBaseline?.conversationCommentCursor ?? 0,
+    plannedBaseline.review?.conversationCommentCursor ?? 0);
   const baseline = plannedBaseline.review ? {
     ...plannedBaseline,
     review: {
       ...plannedBaseline.review,
+      decisionCursor, inlineCommentCursor, conversationCommentCursor,
       ...(durableVerdicts ? { verdicts: durableVerdicts } : {}),
       ...(durableSubmittedReviewStates ? { submittedReviewStates: durableSubmittedReviewStates } : {}),
     },
   } : plannedBaseline;
   return {
     ...after,
-    review: { ...after.review, observedReviews },
+    review: { ...after.review, observedReviews, lastDecisionCursor: decisionCursor,
+      lastInlineCommentCursor: inlineCommentCursor, lastConversationCommentCursor: conversationCommentCursor,
+      lastCommentCursor: Math.max(before.review?.lastCommentCursor ?? 0, after.review?.lastCommentCursor ?? 0,
+        inlineCommentCursor, conversationCommentCursor) },
     await: { ...after.await, baseline },
   };
 }

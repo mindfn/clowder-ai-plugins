@@ -5,7 +5,7 @@ import type {
   PrAutomationState,
 } from '../../model/index.js';
 import {
-  isGitHubReviewDecisionState, reviewVerdictsOf, submittedReviewStatesOf,
+  compareGitHubReviewSubmission, isGitHubReviewDecisionState, reviewVerdictsOf, submittedReviewStatesOf,
 } from './GitHubReviewVerdicts.js';
 
 interface GithubIdItem {
@@ -15,6 +15,8 @@ interface GithubIdItem {
 interface GithubReviewItem extends GithubIdItem {
   readonly state?: string;
   readonly user?: { readonly login?: string } | null;
+  readonly commitId?: string;
+  readonly submittedAt?: string;
 }
 
 export interface GitHubWaitBaselineReaderDeps {
@@ -96,15 +98,17 @@ export async function readGitHubWaitBaseline(
   // #1392: every verdict as of registration, dismissed ones included, so a dismissal that happened
   // before tracking started is never reported as news.
   const verdicts = reviewVerdictsOf(
-    reviews.map((review) => ({ id: review.id, state: review.state, author: review.user?.login })),
+    reviews.map((review) => ({ id: review.id, state: review.state, author: review.user?.login,
+      commitId: review.commitId, submittedAt: review.submittedAt })),
   );
   const submittedReviewStates = submittedReviewStatesOf(
     reviews.map((review) => ({ id: review.id, state: review.state, author: review.user?.login })),
   );
   const latestReview = [...reviews]
     .filter((review): review is GithubReviewItem & { id: number } =>
-      typeof review.id === 'number' && isGitHubReviewDecisionState(review.state))
-    .sort((a, b) => a.id - b.id)
+      typeof review.id === 'number' && isGitHubReviewDecisionState(review.state) &&
+      (review.commitId === undefined || review.commitId === ci.headSha))
+    .sort(compareGitHubReviewSubmission)
     .at(-1);
   const ciBucket =
     ci.aggregateBucket === 'pass' || ci.aggregateBucket === 'fail' || ci.aggregateBucket === 'pending'

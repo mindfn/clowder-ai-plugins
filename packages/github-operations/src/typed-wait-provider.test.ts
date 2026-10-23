@@ -10,6 +10,62 @@ import {
 
 const head = 'a'.repeat(40), oldHead = 'b'.repeat(40);
 const blank: GitHubSnapshot = { state: 'open', headSha: head, ci: 'pending', comments: [], reviews: [], commentsComplete: true };
+
+test('an unrelated new PENDING id cannot replay an already consumed cloud result', async () => {
+  const trigger = { id: 5, author: 'owner', body: '@codex review', commentType: 'conversation' as const,
+    createdAt: '2026-10-09T00:00:00Z' };
+  const approval = { id: 10, author: 'cloud[bot]', state: 'APPROVED', commitId: head,
+    submittedAt: '2026-10-09T00:00:01Z' };
+  const when: GitHubPrWaitPredicate[] = [{ kind: 'pr_review_result_available', triggerCommentId: trigger.id }];
+  const tracked = await task({ ...blank, comments: [trigger], reviews: [approval] }, when);
+  const observed = waitObservation(tracked, { ...blank, comments: [trigger], reviews: [approval,
+    { id: 11, author: 'cloud[bot]', state: 'PENDING', commitId: head }] },
+  Date.parse('2026-10-09T00:00:02Z'), ['cloud[bot]']);
+  assert.deepEqual(matchGitHubWaitPredicates(when, tracked.automationState!.await!.baseline,
+    observed.observation.facts), [], 'only the result source frontier may make that result new');
+});
+
+for (const returned of ['older-only', 'none'] as const) {
+  test(`renewal retains the latest consumed decision when a snapshot returns ${returned}`, async () => {
+    const older = { id: 10, author: 'maintainer', state: 'APPROVED', commitId: head,
+      submittedAt: '2026-10-09T00:00:01Z' };
+    const latest = { id: 11, author: 'maintainer', state: 'CHANGES_REQUESTED', commitId: head,
+      submittedAt: '2026-10-09T00:00:02Z' };
+    const tracked = await task({ ...blank, reviews: [older, latest] }, [
+      { kind: 'pr_review_decision_changed' }, { kind: 'pr_ci_terminal' },
+    ]);
+    const baseline = tracked.automationState!.await!.baseline as GitHubPrWaitBaseline;
+    const observed = waitObservation(tracked, { ...blank, ci: 'pass',
+      reviews: returned === 'older-only' ? [older] : [] }, 2000, []);
+    const renewed = renewPrWaitBaseline(baseline, observed.observation.collectorPatch as PrAutomationState,
+      observed.observation.facts, 2000);
+    assert.equal(renewed.review?.decision, 'CHANGES_REQUESTED', 'omission is not a revocation');
+    assert.equal(renewed.review?.decisionCursor, 11);
+    const nextTask = { ...tracked, automationState: { ...tracked.automationState,
+      await: { ...tracked.automationState!.await!, baseline: renewed } } } as TaskItem;
+    const next = waitObservation(nextTask,
+    { ...blank, reviews: [older, { ...latest, state: 'DISMISSED' }] }, 3000, []);
+    const afterDismissal = renewPrWaitBaseline(renewed, next.observation.collectorPatch as PrAutomationState,
+      next.observation.facts, 3000);
+    assert.equal(afterDismissal.review?.decision, 'APPROVED', 'explicit dismissal still revokes the latest decision');
+  });
+}
+
+test('a consumed legacy verdict cannot make an unrelated CI notification trigger the review-loop brake', async () => {
+  const reviews = [1, 2, 3, 4].map(id => ({ id, author: 'maintainer', state: 'CHANGES_REQUESTED', commitId: head }));
+  const tracked = await task({ ...blank, reviews }, [{ kind: 'pr_review_decision_changed' }, { kind: 'pr_ci_terminal' }]);
+  const automation = tracked.automationState as PrAutomationState;
+  const baseline = automation.await!.baseline as GitHubPrWaitBaseline;
+  const polluted = { ...tracked, automationState: { ...automation,
+    review: { ...automation.review, observedReviews: { '1': 'CHANGES_REQUESTED', '2': 'CHANGES_REQUESTED',
+      '3': 'CHANGES_REQUESTED', '4': 'PENDING' } },
+    await: { ...automation.await!, baseline: { ...baseline, review: { ...baseline.review!, submittedReviewStates: {} } } },
+  } } as TaskItem;
+  const observed = waitObservation(polluted, { ...blank, ci: 'pass', reviews }, 2000, []);
+  assert.deepEqual(matchGitHubWaitPredicates(automation.await!.continuation.when,
+    polluted.automationState!.await!.baseline, observed.observation.facts).map(match => match.kind), ['pr_ci_terminal']);
+  assert.equal(observed.observation.reviewLoopBrake?.kind, 'continue', 'durable verdicts are consumed evidence for every consumer');
+});
 async function task(snapshot: GitHubSnapshot, when: readonly GitHubPrWaitPredicate[]): Promise<TaskItem> {
   const first = await prBaseline(snapshot, 'owner/repo', 1, when, () => 1000);
   return { id: 'task', kind: 'pr_tracking', subjectKey: 'pr:owner/repo#1', threadId: 'thread', ownerCatId: 'cat',

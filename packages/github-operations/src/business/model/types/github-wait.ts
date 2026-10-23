@@ -444,7 +444,13 @@ export type GitHubReviewVerdictState = 'APPROVED' | 'CHANGES_REQUESTED' | 'DISMI
 
 /** Keyed by review id. */
 export type GitHubReviewVerdicts = Readonly<
-  Record<string, { readonly state: GitHubReviewVerdictState; readonly author?: string }>
+  Record<string, {
+    readonly state: GitHubReviewVerdictState;
+    readonly author?: string;
+    /** Optional on older persisted frontiers; retain provider evidence across omitted pages. */
+    readonly commitId?: string;
+    readonly submittedAt?: string;
+  }>
 >;
 
 /** A submitted review can be a formal verdict, a comment-only review, or a dismissal. Unlike the

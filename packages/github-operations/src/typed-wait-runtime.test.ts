@@ -43,6 +43,42 @@ function fixture() {
 }
 const input = { registrationId: 'registration', repoFullName: 'owner/repo', prNumber: 1 };
 
+for (const state of ['APPROVED', 'CHANGES_REQUESTED'] as const) {
+  for (const timing of ['superseding', 'completed'] as const) {
+    test(`${timing} re-registration retains review cursors when the baseline snapshot omits consumed ${state}`, async () => {
+      const f = fixture();
+      const submitted = { id: 10, author: 'maintainer', state, commitId: f.snapshot().headSha };
+      const when = [{ kind: 'pr_review_result_available' as const }, { kind: 'pr_review_decision_changed' as const }];
+      if (timing === 'superseding') f.setSnapshot({ ...f.snapshot(), reviews: [submitted] });
+      let runtime = new TypedWaitRuntime(f.options);
+      try {
+        await runtime.registerPr({ ...input, when, ...(timing === 'completed' ? { autoRenew: false } : {}) }, f.caller);
+        if (timing === 'completed') {
+          f.setSnapshot({ ...f.snapshot(), reviews: [submitted] });
+          await runtime.poll('pr');
+          assert.equal(f.sent.length, 1);
+        }
+        const delivered = f.sent.length;
+        f.setSnapshot({ ...f.snapshot(), reviews: [] });
+        const replacement = await runtime.registerPr({ ...input, when,
+          registrationId: `omitted-${timing}-${state}` }, f.caller);
+        const baseline = replacement.automationState!.await!.baseline;
+        assert.ok('headSha' in baseline);
+        assert.equal(baseline.review?.decisionCursor, 10, 'the semantic frontier and ID frontier advance together');
+        assert.equal(replacement.automationState?.review?.lastDecisionCursor, 10);
+        await runtime.stop();
+        runtime = new TypedWaitRuntime(f.options);
+        f.setSnapshot({ ...f.snapshot(), reviews: [submitted] });
+        await runtime.poll('pr');
+        assert.equal(f.sent.length, delivered, 'the omitted historical review does not replay after restart');
+        f.setSnapshot({ ...f.snapshot(), reviews: [submitted, { ...submitted, id: 11 }] });
+        await runtime.poll('pr');
+        assert.equal(f.sent.length, delivered + 1, 'a genuinely new review remains reportable');
+      } finally { await runtime.stop(); }
+    });
+  }
+}
+
 for (const kind of ['pr', 'issue'] as const) test(`${kind}: native registration admits its live baseline ahead of queued collection`, async () => {
   const f = fixture(), runtime = new TypedWaitRuntime(f.options);
   const order: string[] = [];

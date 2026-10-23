@@ -24,6 +24,16 @@ export function isGitHubReviewDecisionState(state: unknown): state is 'APPROVED'
   return state === 'APPROVED' || state === 'CHANGES_REQUESTED';
 }
 
+export function compareGitHubReviewSubmission(
+  left: { readonly id: number; readonly submittedAt?: string },
+  right: { readonly id: number; readonly submittedAt?: string },
+): number {
+  const leftTime = Date.parse(left.submittedAt ?? '');
+  const rightTime = Date.parse(right.submittedAt ?? '');
+  return Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime
+    ? leftTime - rightTime : left.id - right.id;
+}
+
 type MutableVerdicts = Record<string, GitHubReviewVerdicts[string]>;
 type MutableSubmittedStates = Record<string, GitHubSubmittedReviewStates[string]>;
 
@@ -37,12 +47,16 @@ function isSubmittedState(state: unknown): state is GitHubSubmittedReviewState {
 
 /** Every review that holds or held a verdict. Comment-only and pending reviews carry none. */
 export function reviewVerdictsOf(
-  reviews: readonly { readonly id?: unknown; readonly state?: unknown; readonly author?: string }[],
+  reviews: readonly { readonly id?: unknown; readonly state?: unknown; readonly author?: string;
+    readonly commitId?: string; readonly submittedAt?: string }[],
 ): GitHubReviewVerdicts {
   const verdicts: MutableVerdicts = {};
   for (const review of reviews) {
     if (typeof review.id !== 'number' || !isVerdictState(review.state)) continue;
-    verdicts[String(review.id)] = { state: review.state, ...(review.author ? { author: review.author } : {}) };
+    verdicts[String(review.id)] = { state: review.state, ...(review.author ? { author: review.author } : {}),
+      ...(review.commitId ? { commitId: review.commitId } : {}),
+      ...(review.submittedAt ? { submittedAt: review.submittedAt } : {}),
+    };
   }
   return verdicts;
 }
@@ -70,7 +84,7 @@ export function mergeReviewVerdicts(
   if (!observed) return seen;
   const merged: MutableVerdicts = { ...seen };
   for (const [reviewId, verdict] of Object.entries(observed)) {
-    if (merged[reviewId]?.state !== 'DISMISSED') merged[reviewId] = verdict;
+    if (merged[reviewId]?.state !== 'DISMISSED') merged[reviewId] = { ...merged[reviewId], ...verdict };
   }
   return merged;
 }

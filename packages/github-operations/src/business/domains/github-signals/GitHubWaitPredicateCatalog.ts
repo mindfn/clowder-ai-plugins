@@ -416,7 +416,9 @@ export function matchGitHubWaitPredicates(
         const resultFrontierAdvanced =
           before !== undefined &&
           after !== undefined &&
-          (after.decisionCursor > before.decisionCursor ||
+          ((resultReviewId !== undefined && Number(resultReviewId) > before.decisionCursor &&
+              before.verdicts?.[resultReviewId] === undefined &&
+              before.submittedReviewStates?.[resultReviewId] === undefined) ||
             submittedSameIdResult ||
             (after.resultConversationCommentCursor !== undefined &&
               after.resultConversationCommentCursor > before.conversationCommentCursor));
@@ -448,7 +450,9 @@ export function matchGitHubWaitPredicates(
         if (before && after && frontier !== undefined && frontier > before.decisionCursor) {
           if (after.decisions) {
             for (const review of [...after.decisions].sort((a, b) => a.id - b.id)) {
-              if (review.id <= before.decisionCursor || review.id > frontier) continue;
+              if (review.id <= before.decisionCursor || review.id > frontier ||
+                  before.verdicts?.[String(review.id)] !== undefined ||
+                  before.submittedReviewStates?.[String(review.id)] !== undefined) continue;
               matches.push({ kind: predicate.kind,
                 delta: `review ${before.decision ?? 'pending'} → ${review.state} (${review.author})`,
                 sourceRef: `review:${review.id}` });

@@ -136,11 +136,13 @@ export function waitObservation(task: TaskItem, snapshot: GitHubSnapshot, now: n
     now, timeoutMs: 30 * 60_000,
   }) : undefined;
   const evidence = classification?.evidence;
-  const newReviews = currentReviews.filter(row => row.id > (before?.decisionCursor ?? 0));
+  const newReviews = currentReviews.filter(row => row.id > (before?.decisionCursor ?? 0) &&
+    before?.verdicts?.[String(row.id)] === undefined && before?.submittedReviewStates?.[String(row.id)] === undefined);
   const submittedSameIdReviewIds = stateChanges
     .filter(change => change.previousState === 'PENDING' && change.currentHead &&
       isGitHubReviewDecisionState(change.state) &&
       before?.submittedReviewStates !== undefined &&
+      before.verdicts?.[String(change.id)] === undefined &&
       before.submittedReviewStates[String(change.id)] === undefined)
     .map(change => change.id);
   const newDecisionReviewIds = [...new Set([...newReviews.map(row => row.id), ...submittedSameIdReviewIds])];

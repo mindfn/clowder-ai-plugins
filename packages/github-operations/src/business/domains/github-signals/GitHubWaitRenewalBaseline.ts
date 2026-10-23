@@ -11,7 +11,7 @@ import type {
 } from '../../model/index.js';
 import type { WaitRenewalInstruction } from '../ball-custody/wait-state-machine.js';
 import {
-  isGitHubReviewDecisionState, mergeReviewVerdicts, mergeSubmittedReviewStates,
+  compareGitHubReviewSubmission, isGitHubReviewDecisionState, mergeReviewVerdicts, mergeSubmittedReviewStates,
 } from './GitHubReviewVerdicts.js';
 import type { GitHubWaitFacts } from './GitHubWaitPredicateCatalog.js';
 
@@ -44,27 +44,36 @@ function maxCursor(previous: number, ...observed: (number | undefined)[]): numbe
 const UNOBSERVED_MERGE_STATE = 'UNKNOWN';
 const unobservedCiFingerprint = (headSha: string) => `${headSha}:unobserved`;
 
-function latestReviewDecision(facts: GitHubWaitFacts): string | undefined {
-  return [...(facts.review?.decisions ?? [])]
+function latestReviewDecision(previous: GitHubPrWaitBaseline, facts: GitHubWaitFacts, headSha: string): string | undefined {
+  // A missing row is not a revocation. Keep the consumed evidence and replace it only with an
+  // observed state change. Older records lack HEAD metadata; anchor those to their installed HEAD.
+  const retained = Object.fromEntries(Object.entries(previous.review?.verdicts ?? {}).map(([id, verdict]) =>
+    [id, { ...verdict, commitId: verdict.commitId ?? previous.headSha }]));
+  const observed = { ...facts.review?.verdicts };
+  for (const review of facts.review?.decisions ?? []) {
+    if (isGitHubReviewDecisionState(review.state)) observed[String(review.id)] = {
+      ...observed[String(review.id)], state: review.state, author: review.author,
+      commitId: headSha, ...(review.submittedAt ? { submittedAt: review.submittedAt } : {}),
+    };
+  }
+  const merged = mergeReviewVerdicts(retained, observed) ?? {};
+  return Object.entries(merged).map(([id, verdict]) => ({ ...verdict, id: Number(id) }))
+    .filter(review => review.commitId === headSha)
     .filter(review => isGitHubReviewDecisionState(review.state))
-    .sort((a, b) => {
-      const aTime = Date.parse(a.submittedAt ?? '');
-      const bTime = Date.parse(b.submittedAt ?? '');
-      if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) return aTime - bTime;
-      return a.id - b.id;
-    })
+    .sort(compareGitHubReviewSubmission)
     .at(-1)?.state;
 }
 
 function sameReviewStateMap(
-  left: GitHubReviewVerdicts | GitHubSubmittedReviewStates | undefined,
-  right: GitHubReviewVerdicts | GitHubSubmittedReviewStates | undefined,
+  left: Readonly<Record<string, { state: string; author?: string; commitId?: string; submittedAt?: string }>> | undefined,
+  right: Readonly<Record<string, { state: string; author?: string; commitId?: string; submittedAt?: string }>> | undefined,
 ): boolean {
   if (left === undefined || right === undefined) return left === right;
   const leftEntries = Object.entries(left);
   const rightEntries = Object.entries(right);
   if (leftEntries.length !== rightEntries.length) return false;
-  return leftEntries.every(([id, value]) => value.state === right[id]?.state && value.author === right[id]?.author);
+  return leftEntries.every(([id, value]) => value.state === right[id]?.state && value.author === right[id]?.author &&
+    value.commitId === right[id]?.commitId && value.submittedAt === right[id]?.submittedAt);
 }
 
 export function renewPrWaitBaseline(
@@ -75,7 +84,7 @@ export function renewPrWaitBaseline(
 ): GitHubPrWaitBaseline {
   const headSha = facts.headSha ?? collector.ci?.headSha ?? previous.headSha;
   const headChanged = headSha !== previous.headSha;
-  const observedDecision = latestReviewDecision(facts);
+  const observedDecision = latestReviewDecision(previous, facts, headSha);
   const previousReview = previous.review;
   const previousReviewWithoutDecision = previousReview && (() => {
     const { decision: _revokedOrReplacedDecision, ...rest } = previousReview;
@@ -101,8 +110,7 @@ export function renewPrWaitBaseline(
           collector.review?.lastDecisionCursor,
           facts.review?.decisionCursor,
         ),
-        // The observation is a complete provider read. Rebuild the decision from its formal review
-        // list so COMMENTED cannot replace it and a dismissal cannot leave a revoked value behind.
+        // Merge submitted evidence across pages; only an explicit dismissal revokes a verdict.
         ...(observedDecision ? { decision: observedDecision } : {}),
         ...(facts.review?.threads && !headChanged ? { threads: facts.review.threads } : {}),
         ...renewVerdicts(previousReview.verdicts, facts),
