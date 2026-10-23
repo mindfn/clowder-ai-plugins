@@ -181,8 +181,17 @@ function preserveSubmittedReviewFrontier(previous: AutomationState, planned: Aut
   const previousReviewBaseline = previousBaseline && 'headSha' in previousBaseline
     ? previousBaseline.review
     : undefined;
+  const previousHeadSha = previousBaseline && 'headSha' in previousBaseline
+    ? previousBaseline.headSha : before.ci?.headSha;
+  const previousVerdicts = mergeReviewVerdicts(previousReviewBaseline?.verdicts, collectedVerdicts);
+  // Bind legacy evidence before installing it on a different HEAD. Once installed, renewal can
+  // only see the new baseline HEAD and would otherwise turn an old approval into a new decision.
+  const anchoredVerdicts = previousVerdicts && previousHeadSha
+    ? Object.fromEntries(Object.entries(previousVerdicts).map(([id, verdict]) =>
+      [id, { ...verdict, commitId: verdict.commitId ?? previousHeadSha }]))
+    : previousVerdicts;
   const durableVerdicts = mergeReviewVerdicts(
-    mergeReviewVerdicts(previousReviewBaseline?.verdicts, collectedVerdicts),
+    anchoredVerdicts,
     plannedBaseline.review?.verdicts,
   );
   const durableSubmittedReviewStates = mergeSubmittedReviewStates(
