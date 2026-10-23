@@ -452,7 +452,42 @@ for (const correlated of [false, true] as const) {
   });
 }
 
-for (const state of ['APPROVED', 'CHANGES_REQUESTED'] as const) {
+test('a legacy consumed COMMENTED result repairs a regressed collector without replaying', async () => {
+  const f = fixture();
+  const trigger = cloudTrigger('2026-10-09T00:00:00.000Z');
+  f.setSnapshot({ ...f.snapshot(), comments: [trigger] });
+  const runtime = new TypedWaitRuntime(f.options);
+  try {
+    const tracked = await runtime.registerPr({ ...input,
+      when: [{ kind: 'pr_review_result_available', triggerCommentId: trigger.id }] }, f.caller);
+    const submitted = { id: 10, author: 'chatgpt-codex-connector[bot]', state: 'COMMENTED' as const,
+      commitId: f.snapshot().headSha, submittedAt: '2026-10-09T00:00:01.000Z' };
+    f.setSnapshot({ ...f.snapshot(), reviews: [submitted] });
+    await runtime.poll('pr');
+    assert.equal(f.sent.length, 1);
+
+    const current = await runtime.store.get(tracked.id);
+    const active = current?.automationState?.await as GitHubPrAwaitStateV1 | undefined;
+    assert.ok(current?.automationState?.review && active && 'headSha' in active.baseline);
+    const { submittedReviewStates: _legacyMissing, ...legacyReview } = active.baseline.review ?? {
+      inlineCommentCursor: 0, conversationCommentCursor: 0, decisionCursor: 0,
+    };
+    await runtime.store.patchAutomationState(tracked.id, {
+      review: { ...current.automationState.review,
+        observedReviews: { ...current.automationState.review.observedReviews, '10': 'PENDING' } },
+      await: { ...active, baseline: { ...active.baseline, review: legacyReview } },
+    });
+    await runtime.poll('pr');
+    assert.equal(f.sent.length, 1, 'an alpha.25-consumed COMMENTED result is historical activity');
+    const repaired = await runtime.store.get(tracked.id);
+    assert.equal(repaired?.automationState?.review?.observedReviews?.['10'], 'COMMENTED');
+    const repairedBaseline = repaired?.automationState?.await?.baseline;
+    assert.ok(repairedBaseline && 'headSha' in repairedBaseline);
+    assert.equal(repairedBaseline.review?.submittedReviewStates?.['10']?.state, 'COMMENTED');
+  } finally { await runtime.stop(); }
+});
+
+for (const state of ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'] as const) {
   test(`superseding registration preserves a historical ${state} across a stale PENDING baseline`, async () => {
     const f = fixture();
     const submitted = { id: 10, author: 'maintainer', state, commitId: f.snapshot().headSha,
@@ -470,12 +505,46 @@ for (const state of ['APPROVED', 'CHANGES_REQUESTED'] as const) {
         'registration cannot regress the durable submitted frontier');
       const baseline = superseded.automationState?.await?.baseline;
       assert.ok(baseline && 'headSha' in baseline);
-      assert.equal(baseline.review?.verdicts?.['10']?.state, state,
-        'the replacement generation retains the consumed verdict');
+      assert.equal(baseline.review?.submittedReviewStates?.['10']?.state, state,
+        'the replacement generation retains the consumed submitted state');
 
       f.setSnapshot({ ...f.snapshot(), reviews: [submitted] });
       await runtime.poll('pr');
       assert.equal(f.sent.length, 0, 'restoring a historical verdict after registration is not new activity');
+    } finally { await runtime.stop(); }
+  });
+}
+
+for (const state of ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'] as const) {
+  test(`completed registration preserves a historical ${state} across a stale PENDING baseline`, async () => {
+    const f = fixture();
+    const trigger = cloudTrigger('2026-10-09T00:00:00.000Z');
+    f.setSnapshot({ ...f.snapshot(), comments: [trigger] });
+    const runtime = new TypedWaitRuntime(f.options);
+    try {
+      const tracked = await runtime.registerPr({ ...input, autoRenew: false,
+        when: [{ kind: 'pr_review_result_available', triggerCommentId: trigger.id }] }, f.caller);
+      const submitted = { id: 10, author: 'chatgpt-codex-connector[bot]', state,
+        commitId: f.snapshot().headSha, submittedAt: '2026-10-09T00:00:01.000Z' };
+      f.setSnapshot({ ...f.snapshot(), reviews: [submitted] });
+      await runtime.poll('pr');
+      assert.equal(f.sent.length, 1);
+      assert.equal((await runtime.store.get(tracked.id))?.automationState?.await, undefined,
+        'the first generation completed before re-registration');
+
+      f.setSnapshot({ ...f.snapshot(), reviews: [{ ...submitted, state: 'PENDING', submittedAt: undefined }] });
+      const replaced = await runtime.registerPr({ ...input, registrationId: `completed-${state}`,
+        when: [{ kind: 'pr_review_result_available', triggerCommentId: trigger.id }] }, f.caller);
+      assert.equal(replaced.automationState?.review?.observedReviews?.['10'], state,
+        'registration keeps the completed generation collector frontier');
+      const baseline = replaced.automationState?.await?.baseline;
+      assert.ok(baseline && 'headSha' in baseline);
+      assert.equal(baseline.review?.submittedReviewStates?.['10']?.state, state,
+        'registration keeps the completed generation submitted frontier');
+
+      f.setSnapshot({ ...f.snapshot(), reviews: [submitted] });
+      await runtime.poll('pr');
+      assert.equal(f.sent.length, 1, 'restoring completed historical activity does not replay it');
     } finally { await runtime.stop(); }
   });
 }

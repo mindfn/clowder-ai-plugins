@@ -129,6 +129,32 @@ test('a same-id pending submission participates in the fourth-review loop brake'
   assert.equal(observed.observation.reviewLoopBrake?.kind, 'pause_once');
 });
 
+test('a legacy consumed same-id submission does not retrigger the fourth-review loop brake', async () => {
+  const reviews = Array.from({ length: 4 }, (_, index) => ({
+    id: index + 1,
+    author: 'maintainer',
+    state: 'CHANGES_REQUESTED',
+    commitId: head,
+  }));
+  const registered = await task({ ...blank, authorLogin: 'owner', reviews }, [
+    { kind: 'pr_review_decision_changed' },
+  ]);
+  const automation = registered.automationState as PrAutomationState;
+  const baseline = automation.await!.baseline as GitHubPrWaitBaseline;
+  const { submittedReviewStates: _legacyMissing, ...legacyReview } = baseline.review!;
+  const legacy = { ...registered, automationState: {
+    ...automation,
+    review: { ...automation.review, observedReviews: {
+      ...automation.review?.observedReviews, '4': 'PENDING',
+    } },
+    await: { ...automation.await!, baseline: { ...baseline, review: legacyReview } },
+  } } as TaskItem;
+
+  const observed = waitObservation(legacy, { ...blank, authorLogin: 'owner', reviews }, 7600, []);
+  assert.notEqual(observed.observation.reviewLoopBrake?.kind, 'pause_once',
+    'legacy history is quietly adopted instead of counting the same formal review twice');
+});
+
 test('a newly observed review dismissed between polls remains reportable', async () => {
   const when: GitHubPrWaitPredicate[] = [{ kind: 'pr_review_decision_changed' }];
   const registered = await task(blank, when);

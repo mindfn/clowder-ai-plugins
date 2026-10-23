@@ -2,7 +2,9 @@ import type { GitHubSnapshot, GitHubTarget } from './tracking-runtime.js';
 import type { GitHubPrWaitPredicate, TaskItem, PrAutomationState, IssueWaitAutomationState } from './business/model/index.js';
 import { readGitHubWaitBaseline } from './business/domains/github-signals/GitHubWaitBaselineReader.js';
 import { readGitHubIssueWaitBaseline } from './business/domains/github-signals/GitHubIssueWaitBaselineReader.js';
-import { isGitHubReviewDecisionState, reviewVerdictsOf } from './business/domains/github-signals/GitHubReviewVerdicts.js';
+import {
+  isGitHubReviewDecisionState, reviewVerdictsOf, submittedReviewStatesOf,
+} from './business/domains/github-signals/GitHubReviewVerdicts.js';
 import type { GitHubWaitObservation } from './business/domains/github-signals/GitHubWaitLifecycleService.js';
 import { classifyGitHubReviewLoopBrake } from './business/domains/github-signals/github-wait-renderer.js';
 import { classifyExternalCloudReview } from './business/domains/community/external-review/external-cloud-review-classifier.js';
@@ -116,7 +118,17 @@ export function waitObservation(task: TaskItem, snapshot: GitHubSnapshot, now: n
     : undefined;
   const trigger = snapshot.comments.find(row => row.commentType === 'conversation' && row.id === before?.resultTriggerCommentId);
   const requestedAt = Date.parse(trigger?.createdAt ?? '');
-  const completeReviews = [...Object.keys(seen), ...Object.keys(before?.verdicts ?? {})].every(id => reviews.some(row => String(row.id) === id));
+  // A collected PENDING id still has an unresolved submitted state, so its disappearance makes the
+  // review observation incomplete. Already-consumed submitted ids are durable history: GitHub need
+  // not return every one of them forever, and they must not block a later correlated review request.
+  // Legacy baselines have no submitted frontier, so retain the conservative all-known-ids check
+  // until their first complete observation is quietly adopted.
+  const knownReviewIds = before?.submittedReviewStates === undefined
+    ? [...Object.keys(seen), ...Object.keys(before?.verdicts ?? {})]
+    : Object.entries(seen)
+      .filter(([id, state]) => state === 'PENDING' || before.submittedReviewStates?.[id] === undefined)
+      .map(([id]) => id);
+  const completeReviews = knownReviewIds.every(id => reviews.some(row => String(row.id) === id));
   const classification = completeReviews && trigger && Number.isFinite(requestedAt) ? classifyExternalCloudReview({
     currentHeadSha: snapshot.headSha,
     request: { headSha: before!.resultTriggerHeadSha ?? '', triggerCommentId: trigger.id, requestedAt },
@@ -126,7 +138,10 @@ export function waitObservation(task: TaskItem, snapshot: GitHubSnapshot, now: n
   const evidence = classification?.evidence;
   const newReviews = currentReviews.filter(row => row.id > (before?.decisionCursor ?? 0));
   const submittedSameIdReviewIds = stateChanges
-    .filter(change => change.previousState === 'PENDING' && change.currentHead && isGitHubReviewDecisionState(change.state))
+    .filter(change => change.previousState === 'PENDING' && change.currentHead &&
+      isGitHubReviewDecisionState(change.state) &&
+      before?.submittedReviewStates !== undefined &&
+      before.submittedReviewStates[String(change.id)] === undefined)
     .map(change => change.id);
   const newDecisionReviewIds = [...new Set([...newReviews.map(row => row.id), ...submittedSameIdReviewIds])];
   const { cloudObservation: _ignored, ...raw } = snapshot;
@@ -139,7 +154,8 @@ export function waitObservation(task: TaskItem, snapshot: GitHubSnapshot, now: n
           decision: evidence?.decision ?? unanchoredResult?.state ?? latest?.state,
           reviewer: evidence?.reviewer ?? unanchoredResult?.author ?? latest?.author,
           decisions: currentDecisions, stateChanges,
-          verdicts: reviewVerdictsOf(reviews), threads: snapshot.reviewThreads, comments,
+          verdicts: reviewVerdictsOf(reviews), submittedReviewStates: submittedReviewStatesOf(reviews),
+          threads: snapshot.reviewThreads, comments,
           ...(evidence ? { resultTriggerCommentId: evidence.triggerCommentId, resultSourceRef: evidence.sourceRef,
             resultConversationCommentCursor: evidence.conversationCommentCursor } :
             unanchoredResult ? { resultSourceRef: `review:${unanchoredResult.id}` } : {}),

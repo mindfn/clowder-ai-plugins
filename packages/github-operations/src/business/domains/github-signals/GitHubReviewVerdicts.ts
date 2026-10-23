@@ -1,4 +1,6 @@
-import type { GitHubReviewVerdictState, GitHubReviewVerdicts } from '../../model/index.js';
+import type {
+  GitHubReviewVerdictState, GitHubReviewVerdicts, GitHubSubmittedReviewState, GitHubSubmittedReviewStates,
+} from '../../model/index.js';
 
 /**
  * #1392: a review decision can change without a new review. GitHub dismisses a verdict in place: the
@@ -23,6 +25,15 @@ export function isGitHubReviewDecisionState(state: unknown): state is 'APPROVED'
 }
 
 type MutableVerdicts = Record<string, GitHubReviewVerdicts[string]>;
+type MutableSubmittedStates = Record<string, GitHubSubmittedReviewStates[string]>;
+
+const SUBMITTED_STATES: ReadonlySet<string> = new Set<GitHubSubmittedReviewState>([
+  'APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED',
+]);
+
+function isSubmittedState(state: unknown): state is GitHubSubmittedReviewState {
+  return typeof state === 'string' && SUBMITTED_STATES.has(state);
+}
 
 /** Every review that holds or held a verdict. Comment-only and pending reviews carry none. */
 export function reviewVerdictsOf(
@@ -34,6 +45,18 @@ export function reviewVerdictsOf(
     verdicts[String(review.id)] = { state: review.state, ...(review.author ? { author: review.author } : {}) };
   }
   return verdicts;
+}
+
+/** Every review whose submitted state has been consumed. PENDING is only a transport preview. */
+export function submittedReviewStatesOf(
+  reviews: readonly { readonly id?: unknown; readonly state?: unknown; readonly author?: string }[],
+): GitHubSubmittedReviewStates {
+  const states: MutableSubmittedStates = {};
+  for (const review of reviews) {
+    if (typeof review.id !== 'number' || !isSubmittedState(review.state)) continue;
+    states[String(review.id)] = { state: review.state, ...(review.author ? { author: review.author } : {}) };
+  }
+  return states;
 }
 
 /**
@@ -48,6 +71,20 @@ export function mergeReviewVerdicts(
   const merged: MutableVerdicts = { ...seen };
   for (const [reviewId, verdict] of Object.entries(observed)) {
     if (merged[reviewId]?.state !== 'DISMISSED') merged[reviewId] = verdict;
+  }
+  return merged;
+}
+
+/** Submitted states never regress to PENDING/absence. DISMISSED is terminal; another submitted
+ * state may replace an earlier non-terminal representation of the same GitHub review id. */
+export function mergeSubmittedReviewStates(
+  seen: GitHubSubmittedReviewStates | undefined,
+  observed: GitHubSubmittedReviewStates | undefined,
+): GitHubSubmittedReviewStates | undefined {
+  if (!observed) return seen;
+  const merged: MutableSubmittedStates = { ...seen };
+  for (const [reviewId, state] of Object.entries(observed)) {
+    if (merged[reviewId]?.state !== 'DISMISSED') merged[reviewId] = state;
   }
   return merged;
 }
