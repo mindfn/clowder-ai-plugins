@@ -43,6 +43,59 @@ function fixture() {
 }
 const input = { registrationId: 'registration', repoFullName: 'owner/repo', prNumber: 1 };
 
+for (const state of ['APPROVED', 'CHANGES_REQUESTED'] as const) {
+  for (const metadata of ['legacy', 'explicit'] as const) {
+    test(`ordinary HEAD-follow renewal persists ${metadata} ${state} ownership across restart`, async () => {
+      const f = fixture();
+      const oldHead = f.snapshot().headSha, newHead = 'b'.repeat(40);
+      const oldReview = { id: 10, author: 'maintainer', state, commitId: oldHead,
+        submittedAt: '2026-10-09T00:00:01Z' };
+      f.setSnapshot({ ...f.snapshot(), reviews: [oldReview] });
+      let runtime = new TypedWaitRuntime(f.options);
+      try {
+        const tracked = await runtime.registerPr({ ...input, when: [
+          { kind: 'pr_head_changed' }, { kind: 'pr_ci_terminal' }, { kind: 'pr_review_decision_changed' },
+        ] }, f.caller);
+        const active = tracked.automationState!.await as GitHubPrAwaitStateV1;
+        if (metadata === 'legacy') await runtime.store.patchAutomationState(tracked.id, {
+          await: { ...active, baseline: { ...active.baseline, review: { ...active.baseline.review!,
+            verdicts: { '10': { state, author: 'maintainer' } } } } },
+        });
+        f.setSnapshot({ ...f.snapshot(), headSha: newHead, reviews: [] });
+        await runtime.poll('pr');
+        const first = (await runtime.store.get(tracked.id))!.automationState!.await!.baseline;
+        assert.ok('headSha' in first);
+        assert.equal(first.review?.decision, undefined);
+        assert.equal(f.sent.length, 1, 'the push advances the generation once');
+        await runtime.stop();
+        runtime = new TypedWaitRuntime(f.options);
+        f.setSnapshot({ ...f.snapshot(), ci: 'pass' });
+        await runtime.poll('pr');
+        const second = (await runtime.store.get(tracked.id))!.automationState!.await!.baseline;
+        assert.ok('headSha' in second);
+        assert.equal(second.review?.decision, undefined,
+          'a second renewal cannot rebind an omitted old verdict to the new HEAD');
+        assert.equal(second.review?.verdicts?.['10']?.commitId, oldHead);
+        assert.equal(f.sent.length, 2, 'only the CI transition is delivered');
+        f.setSnapshot({ ...f.snapshot(), reviews: [{ ...oldReview, state: 'DISMISSED' }] });
+        await runtime.poll('pr');
+        assert.equal(f.sent.length, 3, 'old HEAD dismissal still notifies');
+        await runtime.poll('pr');
+        assert.equal(f.sent.length, 3, 'dismissal does not replay');
+        f.setSnapshot({ ...f.snapshot(), reviews: [{ ...oldReview, state: 'DISMISSED' },
+          { id: 11, author: 'maintainer', state: 'APPROVED', commitId: newHead }] });
+        await runtime.poll('pr');
+        assert.equal(f.sent.length, 4, 'a real new-HEAD verdict remains available');
+        const final = (await runtime.store.get(tracked.id))!.automationState!.await!.baseline;
+        assert.ok('headSha' in final);
+        assert.equal(final.review?.decision, 'APPROVED');
+        await runtime.poll('pr');
+        assert.equal(f.sent.length, 4);
+      } finally { await runtime.stop(); }
+    });
+  }
+}
+
 for (const returned of ['none', 'older-only', 'pending', 'dismissed', 'newer'] as const) {
   test(`same-HEAD registration restores the consumed decision before notification: ${returned}`, async () => {
     const f = fixture();

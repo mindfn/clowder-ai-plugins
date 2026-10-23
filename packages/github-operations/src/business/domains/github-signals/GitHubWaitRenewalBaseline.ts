@@ -11,7 +11,7 @@ import type {
 } from '../../model/index.js';
 import type { WaitRenewalInstruction } from '../ball-custody/wait-state-machine.js';
 import {
-  latestGitHubReviewDecision, isGitHubReviewDecisionState, mergeReviewVerdicts, mergeSubmittedReviewStates,
+  anchorGitHubReviewVerdicts, latestGitHubReviewDecision, isGitHubReviewDecisionState, mergeReviewVerdicts, mergeSubmittedReviewStates,
 } from './GitHubReviewVerdicts.js';
 import type { GitHubWaitFacts } from './GitHubWaitPredicateCatalog.js';
 
@@ -44,11 +44,10 @@ function maxCursor(previous: number, ...observed: (number | undefined)[]): numbe
 const UNOBSERVED_MERGE_STATE = 'UNKNOWN';
 const unobservedCiFingerprint = (headSha: string) => `${headSha}:unobserved`;
 
-function latestReviewDecision(previous: GitHubPrWaitBaseline, facts: GitHubWaitFacts, headSha: string): string | undefined {
+function renewedReviewVerdicts(previous: GitHubPrWaitBaseline, facts: GitHubWaitFacts, headSha: string): GitHubReviewVerdicts | undefined {
   // A missing row is not a revocation. Keep the consumed evidence and replace it only with an
   // observed state change. Older records lack HEAD metadata; anchor those to their installed HEAD.
-  const retained = Object.fromEntries(Object.entries(previous.review?.verdicts ?? {}).map(([id, verdict]) =>
-    [id, { ...verdict, commitId: verdict.commitId ?? previous.headSha }]));
+  const retained = anchorGitHubReviewVerdicts(previous.review?.verdicts, previous.headSha);
   const observed = { ...facts.review?.verdicts };
   for (const review of facts.review?.decisions ?? []) {
     if (isGitHubReviewDecisionState(review.state)) observed[String(review.id)] = {
@@ -56,8 +55,8 @@ function latestReviewDecision(previous: GitHubPrWaitBaseline, facts: GitHubWaitF
       commitId: headSha, ...(review.submittedAt ? { submittedAt: review.submittedAt } : {}),
     };
   }
-  const merged = mergeReviewVerdicts(retained, observed) ?? {};
-  return latestGitHubReviewDecision(merged, headSha);
+  return mergeReviewVerdicts(retained,
+    facts.review?.verdicts !== undefined || Object.keys(observed).length > 0 ? observed : undefined);
 }
 
 function sameReviewStateMap(
@@ -80,7 +79,10 @@ export function renewPrWaitBaseline(
 ): GitHubPrWaitBaseline {
   const headSha = facts.headSha ?? collector.ci?.headSha ?? previous.headSha;
   const headChanged = headSha !== previous.headSha;
-  const observedDecision = latestReviewDecision(previous, facts, headSha);
+  // Select and persist from the SAME anchored evidence; temporary anchoring would be lost after a
+  // HEAD-follow generation, allowing the next renewal to reinterpret old verdicts on the new HEAD.
+  const verdicts = renewedReviewVerdicts(previous, facts, headSha);
+  const observedDecision = latestGitHubReviewDecision(verdicts, headSha);
   const previousReview = previous.review;
   const previousReviewWithoutDecision = previousReview && (() => {
     const { decision: _revokedOrReplacedDecision, ...rest } = previousReview;
@@ -109,7 +111,7 @@ export function renewPrWaitBaseline(
         // Merge submitted evidence across pages; only an explicit dismissal revokes a verdict.
         ...(observedDecision ? { decision: observedDecision } : {}),
         ...(facts.review?.threads && !headChanged ? { threads: facts.review.threads } : {}),
-        ...renewVerdicts(previousReview.verdicts, facts),
+        ...(verdicts !== undefined ? { verdicts } : {}),
         ...renewSubmittedReviewStates(previousReview.submittedReviewStates, facts),
       }
     : undefined;
@@ -131,15 +133,6 @@ export function renewPrWaitBaseline(
     ...(ci ? { ci } : {}),
     ...(conflict ? { conflict } : {}),
   };
-}
-
-/** #1392: verdicts are not head-scoped either; a dismissal is reported whichever HEAD it happens on. */
-function renewVerdicts(
-  seen: GitHubReviewVerdicts | undefined,
-  facts: GitHubWaitFacts,
-): { readonly verdicts?: GitHubReviewVerdicts } {
-  const verdicts = mergeReviewVerdicts(seen, facts.review?.verdicts);
-  return verdicts ? { verdicts } : {};
 }
 
 function renewSubmittedReviewStates(

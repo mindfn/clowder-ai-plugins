@@ -4,9 +4,24 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { parse } from 'yaml';
 import { activateCatalog, assertCatalogActivated, assertCatalogAvailable, assertPublishedArchive } from './catalog-activation.mjs';
+
+test('repository candidate retains live release identities before any activation provider work', async () => {
+  const root = fileURLToPath(new URL('../', import.meta.url));
+  const livePath = join(root, 'catalog/catalog.json');
+  const candidatePath = join(root, 'catalog/candidate.json');
+  const liveBefore = await readFile(livePath, 'utf8'), candidateBefore = await readFile(candidatePath, 'utf8');
+  const reachedProvider = new Error('Offline activation boundary reached');
+  await assert.rejects(activateCatalog({ root,
+    registryIntegrity: async () => { throw reachedProvider; },
+    readArchive: async () => { assert.fail('Must stop before downloading or writing a live catalog'); },
+  }), error => error === reachedProvider);
+  assert.equal(await readFile(livePath, 'utf8'), liveBefore);
+  assert.equal(await readFile(candidatePath, 'utf8'), candidateBefore);
+});
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'catalog-activation-'));

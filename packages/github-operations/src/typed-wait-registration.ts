@@ -15,7 +15,7 @@ import { automationGeneration } from './business/domains/github-signals/TaskAuto
 import type { GitHubWaitStorage } from './typed-wait-storage.js';
 import { lifecycleEvent } from './business/domains/github-signals/GitHubWaitLifecycleService.js';
 import {
-  latestGitHubReviewDecision, mergeReviewVerdicts, mergeSubmittedReviewStates, reviewVerdictsOf, submittedReviewStatesOf,
+  anchorGitHubReviewVerdicts, latestGitHubReviewDecision, mergeReviewVerdicts, mergeSubmittedReviewStates, reviewVerdictsOf, submittedReviewStatesOf,
 } from './business/domains/github-signals/GitHubReviewVerdicts.js';
 import { registerPrTrackingInputSchema, registerIssueTrackingInputSchema } from './tracking-mcp-schemas.js';
 
@@ -187,8 +187,7 @@ function preserveSubmittedReviewFrontier(previous: AutomationState, planned: Aut
   // Bind legacy evidence before installing it on a different HEAD. Once installed, renewal can
   // only see the new baseline HEAD and would otherwise turn an old approval into a new decision.
   const anchoredVerdicts = previousVerdicts && previousHeadSha
-    ? Object.fromEntries(Object.entries(previousVerdicts).map(([id, verdict]) =>
-      [id, { ...verdict, commitId: verdict.commitId ?? previousHeadSha }]))
+    ? anchorGitHubReviewVerdicts(previousVerdicts, previousHeadSha)
     : previousVerdicts;
   const durableVerdicts = mergeReviewVerdicts(
     anchoredVerdicts,

@@ -42,6 +42,12 @@ export function latestGitHubReviewDecision(verdicts: GitHubReviewVerdicts | unde
     .at(-1)?.state;
 }
 
+/** Bind legacy evidence before its containing baseline moves to a different HEAD. */
+export function anchorGitHubReviewVerdicts(verdicts: GitHubReviewVerdicts | undefined, headSha: string): GitHubReviewVerdicts | undefined {
+  return verdicts && Object.fromEntries(Object.entries(verdicts).map(([id, verdict]) =>
+    [id, { ...verdict, commitId: verdict.commitId ?? headSha }]));
+}
+
 type MutableVerdicts = Record<string, GitHubReviewVerdicts[string]>;
 type MutableSubmittedStates = Record<string, GitHubSubmittedReviewStates[string]>;
 
