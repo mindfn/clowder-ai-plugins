@@ -82,6 +82,13 @@ export function waitObservation(task: TaskItem, snapshot: GitHubSnapshot, now: n
   const reviews = snapshot.reviews.map(row => seen[String(row.id)] === 'DISMISSED' || before?.verdicts?.[String(row.id)]?.state === 'DISMISSED'
     ? { ...row, state: 'DISMISSED' } : row);
   const currentReviews = reviews.filter(row => row.commitId === snapshot.headSha);
+  const stateChanges = reviews.flatMap(row => {
+    const previousState = seen[String(row.id)];
+    return previousState !== undefined && previousState !== row.state
+      ? [{ id: row.id, previousState, state: row.state, author: row.author,
+          currentHead: row.commitId === snapshot.headSha }]
+      : [];
+  });
   // GitHub creates COMMENTED reviews as containers for inline replies. They advance the review
   // cursor and may prove an explicitly requested cloud result, but they do not hold a PR decision.
   // A previously observed DISMISSED review is an in-place verdict transition matched through
@@ -109,7 +116,7 @@ export function waitObservation(task: TaskItem, snapshot: GitHubSnapshot, now: n
         review: {
           decisionCursor: Math.max(before?.decisionCursor ?? 0, maxId(currentReviews)), headDecisionCursor: maxId(currentReviews),
           decision: evidence?.decision ?? latest?.state, reviewer: evidence?.reviewer ?? latest?.author,
-          decisions: currentDecisions,
+          decisions: currentDecisions, stateChanges,
           verdicts: reviewVerdictsOf(reviews), threads: snapshot.reviewThreads, comments,
           ...(evidence ? { resultTriggerCommentId: evidence.triggerCommentId, resultSourceRef: evidence.sourceRef,
             resultConversationCommentCursor: evidence.conversationCommentCursor } :

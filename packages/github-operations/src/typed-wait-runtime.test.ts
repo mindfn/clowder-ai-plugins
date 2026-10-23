@@ -278,6 +278,131 @@ for (const verdict of ['APPROVED', 'CHANGES_REQUESTED'] as const) {
   });
 }
 
+const cloudTrigger = (createdAt: string) => ({
+  id: 5,
+  author: 'self',
+  body: '@codex review',
+  commentType: 'conversation' as const,
+  createdAt,
+});
+
+for (const state of ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'] as const) {
+  for (const timing of ['registration', 'ci-renewal'] as const) {
+    test(`a result-only wait reports same-id PENDING → ${state} after ${timing}`, async () => {
+      const f = fixture();
+      const createdAt = '2026-10-09T00:00:00.000Z';
+      const trigger = cloudTrigger(createdAt);
+      const pending = { id: 10, author: 'chatgpt-codex-connector[bot]', state: 'PENDING',
+        commitId: f.snapshot().headSha };
+      f.setSnapshot({ ...f.snapshot(), comments: [trigger],
+        reviews: timing === 'registration' ? [pending] : [] });
+      let runtime = new TypedWaitRuntime(f.options);
+      try {
+        const tracked = await runtime.registerPr({ ...input, when: [
+          { kind: 'pr_review_result_available', triggerCommentId: trigger.id },
+          ...(timing === 'ci-renewal' ? [{ kind: 'pr_ci_terminal' as const }] : []),
+        ] }, f.caller);
+        if (timing === 'ci-renewal') {
+          f.setSnapshot({ ...f.snapshot(), ci: 'pass', reviews: [pending] });
+          await runtime.poll('pr');
+          assert.equal(f.sent.length, 1, 'CI renewal consumes the PENDING id without treating it as a result');
+          assert.doesNotMatch(JSON.stringify(f.sent[0]), /review:10/);
+        }
+
+        f.setSnapshot({ ...f.snapshot(), reviews: [{ ...pending, state,
+          submittedAt: '2026-10-09T00:00:01.000Z' }] });
+        await runtime.poll('pr');
+        assert.equal(f.sent.length, timing === 'ci-renewal' ? 2 : 1,
+          'a correlated cloud result remains news when its review id was already collected');
+        assert.match(JSON.stringify(f.sent.at(-1)), /review:10/);
+        assert.match(JSON.stringify(f.sent.at(-1)), new RegExp(state));
+
+        const renewed = (await runtime.store.get(tracked.id))?.automationState?.await?.baseline;
+        assert.ok(renewed && 'headSha' in renewed);
+        assert.equal(renewed.review?.decisionCursor, 10);
+        await runtime.stop();
+        runtime = new TypedWaitRuntime(f.options);
+        await runtime.poll('pr');
+        assert.equal(f.sent.length, timing === 'ci-renewal' ? 2 : 1,
+          'renewal and restart do not replay the same cloud result');
+      } finally { await runtime.stop(); }
+    });
+  }
+}
+
+test('a correlated new-id COMMENTED cloud result remains a one-shot positive control', async () => {
+  const f = fixture();
+  const trigger = cloudTrigger('2026-10-09T00:00:00.000Z');
+  f.setSnapshot({ ...f.snapshot(), comments: [trigger] });
+  const runtime = new TypedWaitRuntime(f.options);
+  try {
+    await runtime.registerPr({ ...input,
+      when: [{ kind: 'pr_review_result_available', triggerCommentId: trigger.id }] }, f.caller);
+    f.setSnapshot({ ...f.snapshot(), reviews: [{ id: 10, author: 'chatgpt-codex-connector[bot]', state: 'COMMENTED',
+      commitId: f.snapshot().headSha, submittedAt: '2026-10-09T00:00:01.000Z' }] });
+    await runtime.poll('pr');
+    assert.equal(f.sent.length, 1);
+    assert.match(JSON.stringify(f.sent[0]), /review:10/);
+    await runtime.poll('pr');
+    assert.equal(f.sent.length, 1);
+  } finally { await runtime.stop(); }
+});
+
+test('an ordinary decision wait keeps a same-id PENDING → COMMENTED submission quiet', async () => {
+  const f = fixture();
+  const pending = { id: 10, author: 'self', state: 'PENDING', commitId: f.snapshot().headSha };
+  f.setSnapshot({ ...f.snapshot(), reviews: [pending] });
+  const runtime = new TypedWaitRuntime(f.options);
+  try {
+    const tracked = await runtime.registerPr({ ...input,
+      when: [{ kind: 'pr_review_decision_changed' }] }, f.caller);
+    f.setSnapshot({ ...f.snapshot(), reviews: [{ ...pending, state: 'COMMENTED' }] });
+    await runtime.poll('pr');
+    assert.equal(f.sent.length, 0, 'COMMENTED is a cloud result only under explicit trigger correlation');
+    assert.equal((await runtime.store.get(tracked.id))?.automationState?.review?.observedReviews?.['10'], 'COMMENTED');
+    await runtime.poll('pr');
+    assert.equal(f.sent.length, 0);
+  } finally { await runtime.stop(); }
+});
+
+for (const timing of ['registration', 'ci-renewal'] as const) {
+  test(`a PENDING review submitted and dismissed under the same id reports after ${timing}`, async () => {
+    const f = fixture();
+    const pending = { id: 10, author: 'maintainer', state: 'PENDING', commitId: f.snapshot().headSha };
+    f.setSnapshot({ ...f.snapshot(), reviews: timing === 'registration' ? [pending] : [] });
+    let runtime = new TypedWaitRuntime(f.options);
+    try {
+      const tracked = await runtime.registerPr({ ...input, when: [
+        { kind: 'pr_review_decision_changed' },
+        ...(timing === 'ci-renewal' ? [{ kind: 'pr_ci_terminal' as const }] : []),
+      ] }, f.caller);
+      if (timing === 'ci-renewal') {
+        f.setSnapshot({ ...f.snapshot(), ci: 'pass', reviews: [pending] });
+        await runtime.poll('pr');
+        assert.equal(f.sent.length, 1);
+        assert.doesNotMatch(JSON.stringify(f.sent[0]), /review:10/);
+      }
+
+      f.setSnapshot({ ...f.snapshot(), reviews: [{ ...pending, state: 'DISMISSED' }] });
+      await runtime.poll('pr');
+      assert.equal(f.sent.length, timing === 'ci-renewal' ? 2 : 1,
+        'a collected PENDING id cannot hide a later dismissal');
+      assert.match(JSON.stringify(f.sent.at(-1)), /review:10/);
+      assert.match(JSON.stringify(f.sent.at(-1)), /DISMISSED/);
+      const renewed = (await runtime.store.get(tracked.id))?.automationState?.await?.baseline;
+      assert.ok(renewed && 'headSha' in renewed);
+      assert.equal(renewed.review?.decisionCursor, 10);
+      assert.equal(renewed.review?.verdicts?.['10']?.state, 'DISMISSED');
+
+      await runtime.stop();
+      runtime = new TypedWaitRuntime(f.options);
+      await runtime.poll('pr');
+      assert.equal(f.sent.length, timing === 'ci-renewal' ? 2 : 1,
+        'the same dismissal is not replayed after renewal and restart');
+    } finally { await runtime.stop(); }
+  });
+}
+
 for (const authors of [['alice', 'bot[bot]'], ['bot[bot]', 'alice'], ['alice', 'bob', 'bot[bot]']]) {
   test(`mixed review authors are filtered independently before the poll is consumed (${authors.join(',')})`, async () => {
     const f = fixture();
