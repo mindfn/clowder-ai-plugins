@@ -245,6 +245,39 @@ test('persisted pending delivery survives restart and failed send does not lose 
   await second.stop();
 });
 
+test('pre-upgrade pending delivery gains an explicit subject link during recovery', async () => {
+  const f = fixture();
+  const first = new GitHubTrackingRuntime(f.deps);
+  await first.register(target);
+  f.set({ ...f.snapshot(), ci: 'fail' });
+  f.fail(true);
+  await assert.rejects(first.poll('cicd-check'), /delivery unavailable/);
+  await first.stop();
+
+  const tracking = [...f.records.entries()].find(([key]) => key.startsWith('github.tracking.v1.'))!;
+  const value = tracking[1].value as {
+    pending: Array<{ id: string; text: string; identity: string; wake: boolean }>;
+  };
+  value.pending = value.pending.map(notification => ({
+    ...notification,
+    text: notification.text.replace(
+      '[example/project#12](https://github.com/example/project/pull/12)',
+      'pr:example/project#12',
+    ),
+  }));
+
+  f.fail(false);
+  const second = new GitHubTrackingRuntime(f.deps);
+  await second.poll('cicd-check');
+  assert.equal(f.messages.length, 1);
+  assert.match(
+    JSON.stringify(f.messages[0]),
+    /\[example\/project#12\]\(https:\/\/github\.com\/example\/project\/pull\/12\)/u,
+  );
+  assert.equal((f.messages[0] as { input: { url?: string } }).input.url, undefined);
+  await second.stop();
+});
+
 test('a terminal CI poll includes the last uncollected comments before retiring tracking', async () => {
   const f = fixture(); const runtime = new GitHubTrackingRuntime(f.deps);
   await runtime.register(target);

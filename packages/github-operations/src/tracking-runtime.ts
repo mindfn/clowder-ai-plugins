@@ -118,6 +118,11 @@ function subject(
 function keyOf(target: Pick<GitHubTarget, 'kind' | 'repoFullName' | 'number'>): string {
   return PREFIX + createHash('sha256').update(subject(target)).digest('hex');
 }
+function notificationTextWithSubjectLink(text: string, target: GitHubTarget): string {
+  const subjectRef = subject(target);
+  const linked = renderGitHubSubjectLink(subjectRef);
+  return text.includes(linked) ? text : text.replace(subjectRef, linked);
+}
 // GitHub dismisses a review in place. Preserve the migrated #1392 rule:
 // dismissal is final for that review ID, including late/omitted observations.
 function reviewChanged(review: GitHubReview, previous: Marker): boolean {
@@ -442,7 +447,8 @@ export class GitHubTrackingRuntime {
         identity: notification.identity, idempotencyKey: notification.id,
         ...(notification.wake ? { wake: { catId: record.target.catId } } : {}),
         payload: { provenance: { epistemicStatus: 'observation' }, elements: [
-          { elementId: notification.id, kind: 'text', payload: { text: notification.text } },
+          { elementId: notification.id, kind: 'text',
+            payload: { text: notificationTextWithSubjectLink(notification.text, record.target) } },
         ] },
       });
     }
