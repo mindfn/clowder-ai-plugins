@@ -11,7 +11,7 @@ import type {
 } from '../../model/index.js';
 import type { WaitRenewalInstruction } from '../ball-custody/wait-state-machine.js';
 import {
-  compareGitHubReviewSubmission, isGitHubReviewDecisionState, mergeReviewVerdicts, mergeSubmittedReviewStates,
+  latestGitHubReviewDecision, isGitHubReviewDecisionState, mergeReviewVerdicts, mergeSubmittedReviewStates,
 } from './GitHubReviewVerdicts.js';
 import type { GitHubWaitFacts } from './GitHubWaitPredicateCatalog.js';
 
@@ -57,11 +57,7 @@ function latestReviewDecision(previous: GitHubPrWaitBaseline, facts: GitHubWaitF
     };
   }
   const merged = mergeReviewVerdicts(retained, observed) ?? {};
-  return Object.entries(merged).map(([id, verdict]) => ({ ...verdict, id: Number(id) }))
-    .filter(review => review.commitId === headSha)
-    .filter(review => isGitHubReviewDecisionState(review.state))
-    .sort(compareGitHubReviewSubmission)
-    .at(-1)?.state;
+  return latestGitHubReviewDecision(merged, headSha);
 }
 
 function sameReviewStateMap(

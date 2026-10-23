@@ -34,6 +34,14 @@ export function compareGitHubReviewSubmission(
     ? leftTime - rightTime : left.id - right.id;
 }
 
+/** Select a decision from consumed evidence; missing rows and comment-only reviews do not revoke it. */
+export function latestGitHubReviewDecision(verdicts: GitHubReviewVerdicts | undefined, headSha: string): string | undefined {
+  return Object.entries(verdicts ?? {}).map(([id, verdict]) => ({ ...verdict, id: Number(id) }))
+    .filter(review => (review.commitId ?? headSha) === headSha && isGitHubReviewDecisionState(review.state))
+    .sort(compareGitHubReviewSubmission)
+    .at(-1)?.state;
+}
+
 type MutableVerdicts = Record<string, GitHubReviewVerdicts[string]>;
 type MutableSubmittedStates = Record<string, GitHubSubmittedReviewStates[string]>;
 

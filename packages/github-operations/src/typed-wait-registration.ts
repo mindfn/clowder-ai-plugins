@@ -15,7 +15,7 @@ import { automationGeneration } from './business/domains/github-signals/TaskAuto
 import type { GitHubWaitStorage } from './typed-wait-storage.js';
 import { lifecycleEvent } from './business/domains/github-signals/GitHubWaitLifecycleService.js';
 import {
-  mergeReviewVerdicts, mergeSubmittedReviewStates, reviewVerdictsOf, submittedReviewStatesOf,
+  latestGitHubReviewDecision, mergeReviewVerdicts, mergeSubmittedReviewStates, reviewVerdictsOf, submittedReviewStatesOf,
 } from './business/domains/github-signals/GitHubReviewVerdicts.js';
 import { registerPrTrackingInputSchema, registerIssueTrackingInputSchema } from './tracking-mcp-schemas.js';
 
@@ -198,6 +198,8 @@ function preserveSubmittedReviewFrontier(previous: AutomationState, planned: Aut
     mergeSubmittedReviewStates(previousReviewBaseline?.submittedReviewStates, collectedSubmittedReviewStates),
     plannedBaseline.review?.submittedReviewStates,
   );
+  const decision = latestGitHubReviewDecision(durableVerdicts, plannedBaseline.headSha);
+  const { decision: _discardedPlannedDecision, ...plannedReview } = plannedBaseline.review ?? {};
   const decisionCursor = Math.max(after.review?.lastDecisionCursor ?? 0,
     before.review?.lastDecisionCursor ?? 0, previousReviewBaseline?.decisionCursor ?? 0,
     plannedBaseline.review?.decisionCursor ?? 0,
@@ -211,8 +213,9 @@ function preserveSubmittedReviewFrontier(previous: AutomationState, planned: Aut
   const baseline = plannedBaseline.review ? {
     ...plannedBaseline,
     review: {
-      ...plannedBaseline.review,
+      ...plannedReview,
       decisionCursor, inlineCommentCursor, conversationCommentCursor,
+      ...(decision ? { decision } : {}),
       ...(durableVerdicts ? { verdicts: durableVerdicts } : {}),
       ...(durableSubmittedReviewStates ? { submittedReviewStates: durableSubmittedReviewStates } : {}),
     },

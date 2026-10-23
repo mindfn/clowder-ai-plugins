@@ -11,6 +11,34 @@ import {
 const head = 'a'.repeat(40), oldHead = 'b'.repeat(40);
 const blank: GitHubSnapshot = { state: 'open', headSha: head, ci: 'pending', comments: [], reviews: [], commentsComplete: true };
 
+for (const frontier of ['unknown', 'empty'] as const) {
+  test(`a durable legacy verdict cannot block a fresh correlated result with ${frontier} submitted frontier`, async () => {
+    const trigger = { id: 5, author: 'owner', body: '@codex review', commentType: 'conversation' as const,
+      createdAt: '2026-10-09T00:00:02Z' };
+    const older = { id: 10, author: 'human', state: 'APPROVED', commitId: head,
+      submittedAt: '2026-10-09T00:00:01Z' };
+    const result = { id: 11, author: 'cloud[bot]', state: 'COMMENTED', commitId: head,
+      submittedAt: '2026-10-09T00:00:03Z' };
+    const when: GitHubPrWaitPredicate[] = [{ kind: 'pr_review_result_available', triggerCommentId: trigger.id }];
+    const registered = await task({ ...blank, comments: [trigger], reviews: [older] }, when);
+    const automation = registered.automationState as PrAutomationState;
+    const baseline = automation.await!.baseline;
+    const tracked = { ...registered, automationState: { ...automation,
+      review: { ...automation.review, observedReviews: { '10': 'PENDING' } },
+      await: { ...automation.await!, baseline: { ...baseline,
+        review: { ...baseline.review!, submittedReviewStates: frontier === 'empty' ? {} : undefined } } },
+    } } as TaskItem;
+    const observed = waitObservation(tracked, { ...blank, comments: [trigger], reviews: [result] },
+      Date.parse('2026-10-09T00:00:04Z'), ['cloud[bot]']);
+    assert.deepEqual(matchGitHubWaitPredicates(when, tracked.automationState!.await!.baseline,
+      observed.observation.facts).map(match => match.sourceRef), ['review:11']);
+    const renewed = renewPrWaitBaseline(tracked.automationState!.await!.baseline as GitHubPrWaitBaseline,
+      observed.observation.collectorPatch as PrAutomationState, observed.observation.facts, 5000);
+    assert.deepEqual(matchGitHubWaitPredicates(when, renewed, observed.observation.facts), [],
+      'the delivered result is consumed exactly once');
+  });
+}
+
 test('an unrelated new PENDING id cannot replay an already consumed cloud result', async () => {
   const trigger = { id: 5, author: 'owner', body: '@codex review', commentType: 'conversation' as const,
     createdAt: '2026-10-09T00:00:00Z' };

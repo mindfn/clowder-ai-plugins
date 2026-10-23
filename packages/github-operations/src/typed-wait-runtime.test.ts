@@ -43,6 +43,39 @@ function fixture() {
 }
 const input = { registrationId: 'registration', repoFullName: 'owner/repo', prNumber: 1 };
 
+for (const returned of ['none', 'older-only', 'pending', 'dismissed', 'newer'] as const) {
+  test(`same-HEAD registration restores the consumed decision before notification: ${returned}`, async () => {
+    const f = fixture();
+    const older = { id: 10, author: 'maintainer', state: 'APPROVED', commitId: f.snapshot().headSha,
+      submittedAt: '2026-10-09T00:00:01Z' };
+    const latest = { ...older, id: 11, state: 'CHANGES_REQUESTED', submittedAt: '2026-10-09T00:00:02Z' };
+    const newer = { ...older, id: 12, submittedAt: '2026-10-09T00:00:03Z' };
+    const when = [{ kind: 'pr_review_decision_changed' as const }];
+    f.setSnapshot({ ...f.snapshot(), reviews: [older, latest] });
+    const runtime = new TypedWaitRuntime(f.options);
+    try {
+      const tracked = await runtime.registerPr({ ...input, when }, f.caller);
+      const returnedReviews = returned === 'none' ? [] : returned === 'older-only' ? [older] :
+        returned === 'newer' ? [older, latest, newer] :
+          [older, { ...latest, state: returned === 'pending' ? 'PENDING' : 'DISMISSED' }];
+      f.setSnapshot({ ...f.snapshot(), reviews: returnedReviews });
+      const replacement = await runtime.registerPr({ ...input, when, registrationId: returned }, f.caller);
+      const baseline = replacement.automationState!.await!.baseline;
+      assert.ok('headSha' in baseline);
+      const expected = returned === 'dismissed' || returned === 'newer' ? 'APPROVED' : 'CHANGES_REQUESTED';
+      assert.equal(baseline.review?.decision, expected, 'registration restores the decision before any subsequent poll');
+      f.setSnapshot({ ...f.snapshot(), reviews: [...returnedReviews,
+        { ...older, id: 13, state: 'CHANGES_REQUESTED', submittedAt: '2026-10-09T00:00:04Z' }] });
+      await runtime.poll('pr');
+      assert.equal(f.sent.length, 1);
+      assert.ok(JSON.stringify(f.sent[0]).includes(`review ${expected} → CHANGES_REQUESTED`));
+      await runtime.poll('pr');
+      assert.equal(f.sent.length, 1);
+      assert.equal((await runtime.store.get(tracked.id))?.automationState?.await?.generation, 3);
+    } finally { await runtime.stop(); }
+  });
+}
+
 for (const scenario of ['legacy-new-head', 'legacy-same-head', 'explicit-new-head', 'completed-new-head'] as const) {
   test(`re-registration keeps consumed verdicts on their original HEAD: ${scenario}`, async () => {
     const f = fixture();
