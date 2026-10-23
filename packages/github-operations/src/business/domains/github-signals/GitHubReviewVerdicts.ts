@@ -16,6 +16,12 @@ function isVerdictState(state: unknown): state is GitHubReviewVerdictState {
   return typeof state === 'string' && VERDICT_STATES.has(state);
 }
 
+/** States that establish a review decision. COMMENTED carries review content; DISMISSED revokes a
+ * previously held verdict and is matched through the verdict-state path below. */
+export function isGitHubReviewDecisionState(state: unknown): state is 'APPROVED' | 'CHANGES_REQUESTED' {
+  return state === 'APPROVED' || state === 'CHANGES_REQUESTED';
+}
+
 type MutableVerdicts = Record<string, GitHubReviewVerdicts[string]>;
 
 /** Every review that holds or held a verdict. Comment-only and pending reviews carry none. */

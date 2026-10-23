@@ -2,7 +2,7 @@ import type { GitHubSnapshot, GitHubTarget } from './tracking-runtime.js';
 import type { GitHubPrWaitPredicate, TaskItem, PrAutomationState, IssueWaitAutomationState } from './business/model/index.js';
 import { readGitHubWaitBaseline } from './business/domains/github-signals/GitHubWaitBaselineReader.js';
 import { readGitHubIssueWaitBaseline } from './business/domains/github-signals/GitHubIssueWaitBaselineReader.js';
-import { reviewVerdictsOf } from './business/domains/github-signals/GitHubReviewVerdicts.js';
+import { isGitHubReviewDecisionState, reviewVerdictsOf } from './business/domains/github-signals/GitHubReviewVerdicts.js';
 import type { GitHubWaitObservation } from './business/domains/github-signals/GitHubWaitLifecycleService.js';
 import { classifyGitHubReviewLoopBrake } from './business/domains/github-signals/github-wait-renderer.js';
 import { classifyExternalCloudReview } from './business/domains/community/external-review/external-cloud-review-classifier.js';
@@ -79,10 +79,41 @@ export function waitObservation(task: TaskItem, snapshot: GitHubSnapshot, now: n
   const baseline = task.automationState?.await?.baseline;
   const before = baseline && 'headSha' in baseline ? baseline.review : undefined;
   const seen = (task.automationState as PrAutomationState | undefined)?.review?.observedReviews ?? {};
-  const reviews = snapshot.reviews.map(row => seen[String(row.id)] === 'DISMISSED' || before?.verdicts?.[String(row.id)]?.state === 'DISMISSED'
-    ? { ...row, state: 'DISMISSED' } : row);
+  const reviews = snapshot.reviews.map(row => {
+    const observedState = seen[String(row.id)];
+    const baselineState = before?.verdicts?.[String(row.id)]?.state;
+    if (observedState === 'DISMISSED' || baselineState === 'DISMISSED') return { ...row, state: 'DISMISSED' };
+    // Provider pages can briefly regress a submitted review to its earlier PENDING shape. Once this
+    // collector has observed a submitted state, PENDING is no longer newer evidence for that id.
+    // Keep COMMENTED here as well: an explicitly correlated cloud result is submitted evidence even
+    // though it is intentionally not a PR decision.
+    if (row.state === 'PENDING' && observedState !== undefined && observedState !== 'PENDING') {
+      return { ...row, state: observedState };
+    }
+    return row;
+  });
   const currentReviews = reviews.filter(row => row.commitId === snapshot.headSha);
+  const stateChanges = reviews.flatMap(row => {
+    const previousState = seen[String(row.id)];
+    return previousState !== undefined && previousState !== row.state
+      ? [{ id: row.id, previousState, state: row.state, author: row.author,
+          currentHead: row.commitId === snapshot.headSha }]
+      : [];
+  });
+  // GitHub creates COMMENTED reviews as containers for inline replies. They advance the review
+  // cursor and may prove an explicitly requested cloud result, but they do not hold a PR decision.
+  // A previously observed DISMISSED review is an in-place verdict transition matched through
+  // `verdicts`. A review first observed after it was already dismissed still has a new id, though,
+  // so keep that one reportable instead of advancing the cursor past an event nobody can emit.
+  const currentDecisions = currentReviews.filter(row => isGitHubReviewDecisionState(row.state) ||
+    (row.state === 'DISMISSED' && row.id > (before?.decisionCursor ?? 0) && !before?.verdicts?.[String(row.id)]));
   const latest = [...currentReviews].sort((a, b) => a.id - b.id).at(-1);
+  const unanchoredResult = before?.resultTriggerCommentId === undefined
+    ? [...currentReviews].filter(row => isGitHubReviewDecisionState(row.state) &&
+        (row.id > (before?.decisionCursor ?? 0) || stateChanges.some(change =>
+          change.id === row.id && change.previousState === 'PENDING' && change.currentHead)))
+      .sort((a, b) => a.id - b.id).at(-1)
+    : undefined;
   const trigger = snapshot.comments.find(row => row.commentType === 'conversation' && row.id === before?.resultTriggerCommentId);
   const requestedAt = Date.parse(trigger?.createdAt ?? '');
   const completeReviews = [...Object.keys(seen), ...Object.keys(before?.verdicts ?? {})].every(id => reviews.some(row => String(row.id) === id));
@@ -101,13 +132,13 @@ export function waitObservation(task: TaskItem, snapshot: GitHubSnapshot, now: n
       facts: { headSha: snapshot.headSha,
         review: {
           decisionCursor: Math.max(before?.decisionCursor ?? 0, maxId(currentReviews)), headDecisionCursor: maxId(currentReviews),
-          decision: evidence?.decision ?? latest?.state, reviewer: evidence?.reviewer ?? latest?.author,
-          decisions: currentReviews,
+          decision: evidence?.decision ?? unanchoredResult?.state ?? latest?.state,
+          reviewer: evidence?.reviewer ?? unanchoredResult?.author ?? latest?.author,
+          decisions: currentDecisions, stateChanges,
           verdicts: reviewVerdictsOf(reviews), threads: snapshot.reviewThreads, comments,
           ...(evidence ? { resultTriggerCommentId: evidence.triggerCommentId, resultSourceRef: evidence.sourceRef,
             resultConversationCommentCursor: evidence.conversationCommentCursor } :
-            before?.resultTriggerCommentId === undefined && latest && latest.id > (before?.decisionCursor ?? 0)
-              ? { resultSourceRef: `review:${latest.id}` } : {}),
+            unanchoredResult ? { resultSourceRef: `review:${unanchoredResult.id}` } : {}),
         },
         ci: { bucket: snapshot.ci, fingerprint: `${snapshot.headSha}:${snapshot.ci}`, blockerCount: snapshot.ciBlockerCount ?? 0 },
         conflict: { mergeState: snapshot.mergeState ?? 'UNKNOWN' },
