@@ -447,6 +447,16 @@ export type GitHubReviewVerdicts = Readonly<
   Record<string, { readonly state: GitHubReviewVerdictState; readonly author?: string }>
 >;
 
+/** A submitted review can be a formal verdict, a comment-only review, or a dismissal. Unlike the
+ * raw id cursor this records whether that submitted state was already consumed by this tracking
+ * lineage, including COMMENTED cloud results that intentionally are not decisions. */
+export type GitHubSubmittedReviewState = GitHubReviewVerdictState | 'COMMENTED';
+
+/** Keyed by review id. Absent only on tracking records written before this frontier existed. */
+export type GitHubSubmittedReviewStates = Readonly<
+  Record<string, { readonly state: GitHubSubmittedReviewState; readonly author?: string }>
+>;
+
 export interface GitHubPrWaitBaseline {
   readonly capturedAt: number;
   readonly headSha: string;
@@ -464,6 +474,8 @@ export interface GitHubPrWaitBaseline {
      * existed: those adopt the verdicts of their first review observation.
      */
     readonly verdicts?: GitHubReviewVerdicts;
+    /** Submitted-result consumption frontier, separate from formal review-decision semantics. */
+    readonly submittedReviewStates?: GitHubSubmittedReviewStates;
   };
   readonly ci?: {
     readonly bucket: GitHubCiBaselineBucket;

@@ -4,7 +4,9 @@ import type {
   GitHubReviewThreadBaseline,
   PrAutomationState,
 } from '../../model/index.js';
-import { isGitHubReviewDecisionState, reviewVerdictsOf } from './GitHubReviewVerdicts.js';
+import {
+  isGitHubReviewDecisionState, reviewVerdictsOf, submittedReviewStatesOf,
+} from './GitHubReviewVerdicts.js';
 
 interface GithubIdItem {
   readonly id?: unknown;
@@ -96,6 +98,9 @@ export async function readGitHubWaitBaseline(
   const verdicts = reviewVerdictsOf(
     reviews.map((review) => ({ id: review.id, state: review.state, author: review.user?.login })),
   );
+  const submittedReviewStates = submittedReviewStatesOf(
+    reviews.map((review) => ({ id: review.id, state: review.state, author: review.user?.login })),
+  );
   const latestReview = [...reviews]
     .filter((review): review is GithubReviewItem & { id: number } =>
       typeof review.id === 'number' && isGitHubReviewDecisionState(review.state))
@@ -118,6 +123,7 @@ export async function readGitHubWaitBaseline(
         decisionCursor,
         ...(latestReview?.state ? { decision: latestReview.state } : {}),
         verdicts,
+        submittedReviewStates,
         ...(resultTriggerCommentId !== undefined ? { resultTriggerCommentId, resultTriggerHeadSha: ci.headSha } : {}),
         ...(threads.length > 0 ? { threads } : {}),
       }

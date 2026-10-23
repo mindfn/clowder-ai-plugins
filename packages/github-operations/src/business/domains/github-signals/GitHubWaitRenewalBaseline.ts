@@ -5,11 +5,14 @@ import type {
   GitHubIssueWaitBaseline,
   GitHubPrWaitBaseline,
   GitHubReviewVerdicts,
+  GitHubSubmittedReviewStates,
   IssueWaitAutomationState,
   PrAutomationState,
 } from '../../model/index.js';
 import type { WaitRenewalInstruction } from '../ball-custody/wait-state-machine.js';
-import { isGitHubReviewDecisionState, mergeReviewVerdicts } from './GitHubReviewVerdicts.js';
+import {
+  isGitHubReviewDecisionState, mergeReviewVerdicts, mergeSubmittedReviewStates,
+} from './GitHubReviewVerdicts.js';
 import type { GitHubWaitFacts } from './GitHubWaitPredicateCatalog.js';
 
 /**
@@ -86,6 +89,7 @@ export function renewPrWaitBaseline(
         ...(observedDecision ? { decision: observedDecision } : {}),
         ...(facts.review?.threads && !headChanged ? { threads: facts.review.threads } : {}),
         ...renewVerdicts(previousReview.verdicts, facts),
+        ...renewSubmittedReviewStates(previousReview.submittedReviewStates, facts),
       }
     : undefined;
 
@@ -115,6 +119,14 @@ function renewVerdicts(
 ): { readonly verdicts?: GitHubReviewVerdicts } {
   const verdicts = mergeReviewVerdicts(seen, facts.review?.verdicts);
   return verdicts ? { verdicts } : {};
+}
+
+function renewSubmittedReviewStates(
+  seen: GitHubSubmittedReviewStates | undefined,
+  facts: GitHubWaitFacts,
+): { readonly submittedReviewStates?: GitHubSubmittedReviewStates } {
+  const submittedReviewStates = mergeSubmittedReviewStates(seen, facts.review?.submittedReviewStates);
+  return submittedReviewStates ? { submittedReviewStates } : {};
 }
 
 function renewCi(
@@ -178,10 +190,17 @@ export function followPushedHead(
  */
 export function adoptReviewVerdicts(active: AwaitStateV1, facts: GitHubWaitFacts): GitHubPrWaitBaseline | null {
   const baseline = active.baseline;
-  if (!('headSha' in baseline) || !baseline.review || baseline.review.verdicts || !facts.review?.verdicts) {
-    return null;
-  }
-  return { ...baseline, review: { ...baseline.review, verdicts: facts.review.verdicts } };
+  if (!('headSha' in baseline) || !baseline.review || !facts.review) return null;
+  const verdicts = baseline.review.verdicts === undefined ? facts.review.verdicts : undefined;
+  const submittedReviewStates = baseline.review.submittedReviewStates === undefined
+    ? facts.review.submittedReviewStates
+    : undefined;
+  if (verdicts === undefined && submittedReviewStates === undefined) return null;
+  return { ...baseline, review: {
+    ...baseline.review,
+    ...(verdicts !== undefined ? { verdicts } : {}),
+    ...(submittedReviewStates !== undefined ? { submittedReviewStates } : {}),
+  } };
 }
 
 /**

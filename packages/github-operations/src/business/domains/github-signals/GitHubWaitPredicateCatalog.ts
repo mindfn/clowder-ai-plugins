@@ -4,6 +4,7 @@ import type {
   GitHubIssueWaitPredicate,
   GitHubReviewThreadBaseline,
   GitHubReviewVerdicts,
+  GitHubSubmittedReviewStates,
   GitHubWaitBaseline,
   GitHubWaitMatchedDelta,
   GitHubWaitPredicate,
@@ -184,6 +185,8 @@ export interface GitHubWaitFacts {
     readonly comments?: readonly GitHubObservedComment[];
     /** #1392: the current state of every review that holds or held a verdict, old ids included. */
     readonly verdicts?: GitHubReviewVerdicts;
+    /** Submitted-result consumption frontier; absent only on legacy wait baselines. */
+    readonly submittedReviewStates?: GitHubSubmittedReviewStates;
   };
   readonly ci?: {
     readonly bucket: GitHubCiBaselineBucket;
@@ -398,7 +401,9 @@ export function matchGitHubWaitPredicates(
         const before = baseline.review;
         const after = current.review;
         const resultReviewId = /^review:([1-9][0-9]*)$/.exec(after?.resultSourceRef ?? '')?.[1];
-        const submittedSameIdResult = resultReviewId !== undefined && before?.verdicts?.[resultReviewId] === undefined &&
+        const submittedSameIdResult = resultReviewId !== undefined &&
+          before?.submittedReviewStates !== undefined &&
+          before.submittedReviewStates[resultReviewId] === undefined &&
           after?.stateChanges?.some(change =>
           change.id === Number(resultReviewId) && change.previousState === 'PENDING' && change.currentHead &&
           change.state === after.decision) === true;

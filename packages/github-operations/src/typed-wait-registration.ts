@@ -14,7 +14,9 @@ import { transitionWaitState } from './business/domains/ball-custody/wait-state-
 import { automationGeneration } from './business/domains/github-signals/TaskAutomationState.js';
 import type { GitHubWaitStorage } from './typed-wait-storage.js';
 import { lifecycleEvent } from './business/domains/github-signals/GitHubWaitLifecycleService.js';
-import { mergeReviewVerdicts, reviewVerdictsOf } from './business/domains/github-signals/GitHubReviewVerdicts.js';
+import {
+  mergeReviewVerdicts, mergeSubmittedReviewStates, reviewVerdictsOf, submittedReviewStatesOf,
+} from './business/domains/github-signals/GitHubReviewVerdicts.js';
 import { registerPrTrackingInputSchema, registerIssueTrackingInputSchema } from './tracking-mcp-schemas.js';
 
 export class TrackingRegistrationError extends Error {
@@ -158,8 +160,7 @@ function preserveSubmittedReviewFrontier(previous: AutomationState, planned: Aut
   const after = planned as PrAutomationState;
   const previousBaseline = before.await?.baseline;
   const plannedBaseline = after.await?.baseline;
-  if (!after.await || !previousBaseline || !plannedBaseline ||
-    !('headSha' in previousBaseline) || !('headSha' in plannedBaseline)) return planned;
+  if (!after.await || !plannedBaseline || !('headSha' in plannedBaseline)) return planned;
 
   const previousObserved = before.review?.observedReviews ?? {};
   const plannedObserved = after.review?.observedReviews ?? {};
@@ -174,15 +175,26 @@ function preserveSubmittedReviewFrontier(previous: AutomationState, planned: Aut
   const collectedVerdicts = reviewVerdictsOf(Object.entries(previousObserved).map(([id, state]) => ({
     id: Number(id), state,
   })));
+  const collectedSubmittedReviewStates = submittedReviewStatesOf(Object.entries(previousObserved).map(([id, state]) => ({
+    id: Number(id), state,
+  })));
+  const previousReviewBaseline = previousBaseline && 'headSha' in previousBaseline
+    ? previousBaseline.review
+    : undefined;
   const durableVerdicts = mergeReviewVerdicts(
-    mergeReviewVerdicts(previousBaseline.review?.verdicts, collectedVerdicts),
+    mergeReviewVerdicts(previousReviewBaseline?.verdicts, collectedVerdicts),
     plannedBaseline.review?.verdicts,
+  );
+  const durableSubmittedReviewStates = mergeSubmittedReviewStates(
+    mergeSubmittedReviewStates(previousReviewBaseline?.submittedReviewStates, collectedSubmittedReviewStates),
+    plannedBaseline.review?.submittedReviewStates,
   );
   const baseline = plannedBaseline.review ? {
     ...plannedBaseline,
     review: {
       ...plannedBaseline.review,
       ...(durableVerdicts ? { verdicts: durableVerdicts } : {}),
+      ...(durableSubmittedReviewStates ? { submittedReviewStates: durableSubmittedReviewStates } : {}),
     },
   } : plannedBaseline;
   return {
