@@ -48,9 +48,7 @@ const messagingSchema = JSON.parse(
 ) as object & { $id: string };
 const behaviorSchema = JSON.parse(
   readFileSync(new URL('../schemas/behavior-fixture.schema.json', import.meta.url), 'utf8'),
-) as {
-  $defs: { CapabilityName: unknown };
-};
+) as object;
 const behaviorFixture = JSON.parse(
   readFileSync(
     new URL('../../fixtures/behavior/messaging/adversarial-invariants.json', import.meta.url),

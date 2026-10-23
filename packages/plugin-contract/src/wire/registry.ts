@@ -1,7 +1,7 @@
 /**
  * Current 11-method standalone wire registry.
  * Module author hooks are invoked directly by the module carrier; they are
- * not additional stdio methods. Row metadata records direction, capability,
+ * not additional stdio methods. Row metadata records direction,
  * frame bounds, readiness and settlement keys for the current wire surface.
  */
 
@@ -10,7 +10,7 @@ import { LIFECYCLE_ROW_ENCODED_BYTE_BOUNDS } from './lifecycle-byte-bounds.js';
 import { MESSAGING_ROW_ENCODED_BYTE_BOUNDS } from './messaging-byte-bounds.js';
 
 // ---------------------------------------------------------------------------
-// Direction + Grant types
+// Method direction
 // ---------------------------------------------------------------------------
 
 /** Message direction on the wire. */
@@ -66,8 +66,7 @@ export interface UnreadyRegistryRow extends RegistryRow {
 
 /**
  * The exact 11 production method names, in registry order.
- * No production method exists for fixture setup/observe, grant presets,
- * revocation, permission-matrix inspection, or replay deletion.
+ * Fixture setup/observe and replay deletion are local adapter operations.
  */
 export const WIRE_METHOD_NAMES = [
   'broker.hello',

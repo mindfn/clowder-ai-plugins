@@ -45,6 +45,23 @@ for (const behaviorCase of fixture.cases) {
   });
 }
 
+test('message delivery rejects an envelope outside its thread handle without side effects', async () => {
+  const delivery = fixture.cases.find(({ id }) => id === 'on-message-delivery');
+  assert.ok(delivery?.when.operation === 'deliverOnMessage');
+  const adapter = new MessagingLoopbackAdapter();
+  await adapter.setup(structuredClone(delivery.given));
+
+  assert.deepEqual(await adapter.execute({
+    operation: 'deliverOnMessage',
+    input: {
+      ...delivery.when.input,
+      envelope: { ...delivery.when.input.envelope, threadId: 'another-thread' },
+    },
+  }), { status: 'error', errorCode: 'VALIDATION' });
+  assert.deepEqual(await adapter.observe('messages'), []);
+  assert.deepEqual(await adapter.observe('output_events'), []);
+});
+
 test('changing every signed error code is detected by the executor', async () => {
   const errorCases = fixture.cases.filter(({ expect }) => expect.status === 'error');
   assert.ok(errorCases.length > 0);
