@@ -596,7 +596,6 @@ features:
       - { type: schedule, id: issue-tracking }
       - { type: schedule, id: repo-comment-poll }
       - { type: schedule, id: community-reconciler }
-    capabilities: []
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js

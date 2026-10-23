@@ -44,8 +44,6 @@ test('ships the actual builtin record module and declared native MCP', async () 
       dataDirectory: 'feishu-meeting-intake',
     });
     assert.equal(result.manifest.signals, undefined);
-    assert.equal(result.manifest.features[0]?.capabilities.some(capability=>String(capability)==='events.publish'), false);
-    assert.ok(result.manifest.features[0]?.capabilities.includes('messaging.send'));
     const native = result.manifest.contributions?.find(item => item.type === 'mcp');
     assert.deepEqual(native && 'actions' in native ? native.actions : undefined, [{ method: 'meeting.records.list' }, { method: 'meeting.records.read' }]);
   }

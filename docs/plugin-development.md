@@ -11,7 +11,7 @@ created: 2026-10-17
 
 ## 1. 身份与 Host client
 
-Host 在安装时掌握 pluginId、安装实例、包版本／摘要和声明，并在加载时建立该实例的 client／capability object。`context.pluginInstanceId` 与 `context.featureId` 由 Host 注入，仅用于归属；业务参数不另提交一份身份或签名。外部平台与线程、消息、成员的业务映射由插件保存，不成为第二份 Host 成员或消息目录。
+Host 在安装时掌握 pluginId、安装实例、包版本／摘要和声明，并在加载时建立该实例的 client object。`context.pluginInstanceId` 与 `context.featureId` 由 Host 注入，仅用于归属；业务参数不另提交一份身份或签名。外部平台与线程、消息、成员的业务映射由插件保存，不成为第二份 Host 成员或消息目录。
 
 Host 调用 action 时，将 `PluginActionContext` 作为 handler 第二参数传入：`catId/threadId/userId/invocationId/originTriggerMessageId?/source?/assertCurrent()`；owner 设置操作或 HTTP 请求使用第三参数 `PluginHostActionContext`，包含其调用类别、实例、请求事实、`signal/assertCurrent()`。输入正文不是身份来源。线程与消息接口遵循普通用户资源规则、调用上下文和实例存活；插件绑定不是额外的资源可见性规则。
 
@@ -19,7 +19,7 @@ Host 调用 action 时，将 `PluginActionContext` 作为 handler 第二参数�
 
 调用取消由实际载体的 `AbortSignal`、action 的 `assertCurrent()`、feature 撤销共同完成。未提供 signal 参数的方法依靠实例撤销／Host 方法检查；普通写操作不会因结果丢失自动重试，拒收晚到结果不等于已经发生的写入被撤销。`config/secrets.get` 每次读取当前有效配置；配置保存保持启用意图，运行实例通过 `configRefresh` 更新实际资源。
 
-SDK 公开方法是接口边界，不再按插件 ID 或 feature 能力数组复制一张 API 授权表。旧 manifest／binding 的 capabilities、grantedCapabilities 等字段保留既有 ABI 形状，不据此拒绝公开端口；普通功能与方法声明、包完整性、实例 token、owner／线程可见性及启用禁用检查保持。Host 侧的对应清理须兼容已安装旧包，不以升级插件为恢复前提。
+SDK 公开方法是接口边界，不再按插件 ID 或 feature 能力数组复制一张 API 授权表。新 manifest 与 SDK 绑定不含 API 权限清单；旧 manifest 字段在原解析入口忽略，旧握手额外字段只在 hello 兼容边界读取后丢弃，不回流新模型；普通功能与方法声明、包完整性、实例 token、owner／线程可见性及启用禁用检查保持。Host 侧的对应清理须兼容已安装旧包，不以升级插件为恢复前提。
 
 ## 2. Plugin → Host
 

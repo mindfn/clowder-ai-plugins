@@ -29,9 +29,7 @@ const SEND_INPUT = {
   },
 } as const;
 
-function activated(
-  grants: ActivatedHandshakeState['binding']['effectiveGrants'] = [],
-): ActivatedHandshakeState {
+function activated(): ActivatedHandshakeState {
   return {
     phase: 'activated',
     candidate: {
@@ -47,8 +45,8 @@ function activated(
       wireVersion: '0.1.0',
       pluginInstanceId: 'plugin-instance-1',
       brokerSessionId: 'broker-session-1',
-      grantRevision: 1,
-      effectiveGrants: grants,
+
+
       bindingNonce: 'binding-nonce-1',
     },
     activation: { bindingNonce: 'binding-nonce-1' },
@@ -132,7 +130,7 @@ test('rejects when session, liveness, input, or Host result is invalid', async (
   });
 
   await assert.rejects(client.send(SEND_INPUT), error => assertClientError(error, 'SESSION_NOT_ACTIVATED'));
-  state = activated([]);
+  state = activated();
   live = false;
   await assert.rejects(client.send(SEND_INPUT), error => assertClientError(error, 'SESSION_NOT_LIVE'));
   live = true;

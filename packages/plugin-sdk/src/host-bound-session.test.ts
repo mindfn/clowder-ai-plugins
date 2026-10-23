@@ -20,8 +20,8 @@ const binding = {
   ...claims,
   pluginInstanceId: 'telegram-1',
   brokerSessionId: 'broker-1',
-  grantRevision: 1,
-  effectiveGrants: [] as const,
+
+
   bindingNonce: 'nonce-1',
 };
 

@@ -38,7 +38,7 @@ async function fixture(get?: (id: string) => Promise<unknown>) {
     contractVersion: "0.1.0",
     name: "Read proof",
     runtime: { transport: "builtin", entrypoint: "dist/index.js" },
-    features: [{ id: "read", name: "Read", resources: [], capabilities: [] }],
+    features: [{ id: "read", name: "Read", resources: [], }],
   };
   const module = definePluginModule((input) =>
     definePlugin({

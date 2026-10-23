@@ -696,10 +696,6 @@ test('packed public packages install and import in a fresh npm consumer', async 
       transport: 'builtin',
       entrypoint: 'dist/plugin-entrypoint.js',
     });
-    assert.deepEqual(
-      enterpriseManifest.features.flatMap((feature) => feature.capabilities),
-      ['plugin.config.read'],
-    );
     const enterpriseEntrypoint = installedSdk.requirePluginModuleEntrypoint(
       (await import(pathToFileURL(join(enterpriseRoot, enterpriseManifest.runtime.entrypoint)).href)).default,
     );

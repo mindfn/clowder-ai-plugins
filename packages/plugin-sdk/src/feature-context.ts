@@ -9,7 +9,6 @@ import { createMemberClient, type PluginMemberHost } from './members.js';
 import type { PluginHostActionContext } from './host-action-context.js';
 import {
   validateManifest,
-  type Capability,
   type CloudConversationHostContribution,
   type ContentEditorProviderContribution,
   type DirectToolContribution,
@@ -45,8 +44,6 @@ export interface FeatureBinding {
   readonly packageRevision: string;
   readonly integrityEpoch: number;
   readonly activationRevision: number;
-  readonly grantRevision: number;
-  readonly grantedCapabilities: readonly Capability[];
   /**
    * Absolute path of the Host-provisioned data directory. Present only when the
    * owning instance starts and the manifest
