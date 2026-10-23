@@ -80,7 +80,7 @@ packages/my-plugin/       # 独立项目也可直接放在项目根
 - `pluginId` 是稳定身份；升级保持不变。`plugin.yaml.version` 与 `package.json.version` 保持一致。
 - `plugin.yaml` 只写对应 Contract 支持的字段。管理信息放 README 或 package.json 标准字段，不自造 manifest 属性。
 - `package.json.files` 包含声明、编译入口、资源和实际需要的文件；本地工作区能运行不能代替打包后验证。
-- 配置、权限、引导和操作只声明实际需要的内容；能力请求仍需 Host 授权。
+- 功能、配置、引导和操作只声明实际需要的内容；公开接口经既有 SDK、实例与调用上下文使用。
 - README 写明支持范围、维护方式、构建命令、验证过的 Host/SDK 与升级注意事项。
 
 ### 描述与 README 的语言
@@ -99,7 +99,7 @@ packages/my-plugin/       # 独立项目也可直接放在项目根
 
 构建后在 Hub 选择「从本地目录安装」，选含 plugin.yaml 与 package.json 的具体插件根目录。至少验证：发现/名称版本、安装、配置保存、启用实际功能、禁用后停止、重新启用；修改同一 pluginId 的版本并重装，核配置与数据保留。源码修改不会热更新已经安装的制品。
 
-提交 PR 时说明实际变动、版本与依赖、所需权限、安装测试结果及剩余限制。官方仓的发布与审查门禁仍以 [CONTRIBUTING](../CONTRIBUTING.md) 为准。
+提交 PR 时说明实际变动、版本与依赖、配置要求、安装测试结果及剩余限制。官方仓的发布与审查门禁仍以 [CONTRIBUTING](../CONTRIBUTING.md) 为准。
 
 ### 验证归档与安装者说明
 
