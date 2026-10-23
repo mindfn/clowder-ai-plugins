@@ -151,8 +151,8 @@ test('official feishu artifact installs its full dependency chain through a regi
 
   await npmCi(consumer, caches[0]);
 
-  assert.equal(await installedVersion(consumer, '@clowder-ai/plugin-contract'), '0.2.0');
-  assert.equal(await installedVersion(consumer, '@clowder-ai/plugin-sdk'), '0.2.0-beta.24');
+  assert.equal(await installedVersion(consumer, '@clowder-ai/plugin-contract'), '0.3.0');
+  assert.equal(await installedVersion(consumer, '@clowder-ai/plugin-sdk'), '0.3.0-beta.1');
   const contract = packs.get('@clowder-ai/plugin-contract');
   const shrinkwrap = JSON.parse(await readFile(join(consumer, 'npm-shrinkwrap.json'), 'utf8'));
   assert.equal(
