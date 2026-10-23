@@ -29,7 +29,6 @@ export interface ConnectorDeliveryInput {
     readonly connector: string;
     readonly label: string;
     readonly icon: string;
-    readonly url: string;
     readonly meta: Readonly<Record<string, unknown>>;
   };
   readonly extra?: Readonly<Record<string, unknown>>;
@@ -53,7 +52,6 @@ export function deliverConnectorMessage(deps: ConnectorDeliveryDeps, input: Conn
       { elementId, kind: 'text', payload: { text: input.content } },
     ] },
     wake: { catId: input.catId },
-    url: input.source.url,
     meta: { ...input.extra, ...input.source.meta },
   });
 }

@@ -206,10 +206,12 @@ test('activation without tracking does no IO; registered comments use SDK messag
   ] });
   await runtime.poll('review-feedback');
   assert.equal(f.messages.length, 1);
-  const message = f.messages[0] as { threadId: string; input: { wake: { catId: string }; payload: unknown } };
+  const message = f.messages[0] as { threadId: string; input: { wake: { catId: string }; payload: unknown; url?: string } };
   assert.equal(message.threadId, 'thread-1');
   assert.deepEqual(message.input.wake, { catId: 'cat-1' });
   assert.match(JSON.stringify(message.input.payload), /maintainer/);
+  assert.match(JSON.stringify(message.input.payload), /\[example\/project#12\]\(https:\/\/github\.com\/example\/project\/pull\/12\)/u);
+  assert.equal(message.input.url, undefined);
   assert.doesNotMatch(JSON.stringify(message.input), /waitContinuationCarrier|ownerFence|parser/);
   await runtime.poll('review-feedback');
   assert.equal(f.messages.length, 1);

@@ -442,9 +442,6 @@ export class GitHubWaitLifecycleService {
         connector: 'github-wait',
         label: 'GitHub Wait',
         icon: 'github',
-        url: outcome.subjectRef.startsWith('pr:')
-          ? `https://github.com/${outcome.subjectRef.slice('pr:'.length).replace('#', '/pull/')}`
-          : `https://github.com/${outcome.subjectRef.slice('issue:'.length).replace('#', '/issues/')}`,
         meta: {},
       },
       ...(deliveryExtra ? { extra: deliveryExtra } : {}),
