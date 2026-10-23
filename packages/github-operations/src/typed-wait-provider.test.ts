@@ -109,6 +109,26 @@ test('a persisted legacy COMMENTED decision baseline converges on the next forma
     'the legacy polluted baseline converges without replaying the approval');
 });
 
+test('a same-id pending submission participates in the fourth-review loop brake', async () => {
+  const prior = Array.from({ length: 3 }, (_, index) => ({
+    id: index + 1,
+    author: 'maintainer',
+    state: 'CHANGES_REQUESTED',
+    commitId: head,
+  }));
+  const pending = { id: 4, author: 'maintainer', state: 'PENDING', commitId: head };
+  const registered = await task({ ...blank, authorLogin: 'owner', reviews: [...prior, pending] }, [
+    { kind: 'pr_review_decision_changed' },
+  ]);
+  const observed = waitObservation(registered, {
+    ...blank,
+    authorLogin: 'owner',
+    reviews: [...prior, { ...pending, state: 'CHANGES_REQUESTED' }],
+  }, 7500, []);
+
+  assert.equal(observed.observation.reviewLoopBrake?.kind, 'pause_once');
+});
+
 test('a newly observed review dismissed between polls remains reportable', async () => {
   const when: GitHubPrWaitPredicate[] = [{ kind: 'pr_review_decision_changed' }];
   const registered = await task(blank, when);

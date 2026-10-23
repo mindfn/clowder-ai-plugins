@@ -125,6 +125,10 @@ export function waitObservation(task: TaskItem, snapshot: GitHubSnapshot, now: n
   }) : undefined;
   const evidence = classification?.evidence;
   const newReviews = currentReviews.filter(row => row.id > (before?.decisionCursor ?? 0));
+  const submittedSameIdReviewIds = stateChanges
+    .filter(change => change.previousState === 'PENDING' && change.currentHead && isGitHubReviewDecisionState(change.state))
+    .map(change => change.id);
+  const newDecisionReviewIds = [...new Set([...newReviews.map(row => row.id), ...submittedSameIdReviewIds])];
   const { cloudObservation: _ignored, ...raw } = snapshot;
   return { snapshot: { ...raw, reviews, ...(classification?.observation ? { cloudObservation: classification.observation } : {}) },
     observation: {
@@ -152,7 +156,7 @@ export function waitObservation(task: TaskItem, snapshot: GitHubSnapshot, now: n
         conflict: { mergeState: snapshot.mergeState ?? 'UNKNOWN' },
       },
       ...(snapshot.state !== 'open' ? { subjectState: snapshot.state } : {}),
-      reviewLoopBrake: classifyGitHubReviewLoopBrake(reviews, newReviews.map(row => row.id), snapshot.authorLogin),
+      reviewLoopBrake: classifyGitHubReviewLoopBrake(reviews, newDecisionReviewIds, snapshot.authorLogin),
     },
   };
 }
