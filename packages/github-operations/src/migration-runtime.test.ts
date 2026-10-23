@@ -64,19 +64,19 @@ test('ordinary module activation in import-only mode holds every collector and e
   assert.equal(f.reads(), 0); assert.equal(f.sent.length, 0);
 });
 
-test('denied recovery Task ports leave basic private tracking usable without adding grants', async t => {
+test('Host recovery source refusal leaves basic private tracking usable', async t => {
   const f = migrationFixture();
   let taskCalls = 0;
-  const denied = async (): Promise<never> => { taskCalls++; throw new Error('task.read/write not granted'); };
+  const denied = async (): Promise<never> => { taskCalls++; throw new Error('Host caller cannot see recovery source'); };
   const host = { ...f.host, config: { get: async () => undefined },
     tasks: { ...f.host.tasks, get: denied, list: denied, update: denied } };
   const active = await f.module.create(manifest).start(host);
   t.after(() => active.stop({ reason: 'test' }));
   const before = await f.storage.list();
-  await assert.rejects(ownerCall(f, active, 'source'), /not granted/);
-  assert.deepEqual(await f.storage.list(), before, 'permission refusal must not advance migration state');
+  await assert.rejects(ownerCall(f, active, 'source'), /cannot see recovery source/);
+  assert.deepEqual(await f.storage.list(), before, 'Host source refusal must not advance migration state');
   const registered = await active.actions['github.typed-wait.register-pr']!({
-    registrationId: 'private-without-task-grants', repoFullName: 'example/project', prNumber: 13,
+    registrationId: 'private-without-recovery-source', repoFullName: 'example/project', prNumber: 13,
   }, f.caller) as { automationState: { await: unknown } };
   assert.ok(registered.automationState.await);
   await active.actions['github.pr-tracking']!({});
@@ -84,7 +84,7 @@ test('denied recovery Task ports leave basic private tracking usable without add
   assert.equal(f.tasks.size, 0);
 });
 
-test('recovery mode remains frozen at module activation across both features', async t => {
+test('recovery mode remains frozen at module activation across owner operations', async t => {
   const f = migrationFixture(), source = frozenSource(); seed(f, source);
   let mode: 'normal' | 'import-only' = 'normal';
   const active = await f.module.create(manifest).start({ ...f.host,

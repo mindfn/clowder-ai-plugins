@@ -42,21 +42,13 @@ export interface GitHubPluginOptions {
   readonly createPrTitleReader?: (context: FeatureContext) => GitHubPrTitleReader;
 }
 
-interface FeatureWiring {
-  migrationTasks(): FeatureContext['tasks'];
-  ready(migration: GitHubMigrationRuntime, recover: () => Promise<void>): void;
-}
-
-async function activate(context: FeatureContext, options: GitHubPluginOptions, wiring: FeatureWiring) {
+async function activate(context: FeatureContext, options: GitHubPluginOptions) {
   // Host get() currently requires content access even for summaries. Package-owned
   // Community mappings need only an owner-visible metadata lookup.
   const threads = context.threads;
   context = { ...context, threads: { ...threads, get: id => findThreadMetadata(threads, id) } };
   const connectionSettings = createGitHubSettings(context, options.settingsExecFileAsync);
-  // Only retained-wait paths touch these ports. Their real feature context keeps Host permissions
-  // and lifecycle checks; new private subscriptions never request the migration Task adapter.
-  const retainedContext = { ...context, get tasks() { return wiring.migrationTasks(); } };
-  const migration = new GitHubMigrationRuntime(retainedContext, options.now);
+  const migration = new GitHubMigrationRuntime(context, options.now);
   const transport = new GitHubProvider({
     token: () => context.secrets.get('token'),
     log: { warn: (message, fields) => context.log('warn', message, fields) },
@@ -79,15 +71,14 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions, w
     observe: (target, snapshot) => community.observeTracking(target, snapshot),
   });
   const tracking = new TypedWaitRuntime({
-    context: retainedContext, provider,
+    context, provider,
     ...(options.now ? { now: options.now } : {}),
     coverage: (repoFullName, prNumber, triggerCommentId) => reviewTriggers.observe({ repoFullName, prNumber, triggerCommentId }),
     collect: (target, snapshot) => community.collectTracking(target, snapshot),
     observe: (target, snapshot) => community.observeTracking(target, snapshot),
   });
   const migratedIssues = new MigratedIssueRuntime(context, provider, () => provider.selfLogin(), options.now);
-  wiring.ready(migration, () => tracking.recover());
-  await migration.held(); // Freeze activation mode before exposing either feature's actions.
+  if (!await migration.held()) await tracking.recover();
   const http = await createCommunityHttpRouter({
     storage: context.storage, threads: context.threads, projectionOperations: community.projectionOperations,
     provider: { token: () => context.secrets.get('token') },
@@ -108,6 +99,7 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions, w
   };
   return {
     actions: migration.guard({
+      ...migrationActions(context, migration, () => tracking.recover()),
       ...connectionSettings.actions,
       'github.pr-title.http': prTitleHttp(prTitles),
       [REVIEW_VERDICT_METHOD]: (input: unknown, caller?: PluginActionContext) => reviewVerdicts.record(input, caller),
@@ -169,35 +161,12 @@ function repoInput(value: unknown, register: boolean): Record<string, unknown> {
 }
 
 export function createGitHubPluginModule(options: GitHubPluginOptions = {}): PluginModuleEntrypoint {
-  const runtimeModule = definePluginModule(manifest => {
-    let migrationContext: FeatureContext | undefined;
-    let shared: { migration: GitHubMigrationRuntime; recover: () => Promise<void> } | undefined;
-    return definePlugin({ manifest, activate: {
-      'github-collaboration': context => activate(context, options, {
-        migrationTasks: () => {
-          if (!migrationContext) throw new Error('Retained GitHub wait recovery feature is not active');
-          return migrationContext.tasks;
-        },
-        ready: (migration, recover) => { shared = { migration, recover }; },
-      }),
-      'github-wait-migration': async context => {
-        if (!shared) throw new Error('GitHub tracking runtime is not active');
-        migrationContext = context;
-        if (!await shared.migration.held()) await shared.recover();
-        // One queue, frozen recovery mode and durable hold; the collaboration owner disposes it.
-        return { actions: migrationActions(context, shared.migration, shared.recover), dispose: async () => {} };
-      },
-    } });
-  });
-  return { create: manifest => {
-    const snapshot = structuredClone(manifest);
-    const definition = runtimeModule.create(snapshot);
-    return { ...definition,
-      // Wiring is local to each start, including callers reusing one module definition.
-      start: host => runtimeModule.create(snapshot).start(host),
-      settings: host => createGitHubSettings(host, options.settingsExecFileAsync),
-    };
-  } };
+  const runtimeModule = definePluginModule(manifest => definePlugin({
+    manifest, activate: { 'github-collaboration': context => activate(context, options) },
+  }));
+  return { create: manifest => ({ ...runtimeModule.create(manifest),
+    settings: host => createGitHubSettings(host, options.settingsExecFileAsync),
+  }) };
 }
 
 export default createGitHubPluginModule();

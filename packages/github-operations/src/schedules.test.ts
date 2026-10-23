@@ -24,9 +24,7 @@ test('manifest schedule contributions match package-owned inventory exactly', as
     .filter(item => item.type === 'schedule')
     .map(item => ({ id: item.id, everyMs: item.schedule?.everyMs, timeoutMs: item.policy?.timeoutMs }));
   assert.deepEqual(schedules, [...GITHUB_SCHEDULES]);
-  assert.ok(manifest.features[0]?.capabilities.includes('messaging.send'));
-  assert.ok(manifest.features[0]?.capabilities.includes('plugin.state.set'));
-  assert.ok(!manifest.features[0]?.capabilities.includes('events.publish'));
+  assert.deepEqual(manifest.features[0]?.capabilities, [], 'schedule wiring does not duplicate SDK API authorization');
 });
 
 test('runtime source contains no ambient token, env, or persistence fallback', async () => {
@@ -46,8 +44,6 @@ test('native tracking MCP and skill use the same installed entrypoint and direct
   assert.deepEqual(manifest.contributions.filter((item: { type: string }) => item.type === 'mcp'),
     [{ type: 'mcp', id: 'github-tracking', runtime: { transport: 'stdio', entrypoint: 'dist/mcp-entrypoint.js' },
       actions: [{ method: 'github.typed-wait.register-pr' }, { method: 'github.typed-wait.register-issue' },
-        { method: 'github.typed-wait.unregister' }, { method: 'github.review.record-verdict' }, ...['triage-complete', 'request-guardian', 'guardian-signoff', 'validate-route', 'report', 'await-external'].map(name => ({ method: `github.community.${name}` }))] },
-      { type: 'mcp', id: 'github-wait-migration', runtime: { transport: 'stdio', entrypoint: 'dist/migration-mcp-entrypoint.js' },
-        actions: [{ method: 'github.migration.bind-wait' }] }]);
+        { method: 'github.typed-wait.unregister' }, { method: 'github.migration.bind-wait' }, { method: 'github.review.record-verdict' }, ...['triage-complete', 'request-guardian', 'guardian-signoff', 'validate-route', 'report', 'await-external'].map(name => ({ method: `github.community.${name}` }))] }]);
   assert.equal(manifest.runtime.transport, 'builtin');
 });

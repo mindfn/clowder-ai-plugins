@@ -88,16 +88,17 @@ test("approved generic get reaches a feature as detached frozen public facts, pr
     await f.activation.stop({reason:'test'});
   }
 });
-test("read requires thread.readContent, has no write grant, and refuses malformed selectors before Host effects", async () => {
+test("read preserves Host visibility refusal without a second SDK permission table and rejects malformed selectors", async () => {
   let calls = 0;
   const denied = await fixture(async () => {
     calls++;
-    return fact();
+    throw new Error("Host caller cannot see this source");
   }, []);
   assert.ok(denied.read);
-  await assert.rejects(denied.read("original"), /thread.readContent/);
-  assert.equal(calls, 0);
+  await assert.rejects(denied.read("original"), /cannot see this source/);
+  assert.equal(calls, 1);
   await denied.activation.stop({reason:'test'});
+  calls = 0;
   const f = await fixture(async () => {
     calls++;
     return fact();
