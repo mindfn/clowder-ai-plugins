@@ -398,7 +398,8 @@ export function matchGitHubWaitPredicates(
         const before = baseline.review;
         const after = current.review;
         const resultReviewId = /^review:([1-9][0-9]*)$/.exec(after?.resultSourceRef ?? '')?.[1];
-        const submittedSameIdResult = resultReviewId !== undefined && after?.stateChanges?.some(change =>
+        const submittedSameIdResult = resultReviewId !== undefined && before?.verdicts?.[resultReviewId] === undefined &&
+          after?.stateChanges?.some(change =>
           change.id === Number(resultReviewId) && change.previousState === 'PENDING' && change.currentHead &&
           change.state === after.decision) === true;
         const resultFrontierAdvanced =

@@ -420,6 +420,66 @@ for (const state of ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'] as const) {
   });
 }
 
+for (const correlated of [false, true] as const) {
+  test(`a consumed verdict repairs a regressed collector without replaying the ${correlated ? 'correlated' : 'unanchored'} result`, async () => {
+    const f = fixture();
+    const trigger = cloudTrigger('2026-10-09T00:00:00.000Z');
+    if (correlated) f.setSnapshot({ ...f.snapshot(), comments: [trigger] });
+    const runtime = new TypedWaitRuntime(f.options);
+    try {
+      const tracked = await runtime.registerPr({ ...input, when: [{
+        kind: 'pr_review_result_available',
+        ...(correlated ? { triggerCommentId: trigger.id } : {}),
+      }] }, f.caller);
+      const submitted = { id: 10, author: correlated ? 'chatgpt-codex-connector[bot]' : 'maintainer',
+        state: 'APPROVED' as const, commitId: f.snapshot().headSha,
+        submittedAt: '2026-10-09T00:00:01.000Z' };
+      f.setSnapshot({ ...f.snapshot(), reviews: [submitted] });
+      await runtime.poll('pr');
+      assert.equal(f.sent.length, 1);
+
+      const current = await runtime.store.get(tracked.id);
+      assert.ok(current?.automationState?.review);
+      await runtime.store.patchAutomationState(tracked.id, { review: {
+        ...current.automationState.review,
+        observedReviews: { ...current.automationState.review.observedReviews, '10': 'PENDING' },
+      } });
+      await runtime.poll('pr');
+      assert.equal(f.sent.length, 1, 'the baseline verdict proves this is collector repair, not a new result');
+      assert.equal((await runtime.store.get(tracked.id))?.automationState?.review?.observedReviews?.['10'], 'APPROVED',
+        'the collector quietly repairs its per-id state');
+    } finally { await runtime.stop(); }
+  });
+}
+
+for (const state of ['APPROVED', 'CHANGES_REQUESTED'] as const) {
+  test(`superseding registration preserves a historical ${state} across a stale PENDING baseline`, async () => {
+    const f = fixture();
+    const submitted = { id: 10, author: 'maintainer', state, commitId: f.snapshot().headSha,
+      submittedAt: '2026-10-09T00:00:01.000Z' };
+    f.setSnapshot({ ...f.snapshot(), reviews: [submitted] });
+    const runtime = new TypedWaitRuntime(f.options);
+    try {
+      const tracked = await runtime.registerPr({ ...input,
+        when: [{ kind: 'pr_review_result_available' }] }, f.caller);
+      f.setSnapshot({ ...f.snapshot(), reviews: [{ ...submitted, state: 'PENDING', submittedAt: undefined }] });
+      const superseded = await runtime.registerPr({ ...input, registrationId: `supersede-${state}`,
+        when: [{ kind: 'pr_review_result_available' }] }, f.caller);
+      assert.equal(superseded.id, tracked.id);
+      assert.equal(superseded.automationState?.review?.observedReviews?.['10'], state,
+        'registration cannot regress the durable submitted frontier');
+      const baseline = superseded.automationState?.await?.baseline;
+      assert.ok(baseline && 'headSha' in baseline);
+      assert.equal(baseline.review?.verdicts?.['10']?.state, state,
+        'the replacement generation retains the consumed verdict');
+
+      f.setSnapshot({ ...f.snapshot(), reviews: [submitted] });
+      await runtime.poll('pr');
+      assert.equal(f.sent.length, 0, 'restoring a historical verdict after registration is not new activity');
+    } finally { await runtime.stop(); }
+  });
+}
+
 test('an ordinary decision wait keeps a same-id PENDING → COMMENTED submission quiet', async () => {
   const f = fixture();
   const pending = { id: 10, author: 'self', state: 'PENDING', commitId: f.snapshot().headSha };
