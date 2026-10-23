@@ -168,7 +168,7 @@ function deliveryRejected(id: string, reason: DeliveryRejectReason): JsonObject 
 /**
  * Starts one external plugin session over the signed 13-row stdio wire.
  *
- * The Host remains the sole authority for bindings, grants, liveness, message
+ * The Host remains the sole authority for bindings, liveness, message
  * admission, retries, and delivery settlement. This helper owns only the
  * plugin-side handshake/correlation machinery and never invents an address.
  */
