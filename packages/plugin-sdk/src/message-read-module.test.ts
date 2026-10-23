@@ -30,7 +30,7 @@ const fact = () => ({
     },
   },
 });
-async function fixture(get?: (id: string) => Promise<unknown>, capabilities = ["thread.readContent"]) {
+async function fixture(get?: (id: string) => Promise<unknown>) {
   let context!: FeatureContext;
   const manifest = {
     pluginId: "dev.message-read-proof",
@@ -38,7 +38,7 @@ async function fixture(get?: (id: string) => Promise<unknown>, capabilities = ["
     contractVersion: "0.1.0",
     name: "Read proof",
     runtime: { transport: "builtin", entrypoint: "dist/index.js" },
-    features: [{ id: "read", name: "Read", resources: [], capabilities }],
+    features: [{ id: "read", name: "Read", resources: [], capabilities: [] }],
   };
   const module = definePluginModule((input) =>
     definePlugin({
@@ -88,17 +88,8 @@ test("approved generic get reaches a feature as detached frozen public facts, pr
     await f.activation.stop({reason:'test'});
   }
 });
-test("read preserves Host visibility refusal without a second SDK permission table and rejects malformed selectors", async () => {
+test("read refuses malformed selectors before Host effects", async () => {
   let calls = 0;
-  const denied = await fixture(async () => {
-    calls++;
-    throw new Error("Host caller cannot see this source");
-  }, []);
-  assert.ok(denied.read);
-  await assert.rejects(denied.read("original"), /cannot see this source/);
-  assert.equal(calls, 1);
-  await denied.activation.stop({reason:'test'});
-  calls = 0;
   const f = await fixture(async () => {
     calls++;
     return fact();

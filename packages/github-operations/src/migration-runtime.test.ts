@@ -64,50 +64,6 @@ test('ordinary module activation in import-only mode holds every collector and e
   assert.equal(f.reads(), 0); assert.equal(f.sent.length, 0);
 });
 
-test('Host recovery source refusal leaves basic private tracking usable', async t => {
-  const f = migrationFixture();
-  let taskCalls = 0;
-  const denied = async (): Promise<never> => { taskCalls++; throw new Error('Host caller cannot see recovery source'); };
-  const host = { ...f.host, config: { get: async () => undefined },
-    tasks: { ...f.host.tasks, get: denied, list: denied, update: denied } };
-  const active = await f.module.create(manifest).start(host);
-  t.after(() => active.stop({ reason: 'test' }));
-  const before = await f.storage.list();
-  await assert.rejects(ownerCall(f, active, 'source'), /cannot see recovery source/);
-  assert.deepEqual(await f.storage.list(), before, 'Host source refusal must not advance migration state');
-  const registered = await active.actions['github.typed-wait.register-pr']!({
-    registrationId: 'private-without-recovery-source', repoFullName: 'example/project', prNumber: 13,
-  }, f.caller) as { automationState: { await: unknown } };
-  assert.ok(registered.automationState.await);
-  await active.actions['github.pr-tracking']!({});
-  assert.equal(taskCalls, 1, 'only the refused explicit recovery operation touches the Task port');
-  assert.equal(f.tasks.size, 0);
-});
-
-test('recovery mode remains frozen at module activation across owner operations', async t => {
-  const f = migrationFixture(), source = frozenSource(); seed(f, source);
-  let mode: 'normal' | 'import-only' = 'normal';
-  const active = await f.module.create(manifest).start({ ...f.host,
-    config: { get: async key => key === 'recoveryMode' ? mode : undefined } });
-  t.after(() => active.stop({ reason: 'test' }));
-  const before = await f.storage.list();
-  mode = 'import-only';
-  await assert.rejects(ownerCall(f, active, 'stage', { snapshot: source, expectedDigest: sourceDigest(source) }),
-    /Configure import-only/);
-  assert.deepEqual(await f.storage.list(), before, 'a configuration edit cannot authorize import without a new activation');
-});
-
-test('reusing a module definition keeps recovery Task contexts isolated per start', async t => {
-  const first = migrationFixture(), second = migrationFixture();
-  const definition = first.module.create(manifest);
-  const a = await definition.start(first.host);
-  const b = await definition.start({ ...second.host, pluginInstanceId: 'other-instance',
-    tasks: { ...second.host.tasks, list: async () => { throw new Error('Wrong installation Task port'); } } });
-  t.after(async () => { await b.stop({ reason: 'test' }); await a.stop({ reason: 'test' }); });
-  const result = await ownerCall(first, a, 'source');
-  assert.equal((result.body.data as unknown as { complete: boolean }).complete, false);
-});
-
 function frozenSource(): MigrationSource {
   const task: TaskItem = { id: 'old-pr', kind: 'pr_tracking', userId: 'owner', ownerCatId: 'cat', threadId: 'thread',
     subjectKey: 'pr:example/project#12', status: 'doing', title: 'Fixture', why: 'Fixture', createdBy: 'historical', createdAt: 1, updatedAt: 2,

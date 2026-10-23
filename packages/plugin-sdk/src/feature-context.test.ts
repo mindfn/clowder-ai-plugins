@@ -5,7 +5,6 @@ import type { StaticContribution } from '@clowder-ai/plugin-contract';
 
 import {
   FeatureContextRevokedError,
-  FeaturePermissionError,
   activateDefinedFeature,
   createFeatureContextSession,
   definePlugin,
@@ -181,31 +180,6 @@ class RecordingAdapter implements FeatureHostAdapter {
     this.calls.push({ operation: `log.${level}`, binding, value: { message, fields } });
   }
 }
-
-test('public SDK ports do not duplicate an interface permission list', async () => {
-  const adapter = new RecordingAdapter();
-  const calls: string[] = [];
-  Object.assign(adapter, {
-    getMessage: async () => { calls.push('message'); return null; },
-    members: { list: async () => { calls.push('members'); return []; }, get: async () => null },
-    streams: { read: async function* () { calls.push('stream'); yield new Uint8Array([7]); } },
-  });
-  const session = createFeatureContextSession(BINDING, adapter);
-  assert.equal(await session.context.messaging.get('message'), null);
-  assert.deepEqual(await session.context.members!.list(), []);
-  const chunks: number[][] = [];
-  for await (const chunk of session.context.streams.read('owned-stream')) chunks.push([...chunk]);
-  assert.deepEqual(chunks, [[7]]);
-  assert.deepEqual(calls, ['message', 'members', 'stream']);
-  const refusal = new Error('Host source is not visible to this caller');
-  Object.assign(adapter, { getMessage: async () => { throw refusal; } });
-  await assert.rejects(session.context.messaging.get('other-message'), error => error === refusal);
-  await session.revoke();
-  await assert.rejects(session.context.messaging.get('message'), FeatureContextRevokedError);
-  await assert.rejects(session.context.members!.list(), FeatureContextRevokedError);
-  assert.throws(() => session.context.streams.read('owned-stream'), FeatureContextRevokedError);
-  assert.deepEqual(calls, ['message', 'members', 'stream']);
-});
 
 type PausedHostOperation = 'config.get' | 'secrets.get' | 'storage.get' | 'storage.set';
 

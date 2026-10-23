@@ -4,7 +4,6 @@ import test from 'node:test';
 import {
   definePlugin,
   FeatureContextRevokedError,
-  FeaturePermissionError,
   type FeatureContext,
 } from './feature-context.js';
 import { definePluginModule } from './module-plugin.js';
@@ -45,15 +44,7 @@ function manifest() {
           { type: 'message-subscription', id: 'outbound' },
           { type: 'tool', id: 'echo' },
         ],
-        capabilities: [
-          'messaging.send',
-          'message.event.subscribe',
-          'thread.write',
-          'plugin.state.get',
-          'plugin.state.set',
-          'task.read',
-          'task.write',
-        ],
+        capabilities: [],
       },
     ],
     runtime: { transport: 'builtin', entrypoint: 'dist/plugin-entrypoint.js' },

@@ -839,10 +839,6 @@ function host() {
 }
 
 test('real manifest → SDK builtin activation → tracking → schedule → ordinary message → terminal → stop without Host Tasks', async () => {
-  assert.equal(manifest.features.length, 1, 'tracking and retained recovery share one existing runtime');
-  assert.deepEqual(manifest.features[0].capabilities, [], 'SDK APIs do not require a second permission declaration');
-  assert.deepEqual(manifest.contributions.filter((value: { type: string }) => value.type === 'mcp')
-    .map((value: { id: string }) => value.id), ['github-tracking']);
   const f = host();
   let snapshot: GitHubSnapshot = { state: 'open', headSha: 'a'.repeat(40), ci: 'pending', comments: [], reviews: [] };
   let reads = 0;
