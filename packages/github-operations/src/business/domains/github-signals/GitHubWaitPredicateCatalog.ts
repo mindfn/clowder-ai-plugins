@@ -458,14 +458,18 @@ export function matchGitHubWaitPredicates(
         // quietly rather than replaying every old formal review.
         if (before?.verdicts !== undefined && after?.stateChanges) {
           for (const review of [...after.stateChanges].sort((a, b) => a.id - b.id)) {
-            if (review.previousState !== 'PENDING' || review.id > before.decisionCursor ||
-                before.verdicts[String(review.id)] !== undefined) continue;
+            if (review.previousState !== 'PENDING' || before.verdicts[String(review.id)] !== undefined) continue;
             if (review.state === 'DISMISSED') {
-              matches.push({ kind: predicate.kind,
-                delta: `review PENDING → DISMISSED (${review.author})`,
-                sourceRef: `review:${review.id}` });
+              // Current-HEAD new ids are already emitted by `decisions` below. Older-HEAD reviews
+              // never enter that list, so their in-place dismissal has to use the raw state delta.
+              if (!review.currentHead || review.id <= before.decisionCursor) {
+                matches.push({ kind: predicate.kind,
+                  delta: `review PENDING → DISMISSED (${review.author})`,
+                  sourceRef: `review:${review.id}` });
+              }
               continue;
             }
+            if (review.id > before.decisionCursor) continue;
             if (!review.currentHead || !isGitHubReviewDecisionState(review.state)) continue;
             matches.push({ kind: predicate.kind,
               delta: `review ${before.decision ?? 'pending'} → ${review.state} (${review.author})`,
