@@ -2,7 +2,37 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createTrackingMcpServer, createRemoteTrackingMcpServer, TRACKING_ACTION_METHODS } from './tracking-mcp-server.js';
+import { createTrackingMcpServer, createRemoteTrackingMcpServer, createRemoteMigrationMcpServer, TRACKING_ACTION_METHODS } from './tracking-mcp-server.js';
+
+test('the basic remote MCP does not advertise retained Host wait binding', async () => {
+  const server = createRemoteTrackingMcpServer({ invoke: async () => ({}) });
+  const client = new Client({ name: 'basic-only-test', version: '1' });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await server.connect(a); await client.connect(b);
+  try {
+    const names = (await client.listTools()).tools.map(tool => tool.name);
+    assert.ok(names.includes('cat_cafe_register_pr_tracking'));
+    assert.ok(!names.includes('github_bind_migrated_wait'), 'Task-only recovery belongs to its separately granted feature');
+  } finally { await client.close(); await server.close(); }
+});
+
+test('the recovery MCP preserves the binding action and forwards native metadata separately', async () => {
+  const calls: unknown[] = [];
+  const server = createRemoteMigrationMcpServer({ invoke: async (method, input, call) => {
+    calls.push({ method, input, meta: call._meta }); return { generation: 27, bound: true };
+  } });
+  const client = new Client({ name: 'migration-only-test', version: '1' });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await server.connect(a); await client.connect(b);
+  try {
+    assert.deepEqual((await client.listTools()).tools.map(tool => tool.name), ['github_bind_migrated_wait']);
+    const input = { taskId: 'retained-original-task', expectedDigest: 'a'.repeat(64) };
+    const meta = { threadId: 'original-thread' };
+    const result = await client.callTool({ name: 'github_bind_migrated_wait', arguments: input, _meta: meta });
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(calls, [{ method: 'github.migration.bind-wait', input, meta }]);
+  } finally { await client.close(); await server.close(); }
+});
 
 test('native MCP exposes the three tracking tools and dispatches directly to package handlers', async () => {
   const calls: unknown[] = [];
@@ -66,7 +96,7 @@ test('remote Community MCP tools carry identity only in runtime metadata and mar
   const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(a); await client.connect(b);
   try {
     const tools = (await client.listTools()).tools;
-    assert.equal(tools.length, 11);
+    assert.equal(tools.length, 10);
     const input = { id: 'issue:org/repo#1', payload: { reason: 'await provider' } }, meta = { threadId: 'real-thread' };
     const result = await client.callTool({ name: 'github_community_await_external', arguments: input, _meta: meta });
     assert.equal(result.isError, true);

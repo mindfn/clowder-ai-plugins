@@ -839,11 +839,17 @@ function host() {
 }
 
 test('real manifest → SDK builtin activation → tracking → schedule → ordinary message → terminal → stop without Host Tasks', async () => {
+  assert.deepEqual([...manifest.features[0].capabilities].sort(), [
+    'schedule.register', 'plugin.config.read', 'secret.read', 'plugin.state.get', 'plugin.state.set',
+    'thread.listMetadata', 'thread.write', 'messaging.send',
+  ].sort(), 'ordinary tracking must remain usable under the original eight-capability policy');
   assert.equal(manifest.features[0].capabilities.includes('thread.readContent'), false,
     'GitHub notifications never require content access');
   for (const capability of ['task.read', 'task.write']) {
-    assert.equal(manifest.features[0].capabilities.includes(capability), true,
-      'Retained Host wait migration declares its existing Task requirements');
+    assert.equal(manifest.features[0].capabilities.includes(capability), false,
+      'Basic tracking must not require imported Host-wait Task permissions');
+    assert.equal(manifest.features.find((feature: { id: string }) => feature.id === 'github-wait-migration')
+      ?.capabilities.includes(capability), true, 'Retained Host waits keep their explicit Task requirements');
   }
   const f = host();
   let snapshot: GitHubSnapshot = { state: 'open', headSha: 'a'.repeat(40), ci: 'pending', comments: [], reviews: [] };

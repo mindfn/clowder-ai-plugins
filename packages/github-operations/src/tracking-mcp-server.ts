@@ -27,7 +27,6 @@ export function createRemoteTrackingMcpServer(client: {
   invoke(method: string, input: unknown, call: ModuleActionCallOptions): Promise<unknown>;
 }): McpServer {
   return createTrackingMcpServer({
-    bindMigration: (input, call) => client.invoke('github.migration.bind-wait', input, call),
     reviewVerdict: (input, call) => client.invoke(REVIEW_VERDICT_METHOD, input, call),
     community: (method, input, call) => client.invoke(method, input, call),
     registerPr: (input, call) => client.invoke(TRACKING_ACTION_METHODS.registerPr, input, call),
@@ -36,16 +35,32 @@ export function createRemoteTrackingMcpServer(client: {
   });
 }
 
+const respond = (handler: TrackingMcpHandlers['registerPr']) => async (input: unknown, call: ModuleActionCallOptions) => {
+  try {
+    return { content: [{ type: 'text' as const, text: JSON.stringify(await handler(input, call)) }] };
+  } catch (error) {
+    return { isError: true, content: [{ type: 'text' as const,
+      text: error instanceof Error ? error.message : 'GitHub tracking failed' }] };
+  }
+};
+
+function migrationBindingTool(server: McpServer, bind: NonNullable<TrackingMcpHandlers['bindMigration']>) {
+  server.tool('github_bind_migrated_wait',
+    'Use when an owner-approved GitHub import is committing and requests this existing Task binding. Call from its original authenticated cat and thread with the exact plan digest and Task ID. Writes a Host wait projection while preserving its generation and baseline. Not for fresh registration, owner changes, expired waits, ambiguous old deliveries or releasing collectors. Output: bound with original generation while collection stays held; changed bindings or missing strict authentication fail. A lost response may be retried from a fresh authenticated turn using the same Task and digest.',
+    { taskId: z.string().min(1).max(500), expectedDigest: z.string().regex(/^[a-f0-9]{64}$/) }, respond(bind));
+}
+
+/** Task-bound recovery has its own Host-issued feature credentials and action allowlist. */
+export function createRemoteMigrationMcpServer(client: {
+  invoke(method: string, input: unknown, call: ModuleActionCallOptions): Promise<unknown>;
+}): McpServer {
+  const server = new McpServer({ name: 'clowder-github-wait-migration', version: '0.1.0' });
+  migrationBindingTool(server, (input, call) => client.invoke('github.migration.bind-wait', input, call));
+  return server;
+}
+
 export function createTrackingMcpServer(handlers: TrackingMcpHandlers): McpServer {
   const server = new McpServer({ name: 'clowder-github-tracking', version: '0.1.0' });
-  const respond = (handler: TrackingMcpHandlers['registerPr']) => async (input: unknown, call: ModuleActionCallOptions) => {
-    try {
-      return { content: [{ type: 'text' as const, text: JSON.stringify(await handler(input, call)) }] };
-    } catch (error) {
-      return { isError: true, content: [{ type: 'text' as const,
-        text: error instanceof Error ? error.message : 'GitHub tracking failed' }] };
-    }
-  };
   server.tool('cat_cafe_register_pr_tracking',
     'Register continuous tracking of one PR for the current cat and thread. ' +
       'Use when: you want to hear about what happens on a PR — its review decision, CI, conflicts, a new HEAD unless you are the PR author, and the replies people leave on it. Supply the subject and a unique registrationId; reuse that ID and arguments after an unknown response. ' +
@@ -67,10 +82,7 @@ export function createTrackingMcpServer(handlers: TrackingMcpHandlers): McpServe
       'Output: unregistered reports whether this caller had a subscription; scope is current_user_cat_thread. It never means all subscribers stopped. ' +
       'Format: "pr:{owner/repo}#{num}" or "issue:{owner/repo}#{num}".',
     unregisterTrackingInputSchema, respond((input, call) => handlers.unregister(input, call)));
-  if (handlers.bindMigration) server.tool('github_bind_migrated_wait',
-    'Use when an owner-approved GitHub import is committing and requests this existing Task binding. Call from its original authenticated cat and thread with the exact plan digest and Task ID. Writes a Host wait projection while preserving its generation and baseline. Not for fresh registration, owner changes, expired waits, ambiguous old deliveries or releasing collectors. Output: bound with original generation while collection stays held; changed bindings or missing strict authentication fail. A lost response may be retried from a fresh authenticated turn using the same Task and digest.',
-    { taskId: z.string().min(1).max(500), expectedDigest: z.string().regex(/^[a-f0-9]{64}$/) },
-    respond((input, call) => handlers.bindMigration!(input, call)));
+  if (handlers.bindMigration) migrationBindingTool(server, handlers.bindMigration);
   if (handlers.reviewVerdict) server.tool('github_record_external_review_verdict',
     'Submit a verdict for the assigned exact PR HEAD under the current native invocation and action lease. ' +
     'Use the exact lease generation and review/comment URL, or an explicit pending_delivery reason. ' +

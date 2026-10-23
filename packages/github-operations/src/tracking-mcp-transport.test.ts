@@ -8,7 +8,7 @@ import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-test('real stdio MCP process invokes module action over HTTP and refreshes turn credentials', async () => {
+for (const kind of ['basic', 'migration'] as const) test(`${kind}: real stdio MCP process invokes module action over HTTP and refreshes turn credentials`, async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tracking-stdio-'));
   const credentials = join(dir, 'credentials.json');
   const calls: { invocation: string | string[] | undefined; body: unknown }[] = [];
@@ -23,7 +23,7 @@ test('real stdio MCP process invokes module action over HTTP and refreshes turn 
   const address = http.address(); assert.ok(address && typeof address !== 'string');
   const client = new Client({ name: 'installed-transport-test', version: '1' });
   const transport = new StdioClientTransport({ command: process.execPath,
-    args: ['--import', 'tsx', fileURLToPath(new URL('./mcp-entrypoint.ts', import.meta.url))],
+    args: ['--import', 'tsx', fileURLToPath(new URL(kind === 'basic' ? './mcp-entrypoint.ts' : './migration-mcp-entrypoint.ts', import.meta.url))],
     cwd: fileURLToPath(new URL('../../../', import.meta.url)), stderr: 'inherit',
     env: { PATH: process.env.PATH ?? '', CAT_CAFE_API_URL: `http://127.0.0.1:${address.port}`,
       CAT_CAFE_CREDENTIAL_FILE: credentials, CLOWDER_PLUGIN_ACTION_TOKEN: 'activation',
@@ -32,18 +32,20 @@ test('real stdio MCP process invokes module action over HTTP and refreshes turn 
   try {
     await writeFile(credentials, JSON.stringify({ invocationId: 'first', callbackToken: 'token1' }));
     await client.connect(transport);
-    assert.equal((await client.listTools()).tools.length, 11);
-    const args = { registrationId: 'stable', repoFullName: 'owner/repo', prNumber: 1 };
-    assert.equal((await client.callTool({ name: 'cat_cafe_register_pr_tracking', arguments: args })).isError, undefined);
+    assert.equal((await client.listTools()).tools.length, kind === 'basic' ? 10 : 1);
+    const name = kind === 'basic' ? 'cat_cafe_register_pr_tracking' : 'github_bind_migrated_wait';
+    const method = kind === 'basic' ? 'github.typed-wait.register-pr' : 'github.migration.bind-wait';
+    const args = kind === 'basic' ? { registrationId: 'stable', repoFullName: 'owner/repo', prNumber: 1 }
+      : { taskId: 'retained-original-task', expectedDigest: 'a'.repeat(64) };
+    assert.equal((await client.callTool({ name, arguments: args })).isError, undefined);
     await writeFile(credentials, JSON.stringify({ invocationId: 'next', callbackToken: 'token2' }));
-    assert.equal((await client.callTool({ name: 'cat_cafe_register_pr_tracking', arguments: args })).isError, undefined);
+    assert.equal((await client.callTool({ name, arguments: args })).isError, undefined);
     assert.deepEqual(calls, [
-      { invocation: 'first', body: { method: 'github.typed-wait.register-pr', input: args } },
-      { invocation: 'next', body: { method: 'github.typed-wait.register-pr', input: args } },
+      { invocation: 'first', body: { method, input: args } },
+      { invocation: 'next', body: { method, input: args } },
     ]);
     await writeFile(credentials, '{}');
-    assert.equal((await client.callTool({ name: 'cat_cafe_unregister_tracking',
-      arguments: { subjectKey: 'pr:owner/repo#1' } })).isError, true);
+    assert.equal((await client.callTool({ name, arguments: args })).isError, true);
     assert.equal(calls.length, 2);
   } finally {
     await client.close();

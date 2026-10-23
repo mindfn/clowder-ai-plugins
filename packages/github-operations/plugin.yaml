@@ -1,5 +1,5 @@
 pluginId: official.github-operations
-version: 0.1.0-alpha.27
+version: 0.1.0-alpha.28
 contractVersion: 0.1.0
 name: GitHub Operations
 description:
@@ -238,7 +238,6 @@ contributions:
       - { method: github.typed-wait.register-pr }
       - { method: github.typed-wait.register-issue }
       - { method: github.typed-wait.unregister }
-      - { method: github.migration.bind-wait }
       - { method: github.review.record-verdict }
       - { method: github.community.triage-complete }
       - { method: github.community.request-guardian }
@@ -531,18 +530,16 @@ contributions:
     path: github/pr-title
     methods: [ GET ]
     action: { method: github.pr-title.http }
+  - type: mcp
+    id: github-wait-migration
+    runtime: { transport: stdio, entrypoint: dist/migration-mcp-entrypoint.js }
+    actions:
+      - { method: github.migration.bind-wait }
 features:
   - id: github-collaboration
     name: GitHub collaboration operations
     resources: []
     contributions:
-      - { type: webhook, id: migration-source }
-      - { type: webhook, id: migration-status }
-      - { type: webhook, id: migration-stage }
-      - { type: webhook, id: migration-commit }
-      - { type: webhook, id: migration-recover }
-      - { type: webhook, id: migration-abort }
-      - { type: webhook, id: migration-release }
       - { type: webhook, id: pr-title-http }
       - { type: webhook, id: community-http-01 }
       - { type: webhook, id: community-http-02 }
@@ -598,8 +595,6 @@ features:
       - { type: schedule, id: community-reconciler }
     capabilities:
       [
-        task.read,
-        task.write,
         schedule.register,
         plugin.config.read,
         secret.read,
@@ -609,6 +604,20 @@ features:
         thread.write,
         messaging.send
       ]
+  - id: github-wait-migration
+    name: Retained GitHub Host wait recovery
+    resources: []
+    contributions:
+      - { type: webhook, id: migration-source }
+      - { type: webhook, id: migration-status }
+      - { type: webhook, id: migration-stage }
+      - { type: webhook, id: migration-commit }
+      - { type: webhook, id: migration-recover }
+      - { type: webhook, id: migration-abort }
+      - { type: webhook, id: migration-release }
+      - { type: mcp, id: github-wait-migration }
+    capabilities:
+      [task.read, task.write, plugin.config.read, plugin.state.get, plugin.state.set, thread.listMetadata]
 runtime:
   transport: builtin
   entrypoint: dist/plugin-entrypoint.js
