@@ -1,0 +1,18 @@
+--- a/packages/shared/src/index.ts
++++ b/packages/shared/src/index.ts
+@@ -55,7 +55,6 @@
+ export * from './eval-metric-ref.js';
+ // First-party WebSocket Stop intent contract (API + Web single source).
+ export * from './explicit-stop-intent.js';
+-export * from './feature-demos.js';
+ export * from './ignored-item-preference.js';
+ export * from './markdown-link-safety.js';
+ // Export shared text helpers
+@@ -71,7 +70,6 @@
+ } from './message-search.js';
+ // First-party host-tool identities shared by onboarding discovery and catalog repair.
+ export * from './native-tool-identities.js';
+-export * from './plugin-archive-replacement.js';
+ export * from './plugin-configuration-required.js';
+ // Browser Preview Gateway request identity shared by API and Web.
+ export * from './preview-gateway.js';

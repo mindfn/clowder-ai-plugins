@@ -1,12 +1,30 @@
 {
-  "repository": "zts212653/cat-cafe",
-  "sourceBaseHead": "193bd7ffef21e1a4b4ba1f6cee7e6331276ec373",
-  "sourceState": "exact-source-head",
+  "repository": "zts212653/clowder-ai",
+  "sourceBaseHead": "f0056865b6b1c7a9b235e51d9bb7d4d29f8e7363",
+  "sourceState": "base-with-recorded-input-overrides",
   "package": "packages/collective-client",
   "buildEntrypoint": "packages/collective-client/scripts/build.mjs#buildRetainedClient",
-  "assetDigest": "f99b5d9b35633f18db4fbb72e0e7d7ae5b803a357af2737306f73284bdaae3dd",
-  "buildInputsSha256": "73a8806e7089ffdc02559b6443817d541c3b52e7e3669ed418d24e2630b90a11",
-  "manifestSha256": "5e8ccb0670fe1bfe7ba93ce3144d89356d243451cfe6dd4dd6012a78bea79345",
-  "inputOverrides": [],
-  "dependencyInputs": "build-inputs.json"
+  "assetDigest": "7b38147e83c35173e71e4de03bce752d70d2ed95de9797815f8d4df2bd380172",
+  "buildInputsSha256": "67ce983767999def01e35e1a53e5e58e1fcf427c88eef85c5eeadbdd639508f7",
+  "manifestSha256": "d8d97ce62ee60b58a20399f97e911f81144d7fbf035e3964cea5997e6ef835a7",
+  "inputOverrides": [
+    {
+      "path": "../shared/src/index.ts",
+      "sha256": "1ca738bb07fd5ef540ada96280f67a9435c617ae0a02eb9f17b98c92fe2b7984",
+      "patch": "source.patch",
+      "reason": "Remove unused archive-replacement permission schema and avoid importing the unrelated demo catalogue into the retained Client."
+    }
+  ],
+  "sourcePatchSha256": "cce786f59bc04b8c67926bcbf4c7bd9795799e5845aa46c5245e2d568305c89c",
+  "dependencyInputs": "build-inputs.json",
+  "replaces": {
+    "repository": "zts212653/cat-cafe",
+    "sourceBaseHead": "193bd7ffef21e1a4b4ba1f6cee7e6331276ec373",
+    "assetDigest": "f99b5d9b35633f18db4fbb72e0e7d7ae5b803a357af2737306f73284bdaae3dd"
+  },
+  "buildTools": {
+    "node": "24.18.0",
+    "esbuild": "0.27.2"
+  },
+  "replacementScope": "Accessible public Core snapshot. Client HTTP/bridge/attachment/draft/read-recovery behavior retained; public Clowder AI labels replace private Cat Cafe labels. No new permission or protocol mechanism."
 }

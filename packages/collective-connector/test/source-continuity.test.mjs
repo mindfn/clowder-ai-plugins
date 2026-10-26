@@ -42,7 +42,16 @@ test('the retained client records verifiable source and generated-byte provenanc
   );
   assert.ok(['exact-source-head', 'base-with-recorded-input-overrides'].includes(source.sourceState));
   if (source.sourceState === 'exact-source-head') assert.deepEqual(source.inputOverrides ?? [], []);
-  else assert.ok(Array.isArray(source.inputOverrides) && source.inputOverrides.length > 0);
+  else {
+    assert.ok(Array.isArray(source.inputOverrides) && source.inputOverrides.length > 0);
+    const patch = await readFile(new URL('source.patch', assets));
+    assert.equal(source.sourcePatchSha256, sha256(patch));
+    const inputs = JSON.parse(buildInputsBytes.toString('utf8')).inputs;
+    for (const override of source.inputOverrides) {
+      assert.equal(override.patch, 'source.patch');
+      assert.equal(inputs.find(input => input.path === override.path)?.sha256, override.sha256);
+    }
+  }
 });
 
 test('the runtime refuses altered client bytes instead of serving them', async t => {

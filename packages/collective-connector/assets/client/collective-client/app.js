@@ -10506,9 +10506,9 @@ var require_react_dom_development = __commonJS({
         }
         function getSuspenseInstanceFallbackErrorDetails(instance) {
           var dataset = instance.nextSibling && instance.nextSibling.dataset;
-          var digest8, message, stack;
+          var digest7, message, stack;
           if (dataset) {
-            digest8 = dataset.dgst;
+            digest7 = dataset.dgst;
             {
               message = dataset.msg;
               stack = dataset.stck;
@@ -10517,7 +10517,7 @@ var require_react_dom_development = __commonJS({
           {
             return {
               message,
-              digest: digest8,
+              digest: digest7,
               stack
             };
           }
@@ -15948,12 +15948,12 @@ var require_react_dom_development = __commonJS({
             digest: null
           };
         }
-        function createCapturedValue(value, digest8, stack) {
+        function createCapturedValue(value, digest7, stack) {
           return {
             value,
             source: null,
             stack: stack != null ? stack : null,
-            digest: digest8 != null ? digest8 : null
+            digest: digest7 != null ? digest7 : null
           };
         }
         function showErrorDialog(boundary, errorInfo) {
@@ -17270,10 +17270,10 @@ var require_react_dom_development = __commonJS({
               );
             }
             if (isSuspenseInstanceFallback(suspenseInstance)) {
-              var digest8, message, stack;
+              var digest7, message, stack;
               {
                 var _getSuspenseInstanceF = getSuspenseInstanceFallbackErrorDetails(suspenseInstance);
-                digest8 = _getSuspenseInstanceF.digest;
+                digest7 = _getSuspenseInstanceF.digest;
                 message = _getSuspenseInstanceF.message;
                 stack = _getSuspenseInstanceF.stack;
               }
@@ -17283,7 +17283,7 @@ var require_react_dom_development = __commonJS({
               } else {
                 error2 = new Error("The server could not finish this Suspense boundary, likely due to an error during server rendering. Switched to client rendering.");
               }
-              var capturedValue = createCapturedValue(error2, digest8, stack);
+              var capturedValue = createCapturedValue(error2, digest7, stack);
               return retrySuspenseComponentWithoutHydrating(current3, workInProgress2, renderLanes2, capturedValue);
             }
             var hasContextChanged2 = includesSomeLane(renderLanes2, current3.childLanes);
@@ -21361,10 +21361,10 @@ var require_react_dom_development = __commonJS({
             for (var i = 0; i < recoverableErrors.length; i++) {
               var recoverableError = recoverableErrors[i];
               var componentStack = recoverableError.stack;
-              var digest8 = recoverableError.digest;
+              var digest7 = recoverableError.digest;
               onRecoverableError(recoverableError.value, {
                 componentStack,
-                digest: digest8
+                digest: digest7
               });
             }
           }
@@ -29055,7 +29055,6 @@ var CapabilityTipSchema = external_exports.object({
   audience: external_exports.array(external_exports.enum(CAPABILITY_TIP_AUDIENCES)).min(1),
   body: external_exports.string().min(12).max(140),
   action: CapabilityTipActionSchema.optional(),
-  demoId: external_exports.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/).optional(),
   owner: external_exports.string().min(1)
 }).strict();
 var CAPABILITY_TIP_USAGE_EVENTS = [
@@ -29243,32 +29242,8 @@ var conversationViewPreferenceSnapshotSchema = external_exports.object({
 // ../shared/src/deployment-profiles.json
 var deployment_profiles_default = {
   schemaVersion: 1,
-  activeProfile: "home",
+  activeProfile: "opensource",
   profiles: {
-    home: {
-      apiPort: 3002,
-      webPort: 3001,
-      envRegistryFrontendPort: 3e3,
-      corsOrigins: ["http://localhost:3000", "http://localhost:3001", "https://cafe.clowder-ai.com"],
-      roadmapPath: "docs/BACKLOG.md",
-      brand: {
-        name: "Cat Cafe",
-        displayName: "Cat Caf\xE9",
-        shortName: "\u732B\u732B",
-        hubName: "Cat Caf\xE9 Hub",
-        tagline: "\u4E09\u53EA AI \u732B\u732B\u7684\u534F\u4F5C\u7A7A\u95F4"
-      },
-      repositoryFullName: "zts212653/cat-cafe",
-      l0Projections: ["owner", "public", "collective-work"],
-      promptPolicy: {
-        coCreatorRole: "\u94F2\u5C4E\u5B98",
-        decisionRole: "CVO",
-        runtimeSafetyRule: "1. **Redis 6399 \u5723\u57DF** \u2014 Worktree \u5F00\u53D1\u53EA\u7528 6398\uFF0C\u8BEF\u89E6 6399 \u7ACB\u5373\u505C\u670D\u52A1\u901A\u77E5\u94F2\u5C4E\u5B98",
-        acceptanceRule: "4. **Alpha \u9A8C\u6536\u901A\u9053** \u2014 `pnpm alpha:start` \u62C9\u6700\u65B0 origin/main \u7684\u9694\u79BB\u6D4B\u8BD5\u73AF\u5883\uFF083011/3012/4111/6397\uFF09\uFF1B\u5F00\u53D1 Redis \u4ECD\u4E3A 6398\u3002\u5DF2\u5408\u5165 main \u7684\u6539\u52A8\u7528 alpha \u9A8C\u6536\uFF08\u613F\u666F\u5B88\u62A4 / \u94F2\u5C4E\u5B98\u6D4B\u8BD5\uFF09\uFF1B\u672A\u5408\u5165\u6539\u52A8\u7684\u81EA\u6D4B\u5728 feature worktree \u4E0A\u505A",
-        modifyDataBoundary: "\u6539 Redis \u5723\u57DF",
-        capabilityQualifier: "\u5BB6\u91CC\u72EC\u6709"
-      }
-    },
     opensource: {
       apiPort: 3004,
       webPort: 3003,
@@ -40345,25 +40320,6 @@ var schema = external_exports.discriminatedUnion("status", [
   }).strict()
 ]);
 
-// ../shared/src/plugin-archive-replacement.ts
-var digest = external_exports.string().regex(/^sha512-[A-Za-z0-9+/]{85}[AQgw]==$/);
-var revision = external_exports.number().int().safe().min(1);
-var PluginArchiveReplacementConfirmationSchema = external_exports.object({
-  pluginId: external_exports.string().min(1).max(128).regex(/^[a-z0-9][a-z0-9._-]*$/),
-  pluginInstanceId: external_exports.string().min(1).max(256),
-  currentPackageDigest: digest,
-  candidatePackageDigest: digest,
-  expectedLifecycleRevision: revision,
-  expectedGrantRevision: revision,
-  candidateEffectiveGrants: external_exports.array(external_exports.string().min(1).max(128)).max(256)
-}).strict();
-var PluginArchiveReplacementOfferSchema = external_exports.object({
-  confirmation: PluginArchiveReplacementConfirmationSchema,
-  displayName: external_exports.string().min(1),
-  currentVersion: external_exports.string().min(1),
-  candidateVersion: external_exports.string().min(1)
-}).strict();
-
 // ../shared/src/preview-visible-page-admission.ts
 var fullGitRevisionSchema = external_exports.string().regex(/^[0-9a-f]{40}$/);
 var boundedTextSchema = external_exports.string().min(1).max(200);
@@ -40859,7 +40815,7 @@ var publicationReviewContextSchema = external_exports.object({
 
 // ../shared/src/types/video-project-review.ts
 var id4 = external_exports.string().min(1).max(256).refine((value) => value.trim().length > 0);
-var revision2 = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
+var revision = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
 var positive3 = external_exports.number().int().positive().safe();
 var tick2 = external_exports.number().int().nonnegative().safe();
 var body = external_exports.string().min(1).max(8e3).refine((value) => value.trim().length > 0);
@@ -40871,7 +40827,7 @@ var videoProjectReviewSourceSchema = external_exports.object({
   kind: external_exports.literal("video-project"),
   contentRef: id4,
   ownerRevision: positive3,
-  revision: revision2,
+  revision,
   mime: external_exports.literal("application/vnd.cat-cafe.video-project+json")
 }).strict();
 var regionBboxSchema = external_exports.object({
@@ -40928,12 +40884,12 @@ var videoProjectReviewTargetSchema = external_exports.discriminatedUnion("kind",
 });
 var videoProjectReviewAnchorSchema = external_exports.object({
   kind: external_exports.literal("video-project"),
-  baseRevision: revision2,
+  baseRevision: revision,
   baseOwnerRevision: positive3,
   target: videoProjectReviewTargetSchema
 }).strict();
 var videoProjectReviewResultSchema = external_exports.union([
-  external_exports.object({ contentRef: id4, ownerRevision: positive3, blobDigest: revision2, operationId: id4 }).strict(),
+  external_exports.object({ contentRef: id4, ownerRevision: positive3, blobDigest: revision, operationId: id4 }).strict(),
   external_exports.object({ assetVersionRef: id4, ownerRevision: positive3 }).strict(),
   external_exports.object({ kind: external_exports.literal("not-changed"), reason: body }).strict()
 ]);
@@ -41171,12 +41127,12 @@ var videoProjectScreeningsSchema = external_exports.array(videoProjectScreeningS
 
 // ../shared/src/types/content-modification-project.ts
 var id5 = external_exports.string().trim().min(1).max(256);
-var revision3 = external_exports.number().int().positive().safe();
+var revision2 = external_exports.number().int().positive().safe();
 var projectModificationSourceSchema = external_exports.object({
   kind: external_exports.literal("video-project"),
   contentRef: id5,
   reviewId: id5,
-  expectedReviewRevision: revision3,
+  expectedReviewRevision: revision2,
   screeningId: id5,
   input: videoProjectFrozenInputSchema,
   media: videoProjectFrozenInputSchema,
@@ -41511,7 +41467,7 @@ var evolutionMediaSnapshotSourceSchema = external_exports.object({
 
 // ../shared/src/types/video-project-message.ts
 var id6 = external_exports.string().trim().min(1).max(256);
-var revision4 = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
+var revision3 = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
 var videoProjectMediaRangeSchema = external_exports.object({ startPts: external_exports.number().int().safe(), endPts: external_exports.number().int().safe() }).strict().refine(({ startPts, endPts }) => endPts > startPts, "Media selection must be a nonempty half-open range");
 var videoProjectScreeningSelectionSchema = external_exports.object({
   id: id6,
@@ -41538,7 +41494,7 @@ var projectScreeningContextAttachmentSchema = external_exports.object({
 var videoProjectMessageSourceSchema = external_exports.object({
   threadId: id6,
   messageId: id6,
-  messageRevision: revision4,
+  messageRevision: revision3,
   attachmentId: id6,
   selectionId: id6,
   visibility: external_exports.enum(["public", "whisper"]),
@@ -41557,7 +41513,7 @@ var videoProjectMessageContextSchema = external_exports.object({
 // ../shared/src/types/workspace-content-review.ts
 var id7 = external_exports.string().trim().min(1).max(256);
 var timestamp2 = external_exports.string().datetime();
-var revision5 = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
+var revision4 = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
 var positive4 = external_exports.number().int().positive().safe();
 var body2 = external_exports.string().trim().min(1).max(8e3);
 var rawSourceQuote = external_exports.string().min(1).max(8e3);
@@ -41574,15 +41530,15 @@ var workspaceContentSourceSchema = external_exports.discriminatedUnion("kind", [
     kind: external_exports.literal("collective-media"),
     contentRef: id7,
     ownerRevision: positive4,
-    blobDigest: revision5,
+    blobDigest: revision4,
     ownerReceiptRef: id7,
-    revision: revision5,
+    revision: revision4,
     mime: external_exports.enum(["image/png", "video/mp4"]),
     media: immutableMediaSchema
   }).strict(),
   external_exports.object({
     kind: external_exports.literal("collective-artifact"),
-    revision: revision5,
+    revision: revision4,
     ownerRevision: positive4,
     mime: external_exports.literal("text/markdown"),
     byteLength: external_exports.number().int().nonnegative().max(65536)
@@ -41591,7 +41547,7 @@ var workspaceContentSourceSchema = external_exports.discriminatedUnion("kind", [
   external_exports.object({
     kind: external_exports.literal("evolution"),
     locator: evolutionMediaLocatorSchema,
-    revision: revision5,
+    revision: revision4,
     mime: external_exports.enum(["image/png", "image/jpeg", "image/webp", "video/mp4", "video/webm"]),
     byteLength: positive4,
     media: immutableMediaSchema,
@@ -41600,21 +41556,21 @@ var workspaceContentSourceSchema = external_exports.discriminatedUnion("kind", [
   external_exports.object({
     kind: external_exports.literal("text"),
     locator: workspaceContentLocatorSchema,
-    revision: revision5,
+    revision: revision4,
     mime: external_exports.string().trim().min(1).max(128),
     byteLength: external_exports.number().int().nonnegative().safe()
   }).strict(),
   external_exports.object({
     kind: external_exports.literal("media"),
     locator: workspaceContentLocatorSchema,
-    revision: revision5,
+    revision: revision4,
     mime: reviewedMediaTypeSchema,
     byteLength: positive4,
     media: immutableMediaSchema
   }).strict(),
   external_exports.object({
     kind: external_exports.literal("publication"),
-    revision: revision5,
+    revision: revision4,
     mime: reviewedMediaTypeSchema,
     media: immutableMediaSchema,
     publication: reviewedMediaAssetSchema.omit({ media: true, mediaType: true })
@@ -41622,15 +41578,15 @@ var workspaceContentSourceSchema = external_exports.discriminatedUnion("kind", [
 ]);
 var workspaceTextAnchorSchema = external_exports.object({
   kind: external_exports.literal("text_quote"),
-  baseRevision: revision5,
+  baseRevision: revision4,
   start: external_exports.number().int().nonnegative().safe(),
   end: external_exports.number().int().positive().safe(),
   /** Raw source evidence is never normalized like a human-authored comment body. */
   quote: rawSourceQuote,
-  quoteDigest: revision5,
-  contextDigest: revision5
+  quoteDigest: revision4,
+  contextDigest: revision4
 }).strict().refine((anchor) => anchor.end > anchor.start, "Text range must be nonempty");
-var workspaceMediaAnchorSchema = external_exports.object({ baseRevision: revision5, anchor: artifactReviewAnchorSchema }).strict();
+var workspaceMediaAnchorSchema = external_exports.object({ baseRevision: revision4, anchor: artifactReviewAnchorSchema }).strict();
 var workspaceContentAnchorSchema = external_exports.union([
   workspaceTextAnchorSchema,
   workspaceMediaAnchorSchema,
@@ -41645,7 +41601,7 @@ var workspaceContentReplySchema = external_exports.object({
 }).strict();
 var workspaceContentVisualMarkSchema = external_exports.object({
   drawing: artifactReviewDrawingSchema,
-  baseRevision: revision5,
+  baseRevision: revision4,
   author: workspaceContentActorSchema,
   createdAt: timestamp2,
   state: external_exports.enum(["active", "deleted"]),
@@ -41659,7 +41615,7 @@ var workspaceContentAnnotationSchema = external_exports.object({
     channelId: id7,
     rootEventId: id7,
     ownerRevision: positive4,
-    blobDigest: revision5
+    blobDigest: revision4
   }).strict().optional(),
   imageEdit: artifactReviewImageEditSchema.optional(),
   reanchoredFrom: external_exports.object({ round: positive4, annotationId: id7 }).strict().optional(),
@@ -41785,32 +41741,32 @@ var contentModificationReceiptV1Schema = external_exports.discriminatedUnion("st
 
 // ../shared/src/types/content-modification.ts
 var id8 = external_exports.string().trim().min(1).max(256);
-var revision6 = external_exports.number().int().positive().safe();
+var revision5 = external_exports.number().int().positive().safe();
 var sha = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
 var businessTime = external_exports.number().int().positive().safe();
 var contentModificationSourceSchema = external_exports.discriminatedUnion("kind", [
   projectModificationSourceSchema,
-  external_exports.object({ kind: external_exports.literal("artifact-review"), reviewId: id8, round: revision6, expectedReviewRevision: revision6 }).strict(),
+  external_exports.object({ kind: external_exports.literal("artifact-review"), reviewId: id8, round: revision5, expectedReviewRevision: revision5 }).strict(),
   external_exports.object({
     kind: external_exports.literal("evolution"),
     locator: evolutionMediaLocatorSchema,
     expectedSourceRevision: sha,
     reviewId: id8,
-    expectedReviewRevision: revision6
+    expectedReviewRevision: revision5
   }).strict(),
   external_exports.object({
     kind: external_exports.literal("publication"),
     contentRef: id8,
-    ownerRevision: revision6,
+    ownerRevision: revision5,
     ledgerRef: id8,
-    expectedLedgerRevision: revision6
+    expectedLedgerRevision: revision5
   }).strict(),
   external_exports.object({
     kind: external_exports.literal("workspace"),
     locator: workspaceContentLocatorSchema,
     expectedSourceRevision: sha,
     reviewId: id8,
-    expectedReviewRevision: revision6
+    expectedReviewRevision: revision5
   }).strict()
 ]);
 var contentModificationSelectionSchema = external_exports.union([
@@ -41876,12 +41832,12 @@ var contentModificationRequestSchema = external_exports.object({
     external_exports.object({
       kind: external_exports.literal("media").optional(),
       taskId: id8,
-      expectedTaskRevision: revision6,
+      expectedTaskRevision: revision5,
       reviewId: id8,
-      expectedReviewRevision: revision6,
-      round: revision6
+      expectedReviewRevision: revision5,
+      round: revision5
     }).strict(),
-    external_exports.object({ kind: external_exports.literal("text"), taskId: id8, expectedTaskRevision: revision6 }).strict()
+    external_exports.object({ kind: external_exports.literal("text"), taskId: id8, expectedTaskRevision: revision5 }).strict()
   ]).optional(),
   time: external_exports.object({ businessDeadline: businessTime.optional(), reviewBy: businessTime.optional() }).strict().optional()
 }).strict();
@@ -41958,7 +41914,7 @@ var contentTextEditSchema = external_exports.object({
 var respondContentTextSchema = external_exports.object({
   requestId: id8,
   operationId: external_exports.string().uuid(),
-  expectedTaskRevision: revision6,
+  expectedTaskRevision: revision5,
   expectedProposalRevision: external_exports.number().int().nonnegative().safe(),
   baseRevision: sha,
   edits: external_exports.array(contentTextEditSchema).min(1).max(500),
@@ -42003,7 +41959,7 @@ var mediaPublicationSourceSchema = external_exports.discriminatedUnion("kind", [
 // ../shared/src/types/media-context-attachment.ts
 var id10 = external_exports.string().trim().min(1).max(128);
 var ownerId = external_exports.string().trim().min(1).max(256);
-var revision7 = external_exports.number().int().positive().safe();
+var revision6 = external_exports.number().int().positive().safe();
 var mediaGalleryOriginSchema = messageMediaPublicationSourceSchema.pick({ threadId: true, messageId: true, messageRevision: true, item: true }).extend({ index: external_exports.number().int().min(0).max(1e4), count: external_exports.number().int().min(1).max(10001) }).strict().refine((value) => value.index < value.count, "Gallery position must be inside its original message group");
 var MediaContextAttachmentSchema = external_exports.object({
   v: external_exports.literal(1),
@@ -42017,10 +41973,10 @@ var MediaContextAttachmentSchema = external_exports.object({
   taskContext: external_exports.object({
     kind: external_exports.literal("media"),
     taskId: ownerId,
-    expectedTaskRevision: revision7,
+    expectedTaskRevision: revision6,
     reviewId: ownerId,
-    expectedReviewRevision: revision7,
-    round: revision7
+    expectedReviewRevision: revision6,
+    round: revision6
   }).strict().optional()
 }).strict().superRefine((value, ctx) => {
   if (new Set(value.selections.map((item) => item.id)).size !== value.selections.length)
@@ -42163,8 +42119,8 @@ var ContextAttachmentsSchema = external_exports.array(ContextAttachmentSchema).m
 });
 var VersionBoundContextAttachmentsSchema = ContextAttachmentsSchema.superRefine((attachments, ctx) => {
   for (const [index4, attachment] of attachments.entries()) {
-    const revision11 = attachment.kind === "workspace_file" ? attachment.revision : attachment.kind === "quote" && attachment.source.kind === "workspace_file" ? attachment.source.revision : "not-a-workspace-reference";
-    if (revision11 === void 0) {
+    const revision10 = attachment.kind === "workspace_file" ? attachment.revision : attachment.kind === "quote" && attachment.source.kind === "workspace_file" ? attachment.source.revision : "not-a-workspace-reference";
+    if (revision10 === void 0) {
       ctx.addIssue({
         code: external_exports.ZodIssueCode.custom,
         message: "New workspace-file references require the exact F063 owner revision",
@@ -43428,16 +43384,16 @@ var collectiveHostShellAppearanceSchema = external_exports.object({
 // ../shared/src/types/collective-artifact-custody.ts
 var id11 = external_exports.string().trim().min(1).max(256);
 var positive5 = external_exports.number().int().positive().safe();
-var digest2 = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
+var digest = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
 var COLLECTIVE_CUSTODY_PAGE_BYTES = 32768;
 var COLLECTIVE_CUSTODY_MAX_BYTES = 16 * 1024 * 1024;
 var COLLECTIVE_CUSTODY_MAX_PAGES = 512;
 var collectiveCustodyManifestSchema = external_exports.object({
-  digest: digest2,
+  digest,
   totalBytes: positive5.max(COLLECTIVE_CUSTODY_MAX_BYTES),
   pageCount: positive5.max(COLLECTIVE_CUSTODY_MAX_PAGES)
 }).strict().refine((value) => value.pageCount === Math.ceil(value.totalBytes / COLLECTIVE_CUSTODY_PAGE_BYTES));
-var collectiveCustodyVersionSchema = external_exports.object({ contentRef: id11, ownerRevision: positive5, blobDigest: digest2, receiptRef: id11 }).strict();
+var collectiveCustodyVersionSchema = external_exports.object({ contentRef: id11, ownerRevision: positive5, blobDigest: digest, receiptRef: id11 }).strict();
 var collectiveCustodyPreparedSchema = external_exports.object({
   preparedRef: id11,
   manifest: collectiveCustodyManifestSchema,
@@ -43447,7 +43403,7 @@ var collectiveCustodyPreparedSchema = external_exports.object({
 var collectiveCustodyReadySchema = external_exports.object({
   readyRef: id11,
   preparedRef: id11,
-  manifestDigest: digest2,
+  manifestDigest: digest,
   ownerScopeRef: id11
 }).strict();
 var collectiveCustodyTransferSchema = external_exports.object({
@@ -43482,7 +43438,7 @@ var collectiveCustodyTransferSchema = external_exports.object({
 var collectiveCustodyPageSchema = external_exports.object({
   transferId: id11,
   index: external_exports.number().int().nonnegative().max(COLLECTIVE_CUSTODY_MAX_PAGES - 1),
-  digest: digest2,
+  digest,
   base64: external_exports.string().min(1).max(Math.ceil(COLLECTIVE_CUSTODY_PAGE_BYTES / 3) * 4)
 }).strict();
 var collectiveCustodyEndpointSchema = external_exports.object({ serviceInstanceId: id11, collectiveId: id11, connectionId: id11 }).strict();
@@ -43496,7 +43452,7 @@ var authorizeCollectiveCustodySchema = collectiveCustodyTargetSchema.extend({ op
 // ../shared/src/types/collective-content-modification.ts
 var id12 = external_exports.string().trim().min(1).max(256);
 var positive6 = external_exports.number().int().positive().safe();
-var digest3 = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
+var digest2 = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
 var collectiveModificationReworkSchema = external_exports.object({ requestId: id12, proposalRef: id12 }).strict();
 var collectiveModificationResolutionSchema = external_exports.object({
   kind: external_exports.enum(["cancelled", "rejected"]),
@@ -43514,7 +43470,7 @@ var collectiveModificationSourceSchema = external_exports.object({
   artifactId: id12,
   contentRef: id12,
   ownerRevision: positive6,
-  blobDigest: digest3,
+  blobDigest: digest2,
   ledgerRef: id12,
   ledgerRevision: positive6,
   sourceEventId: id12,
@@ -43559,7 +43515,7 @@ var collectiveModificationProjectionSchema = collectiveModificationRecordSchema.
 }).extend({
   target: external_exports.object({ humanId: id12, catId: id12 }).strict(),
   ownerRevision: positive6,
-  blobDigest: digest3,
+  blobDigest: digest2,
   requestEventId: id12,
   sourceEventId: id12,
   location: collectiveLocationSchema,
@@ -43577,8 +43533,8 @@ var collectiveContentTextProposalReceiptSchema = external_exports.object({
   requestId: id12,
   revision: positive6,
   operationId: external_exports.string().uuid(),
-  baseRevision: digest3,
-  resultRevision: digest3,
+  baseRevision: digest2,
+  resultRevision: digest2,
   authorCatId: id12,
   createdAt: external_exports.number().int().nonnegative().safe(),
   receiptRef: id12
@@ -43588,12 +43544,12 @@ var collectiveContentTextProposalReceiptSchema = external_exports.object({
 var COLLECTIVE_ARTIFACT_VERSION_LIMIT = 1e4;
 var id13 = external_exports.string().trim().min(1).max(256);
 var positive7 = external_exports.number().int().positive().safe();
-var digest4 = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
+var digest3 = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
 var coordinates = { serviceInstanceId: id13, collectiveId: id13 };
 var collectiveArtifactSelectionSchema = external_exports.object({
   start: external_exports.number().int().nonnegative().max(65536),
   end: external_exports.number().int().positive().max(65536),
-  quoteDigest: digest4
+  quoteDigest: digest3
 }).strict().refine((selection) => selection.end > selection.start && selection.end - selection.start <= 8e3);
 var collectiveArtifactAdoptionLineageSchema = external_exports.object({
   requestId: id13,
@@ -43615,7 +43571,7 @@ var collectiveArtifactActionSchema = external_exports.enum([
 ]);
 var collectiveArtifactVersionSchema = external_exports.object({
   ownerRevision: positive7,
-  blobDigest: digest4,
+  blobDigest: digest3,
   receiptRef: id13,
   recordedAt: external_exports.string().datetime(),
   lineage: collectiveArtifactAdoptionLineageSchema.optional(),
@@ -43640,7 +43596,7 @@ var handoff = external_exports.object({
 var collectiveArtifactRequestSourceSchema = external_exports.object({
   requestEventId: id13,
   ownerRevision: positive7,
-  blobDigest: digest4,
+  blobDigest: digest3,
   annotationIds: external_exports.array(id13).max(12),
   selections: external_exports.array(collectiveArtifactSelectionSchema).min(1).max(12).optional(),
   rework: collectiveModificationReworkSchema.optional(),
@@ -43697,7 +43653,7 @@ var registerCollectiveArtifactSchema = external_exports.object({
   sourceEventId: id13,
   workId: id13.optional(),
   ownerRevision: positive7,
-  blobDigest: digest4,
+  blobDigest: digest3,
   receiptRef: id13,
   requestId: id13,
   expectedRevision: positive7.optional(),
@@ -43730,7 +43686,7 @@ var collectiveArtifactConstraintSchema = external_exports.object({
   ownerRevision: positive7,
   /** Service catalogue head, independent of the historical revision selected by the reader. */
   catalogueOwnerRevision: positive7.optional(),
-  blobDigest: digest4,
+  blobDigest: digest3,
   membershipRevision: positive7,
   revocationEpoch: positive7,
   decisionRef: id13,
@@ -43779,7 +43735,7 @@ var acceptCollectiveArtifactCustodySchema = external_exports.object({
   expectedCustodyRevision: positive7,
   contentRef: id13,
   ownerRevision: positive7,
-  blobDigest: digest4,
+  blobDigest: digest3,
   receiptRef: id13,
   ownerScopeRef: id13,
   preparedRef: id13.optional(),
@@ -43798,14 +43754,14 @@ var collectiveArtifactCatalogueHistoryRequestSchema = external_exports.object({
   offset: external_exports.number().int().nonnegative().max(COLLECTIVE_ARTIFACT_VERSION_LIMIT).default(0),
   limit: external_exports.number().int().min(1).max(30).default(30),
   snapshotOwnerRevision: positive7.optional(),
-  expectedSnapshot: digest4.optional()
+  expectedSnapshot: digest3.optional()
 }).strict();
 var collectiveArtifactCatalogueHistoryPageSchema = external_exports.object({
   artifactId: id13,
   contentRef: id13,
   sourceEventId: id13,
   snapshotOwnerRevision: positive7,
-  snapshot: digest4,
+  snapshot: digest3,
   total: positive7,
   offset: external_exports.number().int().nonnegative(),
   nextOffset: external_exports.number().int().positive().optional(),
@@ -44098,7 +44054,7 @@ var collectiveMediaBufferBytes = 64 * 1024;
 
 // ../shared/src/types/collective-artifact-publication.ts
 var id20 = external_exports.string().trim().min(1).max(256);
-var digest5 = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
+var digest4 = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
 var prepareCollectiveArtifactPublicationSchema = external_exports.object({
   serviceInstanceId: id20,
   collectiveId: id20,
@@ -44106,7 +44062,7 @@ var prepareCollectiveArtifactPublicationSchema = external_exports.object({
   sourceEventId: id20,
   requestId: id20,
   title: external_exports.string().trim().min(1).max(200),
-  blobDigest: digest5,
+  blobDigest: digest4,
   workId: id20.optional()
 }).strict();
 var collectiveArtifactPublicationRecordSchema = prepareCollectiveArtifactPublicationSchema.extend({
@@ -44117,7 +44073,7 @@ var collectiveArtifactPublicationRecordSchema = prepareCollectiveArtifactPublica
   membershipRevision: external_exports.number().int().positive().safe(),
   endpointId: id20,
   sourceLocation: collectiveLocationSchema,
-  requestDigest: digest5,
+  requestDigest: digest4,
   status: external_exports.enum(["pending", "published"]),
   effectPending: external_exports.boolean().optional(),
   receiptRef: id20.optional(),
@@ -44146,13 +44102,13 @@ var collectiveArtifactPublicationReceiptSchema = external_exports.object({
   contentRef: id20,
   previousOwnerRevision: external_exports.literal(0),
   ownerRevision: external_exports.literal(1),
-  blobDigest: digest5,
+  blobDigest: digest4,
   actor: external_exports.object({ kind: external_exports.literal("human"), actorId: id20 }).strict(),
   operationId: id20,
   outboxSequence: external_exports.literal(1),
   operationContext: external_exports.object({
     kind: external_exports.literal("collective-artifact:publish"),
-    requestDigest: digest5,
+    requestDigest: digest4,
     actorHumanId: id20,
     scopeRef: id20,
     custodyRevision: external_exports.literal(1),
@@ -45644,9 +45600,9 @@ var developmentScopeQueryV1Schema = external_exports.object({
 
 // ../shared/src/types/task-data-controller.ts
 var ref7 = external_exports.string().trim().min(1).max(1e3);
-var revision8 = external_exports.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+var revision7 = external_exports.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 var timestamp3 = external_exports.number().int().nonnegative().finite();
-var digest6 = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
+var digest5 = external_exports.string().regex(/^sha256:[a-f0-9]{64}$/);
 var entrustedTaskDataControllerCoordinatesV1Schema = external_exports.object({
   userId: ref7,
   catId: ref7,
@@ -45657,13 +45613,13 @@ var entrustedTaskDataControllerCoordinatesV1Schema = external_exports.object({
   pluginId: ref7,
   pluginInstanceId: ref7,
   moduleRef: ref7,
-  lifecycleRevision: revision8,
-  grantRevision: revision8
+  lifecycleRevision: revision7,
+  grantRevision: revision7
 }).strict();
 var receiptBase = {
   receiptRef: ref7.regex(/^task-data-controller:[a-f0-9]{64}$/),
   operationId: ref7,
-  payloadDigest: digest6,
+  payloadDigest: digest5,
   actorRef: ref7,
   operationKey: ref7,
   actionId: ref7,
@@ -45684,7 +45640,7 @@ var entrustedTaskDataControllerReceiptV1Schema = external_exports.discriminatedU
   }).strict()
 ]);
 var entrustedTaskDataControllerV1Schema = external_exports.object({
-  bindingRevision: revision8,
+  bindingRevision: revision7,
   state: external_exports.enum(["active", "revoked"]),
   binding: entrustedTaskDataControllerCoordinatesV1Schema.extend({
     ownerOperationReceiptRef: receiptBase.receiptRef
@@ -48444,15 +48400,15 @@ var custodyOpportunityEpisodeV1Schema = external_exports.object({
 
 // ../shared/src/types/harness-history-publication.ts
 var harnessHistoryCommitSchema = external_exports.string().regex(/^[a-f0-9]{40}$/);
-var revision9 = external_exports.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+var revision8 = external_exports.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 var commonCommand = {
-  expectedRevision: revision9,
+  expectedRevision: revision8,
   clientMessageId: bounded(240),
   reason: bounded(1e3)
 };
 var harnessHistoryPublicationCommandSchema = external_exports.discriminatedUnion("action", [
   external_exports.object({ ...commonCommand, action: external_exports.literal("publish"), sourceRevision: harnessHistoryCommitSchema }).strict(),
-  external_exports.object({ ...commonCommand, action: external_exports.literal("restore"), restoreRevision: revision9 }).strict()
+  external_exports.object({ ...commonCommand, action: external_exports.literal("restore"), restoreRevision: revision8 }).strict()
 ]);
 var harnessHistoryFailureCodeSchema = external_exports.enum([
   "source_unavailable",
@@ -48462,12 +48418,12 @@ var harnessHistoryFailureCodeSchema = external_exports.enum([
   "restore_not_found"
 ]);
 var harnessHistoryPublicationAttemptSchema = external_exports.object({
-  revision: revision9.refine((value) => value > 0),
+  revision: revision8.refine((value) => value > 0),
   clientMessageId: bounded(240),
   action: external_exports.enum(["publish", "restore"]),
   status: external_exports.enum(["published", "failed"]),
   sourceRevision: harnessHistoryCommitSchema.optional(),
-  restoreRevision: revision9.optional(),
+  restoreRevision: revision8.optional(),
   actorRef: bounded(240),
   originRef: bounded(2e3),
   reason: bounded(1e3),
@@ -48487,7 +48443,7 @@ var harnessHistoryPublicationStatusSchema = evolutionArchivePublicationSchema.ex
   schemaVersion: external_exports.literal(1),
   programRef: ownerTruthRefV1Schema,
   objectRef: ownerTruthRefV1Schema,
-  revision: revision9,
+  revision: revision8,
   current: harnessHistoryPublicationVersionSchema,
   attempts: external_exports.array(harnessHistoryPublicationAttemptSchema).max(50),
   hasMore: external_exports.boolean(),
@@ -51514,8 +51470,8 @@ var routingContextReadModelV1Schema = external_exports.object({
       });
     }
   });
-  model.preferenceRevisions.forEach((revision11, index4) => {
-    if (revision11.ownerId !== model.ownerId) {
+  model.preferenceRevisions.forEach((revision10, index4) => {
+    if (revision10.ownerId !== model.ownerId) {
       ctx.addIssue({
         code: external_exports.ZodIssueCode.custom,
         path: ["preferenceRevisions", index4, "ownerId"],
@@ -52383,7 +52339,7 @@ var videoProjectDocumentSchema = videoProjectDocumentBaseSchema.superRefine(refi
 
 // ../shared/src/types/video-project-command.ts
 var id28 = external_exports.string().trim().min(1).max(256);
-var revision10 = external_exports.number().int().positive().safe();
+var revision9 = external_exports.number().int().positive().safe();
 var page2 = {
   cursor: external_exports.number().int().nonnegative().safe().default(0),
   expectedSnapshot: external_exports.string().regex(/^sha256:[a-f0-9]{64}$/).optional()
@@ -52391,23 +52347,23 @@ var page2 = {
 var videoProjectCommandSchema = external_exports.object({
   requestId: id28,
   command: external_exports.discriminatedUnion("kind", [
-    external_exports.object({ kind: external_exports.literal("read"), ownerRevision: revision10.optional(), ...page2 }).strict(),
+    external_exports.object({ kind: external_exports.literal("read"), ownerRevision: revision9.optional(), ...page2 }).strict(),
     external_exports.object({ kind: external_exports.literal("review-read"), ...page2 }).strict(),
     external_exports.object({
       kind: external_exports.literal("save"),
-      expectedOwnerRevision: revision10,
+      expectedOwnerRevision: revision9,
       operationId: id28,
       document: external_exports.record(external_exports.unknown())
     }).strict(),
     external_exports.object({
       kind: external_exports.literal("review-act"),
-      expectedRevision: revision10,
+      expectedRevision: revision9,
       operationId: id28,
       action: videoProjectReviewActionSchema
     }).strict(),
     external_exports.object({
       kind: external_exports.literal("self-review"),
-      expectedOwnerRevision: revision10,
+      expectedOwnerRevision: revision9,
       operationId: id28,
       id: id28,
       input: videoProjectFrozenInputSchema,
@@ -53105,7 +53061,7 @@ var en = {
   \u53EA: "cats",
   \u6211\u5BB6\u7684\u732B\u5728\u8FD9\u4E2A\u9891\u9053: "My cats in this channel",
   "\u76EE\u6807\u5171\u540C\u5BB6\u56ED\u9700\u8981\u91CD\u65B0\u767B\u5F55\uFF1B\u4E0D\u4F1A\u81EA\u52A8\u5207\u6362\u5230\u5176\u4ED6\u5171\u540C\u5BB6\u56ED\u3002": "Sign in again to open this collective. Your selected collective stays unchanged.",
-  "Cat Caf\xE9 \u6B63\u5728\u5B89\u5168\u6258\u7BA1\u8FDE\u63A5\u51ED\u636E\u2026": "Cat Caf\xE9 is securely saving connection credentials\u2026",
+  "Clowder AI \u6B63\u5728\u5B89\u5168\u6258\u7BA1\u8FDE\u63A5\u51ED\u636E\u2026": "Clowder AI is securely saving connection credentials\u2026",
   \u63A8\u8FDB: "is progressing",
   \u5173\u6389: "Turn off",
   \u53D6\u6D88: "Cancel",
@@ -53276,7 +53232,7 @@ var en = {
   "Collective \u9080\u8BF7": "Collective invitation",
   \u52A0\u5165\u5171\u540C\u4F53: "Join the collective",
   "\u4F7F\u7528 GitHub \u9A8C\u8BC1\u5E76\u52A0\u5165": "Verify with GitHub and join",
-  "\u5148\u9A8C\u8BC1\u4F60\u7684 Human \u8EAB\u4EFD\uFF0C\u518D\u63A5\u53D7\u8FD9\u6B21\u9080\u8BF7\u3002Cat Caf\xE9 endpoint \u7684\u8FDE\u63A5\u4E0E\u64A4\u9500\u4ECD\u72EC\u7ACB\u7BA1\u7406\u3002": "Verify your identity before accepting this invitation. Caf\xE9 connections remain separately managed.",
+  "\u5148\u9A8C\u8BC1\u4F60\u7684 Human \u8EAB\u4EFD\uFF0C\u518D\u63A5\u53D7\u8FD9\u6B21\u9080\u8BF7\u3002Clowder AI endpoint \u7684\u8FDE\u63A5\u4E0E\u64A4\u9500\u4ECD\u72EC\u7ACB\u7BA1\u7406\u3002": "Verify your identity before accepting this invitation. Caf\xE9 connections remain separately managed.",
   \u4E00\u6B21\u6027\u521D\u59CB\u5316: "Initial setup",
   \u521B\u5EFA\u8FD9\u91CC\u7684\u7B2C\u4E00\u4F4D\u7BA1\u7406\u8005: "Create the first steward",
   \u4F60\u5E0C\u671B\u663E\u793A\u7684\u540D\u5B57: "Your display name",
@@ -53873,7 +53829,7 @@ function createHostAppearance(input) {
   const listeners = /* @__PURE__ */ new Set();
   let state = DIRECT;
   let generation;
-  let revision11 = 0;
+  let revision10 = 0;
   let shellRevision = 0;
   const paint = (next) => {
     input.root.setAttribute("data-theme", next.scheme);
@@ -53927,8 +53883,8 @@ function createHostAppearance(input) {
     const parsed = collectiveHostAppearanceSchema.safeParse(event.data);
     if (!parsed.success) return false;
     const message = parsed.data;
-    if (message.bridgeId !== generation || message.appearanceRevision <= revision11) return false;
-    revision11 = message.appearanceRevision;
+    if (message.bridgeId !== generation || message.appearanceRevision <= revision10) return false;
+    revision10 = message.appearanceRevision;
     set({
       presentation: message.presentation,
       scheme: message.resolvedScheme,
@@ -53951,7 +53907,7 @@ function createHostAppearance(input) {
     observeGeneration(bridgeId) {
       if (bridgeId === generation) return;
       generation = bridgeId;
-      revision11 = 0;
+      revision10 = 0;
       shellRevision = 0;
     },
     receive,
@@ -54635,9 +54591,9 @@ function createMessageExpressionPort(coordinates3, request) {
       return collectiveReadPositionSchema.parse(value.read);
     },
     async upload(file, clientUploadId, channelId, signal) {
-      const digest8 = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+      const digest7 = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
       signal.throwIfAborted();
-      const blobDigest = `sha256:${[...new Uint8Array(digest8)].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+      const blobDigest = `sha256:${[...new Uint8Array(digest7)].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
       const query = new URLSearchParams({
         ...coordinates3,
         channelId,
@@ -55552,17 +55508,17 @@ var previewSchema = external_exports.object({
   stale: external_exports.boolean(),
   currentOwnerRevision: external_exports.number().int().positive()
 });
-async function digest7(text10) {
+async function digest6(text10) {
   const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text10)));
   return `sha256:${Array.from(bytes, (item) => item.toString(16).padStart(2, "0")).join("")}`;
 }
-async function previewSharedArtifactModification(operation, artifact, selection, resolveVersion = async (revision11) => artifact.versions.find((version) => version.ownerRevision === revision11)) {
+async function previewSharedArtifactModification(operation, artifact, selection, resolveVersion = async (revision10) => artifact.versions.find((version) => version.ownerRevision === revision10)) {
   const requestId2 = crypto.randomUUID();
   const value = previewSchema.parse(
     await readArtifactJsonPages((page3) => operation(artifact, "preview", { ...selection, ...page3 }, requestId2))
   );
   const version = artifact.versions.find((item) => item.ownerRevision === value.request.ownerRevision) ?? await resolveVersion(value.request.ownerRevision);
-  if (value.request.requestId !== selection.requestId || value.proposal.proposalRef !== selection.proposalRef || value.proposal.requestId !== selection.requestId || value.proposal.authorCatId !== value.request.target.catId || value.request.sourceEventId !== artifact.sourceEventId || value.request.location.channelId !== artifact.sourceLocation.channelId || !version || value.proposal.baseRevision !== version.blobDigest || await digest7(value.baseText) !== value.proposal.baseRevision || await digest7(value.proposedText) !== value.proposal.resultRevision)
+  if (value.request.requestId !== selection.requestId || value.proposal.proposalRef !== selection.proposalRef || value.proposal.requestId !== selection.requestId || value.proposal.authorCatId !== value.request.target.catId || value.request.sourceEventId !== artifact.sourceEventId || value.request.location.channelId !== artifact.sourceLocation.channelId || !version || value.proposal.baseRevision !== version.blobDigest || await digest6(value.baseText) !== value.proposal.baseRevision || await digest6(value.proposedText) !== value.proposal.resultRevision)
     throw new Error("\u4FEE\u6539\u4E0E\u8FD9\u4EF6\u4F5C\u54C1\u7684\u7248\u672C\u4E0D\u4E00\u81F4\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u3002");
   return value;
 }
@@ -55863,7 +55819,7 @@ function collectiveArtifactClient(request, coordinates3, namespace) {
     operation,
     artifact,
     selection,
-    (revision11) => historyClient.version(artifact, revision11)
+    (revision10) => historyClient.version(artifact, revision10)
   );
   const adoptModification = (artifact, preview) => adoptSharedArtifactModification(operation, namespace, artifact, preview);
   const moreRequests = async (artifact, view) => {
@@ -68641,7 +68597,7 @@ function CollectiveWorldRail({
   const t = useCollectiveText();
   if (!visible || !collectives?.length) return null;
   return /* @__PURE__ */ (0, import_jsx_runtime89.jsxs)(WorldRailFrame, { className: "global-rail", "data-spatial-role": "global-rail", "aria-label": t("\u9009\u62E9\u5171\u540C\u5BB6\u56ED"), children: [
-    /* @__PURE__ */ (0, import_jsx_runtime89.jsx)("div", { className: "brand-mark", role: "img", "aria-label": "Cat Caf\xE9 Collective", children: /* @__PURE__ */ (0, import_jsx_runtime89.jsx)(MeowClubMark, {}) }),
+    /* @__PURE__ */ (0, import_jsx_runtime89.jsx)("div", { className: "brand-mark", role: "img", "aria-label": "Clowder AI Collective", children: /* @__PURE__ */ (0, import_jsx_runtime89.jsx)(MeowClubMark, {}) }),
     /* @__PURE__ */ (0, import_jsx_runtime89.jsx)("nav", { children: collectives.map((item) => {
       const active = item.collectiveId === activeCollective?.collectiveId;
       return /* @__PURE__ */ (0, import_jsx_runtime89.jsxs)(
@@ -69182,14 +69138,14 @@ function useHostMediaSurface(options) {
   (0, import_react72.useEffect)(() => {
     const { context: context2, bridge, hostOrigin, channelId, selection } = latest.current;
     active.current = void 0;
-    const { contextId, revision: revision11 } = context2.current;
-    if (!selection || !bridge || context2.current.bridge?.bridgeId !== bridge.bridgeId || bridge.authorityStatus === "revoked" || !hostOrigin || revision11 < 1 || selection.artifact.sourceLocation.channelId !== channelId || !selectedRevision || selection.artifact.mediaType !== "image/png" && selection.artifact.mediaType !== "video/mp4")
+    const { contextId, revision: revision10 } = context2.current;
+    if (!selection || !bridge || context2.current.bridge?.bridgeId !== bridge.bridgeId || bridge.authorityStatus === "revoked" || !hostOrigin || revision10 < 1 || selection.artifact.sourceLocation.channelId !== channelId || !selectedRevision || selection.artifact.mediaType !== "image/png" && selection.artifact.mediaType !== "video/mp4")
       return;
     const ref10 = {
       v: 1,
       bridgeId: bridge.bridgeId,
       contextId,
-      contextRevision: revision11,
+      contextRevision: revision10,
       serviceInstanceId: bridge.serviceInstanceId,
       collectiveId: bridge.collectiveId,
       humanId: bridge.humanId,
@@ -69328,7 +69284,7 @@ function useHostContext(embedded, snapshot, channelId, channelIds, humanSession,
   const [cafeSection, setCafeSection] = (0, import_react74.useState)("cats");
   const [focusWork, setFocusWork] = (0, import_react74.useState)();
   const [contextId] = (0, import_react74.useState)(() => crypto.randomUUID());
-  const revision11 = (0, import_react74.useRef)(0);
+  const revision10 = (0, import_react74.useRef)(0);
   const opener = (0, import_react74.useRef)();
   const reconciledWorks = (0, import_react74.useRef)(/* @__PURE__ */ new Set());
   const pendingWorkFocus = (0, import_react74.useRef)();
@@ -69442,7 +69398,7 @@ function useHostContext(embedded, snapshot, channelId, channelIds, humanSession,
   const channelKey = JSON.stringify([.../* @__PURE__ */ new Set([channelId, ...channelIds])].slice(0, 100));
   (0, import_react74.useEffect)(() => {
     if (!bridge || !hostOrigin || !projectionReady) return;
-    const nextRevision = ++revision11.current;
+    const nextRevision = ++revision10.current;
     publicContext.current = { bridge, contextId, revision: nextRevision };
     window.parent.postMessage(
       {
@@ -70118,7 +70074,7 @@ function OnboardingScene({
         title: hasAuthenticatedHuman ? "\u5EFA\u7ACB\u65B0\u7684\u5171\u540C\u5BB6\u56ED" : "\u7ED9\u5171\u540C\u5BB6\u56ED\u8D77\u4E2A\u540D\u5B57",
         description: hasAuthenticatedHuman ? "\u4F60\u5DF2\u79BB\u5F00\u539F\u5171\u540C\u5BB6\u56ED\u3002\u53EF\u4EE5\u5728\u8FD9\u91CC\u65B0\u5EFA\uFF0C\u4E5F\u53EF\u4EE5\u4ECE\u65B0\u7684\u9080\u8BF7\u94FE\u63A5\u52A0\u5165\uFF1B\u539F\u516C\u5F00\u5386\u53F2\u4E0E\u7F72\u540D\u4ECD\u4F1A\u4FDD\u7559\u3002" : "\u4F60\u4F1A\u6210\u4E3A\u7B2C\u4E00\u4F4D\u7BA1\u7406\u8005\u3002\u9996\u542F\u5B8C\u6210\u540E\u8FD8\u9700\u7ED1\u5B9A Human \u8EAB\u4EFD\uFF0C\u624D\u80FD\u9080\u8BF7\u6210\u5458\u3001\u8FDE\u63A5 Caf\xE9 \u6216\u8FDB\u5165\u65E5\u5E38\u534F\u4F5C\u3002",
         label: "Collective \u540D\u79F0",
-        defaultValue: "Cat Caf\xE9 Collective",
+        defaultValue: "Clowder AI Collective",
         button: "\u5EFA\u7ACB Collective",
         busy,
         error: localError,
@@ -70162,7 +70118,7 @@ function OnboardingScene({
       {
         eyebrow: "Collective \u9080\u8BF7",
         title: "\u52A0\u5165\u5171\u540C\u4F53",
-        description: "\u5148\u9A8C\u8BC1\u4F60\u7684 Human \u8EAB\u4EFD\uFF0C\u518D\u63A5\u53D7\u8FD9\u6B21\u9080\u8BF7\u3002Cat Caf\xE9 endpoint \u7684\u8FDE\u63A5\u4E0E\u64A4\u9500\u4ECD\u72EC\u7ACB\u7BA1\u7406\u3002",
+        description: "\u5148\u9A8C\u8BC1\u4F60\u7684 Human \u8EAB\u4EFD\uFF0C\u518D\u63A5\u53D7\u8FD9\u6B21\u9080\u8BF7\u3002Clowder AI endpoint \u7684\u8FDE\u63A5\u4E0E\u64A4\u9500\u4ECD\u72EC\u7ACB\u7BA1\u7406\u3002",
         button: "\u4F7F\u7528 GitHub \u9A8C\u8BC1\u5E76\u52A0\u5165",
         providerReady: github?.ready === true,
         busy,
@@ -70654,11 +70610,11 @@ function useCollectiveRefresh(snapshot, setSnapshot, request, loadMe, token) {
       const target = currentCollectiveScope(latest.current);
       if (!target || !token.current) return;
       const credential = token.current;
-      const revision11 = ++generation.current;
+      const revision10 = ++generation.current;
       pending.current?.abort();
       const abort = new AbortController();
       pending.current = abort;
-      const fresh2 = () => !abort.signal.aborted && revision11 === generation.current && key === currentKey.current && credential === token.current;
+      const fresh2 = () => !abort.signal.aborted && revision10 === generation.current && key === currentKey.current && credential === token.current;
       const close = (reason, me) => {
         if (fresh2()) setSnapshot((current2) => closeCollectiveScope(current2, target, reason, me ?? current2.me));
       };
@@ -70912,7 +70868,7 @@ function useCollectiveClient() {
       postToHost: (message, targetOrigin) => window.parent.postMessage(message, targetOrigin)
     });
     setSnapshot(
-      (current2) => result === "paired" ? { ...current2, notice: "Cat Caf\xE9 \u6B63\u5728\u5B89\u5168\u6258\u7BA1\u8FDE\u63A5\u51ED\u636E\u2026", error: void 0 } : { ...current2, error: "\u6682\u65F6\u65E0\u6CD5\u521B\u5EFA\u65B0\u7684\u914D\u5BF9\u9080\u8BF7" }
+      (current2) => result === "paired" ? { ...current2, notice: "Clowder AI \u6B63\u5728\u5B89\u5168\u6258\u7BA1\u8FDE\u63A5\u51ED\u636E\u2026", error: void 0 } : { ...current2, error: "\u6682\u65F6\u65E0\u6CD5\u521B\u5EFA\u65B0\u7684\u914D\u5BF9\u9080\u8BF7" }
     );
   }, [loadMe, request, snapshot.collective, snapshot.me, snapshot.phase, snapshot.restrictedScope, token]);
   const announcePairingState = (0, import_react81.useCallback)(() => {
@@ -70983,11 +70939,11 @@ function useCollectiveClient() {
 var import_react82 = __toESM(require_react(), 1);
 
 // src/world-directory-bridge.ts
-function projectWorldDirectory(snapshot, bridgeId, revision11) {
+function projectWorldDirectory(snapshot, bridgeId, revision10) {
   const base2 = {
     type: "collective:client-world-directory",
     bridgeId,
-    revision: revision11
+    revision: revision10
   };
   if (snapshot.phase === "loading") return void 0;
   if (snapshot.phase === "unavailable") {
@@ -71055,7 +71011,7 @@ function useHostWorldDirectory(input) {
     ]
   );
   const [bridge, setBridge] = (0, import_react82.useState)();
-  const revision11 = (0, import_react82.useRef)(0);
+  const revision10 = (0, import_react82.useRef)(0);
   const current2 = (0, import_react82.useRef)();
   const selectCollective = (0, import_react82.useRef)(input.selectCollective);
   selectCollective.current = input.selectCollective;
@@ -71066,7 +71022,7 @@ function useHostWorldDirectory(input) {
       const message = trustedWorldDirectoryHostMessage(event, hostOrigin, parent);
       if (!message) return;
       if (message.type === "collective:host-world-directory-init") {
-        revision11.current = 0;
+        revision10.current = 0;
         current2.current = void 0;
         observeHostAppearanceGeneration(message.bridgeId);
         setBridge({ bridgeId: message.bridgeId, authorityKey });
@@ -71089,9 +71045,9 @@ function useHostWorldDirectory(input) {
   }, [authorityKey, hostOrigin]);
   (0, import_react82.useEffect)(() => {
     if (!bridge || bridge.authorityKey !== authorityKey || !hostOrigin || window.parent === window) return;
-    const projection = projectWorldDirectory(projectionSource, bridge.bridgeId, revision11.current + 1);
+    const projection = projectWorldDirectory(projectionSource, bridge.bridgeId, revision10.current + 1);
     if (!projection) return;
-    revision11.current = projection.revision;
+    revision10.current = projection.revision;
     current2.current = projection.state === "ready" ? projection : void 0;
     window.parent.postMessage(projection, hostOrigin);
   }, [authorityKey, bridge, hostOrigin, projectionSource]);
