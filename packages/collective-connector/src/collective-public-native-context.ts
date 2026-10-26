@@ -38,8 +38,8 @@ interface Options {
  * Production declarations/entrypoint are paired separately; this factory supplies no launch authority. */
 export function createCollectivePublicNativeActions(options: Options): Readonly<Record<string, PluginActionHandler>> {
   const refs = options.references, connector = options.connector;
-  const requireSource = async (action: PluginActionContext, method: string) => {
-    const resolved = await options.sourceCaller.resolveNative(action, method);
+  const requireSource = async (action: PluginActionContext) => {
+    const resolved = await options.sourceCaller.resolveNative(action);
     const profile = async () => {
       const route = await connector.getHostRoute(resolved.source.connectionId);
       const connection = await connector.getProjection(resolved.source.connectionId);
@@ -84,33 +84,32 @@ export function createCollectivePublicNativeActions(options: Options): Readonly<
         ...(operation.acceptedEventId ? { eventId: operation.acceptedEventId } : {}),
         ...(operation.failureCode ? { code: operation.failureCode } : {}) } };
   };
-  const handler = <T>(method: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>, consume: (binding: Binding, input: T) => Promise<unknown>): PluginActionHandler =>
+  const handler = <T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, consume: (binding: Binding, input: T) => Promise<unknown>): PluginActionHandler =>
     async (unsafe, action, hostContext) => {
       if (!action || hostContext) throw collectiveContextError('NOT_COLLECTIVE_ORIGIN', 'Authenticated native context is required');
       const parsed = schema.safeParse(unsafe ?? {});
       if (!parsed.success) throw Object.assign(parsed.error, { code: 'INVALID_COLLECTIVE_REQUEST' });
-      const binding = await requireSource(action, method);
+      const binding = await requireSource(action);
       const result = await consume(binding, parsed.data);
       await binding.revalidate();
       return result;
     };
   return Object.freeze({
-    'collective.artifact.command': handler('collective.artifact.command', collectiveArtifactCallbackCommandSchema, async (binding, input) => {
+    'collective.artifact.command': handler(collectiveArtifactCallbackCommandSchema, async (binding, input) => {
       refs.verifyRef(binding.identity, input.contextRef, 'context', binding.refScope);
       return executeCollectiveArtifactCommand(connector, binding, binding.identity, input.command);
     }),
-    'collective.work.suggest-project': handler('collective.work.suggest-project',
-      collectivePublicNativeTools.find(tool => tool.method === 'collective.work.suggest-project')!.schema,
+    'collective.work.suggest-project': handler(collectivePublicNativeTools.find(tool => tool.method === 'collective.work.suggest-project')!.schema,
       async (binding, input) => {
         refs.verifyRef(binding.identity, input.contextRef, 'context', binding.refScope);
         return suggestProjectWorkFromSource(connector, refs, binding.identity, binding, input, binding.revalidate);
       }),
-    'collective.context.current': handler('collective.context.current', currentSchema, binding => current(binding)),
-    'collective.context.read': handler('collective.context.read', readSchema, async (binding, input) => {
+    'collective.context.current': handler(currentSchema, binding => current(binding)),
+    'collective.context.read': handler(readSchema, async (binding, input) => {
       refs.verifyRef(binding.identity, input.contextRef, 'context', binding.refScope); await binding.revalidate();
       return connector.readParticipationContext(binding.source, input.afterSequence, input.limit);
     }),
-    'collective.participation.set-interest': handler('collective.participation.set-interest', interestSchema, async (binding, input) => {
+    'collective.participation.set-interest': handler(interestSchema, async (binding, input) => {
       refs.verifyRef(binding.identity, input.contextRef, 'context', binding.refScope);
       const route = await connector.getHostRoute(binding.source.connectionId); await binding.revalidate();
       if (!route) throw collectiveContextError('PARTICIPATION_REVOKED', 'Host participation route is unavailable');
@@ -120,7 +119,7 @@ export function createCollectivePublicNativeActions(options: Options): Readonly<
       return { catId: binding.identity.catId, channelId: binding.source.location.channelId, state: input.state,
         attentionRevision: updated.attentionRevision };
     }),
-    'collective.work.propose': handler('collective.work.propose', proposeSchema, async (binding, input) => {
+    'collective.work.propose': handler(proposeSchema, async (binding, input) => {
       refs.verifyRef(binding.identity, input.contextRef, 'context', binding.refScope);
       await binding.revalidate();
       // Original public proposal: Service decides the matter; this grants no Task/execution authority.
@@ -130,7 +129,7 @@ export function createCollectivePublicNativeActions(options: Options): Readonly<
         ...(input.intendedOutcome ? { intendedOutcome: input.intendedOutcome } : {}),
       });
     }),
-    'collective.work.accept': handler('collective.work.accept', acceptSchema, async (binding, { contextRef, ...input }) => {
+    'collective.work.accept': handler(acceptSchema, async (binding, { contextRef, ...input }) => {
       refs.verifyRef(binding.identity, contextRef, 'context', binding.refScope);
       await binding.revalidate();
       const work = await connector.acceptWork(binding.source, binding.agent, input);
@@ -139,12 +138,12 @@ export function createCollectivePublicNativeActions(options: Options): Readonly<
       return { workId: work.workId, assignmentEventId: work.assignmentEventId, accountableHumanId: work.accountableHumanId,
         acceptance: work.acceptance, lifecycle: work.lifecycle, disposition: 'accepted_pending_host_admission' as const };
     }),
-    'collective.work.continue': handler('collective.work.continue', continueSchema, async (binding, { contextRef, ...input }) => {
+    'collective.work.continue': handler(continueSchema, async (binding, { contextRef, ...input }) => {
       refs.verifyRef(binding.identity, contextRef, 'context', binding.refScope);
       await binding.revalidate();
       return continueWorkFromSource(connector, refs, binding.identity, binding, input, binding.revalidate);
     }),
-    'collective.reply.submit': handler('collective.reply.submit', replySchema, async (binding, input) => {
+    'collective.reply.submit': handler(replySchema, async (binding, input) => {
       const operation = await connector.prepareReply(binding.source, binding.sourceRef, 'request'); await binding.revalidate();
       refs.verifyRef(binding.identity, input.returnRef, 'return', binding.refScope);
       refs.verifyRef(binding.identity, input.replyOperationRef, `reply:${operation.outboxId}`, binding.refScope);

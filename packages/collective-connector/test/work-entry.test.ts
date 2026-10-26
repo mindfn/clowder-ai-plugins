@@ -30,10 +30,8 @@ test('production Work module owns one private MCP and rejects untrusted calls be
         ref.type === 'mcp' && ref.id === contribution.id));
     assert.equal(taskMcp.length, 1);
     assert.equal(taskMcp[0].id, 'collective-work-native');
-    assert.deepEqual(taskMcp[0].actions.map((action: {method: string}) => action.method).sort(),
-      ['collective.work.context.current', 'collective.work.context.read', 'collective.work.progress',
-        'collective.work.artifact.read', 'collective.work.artifact.command', 'collective.work.artifact.register', 'collective.work.reply.submit'].sort());
-    for (const method of taskMcp[0].actions.map((action: {method: string}) => action.method)) {
+    for (const method of ['collective.work.context.current', 'collective.work.context.read', 'collective.work.progress',
+      'collective.work.artifact.read', 'collective.work.artifact.command', 'collective.work.artifact.register', 'collective.work.reply.submit']) {
       assert.equal(typeof active.actions[method], 'function');
       await assert.rejects(() => Promise.resolve(active.actions[method]!({})));
     }
@@ -48,12 +46,10 @@ test('production Work module owns one private MCP and rejects untrusted calls be
       method: 'POST', path: 'connections/c1/work/admit', principal: {kind: 'owner', id: 'forged-owner'},
       body: {sourceMessageId: 'source', requestId: 'e2ecbb52-969e-4b98-a24d-eb54c55b01ef'}, headers: {}}})));
     const method = 'collective.work.context.current';
-    const native = { toolExecutionPolicy: { mode: 'plugin_native', contributionId: 'collective-work-native',
-      actionMethods: [method] }, assertCurrent: async () => {} } as never;
+    const native = { userId: 'owner', catId: 'cat', threadId: 'thread', invocationId: 'invocation',
+      originTriggerMessageId: 'source', assertCurrent: async () => {} };
     await assert.rejects(() => Promise.resolve(active.actions[method]!({taskId: 'body-forged-task'}, native)));
-    await assert.rejects(() => Promise.resolve(active.actions[method]!({}, {
-      toolExecutionPolicy: {mode: 'plugin_native', contributionId: 'collective-native', actionMethods: [method]},
-    } as never)));
+    await assert.rejects(() => Promise.resolve(active.actions[method]!({}, { ...native, originTriggerMessageId: undefined })));
     const expired = {kind: 'owner-operation' as const, userId: 'owner', pluginInstanceId: 'instance',
       requestId: 'expired-owner-operation', operationKey: 'work', actionId: 'list',
       signal: new AbortController().signal, assertCurrent: async () => {throw new Error('Owner operation ended');}};

@@ -49,7 +49,7 @@ test('unknown/compatibility owner and every limited policy are refused before ro
     for (const ownerAuthProvenance of [undefined, 'unknown', 'compatibility_fallback'])
       await expect(f.invoke(f.input, f.context({ ownerAuthProvenance }))).rejects.toMatchObject({ code: 'CONNECTOR_OWNER_AUTHORITY_REQUIRED' });
     for (const toolExecutionPolicy of [{ mode: 'read_only', replayDeniedToolNames: [] }, { mode: 'callback_allowlist', allowedCallbackRoutes: [] },
-      { mode: 'plugin_native', pluginInstanceId: 'instance', contributionId: 'collective-native', actionMethods: ['collective.connector.send'] }])
+      { mode: 'plugin_native', pluginInstanceId: 'instance', contributionId: 'collective-native' }])
       await expect(f.invoke(f.input, f.context({ toolExecutionPolicy }))).rejects.toMatchObject({ code: 'EXACT_COLLECTIVE_RETURN_REQUIRED' });
     expect(f.rosterReads).toBe(0); expect((await f.state()).connections[f.connection.connectionId].outbox).toHaveLength(0);
   } finally { await f.close(); }

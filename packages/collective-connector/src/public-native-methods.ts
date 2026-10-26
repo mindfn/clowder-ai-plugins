@@ -37,4 +37,3 @@ export const collectivePublicNativeTools = [
     description: 'Return the original reply to the current Collective request. Reuse its returnRef and replyOperationRef after response loss.',
     schema: z.object({ returnRef: z.string().min(1).max(256), replyOperationRef: z.string().min(1).max(256), body: z.string().trim().min(1).max(20000) }).strict() },
 ] as const;
-export const COLLECTIVE_PUBLIC_METHODS = Object.freeze(collectivePublicNativeTools.map(tool => tool.method));
