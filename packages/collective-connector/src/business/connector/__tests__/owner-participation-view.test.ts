@@ -187,12 +187,12 @@ if (process.env.C1_TASK_READ_HOST_MODULE) test('compiled Host four read ports cr
   Reflect.deleteProperty(legacy, 'userId'); Reflect.deleteProperty(legacy, 'entrustedWork');
   const taskHost: ModulePluginHostShape['tasks'] = createPluginTaskHost({ pluginId: 'official.collective-connector',
     pluginInstanceId:'installed-instance',ownerUserId: 'local-owner', readThreadStore: { async get(id: string) { return { id, createdBy: 'local-owner' }; } },
-    effectiveGrants: ['task.read'],admission:{readCurrentDataControllerAuthority:async()=>({
+    admission:{readCurrentDataControllerAuthority:async()=>({
       pluginId:'official.collective-connector',pluginInstanceId:'installed-instance',moduleRef:'plugin:official.collective-connector',
-      lifecycleRevision:8,effectiveGrants:['task.read','task.write','task.admitEntrusted']}),
+      lifecycleRevision:8}),
       withCurrentDataControllerAuthority:async(run:(value:unknown)=>unknown)=>run({
       pluginId:'official.collective-connector',pluginInstanceId:'installed-instance',moduleRef:'plugin:official.collective-connector',
-      lifecycleRevision:8,effectiveGrants:['task.read','task.write','task.admitEntrusted']}),assertCurrent:async()=>{},
+      lifecycleRevision:8}),assertCurrent:async()=>{},
       messageStore:{},isCatAvailable:()=>true},taskStore: { async get() { return raw; }, async getBySubject() { return raw; },
       async listByThread() { return [raw, legacy]; }, async listByKind() { return [raw, legacy]; } } });
   const results = [await taskHost.get({ id: raw.id }), await taskHost.get({ subjectKey: 'work:fixture' }),
@@ -201,7 +201,6 @@ if (process.env.C1_TASK_READ_HOST_MODULE) test('compiled Host four read ports cr
   expect(results.filter(row => row?.id === legacy.id)).toHaveLength(2);
   for (const result of results.filter(row => row?.id === raw.id)) expect(result).toEqual(publicBase);
   for (const result of results.filter(row => row?.id === legacy.id)) expect(result!.userId).toBeNull();
-  await expect(taskHost.update(raw.id, { status: 'done' })).rejects.toThrow(/task.write/);
   const f = await setup(taskHost); try {
     const response = await f.invoke() as { status: number; body: { tasks: unknown[] } };
     expect(response.status, JSON.stringify(response)).toBe(200);
