@@ -3,6 +3,9 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { setHostRouteInputSchema } from '../host-route-state.js';
 import { fixture } from './communication-work-custody.fixture.js';
+import { ConnectorPersistence } from '../persistence.js';
+import { CollectiveServiceClient } from '../service-client.js';
+import { LocalOperationRecovery } from '../local-operation-recovery.js';
 
 const native = { contributionId: 'collective-native' };
 async function setup() {
@@ -117,18 +120,25 @@ it('serializes concurrent exact bindings through the existing persistence tail a
   } finally { await f.close(); }
 });
 
-it('reopens an existing source with retired method metadata and preserves its source identity', async () => {
+it('reopens retired method metadata without losing source identity or blocking existing recovery records', async () => {
   const f = await setup(); try {
     const binding = await f.bind();
     const path = join(f.root, 'connector', 'collective-connector.json');
+    const persistence = await ConnectorPersistence.open(join(f.root, 'connector'));
+    const service = new CollectiveServiceClient(async () => { throw new Error('No network'); });
+    Object.defineProperty(service, 'usesLocalTransport', { value: () => true });
+    const recovery = new LocalOperationRecovery(persistence, service, Date.now);
+    await recovery.run(f.connection.connectionId, 'ack', 'retained-ack', { sequence: 1 }, async () => undefined, () => {});
     const stored = JSON.parse(await readFile(path, 'utf8'));
+    const attempts = structuredClone(stored.connections[f.connection.connectionId].localAttempts);
     const item = stored.connections[f.connection.connectionId].inbox.find((candidate: {event: {eventId: string}}) => candidate.event.eventId === f.source.eventId);
     item.publicSource.native.methods = ['collective.context.current'];
-    await writeFile(path, JSON.stringify(stored));
+    await writeFile(path, JSON.stringify(stored, null, 2) + '\n');
     const reopened = await f.open();
     expect(reopened.readCurrentPublicSource(f.input.messageRef)).toEqual(binding);
     await reopened.recordPublicSource(f.input);
     const saved = JSON.parse(await readFile(path, 'utf8'));
+    expect(saved.connections[f.connection.connectionId].localAttempts).toEqual(attempts);
     expect(saved.connections[f.connection.connectionId].inbox.find((candidate: {event: {eventId: string}}) => candidate.event.eventId === f.source.eventId).publicSource).toEqual(binding);
   } finally { await f.close(); }
 });
