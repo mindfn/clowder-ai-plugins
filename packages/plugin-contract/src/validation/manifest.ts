@@ -114,8 +114,14 @@ export function validateManifest(value: unknown): ManifestValidationResult {
   if (value && typeof value === 'object' && 'contributions' in value && Array.isArray(value.contributions)) {
     const original = value.contributions;
     const contributions = original.map(contribution => {
-      if (!contribution || typeof contribution !== 'object' || !contribution.when ||
-          typeof contribution.when !== 'object' || !('requiresCapabilities' in contribution.when)) return contribution;
+      if (!contribution || typeof contribution !== 'object') return contribution;
+      // The retired native MCP method list is accepted only at this legacy parsing boundary.
+      if (contribution.type === 'mcp' && 'actions' in contribution) {
+        const { actions: _legacy, ...declaration } = contribution;
+        contribution = declaration;
+      }
+      if (!contribution.when || typeof contribution.when !== 'object' ||
+          !('requiresCapabilities' in contribution.when)) return contribution;
       const { when: originalWhen, ...declaration } = contribution;
       const { requiresCapabilities: _legacy, ...when } = originalWhen;
       return { ...declaration, ...(Object.keys(when).length ? { when } : {}) };

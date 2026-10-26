@@ -272,14 +272,10 @@ export type DirectToolContribution = {
   readonly inputSchema: Readonly<Record<string, unknown>>;
   readonly action: CallbackAction;
 };
-export type McpActionMethod = {
-  readonly method: string;
-};
 export type McpContribution = {
   readonly type: 'mcp';
   readonly id: string;
   readonly runtime: ContributionRuntime;
-  readonly actions?: readonly McpActionMethod[];
   readonly environment?: Readonly<Record<string, EnvironmentBinding>>;
 };
 export type SkillContribution = {

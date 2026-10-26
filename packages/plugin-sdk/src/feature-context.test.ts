@@ -8,7 +8,6 @@ import {
   activateDefinedFeature,
   createFeatureContextSession,
   definePlugin,
-  featureActionMethods,
   type FeatureBinding,
   type FeatureContext,
   type FeatureHostAdapter,
@@ -266,16 +265,10 @@ test('module entrypoint guard rejects absent or ambiguous default exports', () =
   assert.throws(() => requirePluginModuleEntrypoint({ create: 'not-callable' }), /default export/u);
 });
 
-test('native MCP methods are feature-owned handlers without publishing direct tools', async () => {
+test('native MCP invokes exported handlers without a manifest method list and revokes them on disposal', async () => {
   const candidate = manifest();
-  candidate.contributions.push({ type: 'mcp', id: 'native', runtime: { transport: 'stdio', entrypoint: 'native.js' },
-    actions: [{ method: 'native.run' }] } as never);
-  candidate.contributions.push({ type: 'mcp', id: 'foreign', runtime: { transport: 'stdio', entrypoint: 'foreign.js' },
-    actions: [{ method: 'foreign.run' }] } as never);
+  candidate.contributions.push({ type: 'mcp', id: 'native', runtime: { transport: 'stdio', entrypoint: 'native.js' } } as never);
   candidate.features[0]!.contributions.push({ type: 'mcp', id: 'native' } as never);
-  candidate.features.push({ id: 'feature-2', name: 'Foreign feature', resources: [],
-    contributions: [{ type: 'mcp', id: 'foreign' }] } as never);
-  assert.deepEqual([...featureActionMethods(candidate as never, 'feature-1')], ['native.run']);
   const { context } = createFeatureContextSession(BINDING, new RecordingAdapter());
   const defined = definePlugin({ manifest: candidate, activate: { 'feature-1': () => ({
     actions: { 'native.run': async input => input }, dispose: () => undefined,
@@ -283,13 +276,7 @@ test('native MCP methods are feature-owned handlers without publishing direct to
   const active = await activateDefinedFeature(defined, 'feature-1', context);
   assert.equal(await active.actions['native.run']!('native input'), 'native input');
   await active.dispose();
-  const invalidHandlers: ReadonlyArray<Readonly<Record<string, () => Promise<void>>>> = [
-    {}, { 'native.run': async () => undefined, 'foreign.run': async () => undefined },
-  ];
-  for (const actions of invalidHandlers) {
-    const invalid = definePlugin({ manifest: candidate, activate: { 'feature-1': () => ({ actions, dispose: () => undefined }) } });
-    await assert.rejects(activateDefinedFeature(invalid, 'feature-1', context), /no handler|not declared/);
-  }
+  await assert.rejects(async () => active.actions['native.run']!('late input'), FeatureContextRevokedError);
 });
 
 test('feature activation closes declared method handlers and owns idempotent disposal', async () => {
@@ -321,7 +308,7 @@ test('feature activation closes declared method handlers and owns idempotent dis
   assert.equal(disposeCalls, 1);
 });
 
-test('feature activation rolls back missing or undeclared package handlers', async (t) => {
+test('feature activation rolls back missing routed package handlers', async (t) => {
   const candidate = manifest();
   candidate.contributions.push({
     type: 'message-subscription', id: 'fixture-connector', binding: 'fixture-binding',
@@ -334,7 +321,6 @@ test('feature activation rolls back missing or undeclared package handlers', asy
     RegExp,
   ]> = [
     ['missing', {}, /fixture\.outbound.*no handler/i],
-    ['undeclared', { 'fixture.outbound': () => undefined, 'foreign.method': () => undefined }, /foreign\.method.*not declared/i],
   ];
   for (const [name, actions, pattern] of cases) {
     await t.test(name, async () => {

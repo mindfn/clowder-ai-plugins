@@ -86,32 +86,19 @@ function docxProviderManifest() {
   };
 }
 
-test('native MCP actions are declared separately from public tools and reject malformed entries', () => {
+test('old native MCP metadata is ignored at parsing while the runtime declaration remains validated', () => {
   const manifest = videoManifest();
-  manifest.contributions[0] = { ...manifest.contributions[0], actions: [{ method: 'video.analyze' }] } as never;
-  assert.equal(validateManifest(manifest).valid, true);
-  for (const actions of [[], [{ method: '' }], [{ method: 'video.analyze', undeclared: true }], [{ method: 'video.analyze' }, { method: 'video.analyze' }]]) {
-    const invalid = structuredClone(manifest);
-    invalid.contributions[0] = { ...invalid.contributions[0], actions } as never;
-    assert.equal(validateManifest(invalid).valid, false);
+  for (const actions of [[{ method: 'video.analyze' }], [], 'legacy metadata']) {
+    const legacy = structuredClone(manifest);
+    legacy.contributions[0] = { ...legacy.contributions[0], actions } as never;
+    const result = validateManifest(legacy);
+    assert.equal(result.valid, true);
+    if (result.valid) assert.deepEqual(result.manifest, manifest);
+    assert.equal(Object.hasOwn(legacy.contributions[0]!, 'actions'), true);
   }
-});
-
-test('native MCP method allowlists reject fixed params instead of silently ignoring them', () => {
-  const manifest = videoManifest();
-  manifest.contributions[0] = { ...manifest.contributions[0],
-    actions: [{ method: 'video.analyze', params: { mode: 'readonly' } }] } as never;
-  assert.equal(validateManifest(manifest).valid, false);
-});
-
-test('native MCP duplicate methods cannot be disguised with different params or extra fields', () => {
-  for (const second of [{ method: 'video.analyze' },
-    { method: 'video.analyze', params: { mode: 'write' } }, { method: 'video.analyze', label: 'second' }]) {
-    const manifest = videoManifest();
-    manifest.contributions[0] = { ...manifest.contributions[0],
-      actions: [{ method: 'video.analyze' }, second] } as never;
-    assert.equal(validateManifest(manifest).valid, false);
-  }
+  const invalid = structuredClone(manifest);
+  invalid.contributions[0] = { ...invalid.contributions[0], runtime: { transport: 'unknown' } } as never;
+  assert.equal(validateManifest(invalid).valid, false);
 });
 
 test('admits typed static contributions and closed config/secret references', () => {

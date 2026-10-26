@@ -271,15 +271,7 @@
       "runtime": {
         "transport": "stdio",
         "entrypoint": "dist/mcp-entrypoint.js"
-      },
-      "actions": [
-        {
-          "method": "meeting.records.list"
-        },
-        {
-          "method": "meeting.records.read"
-        }
-      ]
+      }
     }
   ]
 }

@@ -190,16 +190,6 @@ contributions:
   - type: mcp
     id: collective-native
     runtime: { transport: stdio, entrypoint: dist/mcp-entrypoint.js }
-    actions:
-      - { method: collective.context.current }
-      - { method: collective.context.read }
-      - { method: collective.artifact.command }
-      - { method: collective.work.suggest-project }
-      - { method: collective.participation.set-interest }
-      - { method: collective.reply.submit }
-      - { method: collective.work.propose }
-      - { method: collective.work.accept }
-      - { method: collective.work.continue }
   - type: webhook
     id: collective-owner-10
     path: connections
@@ -278,8 +268,6 @@ contributions:
   - type: mcp
     id: collective-owner-native
     runtime: { transport: stdio, entrypoint: dist/owner-mcp-entrypoint.js }
-    actions:
-      - { method: collective.connector.send }
   - type: webhook
     id: collective-participation-view
     path: connections/:connectionId/participation
@@ -294,14 +282,6 @@ contributions:
   - type: mcp
     id: collective-work-native
     runtime: { transport: stdio, entrypoint: dist/work-mcp-entrypoint.js }
-    actions:
-      - { method: collective.work.context.current }
-      - { method: collective.work.context.read }
-      - { method: collective.work.progress }
-      - { method: collective.work.artifact.read }
-      - { method: collective.work.artifact.command }
-      - { method: collective.work.artifact.register }
-      - { method: collective.work.reply.submit }
   - type: webhook
     id: collective-work-admit
     path: connections/:connectionId/work/admit

@@ -387,17 +387,8 @@ export interface ActivePluginFeature {
   dispose(): Promise<void>;
 }
 
-export interface ActivePluginFeatureOptions {
-  /** CallbackAction methods declared outside a feature contribution (operation/test). */
-  readonly additionalMethods?: ReadonlySet<string>;
-  /** Limb handler names live in limb YAML, so the SDK passes extra handlers through. */
-  readonly allowLimbHandlers?: boolean;
-}
-
 function actionMethods(contribution: StaticContribution): readonly string[] {
   switch (contribution.type) {
-    case 'mcp':
-      return (contribution.actions ?? []).map(action => action.method);
     case 'schedule':
     case 'tool':
     case 'webhook':
@@ -432,12 +423,11 @@ export function featureActionMethods(manifest: PluginManifest, featureId: string
   );
 }
 
-/** Activate one Host-authorized feature and close its method/disposal surface. */
+/** Activate one feature and bind exported handlers to its lifecycle. */
 export async function activateDefinedFeature(
   plugin: DefinedPlugin,
   featureId: string,
   context: FeatureContext,
-  options: ActivePluginFeatureOptions = {},
 ): Promise<ActivePluginFeature> {
   if (context.featureId !== featureId) {
     throw new TypeError(`feature context ${context.featureId} cannot activate ${featureId}`);
@@ -452,15 +442,6 @@ export async function activateDefinedFeature(
   const rawActions = Object.freeze({ ...(activation.actions ?? {}) });
   const actions = rawActions;
   const requiredMethods = featureActionMethods(plugin.manifest, featureId);
-  const allowedMethods = new Set(requiredMethods);
-  for (const method of options.additionalMethods ?? []) allowedMethods.add(method);
-  const undeclared = options.allowLimbHandlers === true
-    ? undefined
-    : Object.keys(actions).find((method) => !allowedMethods.has(method));
-  if (undeclared !== undefined) {
-    await Promise.resolve(disposeActivation()).catch(() => undefined);
-    throw new TypeError(`action handler ${undeclared} is not declared by feature ${featureId}`);
-  }
   const missing = [...requiredMethods].find((method) => actions[method] === undefined);
   if (missing !== undefined) {
     await Promise.resolve(disposeActivation()).catch(() => undefined);

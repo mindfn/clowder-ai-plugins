@@ -46,7 +46,7 @@ test('ships the actual builtin record module and declared native MCP', async () 
     });
     assert.equal(result.manifest.signals, undefined);
     const native = result.manifest.contributions?.find(item => item.type === 'mcp');
-    assert.deepEqual(native && 'actions' in native ? native.actions : undefined, [{ method: 'meeting.records.list' }, { method: 'meeting.records.read' }]);
+    assert.equal(native?.id, 'meeting-records');
   }
 });
 

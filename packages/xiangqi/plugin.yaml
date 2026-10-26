@@ -23,10 +23,6 @@ contributions:
     runtime:
       transport: stdio
       entrypoint: dist/mcp-entrypoint.mjs
-    actions:
-      - { method: xiangqi.open }
-      - { method: xiangqi.read }
-      - { method: xiangqi.play }
 features:
   - id: analyze-position
     name: Play and analyze Xiangqi

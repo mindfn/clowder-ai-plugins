@@ -848,10 +848,9 @@ test('real manifest → SDK builtin activation → tracking → schedule → ord
   const active = await module.create(manifest).start(f.runtimeHost);
   await active.actions['github.pr-tracking']!({});
   assert.equal(reads, 0);
-  const mcp = manifest.contributions.find((c: { id: string }) => c.id === 'github-tracking');
   assert.equal(manifest.contributions.some((c: { type: string; action?: { method: string } }) =>
     c.type === 'tool' && c.action?.method.startsWith('github.typed-wait.')), false);
-  const registered = await active.actions[mcp.actions[0].method]!(prInput, caller);
+  const registered = await active.actions['github.typed-wait.register-pr']!(prInput, caller);
   assert.ok((registered as any).automationState.await);
   snapshot = { ...snapshot, comments: [{ id: 1, author: 'maintainer', body: 'fix parser', commentType: 'conversation' }] };
   await active.actions['github.pr-tracking']!({});
