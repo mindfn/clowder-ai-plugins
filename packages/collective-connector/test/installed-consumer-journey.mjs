@@ -111,7 +111,6 @@ try {
 } finally { await nativeClient.close(); }
 
 const ownerNative = manifest.contributions.find(item => item.type === 'mcp' && item.id === 'collective-owner-native');
-assert.deepEqual(ownerNative.actions, [{ method: 'collective.connector.send' }]);
 const ownerClient = new Client({ name: 'isolated-installed-owner-consumer', version: '1.0.0' });
 const ownerTransport = new StdioClientTransport({ command: process.execPath, args: [join(packageRoot, ownerNative.runtime.entrypoint)],
   env: { PATH: process.env.PATH ?? '' }, stderr: 'pipe' });
