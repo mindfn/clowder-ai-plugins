@@ -1,6 +1,7 @@
 import { rm } from 'node:fs/promises';
 import type {CollectiveClientAssets} from '../../client-assets.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { randomBytes } from 'node:crypto';
 import { maxCollectiveArtifactProposalEnvelopeBytes } from '../contracts/index.js';
 import { routeArtifactPost } from './artifact-http-routes.js';
 import { routeArtifactMediaHttp } from './artifact-media-http.js';
@@ -45,21 +46,31 @@ export function createCollectiveHttpHandler(options: CollectiveHttpHandlerOption
     : new Set([...options.allowedHostOrigins].map(origin => new URL(origin).origin));
   return async (request: IncomingMessage, response: ServerResponse) => {
     try {
-      applySecurityHeaders(response, allowedOrigins);
+      const documentNonce = randomBytes(18).toString('base64url');
+      applySecurityHeaders(response, allowedOrigins, documentNonce);
       const origin = normalizedOrigin(request.headers.origin);
       if (origin && !allowedOrigins.has(origin)) forbiddenOrigin();
       if (request.method === 'POST' && !origin && !request.headers.authorization) forbiddenOrigin();
       if (origin && allowedOrigins.has(origin)) response.setHeader('access-control-allow-origin', origin);
       if (request.method === 'OPTIONS') {
         response.setHeader('access-control-allow-methods', 'GET,POST,OPTIONS');
-        response.setHeader('access-control-allow-headers', 'authorization,content-type,range,x-collective-message-content');
+        response.setHeader('access-control-allow-headers', 'authorization,content-type,range,x-collective-message-content,x-collective-human-id');
         response.writeHead(origin && allowedOrigins.has(origin) ? 204 : 403).end();
         return;
+      }
+      const intendedHuman = request.headers['x-collective-human-id'];
+      if (intendedHuman !== undefined) {
+        const current = await options.store.requireSession(requireBearer(request));
+        if (typeof intendedHuman !== 'string' || current.human.humanId !== intendedHuman)
+          throw new CollectiveServiceError('HUMAN_CONTEXT_CHANGED', 'This private expression belongs to a different signed-in person', 409);
       }
       const assetPath = new URL(request.url ?? '/', 'http://collective.local').pathname;
       const asset = options.clientAssets?.get(assetPath === '/' ? '/index.html' : assetPath);
       if (request.method === 'GET' && asset) {
-        response.writeHead(200, {'content-type': asset.contentType, 'content-length': asset.bytes.length, 'x-content-type-options':'nosniff'}).end(asset.bytes);
+        const bytes = asset.contentType.startsWith('text/html')
+          ? Buffer.from(asset.bytes.toString('utf8').replace('</head>', `<meta name="collective-widget-nonce" content="${documentNonce}"></head>`))
+          : asset.bytes;
+        response.writeHead(200, {'content-type': asset.contentType, 'content-length': bytes.length, 'x-content-type-options':'nosniff'}).end(bytes);
         return;
       }
       await routeRequest(
