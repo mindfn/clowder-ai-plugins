@@ -1,6 +1,6 @@
 {
   "pluginId": "official.feishu-meeting-intake",
-  "version": "0.1.0-alpha.11",
+  "version": "0.1.0-alpha.12",
   "contractVersion": "0.1.0",
   "name": "Feishu Meeting Intake",
   "description": "Owned meeting records, ordinary notifications and authenticated native reads.",
@@ -9,6 +9,23 @@
     "src": "assets/icon.png"
   },
   "configuration": [
+    {
+      "key": "sourceMaterial",
+      "label": "Project source sharing",
+      "kind": "operation",
+      "required": false,
+      "actions": [
+        {
+          "id": "invoke",
+          "label": "Meeting source sharing",
+          "render": "status",
+          "resultRender": "status",
+          "action": {
+            "method": "meeting.sourceMaterial"
+          }
+        }
+      ]
+    },
     {
       "key": "appId",
       "label": "Feishu app ID",

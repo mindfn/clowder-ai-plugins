@@ -1,5 +1,5 @@
 pluginId: official.collective-connector
-version: 0.1.0-alpha.13
+version: 0.1.0-alpha.14
 contractVersion: 0.1.0
 name: Collective
 description:
@@ -10,6 +10,16 @@ icon:
   type: svg
   src: assets/icon.svg
 configuration:
+  - key: calendar
+    label: Current public Work dates
+    kind: operation
+    required: false
+    actions:
+      - id: read
+        label: Read original Work dates
+        render: status
+        resultRender: status
+        action: { method: collective.work.owner.calendar }
   - key: service
     label: Service status
     kind: operation

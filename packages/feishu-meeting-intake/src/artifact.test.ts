@@ -33,7 +33,7 @@ test('ships the actual builtin record module and declared native MCP', async () 
   assert.equal(result.valid, true, result.valid ? undefined : JSON.stringify(result.errors));
   if (result.valid) {
     assert.deepEqual(manifest, result.manifest, 'the public manifest export must already match the validated current descriptor');
-    assert.equal(result.manifest.version, '0.1.0-alpha.11');
+    assert.equal(result.manifest.version, '0.1.0-alpha.12');
     assert.equal(
       (packageMetadata as { readonly version?: unknown }).version,
       result.manifest.version,
