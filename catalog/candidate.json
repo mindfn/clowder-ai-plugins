@@ -396,6 +396,23 @@
       ],
       "versions": [
         {
+          "version": "0.1.0-alpha.13",
+          "contractVersion": "0.1.0",
+          "manifestPath": "plugin.yaml",
+          "artifact": {
+            "kind": "npm",
+            "packageName": "@clowder-ai/collective-connector",
+            "version": "0.1.0-alpha.13",
+            "tarballUrl": "https://registry.npmjs.org/@clowder-ai/collective-connector/-/collective-connector-0.1.0-alpha.13.tgz",
+            "integrity": "sha512-owT7xetX7H2RSy+JgAhOdiKQzUAhLtSZBDq9idH+JMXo9PMBFb9zQP7gle5DmtD1urpWWytsM6aU52yvfI1nOg==",
+            "shasum": "901fada72ff26675a68001f13251cc715d6aaf8d",
+            "provenance": {
+              "repository": "https://github.com/zts212653/clowder-ai-plugins",
+              "sourceDirectory": "packages/collective-connector"
+            }
+          }
+        },
+        {
           "version": "0.1.0-alpha.12",
           "contractVersion": "0.1.0",
           "manifestPath": "plugin.yaml",
@@ -404,8 +421,8 @@
             "packageName": "@clowder-ai/collective-connector",
             "version": "0.1.0-alpha.12",
             "tarballUrl": "https://registry.npmjs.org/@clowder-ai/collective-connector/-/collective-connector-0.1.0-alpha.12.tgz",
-            "integrity": "sha512-Ryq3DPut4Mmv/Z6AEBMZ1Wv6fhFfEWS/DAOOk1gXX3aTBZQTtrpXOKqBl+BcCIQgCps6eURbB+urjx0tVgewqw==",
-            "shasum": "563ce8f577efcd898b96074c500c70b5b390be8d",
+            "integrity": "sha512-KQXRR1prRkYrMgmkhqcW5NeGSIEOW+h20JB1pEk1PcgyNbty6GiJxj7Emu3fDzQgyAmtdMw+fhTMi/I1GB1MKQ==",
+            "shasum": "7742012d5e05251cae02b8e3bd74124d597a264d",
             "provenance": {
               "repository": "https://github.com/zts212653/clowder-ai-plugins",
               "sourceDirectory": "packages/collective-connector"
