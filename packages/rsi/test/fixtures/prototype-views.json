@@ -1,0 +1,1941 @@
+{
+  "now": 1800000000000,
+  "cases": [
+    {
+      "view": "home",
+      "query": {
+        "project": "cartpole"
+      },
+      "fields": {
+        "projects": [
+          {
+            "id": "cartpole",
+            "name": "cartpole-rl",
+            "host": "clowder",
+            "exp": true
+          },
+          {
+            "id": "pd-infer",
+            "name": "推理框架（PD 分离）",
+            "host": "clowder",
+            "exp": true
+          },
+          {
+            "id": "self",
+            "name": "Clowder",
+            "builtin": true,
+            "host": "clowder"
+          },
+          {
+            "id": "notes-agent",
+            "name": "notes-agent",
+            "host": "claude-code"
+          },
+          {
+            "id": "echo-router",
+            "name": "echo-router",
+            "host": "opencode"
+          },
+          {
+            "id": "data-pipeline",
+            "name": "data-pipeline",
+            "host": ""
+          }
+        ],
+        "projectId": "cartpole",
+        "nodes": {
+          "": []
+        },
+        "pick": {
+          "k": "none"
+        },
+        "hasObjectives": false,
+        "panelList": true,
+        "navs": [
+          {
+            "k": "caps",
+            "selected": false
+          },
+          {
+            "k": "library",
+            "count": 0,
+            "selected": false
+          },
+          {
+            "k": "cards",
+            "count": 0,
+            "selected": false
+          }
+        ]
+      }
+    },
+    {
+      "view": "todo",
+      "query": {
+        "project": "cartpole"
+      },
+      "fields": {
+        "items": []
+      }
+    },
+    {
+      "view": "caps",
+      "query": {
+        "project": "cartpole"
+      },
+      "fields": {
+        "analysis": {
+          "at": 1799481600000,
+          "by": "准备成员"
+        },
+        "modify": [
+          {
+            "id": "g-cp-source",
+            "side": "modify",
+            "kind": "source",
+            "name": "源码",
+            "where": "train.py / eval.py",
+            "apply": "pr",
+            "units": 0,
+            "supported": true
+          },
+          {
+            "id": "g-cp-config",
+            "side": "modify",
+            "kind": "config",
+            "name": "配置",
+            "where": "config.yaml",
+            "units": 0,
+            "supported": false
+          }
+        ],
+        "collect": [
+          {
+            "id": "c-cp-mcp",
+            "side": "collect",
+            "name": "插件 MCP 运行记录",
+            "where": "执行回执、环境指纹、训练曲线与评估产物",
+            "units": 0,
+            "supported": false
+          }
+        ],
+        "env": [
+          {
+            "id": "e-cp-cpu",
+            "side": "env",
+            "name": "训练机 cpu-8c",
+            "where": "torch 2.5 · 每晚 18:00–08:00 可用",
+            "users": "训练更快、更稳地收敛 · 每晚 18:00–08:00"
+          }
+        ]
+      }
+    },
+    {
+      "view": "library",
+      "query": {
+        "project": "cartpole"
+      },
+      "fields": {
+        "analysis": {
+          "at": 1799481600000,
+          "by": "准备成员"
+        },
+        "docs": false,
+        "groups": []
+      }
+    },
+    {
+      "view": "newExp",
+      "query": {
+        "project": "cartpole"
+      },
+      "fields": {
+        "cats": []
+      }
+    },
+    {
+      "view": "home",
+      "query": {
+        "project": "pd-infer"
+      },
+      "fields": {
+        "projects": [
+          {
+            "id": "cartpole",
+            "name": "cartpole-rl",
+            "host": "clowder",
+            "exp": true
+          },
+          {
+            "id": "pd-infer",
+            "name": "推理框架（PD 分离）",
+            "host": "clowder",
+            "exp": true
+          },
+          {
+            "id": "self",
+            "name": "Clowder",
+            "builtin": true,
+            "host": "clowder"
+          },
+          {
+            "id": "notes-agent",
+            "name": "notes-agent",
+            "host": "claude-code"
+          },
+          {
+            "id": "echo-router",
+            "name": "echo-router",
+            "host": "opencode"
+          },
+          {
+            "id": "data-pipeline",
+            "name": "data-pipeline",
+            "host": ""
+          }
+        ],
+        "projectId": "pd-infer",
+        "nodes": {
+          "": [
+            {
+              "id": "pd-ttft",
+              "name": "PD 分离下 TTFT p90 降低 20%",
+              "parent": null,
+              "state": "preparing",
+              "mode": "exp",
+              "trigger": "18:00–08:00",
+              "running": null,
+              "cycle": null,
+              "prediction": null,
+              "locked": 0,
+              "path": "pd-ttft",
+              "pickKey": "obj:pd-ttft",
+              "dir": false,
+              "selected": true
+            }
+          ]
+        },
+        "pick": {
+          "k": "obj",
+          "id": "pd-ttft",
+          "exp": true
+        },
+        "hasObjectives": true,
+        "panelList": false,
+        "navs": [
+          {
+            "k": "caps",
+            "selected": false
+          },
+          {
+            "k": "library",
+            "count": 0,
+            "selected": false
+          },
+          {
+            "k": "cards",
+            "count": 3,
+            "selected": false
+          }
+        ]
+      }
+    },
+    {
+      "view": "objective",
+      "query": {
+        "project": "pd-infer"
+      },
+      "fields": {
+        "id": "pd-ttft",
+        "name": "PD 分离下 TTFT p90 降低 20%",
+        "state": "preparing",
+        "setup": [
+          {
+            "k": "analyzing",
+            "done": true,
+            "on": false
+          },
+          {
+            "k": "preparing",
+            "done": false,
+            "on": true
+          },
+          {
+            "k": "ready",
+            "done": false,
+            "on": false
+          }
+        ]
+      }
+    },
+    {
+      "view": "exp",
+      "query": {
+        "project": "pd-infer"
+      },
+      "fields": {
+        "id": "pd-ttft",
+        "state": "preparing",
+        "next.k": "init",
+        "next.hint": {
+          "t": "rsi.exp.firstOf",
+          "args": [
+            1,
+            4
+          ]
+        },
+        "now": {
+          "version": "v1",
+          "change": "当前 PD 分离部署",
+          "when": "preparing",
+          "window": "18:00–08:00",
+          "plan": null,
+          "exec": null,
+          "metrics": "TTFT p90 -20%；TPOT p90 ≤ 基线；吞吐 ≥ 基线",
+          "e": "E1"
+        },
+        "setup": true,
+        "trend": [],
+        "hitRate": {
+          "hit": 0,
+          "all": 0
+        },
+        "versions": [
+          {
+            "id": "v1",
+            "parent": null,
+            "change": "当前 PD 分离部署",
+            "pr": null,
+            "at": 1799992800000,
+            "current": true,
+            "nodeState": "current",
+            "key": "pd-ttft/v1",
+            "parentKey": null,
+            "selected": true,
+            "nodeSelected": true,
+            "pick": "pd-ttft/v1>node",
+            "cyclePick": null,
+            "steps": []
+          }
+        ],
+        "ver.id": "v1",
+        "step": "node",
+        "prep.needYou": 3,
+        "prep.steps.0.state": "submitted",
+        "prep.steps.2.state": "preparing",
+        "prep.steps.3.deps": "1、2",
+        "executor.state": "generating",
+        "metrics.version": "E1"
+      }
+    },
+    {
+      "view": "todo",
+      "query": {
+        "project": "pd-infer"
+      },
+      "fields": {
+        "items": [
+          {
+            "id": "pd-window",
+            "kind": "prep",
+            "objective": "pd-ttft",
+            "round": 0,
+            "at": 1799996400000,
+            "title": "触发：时段",
+            "value": "定时：每晚 18:00–08:00",
+            "state": "submitted",
+            "isDefault": true,
+            "ask": "确认、手动改或让准备成员补。",
+            "ifIgnored": "不处理就按这个时段",
+            "actions": [],
+            "objectiveName": "PD 分离下 TTFT p90 降低 20%"
+          },
+          {
+            "id": "pd-requests",
+            "kind": "prep",
+            "objective": "pd-ttft",
+            "round": 0,
+            "at": 1799996400000,
+            "title": "基准请求集用哪份",
+            "value": "bench.py 自带的 sharegpt-like 1k 条",
+            "state": "submitted",
+            "isDefault": true,
+            "ask": "确认、手动改或让准备成员补。",
+            "ifIgnored": "不处理就用这份",
+            "actions": [],
+            "objectiveName": "PD 分离下 TTFT p90 降低 20%"
+          },
+          {
+            "id": "pd-fb-holdout",
+            "kind": "prep",
+            "objective": "pd-ttft",
+            "round": 0,
+            "at": 1799996400000,
+            "title": "留出未参与选择的验证场景",
+            "value": "留 20% 请求不参与挑选，用来确认赢家",
+            "state": "submitted",
+            "isDefault": true,
+            "ask": "确认、手动改或让准备成员补。",
+            "ifIgnored": "不处理就按 20% 留出",
+            "actions": [],
+            "objectiveName": "PD 分离下 TTFT p90 降低 20%"
+          }
+        ]
+      }
+    },
+    {
+      "view": "caps",
+      "query": {
+        "project": "pd-infer"
+      },
+      "fields": {
+        "analysis": {
+          "at": 1799992800000,
+          "by": "准备成员"
+        },
+        "modify": [
+          {
+            "id": "g-pd-source",
+            "side": "modify",
+            "kind": "source",
+            "name": "源码",
+            "where": "deploy.py / bench.py / analyze.py",
+            "apply": "pr",
+            "units": 0,
+            "supported": true
+          },
+          {
+            "id": "g-pd-config",
+            "side": "modify",
+            "kind": "config",
+            "name": "配置",
+            "where": "config.yaml",
+            "units": 0,
+            "supported": false
+          }
+        ],
+        "collect": [
+          {
+            "id": "c-pd-exec",
+            "side": "collect",
+            "kind": "mcp",
+            "name": "执行 MCP pd-infer-exec",
+            "where": "生成中：准备成员在读 deploy.py / bench.py / analyze.py",
+            "units": 0,
+            "supported": true
+          },
+          {
+            "id": "c-pd-mcp",
+            "side": "collect",
+            "name": "插件 MCP 运行记录",
+            "where": "部署回执、请求耗时与吞吐产物",
+            "units": 0,
+            "supported": false
+          }
+        ],
+        "env": [
+          {
+            "id": "e-pd-npu",
+            "side": "env",
+            "name": "推理机 8 卡",
+            "where": "只能夜里用",
+            "users": "PD 分离下 TTFT p90 降低 20% · 每晚 18:00–08:00（待确认）"
+          }
+        ]
+      }
+    },
+    {
+      "view": "cards",
+      "query": {
+        "project": "pd-infer"
+      },
+      "fields": {
+        "cards": [
+          {
+            "id": "pd-window",
+            "kind": "prep",
+            "objective": "pd-ttft",
+            "round": 0,
+            "at": 1799996400000,
+            "title": "触发：时段",
+            "value": "定时：每晚 18:00–08:00",
+            "state": "submitted",
+            "isDefault": true,
+            "ask": "确认、手动改或让准备成员补。",
+            "ifIgnored": "不处理就按这个时段",
+            "actions": [],
+            "objectiveName": "PD 分离下 TTFT p90 降低 20%"
+          },
+          {
+            "id": "pd-requests",
+            "kind": "prep",
+            "objective": "pd-ttft",
+            "round": 0,
+            "at": 1799996400000,
+            "title": "基准请求集用哪份",
+            "value": "bench.py 自带的 sharegpt-like 1k 条",
+            "state": "submitted",
+            "isDefault": true,
+            "ask": "确认、手动改或让准备成员补。",
+            "ifIgnored": "不处理就用这份",
+            "actions": [],
+            "objectiveName": "PD 分离下 TTFT p90 降低 20%"
+          },
+          {
+            "id": "pd-fb-holdout",
+            "kind": "prep",
+            "objective": "pd-ttft",
+            "round": 0,
+            "at": 1799996400000,
+            "title": "留出未参与选择的验证场景",
+            "value": "留 20% 请求不参与挑选，用来确认赢家",
+            "state": "submitted",
+            "isDefault": true,
+            "ask": "确认、手动改或让准备成员补。",
+            "ifIgnored": "不处理就按 20% 留出",
+            "actions": [],
+            "objectiveName": "PD 分离下 TTFT p90 降低 20%"
+          }
+        ]
+      }
+    },
+    {
+      "view": "library",
+      "query": {
+        "project": "pd-infer"
+      },
+      "fields": {
+        "analysis": {
+          "at": 1799992800000,
+          "by": "准备成员"
+        },
+        "docs": true,
+        "groups": [
+          {
+            "k": "project",
+            "items": [
+              {
+                "usedBy": [],
+                "id": "doc-pd-overview",
+                "kind": "project",
+                "title": "PD 分离部署与基准测试",
+                "objectives": [
+                  "pd-ttft"
+                ],
+                "by": "准备成员",
+                "at": 1799992800000,
+                "state": "confirmed",
+                "body": "deploy.py 部署，bench.py 发送请求，analyze.py 计算 TTFT p90、TPOT p90 和吞吐。准备成员正在生成 MCP；请求集与时间窗已给默认值，等人确认。",
+                "sources": [],
+                "objectiveNames": [
+                  "PD 分离下 TTFT p90 降低 20%"
+                ],
+                "usedByEs": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "view": "policy",
+      "query": {
+        "project": "pd-infer"
+      },
+      "fields": {
+        "overrides": [
+          {
+            "k": "approval",
+            "v": "[object Object]",
+            "name": {
+              "code": "human",
+              "metric": "human",
+              "goal": "human",
+              "executor": "human",
+              "variable": "auto"
+            }
+          },
+          {
+            "k": "schedule",
+            "v": "[object Object]",
+            "name": {
+              "cron": "0 18 * * *",
+              "window": "18:00–08:00"
+            }
+          },
+          {
+            "k": "seeds",
+            "v": "5",
+            "name": 5
+          },
+          {
+            "k": "vars",
+            "v": "",
+            "name": []
+          }
+        ],
+        "policy": {
+          "count": {
+            "value": "",
+            "inherit": 200,
+            "options": [
+              {
+                "v": "200"
+              },
+              {
+                "v": "400"
+              },
+              {
+                "v": "800"
+              }
+            ]
+          },
+          "days": {
+            "value": "",
+            "inherit": 7,
+            "options": [
+              {
+                "v": "3"
+              },
+              {
+                "v": "7"
+              },
+              {
+                "v": "14"
+              }
+            ]
+          },
+          "interval": {
+            "value": "",
+            "inherit": "2h",
+            "options": [
+              {
+                "v": "1h"
+              },
+              {
+                "v": "2h"
+              },
+              {
+                "v": "6h"
+              }
+            ]
+          },
+          "counter": {
+            "value": "",
+            "inherit": 3,
+            "options": [
+              {
+                "v": "3"
+              },
+              {
+                "v": "5"
+              },
+              {
+                "v": "10"
+              }
+            ]
+          },
+          "approval": {
+            "value": "[object Object]",
+            "inherit": "manual",
+            "options": [
+              {
+                "v": "manual"
+              },
+              {
+                "v": "auto"
+              }
+            ]
+          },
+          "everyN": {
+            "value": "",
+            "inherit": 3,
+            "options": [
+              {
+                "v": "3"
+              },
+              {
+                "v": "5"
+              }
+            ]
+          },
+          "noChangeK": {
+            "value": "",
+            "inherit": 4,
+            "options": [
+              {
+                "v": "4"
+              },
+              {
+                "v": "5"
+              }
+            ]
+          },
+          "eval": {
+            "value": "",
+            "inherit": "opus",
+            "options": [],
+            "inheritName": "opus"
+          },
+          "iterate": {
+            "value": "",
+            "inherit": "opus",
+            "options": [],
+            "inheritName": "opus"
+          },
+          "metrics": {
+            "value": "",
+            "inherit": "codex",
+            "options": [],
+            "inheritName": "codex"
+          }
+        }
+      }
+    },
+    {
+      "view": "doc",
+      "query": {
+        "project": "pd-infer",
+        "doc": "doc-pd-overview"
+      },
+      "fields": {
+        "id": "doc-pd-overview",
+        "kind": "project",
+        "title": "PD 分离部署与基准测试",
+        "body": "deploy.py 部署，bench.py 发送请求，analyze.py 计算 TTFT p90、TPOT p90 和吞吐。准备成员正在生成 MCP；请求集与时间窗已给默认值，等人确认。",
+        "objectiveNames": [
+          "PD 分离下 TTFT p90 降低 20%"
+        ],
+        "usedBy": []
+      }
+    },
+    {
+      "view": "objective",
+      "query": {
+        "project": "self",
+        "pick": "obj:tool-access-correct-use"
+      },
+      "fields": {
+        "id": "tool-access-correct-use",
+        "name": "工具可达与正确使用",
+        "state": "pending",
+        "nowLine": {
+          "o": "v9",
+          "e": "E3",
+          "c": "C2",
+          "got": 186,
+          "need": 400,
+          "collecting": false,
+          "pick": "version|tool-access-correct-use/v9>gov"
+        },
+        "step": "gov",
+        "ver.id": "v9",
+        "cycle.n": 1,
+        "cycle.decision": "pending",
+        "eStep": "collect",
+        "eSel.id": "E3",
+        "eLooked": [
+          {
+            "id": "v8",
+            "pick": "version|tool-access-correct-use/v8>node",
+            "cycles": 3,
+            "keep": 1,
+            "insufficient": 1,
+            "evolve": 1,
+            "rollback": 0,
+            "prediction": "hit"
+          },
+          {
+            "id": "v9",
+            "pick": "version|tool-access-correct-use/v9>node",
+            "cycles": 1,
+            "keep": 0,
+            "insufficient": 0,
+            "evolve": 0,
+            "rollback": 0,
+            "prediction": "partial"
+          }
+        ],
+        "cStep": "node",
+        "cSel.id": "C2",
+        "overrides": [
+          {
+            "k": "count",
+            "v": "400",
+            "name": 400
+          },
+          {
+            "k": "iterate",
+            "v": "codex",
+            "name": "codex"
+          }
+        ]
+      }
+    },
+    {
+      "view": "objective",
+      "query": {
+        "project": "self",
+        "pick": "obj:tool-access-correct-use",
+        "selO": "tool-access-correct-use/v4>c1.gov"
+      },
+      "fields": {
+        "id": "tool-access-correct-use",
+        "name": "工具可达与正确使用",
+        "state": "pending",
+        "nowLine": {
+          "o": "v9",
+          "e": "E3",
+          "c": "C2",
+          "got": 186,
+          "need": 400,
+          "collecting": false,
+          "pick": "version|tool-access-correct-use/v9>gov"
+        },
+        "step": "gov",
+        "ver.id": "v4",
+        "cycle.n": 1,
+        "cycle.decision": "rollback",
+        "eStep": "collect",
+        "eSel.id": "E3",
+        "eLooked": [
+          {
+            "id": "v8",
+            "pick": "version|tool-access-correct-use/v8>node",
+            "cycles": 3,
+            "keep": 1,
+            "insufficient": 1,
+            "evolve": 1,
+            "rollback": 0,
+            "prediction": "hit"
+          },
+          {
+            "id": "v9",
+            "pick": "version|tool-access-correct-use/v9>node",
+            "cycles": 1,
+            "keep": 0,
+            "insufficient": 0,
+            "evolve": 0,
+            "rollback": 0,
+            "prediction": "partial"
+          }
+        ],
+        "cStep": "node",
+        "cSel.id": "C2",
+        "overrides": [
+          {
+            "k": "count",
+            "v": "400",
+            "name": 400
+          },
+          {
+            "k": "iterate",
+            "v": "codex",
+            "name": "codex"
+          }
+        ]
+      }
+    },
+    {
+      "view": "objective",
+      "query": {
+        "project": "self",
+        "pick": "obj:tool-access-correct-use",
+        "tab": "metrics",
+        "selE": "E1>c1.eval"
+      },
+      "fields": {
+        "id": "tool-access-correct-use",
+        "name": "工具可达与正确使用",
+        "state": "pending",
+        "nowLine": {
+          "o": "v9",
+          "e": "E3",
+          "c": "C2",
+          "got": 186,
+          "need": 400,
+          "collecting": false,
+          "pick": "version|tool-access-correct-use/v9>gov"
+        },
+        "step": "gov",
+        "ver.id": "v9",
+        "cycle.n": 1,
+        "cycle.decision": "pending",
+        "eStep": "eval",
+        "eSel.id": "E1",
+        "eEval.kind": "switch",
+        "eLooked": [
+          {
+            "id": "v1",
+            "pick": "version|tool-access-correct-use/v1>node",
+            "cycles": 3,
+            "keep": 2,
+            "insufficient": 0,
+            "evolve": 1,
+            "rollback": 0,
+            "prediction": null
+          },
+          {
+            "id": "v2",
+            "pick": "version|tool-access-correct-use/v2>node",
+            "cycles": 3,
+            "keep": 0,
+            "insufficient": 2,
+            "evolve": 1,
+            "rollback": 0,
+            "prediction": "partial"
+          },
+          {
+            "id": "v3",
+            "pick": "version|tool-access-correct-use/v3>node",
+            "cycles": 4,
+            "keep": 2,
+            "insufficient": 0,
+            "evolve": 2,
+            "rollback": 0,
+            "prediction": "partial"
+          }
+        ],
+        "cStep": "node",
+        "cSel.id": "C2",
+        "overrides": [
+          {
+            "k": "count",
+            "v": "400",
+            "name": 400
+          },
+          {
+            "k": "iterate",
+            "v": "codex",
+            "name": "codex"
+          }
+        ]
+      }
+    },
+    {
+      "view": "exp",
+      "query": {
+        "project": "cartpole"
+      },
+      "script": true,
+      "fields": {
+        "id": "cp-converge",
+        "state": "pending",
+        "next.k": "decide",
+        "next.v": "v2",
+        "next.n": 3,
+        "next.go": "version|cp-converge/v2>c3.gov",
+        "now": {
+          "version": "v2",
+          "change": "加入 value baseline",
+          "when": "pending",
+          "window": "18:00–08:00",
+          "plan": null,
+          "exec": "cartpole-exec",
+          "metrics": "平均回报 ≥ 475；到 475 的步数；种子间标准差 ≤ 30；每组耗时",
+          "e": "E1"
+        },
+        "setup": false,
+        "trend": [
+          {
+            "n": 1,
+            "version": "v1",
+            "value": 182
+          },
+          {
+            "n": 1,
+            "version": "v2",
+            "value": 418
+          },
+          {
+            "n": 2,
+            "version": "v2",
+            "value": 471
+          },
+          {
+            "n": 1,
+            "version": "v3",
+            "value": 441
+          },
+          {
+            "n": 3,
+            "version": "v2",
+            "value": 472
+          }
+        ],
+        "hitRate": {
+          "hit": 2,
+          "all": 3
+        },
+        "versions": [
+          {
+            "id": "v1",
+            "parent": null,
+            "change": "原始 REINFORCE",
+            "pr": null,
+            "at": 1799481600000,
+            "current": false,
+            "nodeState": "",
+            "key": "cp-converge/v1",
+            "parentKey": null,
+            "selected": false,
+            "nodeSelected": false,
+            "pick": "cp-converge/v1>node",
+            "cyclePick": null,
+            "steps": [
+              {
+                "k": "apply",
+                "n": 1,
+                "result": "done",
+                "step": "c1.apply",
+                "pick": "cp-converge/v1>c1.apply",
+                "selected": false
+              },
+              {
+                "k": "collect",
+                "n": 1,
+                "live": false,
+                "step": "c1.collect",
+                "pick": "cp-converge/v1>c1.collect",
+                "selected": false
+              },
+              {
+                "k": "eval",
+                "n": 1,
+                "result": "baseline",
+                "step": "c1.eval",
+                "pick": "cp-converge/v1>c1.eval",
+                "selected": false
+              },
+              {
+                "k": "gov",
+                "result": "evolve",
+                "step": "c1.gov",
+                "pick": "cp-converge/v1>c1.gov",
+                "selected": false
+              }
+            ]
+          },
+          {
+            "id": "v2",
+            "parent": "v1",
+            "change": "加入 value baseline",
+            "pr": "#3",
+            "at": 1799678700000,
+            "current": true,
+            "nodeState": "current",
+            "key": "cp-converge/v2",
+            "parentKey": "cp-converge/v1",
+            "selected": true,
+            "nodeSelected": false,
+            "pick": "cp-converge/v2>node",
+            "cyclePick": {
+              "id": "rsi-cyc-rsiSelO-1",
+              "tree": "rsiSelO",
+              "value": "cp-converge/v2>c3.eval",
+              "options": [
+                {
+                  "v": "cp-converge/v2>c1.eval",
+                  "n": 1,
+                  "total": 3
+                },
+                {
+                  "v": "cp-converge/v2>c2.eval",
+                  "n": 2,
+                  "total": 3
+                },
+                {
+                  "v": "cp-converge/v2>c3.eval",
+                  "n": 3,
+                  "total": 3
+                }
+              ]
+            },
+            "steps": [
+              {
+                "k": "apply",
+                "n": 3,
+                "result": "done",
+                "step": "c3.apply",
+                "pick": "cp-converge/v2>c3.apply",
+                "selected": false
+              },
+              {
+                "k": "collect",
+                "n": 3,
+                "live": false,
+                "step": "c3.collect",
+                "pick": "cp-converge/v2>c3.collect",
+                "selected": false
+              },
+              {
+                "k": "eval",
+                "n": 3,
+                "result": "keep",
+                "step": "c3.eval",
+                "pick": "cp-converge/v2>c3.eval",
+                "selected": false
+              },
+              {
+                "k": "gov",
+                "result": "pending",
+                "step": "c3.gov",
+                "pick": "cp-converge/v2>c3.gov",
+                "selected": true
+              }
+            ]
+          },
+          {
+            "id": "v3",
+            "parent": "v2",
+            "change": "加入优势归一化",
+            "pr": "#5",
+            "at": 1799851500000,
+            "current": false,
+            "nodeState": "",
+            "key": "cp-converge/v3",
+            "parentKey": "cp-converge/v2",
+            "selected": false,
+            "nodeSelected": false,
+            "pick": "cp-converge/v3>node",
+            "cyclePick": null,
+            "steps": [
+              {
+                "k": "apply",
+                "n": 1,
+                "result": "failed",
+                "step": "c1.apply",
+                "pick": "cp-converge/v3>c1.apply",
+                "selected": false
+              },
+              {
+                "k": "collect",
+                "n": 1,
+                "live": false,
+                "step": "c1.collect",
+                "pick": "cp-converge/v3>c1.collect",
+                "selected": false
+              },
+              {
+                "k": "eval",
+                "n": 1,
+                "result": "rollback",
+                "step": "c1.eval",
+                "pick": "cp-converge/v3>c1.eval",
+                "selected": false
+              },
+              {
+                "k": "gov",
+                "result": "rollback",
+                "step": "c1.gov",
+                "pick": "cp-converge/v3>c1.gov",
+                "selected": false
+              }
+            ]
+          }
+        ],
+        "ver.id": "v2",
+        "step": "gov",
+        "cycle.n": 5,
+        "cycle.waiting": true,
+        "cycle.groups": [
+          {
+            "id": "r5-control",
+            "label": "当前 v2 最好组 · 5 种子对照",
+            "version": "v2",
+            "vars": {
+              "lr": "1e-3",
+              "batch": "16",
+              "entropy": "0.01"
+            },
+            "control": true,
+            "confirm": false,
+            "return": {
+              "group": "r5-control",
+              "metric": "return",
+              "mean": 472,
+              "sd": 6,
+              "lo": 464,
+              "hi": 479,
+              "n": 5
+            },
+            "steps": {
+              "group": "r5-control",
+              "metric": "steps",
+              "mean": 60823,
+              "sd": 3075,
+              "lo": 57006,
+              "hi": 64640,
+              "n": 5
+            },
+            "sd": {
+              "group": "r5-control",
+              "metric": "sd",
+              "mean": 6,
+              "sd": 0,
+              "lo": 6,
+              "hi": 6,
+              "n": 5
+            },
+            "wall": {
+              "group": "r5-control",
+              "metric": "wall",
+              "mean": 299,
+              "sd": 10,
+              "lo": 287,
+              "hi": 312,
+              "n": 5
+            },
+            "varsText": "lr=1e-3 batch=16 entropy=0.01",
+            "failed": 0,
+            "doneN": 5,
+            "total": 5
+          },
+          {
+            "id": "r5-confirm",
+            "label": "v2 最好组 · 扩到 10 个种子",
+            "version": "v2",
+            "vars": {
+              "lr": "1e-3",
+              "batch": "16",
+              "entropy": "0.01"
+            },
+            "control": false,
+            "confirm": true,
+            "return": {
+              "group": "r5-confirm",
+              "metric": "return",
+              "mean": 472,
+              "sd": 6,
+              "lo": 468,
+              "hi": 476,
+              "n": 10
+            },
+            "steps": {
+              "group": "r5-confirm",
+              "metric": "steps",
+              "mean": 61000,
+              "sd": 3050,
+              "lo": 58818,
+              "hi": 63182,
+              "n": 10
+            },
+            "sd": {
+              "group": "r5-confirm",
+              "metric": "sd",
+              "mean": 6,
+              "sd": 0,
+              "lo": 6,
+              "hi": 6,
+              "n": 10
+            },
+            "wall": {
+              "group": "r5-confirm",
+              "metric": "wall",
+              "mean": 300,
+              "sd": 10,
+              "lo": 293,
+              "hi": 307,
+              "n": 10
+            },
+            "varsText": "lr=1e-3 batch=16 entropy=0.01",
+            "failed": 0,
+            "doneN": 10,
+            "total": 10
+          }
+        ],
+        "cycle.notAssessed": [],
+        "prep.needYou": 0,
+        "prep.steps.0.state": "confirmed",
+        "prep.steps.2.state": "confirmed",
+        "prep.steps.3.deps": "1、2",
+        "executor.state": "passed",
+        "metrics.version": "E1"
+      }
+    },
+    {
+      "view": "exp",
+      "query": {
+        "project": "cartpole",
+        "selO": "cp-converge/v3>c1.collect"
+      },
+      "script": true,
+      "fields": {
+        "id": "cp-converge",
+        "state": "pending",
+        "next.k": "decide",
+        "next.v": "v2",
+        "next.n": 3,
+        "next.go": "version|cp-converge/v2>c3.gov",
+        "now": {
+          "version": "v2",
+          "change": "加入 value baseline",
+          "when": "pending",
+          "window": "18:00–08:00",
+          "plan": null,
+          "exec": "cartpole-exec",
+          "metrics": "平均回报 ≥ 475；到 475 的步数；种子间标准差 ≤ 30；每组耗时",
+          "e": "E1"
+        },
+        "setup": false,
+        "trend": [
+          {
+            "n": 1,
+            "version": "v1",
+            "value": 182
+          },
+          {
+            "n": 1,
+            "version": "v2",
+            "value": 418
+          },
+          {
+            "n": 2,
+            "version": "v2",
+            "value": 471
+          },
+          {
+            "n": 1,
+            "version": "v3",
+            "value": 441
+          },
+          {
+            "n": 3,
+            "version": "v2",
+            "value": 472
+          }
+        ],
+        "hitRate": {
+          "hit": 2,
+          "all": 3
+        },
+        "versions": [
+          {
+            "id": "v1",
+            "parent": null,
+            "change": "原始 REINFORCE",
+            "pr": null,
+            "at": 1799481600000,
+            "current": false,
+            "nodeState": "",
+            "key": "cp-converge/v1",
+            "parentKey": null,
+            "selected": false,
+            "nodeSelected": false,
+            "pick": "cp-converge/v1>node",
+            "cyclePick": null,
+            "steps": [
+              {
+                "k": "apply",
+                "n": 1,
+                "result": "done",
+                "step": "c1.apply",
+                "pick": "cp-converge/v1>c1.apply",
+                "selected": false
+              },
+              {
+                "k": "collect",
+                "n": 1,
+                "live": false,
+                "step": "c1.collect",
+                "pick": "cp-converge/v1>c1.collect",
+                "selected": false
+              },
+              {
+                "k": "eval",
+                "n": 1,
+                "result": "baseline",
+                "step": "c1.eval",
+                "pick": "cp-converge/v1>c1.eval",
+                "selected": false
+              },
+              {
+                "k": "gov",
+                "result": "evolve",
+                "step": "c1.gov",
+                "pick": "cp-converge/v1>c1.gov",
+                "selected": false
+              }
+            ]
+          },
+          {
+            "id": "v2",
+            "parent": "v1",
+            "change": "加入 value baseline",
+            "pr": "#3",
+            "at": 1799678700000,
+            "current": true,
+            "nodeState": "current",
+            "key": "cp-converge/v2",
+            "parentKey": "cp-converge/v1",
+            "selected": false,
+            "nodeSelected": false,
+            "pick": "cp-converge/v2>node",
+            "cyclePick": {
+              "id": "rsi-cyc-rsiSelO-1",
+              "tree": "rsiSelO",
+              "value": "cp-converge/v2>c3.eval",
+              "options": [
+                {
+                  "v": "cp-converge/v2>c1.eval",
+                  "n": 1,
+                  "total": 3
+                },
+                {
+                  "v": "cp-converge/v2>c2.eval",
+                  "n": 2,
+                  "total": 3
+                },
+                {
+                  "v": "cp-converge/v2>c3.eval",
+                  "n": 3,
+                  "total": 3
+                }
+              ]
+            },
+            "steps": [
+              {
+                "k": "apply",
+                "n": 3,
+                "result": "done",
+                "step": "c3.apply",
+                "pick": "cp-converge/v2>c3.apply",
+                "selected": false
+              },
+              {
+                "k": "collect",
+                "n": 3,
+                "live": false,
+                "step": "c3.collect",
+                "pick": "cp-converge/v2>c3.collect",
+                "selected": false
+              },
+              {
+                "k": "eval",
+                "n": 3,
+                "result": "keep",
+                "step": "c3.eval",
+                "pick": "cp-converge/v2>c3.eval",
+                "selected": false
+              },
+              {
+                "k": "gov",
+                "result": "pending",
+                "step": "c3.gov",
+                "pick": "cp-converge/v2>c3.gov",
+                "selected": false
+              }
+            ]
+          },
+          {
+            "id": "v3",
+            "parent": "v2",
+            "change": "加入优势归一化",
+            "pr": "#5",
+            "at": 1799851500000,
+            "current": false,
+            "nodeState": "",
+            "key": "cp-converge/v3",
+            "parentKey": "cp-converge/v2",
+            "selected": true,
+            "nodeSelected": false,
+            "pick": "cp-converge/v3>node",
+            "cyclePick": null,
+            "steps": [
+              {
+                "k": "apply",
+                "n": 1,
+                "result": "failed",
+                "step": "c1.apply",
+                "pick": "cp-converge/v3>c1.apply",
+                "selected": false
+              },
+              {
+                "k": "collect",
+                "n": 1,
+                "live": false,
+                "step": "c1.collect",
+                "pick": "cp-converge/v3>c1.collect",
+                "selected": true
+              },
+              {
+                "k": "eval",
+                "n": 1,
+                "result": "rollback",
+                "step": "c1.eval",
+                "pick": "cp-converge/v3>c1.eval",
+                "selected": false
+              },
+              {
+                "k": "gov",
+                "result": "rollback",
+                "step": "c1.gov",
+                "pick": "cp-converge/v3>c1.gov",
+                "selected": false
+              }
+            ]
+          }
+        ],
+        "ver.id": "v3",
+        "step": "collect",
+        "cycle.n": 4,
+        "cycle.waiting": false,
+        "cycle.groups": [
+          {
+            "id": "r4-control",
+            "label": "v2 最好组 · 新种子确认",
+            "version": "v2",
+            "vars": {
+              "lr": "1e-3",
+              "batch": "16",
+              "entropy": "0.01"
+            },
+            "control": true,
+            "confirm": true,
+            "return": {
+              "group": "r4-control",
+              "metric": "return",
+              "mean": 468,
+              "sd": 11,
+              "lo": 454,
+              "hi": 482,
+              "n": 5
+            },
+            "steps": {
+              "group": "r4-control",
+              "metric": "steps",
+              "mean": 65000,
+              "sd": 3250,
+              "lo": 60966,
+              "hi": 69034,
+              "n": 5
+            },
+            "sd": {
+              "group": "r4-control",
+              "metric": "sd",
+              "mean": 11,
+              "sd": 0,
+              "lo": 11,
+              "hi": 11,
+              "n": 5
+            },
+            "wall": {
+              "group": "r4-control",
+              "metric": "wall",
+              "mean": 300,
+              "sd": 10,
+              "lo": 288,
+              "hi": 312,
+              "n": 5
+            },
+            "varsText": "lr=1e-3 batch=16 entropy=0.01",
+            "failed": 0,
+            "doneN": 5,
+            "total": 5
+          },
+          {
+            "id": "r4-v3",
+            "label": "v3 优势归一化 · 当晚补跑",
+            "version": "v3",
+            "vars": {
+              "lr": "1e-3",
+              "batch": "16",
+              "entropy": "0.01"
+            },
+            "control": false,
+            "confirm": false,
+            "return": {
+              "group": "r4-v3",
+              "metric": "return",
+              "mean": 441,
+              "sd": 73,
+              "lo": 350,
+              "hi": 532,
+              "n": 5
+            },
+            "steps": {
+              "group": "r4-v3",
+              "metric": "steps",
+              "mean": 78000,
+              "sd": 3900,
+              "lo": 73159,
+              "hi": 82842,
+              "n": 5
+            },
+            "sd": {
+              "group": "r4-v3",
+              "metric": "sd",
+              "mean": 73,
+              "sd": 0,
+              "lo": 73,
+              "hi": 73,
+              "n": 5
+            },
+            "wall": {
+              "group": "r4-v3",
+              "metric": "wall",
+              "mean": 360,
+              "sd": 10,
+              "lo": 348,
+              "hi": 372,
+              "n": 5
+            },
+            "varsText": "lr=1e-3 batch=16 entropy=0.01",
+            "failed": 1,
+            "doneN": 6,
+            "total": 6
+          }
+        ],
+        "cycle.notAssessed": [],
+        "prep.needYou": 0,
+        "prep.steps.0.state": "confirmed",
+        "prep.steps.2.state": "confirmed",
+        "prep.steps.3.deps": "1、2",
+        "executor.state": "passed",
+        "metrics.version": "E1"
+      }
+    },
+    {
+      "view": "exp",
+      "query": {
+        "project": "cartpole",
+        "selO": "cp-converge/v3>c1.eval"
+      },
+      "script": true,
+      "fields": {
+        "id": "cp-converge",
+        "state": "pending",
+        "next.k": "decide",
+        "next.v": "v2",
+        "next.n": 3,
+        "next.go": "version|cp-converge/v2>c3.gov",
+        "now": {
+          "version": "v2",
+          "change": "加入 value baseline",
+          "when": "pending",
+          "window": "18:00–08:00",
+          "plan": null,
+          "exec": "cartpole-exec",
+          "metrics": "平均回报 ≥ 475；到 475 的步数；种子间标准差 ≤ 30；每组耗时",
+          "e": "E1"
+        },
+        "setup": false,
+        "trend": [
+          {
+            "n": 1,
+            "version": "v1",
+            "value": 182
+          },
+          {
+            "n": 1,
+            "version": "v2",
+            "value": 418
+          },
+          {
+            "n": 2,
+            "version": "v2",
+            "value": 471
+          },
+          {
+            "n": 1,
+            "version": "v3",
+            "value": 441
+          },
+          {
+            "n": 3,
+            "version": "v2",
+            "value": 472
+          }
+        ],
+        "hitRate": {
+          "hit": 2,
+          "all": 3
+        },
+        "versions": [
+          {
+            "id": "v1",
+            "parent": null,
+            "change": "原始 REINFORCE",
+            "pr": null,
+            "at": 1799481600000,
+            "current": false,
+            "nodeState": "",
+            "key": "cp-converge/v1",
+            "parentKey": null,
+            "selected": false,
+            "nodeSelected": false,
+            "pick": "cp-converge/v1>node",
+            "cyclePick": null,
+            "steps": [
+              {
+                "k": "apply",
+                "n": 1,
+                "result": "done",
+                "step": "c1.apply",
+                "pick": "cp-converge/v1>c1.apply",
+                "selected": false
+              },
+              {
+                "k": "collect",
+                "n": 1,
+                "live": false,
+                "step": "c1.collect",
+                "pick": "cp-converge/v1>c1.collect",
+                "selected": false
+              },
+              {
+                "k": "eval",
+                "n": 1,
+                "result": "baseline",
+                "step": "c1.eval",
+                "pick": "cp-converge/v1>c1.eval",
+                "selected": false
+              },
+              {
+                "k": "gov",
+                "result": "evolve",
+                "step": "c1.gov",
+                "pick": "cp-converge/v1>c1.gov",
+                "selected": false
+              }
+            ]
+          },
+          {
+            "id": "v2",
+            "parent": "v1",
+            "change": "加入 value baseline",
+            "pr": "#3",
+            "at": 1799678700000,
+            "current": true,
+            "nodeState": "current",
+            "key": "cp-converge/v2",
+            "parentKey": "cp-converge/v1",
+            "selected": false,
+            "nodeSelected": false,
+            "pick": "cp-converge/v2>node",
+            "cyclePick": {
+              "id": "rsi-cyc-rsiSelO-1",
+              "tree": "rsiSelO",
+              "value": "cp-converge/v2>c3.eval",
+              "options": [
+                {
+                  "v": "cp-converge/v2>c1.eval",
+                  "n": 1,
+                  "total": 3
+                },
+                {
+                  "v": "cp-converge/v2>c2.eval",
+                  "n": 2,
+                  "total": 3
+                },
+                {
+                  "v": "cp-converge/v2>c3.eval",
+                  "n": 3,
+                  "total": 3
+                }
+              ]
+            },
+            "steps": [
+              {
+                "k": "apply",
+                "n": 3,
+                "result": "done",
+                "step": "c3.apply",
+                "pick": "cp-converge/v2>c3.apply",
+                "selected": false
+              },
+              {
+                "k": "collect",
+                "n": 3,
+                "live": false,
+                "step": "c3.collect",
+                "pick": "cp-converge/v2>c3.collect",
+                "selected": false
+              },
+              {
+                "k": "eval",
+                "n": 3,
+                "result": "keep",
+                "step": "c3.eval",
+                "pick": "cp-converge/v2>c3.eval",
+                "selected": false
+              },
+              {
+                "k": "gov",
+                "result": "pending",
+                "step": "c3.gov",
+                "pick": "cp-converge/v2>c3.gov",
+                "selected": false
+              }
+            ]
+          },
+          {
+            "id": "v3",
+            "parent": "v2",
+            "change": "加入优势归一化",
+            "pr": "#5",
+            "at": 1799851500000,
+            "current": false,
+            "nodeState": "",
+            "key": "cp-converge/v3",
+            "parentKey": "cp-converge/v2",
+            "selected": true,
+            "nodeSelected": false,
+            "pick": "cp-converge/v3>node",
+            "cyclePick": null,
+            "steps": [
+              {
+                "k": "apply",
+                "n": 1,
+                "result": "failed",
+                "step": "c1.apply",
+                "pick": "cp-converge/v3>c1.apply",
+                "selected": false
+              },
+              {
+                "k": "collect",
+                "n": 1,
+                "live": false,
+                "step": "c1.collect",
+                "pick": "cp-converge/v3>c1.collect",
+                "selected": false
+              },
+              {
+                "k": "eval",
+                "n": 1,
+                "result": "rollback",
+                "step": "c1.eval",
+                "pick": "cp-converge/v3>c1.eval",
+                "selected": true
+              },
+              {
+                "k": "gov",
+                "result": "rollback",
+                "step": "c1.gov",
+                "pick": "cp-converge/v3>c1.gov",
+                "selected": false
+              }
+            ]
+          }
+        ],
+        "ver.id": "v3",
+        "step": "eval",
+        "cycle.n": 4,
+        "cycle.waiting": false,
+        "cycle.groups": [
+          {
+            "id": "r4-control",
+            "label": "v2 最好组 · 新种子确认",
+            "version": "v2",
+            "vars": {
+              "lr": "1e-3",
+              "batch": "16",
+              "entropy": "0.01"
+            },
+            "control": true,
+            "confirm": true,
+            "return": {
+              "group": "r4-control",
+              "metric": "return",
+              "mean": 468,
+              "sd": 11,
+              "lo": 454,
+              "hi": 482,
+              "n": 5
+            },
+            "steps": {
+              "group": "r4-control",
+              "metric": "steps",
+              "mean": 65000,
+              "sd": 3250,
+              "lo": 60966,
+              "hi": 69034,
+              "n": 5
+            },
+            "sd": {
+              "group": "r4-control",
+              "metric": "sd",
+              "mean": 11,
+              "sd": 0,
+              "lo": 11,
+              "hi": 11,
+              "n": 5
+            },
+            "wall": {
+              "group": "r4-control",
+              "metric": "wall",
+              "mean": 300,
+              "sd": 10,
+              "lo": 288,
+              "hi": 312,
+              "n": 5
+            },
+            "varsText": "lr=1e-3 batch=16 entropy=0.01",
+            "failed": 0,
+            "doneN": 5,
+            "total": 5
+          },
+          {
+            "id": "r4-v3",
+            "label": "v3 优势归一化 · 当晚补跑",
+            "version": "v3",
+            "vars": {
+              "lr": "1e-3",
+              "batch": "16",
+              "entropy": "0.01"
+            },
+            "control": false,
+            "confirm": false,
+            "return": {
+              "group": "r4-v3",
+              "metric": "return",
+              "mean": 441,
+              "sd": 73,
+              "lo": 350,
+              "hi": 532,
+              "n": 5
+            },
+            "steps": {
+              "group": "r4-v3",
+              "metric": "steps",
+              "mean": 78000,
+              "sd": 3900,
+              "lo": 73159,
+              "hi": 82842,
+              "n": 5
+            },
+            "sd": {
+              "group": "r4-v3",
+              "metric": "sd",
+              "mean": 73,
+              "sd": 0,
+              "lo": 73,
+              "hi": 73,
+              "n": 5
+            },
+            "wall": {
+              "group": "r4-v3",
+              "metric": "wall",
+              "mean": 360,
+              "sd": 10,
+              "lo": 348,
+              "hi": 372,
+              "n": 5
+            },
+            "varsText": "lr=1e-3 batch=16 entropy=0.01",
+            "failed": 1,
+            "doneN": 6,
+            "total": 6
+          }
+        ],
+        "cycle.notAssessed": [],
+        "prep.needYou": 0,
+        "prep.steps.0.state": "confirmed",
+        "prep.steps.2.state": "confirmed",
+        "prep.steps.3.deps": "1、2",
+        "executor.state": "passed",
+        "metrics.version": "E1"
+      }
+    }
+  ]
+}

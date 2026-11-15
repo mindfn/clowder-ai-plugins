@@ -1,0 +1,5145 @@
+ns: rsi
+inserts:
+  - id: rsi
+    anchor: rail.top
+    at: inside
+    node:
+      title: t:rsi.home.title
+      icon: bolt
+      open:
+        node: rsi.home
+  - id: rsi.panel
+    anchor: panel.tools
+    at: inside
+    node:
+      title: t:rsi.panel
+      icon: bolt
+      open:
+        node: rsi.panel
+      tool: true
+views:
+  rsi.home:
+    page: true
+    blocks:
+      - type: split
+        picked: $.home.pick.id
+        left:
+          - type: head
+            title: t:rsi.home.title
+            help: t:rsi.home.help
+            actions:
+              - type: more
+                items:
+                  - from: $.home.projects
+                    item:
+                      label: t:rsi.new
+                      act: dialog
+                      args:
+                        kind: rsiNewExp
+                        cats: $.members.defaultCatOptions
+                      when:
+                        - of: "@id"
+                          gte: $.home.projectId
+                        - of: $.home.projectId
+                          gte: "@id"
+                        - "@exp"
+                  - from: $.home.projects
+                    item:
+                      label: t:rsi.new
+                      act: dialog
+                      args:
+                        kind: rsiNew
+                      when:
+                        - of: "@id"
+                          gte: $.home.projectId
+                        - of: $.home.projectId
+                          gte: "@id"
+                        - "!@exp"
+          - type: toolbar
+            items:
+              - type: select
+                id: rsi-project
+                options:
+                  - from: $.home.projects
+                    item:
+                      v: "@id"
+                      label: "@name"
+                value: $.home.projectId
+                prefix: t:rsi.projectPrefix
+                label: t:rsi.project
+                change: plugSet
+                args:
+                  k: project
+          - type: list
+            id: rsi-nav
+            from: $.home.navs
+            row:
+              layout: line
+              key: "@k"
+              title:
+                text:
+                  t: rsi.nav
+                  args:
+                    - "@k"
+              cols:
+                - v:
+                    text: "@count"
+                    num: true
+                  w: num
+                  when: "@count"
+              tone:
+                - when: "@selected"
+                  value: selected
+                - value: ""
+              act: plugSet
+              args:
+                k: pick
+                v: "@k"
+          - type: box
+            variant: scroll
+            blocks:
+              - type: label
+                text: t:rsi.objectives
+              - type: empty
+                text: t:rsi.noObjectives
+                when: "!$.home.hasObjectives"
+                action:
+                  type: each
+                  from: $.home.projects
+                  control:
+                    type: stack
+                    when:
+                      - of: "@id"
+                        gte: $.home.projectId
+                      - of: $.home.projectId
+                        gte: "@id"
+                    items:
+                      - type: button
+                        label: t:rsi.new
+                        act: dialog
+                        args:
+                          kind: rsiNewExp
+                          cats: $.members.defaultCatOptions
+                        disabled: $.pending
+                        when: "@exp"
+                      - type: button
+                        label: t:rsi.new
+                        act: dialog
+                        args:
+                          kind: rsiNew
+                        disabled: $.pending
+                        when: "!@exp"
+              - type: tree
+                id: rsi-objectives
+                nodes: $.home.nodes
+                ready: true
+                when: $.home.hasObjectives
+                row:
+                  layout: two
+                  title: "@name"
+                  inline:
+                    - status:
+                        of: "@state"
+                        map:
+                          collecting:
+                            tone: ""
+                            text: t:rsi.state.collecting
+                          pending:
+                            tone: warn
+                            text: t:rsi.state.pending
+                          baseline:
+                            tone: info
+                            text: t:rsi.state.baseline
+                          paused:
+                            tone: ""
+                            text: t:rsi.state.paused
+                          exhausted:
+                            tone: warn
+                            text: t:rsi.state.exhausted
+                          analyzing:
+                            tone: info
+                            text: t:rsi.state.analyzing
+                          preparing:
+                            tone: info
+                            text: t:rsi.state.preparing
+                          retired:
+                            tone: ""
+                            text: t:rsi.state.retired
+                          ready:
+                            tone: warn
+                            text: t:rsi.state.ready
+                          running:
+                            tone: info
+                            text: t:rsi.state.running
+                          stalled:
+                            tone: danger
+                            text: t:rsi.state.stalled
+                          _: ""
+                      when: "@state"
+                  sub:
+                    parts:
+                      - text:
+                          t: rsi.exp.triggerOf
+                          args:
+                            - "@trigger"
+                        when: "@trigger"
+                      - text:
+                          t: rsi.now.collecting
+                          args:
+                            - "@cycle.got"
+                            - "@cycle.need"
+                        when: "@cycle"
+                  cols:
+                    - v:
+                        text: "@running.o"
+                        mono: true
+                      w: id
+                      when: "@running"
+                  cur: "@selected"
+                select:
+                  act: plugSet
+                  args:
+                    k: pick
+                    v: "@pickKey"
+        right:
+          - type: empty
+            icon: bolt
+            text: t:rsi.noObjectivesHint
+            when:
+              of: $.home.pick.k
+              map:
+                none: true
+                _: false
+            action:
+              type: each
+              from: $.home.projects
+              control:
+                type: stack
+                when:
+                  - of: "@id"
+                    gte: $.home.projectId
+                  - of: $.home.projectId
+                    gte: "@id"
+                items:
+                  - type: button
+                    primary: true
+                    label: t:rsi.new
+                    act: dialog
+                    args:
+                      kind: rsiNewExp
+                      cats: $.members.defaultCatOptions
+                    disabled: $.pending
+                    when: "@exp"
+                  - type: button
+                    primary: true
+                    label: t:rsi.new
+                    act: dialog
+                    args:
+                      kind: rsiNew
+                    disabled: $.pending
+                    when: "!@exp"
+          - type: view
+            id: rsi.objective
+            when:
+              - of: $.home.pick.k
+                map:
+                  obj: true
+                  _: false
+              - "!$.home.pick.exp"
+          - type: view
+            id: rsi.exp
+            when:
+              - of: $.home.pick.k
+                map:
+                  obj: true
+                  _: false
+              - $.home.pick.exp
+          - type: view
+            id: rsi.caps
+            when:
+              of: $.home.pick.k
+              map:
+                caps: true
+                _: false
+          - type: view
+            id: rsi.library
+            when:
+              of: $.home.pick.k
+              map:
+                library: true
+                _: false
+          - type: view
+            id: rsi.cards
+            when:
+              of: $.home.pick.k
+              map:
+                cards: true
+                _: false
+    route: rsi
+    sources:
+      home: home
+      members: host:members
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
+  rsi.panel:
+    blocks:
+      - type: each
+        from:
+          - {}
+        when: $.home.panelList
+        blocks:
+          - type: head
+            title: t:rsi.home.title
+            help: t:rsi.home.help
+            actions:
+              - type: more
+                items:
+                  - from: $.home.projects
+                    item:
+                      label: t:rsi.new
+                      act: dialog
+                      args:
+                        kind: rsiNewExp
+                        cats: $.members.defaultCatOptions
+                      when:
+                        - of: "@id"
+                          gte: $.home.projectId
+                        - of: $.home.projectId
+                          gte: "@id"
+                        - "@exp"
+                  - from: $.home.projects
+                    item:
+                      label: t:rsi.new
+                      act: dialog
+                      args:
+                        kind: rsiNew
+                      when:
+                        - of: "@id"
+                          gte: $.home.projectId
+                        - of: $.home.projectId
+                          gte: "@id"
+                        - "!@exp"
+          - type: toolbar
+            items:
+              - type: select
+                id: rsi-project
+                options:
+                  - from: $.home.projects
+                    item:
+                      v: "@id"
+                      label: "@name"
+                value: $.home.projectId
+                prefix: t:rsi.projectPrefix
+                label: t:rsi.project
+                change: plugSet
+                args:
+                  k: project
+          - type: list
+            id: rsi-nav
+            from: $.home.navs
+            row:
+              layout: line
+              key: "@k"
+              title:
+                text:
+                  t: rsi.nav
+                  args:
+                    - "@k"
+              cols:
+                - v:
+                    text: "@count"
+                    num: true
+                  w: num
+                  when: "@count"
+              tone:
+                - when: "@selected"
+                  value: selected
+                - value: ""
+              act: plugSet
+              args:
+                k: pick
+                v: "@k"
+          - type: box
+            variant: scroll
+            blocks:
+              - type: label
+                text: t:rsi.objectives
+              - type: empty
+                text: t:rsi.noObjectives
+                when: "!$.home.hasObjectives"
+                action:
+                  type: each
+                  from: $.home.projects
+                  control:
+                    type: stack
+                    when:
+                      - of: "@id"
+                        gte: $.home.projectId
+                      - of: $.home.projectId
+                        gte: "@id"
+                    items:
+                      - type: button
+                        label: t:rsi.new
+                        act: dialog
+                        args:
+                          kind: rsiNewExp
+                          cats: $.members.defaultCatOptions
+                        disabled: $.pending
+                        when: "@exp"
+                      - type: button
+                        label: t:rsi.new
+                        act: dialog
+                        args:
+                          kind: rsiNew
+                        disabled: $.pending
+                        when: "!@exp"
+              - type: tree
+                id: rsi-objectives
+                nodes: $.home.nodes
+                ready: true
+                when: $.home.hasObjectives
+                row:
+                  layout: two
+                  title: "@name"
+                  inline:
+                    - status:
+                        of: "@state"
+                        map:
+                          collecting:
+                            tone: ""
+                            text: t:rsi.state.collecting
+                          pending:
+                            tone: warn
+                            text: t:rsi.state.pending
+                          baseline:
+                            tone: info
+                            text: t:rsi.state.baseline
+                          paused:
+                            tone: ""
+                            text: t:rsi.state.paused
+                          exhausted:
+                            tone: warn
+                            text: t:rsi.state.exhausted
+                          analyzing:
+                            tone: info
+                            text: t:rsi.state.analyzing
+                          preparing:
+                            tone: info
+                            text: t:rsi.state.preparing
+                          retired:
+                            tone: ""
+                            text: t:rsi.state.retired
+                          ready:
+                            tone: warn
+                            text: t:rsi.state.ready
+                          running:
+                            tone: info
+                            text: t:rsi.state.running
+                          stalled:
+                            tone: danger
+                            text: t:rsi.state.stalled
+                          _: ""
+                      when: "@state"
+                  sub:
+                    parts:
+                      - text:
+                          t: rsi.exp.triggerOf
+                          args:
+                            - "@trigger"
+                        when: "@trigger"
+                      - text:
+                          t: rsi.now.collecting
+                          args:
+                            - "@cycle.got"
+                            - "@cycle.need"
+                        when: "@cycle"
+                  cols:
+                    - v:
+                        text: "@running.o"
+                        mono: true
+                      w: id
+                      when: "@running"
+                  cur: "@selected"
+                select:
+                  act: plugSet
+                  args:
+                    k: pick
+                    v: "@pickKey"
+          - type: toolbar
+            when:
+              of: $.home.pick.k
+              map:
+                none: false
+                _: true
+            items:
+              - type: button
+                label: t:rsi.console.openSelected
+                act: plugSet
+                args:
+                  k: list
+                  v: false
+      - type: each
+        from:
+          - {}
+        when: "!$.home.panelList"
+        blocks:
+          - type: empty
+            icon: bolt
+            text: t:rsi.noObjectivesHint
+            when:
+              of: $.home.pick.k
+              map:
+                none: true
+                _: false
+            action:
+              type: each
+              from: $.home.projects
+              control:
+                type: stack
+                when:
+                  - of: "@id"
+                    gte: $.home.projectId
+                  - of: $.home.projectId
+                    gte: "@id"
+                items:
+                  - type: button
+                    primary: true
+                    label: t:rsi.new
+                    act: dialog
+                    args:
+                      kind: rsiNewExp
+                      cats: $.members.defaultCatOptions
+                    disabled: $.pending
+                    when: "@exp"
+                  - type: button
+                    primary: true
+                    label: t:rsi.new
+                    act: dialog
+                    args:
+                      kind: rsiNew
+                    disabled: $.pending
+                    when: "!@exp"
+          - type: view
+            id: rsi.objective
+            when:
+              - of: $.home.pick.k
+                map:
+                  obj: true
+                  _: false
+              - "!$.home.pick.exp"
+          - type: view
+            id: rsi.exp
+            when:
+              - of: $.home.pick.k
+                map:
+                  obj: true
+                  _: false
+              - $.home.pick.exp
+          - type: view
+            id: rsi.caps
+            when:
+              of: $.home.pick.k
+              map:
+                caps: true
+                _: false
+          - type: view
+            id: rsi.library
+            when:
+              of: $.home.pick.k
+              map:
+                library: true
+                _: false
+          - type: view
+            id: rsi.cards
+            when:
+              of: $.home.pick.k
+              map:
+                cards: true
+                _: false
+    panel:
+      - t:rsi.panel
+      - bolt
+      - ""
+      - other
+      - t:rsi.home.help
+    drill:
+      - when: "!$.home.panelList"
+        act: plugSet
+        args:
+          k: list
+          v: true
+    sources:
+      home: home
+      members: host:members
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
+  rsi.exp:
+    blocks:
+      - type: head
+        variant: detail
+        title: $.exp.name
+        actions:
+          - type: status
+            text:
+              t: rsi.state
+              args:
+                - $.exp.state
+            tone:
+              of: $.exp.state
+              map:
+                pending: warn
+                preparing: info
+                ready: warn
+                running: info
+                paused: warn
+                _: ""
+          - type: button
+            when:
+              of: $.exp.state
+              map:
+                _: false
+                ready: true
+            primary: true
+            label: t:rsi.life.start
+            act: plugin
+            args:
+              request: life
+              op: start
+            disabled: $.pending
+          - type: button
+            when:
+              of: $.exp.state
+              map:
+                ready: true
+                pending: true
+                _: false
+            label: t:rsi.life.pause
+            act: plugin
+            args:
+              request: life
+              op: pause
+            disabled: $.pending
+          - type: button
+            when:
+              of: $.exp.state
+              map:
+                _: false
+                paused: true
+            label: t:rsi.life.resume
+            act: plugin
+            args:
+              request: life
+              op: resume
+            disabled: $.pending
+          - type: button
+            when:
+              of: $.exp.next.k
+              map:
+                _: false
+                stale: true
+            primary: true
+            label: t:rsi.exp.redo
+            act: plugin
+            args:
+              request: initRedo
+            disabled: $.pending
+          - type: button
+            when: "!$.exp.setup"
+            label: t:rsi.exp.declare
+            act: dialog
+            args:
+              kind: rsiExpPrep
+          - type: button
+            label: t:rsi.exp.thread
+            act: open
+            args:
+              kind: msg
+              t: $.exp.thread
+      - type: kv
+        from:
+          - k: t:rsi.exp.now.version
+            v:
+              t: rsi.exp.now.versionOf
+              args:
+                - $.exp.now.version
+                - $.exp.now.change
+          - k: t:rsi.exp.now.when
+            v:
+              t: rsi.exp.now.whenOf
+              args:
+                - $.exp.now.when
+                - $.exp.now.window
+                - $.exp.now.v
+                - $.exp.now.n
+          - k: t:rsi.exp.now.how
+            v:
+              t: rsi.exp.now.howOf
+              args:
+                - $.exp.now.plan.groups
+                - $.exp.now.plan.seeds
+                - $.exp.now.exec
+            when: $.exp.now.plan
+          - k: t:rsi.exp.now.how
+            v:
+              t: rsi.exp.now.howLater
+              args:
+                - $.exp.now.when
+            when: "!$.exp.now.plan"
+          - k: t:rsi.exp.now.metrics
+            v:
+              t: rsi.exp.now.metricsOf
+              args:
+                - $.exp.now.e
+                - $.exp.now.metrics
+            when: $.exp.now.metrics
+          - k: t:rsi.exp.now.metrics
+            v: t:rsi.exp.now.later
+            when: "!$.exp.now.metrics"
+      - type: notice
+        tone:
+          of: $.exp.next.k
+          map:
+            decide: warn
+            prep: warn
+            stale: warn
+            ready: warn
+            cancelled: warn
+            _: info
+        text:
+          t: rsi.exp.next
+          args:
+            - $.exp.next.k
+            - $.exp.next.v
+            - $.exp.next.n
+            - $.exp.next.count
+            - $.exp.next.window
+            - $.exp.next.by
+            - $.exp.next.hint
+        action:
+          type: button
+          label: t:rsi.now.locate
+          act: plugSet
+          args:
+            k: selO
+            v:
+              of: $.exp.next.go
+              slice:
+                - 8
+          when: $.exp.next.go
+      - type: each
+        from:
+          - {}
+        when: $.exp.trend
+        blocks:
+          - type: label
+            text:
+              t: rsi.exp.trend
+              args:
+                - $.exp.trendMetric
+                - $.exp.hitRate.hit
+                - $.exp.hitRate.all
+          - type: component
+            use: plugin:official.rsi/rsiTrend
+            props:
+              from: $.exp.trend
+              label: t:rsi.exp.trendLabel
+      - type: each
+        from:
+          - {}
+        when: $.exp.setup
+        blocks:
+          - type: each
+            from: $.exp.prep.steps
+            blocks:
+              - type: text
+                parts:
+                  - text:
+                      t: rsi.exp.initStep
+                      args:
+                        - "@i"
+                        - t: rsi.exp.init
+                          args:
+                            - "@k"
+                    strong: true
+                  - status:
+                      of: "@state"
+                      map:
+                        confirmed:
+                          tone: ok
+                          text: t:rsi.exp.prep.state.confirmed
+                        preparing:
+                          tone: info
+                          text: t:rsi.exp.prep.state.preparing
+                        submitted:
+                          tone: warn
+                          text: t:rsi.exp.prep.state.submitted
+                        cancelled:
+                          tone: warn
+                          text: t:rsi.exp.prep.state.cancelled
+                        stale:
+                          tone: warn
+                          text: t:rsi.exp.prep.state.stale
+                        waiting:
+                          tone: ""
+                          text: t:rsi.exp.prep.state.waiting
+                        queued:
+                          tone: ""
+                          text: t:rsi.exp.prep.state.queued
+                        _:
+                          tone: ""
+                          text: t:rsi.exp.prep.state.uninvestigated
+                  - text:
+                      t: rsi.exp.byOf
+                      args:
+                        - "@by"
+                    when: "@by"
+                  - text:
+                      t: rsi.exp.waitOnOf
+                      args:
+                        - "@waitOn"
+                    when: "@waitOn"
+                  - text:
+                      t: rsi.exp.initOut
+                      args:
+                        - "@k"
+                  - text:
+                      t: rsi.exp.depsOf
+                      args:
+                        - "@deps"
+                    when: "@deps"
+                actions:
+                  - type: button
+                    label: t:rsi.exp.retry
+                    act: plugin
+                    args:
+                      request: initRetry
+                      k: "@k"
+                    when:
+                      of: "@state"
+                      map:
+                        _: false
+                        cancelled: true
+                    disabled: $.pending
+              - type: list
+                from: "@items"
+                row: rsi.prep
+              - type: text
+                variant: meta
+                text:
+                  t: rsi.exp.unknownsOf
+                  args:
+                    - "@unknowns"
+                when: "@unknowns"
+              - type: text
+                variant: meta
+                text:
+                  t: rsi.exp.nextOf
+                  args:
+                    - "@next"
+                when: "@next"
+          - type: label
+            text: t:rsi.exp.members
+          - type: list
+            from: $.exp.members
+            row:
+              layout: two
+              title:
+                text:
+                  t: rsi.exp.role
+                  args:
+                    - "@role"
+              sub: "@name"
+              cols:
+                - v:
+                    text: "@model"
+                    mono: true
+                  w: id
+          - type: label
+            text: t:rsi.exp.policyTitle
+          - type: kv
+            from:
+              - k: t:rsi.exp.pol.schedule
+                v: $.exp.policy.schedule.window
+              - k: t:rsi.exp.pol.seeds
+                v:
+                  t: rsi.exp.seedsOf
+                  args:
+                    - $.exp.policy.seeds
+              - k: t:rsi.exp.pol.vars
+                v:
+                  of: $.exp.policy.vars
+                  sep: ；
+                  item:
+                    t: rsi.exp.varOf
+                    args:
+                      - "@name"
+                      - of: "@values"
+                        sep: " / "
+              - k: t:rsi.exp.pol.auto
+                v: t:rsi.exp.pol.autoText
+      - type: toolbar
+        when: "!$.exp.setup"
+        items:
+          - type: seg
+            value: $.exp.tab
+            options:
+              - v: version
+                label: t:rsi.tab.version
+              - v: metrics
+                label: t:rsi.tab.metrics
+              - v: collect
+                label: t:rsi.tab.collect
+            act: plugSet
+            args:
+              k: tab
+      - type: each
+        from:
+          - {}
+        when:
+          - "!$.exp.setup"
+          - of: $.exp.tab
+            map:
+              _: false
+              version: true
+        blocks:
+          - type: component
+            use: plugin:official.rsi/rsiLineage
+            props:
+              from: $.exp.versions
+              key: "@key"
+              parent: "@parentKey"
+              node:
+                label:
+                  - text: "@id"
+                state: "@nodeState"
+                pressed: "@nodeSelected"
+                act: plugSet
+                args:
+                  k: selO
+                  v: "@pick"
+              cells:
+                - type: select
+                  when: "@cyclePick"
+                  id: "@cyclePick.id"
+                  label: t:rsi.cycle.pick
+                  change: plugSet
+                  args:
+                    k:
+                      of: "@cyclePick.tree"
+                      map:
+                        rsiSelO: selO
+                        rsiSelE: selE
+                        rsiSelC: selC
+                  value: "@cyclePick.value"
+                  options:
+                    - from: "@cyclePick.options"
+                      item:
+                        v: "@v"
+                        label:
+                          t: rsi.cycle.nOf
+                          args:
+                            - "@n"
+                            - "@total"
+                - type: each
+                  from: "@steps"
+                  control:
+                    type: chip
+                    label:
+                      of: "@k"
+                      map:
+                        apply:
+                          t: rsi.step.apply
+                          args:
+                            - t: rsi.applyResult
+                              args:
+                                - "@result"
+                        collect:
+                          of: "@live"
+                          map:
+                            "true":
+                              t: rsi.step.collectLive
+                              args:
+                                - "@n"
+                            _:
+                              t: rsi.step.collect
+                              args:
+                                - "@n"
+                        eval:
+                          t: rsi.step.eval
+                          args:
+                            - "@n"
+                            - t: rsi.evalResult
+                              args:
+                                - "@result"
+                        gov:
+                          t: rsi.step.gov
+                          args:
+                            - t: rsi.govResult
+                              args:
+                                - "@result"
+                        cycles:
+                          t: rsi.step.cycles
+                          args:
+                            - "@count"
+                    pressed: "@selected"
+                    tone:
+                      of: "@result"
+                      map:
+                        pending: warn
+                        rollback: warn
+                        failed: warn
+                        _: ""
+                    act: plugSet
+                    args:
+                      k: selO
+                      v: "@pick"
+              tail:
+                sep: " · "
+                parts:
+                  - text: "@change"
+                  - text: "@pr"
+                    mono: true
+                    when: "@pr"
+          - type: section
+            title:
+              of: $.exp.step
+              map:
+                node: $.exp.ver.id
+                _:
+                  t: rsi.detail.step
+                  args:
+                    - $.exp.ver.id
+                    - $.exp.cycle.k
+                    - t: rsi.stepName
+                      args:
+                        - $.exp.step
+            blocks:
+              - type: kv
+                when:
+                  of: $.exp.step
+                  map:
+                    _: false
+                    node: true
+                from:
+                  - k: t:rsi.detail.change
+                    v: $.exp.ver.change
+                  - k: t:rsi.detail.parent
+                    v: $.exp.ver.parent
+                    when: $.exp.ver.parent
+                  - k: t:rsi.exp.pr
+                    v: $.exp.ver.pr
+                    when: $.exp.ver.pr
+                  - k: t:rsi.detail.at
+                    v:
+                      of: $.exp.ver.at
+                      fmt: stamp
+              - type: each
+                from:
+                  - {}
+                when:
+                  of: $.exp.step
+                  map:
+                    _: false
+                    apply: true
+                blocks:
+                  - type: kv
+                    from:
+                      - k: t:rsi.exp.plan.by
+                        v:
+                          t: rsi.exp.planBy
+                          args:
+                            - $.exp.cycle.plan.by
+                      - k: t:rsi.exp.plan.seeds
+                        v:
+                          of: $.exp.cycle.plan.seeds
+                          sep: " "
+                      - k: t:rsi.exp.plan.window
+                        v: $.exp.cycle.plan.window
+                  - type: list
+                    id: rsi-exp-plan
+                    label: t:rsi.exp.groups
+                    from: $.exp.cycle.groups
+                    row:
+                      layout: two
+                      key: "@id"
+                      title: "@label"
+                      inline:
+                        - chip: t:rsi.exp.control
+                          when: "@control"
+                        - chip: t:rsi.exp.confirm
+                          when: "@confirm"
+                      sub:
+                        sep: " · "
+                        parts:
+                          - text: "@version"
+                            mono: true
+                          - text: "@varsText"
+                            mono: true
+                            when: "@varsText"
+                      cols:
+                        - v:
+                            text:
+                              t: rsi.exp.doneOf
+                              args:
+                                - "@doneN"
+                                - "@total"
+                            num: true
+                          w: label
+                        - v:
+                            text:
+                              t: rsi.exp.failedOf
+                              args:
+                                - "@failed"
+                            tone: danger
+                          w: label
+                          when: "@failed"
+              - type: each
+                from:
+                  - {}
+                when:
+                  of: $.exp.step
+                  map:
+                    _: false
+                    collect: true
+                blocks:
+                  - type: list
+                    id: rsi-exp-events
+                    label: t:rsi.exp.events
+                    from: $.exp.cycle.events
+                    optional: true
+                    row:
+                      layout: two
+                      title: "@text"
+                      sub:
+                        text:
+                          t: rsi.exp.event
+                          args:
+                            - "@kind"
+                      cols:
+                        - v:
+                            text:
+                              of: "@at"
+                              fmt: stamp
+                          w: time
+                  - type: list
+                    id: rsi-exp-runs
+                    label:
+                      t: rsi.exp.runs
+                      args:
+                        - $.exp.cycle.runs.length
+                    from: $.exp.cycle.runs
+                    row:
+                      layout: two
+                      key: "@id"
+                      title:
+                        text:
+                          t: rsi.exp.runOf
+                          args:
+                            - "@groupLabel"
+                            - "@seed"
+                      sub:
+                        sep: " · "
+                        parts:
+                          - text: "@env.commit"
+                            mono: true
+                          - text: "@env.hw"
+                          - text:
+                              t: rsi.exp.retries
+                              args:
+                                - "@retries"
+                            when: "@retries"
+                      cols:
+                        - v:
+                            text: "@metrics.return"
+                            num: true
+                            when: "@metrics.return"
+                          w: num
+                        - v:
+                            status:
+                              of: "@state"
+                              map:
+                                failed:
+                                  of: "@error.kind"
+                                  map:
+                                    env:
+                                      tone: warn
+                                      text: t:rsi.exp.err.env
+                                    _:
+                                      tone: danger
+                                      text: t:rsi.exp.err.real
+                                running:
+                                  tone: info
+                                  text: t:rsi.exp.state.running
+                                queued:
+                                  tone: ""
+                                  text: t:rsi.exp.state.queued
+                                _: ""
+                          w: state
+                      expand:
+                        - type: kv
+                          from:
+                            - k: t:rsi.exp.env.commit
+                              v: "@env.commit"
+                            - k: t:rsi.exp.env.config
+                              v: "@env.config"
+                            - k: t:rsi.exp.env.hw
+                              v: "@env.hw"
+                            - k: t:rsi.exp.env.driver
+                              v: "@env.driver"
+                            - k: t:rsi.exp.env.data
+                              v: "@env.data"
+                            - k: t:rsi.exp.err.step
+                              v: "@error.step"
+                              when: "@error"
+                        - type: pre
+                          text: "@error.raw"
+                          when: "@error"
+                        - type: pre
+                          text: "@log"
+                          when: "@log"
+              - type: each
+                from:
+                  - {}
+                when:
+                  - of: $.exp.step
+                    map:
+                      _: false
+                      eval: true
+                  - $.exp.cycle.report
+                blocks:
+                  - type: text
+                    parts:
+                      - status:
+                          of: $.exp.cycle.report.verdict
+                          map:
+                            baseline:
+                              tone: info
+                              text: t:rsi.exp.verdict.baseline
+                            keep:
+                              tone: ok
+                              text: t:rsi.exp.verdict.keep
+                            tune:
+                              tone: ok
+                              text: t:rsi.exp.verdict.tune
+                            rollback:
+                              tone: warn
+                              text: t:rsi.exp.verdict.rollback
+                            sunset:
+                              tone: ""
+                              text: t:rsi.exp.verdict.sunset
+                            insufficient:
+                              tone: ""
+                              text: t:rsi.exp.verdict.insufficient
+                            _: ""
+                      - text: $.exp.cycle.report.headline
+                        strong: true
+                  - type: markdown
+                    text: $.exp.cycle.report.summary
+                  - type: text
+                    variant: meta
+                    parts:
+                      - text:
+                          of: $.exp.cycle.report.compare.comparable
+                          map:
+                            "true":
+                              t: rsi.exp.comparable
+                              args:
+                                - $.exp.cycle.report.compare.against
+                            _: t:rsi.exp.noCompare
+                      - text: " · "
+                      - text: $.exp.cycle.report.compare.note
+                  - type: list
+                    id: rsi-exp-groups
+                    label: t:rsi.exp.results
+                    from: $.exp.cycle.groups
+                    row:
+                      layout: two
+                      key: "@id"
+                      title: "@label"
+                      inline:
+                        - chip: t:rsi.exp.control
+                          when: "@control"
+                        - chip: t:rsi.exp.confirm
+                          when: "@confirm"
+                      sub:
+                        sep: " · "
+                        parts:
+                          - text: "@version"
+                            mono: true
+                          - text: "@varsText"
+                            mono: true
+                            when: "@varsText"
+                      cols:
+                        - v:
+                            text:
+                              t: rsi.exp.ms
+                              args:
+                                - "@return.mean"
+                                - "@return.lo"
+                                - "@return.hi"
+                            when: "@return.mean"
+                            num: true
+                          w: auto
+                        - v:
+                            text:
+                              t: rsi.exp.sdOf
+                              args:
+                                - "@sd.mean"
+                            when: "@sd.mean"
+                            num: true
+                          w: num
+                        - v:
+                            text:
+                              t: rsi.exp.minOf
+                              args:
+                                - "@wall.mean"
+                            when: "@wall.mean"
+                            num: true
+                          w: num
+                        - v:
+                            text:
+                              t: rsi.exp.failedOf
+                              args:
+                                - "@failed"
+                            tone: danger
+                          w: label
+                          when: "@failed"
+                  - type: label
+                    text: t:rsi.exp.attribution
+                  - type: kv
+                    from:
+                      - k: t:rsi.exp.attr.verdict
+                        v:
+                          t: rsi.exp.attrVerdict
+                          args:
+                            - $.exp.cycle.report.attribution.verdict
+                      - k: t:rsi.exp.attr.primary
+                        v:
+                          of: $.exp.cycle.report.attribution.primaryLayer
+                          map:
+                            execution: t:rsi.exp.layer.execution
+                            harness: t:rsi.exp.layer.harness
+                            rubric: t:rsi.exp.layer.rubric
+                            observation: t:rsi.exp.layer.observation
+                            _: ""
+                        when: $.exp.cycle.report.attribution.primaryLayer
+                      - k: t:rsi.exp.attr.assessed
+                        v:
+                          of: $.exp.cycle.report.attribution.assessedLayers
+                          sep: 、
+                          item:
+                            of: "@"
+                            map:
+                              execution: t:rsi.exp.layer.execution
+                              harness: t:rsi.exp.layer.harness
+                              rubric: t:rsi.exp.layer.rubric
+                              observation: t:rsi.exp.layer.observation
+                              _: "@"
+                      - k: t:rsi.exp.attr.notAssessed
+                        v:
+                          of: $.exp.cycle.notAssessed
+                          sep: 、
+                          item:
+                            of: "@"
+                            map:
+                              execution: t:rsi.exp.layer.execution
+                              harness: t:rsi.exp.layer.harness
+                              rubric: t:rsi.exp.layer.rubric
+                              observation: t:rsi.exp.layer.observation
+                              _: "@"
+                        when: $.exp.cycle.notAssessed
+                      - k: t:rsi.exp.attr.competing
+                        v:
+                          of: $.exp.cycle.report.attribution.competingLayers
+                          sep: 、
+                          item:
+                            of: "@"
+                            map:
+                              execution: t:rsi.exp.layer.execution
+                              harness: t:rsi.exp.layer.harness
+                              rubric: t:rsi.exp.layer.rubric
+                              observation: t:rsi.exp.layer.observation
+                              _: "@"
+                        when: $.exp.cycle.report.attribution.competingLayers
+                      - k: t:rsi.exp.attr.uncertainty
+                        v:
+                          t: rsi.exp.uncertainty
+                          args:
+                            - $.exp.cycle.report.attribution.uncertainty
+                      - k: t:rsi.exp.attr.comparability
+                        v:
+                          t: rsi.exp.comparability
+                          args:
+                            - $.exp.cycle.report.attribution.comparability
+                  - type: list
+                    from: $.exp.cycle.report.attribution.evidence
+                    label: t:rsi.exp.attr.evidence
+                    optional: true
+                    row:
+                      layout: line
+                      title: "@"
+                  - type: list
+                    id: rsi-exp-preds
+                    label: t:rsi.exp.predictions
+                    optional: true
+                    from: $.exp.cycle.report.predictions
+                    row:
+                      layout: two
+                      title: "@text"
+                      sub:
+                        text:
+                          t: rsi.exp.predOf
+                          args:
+                            - "@expect"
+                            - "@actual"
+                      cols:
+                        - v:
+                            status:
+                              of: "@result"
+                              map:
+                                hit:
+                                  tone: ok
+                                  text: t:rsi.pred.hit
+                                partial:
+                                  tone: warn
+                                  text: t:rsi.pred.partial
+                                miss:
+                                  tone: danger
+                                  text: t:rsi.pred.miss
+                                _:
+                                  tone: info
+                                  text: t:rsi.pred.pending
+                          w: state
+              - type: each
+                from:
+                  - {}
+                when:
+                  - of: $.exp.step
+                    map:
+                      _: false
+                      gov: true
+                  - $.exp.cycle.report
+                blocks:
+                  - type: notice
+                    tone: warn
+                    when:
+                      - "!$.exp.cycle.report.agree"
+                      - $.exp.cycle.waiting
+                    text: t:rsi.exp.disagree
+                  - type: list
+                    id: rsi-exp-dirs
+                    label: t:rsi.exp.directions
+                    from: $.exp.cycle.report.directions
+                    row:
+                      layout: two
+                      key: "@id"
+                      title: "@title"
+                      inline:
+                        - text:
+                            t: rsi.exp.dirKind
+                            args:
+                              - "@kind"
+                          variant: badge
+                        - chip: t:rsi.exp.picked
+                          when: "@picked"
+                      sub:
+                        sep: " · "
+                        parts:
+                          - text: "@by"
+                          - text: "@model"
+                            mono: true
+                          - text:
+                              t: rsi.exp.expect
+                              args:
+                                - "@expect"
+                            when: "@expect"
+                      cols:
+                        - control:
+                            - type: button
+                              label: t:rsi.exp.adopt
+                              act: plugin
+                              args:
+                                request: expDecide
+                                n: $.exp.cycle.n
+                                pick: direction
+                                directionId: "@id"
+                                note: ""
+                              when: $.exp.cycle.waiting
+                              disabled: $.pending
+                      expand:
+                        - type: markdown
+                          text: "@why"
+                        - type: text
+                          variant: meta
+                          parts:
+                            - text: t:rsi.exp.cites
+                            - text:
+                                of: "@cites"
+                                sep: 、
+                          when: "@cites"
+                  - type: list
+                    label: t:rsi.exp.asks
+                    optional: true
+                    from: $.exp.cycle.report.asks
+                    row:
+                      layout: line
+                      title: "@text"
+                  - type: toolbar
+                    items:
+                      - when: $.exp.cycle.waiting
+                        type: button
+                        label: t:rsi.exp.pick.info
+                        act: dialog
+                        args:
+                          kind: rsiExpNote
+                          n: $.exp.cycle.n
+                          pick: info
+                        disabled: $.pending
+                      - when: $.exp.cycle.waiting
+                        type: button
+                        label: t:rsi.exp.pick.addVar
+                        act: dialog
+                        args:
+                          kind: rsiExpNote
+                          n: $.exp.cycle.n
+                          pick: addVar
+                        disabled: $.pending
+                      - when: $.exp.cycle.waiting
+                        type: button
+                        label: t:rsi.exp.pick.metric
+                        act: dialog
+                        args:
+                          kind: rsiExpNote
+                          n: $.exp.cycle.n
+                          pick: metric
+                        disabled: $.pending
+                      - when: $.exp.cycle.waiting
+                        type: button
+                        label: t:rsi.exp.pick.goal
+                        act: dialog
+                        args:
+                          kind: rsiExpNote
+                          n: $.exp.cycle.n
+                          pick: goal
+                        disabled: $.pending
+                      - when: $.exp.cycle.waiting
+                        type: button
+                        label: t:rsi.exp.pick.same
+                        act: plugin
+                        args:
+                          request: expDecide
+                          n: $.exp.cycle.n
+                          pick: same
+                          note: ""
+                        disabled: $.pending
+                  - type: text
+                    variant: meta
+                    when: $.exp.cycle.decision
+                    parts:
+                      - text:
+                          t: rsi.exp.decided
+                          args:
+                            - t: rsi.exp.pickName
+                              args:
+                                - $.exp.cycle.decision.pick
+                            - $.exp.cycle.decision.by
+                            - of: $.exp.cycle.decision.at
+                              fmt: ago
+                      - text: " · "
+                        when: $.exp.cycle.decision.note
+                      - text: $.exp.cycle.decision.note
+                        when: $.exp.cycle.decision.note
+      - type: each
+        from:
+          - {}
+        when:
+          - "!$.exp.setup"
+          - of: $.exp.tab
+            map:
+              _: false
+              metrics: true
+        blocks:
+          - type: component
+            use: plugin:official.rsi/rsiLineage
+            props:
+              from: $.exp.eTree
+              key: "@id"
+              node:
+                label: "@id"
+                state: current
+              tail:
+                - text:
+                    t: rsi.exp.eCount
+                    args:
+                      - $.exp.metrics.items.length
+          - type: list
+            from: $.exp.metrics.items
+            row:
+              layout: two
+              key: "@id"
+              title: "@name"
+              inline:
+                - chip: t:rsi.metric.locked
+                  when: "@locked"
+                - chip: t:rsi.metric.guard
+                  when: "@guard"
+              sub: "@how"
+              cols:
+                - v:
+                    text:
+                      t: rsi.exp.dir
+                      args:
+                        - "@dir"
+                  w: label
+                - v:
+                    text: "@line"
+                  w: label
+                  when: "@line"
+      - type: each
+        from:
+          - {}
+        when:
+          - "!$.exp.setup"
+          - of: $.exp.tab
+            map:
+              _: false
+              collect: true
+        blocks:
+          - type: component
+            use: plugin:official.rsi/rsiLineage
+            props:
+              from: $.exp.cTree
+              key: "@id"
+              node:
+                label: "@id"
+                state: current
+              tail:
+                sep: " · "
+                parts:
+                  - text: $.exp.executor.mcp
+                    mono: true
+                  - text:
+                      t: rsi.exp.exState
+                      args:
+                        - $.exp.executor.state
+          - type: list
+            label: t:rsi.exp.executor
+            from: $.exp.executor.ops
+            row:
+              layout: two
+              title: "@op"
+              sub:
+                text: "@params"
+                mono: true
+                when: "@params"
+              cols:
+                - v:
+                    text: "@tool"
+                    mono: true
+                  w: id
+          - type: list
+            label: t:rsi.exp.resultMap
+            from: $.exp.executor.resultMap
+            row:
+              layout: line
+              title: "@metric"
+              cols:
+                - v:
+                    text: "@field"
+                    mono: true
+                  w: id
+    sources:
+      exp: exp
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
+  rsi.objective:
+    blocks:
+      - type: head
+        variant: detail
+        title: $.objective.name
+        sub: $.objective.statement
+        actions:
+          - type: status
+            text:
+              t: rsi.state
+              args:
+                - $.objective.state
+            tone:
+              of: $.objective.state
+              map:
+                pending: warn
+                exhausted: warn
+                baseline: info
+                analyzing: info
+                preparing: info
+                ready: warn
+                stalled: danger
+                _: ""
+          - type: button
+            when:
+              of: $.objective.state
+              map:
+                _: false
+                ready: true
+            primary: true
+            label: t:rsi.life.start
+            act: plugin
+            args:
+              request: life
+              op: start
+            disabled: $.pending
+          - type: button
+            when:
+              of: $.objective.state
+              map:
+                _: false
+                exhausted: true
+            label: t:rsi.life.more
+            act: plugin
+            args:
+              request: life
+              op: more
+            disabled: $.pending
+          - type: button
+            when:
+              of: $.objective.state
+              map:
+                _: false
+                paused: true
+            label: t:rsi.life.resume
+            act: plugin
+            args:
+              request: life
+              op: resume
+            disabled: $.pending
+          - type: button
+            when:
+              of: $.objective.state
+              map:
+                collecting: true
+                baseline: true
+                pending: true
+                _: false
+            label: t:rsi.life.pause
+            act: plugin
+            args:
+              request: life
+              op: pause
+            disabled: $.pending
+          - type: button
+            when: "!$.objective.setup"
+            iconOnly: true
+            icon: gear
+            label: t:rsi.policy.title
+            act: dialog
+            args:
+              kind: rsiPolicy
+      - type: text
+        when: "!$.objective.setup"
+        parts:
+          sep: " · "
+          parts:
+            - text:
+                t: rsi.now.line
+                args:
+                  - $.objective.nowLine.o
+                  - $.objective.nowLine.e
+                  - $.objective.nowLine.c
+            - text:
+                t: rsi.now.collecting
+                args:
+                  - $.objective.nowLine.got
+                  - $.objective.nowLine.need
+              when: $.objective.nowLine.collecting
+        actions:
+          - type: button
+            when: $.objective.nowLine.pick
+            label: t:rsi.now.locate
+            act: plugSet
+            args:
+              k: selO
+              v:
+                of: $.objective.nowLine.pick
+                slice:
+                  - 8
+      - type: text
+        variant: meta
+        when:
+          - "!$.objective.setup"
+          - $.objective.overrides
+        parts:
+          - text: t:rsi.policy.overridden
+          - parts: $.objective.overrides
+            sep: 、
+            each:
+              text:
+                t: rsi.policy.overrideOf
+                args:
+                  - t: rsi.policy
+                    args:
+                      - "@k"
+                  - of: "@k"
+                    map:
+                      approval:
+                        t: rsi.approval
+                        args:
+                          - "@v"
+                      eval: "@name"
+                      iterate: "@name"
+                      metrics: "@name"
+                      _: "@v"
+      - type: list
+        id: rsi-setup
+        when: $.objective.setup
+        from: $.objective.setup
+        row:
+          layout: line
+          key: "@k"
+          title:
+            text:
+              t: rsi.setup
+              args:
+                - "@k"
+          cols:
+            - v:
+                status:
+                  of: "@on"
+                  map:
+                    "true":
+                      tone: info
+                      text: t:rsi.setupState.on
+                    _:
+                      of: "@done"
+                      map:
+                        "true":
+                          tone: ok
+                          text: t:rsi.setupState.done
+                        _: ""
+              w: state
+      - type: toolbar
+        when: $.objective.setup
+        items:
+          - type: button
+            label: t:rsi.caps.open
+            act: plugSet
+            args:
+              k: pick
+              v: caps
+      - type: notice
+        tone: warn
+        when: $.objective.card
+        text:
+          t: rsi.card.waiting
+          args:
+            - $.objective.card.from
+            - $.objective.card.to
+        action:
+          type: button
+          label: t:rsi.card.open
+          act: dialog
+          args:
+            kind: rsiCards
+            objective: $.objective.id
+      - type: toolbar
+        when: "!$.objective.setup"
+        items:
+          - type: seg
+            value: $.objective.tab
+            options:
+              - v: version
+                label: t:rsi.tab.version
+              - v: metrics
+                label: t:rsi.tab.metrics
+              - v: collect
+                label: t:rsi.tab.collect
+            act: plugSet
+            args:
+              k: tab
+      - type: each
+        from:
+          - {}
+        when:
+          - "!$.objective.setup"
+          - of: $.objective.tab
+            map:
+              _: false
+              version: true
+        blocks:
+          - type: component
+            use: plugin:official.rsi/rsiLineage
+            props:
+              from: $.objective.versions
+              key: "@key"
+              parent: "@parentKey"
+              node:
+                label:
+                  - text:
+                      of: "@kind"
+                      map:
+                        candidate: t:rsi.version.candidate
+                        _: "@id"
+                state: "@nodeState"
+                pressed: "@nodeSelected"
+                act: plugSet
+                args:
+                  k: selO
+                  v: "@pick"
+              cells:
+                - type: select
+                  when: "@cyclePick"
+                  id: "@cyclePick.id"
+                  label: t:rsi.cycle.pick
+                  change: plugSet
+                  args:
+                    k:
+                      of: "@cyclePick.tree"
+                      map:
+                        rsiSelO: selO
+                        rsiSelE: selE
+                        rsiSelC: selC
+                  value: "@cyclePick.value"
+                  options:
+                    - from: "@cyclePick.options"
+                      item:
+                        v: "@v"
+                        label:
+                          t: rsi.cycle.nOf
+                          args:
+                            - "@n"
+                            - "@total"
+                - type: each
+                  from: "@steps"
+                  control:
+                    type: chip
+                    label:
+                      of: "@k"
+                      map:
+                        apply:
+                          t: rsi.step.apply
+                          args:
+                            - t: rsi.applyResult
+                              args:
+                                - "@result"
+                        collect:
+                          of: "@live"
+                          map:
+                            "true":
+                              t: rsi.step.collectLive
+                              args:
+                                - "@n"
+                            _:
+                              t: rsi.step.collect
+                              args:
+                                - "@n"
+                        eval:
+                          t: rsi.step.eval
+                          args:
+                            - "@n"
+                            - t: rsi.evalResult
+                              args:
+                                - "@result"
+                        gov:
+                          t: rsi.step.gov
+                          args:
+                            - t: rsi.govResult
+                              args:
+                                - "@result"
+                        cycles:
+                          t: rsi.step.cycles
+                          args:
+                            - "@count"
+                    pressed: "@selected"
+                    tone:
+                      of: "@result"
+                      map:
+                        pending: warn
+                        rollback: warn
+                        failed: warn
+                        _: ""
+                    act: plugSet
+                    args:
+                      k: selO
+                      v: "@pick"
+              tail:
+                sep: " · "
+                parts:
+                  - text:
+                      t: rsi.version.ec
+                      args:
+                        - "@e"
+                        - "@c"
+                    mono: true
+                    tone: info
+                    when: "@ecChanged"
+                  - status:
+                      of: "@prediction"
+                      map:
+                        hit:
+                          tone: ok
+                          text: t:rsi.pred.hit
+                        partial:
+                          tone: warn
+                          text: t:rsi.pred.partial
+                        miss:
+                          tone: danger
+                          text: t:rsi.pred.miss
+                        pending:
+                          tone: info
+                          text: t:rsi.pred.pending
+                        _: ""
+                    when: "@prediction"
+                  - text:
+                      of: "@change"
+                      sep: ；
+                      item:
+                        of: "@op"
+                        map:
+                          modify:
+                            t: rsi.change.modify
+                            args:
+                              - "@unitName"
+                              - "@from"
+                              - "@to"
+                          add:
+                            t: rsi.change.add
+                            args:
+                              - "@unitName"
+                          remove:
+                            t: rsi.change.remove
+                            args:
+                              - "@unitName"
+                          enable:
+                            t: rsi.change.enable
+                            args:
+                              - "@unitName"
+                          disable:
+                            t: rsi.change.disable
+                            args:
+                              - "@unitName"
+                          _: "@unitName"
+                    when: "@change"
+          - type: section
+            title:
+              of: $.objective.step
+              map:
+                node:
+                  t: rsi.detail.node
+                  args:
+                    - $.objective.ver.id
+                gov:
+                  t: rsi.detail.gov
+                  args:
+                    - $.objective.ver.id
+                _:
+                  t: rsi.detail.step
+                  args:
+                    - $.objective.ver.id
+                    - $.objective.cycle.n
+                    - t: rsi.stepName
+                      args:
+                        - $.objective.step
+            blocks:
+              - type: each
+                from:
+                  - {}
+                when:
+                  of: $.objective.step
+                  map:
+                    _: false
+                    node: true
+                blocks:
+                  - type: kv
+                    from:
+                      - k: t:rsi.detail.change
+                        v:
+                          of: $.objective.ver.change
+                          sep: ；
+                          item:
+                            of: "@op"
+                            map:
+                              modify:
+                                t: rsi.change.modify
+                                args:
+                                  - "@unitName"
+                                  - "@from"
+                                  - "@to"
+                              add:
+                                t: rsi.change.add
+                                args:
+                                  - "@unitName"
+                              remove:
+                                t: rsi.change.remove
+                                args:
+                                  - "@unitName"
+                              enable:
+                                t: rsi.change.enable
+                                args:
+                                  - "@unitName"
+                              disable:
+                                t: rsi.change.disable
+                                args:
+                                  - "@unitName"
+                              _: "@unitName"
+                      - k: t:rsi.detail.parent
+                        v: $.objective.ver.parent
+                      - k: t:rsi.detail.at
+                        v:
+                          of: $.objective.ver.at
+                          fmt: stamp
+                      - k: t:rsi.detail.ec
+                        v:
+                          t: rsi.version.ec
+                          args:
+                            - $.objective.ver.e
+                            - $.objective.ver.c
+                  - type: list
+                    id: rsi-ver-predictions
+                    label: t:rsi.card.predictions
+                    optional: true
+                    from: $.objective.ver.predictions
+                    row:
+                      layout: line
+                      key: "@metric"
+                      title: "@metric"
+                      inline:
+                        - chip: t:rsi.metric.locked
+                          when: "@locked"
+                        - chip: t:rsi.metric.guard
+                          when: "@guard"
+                      cols:
+                        - v:
+                            text:
+                              t: rsi.pred.expect
+                              args:
+                                - "@expect"
+                          w: label
+              - type: each
+                from:
+                  - {}
+                when:
+                  of: $.objective.step
+                  map:
+                    _: false
+                    collect: true
+                blocks:
+                  - type: kv
+                    from:
+                      - k: t:rsi.cur.window
+                        v:
+                          t: rsi.window
+                          args:
+                            - of: $.objective.cycle.start
+                              fmt: stamp
+                            - of: $.objective.cycle.end
+                              fmt: stamp
+                      - k: t:rsi.cur.samples
+                        v:
+                          t: rsi.cycle.samples
+                          args:
+                            - $.objective.cycle.samples
+                      - k: t:rsi.cur.trigger
+                        v:
+                          of: $.objective.cycle.trigger
+                          map:
+                            count: t:rsi.triggerBy.count
+                            counter: t:rsi.triggerBy.counter
+                            days: t:rsi.triggerBy.days
+                            _: t:rsi.triggerBy.none
+                  - type: text
+                    variant: meta
+                    when: $.objective.cycle.merged
+                    text:
+                      t: rsi.cycle.merged
+                      args:
+                        - $.objective.cycle.merged
+                  - type: list
+                    id: rsi-trigger
+                    when: $.objective.now
+                    groups: $.objective.now.groups
+                    group:
+                      title:
+                        t: rsi.trigger.group
+                        args:
+                          - "@k"
+                    row:
+                      layout: line
+                      key: "@k"
+                      title:
+                        text:
+                          t: rsi.trigger.k
+                          args:
+                            - "@k"
+                      cols:
+                        - v:
+                            text:
+                              t: rsi.trigger.of
+                              args:
+                                - "@got"
+                                - "@need"
+                            num: true
+                          w: label
+                          when:
+                            of: "@k"
+                            map:
+                              interval: false
+                              _: true
+                        - v:
+                            status:
+                              of: "@met"
+                              map:
+                                "true":
+                                  tone: ok
+                                  text: t:rsi.trigger.met
+                                _: ""
+                          w: state
+                      bar:
+                        pct: "@pct"
+                        tone:
+                          of: "@met"
+                          map:
+                            "true": ok
+                            _: ""
+                  - type: list
+                    id: rsi-metric-triggers
+                    label: t:rsi.mtrig.label
+                    optional: true
+                    from: $.objective.now.metricTriggers
+                    row:
+                      layout: line
+                      key: "@name"
+                      title: "@name"
+                      cols:
+                        - v:
+                            text:
+                              t: rsi.mtrig.of
+                              args:
+                                - "@tk"
+                                - "@got"
+                                - "@need"
+                          w: label
+                        - v:
+                            status:
+                              of: "@met"
+                              map:
+                                "true":
+                                  tone: ok
+                                  text: t:rsi.trigger.met
+                                _: ""
+                          w: state
+                      bar:
+                        pct: "@pct"
+                        tone:
+                          of: "@met"
+                          map:
+                            "true": ok
+                            _: ""
+                  - type: text
+                    variant: meta
+                    when: $.objective.now
+                    text:
+                      t: rsi.cur.nowOf
+                      args:
+                        - $.objective.now.cur
+                        - of: $.objective.now.ladder
+                          sep: " → "
+                        - $.objective.now.evals.used
+                        - $.objective.now.evals.max
+                  - type: list
+                    id: rsi-awaiting
+                    label: t:rsi.awaiting
+                    optional: true
+                    from: $.objective.now.awaiting
+                    row:
+                      layout: line
+                      key: "@metric"
+                      title: "@metric"
+                      inline:
+                        - chip: t:rsi.metric.locked
+                          when: "@locked"
+                        - chip: t:rsi.metric.guard
+                          when: "@guard"
+                      cols:
+                        - v:
+                            text:
+                              t: rsi.pred.expect
+                              args:
+                                - "@expect"
+                          w: label
+                  - type: list
+                    id: rsi-live
+                    label: t:rsi.live
+                    optional: true
+                    from: $.objective.now.live
+                    row:
+                      layout: line
+                      key: "@name"
+                      title: "@name"
+                      cols:
+                        - v:
+                            text: "@value"
+                            num: true
+                          w: num
+                  - type: list
+                    id: rsi-traces
+                    when: $.objective.traces
+                    label:
+                      t: rsi.trace.label
+                      args:
+                        - $.objective.traces.total
+                        - $.objective.traces.items.length
+                    from: $.objective.traces.items
+                    empty: t:rsi.trace.none
+                    row:
+                      layout: two
+                      key: "@id"
+                      title: "@source"
+                      sub:
+                        sep: " · "
+                        parts:
+                          - text: "@cat"
+                          - text:
+                              t: rsi.trace.whereOf
+                              args:
+                                - "@version"
+                                - "@cycle"
+                      cols:
+                        - v:
+                            status:
+                              tone: warn
+                              text: t:rsi.trace.counter
+                          w: state
+                          when: "@counter"
+                        - v:
+                            text:
+                              of: "@at"
+                              fmt: ago
+                          w: time
+                      act: dialog
+                      args:
+                        kind: rsiRecord
+                        type: trace
+                        objective: $.objective.id
+                        cycle: "@cycleId"
+                        id: "@id"
+                        title: "@source"
+              - type: each
+                from:
+                  - {}
+                when:
+                  of: $.objective.step
+                  map:
+                    _: false
+                    eval: true
+                blocks:
+                  - type: notice
+                    tone: danger
+                    when:
+                      - of: $.objective.cycle.decision
+                        map:
+                          _: false
+                          stalled: true
+                      - of: $.objective.cycle.stalledAt
+                        map:
+                          _: false
+                          eval: true
+                    text: t:rsi.stall.eval
+                    action:
+                      type: button
+                      label: t:rsi.life.retry
+                      act: plugin
+                      args:
+                        request: life
+                        op: retry
+                      disabled: $.pending
+                  - type: toolbar
+                    items:
+                      - type: button
+                        label: t:rsi.thread.eval
+                        act: open
+                        args:
+                          kind: msg
+                          t: $.objective.threads.eval
+                  - type: text
+                    parts:
+                      - status:
+                          of: $.objective.cycle.decision
+                          map:
+                            baseline:
+                              tone: info
+                              text: t:rsi.decision.baseline
+                            keep:
+                              tone: ""
+                              text: t:rsi.decision.keep
+                            insufficient:
+                              tone: ""
+                              text: t:rsi.decision.insufficient
+                            evolve:
+                              tone: ok
+                              text: t:rsi.decision.evolve
+                            rollback:
+                              tone: warn
+                              text: t:rsi.decision.rollback
+                            pending:
+                              tone: warn
+                              text: t:rsi.decision.pending
+                            collecting:
+                              tone: info
+                              text: t:rsi.decision.collecting
+                            stalled:
+                              tone: danger
+                              text: t:rsi.decision.stalled
+                            _: ""
+                    when:
+                      of: $.objective.cycle.stalledAt
+                      map:
+                        eval: false
+                        _: true
+                  - type: text
+                    variant: para
+                    text: $.objective.cycle.summary
+                  - type: list
+                    id: rsi-cycle-predictions
+                    label: t:rsi.cycle.predictions
+                    optional: true
+                    from: $.objective.cycle.predictions
+                    row:
+                      layout: line
+                      key: "@metric"
+                      title: "@metric"
+                      inline:
+                        - chip: t:rsi.metric.locked
+                          when: "@locked"
+                        - chip: t:rsi.metric.guard
+                          when: "@guard"
+                      cols:
+                        - v:
+                            text: "@actual"
+                          w: label
+                        - v:
+                            text:
+                              t: rsi.pred.expect
+                              args:
+                                - "@expect"
+                          w: label
+                        - v:
+                            status:
+                              of: "@result"
+                              map:
+                                hit:
+                                  tone: ok
+                                  text: t:rsi.pred.hit
+                                partial:
+                                  tone: warn
+                                  text: t:rsi.pred.partial
+                                miss:
+                                  tone: danger
+                                  text: t:rsi.pred.miss
+                                _:
+                                  tone: info
+                                  text: t:rsi.pred.pending
+                          w: state
+                  - type: list
+                    id: rsi-cycle-metrics
+                    label: t:rsi.cycle.metrics
+                    optional: true
+                    from: $.objective.cycle.metrics
+                    row:
+                      layout: two
+                      key: "@name"
+                      title: "@name"
+                      inline:
+                        - chip: t:rsi.metric.locked
+                          when: "@locked"
+                        - chip: t:rsi.metric.guard
+                          when: "@guard"
+                      sub:
+                        text: "@value"
+                        when:
+                          of: "@kind"
+                          map:
+                            _: false
+                            semantic: true
+                      cols:
+                        - v:
+                            text: "@value"
+                            num: true
+                          w: label
+                          when:
+                            of: "@kind"
+                            map:
+                              semantic: false
+                              _: true
+                        - v:
+                            text:
+                              t: rsi.metric.kind
+                              args:
+                                - "@kind"
+                          w: state
+                  - type: text
+                    variant: meta
+                    when: $.objective.cycle.card.reason
+                    text:
+                      t: rsi.cycle.reason
+                      args:
+                        - $.objective.cycle.card.reason
+                  - type: text
+                    variant: meta
+                    when: $.objective.cycle.candidate
+                    text:
+                      t: rsi.gov.candidate
+                      args:
+                        - of: $.objective.cycle.candidate.change
+                          sep: ；
+                          item:
+                            of: "@op"
+                            map:
+                              modify:
+                                t: rsi.change.modify
+                                args:
+                                  - "@unitName"
+                                  - "@from"
+                                  - "@to"
+                              add:
+                                t: rsi.change.add
+                                args:
+                                  - "@unitName"
+                              remove:
+                                t: rsi.change.remove
+                                args:
+                                  - "@unitName"
+                              enable:
+                                t: rsi.change.enable
+                                args:
+                                  - "@unitName"
+                              disable:
+                                t: rsi.change.disable
+                                args:
+                                  - "@unitName"
+                              _: "@unitName"
+              - type: each
+                from:
+                  - {}
+                when:
+                  of: $.objective.step
+                  map:
+                    _: false
+                    gov: true
+                blocks:
+                  - type: notice
+                    tone: danger
+                    when:
+                      - of: $.objective.cycle.decision
+                        map:
+                          _: false
+                          stalled: true
+                      - of: $.objective.cycle.stalledAt
+                        map:
+                          _: false
+                          gov: true
+                    text: t:rsi.stall.gov
+                    action:
+                      type: button
+                      label: t:rsi.life.retry
+                      act: plugin
+                      args:
+                        request: life
+                        op: retry
+                      disabled: $.pending
+                  - type: toolbar
+                    items:
+                      - type: button
+                        label: t:rsi.thread.iterate
+                        act: open
+                        args:
+                          kind: msg
+                          t: $.objective.threads.iterate
+                  - type: text
+                    parts:
+                      - status:
+                          of: $.objective.cycle.decision
+                          map:
+                            baseline:
+                              tone: info
+                              text: t:rsi.decision.baseline
+                            keep:
+                              tone: ""
+                              text: t:rsi.decision.keep
+                            insufficient:
+                              tone: ""
+                              text: t:rsi.decision.insufficient
+                            evolve:
+                              tone: ok
+                              text: t:rsi.decision.evolve
+                            rollback:
+                              tone: warn
+                              text: t:rsi.decision.rollback
+                            pending:
+                              tone: warn
+                              text: t:rsi.decision.pending
+                            collecting:
+                              tone: info
+                              text: t:rsi.decision.collecting
+                            stalled:
+                              tone: danger
+                              text: t:rsi.decision.stalled
+                            _: ""
+                      - text:
+                          t: rsi.gov.toOf
+                          args:
+                            - $.objective.cycle.to
+                        when: $.objective.cycle.to
+                      - text:
+                          t: rsi.gov.cardOf
+                          args:
+                            - t: rsi.cycle.card
+                              args:
+                                - $.objective.cycle.card.result
+                            - t: rsi.by
+                              args:
+                                - $.objective.cycle.card.by
+                        when: $.objective.cycle.card.result
+                  - type: text
+                    variant: meta
+                    when: $.objective.cycle.summary
+                    text: $.objective.cycle.summary
+                  - type: list
+                    id: rsi-runs
+                    label: t:rsi.run.label
+                    optional: true
+                    from: $.objective.runs.items
+                    row:
+                      layout: two
+                      key: "@id"
+                      title:
+                        text:
+                          of: "@op"
+                          map:
+                            modify:
+                              t: rsi.change.modify
+                              args:
+                                - "@unitName"
+                                - "@from"
+                                - "@to"
+                            add:
+                              t: rsi.change.add
+                              args:
+                                - "@unitName"
+                            remove:
+                              t: rsi.change.remove
+                              args:
+                                - "@unitName"
+                            enable:
+                              t: rsi.change.enable
+                              args:
+                                - "@unitName"
+                            disable:
+                              t: rsi.change.disable
+                              args:
+                                - "@unitName"
+                            _: "@unitName"
+                      sub:
+                        sep: " · "
+                        parts:
+                          - text:
+                              t: rsi.apply
+                              args:
+                                - "@apply"
+                          - text: "@pr"
+                            when: "@pr"
+                          - text: "@run"
+                            mono: true
+                            when: "@run"
+                      cols:
+                        - v:
+                            status:
+                              of: "@state"
+                              map:
+                                done:
+                                  tone: ok
+                                  text: t:rsi.run.state.done
+                                running:
+                                  tone: info
+                                  text: t:rsi.run.state.running
+                                failed:
+                                  tone: danger
+                                  text: t:rsi.run.state.failed
+                                _: ""
+                          w: state
+                        - v:
+                            text:
+                              of: "@at"
+                              fmt: ago
+                          w: time
+                      act: dialog
+                      args:
+                        kind: rsiRecord
+                        type: run
+                        objective: $.objective.id
+                        cycle: "@cycleId"
+                        id: "@id"
+                        title: "@unitName"
+      - type: each
+        from:
+          - {}
+        when:
+          - "!$.objective.setup"
+          - of: $.objective.tab
+            map:
+              _: false
+              metrics: true
+        blocks:
+          - type: component
+            use: plugin:official.rsi/rsiLineage
+            props:
+              from: $.objective.metricVersions
+              key: "@key"
+              parent: "@parentKey"
+              node:
+                label:
+                  - text: "@id"
+                state: "@nodeState"
+                pressed: "@nodeSelected"
+                act: plugSet
+                args:
+                  k: selE
+                  v: "@pick"
+              cells:
+                - type: select
+                  when: "@cyclePick"
+                  id: "@cyclePick.id"
+                  label: t:rsi.cycle.pick
+                  change: plugSet
+                  args:
+                    k:
+                      of: "@cyclePick.tree"
+                      map:
+                        rsiSelO: selO
+                        rsiSelE: selE
+                        rsiSelC: selC
+                  value: "@cyclePick.value"
+                  options:
+                    - from: "@cyclePick.options"
+                      item:
+                        v: "@v"
+                        label:
+                          t: rsi.cycle.nOf
+                          args:
+                            - "@n"
+                            - "@total"
+                - type: each
+                  from: "@steps"
+                  control:
+                    type: chip
+                    label:
+                      of: "@k"
+                      map:
+                        apply:
+                          t: rsi.step.apply
+                          args:
+                            - t: rsi.applyResult
+                              args:
+                                - "@result"
+                        collect:
+                          of: "@live"
+                          map:
+                            "true":
+                              t: rsi.step.collectLive
+                              args:
+                                - "@n"
+                            _:
+                              t: rsi.step.collect
+                              args:
+                                - "@n"
+                        eval:
+                          t: rsi.step.eval
+                          args:
+                            - "@n"
+                            - t: rsi.evalResult
+                              args:
+                                - "@result"
+                        gov:
+                          t: rsi.step.gov
+                          args:
+                            - t: rsi.govResult
+                              args:
+                                - "@result"
+                        cycles:
+                          t: rsi.step.cycles
+                          args:
+                            - "@count"
+                    pressed: "@selected"
+                    tone:
+                      of: "@result"
+                      map:
+                        pending: warn
+                        rollback: warn
+                        failed: warn
+                        _: ""
+                    act: plugSet
+                    args:
+                      k: selE
+                      v: "@pick"
+              tail:
+                sep: " · "
+                parts:
+                  - text:
+                      t: rsi.metricVersion.counts
+                      args:
+                        - "@locked"
+                        - "@working"
+                  - text:
+                      t: rsi.metricVersion.used
+                      args:
+                        - of: "@objectiveVersions"
+                          sep: " "
+                    when: "@objectiveVersions"
+          - type: section
+            title:
+              of: $.objective.eStep
+              map:
+                node:
+                  t: rsi.detail.node
+                  args:
+                    - $.objective.eSel.id
+                gov:
+                  t: rsi.detail.gov
+                  args:
+                    - $.objective.eSel.id
+                _:
+                  t: rsi.detail.mstep
+                  args:
+                    - $.objective.eSel.id
+                    - t: rsi.stepName
+                      args:
+                        - $.objective.eStep
+            blocks:
+              - type: each
+                from:
+                  - {}
+                when:
+                  of: $.objective.eStep
+                  map:
+                    _: false
+                    node: true
+                blocks:
+                  - type: text
+                    variant: meta
+                    when: $.objective.eSel.diff
+                    text:
+                      t: rsi.metricVersion.diff
+                      args:
+                        - $.objective.eSel.diff.add
+                        - $.objective.eSel.diff.del
+                        - $.objective.eSel.diff.mod
+                  - type: toolbar
+                    when: $.objective.eCurrent
+                    items:
+                      - type: button
+                        label: t:rsi.metric.add
+                        act: dialog
+                        args:
+                          kind: rsiAddMetric
+                        disabled: $.pending
+                  - type: list
+                    id: rsi-metric-items
+                    from: $.objective.eSel.items
+                    empty: t:rsi.metric.none
+                    row:
+                      layout: two
+                      key: "@id"
+                      title: "@name"
+                      inline:
+                        - chip: t:rsi.metric.locked
+                          when: "@locked"
+                        - chip: t:rsi.metric.guard
+                          when: "@guard"
+                      sub:
+                        text:
+                          t: rsi.metric.howOf
+                          args:
+                            - t: rsi.measure
+                              args:
+                                - "@measure"
+                            - t: rsi.rule
+                              args:
+                                - "@rule"
+                            - t: rsi.trig
+                              args:
+                                - "@tk"
+                                - "@tn"
+                      cols:
+                        - v:
+                            text:
+                              t: rsi.metric.kind
+                              args:
+                                - "@kind"
+                          w: state
+                        - control:
+                            type: button
+                            label:
+                              of: "@locked"
+                              map:
+                                "true": t:rsi.metric.unlock
+                                _: t:rsi.metric.lock
+                            act: plugin
+                            args:
+                              request: lock
+                              metric: "@id"
+                              locked:
+                                of: "@locked"
+                                map:
+                                  "true": "false"
+                                  _: "true"
+                            disabled: $.pending
+                          when: $.objective.eCurrent
+                      expand:
+                        - type: pre
+                          text: "@logic"
+              - type: each
+                from:
+                  - {}
+                when:
+                  of: $.objective.eStep
+                  map:
+                    _: false
+                    collect: true
+                blocks:
+                  - type: text
+                    when: $.objective.eLive
+                    text:
+                      t: rsi.mstep.progress
+                      args:
+                        - $.objective.eLive.since
+                        - $.objective.eLive.needN
+                        - $.objective.eLive.noChange
+                        - $.objective.eLive.needK
+                  - type: list
+                    id: rsi-e-looked
+                    label: t:rsi.mstep.looked
+                    from: $.objective.eLooked
+                    row:
+                      layout: two
+                      key: "@id"
+                      title:
+                        text: "@id"
+                        mono: true
+                      sub:
+                        text:
+                          t: rsi.mstep.cyclesOf
+                          args:
+                            - "@cycles"
+                            - "@keep"
+                            - "@insufficient"
+                            - "@evolve"
+                            - "@rollback"
+                      cols:
+                        - v:
+                            status:
+                              of: "@prediction"
+                              map:
+                                hit:
+                                  tone: ok
+                                  text: t:rsi.pred.hit
+                                partial:
+                                  tone: warn
+                                  text: t:rsi.pred.partial
+                                miss:
+                                  tone: danger
+                                  text: t:rsi.pred.miss
+                                pending:
+                                  tone: info
+                                  text: t:rsi.pred.pending
+                                _: ""
+                          w: state
+                          when: "@prediction"
+                      acts:
+                        - label: t:rsi.mstep.goVersion
+                          icon: hook
+                          act: plugin
+                          args:
+                            request: goVersion
+                            pick: "@pick"
+              - type: each
+                from:
+                  - {}
+                when:
+                  of: $.objective.eStep
+                  map:
+                    _: false
+                    eval: true
+                blocks:
+                  - type: toolbar
+                    items:
+                      - type: button
+                        label: t:rsi.thread.metrics
+                        act: open
+                        args:
+                          kind: msg
+                          t: $.objective.threads.metrics
+                  - type: text
+                    parts:
+                      - text:
+                          t: rsi.evalResult
+                          args:
+                            - $.objective.eEval.kind
+                        strong: true
+                  - type: text
+                    variant: para
+                    text: $.objective.eEval.basis
+                  - type: list
+                    id: rsi-e-refs
+                    label: t:rsi.library.refs
+                    optional: true
+                    from: $.objective.eRefs
+                    row: rsi.doc
+              - type: each
+                from:
+                  - {}
+                when:
+                  of: $.objective.eStep
+                  map:
+                    _: false
+                    gov: true
+                blocks:
+                  - type: toolbar
+                    items:
+                      - type: button
+                        label: t:rsi.thread.metrics
+                        act: open
+                        args:
+                          kind: msg
+                          t: $.objective.threads.metrics
+                  - type: text
+                    parts:
+                      - text:
+                          t: rsi.gov.toOf
+                          args:
+                            - $.objective.eEval.to
+                      - text:
+                          t: rsi.gov.cardOf
+                          args:
+                            - t: rsi.cycle.card
+                              args:
+                                - $.objective.eEval.card.result
+                            - t: rsi.by
+                              args:
+                                - $.objective.eEval.card.by
+                        when: $.objective.eEval.card
+                  - type: text
+                    variant: meta
+                    text: $.objective.eEval.basis
+      - type: each
+        from:
+          - {}
+        when:
+          - "!$.objective.setup"
+          - of: $.objective.tab
+            map:
+              _: false
+              collect: true
+        blocks:
+          - type: component
+            use: plugin:official.rsi/rsiLineage
+            props:
+              from: $.objective.collectVersions
+              key: "@key"
+              parent: "@parentKey"
+              node:
+                label:
+                  - text: "@id"
+                state: "@nodeState"
+                pressed: "@nodeSelected"
+                act: plugSet
+                args:
+                  k: selC
+                  v: "@pick"
+              cells:
+                - type: select
+                  when: "@cyclePick"
+                  id: "@cyclePick.id"
+                  label: t:rsi.cycle.pick
+                  change: plugSet
+                  args:
+                    k:
+                      of: "@cyclePick.tree"
+                      map:
+                        rsiSelO: selO
+                        rsiSelE: selE
+                        rsiSelC: selC
+                  value: "@cyclePick.value"
+                  options:
+                    - from: "@cyclePick.options"
+                      item:
+                        v: "@v"
+                        label:
+                          t: rsi.cycle.nOf
+                          args:
+                            - "@n"
+                            - "@total"
+                - type: each
+                  from: "@steps"
+                  control:
+                    type: chip
+                    label:
+                      of: "@k"
+                      map:
+                        apply:
+                          t: rsi.step.apply
+                          args:
+                            - t: rsi.applyResult
+                              args:
+                                - "@result"
+                        collect:
+                          of: "@live"
+                          map:
+                            "true":
+                              t: rsi.step.collectLive
+                              args:
+                                - "@n"
+                            _:
+                              t: rsi.step.collect
+                              args:
+                                - "@n"
+                        eval:
+                          t: rsi.step.eval
+                          args:
+                            - "@n"
+                            - t: rsi.evalResult
+                              args:
+                                - "@result"
+                        gov:
+                          t: rsi.step.gov
+                          args:
+                            - t: rsi.govResult
+                              args:
+                                - "@result"
+                        cycles:
+                          t: rsi.step.cycles
+                          args:
+                            - "@count"
+                    pressed: "@selected"
+                    tone:
+                      of: "@result"
+                      map:
+                        pending: warn
+                        rollback: warn
+                        failed: warn
+                        _: ""
+                    act: plugSet
+                    args:
+                      k: selC
+                      v: "@pick"
+              tail:
+                sep: " · "
+                parts:
+                  - text:
+                      t: rsi.collectVersion.for
+                      args:
+                        - "@for"
+                  - text:
+                      of: "@pointNames"
+                      sep: 、
+          - type: section
+            title:
+              of: $.objective.cStep
+              map:
+                node:
+                  t: rsi.detail.node
+                  args:
+                    - $.objective.cSel.id
+                gov:
+                  t: rsi.detail.gov
+                  args:
+                    - $.objective.cSel.id
+                _:
+                  t: rsi.detail.mstep
+                  args:
+                    - $.objective.cSel.id
+                    - t: rsi.stepName
+                      args:
+                        - $.objective.cStep
+            blocks:
+              - type: text
+                variant: list
+                when:
+                  of: $.objective.cStep
+                  map:
+                    _: false
+                    node: true
+                from: $.objective.cSel.pointNames
+              - type: list
+                id: rsi-traces
+                when: $.objective.traces
+                label:
+                  t: rsi.trace.label
+                  args:
+                    - $.objective.traces.total
+                    - $.objective.traces.items.length
+                from: $.objective.traces.items
+                empty: t:rsi.trace.none
+                row:
+                  layout: two
+                  key: "@id"
+                  title: "@source"
+                  sub:
+                    sep: " · "
+                    parts:
+                      - text: "@cat"
+                      - text:
+                          t: rsi.trace.whereOf
+                          args:
+                            - "@version"
+                            - "@cycle"
+                  cols:
+                    - v:
+                        status:
+                          tone: warn
+                          text: t:rsi.trace.counter
+                      w: state
+                      when: "@counter"
+                    - v:
+                        text:
+                          of: "@at"
+                          fmt: ago
+                      w: time
+                  act: dialog
+                  args:
+                    kind: rsiRecord
+                    type: trace
+                    objective: $.objective.id
+                    cycle: "@cycleId"
+                    id: "@id"
+                    title: "@source"
+              - type: text
+                variant: para
+                when:
+                  of: $.objective.cStep
+                  map:
+                    _: false
+                    eval: true
+                text: $.objective.cEval.basis
+              - type: text
+                when:
+                  of: $.objective.cStep
+                  map:
+                    _: false
+                    gov: true
+                parts:
+                  - text:
+                      t: rsi.gov.toOf
+                      args:
+                        - $.objective.cEval.to
+                  - text:
+                      t: rsi.gov.cardOf
+                      args:
+                        - t: rsi.cycle.card
+                          args:
+                            - $.objective.cEval.card.result
+                        - t: rsi.by
+                          args:
+                            - $.objective.cEval.card.by
+                    when: $.objective.cEval.card
+    sources:
+      objective: objective
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
+  rsi.caps:
+    blocks:
+      - type: head
+        variant: detail
+        title: t:rsi.nav.caps
+        help: t:rsi.caps.help
+      - type: empty
+        icon: search
+        text: t:rsi.caps.none
+        when: "!$.caps.analysis"
+        action:
+          type: each
+          from: $.home.projects
+          control:
+            type: stack
+            when:
+              - of: "@id"
+                gte: $.home.projectId
+              - of: $.home.projectId
+                gte: "@id"
+            items:
+              - type: button
+                primary: true
+                label: t:rsi.new
+                act: dialog
+                args:
+                  kind: rsiNewExp
+                  cats: $.members.defaultCatOptions
+                disabled: $.pending
+                when: "@exp"
+              - type: button
+                primary: true
+                label: t:rsi.new
+                act: dialog
+                args:
+                  kind: rsiNew
+                disabled: $.pending
+                when: "!@exp"
+      - type: text
+        variant: meta
+        when: $.caps.analysis
+        text:
+          t: rsi.caps.at
+          args:
+            - of: $.caps.analysis.at
+              fmt: stamp
+            - $.caps.analysis.by
+      - type: list
+        id: rsi-modify
+        label: t:rsi.caps.modify
+        optional: true
+        from: $.caps.modify
+        row: rsi.group
+      - type: list
+        id: rsi-collect
+        label: t:rsi.caps.collect
+        optional: true
+        from: $.caps.collect
+        row: rsi.group
+      - type: list
+        id: rsi-env
+        label: t:rsi.caps.env
+        optional: true
+        from: $.caps.env
+        row: rsi.group
+    sources:
+      caps: caps
+      home: home
+      members: host:members
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
+  rsi.library:
+    blocks:
+      - type: head
+        variant: detail
+        title: t:rsi.nav.library
+        help: t:rsi.library.help
+        actions:
+          - type: button
+            label: t:rsi.library.add
+            act: dialog
+            when: $.library.analysis
+            args:
+              kind: rsiDocAdd
+            disabled: $.pending
+      - type: empty
+        icon: search
+        text: t:rsi.library.none
+        when: "!$.library.docs"
+        action:
+          type: each
+          from: $.home.projects
+          control:
+            type: stack
+            when:
+              - of: "@id"
+                gte: $.home.projectId
+              - of: $.home.projectId
+                gte: "@id"
+              - "!$.library.analysis"
+            items:
+              - type: button
+                primary: true
+                label: t:rsi.new
+                act: dialog
+                args:
+                  kind: rsiNewExp
+                  cats: $.members.defaultCatOptions
+                disabled: $.pending
+                when: "@exp"
+              - type: button
+                primary: true
+                label: t:rsi.new
+                act: dialog
+                args:
+                  kind: rsiNew
+                disabled: $.pending
+                when: "!@exp"
+      - type: list
+        id: rsi-library
+        when: $.library.docs
+        groups: $.library.groups
+        group:
+          title:
+            t: rsi.library.kind
+            args:
+              - "@k"
+        row: rsi.doc
+    sources:
+      library: library
+      home: home
+      members: host:members
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
+  dlg.rsiCards:
+    title: t:rsi.card.dialog
+    wide: true
+    blocks:
+      - type: empty
+        text: t:rsi.cards.none
+        when: "!$.cards.cards"
+      - type: each
+        from: $.cards.cards
+        blocks:
+          - type: box
+            variant: card
+            blocks:
+              - type: text
+                variant: title
+                text:
+                  t: rsi.card.titleOf
+                  args:
+                    - "@objectiveName"
+                    - "@from"
+                    - "@to"
+              - type: text
+                variant: meta
+                when:
+                  of: "@round"
+                  gte: 2
+                text:
+                  t: rsi.card.round
+                  args:
+                    - "@round"
+              - type: label
+                text: t:rsi.card.basis
+              - type: text
+                variant: para
+                text: "@basis"
+              - type: text
+                variant: list
+                from: "@reasons"
+              - type: label
+                text: t:rsi.card.proposal
+              - type: list
+                from: "@actions"
+                row:
+                  layout: line
+                  key: "@unit"
+                  title:
+                    text:
+                      of: "@op"
+                      map:
+                        modify:
+                          t: rsi.change.modify
+                          args:
+                            - "@unitName"
+                            - "@from"
+                            - "@to"
+                        add:
+                          t: rsi.change.add
+                          args:
+                            - "@unitName"
+                        remove:
+                          t: rsi.change.remove
+                          args:
+                            - "@unitName"
+                        enable:
+                          t: rsi.change.enable
+                          args:
+                            - "@unitName"
+                        disable:
+                          t: rsi.change.disable
+                          args:
+                            - "@unitName"
+                        _: "@unitName"
+                  cols:
+                    - v:
+                        text:
+                          t: rsi.card.shared
+                          args:
+                            - of: "@sharedNames"
+                              sep: 、
+                        tone: warn
+                      w: label
+                      when: "@sharedNames"
+                    - v:
+                        text:
+                          t: rsi.apply
+                          args:
+                            - "@apply"
+                      w: state
+              - type: label
+                text: t:rsi.card.predictions
+              - type: list
+                from: "@predictions"
+                row:
+                  layout: line
+                  key: "@metric"
+                  title: "@metric"
+                  inline:
+                    - chip: t:rsi.metric.locked
+                      when: "@locked"
+                    - chip: t:rsi.metric.guard
+                      when: "@guard"
+                  cols:
+                    - v:
+                        text: "@expect"
+                      w: label
+              - type: label
+                text: t:rsi.card.collab
+                when: "@collab"
+              - type: text
+                variant: para
+                text: "@collab.text"
+                when: "@collab"
+              - type: toolbar
+                items:
+                  - type: button
+                    primary: true
+                    label: t:rsi.card.apply
+                    act: plugin
+                    args:
+                      request: decide
+                      card: "@id"
+                      decision: apply
+                    disabled: $.pending
+                  - type: button
+                    label: t:rsi.card.reevaluate
+                    act: dialog
+                    args:
+                      kind: rsiReeval
+                      card: "@id"
+                    disabled: $.pending
+                  - type: button
+                    label: t:rsi.card.skip
+                    act: plugin
+                    args:
+                      request: decide
+                      card: "@id"
+                      decision: skip
+                    disabled: $.pending
+    sources:
+      cards: cards
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
+  rsi.cards:
+    blocks:
+      - type: head
+        variant: detail
+        title: t:rsi.nav.cards
+      - type: list
+        id: rsi-todo
+        from: $.todo.items
+        empty: t:rsi.cards.none
+        row:
+          layout: two
+          key: "@id"
+          lead:
+            - glyph:
+                of: "@kind"
+                map:
+                  card: bolt
+                  stalled: alert
+                  exhausted: clock
+                  ready: play
+                  _: bolt
+          title: "@objectiveName"
+          sub:
+            sep: " · "
+            parts:
+              - text:
+                  of: "@kind"
+                  map:
+                    card:
+                      t: rsi.card.title
+                      args:
+                        - "@from"
+                        - "@to"
+                    stalled: t:rsi.todo.stalled
+                    exhausted: t:rsi.todo.exhausted
+                    ready: t:rsi.todo.ready
+                    _: "@kind"
+              - text:
+                  t: rsi.card.round
+                  args:
+                    - "@round"
+                when:
+                  of: "@round"
+                  gte: 2
+          cols:
+            - v:
+                text:
+                  of: "@at"
+                  fmt: ago
+              w: time
+          acts:
+            - label: t:rsi.todo.jump
+              icon: hook
+              act: plugin
+              args:
+                request: go
+                objective: "@objective"
+          expand:
+            - type: box
+              variant: card
+              blocks:
+                - type: text
+                  variant: title
+                  text:
+                    t: rsi.card.titleOf
+                    args:
+                      - "@objectiveName"
+                      - "@from"
+                      - "@to"
+                - type: text
+                  variant: meta
+                  when:
+                    of: "@round"
+                    gte: 2
+                  text:
+                    t: rsi.card.round
+                    args:
+                      - "@round"
+                - type: label
+                  text: t:rsi.card.basis
+                - type: text
+                  variant: para
+                  text: "@basis"
+                - type: text
+                  variant: list
+                  from: "@reasons"
+                - type: label
+                  text: t:rsi.card.proposal
+                - type: list
+                  from: "@actions"
+                  row:
+                    layout: line
+                    key: "@unit"
+                    title:
+                      text:
+                        of: "@op"
+                        map:
+                          modify:
+                            t: rsi.change.modify
+                            args:
+                              - "@unitName"
+                              - "@from"
+                              - "@to"
+                          add:
+                            t: rsi.change.add
+                            args:
+                              - "@unitName"
+                          remove:
+                            t: rsi.change.remove
+                            args:
+                              - "@unitName"
+                          enable:
+                            t: rsi.change.enable
+                            args:
+                              - "@unitName"
+                          disable:
+                            t: rsi.change.disable
+                            args:
+                              - "@unitName"
+                          _: "@unitName"
+                    cols:
+                      - v:
+                          text:
+                            t: rsi.card.shared
+                            args:
+                              - of: "@sharedNames"
+                                sep: 、
+                          tone: warn
+                        w: label
+                        when: "@sharedNames"
+                      - v:
+                          text:
+                            t: rsi.apply
+                            args:
+                              - "@apply"
+                        w: state
+                - type: label
+                  text: t:rsi.card.predictions
+                - type: list
+                  from: "@predictions"
+                  row:
+                    layout: line
+                    key: "@metric"
+                    title: "@metric"
+                    inline:
+                      - chip: t:rsi.metric.locked
+                        when: "@locked"
+                      - chip: t:rsi.metric.guard
+                        when: "@guard"
+                    cols:
+                      - v:
+                          text: "@expect"
+                        w: label
+                - type: label
+                  text: t:rsi.card.collab
+                  when: "@collab"
+                - type: text
+                  variant: para
+                  text: "@collab.text"
+                  when: "@collab"
+                - type: toolbar
+                  items:
+                    - type: button
+                      primary: true
+                      label: t:rsi.card.apply
+                      act: plugin
+                      args:
+                        request: decide
+                        card: "@id"
+                        decision: apply
+                      disabled: $.pending
+                    - type: button
+                      label: t:rsi.card.reevaluate
+                      act: dialog
+                      args:
+                        kind: rsiReeval
+                        card: "@id"
+                      disabled: $.pending
+                    - type: button
+                      label: t:rsi.card.skip
+                      act: plugin
+                      args:
+                        request: decide
+                        card: "@id"
+                        decision: skip
+                      disabled: $.pending
+              when:
+                of: "@kind"
+                map:
+                  _: false
+                  card: true
+            - type: notice
+              tone: danger
+              when:
+                of: "@kind"
+                map:
+                  _: false
+                  stalled: true
+              text:
+                of: "@stalledAt"
+                map:
+                  gov: t:rsi.stall.gov
+                  _: t:rsi.stall.eval
+            - type: toolbar
+              when:
+                of: "@kind"
+                map:
+                  _: false
+                  stalled: true
+              items:
+                - type: button
+                  primary: true
+                  label: t:rsi.life.retry
+                  act: plugin
+                  args:
+                    request: life
+                    op: retry
+                    objective: "@objective"
+                  disabled: $.pending
+                - type: button
+                  label:
+                    of: "@stalledAt"
+                    map:
+                      gov: t:rsi.thread.iterate
+                      _: t:rsi.thread.eval
+                  act: open
+                  args:
+                    kind: msg
+                    t: "@thread"
+            - type: toolbar
+              when:
+                of: "@kind"
+                map:
+                  _: false
+                  exhausted: true
+              items:
+                - type: button
+                  label: t:rsi.life.more
+                  act: plugin
+                  args:
+                    request: life
+                    op: more
+                    objective: "@objective"
+                  disabled: $.pending
+            - type: toolbar
+              when:
+                of: "@kind"
+                map:
+                  _: false
+                  ready: true
+              items:
+                - type: button
+                  primary: true
+                  label: t:rsi.life.start
+                  act: plugin
+                  args:
+                    request: life
+                    op: start
+                    objective: "@objective"
+                  disabled: $.pending
+    sources:
+      todo: todo
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
+  dlg.rsiRecord:
+    title: $.title
+    wide: true
+    blocks:
+      - type: kv
+        when:
+          of: $.record.type
+          map:
+            _: false
+            trace: true
+        from:
+          - k: t:rsi.trace.at
+            v:
+              of: $.record.at
+              fmt: stamp
+          - k: t:rsi.trace.cat
+            v: $.record.cat
+          - k: t:rsi.trace.where
+            v:
+              t: rsi.trace.whereOf
+              args:
+                - $.record.version
+                - $.record.cycle
+          - k: t:rsi.trace.c
+            v: $.record.c
+      - type: kv
+        when:
+          of: $.record.type
+          map:
+            _: false
+            run: true
+        from:
+          - k: t:rsi.trace.at
+            v:
+              of: $.record.at
+              fmt: stamp
+          - k: t:rsi.run.change
+            v:
+              of: "@op"
+              map:
+                modify:
+                  t: rsi.change.modify
+                  args:
+                    - "@unitName"
+                    - "@from"
+                    - "@to"
+                add:
+                  t: rsi.change.add
+                  args:
+                    - "@unitName"
+                remove:
+                  t: rsi.change.remove
+                  args:
+                    - "@unitName"
+                enable:
+                  t: rsi.change.enable
+                  args:
+                    - "@unitName"
+                disable:
+                  t: rsi.change.disable
+                  args:
+                    - "@unitName"
+                _: "@unitName"
+          - k: t:rsi.run.apply
+            v:
+              t: rsi.apply
+              args:
+                - $.record.apply
+          - k: t:rsi.run.pr
+            v: $.record.pr
+            when: $.record.pr
+          - k: t:rsi.run.script
+            v: $.record.run
+            when: $.record.run
+          - k: t:rsi.run.by
+            v:
+              t: rsi.by
+              args:
+                - $.record.by
+      - type: toolbar
+        when: $.record.thread
+        items:
+          - type: button
+            label: t:rsi.trace.thread
+            act: open
+            args:
+              kind: msg
+              t: $.record.thread
+      - type: list
+        id: rsi-record-results
+        label:
+          of: $.record.type
+          map:
+            run: t:rsi.run.results
+            _: t:rsi.trace.results
+        from: $.record.results
+        empty: t:rsi.trace.noResults
+        row:
+          layout: line
+          key: "@name"
+          title: "@name"
+          cols:
+            - v:
+                status:
+                  of: "@pass"
+                  map:
+                    "true":
+                      tone: ok
+                      text: t:rsi.trace.pass
+                    _:
+                      tone: warn
+                      text:
+                        of: $.record.type
+                        map:
+                          run: t:rsi.run.fail
+                          _: t:rsi.trace.counter
+              w: state
+      - type: list
+        id: rsi-record-events
+        label:
+          of: $.record.type
+          map:
+            run: t:rsi.run.events
+            _: t:rsi.trace.events
+        from: $.record.events
+        row:
+          layout: two
+          key: "@source"
+          title: "@text"
+          sub: "@source"
+          cols:
+            - v:
+                status:
+                  of: "@state"
+                  map:
+                    hit:
+                      tone: warn
+                      text: t:rsi.trace.counter
+                    failed:
+                      tone: danger
+                      text: t:rsi.run.state.failed
+                    _: ""
+              w: state
+              when: "@state"
+            - v:
+                text:
+                  of: "@at"
+                  fmt: hm
+              w: time
+          expand:
+            - type: pre
+              text: "@raw"
+              when: "@raw"
+    sources:
+      record: record
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
+  dlg.rsiDoc:
+    title: $.title
+    wide: true
+    blocks:
+      - type: kv
+        from:
+          - k: t:rsi.library.from
+            v:
+              t: rsi.library.kind
+              args:
+                - $.doc.kind
+          - k: t:rsi.library.path
+            v: $.doc.path
+            when: $.doc.path
+          - k: t:rsi.library.url
+            v: $.doc.url
+            when: $.doc.url
+          - k: t:rsi.library.byLabel
+            v: $.doc.by
+          - k: t:rsi.trace.at
+            v:
+              of: $.doc.at
+              fmt: stamp
+          - k: t:rsi.library.for
+            v:
+              of: $.doc.objectiveNames
+              sep: 、
+            when: $.doc.objectiveNames
+          - k: t:rsi.library.for
+            v: t:rsi.library.whole
+            when: "!$.doc.objectiveNames"
+      - type: toolbar
+        when:
+          of: $.doc.state
+          map:
+            _: false
+            pending: true
+        items:
+          - type: button
+            primary: true
+            label: t:rsi.library.confirm
+            act: plugin
+            args:
+              request: docConfirm
+              id: $.doc.id
+            disabled: $.pending
+          - type: button
+            label: t:rsi.common.delete
+            act: plugin
+            args:
+              request: docRemove
+              id: $.doc.id
+            disabled: $.pending
+      - type: list
+        id: rsi-doc-used
+        label: t:rsi.library.usedLabel
+        optional: true
+        from: $.doc.usedBy
+        row:
+          layout: line
+          key: "@e"
+          title: "@name"
+          cols:
+            - v:
+                text: "@e"
+                mono: true
+              w: id
+      - type: list
+        id: rsi-doc-sources
+        label: t:rsi.library.sources
+        optional: true
+        from: $.doc.sources
+        row:
+          layout: line
+          key: "@label"
+          title: "@label"
+          acts:
+            - label: t:rsi.trace.thread
+              icon: hook
+              act: open
+              args:
+                kind: msg
+                t: "@thread"
+              when: "@thread"
+      - type: markdown
+        text: $.doc.body
+    sources:
+      doc: doc
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
+  dlg.rsiDocAdd:
+    title: t:rsi.library.add
+    fields:
+      - id: dlg-name
+        label: t:rsi.library.title
+        req: true
+        arg: title
+      - id: dlg-url
+        label: t:rsi.library.url
+        arg: url
+      - id: dlg-body
+        label: t:rsi.library.body
+        area: true
+        rows: 8
+        arg: body
+    ok: t:rsi.library.addOk
+    okAct: plugin
+    okArgs:
+      request: docAdd
+  dlg.rsiPolicy:
+    title: t:rsi.policy.title
+    help: t:rsi.policy.help
+    wide: true
+    blocks:
+      - type: box
+        variant: columns
+        blocks:
+          - type: box
+            blocks:
+              - type: label
+                text: t:rsi.policy.group.trigger
+              - type: settings
+                rows:
+                  - label: t:rsi.policy.count
+                    control:
+                      type: select
+                      id: rsi-pol-count
+                      label: t:rsi.policy.count
+                      change: plugin
+                      value: $.policy.policy.count.value
+                      options:
+                        - v: ""
+                          label:
+                            t: rsi.policy.inherit
+                            args:
+                              - $.policy.policy.count.inherit
+                        - from: $.policy.policy.count.options
+                          item:
+                            v: "@v"
+                            label: "@v"
+                      args:
+                        request: setPolicy
+                        key: count
+                        v: "@v"
+                  - label: t:rsi.policy.days
+                    control:
+                      type: select
+                      id: rsi-pol-days
+                      label: t:rsi.policy.days
+                      change: plugin
+                      value: $.policy.policy.days.value
+                      options:
+                        - v: ""
+                          label:
+                            t: rsi.policy.inherit
+                            args:
+                              - $.policy.policy.days.inherit
+                        - from: $.policy.policy.days.options
+                          item:
+                            v: "@v"
+                            label: "@v"
+                      args:
+                        request: setPolicy
+                        key: days
+                        v: "@v"
+                  - label: t:rsi.policy.interval
+                    control:
+                      type: select
+                      id: rsi-pol-interval
+                      label: t:rsi.policy.interval
+                      change: plugin
+                      value: $.policy.policy.interval.value
+                      options:
+                        - v: ""
+                          label:
+                            t: rsi.policy.inherit
+                            args:
+                              - $.policy.policy.interval.inherit
+                        - from: $.policy.policy.interval.options
+                          item:
+                            v: "@v"
+                            label: "@v"
+                      args:
+                        request: setPolicy
+                        key: interval
+                        v: "@v"
+                  - label: t:rsi.policy.counter
+                    control:
+                      type: select
+                      id: rsi-pol-counter
+                      label: t:rsi.policy.counter
+                      change: plugin
+                      value: $.policy.policy.counter.value
+                      options:
+                        - v: ""
+                          label:
+                            t: rsi.policy.inherit
+                            args:
+                              - $.policy.policy.counter.inherit
+                        - from: $.policy.policy.counter.options
+                          item:
+                            v: "@v"
+                            label: "@v"
+                      args:
+                        request: setPolicy
+                        key: counter
+                        v: "@v"
+              - type: label
+                text: t:rsi.policy.group.approval
+              - type: settings
+                rows:
+                  - label: t:rsi.policy.approval
+                    control:
+                      type: select
+                      id: rsi-pol-approval
+                      label: t:rsi.policy.approval
+                      change: plugin
+                      value: $.policy.policy.approval.value
+                      options:
+                        - v: ""
+                          label:
+                            t: rsi.policy.inherit
+                            args:
+                              - t: rsi.approval
+                                args:
+                                  - $.policy.policy.approval.inherit
+                        - from: $.policy.policy.approval.options
+                          item:
+                            v: "@v"
+                            label:
+                              t: rsi.approval
+                              args:
+                                - "@v"
+                      args:
+                        request: setPolicy
+                        key: approval
+                        v: "@v"
+          - type: box
+            blocks:
+              - type: label
+                text: t:rsi.policy.group.metricEval
+              - type: settings
+                rows:
+                  - label: t:rsi.policy.everyN
+                    control:
+                      type: select
+                      id: rsi-pol-everyN
+                      label: t:rsi.policy.everyN
+                      change: plugin
+                      value: $.policy.policy.everyN.value
+                      options:
+                        - v: ""
+                          label:
+                            t: rsi.policy.inherit
+                            args:
+                              - $.policy.policy.everyN.inherit
+                        - from: $.policy.policy.everyN.options
+                          item:
+                            v: "@v"
+                            label: "@v"
+                      args:
+                        request: setPolicy
+                        key: everyN
+                        v: "@v"
+                  - label: t:rsi.policy.noChangeK
+                    control:
+                      type: select
+                      id: rsi-pol-noChangeK
+                      label: t:rsi.policy.noChangeK
+                      change: plugin
+                      value: $.policy.policy.noChangeK.value
+                      options:
+                        - v: ""
+                          label:
+                            t: rsi.policy.inherit
+                            args:
+                              - $.policy.policy.noChangeK.inherit
+                        - from: $.policy.policy.noChangeK.options
+                          item:
+                            v: "@v"
+                            label: "@v"
+                      args:
+                        request: setPolicy
+                        key: noChangeK
+                        v: "@v"
+              - type: label
+                text: t:rsi.policy.group.members
+              - type: settings
+                rows:
+                  - label: t:rsi.policy.eval
+                    control:
+                      type: select
+                      id: rsi-pol-eval
+                      label: t:rsi.policy.eval
+                      change: plugin
+                      value: $.policy.policy.eval.value
+                      options:
+                        - v: ""
+                          label:
+                            t: rsi.policy.inherit
+                            args:
+                              - $.policy.policy.eval.inheritName
+                        - from: $.policy.policy.eval.options
+                          item:
+                            v: "@v"
+                            label: "@label"
+                      args:
+                        request: setPolicy
+                        key: eval
+                        v: "@v"
+                  - label: t:rsi.policy.iterate
+                    control:
+                      type: select
+                      id: rsi-pol-iterate
+                      label: t:rsi.policy.iterate
+                      change: plugin
+                      value: $.policy.policy.iterate.value
+                      options:
+                        - v: ""
+                          label:
+                            t: rsi.policy.inherit
+                            args:
+                              - $.policy.policy.iterate.inheritName
+                        - from: $.policy.policy.iterate.options
+                          item:
+                            v: "@v"
+                            label: "@label"
+                      args:
+                        request: setPolicy
+                        key: iterate
+                        v: "@v"
+                  - label: t:rsi.policy.metrics
+                    control:
+                      type: select
+                      id: rsi-pol-metrics
+                      label: t:rsi.policy.metrics
+                      change: plugin
+                      value: $.policy.policy.metrics.value
+                      options:
+                        - v: ""
+                          label:
+                            t: rsi.policy.inherit
+                            args:
+                              - $.policy.policy.metrics.inheritName
+                        - from: $.policy.policy.metrics.options
+                          item:
+                            v: "@v"
+                            label: "@label"
+                      args:
+                        request: setPolicy
+                        key: metrics
+                        v: "@v"
+    sources:
+      policy: policy
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
+  dlg.rsiAddMetric:
+    title: t:rsi.metric.add
+    fields:
+      - id: dlg-name
+        label: t:rsi.metric.addName
+        req: true
+        arg: name
+      - id: dlg-how
+        label: t:rsi.metric.addHow
+        area: true
+        rows: 4
+        arg: how
+    ok: t:rsi.metric.addOk
+    okAct: plugin
+    okArgs:
+      request: addMetric
+  dlg.rsiPrepEdit:
+    title: $.title
+    wide: true
+    fields:
+      - id: dlg-value
+        label: t:rsi.exp.prep.value
+        value: $.value
+        area: true
+        rows: 8
+        arg: value
+      - id: dlg-note
+        label: t:rsi.exp.prep.note
+        area: true
+        rows: 3
+        arg: note
+    ok: t:rsi.common.save
+    okAct: plugin
+    okArgs:
+      request: prep
+      id: $.id
+      op: edit
+  dlg.rsiExpPrep:
+    title: t:rsi.exp.declare
+    wide: true
+    blocks:
+      - type: each
+        from: $.exp.prep.steps
+        blocks:
+          - type: text
+            parts:
+              - text:
+                  t: rsi.exp.initStep
+                  args:
+                    - "@i"
+                    - t: rsi.exp.init
+                      args:
+                        - "@k"
+                strong: true
+              - status:
+                  of: "@state"
+                  map:
+                    confirmed:
+                      tone: ok
+                      text: t:rsi.exp.prep.state.confirmed
+                    preparing:
+                      tone: info
+                      text: t:rsi.exp.prep.state.preparing
+                    submitted:
+                      tone: warn
+                      text: t:rsi.exp.prep.state.submitted
+                    cancelled:
+                      tone: warn
+                      text: t:rsi.exp.prep.state.cancelled
+                    stale:
+                      tone: warn
+                      text: t:rsi.exp.prep.state.stale
+                    waiting:
+                      tone: ""
+                      text: t:rsi.exp.prep.state.waiting
+                    queued:
+                      tone: ""
+                      text: t:rsi.exp.prep.state.queued
+                    _:
+                      tone: ""
+                      text: t:rsi.exp.prep.state.uninvestigated
+              - text:
+                  t: rsi.exp.byOf
+                  args:
+                    - "@by"
+                when: "@by"
+              - text:
+                  t: rsi.exp.waitOnOf
+                  args:
+                    - "@waitOn"
+                when: "@waitOn"
+              - text:
+                  t: rsi.exp.initOut
+                  args:
+                    - "@k"
+              - text:
+                  t: rsi.exp.depsOf
+                  args:
+                    - "@deps"
+                when: "@deps"
+            actions:
+              - type: button
+                label: t:rsi.exp.retry
+                act: plugin
+                args:
+                  request: initRetry
+                  k: "@k"
+                when:
+                  of: "@state"
+                  map:
+                    _: false
+                    cancelled: true
+                disabled: $.pending
+          - type: list
+            from: "@items"
+            row: rsi.prep
+          - type: text
+            variant: meta
+            text:
+              t: rsi.exp.unknownsOf
+              args:
+                - "@unknowns"
+            when: "@unknowns"
+          - type: text
+            variant: meta
+            text:
+              t: rsi.exp.nextOf
+              args:
+                - "@next"
+            when: "@next"
+      - type: label
+        text: t:rsi.exp.members
+      - type: list
+        from: $.exp.members
+        row:
+          layout: two
+          title:
+            text:
+              t: rsi.exp.role
+              args:
+                - "@role"
+          sub: "@name"
+          cols:
+            - v:
+                text: "@model"
+                mono: true
+              w: id
+      - type: label
+        text: t:rsi.exp.policyTitle
+      - type: kv
+        from:
+          - k: t:rsi.exp.pol.schedule
+            v: $.exp.policy.schedule.window
+          - k: t:rsi.exp.pol.seeds
+            v:
+              t: rsi.exp.seedsOf
+              args:
+                - $.exp.policy.seeds
+          - k: t:rsi.exp.pol.vars
+            v:
+              of: $.exp.policy.vars
+              sep: ；
+              item:
+                t: rsi.exp.varOf
+                args:
+                  - "@name"
+                  - of: "@values"
+                    sep: " / "
+          - k: t:rsi.exp.pol.auto
+            v: t:rsi.exp.pol.autoText
+    sources:
+      exp: exp
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
+  dlg.rsiExpNote:
+    title:
+      t: rsi.exp.pickName
+      args:
+        - $.pick
+    fields:
+      - id: dlg-note
+        label: t:rsi.exp.note
+        area: true
+        rows: 4
+        req: true
+        arg: note
+    ok: t:rsi.exp.send
+    okAct: plugin
+    okArgs:
+      request: expDecide
+      n: $.n
+      pick: $.pick
+      directionId: $.directionId
+  dlg.rsiNewExp:
+    title: t:rsi.new
+    help: t:rsi.newExp.help
+    fields:
+      - id: dlg-name
+        label: t:rsi.newExp.statement
+        value: t:rsi.newExp.statementDefault
+        req: true
+        arg: statement
+      - id: dlg-prepare
+        label: t:rsi.newExp.prepare
+        value: opus
+        options:
+          - from: $.cats
+            item:
+              v: "@id"
+              label: "@name"
+        arg: prepare
+      - id: dlg-evaluate
+        label: t:rsi.newExp.evaluate
+        value: codex
+        options:
+          - from: $.cats
+            item:
+              v: "@id"
+              label: "@name"
+        arg: evaluate
+      - id: dlg-target
+        label: t:rsi.newExp.stopTarget
+        value: t:rsi.newExp.stopTargetDefault
+        help: t:rsi.newExp.stopHelp
+        arg: target
+      - id: dlg-stall
+        label: t:rsi.newExp.stopStall
+        value: "3"
+        arg: stall
+      - id: dlg-rounds
+        label: t:rsi.newExp.stopRounds
+        value: "20"
+        arg: rounds
+    ok: t:rsi.newExp.ok
+    okAct: plugin
+    okArgs:
+      request: new
+  dlg.rsiNew:
+    title: t:rsi.new
+    fields:
+      - id: dlg-name
+        label: t:rsi.newName
+        req: true
+        arg: name
+    ok: t:rsi.newOk
+    okAct: plugin
+    okArgs:
+      request: new
+  dlg.rsiReeval:
+    title: t:rsi.reeval.title
+    fields:
+      - id: dlg-note
+        label: t:rsi.reeval.label
+        req: true
+        arg: reason
+    ok: t:rsi.reeval.ok
+    okAct: plugin
+    okArgs:
+      request: reeval
+      card: $.card
+rows:
+  rsi.prep:
+    layout: two
+    key: "@id"
+    title: "@title"
+    inline:
+      - chip: t:rsi.exp.prep.default
+        when: "@isDefault"
+      - status:
+          tone: warn
+          text: t:rsi.exp.prep.needYou
+        when: "@needYou"
+      - status:
+          of: "@can"
+          map:
+            modifiable:
+              tone: ok
+              text: t:rsi.exp.prep.can.modifiable
+            partial:
+              tone: warn
+              text: t:rsi.exp.prep.can.partial
+            no:
+              tone: ""
+              text: t:rsi.exp.prep.can.no
+            unknown:
+              tone: warn
+              text: t:rsi.exp.prep.can.unknown
+            _: ""
+        when: "@can"
+      - text: "@tag"
+        variant: badge
+        when: "@tag"
+      - text:
+          t: rsi.exp.prep.decide
+          args:
+            - "@decision"
+        variant: badge
+        when: "@decision"
+    sub:
+      sep: " · "
+      parts:
+        - text: "@by"
+          when: "@by"
+        - text: "@value"
+          when: "@value"
+        - text:
+            t: rsi.exp.prep.recOf
+            args:
+              - t: rsi.exp.prep.decide
+                args:
+                  - "@rec"
+          when:
+            - "@rec"
+            - "!@decision"
+        - text: "@note"
+          when: "@note"
+    cols:
+      - v:
+          status:
+            of: "@state"
+            map:
+              uninvestigated:
+                tone: ""
+                text: t:rsi.exp.prep.state.uninvestigated
+              preparing:
+                tone: info
+                text: t:rsi.exp.prep.state.preparing
+              submitted:
+                tone: ""
+                text: t:rsi.exp.prep.state.submitted
+              confirmed:
+                tone: ok
+                text: t:rsi.exp.prep.state.confirmed
+              _: ""
+        w: state
+      - control:
+          - type: button
+            label: t:rsi.exp.prep.confirm
+            act: plugin
+            args:
+              request: prep
+              id: "@id"
+              op: confirm
+            when:
+              - of: "@state"
+                map:
+                  _: false
+                  submitted: true
+              - "!@rec"
+            disabled: $.pending
+      - control:
+          - type: button
+            label: t:rsi.exp.prep.decide.explore
+            act: plugin
+            args:
+              request: prep
+              id: "@id"
+              op: decide
+              decision: explore
+            disabled: $.pending
+          - type: button
+            label: t:rsi.exp.prep.decide.fixed
+            act: plugin
+            args:
+              request: prep
+              id: "@id"
+              op: decide
+              decision: fixed
+            disabled: $.pending
+          - type: button
+            label: t:rsi.exp.prep.decide.excluded
+            act: plugin
+            args:
+              request: prep
+              id: "@id"
+              op: decide
+              decision: excluded
+            disabled: $.pending
+        when:
+          - of: "@state"
+            map:
+              _: false
+              submitted: true
+          - "@rec"
+    acts:
+      - label: t:rsi.exp.prep.edit
+        icon: edit
+        act: dialog
+        args:
+          kind: rsiPrepEdit
+          id: "@id"
+          title: "@title"
+          value: "@value"
+      - label: t:rsi.exp.prep.agent
+        icon: bolt
+        act: plugin
+        args:
+          request: prep
+          id: "@id"
+          op: agent
+    expand:
+      - type: kv
+        from: "@facts"
+  rsi.doc:
+    layout: two
+    key: "@id"
+    title: "@title"
+    inline:
+      - status:
+          tone: warn
+          text: t:rsi.library.pending
+        when:
+          of: "@state"
+          map:
+            _: false
+            pending: true
+    sub:
+      sep: " · "
+      parts:
+        - text: "@path"
+          mono: true
+          when: "@path"
+        - text: "@by"
+        - text:
+            of: "@objectiveNames"
+            sep: 、
+          when: "@objectiveNames"
+        - text: t:rsi.library.whole
+          when: "!@objectiveNames"
+    cols:
+      - v:
+          text:
+            t: rsi.library.usedBy
+            args:
+              - of: "@usedByEs"
+                sep: " "
+        w: label
+        when: "@usedByEs"
+      - v:
+          text:
+            of: "@at"
+            fmt: ago
+        w: time
+    act: dialog
+    args:
+      kind: rsiDoc
+      id: "@id"
+      title: "@title"
+  rsi.group:
+    layout: two
+    key: "@id"
+    title: "@name"
+    sub:
+      sep: " · "
+      parts:
+        - text: "@where"
+        - text:
+            t: rsi.caps.usedBy
+            args:
+              - "@users"
+requests:
+  home:
+    path: rsi/view
+    method: GET
+    query:
+      view: home
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+  objective:
+    path: rsi/view
+    method: GET
+    query:
+      view: objective
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+  exp:
+    path: rsi/view
+    method: GET
+    query:
+      view: exp
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+  record:
+    path: rsi/view
+    method: GET
+    query:
+      view: record
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+      type: "@type"
+      objective: "@objective"
+      cycle: "@cycle"
+      id: "@id"
+  policy:
+    path: rsi/view
+    method: GET
+    query:
+      view: policy
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+  todo:
+    path: rsi/view
+    method: GET
+    query:
+      view: todo
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+  newExp:
+    path: rsi/view
+    method: GET
+    query:
+      view: newExp
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+  caps:
+    path: rsi/view
+    method: GET
+    query:
+      view: caps
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+  cards:
+    path: rsi/view
+    method: GET
+    query:
+      view: cards
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+      objective: "@objective"
+  library:
+    path: rsi/view
+    method: GET
+    query:
+      view: library
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+  doc:
+    path: rsi/view
+    method: GET
+    query:
+      view: doc
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+      id: "@id"
+  new:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: new
+      statement: "@statement"
+      prepare: "@prepare"
+      evaluate: "@evaluate"
+      target: "@target"
+      stall: "@stall"
+      rounds: "@rounds"
+      name: "@name"
+  life:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: life
+      action: "@op"
+      objective: "@objective"
+  initRedo:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: initRedo
+  initRetry:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: initRetry
+      k: "@k"
+  prep:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: prep
+      id: "@id"
+      action: "@op"
+      decision: "@decision"
+      title: "@title"
+      value: "@value"
+      note: "@note"
+  expDecide:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: expDecide
+      n: "@n"
+      pick: "@pick"
+      directionId: "@directionId"
+      note: "@note"
+  addMetric:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: addMetric
+      name: "@name"
+      how: "@how"
+  lock:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: lock
+      metric: "@metric"
+      locked: "@locked"
+  goVersion:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: goVersion
+      pick: "@pick"
+  docAdd:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: docAdd
+      title: "@title"
+      url: "@url"
+      body: "@body"
+  decide:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: decide
+      card: "@card"
+      decision: "@decision"
+  reeval:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: reeval
+      card: "@card"
+      reason: "@reason"
+  go:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: go
+      objective: "@objective"
+  docConfirm:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: docConfirm
+      id: "@id"
+  docRemove:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: docRemove
+      id: "@id"
+  setPolicy:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      list: state.list
+      selC: state.selC
+    body:
+      op: policy
+      key: "@key"
+      v: "@v"
+components:
+  js: []
+  css: []

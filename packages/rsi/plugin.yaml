@@ -1,0 +1,27 @@
+pluginId: official.rsi
+version: 0.1.0-alpha.0
+contractVersion: 0.4.0-candidate.0
+name: 能力进化
+description:
+  default: 给项目设评估项，每晚按计划跑实验、出结论，你选方向后进入下一轮。
+  translations:
+    en: Set objectives for a project; experiments run nightly, conclusions come back for you to choose the next direction.
+icon: { type: svg, src: assets/icon.svg }
+steps:
+  - text: 启用后，在左侧「能力进化」或工作台面板里新建评估项。
+contributions:
+  - { type: webhook, id: rsi.view, path: rsi/view, methods: [GET], action: { method: rsi.view } }
+  - { type: webhook, id: rsi.act, path: rsi/act, methods: [POST], action: { method: rsi.act } }
+features:
+  - id: rsi
+    name: 能力进化
+    resources: []
+    contributions:
+      - { type: webhook, id: rsi.view }
+      - { type: webhook, id: rsi.act }
+data:
+  - { name: rsi, dataClass: user-authored, strategy: retained }
+runtime:
+  transport: builtin
+  entrypoint: dist/index.js
+  dataDirectory: rsi

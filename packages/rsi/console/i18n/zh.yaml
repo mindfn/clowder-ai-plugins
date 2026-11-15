@@ -1,0 +1,665 @@
+home:
+  title: 能力进化
+  help: 围绕评估项持续采集轨迹、评估、迭代版本；改动都要过审批卡
+panel: RSI
+project: 项目
+projectPrefix: 项目：
+nav:
+  caps: 开放能力
+  library: 资料库
+  cards: 待处理
+objectives: 评估项
+now:
+  line: 运行 {0} · {1} · {2}
+  collecting: 采集 {0} / {1}
+  locate: 定位
+state:
+  collecting: 采集中
+  pending: 等待决定
+  baseline: 基线周期
+  paused: 已暂停
+  exhausted: 次数用完
+  analyzing: 分析项目
+  preparing: 准备中
+  retired: 已退役
+  ready: 待启动
+  stalled: 评估卡住
+  running: 运行中
+tab:
+  version: 版本
+  metrics: 指标
+  collect: 采集
+step:
+  apply: 应用 · {0}
+  collect: 采集
+  collectLive: 采集 · 进行中
+  eval: 评估 · {1}
+  gov: 治理 · {0}
+  cycles: "{0} 个周期"
+evalResult:
+  stalled: 没回写
+  tune: 继续调
+  rollback: 建议回退
+  keep: 保持
+  insufficient: 证据不足
+  baseline: 基线
+  proposal: 提出修改
+  switch: 需要换版
+govResult:
+  stalled: 没回写
+  evolve: 演进
+  rollback: 回退
+  pending: 等待决定
+  switch: 换版
+  variable: 调变量
+  metric: 改指标
+  goal: 改目标
+  info: 补信息
+  addVar: 加变量
+  same: 照旧
+applyResult:
+  done: 已部署
+  failed: 有环境失败
+  _: "{0}"
+stepName:
+  apply: 应用
+  collect: 采集
+  eval: 评估
+  gov: 治理
+detail:
+  node: "{0}"
+  gov: "{0} · 治理"
+  step: "{0} · 周期 {1} · {2}"
+  mstep: "{0} · {1}"
+  change: 改了什么
+  parent: 源自
+  at: 开始于
+  ec: 指标 · 采集
+mstep:
+  goVersion: 去这个版本
+  cyclesOf: "{0} 个周期 · 保持 {1} · 证据不足 {2} · 演进 {3} · 回退 {4}"
+  looked: 这段时间各对象版本的周期和评估结论
+  progress: 距下次例行指标评估：已过 {0} / {1} 个版本，连续 {2} / {3} 个周期没有变化
+policy:
+  title: 策略
+  help: 不改的项继承项目的设置
+  overridden: 策略：
+  overrideOf: "{0} {1}"
+  inherit: 继承（{0}）
+  count: 轨迹数
+  days: 天数
+  interval: 最短间隔
+  counter: 高置信反例
+  approval: 审批
+  everyN: 每几个版本
+  noChangeK: 连续无变化周期
+  eval: 评估
+  iterate: 迭代
+  metrics: 指标
+  p:
+    count: 轨迹数：
+    days: 天数：
+    interval: 最短间隔：
+    counter: 反例：
+    approval: ""
+    everyN: 每 N 版：
+    noChangeK: 连续 K 周期：
+    eval: 评估：
+    iterate: 迭代：
+    metrics: 指标：
+  group:
+    trigger: 触发
+    approval: 审批
+    metricEval: 指标评估
+    members: 成员
+approval:
+  manual: 人工审批
+  auto: 自动执行
+dim:
+  o: 对象
+  e: 指标
+  c: 采集
+version:
+  ec: "{0} · {1}"
+  running: 运行中
+  current: 当前
+  candidate: 候选
+  external: 外部变更
+  parent: 源自 {0}
+  by: "{0} 修改了共管单元"
+  cycles: "{0} 的周期"
+change:
+  modify: 修改 {0}：{1} → {2}
+  add: 纳入 {0}
+  remove: 移出 {0}
+  enable: 启用 {0}
+  disable: 禁用 {0}
+pred:
+  hit: 兑现
+  partial: 部分兑现
+  miss: 落空
+  pending: 待核对
+  expect: 预测 {0}
+decision:
+  stalled: 没回写
+  baseline: 基线
+  keep: 保持
+  insufficient: 证据不足
+  evolve: 演进
+  rollback: 回退
+  pending: 等待决定
+  collecting: 采集中
+cycle:
+  pick: 周期
+  nOf: 周期 {0}/{1}
+  n: 周期 {0}
+  merged: 合并 {0} 个窗口
+  samples: "{0} 条"
+  card:
+    apply: 已执行
+    skip: 已跳过
+  none: 还没有周期
+  detail: "{0} · 周期 {1}"
+  reason: 跳过理由：{0}
+  predictions: 预测核对
+  metrics: 指标结论
+window: "{0} – {1}"
+stage:
+  collect: 采集
+  eval: 评估
+  gov: 治理 · {0}
+  name:
+    collect: 采集
+    eval: 评估
+    gov: 治理
+stageDetail: "{0} · 周期 {1} · {2}"
+triggerBy:
+  count: 轨迹数到了
+  counter: 高置信反例到了
+  days: 天数到了
+  none: 还在采集
+gov:
+  toOf: → {0}
+  cardOf: 卡：{0}（{1}）
+  candidate: 被跳过的候选：{0}
+  pending: 卡还在等你决定
+by:
+  human: 人工
+  policy: 策略自动
+collectVersion:
+  for: 配合 {0}
+measure:
+  counter: 计数
+  rate: 比率
+  semantic: 语义判断
+rule:
+  counter-zero: 零容忍
+  evidence-only: 只给证据
+trig:
+  counter: 去重反例 ≥ {0} 触发
+  sample: 样本 ≥ {0} 才判断
+  weekly: 每周评估一次
+metric:
+  add: 添加指标
+  addName: 名字
+  addHow: 怎么判断（给评估 thread 的标准）
+  addOk: 添加
+  lock: 锁定
+  unlock: 解锁
+  locked: 锁定
+  guard: 守护
+  kind:
+    structural: 结构性
+    semantic: 语义类
+  none: 还没有指标
+  howOf: "{0} · {1} · {2}"
+metricVersion:
+  used: 用于 {0}
+  counts: 锁定 {0} · 工作 {1}
+  diff: 新增 {0} · 删除 {1} · 修改 {2}
+card:
+  dialog: 待决定的卡
+  title: 演进：{0} → {1}
+  titleOf: "{0} · 演进：{1} → {2}"
+  waiting: 有一张卡等你决定：演进 {0} → {1}
+  open: 查看
+  round: 第 {0} 张卡，已带理由重评
+  basis: 依据和结论
+  proposal: 提案
+  shared: 共管：{0}
+  predictions: 预测
+  collab: 协作结论
+  apply: 开始执行
+  reevaluate: 重新评估
+  skip: 跳过，进入下一周期
+apply:
+  direct: 直接生效
+  pr: PR
+  script: 脚本
+cur:
+  nowOf: 轨迹数 {0}（阶梯 {1}） · 已评估 {2} / {3} 次
+  none:
+    exhausted: 评估次数用完，不再开新周期
+    retired: 已退役，不再开新周期
+    _: 没有进行中的周期
+  window: 窗口
+  samples: 样本
+  trigger: 触发
+  coord: 坐标
+  coordOf: "{0} × {1} × {2}"
+  cycle: 周期
+  start: 开始于
+  evals: 评估次数
+  evalsOf: "{0} / {1}"
+  merged: 上次跳过，这次评估会合并 {0} 个窗口
+  ladder: 轨迹数
+  ladderOf: "{0}（阶梯 {1}）"
+trigger:
+  group:
+    must: 必须满足
+    any: 任一满足
+  k:
+    interval: 最短评估间隔
+    count: 累计轨迹
+    counter: 高置信反例
+    days: 持续天数
+  of: "{0} / {1}"
+  met: 已满足
+live: 结构性指标 · 本周期
+awaiting: 待核对的预测
+caps:
+  forOf: 为「{0}」引入
+  off: 已停用
+  modify: 能改的
+  collect: 能采集 / 能执行的
+  env: 环境
+  usedBy: 在用：{0}
+  units: "{0} 个单元"
+  until: 等 {0}
+  supported: Host 支持
+  unsupported: Host 暂不支持
+  open: 查看能力清单
+  none: 还没有能力清单，在这个项目里新建第一个评估项时会先分析项目
+  at: "{0} 新建「{1}」时在项目的系统 thread 里分析"
+  help: 项目第一次新建评估项时由 Agent 在项目的系统 thread 里分析生成，告诉 Agent 能采集什么、能改什么
+kind:
+  skill: skill
+  mcp: MCP
+  plugin: 插件
+  source: 源码
+  prompt: 提示词
+  hook: hook
+  config: 配置
+  segment: hook 段
+setup:
+  analyzing: 分析项目，生成能力清单
+  preparing: 整理单元、指标、采集方案
+  ready: 看过之后开始评估（从基线周期开始）
+stall:
+  eval: 评估派给评估 thread 后 30 分钟没回写，提醒过一次还是没有。可以去评估 thread 看看，或者重试一次。
+  gov: 评估已回写，治理派给迭代 thread 后 30 分钟没回写，提醒过一次还是没有。可以去迭代 thread 看看，或者重试一次。
+thread:
+  eval: 去评估 thread
+  iterate: 去迭代 thread
+  metrics: 去指标 thread
+mtrig:
+  label: 指标自己的触发条件
+  of:
+    counter: 去重反例 {0} / {1}
+    sample: 样本 {0} / {1}
+    weekly: 距上次 {0} / {1} 天
+life:
+  start: 开始评估
+  pause: 暂停评估
+  resume: 恢复评估
+  retry: 重试一次
+  more: 追加 10 次评估
+todo:
+  jump: 打开评估项
+  stalled: 没回写，提醒过一次
+  exhausted: 评估次数用完，已停在最后一次评估
+  ready: 准备好了，等你开始评估
+setupState:
+  on: 进行中
+  done: 完成
+new: 新建评估项
+newName: 目标
+newOk: 新建
+noObjectives: 还没有评估项
+noObjectivesHint: 这个项目还没有评估项。新建一个：说清楚要改进什么、什么时候停；怎么跑、看哪些指标由 agent 读项目后在评估项 thread 里起草，再列给你确认。
+newExp:
+  help: 建好后插件会建一个评估项 thread，按六步初始化，每步 @ 负责的成员；agent 一直往下起草，要你判断的在评估项页逐条列出。机器和时段不用现在填，第 4 步由 agent 查项目后起草。
+  statement: 要改进什么（一句话）
+  statementDefault: 训练更快、更稳地收敛
+  prepare: 谁来初始化（读项目、起草）
+  evaluate: 谁来评估（判指标）
+  stopTarget: 达到什么就停
+  stopTargetDefault: 平均回报 ≥ 475
+  stopStall: 连续几个周期没进步就停
+  stopRounds: 最多几个周期
+  stopHelp: 三条可以组合，哪条先到就停；留空 = 不设这条
+  ok: 建好并开始初始化
+cards:
+  none: 没有待处理的事
+trace:
+  label: 采集到的轨迹 · 共 {0} 条，这里是最近 {1} 条
+  none: 还没有采集到轨迹
+  whereOf: "{0} · 周期 {1}"
+  counter: 反例
+  pass: 通过
+  at: 时间
+  cat: 猫
+  where: 落在
+  c: 采集版本
+  thread: 去原 thread
+  results: 结构性指标（逐条判）
+  noResults: 没有结构性指标，语义类在评估时整窗判断
+  events: 采集点记下的事件
+run:
+  label: 执行记录
+  change: 改动
+  apply: 方式
+  pr: PR
+  script: 脚本
+  by: 决定
+  results: 执行后的检查
+  fail: 没通过
+  events: 步骤
+  state:
+    done: 已生效
+    running: 进行中
+    failed: 失败
+library:
+  help: 像 feat 文档一样一篇篇整理项目的资料，指标 thread 刷新指标（例行评估、换指标版本）时读；从反馈整理的先待确认
+  none: 还没有资料库，在这个项目里新建第一个评估项时和能力清单一起整理
+  kind:
+    project: 项目文档
+    feedback: 从反馈整理
+    provided: 人提供
+  pending: 待确认
+  whole: 整个项目
+  usedBy: "{0} 读过"
+  add: 添加资料
+  addOk: 添加
+  title: 标题
+  url: 链接
+  body: 内容
+  from: 来源
+  path: 路径
+  byLabel: 整理
+  for: 适用于
+  confirm: 确认
+  usedLabel: 被这些指标评估读过
+  sources: 依据
+  refs: 这次评估读的资料
+exp:
+  ms: "{0}  [{1}, {2}]"
+  sdOf: σ {0}
+  seedsOf: "{0} 个"
+  minOf: "{0} 分"
+  control: 对照
+  confirm: 确认赢家
+  failedOf: "{0} 次失败"
+  doneOf: 跑完 {0} / {1}
+  runOf: "{0} · 种子 {1}"
+  retries: 重试 {0} 次
+  groups: 这晚的各组
+  pr: PR
+  declare: 基础信息与初始化
+  goalVersion: 版本
+  goalStatement: 改进什么
+  goalGood: 怎么判断有效
+  adoptWhen: 何时采用
+  stopWhen: 何时停
+  triggerOf: 定时 · 每晚 {0}
+  initStep: "{0}. {1}"
+  init:
+    goal: 基础信息
+    scope: 治理对象
+    run: 执行方式
+    rules: 好坏规约
+    design: 实验设计
+    feedback: 反馈接入
+    baseline: 基线与初步诊断
+    _: "{0}"
+  initOut:
+    goal: → G1
+    scope: → 范围
+    run: → C1
+    rules: → E1
+    design: → 第一晚的计划
+    feedback: → 能开跑的证据条件
+    baseline: → v1 + 基线周期
+    _: ""
+  thread: 去评估项 thread
+  resultMap: 结果字段映射
+  eCount: "{0} 个指标"
+  state:
+    running: 运行中
+    planned: 今晚
+    queued: 排队
+  err:
+    env: 环境失败
+    real: 失败（算结果）
+    step: 失败步骤
+  env:
+    commit: 代码版本
+    config: 配置
+    hw: 硬件
+    driver: 驱动 / 库
+    data: 数据
+  verdict:
+    baseline: 基线
+    keep: 保持
+    tune: 继续调整
+    rollback: 回退
+    sunset: 停止
+    insufficient: 证据不足
+  layer:
+    execution: 执行环境
+    harness: 实现（代码 / 变量）
+    rubric: 指标
+    observation: 样本 / 数据
+  plan:
+    by: 计划来源
+    seeds: 种子
+    window: 时间
+  planBy:
+    auto: agent 在允许范围内调整
+    approved: 你批准的计划
+    baseline: 基线
+    _: "{0}"
+  results: 各组结果（主指标均值 [95% 区间] · 种子间标准差 · 耗时）
+  conclusion: 结论
+  comparable: 和对照组 {0} 可比
+  noCompare: 没有对照（基线）
+  attribution: 归因
+  attr:
+    verdict: 结论
+    primary: 主要来自
+    assessed: 看过的层
+    notAssessed: 没看过的层（不等于排除）
+    competing: 还分不开的层
+    uncertainty: 不确定性
+    comparability: 可比方式
+    evidence: 依据
+    reasons: 原因
+  attrVerdict:
+    attributed: 能归因
+    unresolved: 说不清
+    insufficient: 证据不足
+    incomparable: 不可比
+    _: "{0}"
+  uncertainty:
+    interval: 有区间
+    power: 做过功效估计
+    not_estimable: 估不出
+    unknown: 未知
+    _: "{0}"
+  comparability:
+    unchanged: 指标没变
+    rejudge: 用新指标重新分析了旧产物
+    baseline_rebuild: 重建了基线
+    none: 没有重新判
+    _: "{0}"
+  predictions: 预测核对
+  predOf: 预测 {0} · 实际 {1}
+  directions: 方向（各分析成员）
+  disagree: 几个分析成员意见不一致，需要你判断
+  dirKind:
+    code: 改代码
+    variable: 调变量
+    metric: 改指标
+    goal: 改目标
+    discriminate: 区分实验
+    _: "{0}"
+  picked: 已采纳
+  expect: 预期 {0}
+  adopt: 采纳
+  cites: 引用：
+  asks: 要你补充的
+  pick:
+    info: 补充信息
+    addVar: 加实验变量
+    metric: 改指标
+    goal: 改目标
+    same: 今晚照旧
+  pickName:
+    direction: 采纳方向
+    info: 补充信息
+    addVar: 加实验变量
+    metric: 改指标
+    goal: 改目标
+    same: 今晚照旧
+    _: "{0}"
+  decided: "{1} 选了「{0}」 · {2}"
+  note: 说明
+  send: 发给迭代成员
+  events: 这晚发生的事
+  event:
+    failed: 失败
+    pushed: 已推送
+    retried: 已重试
+    rerun: 补跑
+    merged: 已合入
+    _: "{0}"
+  runs: 每次运行（{0}）
+  next:
+    decide: "{0} 周期 {1} 的结论出来了，等你选下一步；不处理今晚照当前计划跑"
+    running: "{0} 周期 {1} 正在跑；有失败会立即推给你，其余组照常"
+    ready: 初始化完成，都确认了；点「开始评估」，第一晚只跑基线
+    init: "{4}；提交后自动接着做依赖它的步骤{5}"
+    cancelled: 第 {1} 步的回复被中断了，点这一步的「重试」再 @ {4}；不依赖它的步骤照常往下做
+    paused: 已暂停：不会开跑，它引入的执行能力也停用了
+    prep: 还有 {2} 项等你确认，都确认了才能开始评估{5}
+    stale: 有 {2} 步依据的是改之前的版本，点「按新版本重做」按依赖顺序重新 @ 成员
+    executor: 执行方式还没接通，接通前不会开跑
+    planned: 下一个周期在 {3} 跑
+    _: ""
+  trend: "{0} · 每个周期取这个版本最好的一组 · 预测兑现 {1} / {2}"
+  trendLabel: 主指标趋势
+  prep:
+    default: 默认值
+    needYou: 等你
+    needYouOf: "{0} 项等你确认；不处理就按默认值先跑"
+    confirm: 确认
+    edit: 修改
+    agent: 让 agent 补
+    value: 内容
+    note: 或者写意见，让 agent 按意见重写这一条
+    recOf: 建议：{0}
+    decide:
+      explore: 探索
+      fixed: 固定
+      excluded: 排除
+      _: ""
+    can:
+      modifiable: 能改
+      partial: 部分能改
+      no: 这轮不改
+      unknown: 不知道能不能改
+      _: ""
+    state:
+      uninvestigated: 尚未调查
+      preparing: 正在准备
+      submitted: 已提交
+      confirmed: 已确认
+      cancelled: 回复被中断
+      stale: 过期
+      waiting: 等前面的步骤
+      queued: 排队
+  firstOf: ；可以先确认第 {0} 步，后面 {1} 步依赖它
+  doingOf: "{0} 在做第 {1} 步"
+  waitOnOf: 等第 {0} 步提交
+  depsOf: 依据第 {0} 步
+  unknownsOf: 还不知道：{0}
+  nextOf: 下一步：{0}
+  redo: 按新版本重做
+  byOf: "{0} 在处理"
+  retry: 重试
+  now:
+    version: 当前版本
+    versionOf: "{0} · {1}"
+    when: 什么时候跑
+    how: 怎么跑
+    metrics: 看哪些指标
+    later: 初始化后定
+    howLater:
+      pending: 你选了下一步后定
+      paused: 恢复后定
+      preparing: 初始化后定
+      _: 初始化后定
+    metricsOf: "{0}：{1}"
+    howOf: "{0} · 每组 {1} 个种子 · 执行能力 {2}"
+    whenOf:
+      preparing: 初始化完成后开始
+      ready: 点「开始评估」后，每晚 {0}
+      running: 正在跑：{1} 周期 {2}
+      soon: 马上开跑
+      pending: 等你决定后，今晚 {0}
+      paused: 已暂停
+      _: ""
+  executor: 执行方式（插件 MCP 代理）
+  ex:
+    mcp: MCP
+    state: 状态
+    probe: 试跑
+  exState:
+    none: 未接入
+    generating: 生成中
+    pending: 待确认
+    passed: 试跑通过
+    failed: 试跑失败
+    _: "{0}"
+  members: 成员
+  role:
+    prepare: 准备
+    execute: 执行
+    evaluate: 评估
+    analyze: 分析
+    iterate: 迭代
+    metrics: 指标
+    _: "{0}"
+  policyTitle: 策略
+  pol:
+    schedule: 运行时段
+    seeds: 每组种子
+    vars: 允许 agent 调的变量
+    auto: 审批
+    autoText: 改代码 / 指标 / 目标 / 执行方式要你批；范围内调变量 agent 自定
+  varOf: "{0}：{1}"
+  dir:
+    up: 越高越好
+    down: 越低越好
+    _: "{0}"
+reeval:
+  title: 重新评估
+  label: 理由
+  ok: 重新评估
+console:
+  loading: 加载中…
+  error: 加载失败
+  openSelected: 查看所选内容
+common:
+  save: 保存
+  delete: 删除

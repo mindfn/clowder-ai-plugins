@@ -1,0 +1,665 @@
+home:
+  title: Capability evolution
+  help: Keep collecting traces, evaluating, and iterating versions for each objective; changes go through approval cards
+panel: RSI
+project: Project
+projectPrefix: "Project: "
+nav:
+  caps: Available capabilities
+  library: Library
+  cards: To do
+objectives: Objectives
+now:
+  line: Running {0} · {1} · {2}
+  collecting: Collected {0} / {1}
+  locate: Locate
+state:
+  collecting: Collecting
+  pending: Awaiting decision
+  baseline: Baseline cycle
+  paused: Paused
+  exhausted: Evaluation limit reached
+  analyzing: Analyzing project
+  preparing: Preparing
+  retired: Retired
+  ready: Ready to start
+  stalled: Evaluation stalled
+  running: Running
+tab:
+  version: Versions
+  metrics: Metrics
+  collect: Collection
+step:
+  apply: Apply · {0}
+  collect: Collect
+  collectLive: Collect · In progress
+  eval: Evaluate · {1}
+  gov: Govern · {0}
+  cycles: "{0} cycles"
+evalResult:
+  stalled: No result submitted
+  tune: Keep tuning
+  rollback: Rollback recommended
+  keep: Keep
+  insufficient: Insufficient evidence
+  baseline: Baseline
+  proposal: Change proposed
+  switch: New version needed
+govResult:
+  stalled: No result submitted
+  evolve: Evolve
+  rollback: Roll back
+  pending: Awaiting decision
+  switch: Switch version
+  variable: Tune variables
+  metric: Change metrics
+  goal: Change goal
+  info: Add information
+  addVar: Add variables
+  same: Keep the plan
+applyResult:
+  done: Deployed
+  failed: Environment failures
+  _: "{0}"
+stepName:
+  apply: Apply
+  collect: Collect
+  eval: Evaluate
+  gov: Govern
+detail:
+  node: "{0}"
+  gov: "{0} · Governance"
+  step: "{0} · Cycle {1} · {2}"
+  mstep: "{0} · {1}"
+  change: What changed
+  parent: Based on
+  at: Started at
+  ec: Metrics · Collection
+mstep:
+  goVersion: Go to this version
+  cyclesOf: "{0} cycles · Kept {1} · Insufficient evidence {2} · Evolved {3} · Rolled back {4}"
+  looked: Cycles and evaluation results for each object version in this period
+  progress: "Until the next routine metric evaluation: {0} / {1} versions elapsed, {2} / {3} consecutive cycles unchanged"
+policy:
+  title: Policy
+  help: Unchanged settings inherit the project policy
+  overridden: "Policy: "
+  overrideOf: "{0} {1}"
+  inherit: Inherit ({0})
+  count: Trace count
+  days: Days
+  interval: Minimum interval
+  counter: High-confidence counterexamples
+  approval: Approval
+  everyN: Versions between evaluations
+  noChangeK: Consecutive unchanged cycles
+  eval: Evaluate
+  iterate: Iterate
+  metrics: Metrics
+  p:
+    count: "Trace count: "
+    days: "Days: "
+    interval: "Minimum interval: "
+    counter: "Counterexamples: "
+    approval: ""
+    everyN: "Every N versions: "
+    noChangeK: "Consecutive K cycles: "
+    eval: "Evaluate: "
+    iterate: "Iterate: "
+    metrics: "Metrics: "
+  group:
+    trigger: Triggers
+    approval: Approval
+    metricEval: Metric evaluation
+    members: Members
+approval:
+  manual: Manual approval
+  auto: Automatic execution
+dim:
+  o: Object
+  e: Metrics
+  c: Collection
+version:
+  ec: "{0} · {1}"
+  running: Running
+  current: Current
+  candidate: Candidate
+  external: External change
+  parent: Based on {0}
+  by: "{0} changed a shared unit"
+  cycles: Cycles for {0}
+change:
+  modify: "Change {0}: {1} → {2}"
+  add: Include {0}
+  remove: Remove {0}
+  enable: Enable {0}
+  disable: Disable {0}
+pred:
+  hit: Met
+  partial: Partly met
+  miss: Missed
+  pending: Awaiting check
+  expect: Predicted {0}
+decision:
+  stalled: No result submitted
+  baseline: Baseline
+  keep: Keep
+  insufficient: Insufficient evidence
+  evolve: Evolve
+  rollback: Roll back
+  pending: Awaiting decision
+  collecting: Collecting
+cycle:
+  pick: Cycle
+  nOf: Cycle {0}/{1}
+  n: Cycle {0}
+  merged: "{0} windows merged"
+  samples: "{0} traces"
+  card:
+    apply: Applied
+    skip: Skipped
+  none: No cycles yet
+  detail: "{0} · Cycle {1}"
+  reason: "Reason for skipping: {0}"
+  predictions: Prediction checks
+  metrics: Metric results
+window: "{0} – {1}"
+stage:
+  collect: Collect
+  eval: Evaluate
+  gov: Govern · {0}
+  name:
+    collect: Collect
+    eval: Evaluate
+    gov: Govern
+stageDetail: "{0} · Cycle {1} · {2}"
+triggerBy:
+  count: Trace threshold reached
+  counter: High-confidence counterexample threshold reached
+  days: Day threshold reached
+  none: Still collecting
+gov:
+  toOf: → {0}
+  cardOf: "Card: {0} ({1})"
+  candidate: "Skipped candidate: {0}"
+  pending: The card is awaiting your decision
+by:
+  human: Human
+  policy: Automatic policy
+collectVersion:
+  for: For {0}
+measure:
+  counter: Count
+  rate: Rate
+  semantic: Semantic judgment
+rule:
+  counter-zero: Zero tolerance
+  evidence-only: Evidence only
+trig:
+  counter: Trigger at ≥ {0} unique counterexamples
+  sample: Judge with ≥ {0} samples
+  weekly: Evaluate once a week
+metric:
+  add: Add metric
+  addName: Name
+  addHow: How to judge (criteria for the evaluation thread)
+  addOk: Add
+  lock: Lock
+  unlock: Unlock
+  locked: Locked
+  guard: Guardrail
+  kind:
+    structural: Structural
+    semantic: Semantic
+  none: No metrics yet
+  howOf: "{0} · {1} · {2}"
+metricVersion:
+  used: Used by {0}
+  counts: Locked {0} · Working {1}
+  diff: Added {0} · Removed {1} · Changed {2}
+card:
+  dialog: Cards awaiting decisions
+  title: "Evolve: {0} → {1}"
+  titleOf: "{0} · Evolve: {1} → {2}"
+  waiting: "A card awaits your decision: evolve {0} → {1}"
+  open: View
+  round: Card {0}, reevaluated with reasons
+  basis: Evidence and conclusion
+  proposal: Proposal
+  shared: "Shared with: {0}"
+  predictions: Predictions
+  collab: Collaboration result
+  apply: Start execution
+  reevaluate: Reevaluate
+  skip: Skip and start the next cycle
+apply:
+  direct: Apply directly
+  pr: PR
+  script: Script
+cur:
+  nowOf: "{0} traces (ladder {1}) · Evaluated {2} / {3} times"
+  none:
+    exhausted: Evaluation limit reached; no new cycles
+    retired: Retired; no new cycles
+    _: No cycle in progress
+  window: Window
+  samples: Samples
+  trigger: Trigger
+  coord: Coordinates
+  coordOf: "{0} × {1} × {2}"
+  cycle: Cycle
+  start: Started at
+  evals: Evaluations
+  evalsOf: "{0} / {1}"
+  merged: The previous cycle was skipped; this evaluation will merge {0} windows
+  ladder: Trace count
+  ladderOf: "{0} (ladder {1})"
+trigger:
+  group:
+    must: All required
+    any: Any one required
+  k:
+    interval: Minimum evaluation interval
+    count: Accumulated traces
+    counter: High-confidence counterexamples
+    days: Elapsed days
+  of: "{0} / {1}"
+  met: Met
+live: Structural metrics · This cycle
+awaiting: Predictions awaiting checks
+caps:
+  forOf: Added for “{0}”
+  off: Disabled
+  modify: Can modify
+  collect: Can collect / execute
+  env: Environment
+  usedBy: "In use by: {0}"
+  units: "{0} units"
+  until: Waiting for {0}
+  supported: Supported by host
+  unsupported: Not yet supported by host
+  open: View capabilities
+  none: No capability list yet; the project will be analyzed when its first objective is created
+  at: Analyzed in the project system thread at {0}, when “{1}” was created
+  help: An agent analyzes the project in its system thread when the first objective is created, listing what agents can collect and modify
+kind:
+  skill: Skill
+  mcp: MCP
+  plugin: Plugin
+  source: Source code
+  prompt: Prompt
+  hook: Hook
+  config: Configuration
+  segment: Hook segment
+setup:
+  analyzing: Analyze the project and list capabilities
+  preparing: Prepare units, metrics, and collection
+  ready: Review and start evaluation from the baseline cycle
+stall:
+  eval: No result was submitted within 30 minutes of assigning the evaluation thread, even after one reminder. Open the evaluation thread or retry once.
+  gov: The evaluation was submitted, but governance has not been submitted within 30 minutes of assigning the iteration thread, even after one reminder. Open the iteration thread or retry once.
+thread:
+  eval: Go to evaluation thread
+  iterate: Go to iteration thread
+  metrics: Go to metrics thread
+mtrig:
+  label: Metric-specific triggers
+  of:
+    counter: Unique counterexamples {0} / {1}
+    sample: Samples {0} / {1}
+    weekly: "{0} / {1} days since last evaluation"
+life:
+  start: Start evaluation
+  pause: Pause evaluation
+  resume: Resume evaluation
+  retry: Retry once
+  more: Add 10 evaluations
+todo:
+  jump: Open objective
+  stalled: No result submitted after one reminder
+  exhausted: Evaluation limit reached; stopped at the last evaluation
+  ready: Ready and waiting for you to start evaluation
+setupState:
+  on: In progress
+  done: Done
+new: New objective
+newName: Goal
+newOk: Create
+noObjectives: No objectives yet
+noObjectivesHint: This project has no objectives yet. Create one with what to improve and when to stop; an agent will read the project, draft execution and metrics in the objective thread, and list them for your confirmation.
+newExp:
+  help: The plugin creates an objective thread and initializes it in six steps, mentioning the member responsible for each step. Agents keep drafting; items needing your judgment appear on the objective page. The machine and time window are drafted in step 4 after the agent reviews the project.
+  statement: What to improve (one sentence)
+  statementDefault: Make training converge faster and more reliably
+  prepare: Who initializes (reviews and drafts)
+  evaluate: Who evaluates (judges metrics)
+  stopTarget: Stop when this target is reached
+  stopTargetDefault: Mean return ≥ 475
+  stopStall: Stop after this many cycles without improvement
+  stopRounds: Maximum cycles
+  stopHelp: Combine these conditions; stop at the first one reached. Leave a condition blank to omit it.
+  ok: Create and start initialization
+cards:
+  none: Nothing to do
+trace:
+  label: Collected traces · {0} total, showing the latest {1}
+  none: No traces collected yet
+  whereOf: "{0} · Cycle {1}"
+  counter: Counterexample
+  pass: Passed
+  at: Time
+  cat: Cat
+  where: Belongs to
+  c: Collection version
+  thread: Go to original thread
+  results: Structural metrics (judged individually)
+  noResults: No structural metrics; semantic metrics are judged over the full window during evaluation
+  events: Events recorded by collection points
+run:
+  label: Execution records
+  change: Change
+  apply: Method
+  pr: PR
+  script: Script
+  by: Decision
+  results: Checks after execution
+  fail: Failed
+  events: Steps
+  state:
+    done: Applied
+    running: In progress
+    failed: Failed
+library:
+  help: Organize project references as individual documents, like feature documents. The metrics thread reads them during routine evaluation and metric version changes. References compiled from feedback await confirmation.
+  none: No library yet; it is prepared with the capability list when the first objective is created
+  kind:
+    project: Project documents
+    feedback: Compiled from feedback
+    provided: Provided by a person
+  pending: Awaiting confirmation
+  whole: Whole project
+  usedBy: Read by {0}
+  add: Add reference
+  addOk: Add
+  title: Title
+  url: Link
+  body: Content
+  from: Source
+  path: Path
+  byLabel: Compiled by
+  for: Applies to
+  confirm: Confirm
+  usedLabel: Read by these metric evaluations
+  sources: Evidence
+  refs: References read for this evaluation
+exp:
+  ms: "{0}  [{1}, {2}]"
+  sdOf: σ {0}
+  seedsOf: "{0}"
+  minOf: "{0} min"
+  control: Control
+  confirm: Confirm winner
+  failedOf: "{0} failures"
+  doneOf: Completed {0} / {1}
+  runOf: "{0} · Seed {1}"
+  retries: "{0} retries"
+  groups: Groups for this night
+  pr: PR
+  declare: Basic information and initialization
+  goalVersion: Version
+  goalStatement: What to improve
+  goalGood: How to judge improvement
+  adoptWhen: When to adopt
+  stopWhen: When to stop
+  triggerOf: Scheduled · Every night {0}
+  initStep: "{0}. {1}"
+  init:
+    goal: Basic information
+    scope: Governed objects
+    run: Execution
+    rules: Success criteria
+    design: Experiment design
+    feedback: Feedback integration
+    baseline: Baseline and initial diagnosis
+    _: "{0}"
+  initOut:
+    goal: → G1
+    scope: → Scope
+    run: → C1
+    rules: → E1
+    design: → First-night plan
+    feedback: → Evidence conditions for starting
+    baseline: → v1 + Baseline cycle
+    _: ""
+  thread: Go to objective thread
+  resultMap: Result field mapping
+  eCount: "{0} metrics"
+  state:
+    running: Running
+    planned: Tonight
+    queued: Queued
+  err:
+    env: Environment failure
+    real: Failure (counts as a result)
+    step: Failed step
+  env:
+    commit: Code version
+    config: Configuration
+    hw: Hardware
+    driver: Driver / libraries
+    data: Data
+  verdict:
+    baseline: Baseline
+    keep: Keep
+    tune: Keep tuning
+    rollback: Roll back
+    sunset: Stop
+    insufficient: Insufficient evidence
+  layer:
+    execution: Execution environment
+    harness: Implementation (code / variables)
+    rubric: Metrics
+    observation: Samples / data
+  plan:
+    by: Plan source
+    seeds: Seeds
+    window: Time
+  planBy:
+    auto: Agent adjustments within allowed bounds
+    approved: Your approved plan
+    baseline: Baseline
+    _: "{0}"
+  results: Group results (primary metric mean [95% interval] · Standard deviation across seeds · Duration)
+  conclusion: Conclusion
+  comparable: Comparable with control group {0}
+  noCompare: No control group (baseline)
+  attribution: Attribution
+  attr:
+    verdict: Conclusion
+    primary: Main source
+    assessed: Layers assessed
+    notAssessed: Layers not assessed (not ruled out)
+    competing: Layers not yet distinguished
+    uncertainty: Uncertainty
+    comparability: Comparability method
+    evidence: Evidence
+    reasons: Reasons
+  attrVerdict:
+    attributed: Attributable
+    unresolved: Unresolved
+    insufficient: Insufficient evidence
+    incomparable: Not comparable
+    _: "{0}"
+  uncertainty:
+    interval: Interval available
+    power: Power estimated
+    not_estimable: Not estimable
+    unknown: Unknown
+    _: "{0}"
+  comparability:
+    unchanged: Metrics unchanged
+    rejudge: Old artifacts reanalyzed with new metrics
+    baseline_rebuild: Baseline rebuilt
+    none: Not rejudged
+    _: "{0}"
+  predictions: Prediction checks
+  predOf: Predicted {0} · Actual {1}
+  directions: Directions from analysis members
+  disagree: Analysis members disagree; your judgment is needed
+  dirKind:
+    code: Change code
+    variable: Tune variables
+    metric: Change metrics
+    goal: Change goal
+    discriminate: Discriminating experiment
+    _: "{0}"
+  picked: Adopted
+  expect: Expected {0}
+  adopt: Adopt
+  cites: "References: "
+  asks: Information needed from you
+  pick:
+    info: Add information
+    addVar: Add experiment variables
+    metric: Change metrics
+    goal: Change goal
+    same: Keep tonight as planned
+  pickName:
+    direction: Adopt direction
+    info: Add information
+    addVar: Add experiment variables
+    metric: Change metrics
+    goal: Change goal
+    same: Keep tonight as planned
+    _: "{0}"
+  decided: "{1} chose “{0}” · {2}"
+  note: Note
+  send: Send to iteration member
+  events: Events this night
+  event:
+    failed: Failed
+    pushed: Pushed
+    retried: Retried
+    rerun: Rerun
+    merged: Merged
+    _: "{0}"
+  runs: Individual runs ({0})
+  next:
+    decide: Results for {0} cycle {1} are ready; choose the next step. Tonight follows the current plan if you take no action.
+    running: "{0} cycle {1} is running. Failures are reported immediately; other groups continue."
+    ready: Initialization is complete and confirmed. Start evaluation; the first night runs only the baseline.
+    init: "{4}; steps depending on it continue automatically after submission{5}"
+    cancelled: The reply for step {1} was interrupted. Retry that step to mention {4} again; independent steps continue.
+    paused: "Paused: no new runs; capabilities introduced by this objective are disabled"
+    prep: "{2} items await your confirmation; all must be confirmed before evaluation starts{5}"
+    stale: "{2} steps used an older revision. Redo with the new revision to mention members in dependency order."
+    executor: Execution is not connected; no runs will start until it is ready
+    planned: The next cycle runs at {3}
+    _: ""
+  trend: "{0} · Best group for this version in each cycle · Predictions met {1} / {2}"
+  trendLabel: Primary metric trend
+  prep:
+    default: Default
+    needYou: Waiting for you
+    needYouOf: "{0} items await your confirmation; defaults are used if you take no action"
+    confirm: Confirm
+    edit: Edit
+    agent: Ask agent to complete
+    value: Content
+    note: Or leave a note for the agent to rewrite this item
+    recOf: "Suggested: {0}"
+    decide:
+      explore: Explore
+      fixed: Fixed
+      excluded: Exclude
+      _: ""
+    can:
+      modifiable: Can modify
+      partial: Partly modifiable
+      no: Unchanged this round
+      unknown: Modifiability unknown
+      _: ""
+    state:
+      uninvestigated: Not investigated
+      preparing: Preparing
+      submitted: Submitted
+      confirmed: Confirmed
+      cancelled: Reply interrupted
+      stale: Outdated
+      waiting: Waiting for earlier steps
+      queued: Queued
+  firstOf: ; confirm step {0} first; {1} later steps depend on it
+  doingOf: "{0} is working on step {1}"
+  waitOnOf: Waiting for step {0} to be submitted
+  depsOf: Based on step {0}
+  unknownsOf: "Still unknown: {0}"
+  nextOf: "Next: {0}"
+  redo: Redo with new revision
+  byOf: "{0} is working on this"
+  retry: Retry
+  now:
+    version: Current version
+    versionOf: "{0} · {1}"
+    when: When it runs
+    how: How it runs
+    metrics: Metrics to check
+    later: Set after initialization
+    howLater:
+      pending: Set after you choose the next step
+      paused: Set after resuming
+      preparing: Set after initialization
+      _: Set after initialization
+    metricsOf: "{0}: {1}"
+    howOf: "{0} · {1} seeds per group · Execution capability {2}"
+    whenOf:
+      preparing: Starts after initialization
+      ready: Every night {0} after you start evaluation
+      running: "Running: {1} cycle {2}"
+      soon: Starting soon
+      pending: Waiting for your decision, tonight {0}
+      paused: Paused
+      _: ""
+  executor: Execution (plugin MCP proxy)
+  ex:
+    mcp: MCP
+    state: State
+    probe: Trial run
+  exState:
+    none: Not connected
+    generating: Generating
+    pending: Awaiting confirmation
+    passed: Trial passed
+    failed: Trial failed
+    _: "{0}"
+  members: Members
+  role:
+    prepare: Prepare
+    execute: Execute
+    evaluate: Evaluate
+    analyze: Analyze
+    iterate: Iterate
+    metrics: Metrics
+    _: "{0}"
+  policyTitle: Policy
+  pol:
+    schedule: Run window
+    seeds: Seeds per group
+    vars: Variables the agent may tune
+    auto: Approval
+    autoText: Code, metric, goal, and execution changes need your approval; agents may tune variables within the allowed bounds
+  varOf: "{0}: {1}"
+  dir:
+    up: Higher is better
+    down: Lower is better
+    _: "{0}"
+reeval:
+  title: Reevaluate
+  label: Reason
+  ok: Reevaluate
+console:
+  loading: Loading…
+  error: Failed to load
+  openSelected: View selection
+common:
+  save: Save
+  delete: Delete

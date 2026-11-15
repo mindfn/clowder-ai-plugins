@@ -1,0 +1,20 @@
+.rsi-lin-box{flex:none;max-height:calc(8*var(--row-h-1))}
+.rsi-lin{--rsi-step:calc(14*var(--unit));--rsi-mid:calc(6*var(--unit));display:grid;width:max-content;min-width:100%;padding-block:var(--sp-xs)}
+.rsi-lin-row{position:relative;display:flex;align-items:center;gap:var(--sp-s);min-height:var(--row-h-1);padding-inline-start:calc(var(--d)*var(--rsi-step));white-space:nowrap}
+.rsi-lin-rail,.rsi-lin-elbow,.rsi-lin-down{position:absolute;pointer-events:none;border:0 solid var(--line-strong)}
+.rsi-lin-rail{top:0;bottom:0;left:calc((var(--l) - 1)*var(--rsi-step) + var(--rsi-mid));border-left-width:var(--sp-hairline)}
+.rsi-lin-elbow{top:0;height:50%;left:calc((var(--l) - 1)*var(--rsi-step) + var(--rsi-mid));width:calc(var(--rsi-step) - var(--rsi-mid));border-left-width:var(--sp-hairline);border-bottom-width:var(--sp-hairline)}
+.rsi-lin-elbow:not(.last)::after{content:"";position:absolute;top:100%;left:calc(-1*var(--sp-hairline));height:100%;border-left:var(--sp-hairline) solid var(--line-strong)}
+.rsi-lin-down{top:50%;bottom:0;left:calc((var(--l) - 1)*var(--rsi-step) + var(--rsi-mid));border-left-width:var(--sp-hairline)}
+.rsi-lin-v{position:relative;min-width:calc(2*var(--rsi-mid));justify-content:center;font-family:var(--font-mono)}
+.rsi-lin-v[data-state="current"]{background:color-mix(in srgb,var(--ok) var(--d-wash),var(--bg-field));color:var(--ok)}
+.rsi-lin-v[data-state="candidate"]{background:transparent;outline:var(--sp-hairline) dashed var(--line-strong);color:var(--fg-faint)}
+.rsi-lin-v[data-state="external"]{background:color-mix(in srgb,var(--info) var(--d-wash),var(--bg-field));color:var(--info)}
+.rsi-lin-tail{display:inline-flex;align-items:center;gap:var(--sp-s);color:var(--fg-muted);font-size:var(--fs-s)}
+
+.rsi-trend{width:100%;max-width:calc(140*var(--unit));height:auto;flex:none}
+.rsi-trend polyline{fill:none;stroke:var(--info);stroke-width:2}
+.rsi-trend circle{fill:var(--info)}
+.rsi-trend circle.moved{fill:var(--bg-field);stroke:var(--info);stroke-width:2}
+.rsi-trend text{font-size:var(--fs-s);fill:var(--fg);text-anchor:middle;font-family:var(--font-mono)}
+.rsi-trend text.axis{fill:var(--fg-muted)}
