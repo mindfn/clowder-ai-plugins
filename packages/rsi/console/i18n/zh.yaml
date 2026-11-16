@@ -591,6 +591,7 @@ exp:
   firstOf: ；可以先确认第 {0} 步，后面 {1} 步依赖它
   doingOf: "{0} 在做第 {1} 步"
   doingAlso: "，{0} 在做第 {1} 步"
+  wakeAgain: 重新叫醒
   waitOnOf: 等第 {0} 步提交
   depsOf: 依据第 {0} 步
   unknownsOf: 还不知道：{0}

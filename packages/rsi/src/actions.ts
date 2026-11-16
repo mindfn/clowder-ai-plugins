@@ -155,7 +155,9 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       } else {
         const section = body.k as Section;
         if (!d.plan.some((p) => p.k === section)) return { error: 'Initialization step not found', status: 404 };
-        if (d.exec[section]?.state === 'started') return { error: 'Initialization step is still running' };
+        // A step still counts as running when the member's turn ended without a submission and the host's turn events were lost;
+        // the page's 重新叫醒 (force) dispatches it again — a submission from the old dispatch is then rejected as out of date.
+        if (d.exec[section]?.state === 'started' && body.force !== true && body.force !== 'true') return { error: 'Initialization step is still running' };
         delete d.exec[section];
         if (d.steps[section]?.stale) d.steps[section]!.redo = true;
       }

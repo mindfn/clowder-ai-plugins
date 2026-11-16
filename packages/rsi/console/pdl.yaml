@@ -754,18 +754,33 @@ views:
                     - $.exp.next.by.1.i
                 _: ""
         action:
-          type: button
-          label: t:rsi.now.locate
-          act: plugSet
-          args:
-            k: selO
-            also:
-              tab: version
-            v:
-              of: $.exp.next.go
-              slice:
-                - 8
-          when: $.exp.next.go
+          type: stack
+          items:
+            - type: button
+              label: t:rsi.now.locate
+              act: plugSet
+              args:
+                k: selO
+                also:
+                  tab: version
+                v:
+                  of: $.exp.next.go
+                  slice:
+                    - 8
+              when: $.exp.next.go
+            - type: button
+              label: t:rsi.exp.wakeAgain
+              act: plugin
+              args:
+                request: initRetry
+                k: $.exp.next.by.0.k
+                force: "true"
+              disabled: $.pending
+              when:
+                of: $.exp.next.k
+                map:
+                  init: true
+                  _: false
       - type: each
         from:
           - {}
@@ -5142,6 +5157,7 @@ requests:
     body:
       op: initRetry
       k: "@k"
+      force: "@force"
   prep:
     path: rsi/act
     method: POST

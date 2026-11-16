@@ -137,3 +137,14 @@ test('何时停 is one setting: a target must read "metric comparison number"; e
   assert.equal(stopItem(s).value, '达到「accuracy ≥ 0.5」并复验稳定，或用满 4 个周期');
   assert.equal((await f.act({ op: 'stop', objective: id, target: '准确率高一点' })).status, 400);
 });
+
+test('a step that still counts as running is dispatched again only on an explicit wake-again', async () => {
+  const f = fixture(); await f.seed();
+  const id = await f.newObjective();
+  const [k, before] = Object.entries((await f.read()).experiments[id].exec).find(([, x]) => x.state === 'started');
+  assert.equal((await f.act({ op: 'initRetry', objective: id, k })).status, 400);
+  assert.equal((await f.act({ op: 'initRetry', objective: id, k, force: 'true' })).status, 200);
+  const after = (await f.read()).experiments[id].exec[k];
+  assert.equal(after.state, 'started');
+  assert.notEqual(after.id, before.id);
+});
