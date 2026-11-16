@@ -20,7 +20,7 @@ export function fixture() {
     },
   };
   const start = () => plugin.create().start({ pluginInstanceId: 'rsi-test', storage, dataPath: '/tmp/rsi-fixture', log() {},
-    threads: { async list() { return []; }, async get() { return null; }, async create() { throw new Error('demo must not create threads'); } },
+    threads: { async list(options) { if (!(options.limit >= 1 && options.limit <= 50)) throw new TypeError('limit must be an integer in 1..50'); return []; }, async get() { return null; }, async create() { throw new Error('demo must not create threads'); } },
     messaging: { async subscribe() {}, async send() { throw new Error('demo must not send'); } } });
   const invoke = async (name, request, options = {}) => {
     const { userId = 'owner-a', operation = name === 'view' ? 'read' : 'write', instanceId = 'rsi-test', active = true, assertCurrent = async () => {} } = options;
