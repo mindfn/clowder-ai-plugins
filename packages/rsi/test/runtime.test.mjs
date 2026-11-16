@@ -89,7 +89,7 @@ async function fixture(t) {
       const task = await tool('task', {}, execution.by, objective.thread);
       const step = task.steps.find((s) => s.section === section);
       assert.ok(step?.ask); assert.ok(step.items.every((i) => i.meaning && i.format && i.example));
-      const result = await tool('submit', { step: step.step, items: step.items.filter((i) => !i.userOwned).map((i) => ({ id: i.id, value: `Observed ${i.title}` })),
+      const result = await tool('submit', { step: step.step, items: (step.examples ? step.examples.map((x) => ({ id: `own-${x.id}`, title: `Own ${x.title}` })) : step.items.filter((i) => !i.userOwned)).map((i) => ({ id: i.id, title: i.title, value: `Observed ${i.title}` })),
         unknowns: '', next: '', ...(section === 'run' ? { window: options.window || '20:00–08:00' } : {}), ...(section === 'rules' ? { metrics: options.metrics || { version: 'E1', items: [{ id: 'score', name: 'Score', how: 'metrics.score', dir: 'up' }] } } : {}),
         ...(section === 'design' ? { upcoming: plan } : {}) }, execution.by, objective.thread);
       assert.equal(result.ok, true, JSON.stringify(result));
@@ -147,10 +147,12 @@ test('tools enforce caller, dependencies, complete input and owner CAS without d
   assert.equal((await f.tool('submit', {step:1,items}, 'cat-b5ddoo9l', o.thread)).ok, true);
   const prepare = await f.tool('task', {}, 'codex', o.thread);
   const scope = prepare.steps[0];
-  assert.equal((await f.tool('submit',{step:2,items:scope.items.filter((i)=>!i.userOwned).map((i)=>({id:i.id,value:'Scope'}))},'codex',o.thread)).ok,true);
+  assert.deepEqual(scope.items, []); assert.ok(scope.itemsAreYours && scope.examples.length);
+  { const r = await f.tool('submit',{step:2,items:scope.examples.map((x)=>({id:`own-${x.id}`,title:`Own ${x.title}`,value:'Scope'}))},'codex',o.thread); assert.equal(r.ok,true); }
+  assert.ok((await f.read()).experiments[o.id].prep.filter((p)=>p.section==='scope').every((p)=>p.title.startsWith('Own ') && p.state==='submitted'));
   const rules = await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
   assert.ok(rules.steps[0].deps.every((d)=>d.version===1 && d.items.length));
-  const invalidGuard = await f.tool('submit', {step:4, items:rules.steps[0].items.map((i)=>({id:i.id,value:'metric'})), metrics:{version:'E1',items:[{id:'score',name:'Score',how:'score',dir:'up'},{id:'cost',name:'Cost',how:'cost',dir:'down',guard:true}]}}, 'cat-b5ddoo9l', o.thread);
+  const invalidGuard = await f.tool('submit', {step:4, items:rules.steps[0].examples.map((x)=>({id:`own-${x.id}`,title:`Own ${x.title}`,value:'metric'})), metrics:{version:'E1',items:[{id:'score',name:'Score',how:'score',dir:'up'},{id:'cost',name:'Cost',how:'cost',dir:'down',guard:true}]}}, 'cat-b5ddoo9l', o.thread);
   assert.match(invalidGuard.error, /finite threshold/);
   assert.equal((await f.read()).experiments[o.id].steps.rules, undefined);
   await f.http('POST',{op:'prep',objective:o.id,id:'cp-good',action:'edit',note:'',value:'New criterion'},{project:f.project});
@@ -266,7 +268,7 @@ test('stop kills the owned process and restart restores subscriptions with faile
 test('preflight failure cannot complete step 3; retry probes again before accepting its submission', async (t) => {
   const f=await fixture(t),o=await f.create();
   let task=await f.tool('task',{},'codex',o.thread);
-  const items=(step)=>step.items.filter((i)=>!i.userOwned).map((i)=>({id:i.id,value:'Observed execution environment'}));
+  const items=(step)=>(step.examples?step.examples.map((x)=>({id:`own-${x.id}`,title:`Own ${x.title}`})):step.items.filter((i)=>!i.userOwned)).map((i)=>({id:i.id,title:i.title,value:'Observed execution environment'}));
   assert.equal((await f.tool('submit',{step:2,items:items(task.steps[0])},'codex',o.thread)).ok,true);
   task=await f.tool('task',{},'codex',o.thread);
   assert.equal(task.steps[0].step,3);

@@ -41,10 +41,12 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
       items: d.prep.filter((item) => item.section === p.k).map((item) => ({ id: item.id, title: item.title, meaning: item.title,
         value: item.value, userOwned: !!item.mine, format: 'value: string; facts?: [{k:string,v:string}]; can?: string; rec?: explore|fixed|excluded; tag?: string',
         example: template.prep.find((p) => p.id === item.id)?.value || '填写项目中的观察、依据和建议。' })),
+      ...(d.objective.projectPath && p.k !== 'goal' ? { itemsAreYours: '这一步的条目由你按这个项目来定：每条自己起 id（小写、短横线）和 title，按项目实际增删；重做时没再提交的条目会被去掉。下面 examples 是另一个项目（CartPole 强化学习）的写法，只看结构，不要照抄名字。',
+        examples: template.prep.filter((x) => x.section === p.k).map((x) => ({ id: x.id, title: x.title, value: x.value })) } : {}),
       deps: p.deps.map((k) => ({ step: d.plan.findIndex((p) => p.k === k) + 1, section: k, version: d.steps![k]!.rev, items: d.prep.filter((item) => item.section === k) })),
       ...(p.k === 'run' ? { window: '每晚 20:00–08:00', executor: '先用 rsi.executor 登记 preflight/submit/collect 命令；preflight 通过且本步 items 已提交后才完成。' } : {}),
       ...(p.k === 'rules' ? { metrics: { version: 'E1', items: [{ id: 'score', name: '得分', how: 'metrics.json 的 score', dir: 'up', unit: '分', locked: true, guard: false }] } } : {}),
-      ...(p.k === 'design' || p.k === 'baseline' ? { upcoming: { groups: [{ id: 'control', label: '对照', vars: {}, control: true }, { id: 'change', label: '一个改动', vars: { learning_rate: 0.001 } }], seeds: [11, 23] } } : {}) };
+      ...(p.k === 'design' || p.k === 'baseline' ? { upcoming: { groups: [{ id: 'control', label: '对照', vars: {}, control: true }, { id: 'change', label: '一个改动', vars: { '<配置里的键>': '<新取值>' } }], seeds: [11, 23] } } : {}) };
   });
   const evaluate = d.members.find((m) => m.role === 'evaluate')?.catId === ctx.catId && d.rounds.find((r: Data) => r.state === 'evaluating');
   const version = d.members.find((m) => m.role === 'prepare')?.catId === ctx.catId && d.versionRequest;
@@ -99,15 +101,16 @@ export function toolAction(state: RsiState, method: string, input: Data, ctx: To
   }
   if (method !== 'rsi.submit') return { error: 'Unknown RSI tool' };
   const section = currentStep(d, input);
+  const own = !!d.objective.projectPath && section !== 'goal';
   if (!section || !claimed(d, section, ctx)) return { error: 'Call rsi.task for the current step; dependencies or execution changed', status: 409 };
   if (!Array.isArray(input.items) || !input.items.length || input.items.some((p: unknown) => !record(p) || !text(p.id) || !text(p.value)
     || p.facts !== undefined && (!Array.isArray(p.facts) || p.facts.some((f: unknown) => !record(f) || !text(f.k) || typeof f.v !== 'string'))
     || p.rec !== undefined && !['explore', 'fixed', 'excluded'].includes(p.rec)
     || p.can !== undefined && !text(p.can) || p.tag !== undefined && !text(p.tag))
     || new Set(input.items.map((p: Data) => p.id)).size !== input.items.length
-    || input.items.some((p: Data) => !d.prep.some((x) => x.section === section && x.id === p.id))
-    || d.prep.some((p) => p.section === section && !p.mine && !input.items.some((x: Data) => x.id === p.id))
-    || input.unknowns !== undefined && typeof input.unknowns !== 'string' || input.next !== undefined && typeof input.next !== 'string') return { error: 'Submit all step items with non-empty values and valid facts/rec/can/tag' };
+    || input.items.some((p: Data) => !d.prep.some((x) => x.section === section && x.id === p.id) && (!own || !text(p.title) || d.prep.some((x) => x.id === p.id)))
+    || d.prep.some((p) => p.section === section && !p.mine && !own && !input.items.some((x: Data) => x.id === p.id))
+    || input.unknowns !== undefined && typeof input.unknowns !== 'string' || input.next !== undefined && typeof input.next !== 'string') return { error: 'Submit all step items with non-empty values and valid facts/rec/can/tag; in a real project a new item needs its own id and a title' };
   if (section === 'run' && input.window !== undefined && !windowMinutes(input.window)) return { error: 'Provide a window such as 20:00–08:00' };
   if (input.goal !== undefined && !record(input.goal)) return { error: 'Invalid goal' };
   if (input.docs !== undefined && (!Array.isArray(input.docs) || input.docs.some((doc: unknown) => !record(doc) || !text(doc.id) || !text(doc.title) || !text(doc.body) || !['project', 'provided', 'feedback'].includes(doc.kind)))) return { error: 'Docs require id, title, body and kind' };

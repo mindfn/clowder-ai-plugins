@@ -106,15 +106,17 @@ export function submitInitStep(state: RsiState, id: string, submission: InitSubm
   const d = state.experiments[id], section = submission.section, plan = d?.plan.find((p) => p.k === section);
   const execution = d?.exec?.[section];
   if (!plan || !execution || execution.state !== 'started' || execution.id !== submission.executionId) return { error: 'Initialization execution not found' };
-  if (!Array.isArray(submission.items) || !submission.items.length || submission.items.some((p) => p.section !== section || typeof p.id !== 'string' || typeof p.value !== 'string')
-    || d.prep.some((p) => p.section === section && !p.mine && !submission.items.some((x) => x.id === p.id))) return { error: 'Submit all items for this step' };
+  const real = !!d?.objective.projectPath;
+  if (!Array.isArray(submission.items) || !submission.items.length || submission.items.some((p) => p.section !== section || typeof p.id !== 'string' || typeof p.value !== 'string'
+    || (real && !d.prep.some((x) => x.id === p.id) && (typeof p.title !== 'string' || !p.title.trim())))
+    || d.prep.some((p) => p.section === section && !p.mine && (!real || p.section === 'goal') && !submission.items.some((x) => x.id === p.id))) return { error: 'Submit all items for this step; a new item needs a title' };
   const old = d.steps?.[section];
   const moved = plan.deps.some((k) => !d.steps?.[k] || d.steps[k]!.stale || d.steps[k]!.rev !== execution.base[k]);
   const config = RSI_CP_INIT.find((p) => p.section === section)!;
   const items = submission.items.map((p) => {
     const prior = d.prep.find((x) => x.id === p.id);
     if (prior?.mine) return prior;
-    const human = config.human?.includes(p.id) || p.neededFrom === 'human';
+    const human = config.human?.includes(p.id) || p.neededFrom === 'human' || (real && section !== 'goal' && !!config.human?.length);
     return { ...p, state: human ? 'submitted' as const : 'confirmed' as const, neededFrom: human ? 'human' as const : null, by: execution.by, at: now, decision: undefined };
   });
   d.prep = d.prep.filter((p) => p.section !== section).concat(items, d.prep.filter((p) => p.section === section && p.mine && !items.some((x) => x.id === p.id)));
@@ -177,6 +179,8 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   d.plan = RSI_CP_INIT.map((s) => ({ k: s.section, role: s.role, deps: [...s.deps] }));
   d.executor.state = 'none';
   d.prep = d.prep.map((p) => ({ ...p, value: '', state: 'uninvestigated', by: '', neededFrom: null, at: null, facts: null, can: null, rec: null, tag: null }));
+  // A real project's items are the members' own (they name, add and drop them); only the goal section's questions are fixed.
+  if (body.projectPath) d.prep = d.prep.filter((p) => p.section === 'goal');
   for (const role of ['prepare', 'evaluate']) Object.assign(d.members.find((m) => m.role === role)!, { catId: body[role], name: (Array.isArray(body.cats) && body.cats.find((c: Data) => c.id === body[role])?.name) || body[role], model: '' });
   const goal = d.prep.find((p) => p.id.endsWith('-goal'))!;
   Object.assign(goal, { value: body.statement, state: 'confirmed', by: '你', mine: true, at: now });
