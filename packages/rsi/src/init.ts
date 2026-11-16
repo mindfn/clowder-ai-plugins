@@ -170,7 +170,7 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   else d.prep.push({ id: `${id}-stop`, section: 'goal', title: '何时停', value: stop, state: 'confirmed', neededFrom: null, mine: true, by: '你', at: now });
   state.experiments[id] = d;
   state.objectives[project].push({ id, name: body.statement, parent: null, state: 'preparing', mode: 'exp', trigger: '', running: null, cycle: null, prediction: null, locked: 0 });
-  enqueue(state, d, 'createThread', { project, title: `能力进化 · ${body.statement}` });
+  enqueue(state, d, 'createThread', { project, title: `RSI · ${body.statement}` });
   message(state, d, now, `新评估项：${body.statement}`, `何时停：${stop}。\n\n@${body.prepare} 负责准备；@${body.evaluate} 负责评估。初始化七步，按依赖往下做。`, 'goal');
   kick(state, id, now);
   return state.experiments[id].objective;

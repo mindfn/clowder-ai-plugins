@@ -1,7 +1,7 @@
 home:
-  title: Capability evolution
+  title: RSI capability evolution
   help: Keep collecting traces, evaluating, and iterating versions for each objective; changes go through approval cards
-panel: RSI
+panel: RSI capability evolution
 project: Project
 projectPrefix: "Project: "
 nav:
