@@ -119,6 +119,8 @@ test('host projects, current-thread dialog selection, real threads and exact wak
   assert.equal(home.projects.length, 7);
   const objective = await f.create();
   assert.equal(objective.result.act, 'thread');
+  // A woken member is told the RSI tools are reached through plugin_call, with the exact arguments.
+  assert.ok(f.sends.some((x) => x.wake && x.payload.elements[0].payload.text.includes('plugin_call({ pluginId: "official.rsi", contributionId: "rsi.task", toolName: "rsi.task", arguments: {} })')));
   assert.equal(f.threads.at(-1).projectRef, f.project);
   assert.deepEqual(f.threads.at(-1).participants, ['codex', 'cat-b5ddoo9l']);
   assert.equal((await f.read()).experiments[objective.id].objective.projectPath, f.project);

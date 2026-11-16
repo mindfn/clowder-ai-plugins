@@ -27,6 +27,12 @@ function executionEvents(state: import('./types.js').RsiState, d: Experiment) {
   }
 }
 
+// How a woken member calls the RSI tools: they are plugin tools reached through plugin_call (lazily loaded, so search for it);
+// a member that could not find it once read its credential file and called the host by hand.
+export const AGENT_HOW = '先用 plugin_call 读取当前任务和依据版本：plugin_call({ pluginId: "official.rsi", contributionId: "rsi.task", toolName: "rsi.task", arguments: {} })。'
+  + 'rsi.submit、rsi.executor、rsi.conclude、rsi.version 也都经 plugin_call 调用（contributionId 和 toolName 都写工具名）。'
+  + 'plugin_call 不在一开始的工具里时，先按名字搜 plugin_call；不要读凭据文件自己请求宿主接口。';
+
 export function createRuntime(host: RsiHost) {
   let stopped = false, tail = Promise.resolve();
   const runs = createRuns(host, flush);
@@ -54,7 +60,7 @@ export function createRuntime(host: RsiHost) {
           await retain(host.storage, key, (next) => { mark(next, entry.id); });
           continue;
         }
-        const content = [entry.message?.title, entry.kind === 'agent' ? '先调用 rsi.task 读取当前任务和依据版本。' : '', entry.message?.body, entry.message?.ask].filter(Boolean).join('\n\n');
+        const content = [entry.message?.title, entry.kind === 'agent' ? AGENT_HOW : '', entry.message?.body, entry.message?.ask].filter(Boolean).join('\n\n');
         const sent = await host.messaging.send({ threadId: d.objective.thread, idempotencyKey: entry.id,
           ...(entry.kind === 'agent' && !entry.inTurn ? { wake: { catId: entry.member, exact: true as const } } : {}),
           payload: { provenance: { epistemicStatus: entry.kind === 'agent' ? 'user_intent' : 'observation' },
