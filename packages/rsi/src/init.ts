@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createFixtures, RSI_CP_INIT } from './fixtures.js';
-import { windowMinutes } from './schedule.js';
+import { timeRange, windowMinutes } from './schedule.js';
 import { summaryOf } from './data.js';
 import type { Data, Experiment, InitExecution, OutboxEntry, PrepItem, RsiState, Section } from './types.js';
 
@@ -141,9 +141,9 @@ export function submitInitStep(state: RsiState, id: string, submission: InitSubm
     if (at < 0) state.library[project].push(value); else state.library[project][at] = value;
   }
   if (submission.executor?.state === 'passed') {
-    summaryOf(state, id)!.trigger = d.policy.schedule.window;
+    summaryOf(state, id)!.trigger = timeRange(d.policy.schedule.window);
     const capability = state.groups[project].find((g) => g.forObjective === id);
-    const value = { id: `exec-${id}`, side: 'collect', kind: 'mcp', name: `执行 MCP ${d.executor.mcp}`, where: d.executor.ops.map((o: Data) => o.op).join(' / ') + ' · 试跑通过', for: d.objective.name, forObjective: id };
+    const value = { id: `exec-${id}`, side: 'collect', kind: 'mcp', name: `执行 MCP ${d.executor.mcp}`, where: d.executor.ops.map((o: Data) => o.op).join(' / ') + ' · 试跑通过', for: d.objective.name, users: d.objective.name, forObjective: id };
     if (capability) Object.assign(capability, value); else state.groups[project].push(value);
   }
   kick(state, id, now);

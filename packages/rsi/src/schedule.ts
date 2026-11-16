@@ -1,5 +1,8 @@
 import type { Data } from './types.js';
 
+// The time range of a window ("每晚 20:00–08:00" → "20:00–08:00"); the page says 每晚 itself.
+export const timeRange = (w: unknown) => typeof w === 'string' ? /\d{1,2}:\d{2}\s*[–-]\s*\d{1,2}:\d{2}/.exec(w)?.[0] || w : w;
+
 export function windowMinutes(value: unknown): number[] | null {
   if (typeof value !== 'string') return null;
   const match = /(\d{2}):(\d{2})\s*[–—\-~至]\s*(\d{2}):(\d{2})/.exec(value);

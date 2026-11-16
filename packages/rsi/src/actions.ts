@@ -53,6 +53,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       for (let more = true; more;) { more = false; for (const x of list) if (gone.has(x.parent) && !gone.has(x.id)) { gone.add(x.id); more = true; } }
       state.objectives[owner] = list.filter((x) => !gone.has(x.id));
       for (const x of gone) { delete state.experiments[x]; delete state.details[x]; }
+      state.groups[owner] = (state.groups[owner] || []).filter((g) => !gone.has(g.forObjective));
       state.outbox = state.outbox.filter((e) => !gone.has(e.objective));
       state.library[owner] = (state.library[owner] || []).flatMap((doc) => {
         const rest = (doc.objectives || []).filter((x: string) => !gone.has(x));

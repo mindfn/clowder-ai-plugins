@@ -270,7 +270,10 @@ test('a real objective whose stop target names a metric needs that metric in ste
   const f = await fixture(t), o = await f.create({ target: 'accuracy ≥ 0.45' });
   await assert.rejects(f.initialize(o), /指标「accuracy」不在量尺里/);
   const g = await fixture(t), p = await g.create({ target: 'accuracy ≥ 0.45' });
-  await g.initialize(p, undefined, { metrics: { version: 'E1', items: [{ id: 'accuracy', name: 'Accuracy', how: 'metrics.json 的 accuracy', dir: 'up', guard: false }] } });
+  await g.initialize(p, undefined, { window: '每晚 20:00–08:00', metrics: { version: 'E1', items: [{ id: 'accuracy', name: 'Accuracy', how: 'metrics.json 的 accuracy', dir: 'up', guard: false }] } });
+  const s = await g.read(), objective = s.objectives[g.project].find((x) => x.id === p.id);
+  assert.equal(objective.trigger, '20:00–08:00');
+  assert.equal(s.groups[g.project].find((x) => x.forObjective === p.id).users, objective.name);
 });
 
 test('deleting an objective kills its run and removes its runs folder, data, pending messages and cycle notes; other objectives keep running', async (t) => {
@@ -288,6 +291,7 @@ test('deleting an objective kills its run and removes its runs folder, data, pen
   assert.equal(s.experiments[o.id], undefined);
   assert.ok(!Object.values(s.objectives).flat().some((x) => x.id === o.id));
   assert.ok(!s.outbox.some((e) => e.objective === o.id));
+  assert.ok(!(s.groups[f.project] || []).some((g) => g.forObjective === o.id));
   assert.deepEqual(s.library[f.project].filter((d) => [`${o.id}-cycle-1`, 'shared'].includes(d.id)).map((d) => [d.id, d.objectives]), [['shared', ['other']]]);
   await assert.rejects(access(join(f.project, 'runs', o.id)));
   assert.equal((await f.http('POST', { op: 'delete', objective: o.id }, { project: f.project })).status, 404);

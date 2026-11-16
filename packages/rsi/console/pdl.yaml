@@ -3310,7 +3310,7 @@ views:
       - type: empty
         icon: search
         text: t:rsi.caps.none
-        when: "!$.caps.analysis"
+        when: "!$.caps.listed"
         action:
           type: each
           from: $.home.projects
@@ -4605,7 +4605,7 @@ views:
         arg: project
       - id: dlg-name
         label: t:rsi.newExp.statement
-        value: t:rsi.newExp.statementDefault
+        placeholder: t:rsi.newExp.statementHint
         req: true
         arg: statement
       - id: dlg-prepare
@@ -4896,6 +4896,7 @@ rows:
             t: rsi.caps.usedBy
             args:
               - "@users"
+          when: "@users"
 requests:
   home:
     path: rsi/view

@@ -328,9 +328,9 @@ newOk: Create
 noObjectives: No objectives yet
 noObjectivesHint: This project has no objectives yet. Create one with what to improve and when to stop; an agent will read the project, draft execution and metrics in the objective thread, and list them for your confirmation.
 newExp:
-  help: The plugin creates an objective thread and initializes it in six steps, mentioning the member responsible for each step. Agents keep drafting; items needing your judgment appear on the objective page. The machine and time window are drafted in step 4 after the agent reviews the project.
+  help: The plugin creates an objective thread and initializes it in seven steps, mentioning the member responsible for each step. Agents keep drafting; items needing your judgment appear on the objective page. The machine and time window are drafted in step 3 after the agent reviews the project.
   statement: What to improve (one sentence)
-  statementDefault: Make training converge faster and more reliably
+  statementHint: e.g. raise arithmetic accuracy without the training collapsing
   prepare: Who initializes (reviews and drafts)
   evaluate: Who evaluates (judges metrics)
   stopTarget: Stop when this target is reached

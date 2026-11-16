@@ -74,6 +74,21 @@ test('a project conversation opens its project; with nothing to follow the page 
   assert.deepEqual(home.projects.find((p) => p.id === 'cartpole').name, { t: 'rsi.demoProject', args: ['cartpole-rl'] });
 });
 
+test('a real project with only its executor capability is listed; groups say who uses them; the executor of a deleted objective is not shown; triggers read as a time range', () => {
+  const s = createFixtures(now).state;
+  s.projects.unshift({ id: '/work/real', name: 'real', projectPath: '/work/real', exp: true });
+  s.objectives['/work/real'] = [{ id: 'pd-ttft', name: '目标 X', parent: null, state: 'preparing', mode: 'exp', trigger: '每晚 20:00–08:00' }];
+  s.units['/work/real'] = []; s.library['/work/real'] = [];
+  s.groups['/work/real'] = [{ id: 'exec-pd-ttft', side: 'collect', kind: 'mcp', name: '执行 MCP rsi.executor', where: 'preflight · 试跑通过', users: '目标 X', forObjective: 'pd-ttft' },
+    { id: 'exec-gone', side: 'collect', kind: 'mcp', name: '执行 MCP rsi.executor', where: 'preflight · 试跑通过', users: '已删', forObjective: 'gone' }];
+  const caps = viewModel(s, 'caps', { project: '/work/real' });
+  assert.equal(caps.listed, true);
+  assert.deepEqual(caps.collect.map((g) => [g.id, g.users]), [['exec-pd-ttft', '目标 X']]);
+  assert.equal(viewModel(s, 'home', { project: '/work/real' }).nodes[''][0].trigger, '20:00–08:00');
+  s.groups['/work/real'] = [];
+  assert.equal(viewModel(s, 'caps', { project: '/work/real' }).listed, false);
+});
+
 test('capability groups are renamed with the plugin write; a write acts on the project the page shows', async () => {
   const f = fixture(); await f.seed();
   const g = (await f.read()).groups['pd-infer'][0];

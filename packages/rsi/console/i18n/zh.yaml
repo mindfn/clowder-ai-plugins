@@ -328,9 +328,9 @@ newOk: 新建
 noObjectives: 还没有评估项
 noObjectivesHint: 这个项目还没有评估项。新建一个：说清楚要改进什么、什么时候停；怎么跑、看哪些指标由 agent 读项目后在评估项 thread 里起草，再列给你确认。
 newExp:
-  help: 建好后插件会建一个评估项 thread，按六步初始化，每步 @ 负责的成员；agent 一直往下起草，要你判断的在评估项页逐条列出。机器和时段不用现在填，第 4 步由 agent 查项目后起草。
+  help: 建好后插件会建一个评估项 thread，按七步初始化，每步 @ 负责的成员；agent 一直往下起草，要你判断的在评估项页逐条列出。机器和时段不用现在填，第 3 步由 agent 查项目后起草。
   statement: 要改进什么（一句话）
-  statementDefault: 训练更快、更稳地收敛
+  statementHint: 比如：让算术题准确率提高，训练不崩
   prepare: 谁来初始化（读项目、起草）
   evaluate: 谁来评估（判指标）
   stopTarget: 达到什么就停

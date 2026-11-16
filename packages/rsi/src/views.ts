@@ -1,5 +1,6 @@
 import type { Data, RsiState } from './types.js';
 import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData, memberIds } from './data.js';
+import { timeRange } from './schedule.js';
 
 const tc = (key: string, ...args: unknown[]) => ({ t: key, args });
 
@@ -48,7 +49,7 @@ function rsiPick(objectives: any): any {
 function home(): any {
 
   const pr = rsiProject(), todo = todoOf(state, { projectId: S.rsiProject }).items, pick = rsiPick(pr.objectives);
-  const node = function (o: any): any { const kids = pr.objectives.filter(function (x: any): any { return x.parent === o.id; }); return Object.assign({}, o, { path: o.id, pickKey: 'obj:' + o.id + S.tag, dir: kids.length > 0, selected: pick.k === 'obj' && pick.id === o.id }); };
+  const node = function (o: any): any { const kids = pr.objectives.filter(function (x: any): any { return x.parent === o.id; }); return Object.assign({}, o, { trigger: timeRange(o.trigger), path: o.id, pickKey: 'obj:' + o.id + S.tag, dir: kids.length > 0, selected: pick.k === 'obj' && pick.id === o.id }); };
 
   const rank = function (o: any): any { return ({ pending: 0, retired: 2 } as Data)[o.state] != null ? ({ pending: 0, retired: 2 } as Data)[o.state] : 1; };
   const sorted = pr.objectives.map(function (o: any, i: any): any { return { o: o, i: i }; }).sort(function (a: any, b: any): any { return rank(a.o) - rank(b.o) || a.i - b.i; }).map(function (x: any): any { return x.o; });
@@ -182,7 +183,7 @@ function exp(): any {
   const below = function (k: any): any { const out: any[] = []; (function walk(x: any): any { d.plan.forEach(function (p: any): any { if (p.deps.indexOf(x) >= 0 && out.indexOf(p.k) < 0) { out.push(p.k); walk(p.k); } }); })(k); return out; };
   const nameOf = function (id: any): any { const m = d.members.find(function (m: any): any { return m.catId === id; }); return m ? m.name : id; };
   const steps = d.plan.map(function (p: any, i: any): any {
-    const k = p.k, items = d.prep.filter(function (x: any): any { return x.section === k; }).map(function (x: any): any { return Object.assign({}, x, { needYou: x.neededFrom === 'human' && x.state !== 'confirmed' }); });
+    const k = p.k, items = d.prep.filter(function (x: any): any { return x.section === k; }).map(function (x: any): any { return Object.assign({}, x, { needYou: x.neededFrom === 'human' && x.state !== 'confirmed', by: x.by && nameOf(x.by) }); });
     const has = function (st: any): any { return items.some(function (x: any): any { return x.state === st; }); }, ex = d.exec && d.exec[k], st = d.steps && d.steps[k];
     const missing = d.steps ? p.deps.filter(function (x: any): any { return !d.steps[x] || d.steps[x].stale; }).map(no) : [];
     return { k: k, i: i + 1, items: items, by: ex && ex.state === 'started' && nameOf(ex.by), who: ex && nameOf(ex.by), unknowns: st && st.unknowns, next: st && st.next,
@@ -252,8 +253,9 @@ function todo(): any {
 
 function newExp(): any { return { cats: [] }; }
 function caps(): any {
-  const pr = rsiProject(), group = function (g: any): any { return Object.assign({}, g, { units: pr.units.filter(function (u: any): any { return u.group === g.id; }).length, supported: pr.hostKinds.indexOf(g.kind) >= 0 }); };
-  return { analysis: pr.analysis, modify: pr.groups.filter(function (g: any): any { return g.side === 'modify'; }).map(group), collect: pr.groups.filter(function (g: any): any { return g.side === 'collect'; }).map(group), env: pr.groups.filter(function (g: any): any { return g.side === 'env'; }) };
+  // An executor capability of an objective that no longer exists is not shown.
+  const pr = rsiProject(), groups = pr.groups.filter(function (g: any): any { return !g.forObjective || state.experiments[g.forObjective]; }), group = function (g: any): any { return Object.assign({}, g, { units: pr.units.filter(function (u: any): any { return u.group === g.id; }).length, supported: pr.hostKinds.indexOf(g.kind) >= 0 }); };
+  return { analysis: pr.analysis, listed: !!pr.analysis || groups.length > 0, modify: groups.filter(function (g: any): any { return g.side === 'modify'; }).map(group), collect: groups.filter(function (g: any): any { return g.side === 'collect'; }).map(group), env: groups.filter(function (g: any): any { return g.side === 'env'; }) };
 };
 
 function cards(): any {
