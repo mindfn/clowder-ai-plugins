@@ -33,7 +33,9 @@ test('VM fields match responses captured by executing the original mock.js and a
     const actual = JSON.parse(JSON.stringify(viewModel(state, entry.view, entry.query)));
     for (const [path, expected] of Object.entries(entry.fields)) {
       const value = path.split('.').reduce((at, key) => at?.[key], actual);
-      assert.deepEqual(value, expected, `${entry.view} ${JSON.stringify(entry.query)} ${path}`);
+      // The plugin returns the hint's numbers; the console composes the sentence (the prototype composed it in the VM).
+      const want = expected?.t === 'rsi.exp.firstOf' ? { i: expected.args[0], n: expected.args[1] } : expected;
+      assert.deepEqual(value, want, `${entry.view} ${JSON.stringify(entry.query)} ${path}`);
     }
   }
 });

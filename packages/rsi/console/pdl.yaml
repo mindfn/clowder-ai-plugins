@@ -713,8 +713,32 @@ views:
             - $.exp.next.n
             - $.exp.next.count
             - $.exp.next.window
-            - $.exp.next.by
-            - $.exp.next.hint
+            - of: $.exp.next.k
+              map:
+                init:
+                  t: rsi.exp.doingOf
+                  args:
+                    - $.exp.next.by.0.who
+                    - $.exp.next.by.0.i
+                _: $.exp.next.by
+            - of: $.exp.next.hint.i
+              gte: 1
+              map:
+                "true":
+                  t: rsi.exp.firstOf
+                  args:
+                    - $.exp.next.hint.i
+                    - $.exp.next.hint.n
+                _: ""
+            - of: $.exp.next.by.1.i
+              gte: 1
+              map:
+                "true":
+                  t: rsi.exp.doingAlso
+                  args:
+                    - $.exp.next.by.1.who
+                    - $.exp.next.by.1.i
+                _: ""
         action:
           type: button
           label: t:rsi.now.locate

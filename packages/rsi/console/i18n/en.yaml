@@ -548,7 +548,7 @@ exp:
     decide: Results for {0} cycle {1} are ready; choose the next step. Tonight follows the current plan if you take no action.
     running: "{0} cycle {1} is running. Failures are reported immediately; other groups continue."
     ready: Initialization is complete and confirmed. Start evaluation; the first night runs only the baseline.
-    init: "{4}; steps depending on it continue automatically after submission{5}"
+    init: "{4}{6}; steps depending on it continue automatically after submission{5}"
     cancelled: The reply for step {1} was interrupted. Retry that step to mention {4} again; independent steps continue.
     paused: "Paused: no new runs; capabilities introduced by this objective are disabled"
     prep: "{2} items await your confirmation; all must be confirmed before evaluation starts{5}"
@@ -590,6 +590,7 @@ exp:
       queued: Queued
   firstOf: ; confirm step {0} first; {1} later steps depend on it
   doingOf: "{0} is working on step {1}"
+  doingAlso: ", {0} is working on step {1}"
   waitOnOf: Waiting for step {0} to be submitted
   depsOf: Based on step {0}
   unknownsOf: "Still unknown: {0}"
