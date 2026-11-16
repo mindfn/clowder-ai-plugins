@@ -4370,6 +4370,28 @@ views:
     okAct: plugin
     okArgs:
       request: addMetric
+  dlg.rsiStop:
+    title: t:rsi.stop.title
+    fields:
+      - id: dlg-target
+        label: t:rsi.newExp.stopTarget
+        help: t:rsi.newExp.stopTargetHelp
+        placeholder: accuracy ≥ 0.45
+        value: $.target
+        arg: target
+      - id: dlg-stall
+        label: t:rsi.newExp.stopStall
+        value: $.stall
+        arg: stall
+      - id: dlg-rounds
+        label: t:rsi.newExp.stopRounds
+        value: $.rounds
+        arg: rounds
+    ok: t:rsi.common.save
+    okAct: plugin
+    okArgs:
+      request: stop
+      objective: $.objective
   dlg.rsiPrepEdit:
     title: $.title
     wide: true
@@ -4587,8 +4609,8 @@ views:
         arg: evaluate
       - id: dlg-target
         label: t:rsi.newExp.stopTarget
-        value: t:rsi.newExp.stopTargetDefault
-        help: t:rsi.newExp.stopHelp
+        help: t:rsi.newExp.stopTargetHelp
+        placeholder: accuracy ≥ 0.45
         arg: target
       - id: dlg-stall
         label: t:rsi.newExp.stopStall
@@ -5016,6 +5038,22 @@ requests:
     body:
       op: delete
       objective: "@objective"
+  stop:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      selC: state.selC
+    body:
+      op: stop
+      objective: "@objective"
+      target: "@target"
+      stall: "@stall"
+      rounds: "@rounds"
   initRedo:
     path: rsi/act
     method: POST

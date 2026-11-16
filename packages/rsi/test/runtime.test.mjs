@@ -264,6 +264,13 @@ test('stop kills the owned process and restart restores subscriptions with faile
   assert.equal(d.rounds.length,1);assert.equal(d.rounds[0].runs[0].state,'done');
 });
 
+test('a real objective whose stop target names a metric needs that metric in step 4', async (t) => {
+  const f = await fixture(t), o = await f.create({ target: 'accuracy ≥ 0.45' });
+  await assert.rejects(f.initialize(o), /指标「accuracy」不在量尺里/);
+  const g = await fixture(t), p = await g.create({ target: 'accuracy ≥ 0.45' });
+  await g.initialize(p, undefined, { metrics: { version: 'E1', items: [{ id: 'accuracy', name: 'Accuracy', how: 'metrics.json 的 accuracy', dir: 'up', guard: false }] } });
+});
+
 test('deleting an objective kills its run and removes its runs folder, data, pending messages and cycle notes; other objectives keep running', async (t) => {
   const f = await fixture(t), o = await f.create();
   await f.initialize(o, { groups: [{ id: 'control', label: 'Slow run', vars: { slow: true }, control: true }], seeds: [1] });

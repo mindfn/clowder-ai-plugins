@@ -121,3 +121,19 @@ test('multiple new objectives keep independent queues, and the thread binding ho
   assert.ok(state.outbox.filter((e) => e.objective === second && e.kind !== 'createThread').every((e) => e.thread === 'host-created-thread'));
   assert.equal((await f.view({ thread: 'host-created-thread' })).payload.pick.id, second);
 });
+
+test('何时停 is one setting: a target must read "metric comparison number"; editing it opens its own dialog and rewrites the item from the enforced condition', async () => {
+  const f = fixture(); await f.seed();
+  const bad = await f.act({ op: 'new', statement: 'x', prepare: 'prepare-id', evaluate: 'evaluate-id', target: 'accuracy ≥ 0.45（备注）' });
+  assert.equal(bad.status, 400); assert.match(bad.payload.error, /指标 比较符 数字/);
+  const id = await f.newObjective({ target: 'accuracy ≥ 0.45', stall: '3', rounds: '5' });
+  const stopItem = (s) => s.experiments[id].prep.find((p) => p.id.endsWith('-stop'));
+  const dialog = await f.act({ op: 'prep', objective: id, id: stopItem(await f.read()).id, action: 'edit' });
+  assert.deepEqual(dialog.payload.args, { kind: 'rsiStop', objective: id, target: 'accuracy ≥ 0.45', stall: 3, rounds: 5 });
+  assert.equal((await f.act({ op: 'stop', objective: id, target: 'accuracy ≥ 0.5', stall: '', rounds: '4' })).status, 200);
+  const s = await f.read();
+  assert.deepEqual(s.experiments[id].objective.stop, { target: 'accuracy ≥ 0.5', stall: null, maxCycles: 4 });
+  assert.equal(s.experiments[id].objective.budget.rounds, 4);
+  assert.equal(stopItem(s).value, '达到「accuracy ≥ 0.5」并复验稳定，或用满 4 个周期');
+  assert.equal((await f.act({ op: 'stop', objective: id, target: '准确率高一点' })).status, 400);
+});

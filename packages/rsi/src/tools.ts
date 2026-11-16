@@ -1,5 +1,5 @@
 import { RSI_CP_INIT, createFixtures } from './fixtures.js';
-import { submitInitStep, enqueue, kick, syncObjective } from './init.js';
+import { submitInitStep, enqueue, kick, STOP_TARGET, syncObjective } from './init.js';
 import { conclude, comparison, controlGroup, cycleLibrary, freshSeeds, validPlan } from './cycles.js';
 import { windowMinutes } from './schedule.js';
 import { record, text } from './store.js';
@@ -118,6 +118,10 @@ export function toolAction(state: RsiState, method: string, input: Data, ctx: To
     || input.metrics.items.some((m: unknown) => !record(m) || !text(m.id) || !text(m.name) || !text(m.how) || !['up', 'down'].includes(m.dir) || m.guard !== undefined && typeof m.guard !== 'boolean' || m.guard && (typeof m.threshold !== 'number' || !Number.isFinite(m.threshold)))
     || !input.metrics.items.some((m: Data) => !m.guard)
     || new Set(input.metrics.items.map((m: Data) => m.id)).size !== input.metrics.items.length)) return { error: 'Step 4 requires metrics {version,items:[{id,name,how,dir:up|down,guard?,threshold?}]}; guardrails require a finite threshold' };
+  // A real objective's stop target names a metric; step 4 must define it, or the target could never be checked.
+  const stopMetric = section === 'rules' && d.objective.projectPath && STOP_TARGET.exec(d.objective.stop?.target || '')?.[1].trim();
+  if (stopMetric && !input.metrics.items.some((m: Data) => m.id === stopMetric || m.name === stopMetric))
+    return { error: `停止目标「${d.objective.stop.target}」里的指标「${stopMetric}」不在量尺里：把对应量尺的 id 或名称写成「${stopMetric}」，或请用户在页面上改「何时停」。` };
   if ((section === 'design' || section === 'baseline') && input.upcoming !== undefined && !validPlan(input.upcoming)) return { error: 'Invalid upcoming plan' };
   if (section === 'design' && !validPlan(input.upcoming)) return { error: 'Step 5 requires upcoming {groups:[{id,label,vars}],seeds:[integer]}' };
   const items = input.items.map((p: Data) => ({ ...d.prep.find((x) => x.id === p.id)!, ...p, section })) as PrepItem[];

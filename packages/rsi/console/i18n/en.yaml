@@ -334,10 +334,9 @@ newExp:
   prepare: Who initializes (reviews and drafts)
   evaluate: Who evaluates (judges metrics)
   stopTarget: Stop when this target is reached
-  stopTargetDefault: Mean return ≥ 475
+  stopTargetHelp: Write “metric comparison number”, e.g. accuracy ≥ 0.45; the metric must match a step-4 metric id or name. Combine these conditions; stop at the first one reached. Leave a condition blank to omit it.
   stopStall: Stop after this many cycles without improvement
   stopRounds: Maximum cycles
-  stopHelp: Combine these conditions; stop at the first one reached. Leave a condition blank to omit it.
   ok: Create and start initialization
 cards:
   none: Nothing to do
@@ -677,3 +676,5 @@ delete:
   title: Delete “{0}”?
   text: This deletes the objective (and its sub-objectives) with its setup, cycle results and conclusions, unsent messages, its run folder under runs/ in the project, and the code copies the plugin made for it; a running training is stopped. Its conversation thread stays; delete it yourself if you no longer need it. This cannot be undone.
   ok: Delete
+stop:
+  title: Change when to stop

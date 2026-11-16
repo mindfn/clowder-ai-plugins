@@ -1,4 +1,4 @@
-import { enqueue, message, syncObjective } from './init.js';
+import { enqueue, message, STOP_TARGET, syncObjective } from './init.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, RsiState } from './types.js';
 
@@ -98,7 +98,7 @@ function stopAfterConclusion(state: RsiState, d: Experiment, round: Data, compar
   const progress = d.objective.progress ||= { stall: 0 }, stop = d.objective.stop;
   if (compared.comparable && round.runs.every((r: Data) => r.error?.kind !== 'env')) progress.stall = improved || round.n === 1 ? 0 : progress.stall + 1;
   const target = stop?.target;
-  const match = typeof target === 'string' && /^(.*?)\s*(>=|<=|≥|≤|>|<)\s*(-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)\s*$/i.exec(target);
+  const match = typeof target === 'string' && STOP_TARGET.exec(target);
   const metric = match && (round.metrics || d.metrics).items.find((m: Data) => m.id === match[1].trim() || m.name === match[1].trim());
   const adopted = round.confirmation?.status === 'confirmed' ? round.confirmation.group : 'control';
   const cell = metric && compared.matrix.find((m: Data) => m.group === adopted && m.metric === metric.id);

@@ -161,12 +161,23 @@ export function recordInitExecution(state: RsiState, id: string, section: Sectio
   return { ok: true };
 }
 
+// 何时停 is one setting: the enforced stop condition; the 何时停 item text is derived from it.
+// A target reads "<metric id or name> <comparison> <number>" (accuracy ≥ 0.45); step 4's metrics must contain that metric.
+export const STOP_TARGET = /^(.*?)\s*(>=|<=|≥|≤|>|<)\s*(-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)\s*$/i;
+export function stopOf(input: Data): Data {
+  const target = typeof input.target === 'string' ? input.target.trim() : '';
+  if (target && !STOP_TARGET.exec(target)?.[1].trim()) return { error: '「达到什么就停」要写成「指标 比较符 数字」，比如 accuracy ≥ 0.45；不需要就留空' };
+  if (['stall', 'rounds'].some((k) => input[k] != null && input[k] !== '' && (!Number.isSafeInteger(+input[k]) || +input[k] < 1))) return { error: 'Stop cycle counts must be positive integers' };
+  return { stop: { target: target || null, stall: +input.stall || null, maxCycles: +input.rounds || null } };
+}
+export const stopText = (stop: Data) => [stop.target && `达到「${stop.target}」并复验稳定`, stop.stall && `连续 ${stop.stall} 个周期没进步`, stop.maxCycles && `用满 ${stop.maxCycles} 个周期`].filter(Boolean).join('，或') || '由你决定';
+
 export function rsiExpNew(state: RsiState, project: string, body: Data, now: number) {
   const fixture = createFixtures(now), templateId = project === 'pd-infer' ? 'pd-ttft' : 'cp-converge';
   const d = structuredClone(fixture.templates[templateId]);
   const id = body.projectPath || summaryOf(state, templateId) ? `obj-${randomUUID()}` : templateId;
-  const stop = [body.target && `达到「${body.target}」并复验稳定`, +body.stall && `连续 ${body.stall} 个周期没进步`, +body.rounds && `用满 ${body.rounds} 个周期`].filter(Boolean).join('，或') || '由你决定';
-  d.objective = { ...d.objective, id, name: body.statement, projectId: project, ...(body.projectPath ? { projectPath: body.projectPath } : {}), state: 'preparing', thread: null, currentVersion: 'v1', round: 0, budget: { rounds: +body.rounds || null, used: 0 }, stop: { target: body.target || null, stall: +body.stall || null, maxCycles: +body.rounds || null }, goal: { ...d.objective.goal, statement: body.statement, good: '', adoptWhen: '', stopWhen: stop } };
+  const limits = stopOf(body).stop, stop = stopText(limits);
+  d.objective = { ...d.objective, id, name: body.statement, projectId: project, ...(body.projectPath ? { projectPath: body.projectPath } : {}), state: 'preparing', thread: null, currentVersion: 'v1', round: 0, budget: { rounds: limits.maxCycles, used: 0 }, stop: limits, goal: { ...d.objective.goal, statement: body.statement, good: '', adoptWhen: '', stopWhen: stop } };
   d.rounds = []; d.messages = []; d.steps = {}; d.exec = {}; d.seq = 0;
   delete d.night;
   d.versions = [{ ...d.versions[0], current: true }];
