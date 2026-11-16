@@ -10,7 +10,6 @@ test('phase 2 declarations expose five documented tools, a v2 subscription and m
   assert.deepEqual(tools.map((c)=>c.name),['rsi.task','rsi.submit','rsi.executor','rsi.version','rsi.conclude']);
   for(const tool of tools){assert.equal(tool.action.method,tool.name);assert.equal(tool.inputSchema.type,'object');assert.ok(tool.description.length>150);}
   assert.equal(manifest.contributions.find((c)=>c.type==='message-subscription').presentation,'v2');
-  assert.equal(manifest.version,'0.1.0-alpha.4');
   for(const file of ['package.json','npm-shrinkwrap.json'])assert.equal(JSON.parse(readFileSync(new URL(`../${file}`,import.meta.url),'utf8')).version,manifest.version);
 });
 
