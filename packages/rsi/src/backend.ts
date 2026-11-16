@@ -1,4 +1,4 @@
-import { viewModel } from './views.js';
+import { follow, viewModel } from './views.js';
 import { act } from './actions.js';
 import { createRuntime } from './runtime.js';
 import { mergeProjects, projects } from './projects.js';
@@ -27,10 +27,12 @@ export function createRsi(host: RsiHost) {
     if (!current) return json(409, { error: 'RSI state changed, please retry' });
     if (!isState(current.value)) return json(500, { error: 'Invalid RSI data' });
     const live = await projects(host);
+    // The current conversation's project: the page follows it when nothing was chosen in this conversation.
+    if (typeof query.thread === 'string' && query.thread) query.threadProject = (await host.threads.get(query.thread).catch(() => null))?.projectRef;
     if (method === 'GET') {
       if (typeof query.view !== 'string') return json(400, { error: 'Provide a view' });
       mergeProjects(current.value, live);
-      if (query.project && !current.value.projects.some((p) => p.id === query.project)) return json(404, { error: 'Project not found' });
+      if (follow(current.value, query).missing) return json(404, { error: 'Project not found' });
       const result = viewModel(current.value, query.view, query);
       return result === undefined ? json(400, { error: 'Unknown view' }) : json(200, result);
     }
@@ -44,10 +46,12 @@ export function createRsi(host: RsiHost) {
     let created: string | undefined, removed: Experiment[] = [];
     const result = await update(host.storage, key, (next) => {
       mergeProjects(next, live);
-      const project = next.projects.find((p) => p.id === (body.project || query.project));
+      // A write acts on what the page shows: the followed or chosen project and pick, without the conversation tag.
+      const at = follow(next, query), shown = { ...query, project: at.project, pick: at.pick };
+      const project = next.projects.find((p) => p.id === (body.project || shown.project));
       body.projectPath = project?.projectPath;
       const before = next.outbox.length, had = { ...next.experiments };
-      const result = act(next, body, query, Date.now());
+      const result = act(next, body, shown, Date.now());
       created = next.outbox.slice(before).find((e) => e.kind === 'createThread')?.objective;
       removed = Object.values(had).filter((d) => !next.experiments[d.objective.id]);
       return result;
@@ -58,7 +62,8 @@ export function createRsi(host: RsiHost) {
     if (created) {
       const saved = await host.storage.get(key);
       const id = isState(saved?.value) && saved.value.experiments[created].objective.thread;
-      if (id) return json(200, { ok: true, act: 'thread', args: { id } });
+      // Open the new objective's conversation, then the RSI panel; the panel follows that conversation to the objective.
+      if (id) return json(200, { ok: true, acts: [{ act: 'thread', args: { id } }, { act: 'open', args: { ref: 'plugin:official.rsi/rsi.panel' } }] });
     }
     return json(200, result);
   }

@@ -31,22 +31,58 @@ test('VM fields match responses captured by executing the original mock.js and a
       state.objectives.cartpole.push({ id: 'cp-converge', name: '训练更快、更稳地收敛', parent: null, state: 'pending', mode: 'exp', trigger: '18:00–08:00', running: { o: 'v2' }, cycle: null, prediction: null, locked: 0 });
     }
     const actual = JSON.parse(JSON.stringify(viewModel(state, entry.view, entry.query)));
+    // The plugin may add fields for its own page (choices tagged with the conversation); the prototype's fields must match.
+    const like = (a, e) => Array.isArray(e) ? (Array.isArray(a) && a.length === e.length ? a.map((x, i) => like(x, e[i])) : a)
+      : e && typeof e === 'object' && a && typeof a === 'object' && !Array.isArray(a) ? Object.fromEntries(Object.keys(e).map((k) => [k, like(a[k], e[k])])) : a;
     for (const [path, expected] of Object.entries(entry.fields)) {
       const value = path.split('.').reduce((at, key) => at?.[key], actual);
-      // The plugin returns the hint's numbers; the console composes the sentence (the prototype composed it in the VM).
-      const want = expected?.t === 'rsi.exp.firstOf' ? { i: expected.args[0], n: expected.args[1] } : expected;
-      assert.deepEqual(value, want, `${entry.view} ${JSON.stringify(entry.query)} ${path}`);
+      assert.deepEqual(like(value, expected), expected, `${entry.view} ${JSON.stringify(entry.query)} ${path}`);
     }
   }
 });
 
-test('home follows an objective thread; unrelated threads preserve the page selection', async () => {
+test('the page follows the current conversation unless something was chosen in it; a choice made in another conversation no longer applies', async () => {
   const f = fixture(); await f.seed();
-  const response = await f.view({ project: 'cartpole', thread: 't-rsi-pd', pick: 'list' });
-  assert.equal(response.payload.projectId, 'pd-infer');
-  assert.deepEqual(response.payload.pick, { k: 'obj', id: 'pd-ttft', exp: true });
-  assert.equal(response.payload.picked, true);
-  assert.equal((await f.view({ project: 'pd-infer', pick: 'library', thread: 'unrelated' })).payload.pick.k, 'library');
+  const home = async (q) => (await f.view(q)).payload;
+  // An objective's conversation opens that objective.
+  const at = await home({ thread: 't-rsi-pd' });
+  assert.deepEqual([at.projectId, at.pick.id, at.picked], ['pd-infer', 'pd-ttft', true]);
+  // Choices carry the conversation they were made in.
+  assert.equal(at.listKey, 'list#@t-rsi-pd');
+  assert.equal(at.projectChoice, 'pd-infer#@t-rsi-pd');
+  assert.ok(at.nodes[''].every((n) => n.pickKey.endsWith('#@t-rsi-pd')));
+  assert.ok(at.navs.every((n) => n.pickKey === n.k + '#@t-rsi-pd'));
+  // In that conversation a choice applies (the library, still in the objective's project), and the list stays the list ...
+  const lib = await home({ thread: 't-rsi-pd', pick: 'library#@t-rsi-pd' });
+  assert.deepEqual([lib.projectId, lib.pick.k, lib.picked], ['pd-infer', 'library', true]);
+  assert.equal((await home({ thread: 't-rsi-pd', pick: 'list#@t-rsi-pd' })).picked, false);
+  // ... while choices made in another conversation do not: the page follows this one.
+  const other = await home({ thread: 't-rsi-pd', project: 'cartpole#@elsewhere', pick: 'caps#@elsewhere' });
+  assert.deepEqual([other.projectId, other.pick.id, other.picked], ['pd-infer', 'pd-ttft', true]);
+  // Untagged choices apply in any conversation.
+  assert.equal((await home({ project: 'pd-infer', pick: 'library', thread: 'unrelated' })).pick.k, 'library');
+});
+
+test('a project conversation opens its project; with nothing to follow the page opens the first real project; demo projects say so', () => {
+  const s = createFixtures(now).state;
+  s.projects.unshift({ id: '/work/real', name: 'real', projectPath: '/work/real', exp: true });
+  s.objectives['/work/real'] = []; s.groups['/work/real'] = []; s.units['/work/real'] = []; s.library['/work/real'] = [];
+  assert.equal(viewModel(s, 'home', { thread: 'conversation-1', threadProject: 'pd-infer' }).projectId, 'pd-infer');
+  const home = viewModel(s, 'home', {});
+  assert.equal(home.projectId, '/work/real');
+  assert.equal(home.projects.find((p) => p.id === '/work/real').name, 'real');
+  assert.deepEqual(home.projects.find((p) => p.id === 'cartpole').name, { t: 'rsi.demoProject', args: ['cartpole-rl'] });
+});
+
+test('capability groups are renamed with the plugin write; a write acts on the project the page shows', async () => {
+  const f = fixture(); await f.seed();
+  const g = (await f.read()).groups['pd-infer'][0];
+  // No project in the query: the followed conversation (an objective of pd-infer) decides it.
+  const renamed = await f.act({ op: 'groupRename', id: g.id, name: '  新名字  ' }, { thread: 't-rsi-pd' });
+  assert.equal(renamed.status, 200, JSON.stringify(renamed.payload));
+  assert.equal((await f.read()).groups['pd-infer'].find((x) => x.id === g.id).name, '新名字');
+  assert.equal((await f.act({ op: 'groupRename', id: g.id, name: ' ' }, { project: 'pd-infer' })).status, 400);
+  assert.equal((await f.act({ op: 'groupRename', id: 'missing', name: 'x' }, { project: 'pd-infer' })).status, 404);
 });
 
 test('home says whether the user picked something (a collapsed split shows its detail); pick list goes back to the list', async () => {

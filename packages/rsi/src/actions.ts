@@ -27,6 +27,13 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
   const id = selected(state, body, query), o = summaryOf(state, id), d = state.experiments[id];
   switch (body.op) {
     case 'refresh': return { ok: true };
+    case 'groupRename': {
+      const g = (state.groups[project] || []).find((x) => x.id === body.id), name = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!g) return { error: 'Group not found', status: 404 };
+      if (!name) return { error: 'Provide a name' };
+      g.name = name;
+      return { ok: true };
+    }
     case 'stop': {
       if (!d) return { error: 'Experiment not found', status: 404 };
       const limits = stopOf(body);

@@ -74,9 +74,9 @@ async function fixture(t) {
   const create = async (extra = {}) => {
     const result = await http('POST', { op: 'new', project: '', thread: 'source', statement: 'Improve a measured score', prepare: 'codex', evaluate: 'cat-b5ddoo9l', ...extra });
     assert.equal(result.status, 200, JSON.stringify(result));
-    assert.equal(result.act, 'thread', JSON.stringify(result));
+    assert.deepEqual(result.acts?.map((a) => a.act), ['thread', 'open'], JSON.stringify(result));
     const state = await read(), d = Object.values(state.experiments).find((d) => d.objective.projectPath === project);
-    return { id: d.objective.id, thread: result.args.id, result };
+    return { id: d.objective.id, thread: result.acts[0].args.id, result };
   };
   const tool = (method, input, catId, threadId, invocationId = `${catId}-turn`) => activation.actions[`rsi.${method}`](input,
     { catId, threadId, userId: 'owner', invocationId, assertCurrent: async () => {} });
@@ -118,7 +118,7 @@ test('host projects, current-thread dialog selection, real threads and exact wak
   assert.equal(home.projects[0].id, f.project); assert.equal(home.projects[0].name, basename(f.project)); assert.equal(home.projects[0].exp, true);
   assert.equal(home.projects.length, 7);
   const objective = await f.create();
-  assert.equal(objective.result.act, 'thread');
+  assert.deepEqual(objective.result.acts, [{ act: 'thread', args: { id: objective.thread } }, { act: 'open', args: { ref: 'plugin:official.rsi/rsi.panel' } }]);
   // A woken member is told the RSI tools are reached through plugin_call, with the exact arguments.
   assert.ok(f.sends.some((x) => x.wake && x.payload.elements[0].payload.text.includes('plugin_call({ pluginId: "official.rsi", contributionId: "rsi.task", toolName: "rsi.task", arguments: {} })')));
   assert.equal(f.threads.at(-1).projectRef, f.project);

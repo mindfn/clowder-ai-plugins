@@ -23,6 +23,12 @@ views:
     blocks:
       - type: split
         picked: $.home.picked
+        back:
+          act: plugSet
+          args:
+            plugin: official.rsi
+            k: pick
+            v: $.home.listKey
         left:
           - type: head
             title: t:rsi.home.title
@@ -52,14 +58,16 @@ views:
                 options:
                   - from: $.home.projects
                     item:
-                      v: "@id"
+                      v: "@choice"
                       label: "@name"
-                value: $.home.projectId
+                value: $.home.projectChoice
                 prefix: t:rsi.projectPrefix
                 label: t:rsi.project
                 change: plugSet
                 args:
                   k: project
+                  also:
+                    pick: ""
           - type: list
             id: rsi-nav
             from: $.home.navs
@@ -84,7 +92,7 @@ views:
               act: plugSet
               args:
                 k: pick
-                v: "@k"
+                v: "@pickKey"
           - type: box
             variant: scroll
             blocks:
@@ -289,6 +297,12 @@ views:
     blocks:
       - type: split
         picked: $.home.picked
+        back:
+          act: plugSet
+          args:
+            plugin: official.rsi
+            k: pick
+            v: $.home.listKey
         left:
           - type: head
             title: t:rsi.home.title
@@ -318,14 +332,16 @@ views:
                 options:
                   - from: $.home.projects
                     item:
-                      v: "@id"
+                      v: "@choice"
                       label: "@name"
-                value: $.home.projectId
+                value: $.home.projectChoice
                 prefix: t:rsi.projectPrefix
                 label: t:rsi.project
                 change: plugSet
                 args:
                   k: project
+                  also:
+                    pick: ""
           - type: list
             id: rsi-nav
             from: $.home.navs
@@ -350,7 +366,7 @@ views:
               act: plugSet
               args:
                 k: pick
-                v: "@k"
+                v: "@pickKey"
           - type: box
             variant: scroll
             blocks:
@@ -549,12 +565,6 @@ views:
       - ""
       - other
       - t:rsi.home.help
-    drill:
-      - when: $.home.picked
-        act: plugSet
-        args:
-          k: pick
-          v: list
     sources:
       home: home
       members: host:members
@@ -733,15 +743,7 @@ views:
                     - $.exp.next.by.0.who
                     - $.exp.next.by.0.i
                 _: $.exp.next.by
-            - of: $.exp.next.hint.i
-              gte: 1
-              map:
-                "true":
-                  t: rsi.exp.firstOf
-                  args:
-                    - $.exp.next.hint.i
-                    - $.exp.next.hint.n
-                _: ""
+            - $.exp.next.hint
             - of: $.exp.next.by.1.i
               gte: 1
               map:
@@ -757,6 +759,8 @@ views:
           act: plugSet
           args:
             k: selO
+            also:
+              tab: version
             v:
               of: $.exp.next.go
               slice:
@@ -1810,6 +1814,8 @@ views:
             act: plugSet
             args:
               k: selO
+              also:
+                tab: version
               v:
                 of: $.objective.nowLine.pick
                 slice:
@@ -4392,6 +4398,19 @@ views:
     okArgs:
       request: stop
       objective: $.objective
+  dlg.rsiGroupRename:
+    title: t:rsi.common.rename
+    fields:
+      - id: dlg-name
+        label: t:rsi.common.name
+        value: $.name
+        req: true
+        arg: name
+    ok: t:rsi.common.save
+    okAct: plugin
+    okArgs:
+      request: groupRename
+      id: $.id
   dlg.rsiPrepEdit:
     title: $.title
     wide: true
@@ -4596,7 +4615,11 @@ views:
           - from: $.cats
             item:
               v: "@id"
-              label: "@name"
+              label:
+                t: rsi.memberOption
+                args:
+                  - "@name"
+                  - "@id"
         arg: prepare
       - id: dlg-evaluate
         label: t:rsi.newExp.evaluate
@@ -4605,7 +4628,11 @@ views:
           - from: $.cats
             item:
               v: "@id"
-              label: "@name"
+              label:
+                t: rsi.memberOption
+                args:
+                  - "@name"
+                  - "@id"
         arg: evaluate
       - id: dlg-target
         label: t:rsi.newExp.stopTarget
@@ -4853,6 +4880,14 @@ rows:
     layout: two
     key: "@id"
     title: "@name"
+    acts:
+      - label: t:rsi.common.rename
+        icon: edit
+        act: dialog
+        args:
+          kind: rsiGroupRename
+          id: "@id"
+          name: "@name"
     sub:
       sep: " · "
       parts:
@@ -4873,6 +4908,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
   objective:
     path: rsi/view
     method: GET
@@ -4884,6 +4920,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
   exp:
     path: rsi/view
     method: GET
@@ -4895,6 +4932,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
   record:
     path: rsi/view
     method: GET
@@ -4906,6 +4944,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
       type: "@type"
       objective: "@objective"
       cycle: "@cycle"
@@ -4921,6 +4960,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
   todo:
     path: rsi/view
     method: GET
@@ -4932,6 +4972,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
   newExp:
     path: rsi/view
     method: GET
@@ -4943,6 +4984,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
   caps:
     path: rsi/view
     method: GET
@@ -4954,6 +4996,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
   cards:
     path: rsi/view
     method: GET
@@ -4965,6 +5008,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
       objective: "@objective"
   library:
     path: rsi/view
@@ -4977,6 +5021,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
   doc:
     path: rsi/view
     method: GET
@@ -4988,6 +5033,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
       id: "@id"
   new:
     path: rsi/act
@@ -4999,6 +5045,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: new
       project: "@project"
@@ -5021,6 +5068,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: life
       action: "@op"
@@ -5035,9 +5083,20 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: delete
       objective: "@objective"
+  groupRename:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      thread: host:currentThread.id
+    body:
+      op: groupRename
+      id: "@id"
+      name: "@name"
   stop:
     path: rsi/act
     method: POST
@@ -5048,6 +5107,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: stop
       objective: "@objective"
@@ -5064,6 +5124,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: initRedo
   initRetry:
@@ -5076,6 +5137,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: initRetry
       k: "@k"
@@ -5089,6 +5151,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: prep
       id: "@id"
@@ -5107,6 +5170,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: expDecide
       n: "@n"
@@ -5123,6 +5187,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: addMetric
       name: "@name"
@@ -5137,6 +5202,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: lock
       metric: "@metric"
@@ -5151,6 +5217,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: goVersion
       pick: "@pick"
@@ -5164,6 +5231,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: docAdd
       title: "@title"
@@ -5179,6 +5247,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: decide
       card: "@card"
@@ -5193,6 +5262,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: reeval
       card: "@card"
@@ -5207,6 +5277,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: go
       objective: "@objective"
@@ -5220,6 +5291,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: docConfirm
       id: "@id"
@@ -5233,6 +5305,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: docRemove
       id: "@id"
@@ -5246,6 +5319,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      thread: host:currentThread.id
     body:
       op: policy
       key: "@key"

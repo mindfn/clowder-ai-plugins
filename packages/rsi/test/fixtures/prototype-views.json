@@ -7,41 +7,6 @@
         "project": "cartpole"
       },
       "fields": {
-        "projects": [
-          {
-            "id": "cartpole",
-            "name": "cartpole-rl",
-            "host": "clowder",
-            "exp": true
-          },
-          {
-            "id": "pd-infer",
-            "name": "推理框架（PD 分离）",
-            "host": "clowder",
-            "exp": true
-          },
-          {
-            "id": "self",
-            "name": "Clowder",
-            "builtin": true,
-            "host": "clowder"
-          },
-          {
-            "id": "notes-agent",
-            "name": "notes-agent",
-            "host": "claude-code"
-          },
-          {
-            "id": "echo-router",
-            "name": "echo-router",
-            "host": "opencode"
-          },
-          {
-            "id": "data-pipeline",
-            "name": "data-pipeline",
-            "host": ""
-          }
-        ],
         "projectId": "cartpole",
         "nodes": {
           "": []
@@ -158,41 +123,6 @@
         "project": "pd-infer"
       },
       "fields": {
-        "projects": [
-          {
-            "id": "cartpole",
-            "name": "cartpole-rl",
-            "host": "clowder",
-            "exp": true
-          },
-          {
-            "id": "pd-infer",
-            "name": "推理框架（PD 分离）",
-            "host": "clowder",
-            "exp": true
-          },
-          {
-            "id": "self",
-            "name": "Clowder",
-            "builtin": true,
-            "host": "clowder"
-          },
-          {
-            "id": "notes-agent",
-            "name": "notes-agent",
-            "host": "claude-code"
-          },
-          {
-            "id": "echo-router",
-            "name": "echo-router",
-            "host": "opencode"
-          },
-          {
-            "id": "data-pipeline",
-            "name": "data-pipeline",
-            "host": ""
-          }
-        ],
         "projectId": "pd-infer",
         "nodes": {
           "": [

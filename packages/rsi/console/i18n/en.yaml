@@ -661,6 +661,8 @@ console:
   loading: Loading…
   error: Failed to load
 common:
+  name: Name
+  rename: Rename
   save: Save
   delete: Delete
 
@@ -678,3 +680,5 @@ delete:
   ok: Delete
 stop:
   title: Change when to stop
+demoProject: "{0} (demo)"
+memberOption: "{0} (@{1})"

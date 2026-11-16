@@ -661,6 +661,8 @@ console:
   loading: 加载中…
   error: 加载失败
 common:
+  name: 名字
+  rename: 改名
   save: 保存
   delete: 删除
 
@@ -678,3 +680,5 @@ delete:
   ok: 删除
 stop:
   title: 改何时停
+demoProject: "{0}（演示）"
+memberOption: "{0}（@{1}）"

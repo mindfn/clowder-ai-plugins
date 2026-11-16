@@ -35,7 +35,7 @@ for(const query of [{},{selO:'cp-converge/v3>c1.collect'},{selO:'cp-converge/v3>
 }
 fs.mkdirSync(new URL('./fixtures/', import.meta.url), {recursive:true});
 const paths = {
- home:['projects','projectId','nodes','pick','hasObjectives','navs'],
+ home:['projectId','nodes','pick','hasObjectives','navs'],
  caps:['analysis','modify','collect','env'], todo:['items'], cards:['cards'], library:['analysis','docs','groups'],
  newExp:['cats'], policy:['overrides','policy'], doc:['id','kind','title','body','objectiveNames','usedBy'],
  objective:['id','name','state','setup','nowLine','step','ver.id','cycle.n','cycle.decision','eStep','eSel.id','eEval.kind','eLooked','cStep','cSel.id','overrides'],

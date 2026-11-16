@@ -3,24 +3,32 @@ import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData,
 
 const tc = (key: string, ...args: unknown[]) => ({ t: key, args });
 
+// The page follows the current conversation (query.thread = host:currentThread.id): its objective, else its project (threadProject,
+// looked up by the backend). A choice made in the page is tagged with the conversation it was made in ("…#@thread"); in another
+// conversation it no longer applies, so the page follows that one. pick "list" = back at the list. Reads and writes both use this.
+export function follow(state: RsiState, query: Data) {
+  const thread = typeof query.thread === 'string' ? query.thread : '', tag = thread ? '#@' + thread : '';
+  const here = (v: unknown) => { if (typeof v !== 'string') return ''; const i = v.lastIndexOf('#@'); return i < 0 ? v : v.slice(i + 2) === thread ? v.slice(0, i) : ''; };
+  const pickQ = here(query.pick), projectQ = here(query.project);
+  const owner = (id: string) => Object.keys(state.objectives).find((k) => state.objectives[k].some((o) => o.id === id));
+  const inThread = thread ? Object.values(state.experiments).find((x) => x.objective.thread === thread) : undefined;
+  const pick = pickQ && pickQ !== 'list' ? pickQ : inThread && !pickQ && !projectQ ? 'obj:' + inThread.objective.id : '';
+  const project = [pick.startsWith('obj:') ? owner(pick.slice(4)) : '', projectQ, inThread && owner(inThread.objective.id), query.threadProject, state.projects.find((p) => p.projectPath)?.id]
+    .find((k) => k && state.objectives[k]) || 'cartpole';
+  return { project, pick, tag, missing: !!projectQ && !state.projects.some((p) => p.id === projectQ) };
+}
+
 export function viewModel(state: RsiState, view: string, query: Data = {}): any {
-  // pick 'list' = back to the list (a collapsed split shows the list; side by side shows the default objective).
-  const picked = !!query.pick && query.pick !== 'list';
+  const at = follow(state, query);
   const S: Data = {
-    rsiProject: query.project || 'cartpole', rsiPick: picked ? query.pick : 'obj:cp-converge', rsiPicked: picked,
+    rsiProject: at.project, rsiPick: at.pick || 'obj:cp-converge', rsiPicked: !!at.pick, tag: at.tag,
     rsiTab: query.tab || 'version',
     rsiSelO: query.selO || '', rsiSelE: query.selE || '', rsiSelC: query.selC || '',
-    thread: query.thread,
     dialog: query.dialog,
   };
   if (view === 'doc' && (query.id || query.doc)) S.dialog = { kind: 'rsiDoc', args: { id: query.id || query.doc } };
   if (view === 'cards' && query.objective) S.dialog = { kind: 'rsiCards', args: { objective: query.objective } };
   if (view === 'record' && query.id) S.dialog = { kind: 'rsiRecord', args: { id: query.id, type: query.type, objective: query.objective, cycle: query.cycle } };
-  function threadObjective(thread: string) {
-    const d = Object.values(state.experiments).find((x) => x.objective.thread === thread);
-    if (!d) return null;
-    return { objectiveId: d.objective.id, projectId: Object.keys(state.objectives).find((k) => state.objectives[k].some((o) => o.id === d.objective.id)) };
-  }
   function experimentData(id: string) {
     const d = state.experiments[id];
     if (!d || !objectiveData(state, id)) return null;
@@ -39,19 +47,20 @@ function rsiPick(objectives: any): any {
 
 function home(): any {
 
-  const at = S.thread && threadObjective(S.thread);
-  if (at && at.objectiveId) Object.assign(S, { rsiProject: at.projectId, rsiPick: 'obj:' + at.objectiveId, rsiPicked: true });
   const pr = rsiProject(), todo = todoOf(state, { projectId: S.rsiProject }).items, pick = rsiPick(pr.objectives);
-  const node = function (o: any): any { const kids = pr.objectives.filter(function (x: any): any { return x.parent === o.id; }); return Object.assign({}, o, { path: o.id, pickKey: 'obj:' + o.id, dir: kids.length > 0, selected: pick.k === 'obj' && pick.id === o.id }); };
+  const node = function (o: any): any { const kids = pr.objectives.filter(function (x: any): any { return x.parent === o.id; }); return Object.assign({}, o, { path: o.id, pickKey: 'obj:' + o.id + S.tag, dir: kids.length > 0, selected: pick.k === 'obj' && pick.id === o.id }); };
 
   const rank = function (o: any): any { return ({ pending: 0, retired: 2 } as Data)[o.state] != null ? ({ pending: 0, retired: 2 } as Data)[o.state] : 1; };
   const sorted = pr.objectives.map(function (o: any, i: any): any { return { o: o, i: i }; }).sort(function (a: any, b: any): any { return rank(a.o) - rank(b.o) || a.i - b.i; }).map(function (x: any): any { return x.o; });
   const nodes: Data = { '': sorted.filter(function (o: any): any { return !o.parent; }).map(node) };
   sorted.forEach(function (o: any): any { if (o.parent) (nodes[o.parent] = nodes[o.parent] || []).push(node(o)); });
-  return { projects: state.projects, projectId: S.rsiProject, nodes: nodes, pick: pick, hasObjectives: pr.objectives.length > 0,
+  // A demo project (no project directory) says so; choices carry the conversation tag.
+  const projects = state.projects.map(function (p: any): any { return Object.assign({}, p, { choice: p.id + S.tag, name: p.projectPath ? p.name : tc('rsi.demoProject', p.name) }); });
+  return { projects: projects, projectId: S.rsiProject, projectChoice: S.rsiProject + S.tag, listKey: 'list' + S.tag, nodes: nodes, pick: pick, hasObjectives: pr.objectives.length > 0,
     exp: !!state.projects.find(function (p: any): any { return p.id === S.rsiProject; })?.exp,
     picked: !!S.rsiPicked && pick.k !== 'none' && (pick.k !== 'obj' || S.rsiPick === 'obj:' + pick.id),
-    navs: [{ k: 'caps', selected: pick.k === 'caps' }, { k: 'library', count: rsiDocs().filter(function (doc: any): any { return doc.state === 'pending'; }).length, selected: pick.k === 'library' }, { k: 'cards', count: todo.length, selected: pick.k === 'cards' }] };
+    navs: [{ k: 'caps', selected: pick.k === 'caps' }, { k: 'library', count: rsiDocs().filter(function (doc: any): any { return doc.state === 'pending'; }).length, selected: pick.k === 'library' }, { k: 'cards', count: todo.length, selected: pick.k === 'cards' }]
+      .map(function (n: any): any { return Object.assign(n, { pickKey: n.k + S.tag }); }) };
 };
 
 function rsiTree(tree: any, rows: any, def: any): any {
@@ -186,7 +195,7 @@ function exp(): any {
   const doing = steps.filter(function (x: any): any { return x.state === 'preparing'; }), cut = steps.find(function (x: any): any { return x.state === 'cancelled'; }), stale = steps.filter(function (x: any): any { return x.state === 'stale'; }).length;
 
   const first = steps.filter(function (x: any): any { return x.items.some(function (y: any): any { return y.needYou; }); }).map(function (x: any): any { return { i: x.i, n: below(x.k).length }; }).sort(function (a: any, b: any): any { return b.n - a.n; })[0];
-  const hint = first && first.n ? first : null;
+  const hint = first && first.n ? tc('rsi.exp.firstOf', first.i, first.n) : '';
   const next = o.state === 'done' ? { k: 'done' } : o.state === 'paused' ? { k: 'paused' } : wait ? { k: 'decide', v: wait.version, n: wait.k, go: at(wait, 'gov') } : run ? { k: 'running', v: run.version, n: run.k, go: at(run, 'collect') }
     : cut ? { k: 'cancelled', n: cut.i, by: cut.who } : doing.length ? { k: 'init', by: doing.map(function (x: any): any { return { who: x.who, i: x.i }; }), hint: hint }
     : o.state === 'ready' ? { k: 'ready' } : stale ? { k: 'stale', count: stale } : needYou ? { k: 'prep', count: needYou, hint: hint }
