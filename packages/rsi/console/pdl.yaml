@@ -4557,6 +4557,7 @@ views:
     okAct: plugin
     okArgs:
       request: new
+      cats: $.cats
   dlg.rsiNew:
     title: t:rsi.new
     fields:
@@ -4939,6 +4940,7 @@ requests:
       stall: "@stall"
       rounds: "@rounds"
       name: "@name"
+      cats: "@cats"
   life:
     path: rsi/act
     method: POST

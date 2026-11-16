@@ -167,11 +167,12 @@ function exp(): any {
 
   const no = function (k: any): any { return d.plan.findIndex(function (p: any): any { return p.k === k; }) + 1; };
   const below = function (k: any): any { const out: any[] = []; (function walk(x: any): any { d.plan.forEach(function (p: any): any { if (p.deps.indexOf(x) >= 0 && out.indexOf(p.k) < 0) { out.push(p.k); walk(p.k); } }); })(k); return out; };
+  const nameOf = function (id: any): any { const m = d.members.find(function (m: any): any { return m.catId === id; }); return m ? m.name : id; };
   const steps = d.plan.map(function (p: any, i: any): any {
     const k = p.k, items = d.prep.filter(function (x: any): any { return x.section === k; }).map(function (x: any): any { return Object.assign({}, x, { needYou: x.neededFrom === 'human' && x.state !== 'confirmed' }); });
     const has = function (st: any): any { return items.some(function (x: any): any { return x.state === st; }); }, ex = d.exec && d.exec[k], st = d.steps && d.steps[k];
     const missing = d.steps ? p.deps.filter(function (x: any): any { return !d.steps[x] || d.steps[x].stale; }).map(no) : [];
-    return { k: k, i: i + 1, items: items, by: ex && ex.state === 'started' && ex.by, who: ex && ex.by, unknowns: st && st.unknowns, next: st && st.next,
+    return { k: k, i: i + 1, items: items, by: ex && ex.state === 'started' && nameOf(ex.by), who: ex && nameOf(ex.by), unknowns: st && st.unknowns, next: st && st.next,
       deps: p.deps.map(no).join('、'), waitOn: d.steps && !ex && !st && missing.join('、'),
       state: ex ? ({ started: 'preparing', cancelled: 'cancelled', failed: 'failed', blocked: 'blocked', missing: 'missing' } as Data)[ex.state] : d.steps && st && st.stale ? 'stale' : d.steps && !st ? (missing.length ? 'waiting' : 'queued')
       : items.every(function (x: any): any { return x.state === 'confirmed'; }) ? 'confirmed' : has('preparing') ? 'preparing' : has('submitted') ? 'submitted' : 'uninvestigated' };

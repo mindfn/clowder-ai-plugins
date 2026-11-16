@@ -162,7 +162,7 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   d.plan = RSI_CP_INIT.map((s) => ({ k: s.section, role: s.role, deps: [...s.deps] }));
   d.executor.state = 'none';
   d.prep = d.prep.map((p) => ({ ...p, value: '', state: 'uninvestigated', by: '', neededFrom: null, at: null, facts: null, can: null, rec: null, tag: null }));
-  for (const role of ['prepare', 'evaluate']) Object.assign(d.members.find((m) => m.role === role)!, { catId: body[role], name: body[role], model: '' });
+  for (const role of ['prepare', 'evaluate']) Object.assign(d.members.find((m) => m.role === role)!, { catId: body[role], name: (Array.isArray(body.cats) && body.cats.find((c: Data) => c.id === body[role])?.name) || body[role], model: '' });
   const goal = d.prep.find((p) => p.id.endsWith('-goal'))!;
   Object.assign(goal, { value: body.statement, state: 'confirmed', by: '你', mine: true, at: now });
   const stopItem = d.prep.find((p) => p.id.endsWith('-stop'));
