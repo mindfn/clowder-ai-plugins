@@ -13,6 +13,13 @@ function executionEvents(state: import('./types.js').RsiState, d: Experiment) {
     const step = d.exec?.[dispatch.section as Section];
     if (step?.state === 'started' && step.id === dispatch.executionId && step.by === dispatch.member)
       recordInitExecution(state, d.objective.id, dispatch.section, step.id, event.outcome, Date.now());
+    // The member's turn ended normally while a step handed to it in that turn is still open: wake it once for that step.
+    if (event.outcome === 'completed') for (const handed of state.outbox.filter((e) => e.kind === 'agent' && e.objective === d.objective.id && e.member === dispatch.member && e.inTurn && !e.rewoken)) {
+      const open = d.exec?.[handed.section as Section];
+      if (open?.state !== 'started' || open.id !== handed.executionId) continue;
+      handed.rewoken = true;
+      state.outbox.push({ ...handed, id: `${handed.id}-wake`, inTurn: undefined, sent: undefined, messageId: undefined });
+    }
     state.experiments[d.objective.id].lifecycle[id].applied = true;
   }
 }
@@ -47,7 +54,7 @@ export function createRuntime(host: RsiHost) {
         }
         const content = [entry.message?.title, entry.kind === 'agent' ? '先调用 rsi.task 读取当前任务和依据版本。' : '', entry.message?.body, entry.message?.ask].filter(Boolean).join('\n\n');
         const sent = await host.messaging.send({ threadId: d.objective.thread, idempotencyKey: entry.id,
-          ...(entry.kind === 'agent' ? { wake: { catId: entry.member, exact: true as const } } : {}),
+          ...(entry.kind === 'agent' && !entry.inTurn ? { wake: { catId: entry.member, exact: true as const } } : {}),
           payload: { provenance: { epistemicStatus: entry.kind === 'agent' ? 'user_intent' : 'observation' },
             elements: [{ elementId: entry.id, kind: 'text', payload: { text: content } },
               ...(entry.kind === 'message' && ['goal', 'conclusion', 'failed', 'plan'].includes(entry.message.kind) ? [{ elementId: `${entry.id}-card`, kind: 'rich_block' as const,

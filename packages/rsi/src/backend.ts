@@ -70,7 +70,14 @@ export function createRsi(host: RsiHost) {
       await ready;
       const key = ownerKey(ctx.userId);
       if (!(await host.storage.get(key))) return { error: 'No RSI objective for this owner', status: 404 };
-      const result = await update(host.storage, key, (state) => toolAction(state, method, input, ctx, Date.now()), () => ctx.assertCurrent());
+      const result = await update(host.storage, key, (state) => {
+        const before = state.outbox.length, result = toolAction(state, method, input, ctx, Date.now());
+        if (result.error) return result;
+        // Steps that became this member's while it is still in this turn: tell it here instead of waking it again.
+        const mine = state.outbox.slice(before).filter((e) => e.kind === 'agent' && e.member === ctx.catId && !e.sent);
+        for (const e of mine) e.inTurn = ctx.invocationId;
+        return mine.length ? { ...result, next: `第 ${mine.map((e) => state.experiments[e.objective].plan.findIndex((p) => p.k === e.section) + 1).join('、')} 步也轮到你了：接着调用 rsi.task 做，不用等新的消息。` } : result;
+      }, () => ctx.assertCurrent());
       if (!result.error) await runtime.flush(key);
       return result;
     },
