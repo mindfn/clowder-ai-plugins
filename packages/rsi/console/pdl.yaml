@@ -200,6 +200,16 @@ views:
                       w: id
                       when: "@running"
                   cur: "@selected"
+                  acts:
+                    - label: t:rsi.moreActions
+                      icon: more
+                      items:
+                        - label: t:rsi.delete.action
+                          act: dialog
+                          args:
+                            kind: rsiDelete
+                            objective: "@id"
+                            name: "@name"
                 select:
                   act: plugSet
                   args:
@@ -470,6 +480,16 @@ views:
                       w: id
                       when: "@running"
                   cur: "@selected"
+                  acts:
+                    - label: t:rsi.moreActions
+                      icon: more
+                      items:
+                        - label: t:rsi.delete.action
+                          act: dialog
+                          args:
+                            kind: rsiDelete
+                            objective: "@id"
+                            name: "@name"
                 select:
                   act: plugSet
                   args:

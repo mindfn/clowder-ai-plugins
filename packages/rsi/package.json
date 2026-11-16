@@ -1,6 +1,6 @@
 {
   "name": "@clowder-ai/rsi",
-  "version": "0.1.0-alpha.12",
+  "version": "0.1.0-alpha.13",
   "private": true,
   "description": "Capability evolution (RSI) for Clowder AI projects",
   "license": "MIT",
