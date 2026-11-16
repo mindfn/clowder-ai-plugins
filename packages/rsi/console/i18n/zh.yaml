@@ -664,3 +664,11 @@ console:
 common:
   save: 保存
   delete: 删除
+
+phase2:
+  project: 项目
+  currentProject: 当前对话的项目
+  runCycle: 跑一轮
+  refresh: 刷新进度
+  duration: 耗时（秒）
+  done: 完成

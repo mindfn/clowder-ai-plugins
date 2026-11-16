@@ -40,6 +40,7 @@ export interface InitExecution {
   recoveryUrl?: string;
   item?: string;
   note?: string;
+  invocationId?: string;
 }
 
 export interface Experiment extends Data {
@@ -74,6 +75,7 @@ export interface RsiState {
 }
 
 export interface RsiStorage {
+  list(): Promise<Readonly<Record<string, { revision: number; value: unknown }>>>;
   get(key: string): Promise<{ revision: number; value: unknown } | undefined>;
   compareAndSet(key: string, revision: number | null, value: RsiState): Promise<{ applied: boolean }>;
 }
@@ -84,4 +86,38 @@ export interface OwnerContext {
   pluginInstanceId: string;
   operation: 'read' | 'write';
   assertCurrent(): Promise<void>;
+}
+
+export interface ToolContext {
+  catId: string;
+  threadId: string;
+  userId: string;
+  invocationId: string;
+  assertCurrent(): Promise<void>;
+}
+
+export interface HostThread {
+  id: string;
+  projectRef?: string;
+  lastActiveAt: number;
+}
+
+export interface RsiHost {
+  pluginInstanceId: string;
+  storage: RsiStorage;
+  threads: {
+    list(options?: { limit?: number; before?: { id: string; lastActiveAt: number } }): Promise<readonly HostThread[]>;
+    get(id: string): Promise<HostThread | null>;
+    create(input: { title: string; projectRef: string; participants: string[] }): Promise<HostThread>;
+  };
+  messaging: {
+    subscribe(input: { threadId: string; method: string }): Promise<void>;
+    send(input: { threadId: string; idempotencyKey: string; wake?: { catId: string; exact: true }; payload: {
+      provenance: { epistemicStatus: 'observation' | 'user_intent' };
+      elements: ({ elementId: string; kind: 'text'; payload: { text: string } } |
+        { elementId: string; kind: 'rich_block'; payload: { id: string; kind: 'card'; v: 1; title: string; bodyMarkdown: string } })[];
+    } }): Promise<{ messageId: string }>;
+  };
+  dataPath: string;
+  log(level: 'info' | 'error', message: string, fields?: Data): void;
 }

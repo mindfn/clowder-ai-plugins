@@ -1,0 +1,135 @@
+import { RSI_CP_INIT, createFixtures } from './fixtures.js';
+import { submitInitStep, enqueue, kick, syncObjective } from './init.js';
+import { conclude, validPlan } from './cycles.js';
+import { record, text } from './store.js';
+import type { Data, Experiment, PrepItem, RsiState, Section, ToolContext } from './types.js';
+
+const fields = ['preflight', 'submit', 'get', 'cancel', 'collect', 'analyze'];
+export function executorInput(input: Data): boolean {
+  return ['preflight', 'submit', 'collect'].every((k) => text(input[k]))
+    && fields.every((k) => input[k] === undefined || text(input[k]))
+    && (input.resultMap === undefined || Array.isArray(input.resultMap) && input.resultMap.every((m: unknown) => record(m) && text(m.metric) && text(m.field)));
+}
+
+function registerExecutor(state: RsiState, d: Experiment, input: Data) {
+  const commands = Object.fromEntries(fields.filter((k) => input[k] !== undefined).map((k) => [k, input[k]]));
+  d.executor = { mcp: 'rsi.executor', state: 'probing', commands, resultMap: input.resultMap || [],
+    ops: Object.entries(commands).map(([op, command]) => ({ op, tool: command, params: {} })), pending: d.executor.pending?.executionId === d.exec!.run!.id ? d.executor.pending : undefined };
+  enqueue(state, d, 'executor', { action: 'preflight', executionId: d.exec!.run!.id });
+}
+
+function currentStep(d: Experiment, input: Data) {
+  const plan = typeof input.step === 'number' ? d.plan[input.step - 1] : d.plan.find((p) => p.k === input.step);
+  return plan?.k;
+}
+
+function claimed(d: Experiment, section: Section, ctx: ToolContext) {
+  const ex = d.exec?.[section], plan = d.plan.find((p) => p.k === section)!;
+  return ex?.state === 'started' && ex.by === ctx.catId && ex.invocationId === ctx.invocationId
+    && plan.deps.every((k) => d.steps?.[k] && !d.steps[k]!.stale && d.steps[k]!.rev === ex.base[k]);
+}
+
+function task(d: Experiment, ctx: ToolContext) {
+  const template = createFixtures().templates['cp-converge'];
+  const steps = d.plan.filter((p) => d.exec?.[p.k]?.state === 'started' && d.exec[p.k]!.by === ctx.catId).map((p) => {
+    const ex = d.exec![p.k]!;
+    ex.invocationId = ctx.invocationId;
+    const prototype = RSI_CP_INIT.find((s) => s.section === p.k)!;
+    return { step: d.plan.indexOf(p) + 1, section: p.k, executionId: ex.id, ask: prototype.ask,
+      items: d.prep.filter((item) => item.section === p.k).map((item) => ({ id: item.id, title: item.title, meaning: item.title,
+        value: item.value, userOwned: !!item.mine, format: 'value: string; facts?: [{k:string,v:string}]; can?: string; rec?: explore|fixed|excluded; tag?: string',
+        example: template.prep.find((p) => p.id === item.id)?.value || '填写项目中的观察、依据和建议。' })),
+      deps: p.deps.map((k) => ({ step: d.plan.findIndex((p) => p.k === k) + 1, section: k, version: d.steps![k]!.rev, items: d.prep.filter((item) => item.section === k) })),
+      ...(p.k === 'run' ? { executor: '先用 rsi.executor 登记 preflight/submit/collect 命令；preflight 通过且本步 items 已提交后才完成。' } : {}),
+      ...(p.k === 'rules' ? { metrics: { version: 'E1', items: [{ id: 'score', name: '得分', how: 'metrics.json 的 score', dir: 'up', unit: '分', locked: true, guard: false }] } } : {}),
+      ...(p.k === 'design' || p.k === 'baseline' ? { upcoming: { groups: [{ id: 'control', label: '对照', vars: {}, control: true }, { id: 'change', label: '一个改动', vars: { learning_rate: 0.001 } }], seeds: [11, 23] } } : {}) };
+  });
+  const evaluate = d.members.find((m) => m.role === 'evaluate')?.catId === ctx.catId && d.rounds.find((r: Data) => r.state === 'evaluating');
+  const version = d.members.find((m) => m.role === 'prepare')?.catId === ctx.catId && d.versionRequest;
+  if (!steps.length && !evaluate && !version) return { error: 'It is not this member’s turn', status: 403 };
+  if (evaluate) evaluate.invocationId = ctx.invocationId;
+  if (version) version.invocationId = ctx.invocationId;
+  return { objective: d.objective, projectPath: d.objective.projectPath, steps, versions: d.versions,
+    stepVersions: d.steps, ...(evaluate ? { evaluate: { cycle: evaluate.n, plan: evaluate.plan, runs: evaluate.runs, metrics: d.metrics, next: '调用 rsi.conclude 提交 verdict/findings/options。' } } : {}),
+    ...(version ? { version: { ...version, next: '按方向修改项目并提交 git；调用 rsi.version({change,commit,config})。config 是 JSON 对象或项目内 JSON 文件路径。' } } : {}) };
+}
+
+export function toolAction(state: RsiState, method: string, input: Data, ctx: ToolContext, now: number): Data {
+  const d = Object.values(state.experiments).find((d) => d.objective.thread === ctx.threadId);
+  if (!d?.objective.projectPath) return { error: 'No real RSI objective in this thread', status: 404 };
+  if (!d.members.some((m) => m.catId === ctx.catId)) return { error: 'Not an objective member', status: 403 };
+  if (method === 'rsi.task') {
+    for (const plan of d.plan) {
+      const execution = d.exec?.[plan.k];
+      if (execution?.state !== 'started' || execution.by !== ctx.catId) continue;
+      if (plan.deps.some((k) => d.steps?.[k]?.rev !== execution.base[k] || d.steps?.[k]?.stale)) {
+        delete d.exec![plan.k];
+        if (d.steps?.[plan.k]) Object.assign(d.steps[plan.k]!, { stale: true, redo: true });
+        kick(state, d.objective.id, now);
+        return task(state.experiments[d.objective.id], ctx);
+      }
+    }
+    return task(d, ctx);
+  }
+  if (method === 'rsi.conclude') {
+    const round = d.rounds.find((r: Data) => r.n === input.cycle);
+    if (d.members.find((m) => m.role === 'evaluate')?.catId !== ctx.catId || round?.invocationId !== ctx.invocationId) return { error: 'Call rsi.task on the evaluation turn first', status: 403 };
+    return conclude(state, d, input, now);
+  }
+  if (method === 'rsi.version') {
+    if (d.members.find((m) => m.role === 'prepare')?.catId !== ctx.catId || d.versionRequest?.invocationId !== ctx.invocationId) return { error: 'Call rsi.task on the version turn first', status: 403 };
+    if (!text(input.change) || !text(input.commit) || !/^[a-f0-9]{7,40}$/i.test(input.commit) || !(record(input.config) || text(input.config))) return { error: 'Provide change, git commit (7–40 hex characters), and config (JSON object or JSON file path)' };
+    const previous = d.objective.currentVersion, id = `v${d.versions.length + 1}`;
+    for (const v of d.versions) v.current = false;
+    d.versions.push({ id, parent: previous, change: input.change, commit: input.commit, config: input.config, at: now, current: true });
+    const last = d.rounds.find((r: Data) => r.n === d.versionRequest.cycle), control = last.plan.groups.find((g: Data) => g.version === previous && !g.control) || last.plan.groups.find((g: Data) => g.version === previous) || last.plan.groups[0];
+    d.upcoming = { ...last.plan, baseline: false, groups: [{ ...control, id: 'control', label: '上一版本对照', version: previous, control: true },
+      { id: 'change', label: input.change, version: id, vars: {}, control: false, confirm: false }] };
+    d.objective.currentVersion = id;
+    delete d.versionRequest;
+    syncObjective(state, d);
+    return { ok: true, version: id };
+  }
+  if (method === 'rsi.executor') {
+    if (!claimed(d, 'run', ctx)) return { error: 'Call rsi.task on step 3 first; dependencies must be current', status: 403 };
+    if (!executorInput(input)) return { error: 'Provide preflight, submit and collect templates; get/cancel/analyze and resultMap are optional' };
+    if (d.executor.state === 'probing') return { error: 'Preflight is already running', status: 409 };
+    registerExecutor(state, d, input);
+    return { ok: true, state: 'probing' };
+  }
+  if (method !== 'rsi.submit') return { error: 'Unknown RSI tool' };
+  const section = currentStep(d, input);
+  if (!section || !claimed(d, section, ctx)) return { error: 'Call rsi.task for the current step; dependencies or execution changed', status: 409 };
+  if (!Array.isArray(input.items) || !input.items.length || input.items.some((p: unknown) => !record(p) || !text(p.id) || !text(p.value)
+    || p.facts !== undefined && (!Array.isArray(p.facts) || p.facts.some((f: unknown) => !record(f) || !text(f.k) || typeof f.v !== 'string'))
+    || p.rec !== undefined && !['explore', 'fixed', 'excluded'].includes(p.rec)
+    || p.can !== undefined && !text(p.can) || p.tag !== undefined && !text(p.tag))
+    || new Set(input.items.map((p: Data) => p.id)).size !== input.items.length
+    || input.items.some((p: Data) => !d.prep.some((x) => x.section === section && x.id === p.id))
+    || d.prep.some((p) => p.section === section && !p.mine && !input.items.some((x: Data) => x.id === p.id))
+    || input.unknowns !== undefined && typeof input.unknowns !== 'string' || input.next !== undefined && typeof input.next !== 'string') return { error: 'Submit all step items with non-empty values and valid facts/rec/can/tag' };
+  if (input.goal !== undefined && !record(input.goal)) return { error: 'Invalid goal' };
+  if (input.docs !== undefined && (!Array.isArray(input.docs) || input.docs.some((doc: unknown) => !record(doc) || !text(doc.id) || !text(doc.title) || !text(doc.body) || !['project', 'provided', 'feedback'].includes(doc.kind)))) return { error: 'Docs require id, title, body and kind' };
+  if (section === 'rules' && (!record(input.metrics) || !text(input.metrics.version) || !Array.isArray(input.metrics.items) || !input.metrics.items.length
+    || input.metrics.items.some((m: unknown) => !record(m) || !text(m.id) || !text(m.name) || !text(m.how) || !['up', 'down'].includes(m.dir))
+    || new Set(input.metrics.items.map((m: Data) => m.id)).size !== input.metrics.items.length)) return { error: 'Step 4 requires metrics {version,items:[{id,name,how,dir:up|down}]}' };
+  if ((section === 'design' || section === 'baseline') && input.upcoming !== undefined && !validPlan(input.upcoming)) return { error: 'Invalid upcoming plan' };
+  if (section === 'design' && !validPlan(input.upcoming)) return { error: 'Step 5 requires upcoming {groups:[{id,label,vars}],seeds:[integer]}' };
+  const items = input.items.map((p: Data) => ({ ...d.prep.find((x) => x.id === p.id)!, ...p, section })) as PrepItem[];
+  const submission = { section, executionId: d.exec![section]!.id, items, unknowns: input.unknowns, next: input.next,
+    ...(section === 'goal' && input.goal ? { goal: input.goal } : {}), ...(section === 'rules' ? { metrics: input.metrics } : {}),
+    ...(['design', 'baseline'].includes(section) && input.upcoming ? { upcoming: input.upcoming } : {}),
+    ...(input.docs ? { docs: input.docs.map((doc: Data) => ({ ...doc, objectives: [d.objective.id], sources: doc.sources || [], by: ctx.catId })) } : {}) };
+  if (section === 'run') {
+    if (input.executor !== undefined) {
+      if (!record(input.executor) || !executorInput(input.executor)) return { error: 'Invalid executor templates' };
+      if (d.executor.state === 'probing') return { error: 'Preflight is already running', status: 409 };
+      registerExecutor(state, d, input.executor);
+    }
+    if (d.executor.state !== 'passed') {
+      d.executor.pending = submission;
+      return { ok: true, state: 'awaiting-preflight', next: 'Call rsi.executor if it has not been registered.' };
+    }
+  }
+  return submitInitStep(state, d.objective.id, { ...submission, ...(section === 'run' ? { executor: d.executor } : {}) }, now);
+}

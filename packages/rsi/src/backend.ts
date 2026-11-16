@@ -1,61 +1,80 @@
-import { seedState } from './fixtures.js';
 import { viewModel } from './views.js';
 import { act } from './actions.js';
-import type { OwnerContext, RsiState, RsiStorage } from './types.js';
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isState(value: unknown): value is RsiState {
-  return isRecord(value) && Array.isArray(value.projects) && isRecord(value.objectives)
-    && isRecord(value.experiments) && isRecord(value.details) && Array.isArray(value.outbox);
-}
-
-export function ownerKey(userId: string) {
-  return `rsi:${Buffer.from(userId).toString('base64url')}`;
-}
+import { createRuntime } from './runtime.js';
+import { mergeProjects, projects } from './projects.js';
+import { isState, load, ownerKey, record, update } from './store.js';
+import { toolAction } from './tools.js';
+import type { Data, OwnerContext, RsiHost, ToolContext } from './types.js';
+export { ownerKey } from './store.js';
 
 export function json(status: number, payload: unknown) {
   return { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }, body: JSON.stringify(payload ?? null) };
 }
 
-export function createRsi(storage: RsiStorage) {
+export function createRsi(host: RsiHost) {
+  const runtime = createRuntime(host), ready = runtime.start();
   async function handle(input: unknown, context: OwnerContext | undefined, method: 'GET' | 'POST') {
     if (context?.kind !== 'owner-http-request') return json(403, { error: 'Owner request required' });
-    if (!isRecord(input) || !isRecord(input.request)) return json(400, { error: 'Invalid request' });
+    if (!record(input) || !record(input.request)) return json(400, { error: 'Invalid request' });
     if (input.request.method !== method) return json(405, { error: 'Invalid method' });
     if (context.operation !== (method === 'GET' ? 'read' : 'write')) return json(403, { error: 'Invalid owner operation' });
-    if (input.request.query !== undefined && !isRecord(input.request.query)) return json(400, { error: 'Invalid query' });
-    if (method === 'POST' && (!isRecord(input.request.body) || typeof input.request.body.op !== 'string')) return json(400, { error: 'Invalid operation' });
+    if (input.request.query !== undefined && !record(input.request.query)) return json(400, { error: 'Invalid query' });
+    if (method === 'POST' && (!record(input.request.body) || typeof input.request.body.op !== 'string')) return json(400, { error: 'Invalid operation' });
     await context.assertCurrent();
+    await ready;
     const key = ownerKey(context.userId), query = input.request.query || {};
-    let current = await storage.get(key);
-    if (!current) {
-      await context.assertCurrent();
-      await storage.compareAndSet(key, null, seedState());
-      current = await storage.get(key);
-      if (!current) return json(409, { error: 'RSI state changed, please retry' });
-    }
+    const current = await load(host.storage, key, () => context.assertCurrent());
+    if (!current) return json(409, { error: 'RSI state changed, please retry' });
     if (!isState(current.value)) return json(500, { error: 'Invalid RSI data' });
+    const live = await projects(host);
     if (method === 'GET') {
       if (typeof query.view !== 'string') return json(400, { error: 'Provide a view' });
+      mergeProjects(current.value, live);
       if (query.project && !current.value.projects.some((p) => p.id === query.project)) return json(404, { error: 'Project not found' });
       const result = viewModel(current.value, query.view, query);
       return result === undefined ? json(400, { error: 'Unknown view' }) : json(200, result);
     }
-    const next = structuredClone(current.value), body = input.request.body as Record<string, unknown>;
-    const result = act(next, body, query, Date.now());
-    if (result.error) {
-      const { status = 400, ...payload } = result;
-      return json(status, payload);
+    const body: Data = { ...input.request.body };
+    if (['new', 'newExp'].includes(body.op) && body.project === '') {
+      if (typeof body.thread !== 'string') return json(400, { error: 'Choose a project or open this dialog from a project conversation' });
+      const thread = await host.threads.get(body.thread);
+      if (!thread?.projectRef) return json(400, { error: 'The current conversation has no project' });
+      body.project = thread.projectRef;
     }
-    await context.assertCurrent();
-    const write = await storage.compareAndSet(key, current.revision, next);
-    return write.applied ? json(200, result) : json(409, { error: 'RSI state changed, please retry' });
+    let created: string | undefined;
+    const result = await update(host.storage, key, (next) => {
+      mergeProjects(next, live);
+      const project = next.projects.find((p) => p.id === (body.project || query.project));
+      body.projectPath = project?.projectPath;
+      const before = next.outbox.length;
+      const result = act(next, body, query, Date.now());
+      created = next.outbox.slice(before).find((e) => e.kind === 'createThread')?.objective;
+      return result;
+    }, () => context.assertCurrent());
+    if (result.error) { const { status = 400, ...payload } = result; return json(status, payload); }
+    await runtime.flush(key);
+    if (created) {
+      const saved = await host.storage.get(key);
+      const id = isState(saved?.value) && saved.value.experiments[created].objective.thread;
+      if (id) return json(200, { ok: true, act: 'thread', args: { id } });
+    }
+    return json(200, result);
   }
   return {
     view: (input: unknown, context?: OwnerContext) => handle(input, context, 'GET'),
     act: (input: unknown, context?: OwnerContext) => handle(input, context, 'POST'),
+    async tool(method: string, input: unknown, ctx?: ToolContext) {
+      if (!ctx || !ctx.catId || !ctx.threadId || !ctx.userId || !ctx.invocationId) return { error: 'Host tool context required', status: 403 };
+      if (!record(input)) return { error: 'Tool input must be an object', status: 400 };
+      await ctx.assertCurrent();
+      await ready;
+      const key = ownerKey(ctx.userId);
+      if (!(await host.storage.get(key))) return { error: 'No RSI objective for this owner', status: 404 };
+      const result = await update(host.storage, key, (state) => toolAction(state, method, input, ctx, Date.now()), () => ctx.assertCurrent());
+      if (!result.error) await runtime.flush(key);
+      return result;
+    },
+    deliver: runtime.deliver,
+    stop: () => runtime.stop(),
   };
 }

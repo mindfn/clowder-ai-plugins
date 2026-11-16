@@ -664,3 +664,11 @@ console:
 common:
   save: Save
   delete: Delete
+
+phase2:
+  project: Project
+  currentProject: Current conversation’s project
+  runCycle: Run one cycle
+  refresh: Refresh progress
+  duration: Duration (seconds)
+  done: Done

@@ -200,12 +200,12 @@ function exp(): any {
         doneN: runs.filter(function (u: any): any { return u.state === 'done' || u.state === 'failed'; }).length, total: runs.length });
     });
   };
-  return { id: o.id, name: o.name, state: o.state, goal: o.goal, thread: o.thread, next: next, now: now, tab: S.rsiTab, setup: rounds.length === 0,
+  return { id: o.id, name: o.name, state: o.state, projectPath: o.projectPath, goal: o.goal, thread: o.thread, next: next, now: now, tab: S.rsiTab, setup: rounds.length === 0,
     trend: rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, value: best(x).mean }; }),
     trendMetric: d.metrics.items[0].name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.length },
     versions: tree.rows, ver: ver, step: m ? m[2] : 'node',
     cycle: r && Object.assign({}, r, { waiting: waiting(r), groups: groupsOf(r),
-      runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),
+      runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { durationSeconds: u.start ? Math.round(((u.end || Date.now()) - u.start) / 1000) : null, metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })), groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),
       notAssessed: r.report && RSI_LAYERS.filter(function (l: any): any { return r.report.attribution.assessedLayers.indexOf(l) < 0; }),
       report: r.report && Object.assign({}, r.report, { directions: r.report.directions.map(function (x: any): any { return Object.assign({}, x, { picked: !!r.decision && r.decision.directionId === x.id }); }) }) }),
     prep: { needYou: needYou, steps: steps }, executor: d.executor, members: d.members, policy: d.policy, metrics: d.metrics,

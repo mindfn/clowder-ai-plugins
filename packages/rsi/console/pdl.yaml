@@ -36,6 +36,8 @@ views:
                       act: dialog
                       args:
                         kind: rsiNewExp
+                        thread: $.currentThread.id
+                        projects: $.home.projects
                         cats: $.members.defaultCatOptions
                       when:
                         - of: "@id"
@@ -119,6 +121,8 @@ views:
                         act: dialog
                         args:
                           kind: rsiNewExp
+                          thread: $.currentThread.id
+                          projects: $.home.projects
                           cats: $.members.defaultCatOptions
                         disabled: $.pending
                         when: "@exp"
@@ -227,6 +231,8 @@ views:
                     act: dialog
                     args:
                       kind: rsiNewExp
+                      thread: $.currentThread.id
+                      projects: $.home.projects
                       cats: $.members.defaultCatOptions
                     disabled: $.pending
                     when: "@exp"
@@ -279,6 +285,7 @@ views:
     sources:
       home: home
       members: host:members
+      currentThread: host:currentThread
     loading: t:rsi.console.loading
     error: t:rsi.console.error
   rsi.panel:
@@ -300,6 +307,8 @@ views:
                       act: dialog
                       args:
                         kind: rsiNewExp
+                        thread: $.currentThread.id
+                        projects: $.home.projects
                         cats: $.members.defaultCatOptions
                       when:
                         - of: "@id"
@@ -383,6 +392,8 @@ views:
                         act: dialog
                         args:
                           kind: rsiNewExp
+                          thread: $.currentThread.id
+                          projects: $.home.projects
                           cats: $.members.defaultCatOptions
                         disabled: $.pending
                         when: "@exp"
@@ -508,6 +519,8 @@ views:
                     act: dialog
                     args:
                       kind: rsiNewExp
+                      thread: $.currentThread.id
+                      projects: $.home.projects
                       cats: $.members.defaultCatOptions
                     disabled: $.pending
                     when: "@exp"
@@ -571,6 +584,7 @@ views:
     sources:
       home: home
       members: host:members
+      currentThread: host:currentThread
     loading: t:rsi.console.loading
     error: t:rsi.console.error
   rsi.exp:
@@ -593,6 +607,21 @@ views:
                 running: info
                 paused: warn
                 _: ""
+          - type: button
+            label: t:rsi.phase2.refresh
+            when: $.exp.projectPath
+            act: plugin
+            args:
+              request: refresh
+            disabled: $.pending
+          - type: button
+            label: t:rsi.phase2.runCycle
+            when: $.exp.projectPath
+            act: plugin
+            args:
+              request: runCycle
+              objective: $.exp.id
+            disabled: $.pending
           - type: button
             when:
               of: $.exp.state
@@ -1197,11 +1226,16 @@ views:
                                 queued:
                                   tone: ""
                                   text: t:rsi.exp.state.queued
+                                done:
+                                  tone: ok
+                                  text: t:rsi.phase2.done
                                 _: ""
                           w: state
                       expand:
                         - type: kv
                           from:
+                            - k: t:rsi.phase2.duration
+                              v: "@durationSeconds"
                             - k: t:rsi.exp.env.commit
                               v: "@env.commit"
                             - k: t:rsi.exp.env.config
@@ -1215,6 +1249,8 @@ views:
                             - k: t:rsi.exp.err.step
                               v: "@error.step"
                               when: "@error"
+                        - type: kv
+                          from: "@metricRows"
                         - type: pre
                           text: "@error.raw"
                           when: "@error"
@@ -3294,6 +3330,8 @@ views:
                 act: dialog
                 args:
                   kind: rsiNewExp
+                  thread: $.currentThread.id
+                  projects: $.home.projects
                   cats: $.members.defaultCatOptions
                 disabled: $.pending
                 when: "@exp"
@@ -3336,6 +3374,7 @@ views:
       caps: caps
       home: home
       members: host:members
+      currentThread: host:currentThread
     loading: t:rsi.console.loading
     error: t:rsi.console.error
   rsi.library:
@@ -3374,6 +3413,8 @@ views:
                 act: dialog
                 args:
                   kind: rsiNewExp
+                  thread: $.currentThread.id
+                  projects: $.home.projects
                   cats: $.members.defaultCatOptions
                 disabled: $.pending
                 when: "@exp"
@@ -3399,6 +3440,7 @@ views:
       library: library
       home: home
       members: host:members
+      currentThread: host:currentThread
     loading: t:rsi.console.loading
     error: t:rsi.console.error
   dlg.rsiCards:
@@ -4517,6 +4559,17 @@ views:
     title: t:rsi.new
     help: t:rsi.newExp.help
     fields:
+      - id: dlg-project
+        label: t:rsi.phase2.project
+        value: ""
+        options:
+          - v: ""
+            label: t:rsi.phase2.currentProject
+          - from: $.projects
+            item:
+              v: "@id"
+              label: "@name"
+        arg: project
       - id: dlg-name
         label: t:rsi.newExp.statement
         value: t:rsi.newExp.statementDefault
@@ -4524,7 +4577,7 @@ views:
         arg: statement
       - id: dlg-prepare
         label: t:rsi.newExp.prepare
-        value: opus
+        value: codex
         options:
           - from: $.cats
             item:
@@ -4533,7 +4586,7 @@ views:
         arg: prepare
       - id: dlg-evaluate
         label: t:rsi.newExp.evaluate
-        value: codex
+        value: cat-b5ddoo9l
         options:
           - from: $.cats
             item:
@@ -4557,6 +4610,7 @@ views:
     okAct: plugin
     okArgs:
       request: new
+      thread: $.thread
       cats: $.cats
   dlg.rsiNew:
     title: t:rsi.new
@@ -4933,6 +4987,8 @@ requests:
       selC: state.selC
     body:
       op: new
+      project: "@project"
+      thread: "@thread"
       statement: "@statement"
       prepare: "@prepare"
       evaluate: "@evaluate"
@@ -5166,6 +5222,17 @@ requests:
       op: policy
       key: "@key"
       v: "@v"
+  runCycle:
+    path: rsi/act
+    method: POST
+    body:
+      op: runCycle
+      objective: "@objective"
+  refresh:
+    path: rsi/act
+    method: POST
+    body:
+      op: refresh
 components:
   js: []
   css: []

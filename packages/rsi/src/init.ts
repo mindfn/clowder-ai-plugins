@@ -56,7 +56,7 @@ export function rsiExpKick(experiment: Experiment, now: number): { experiment: E
     const old = d.steps[plan.k], member = d.members.find((m) => m.role === plan.role);
     if (!member?.catId || d.exec[plan.k] || (old && !(old.stale && old.redo))) continue;
     if (plan.deps.some((k) => !d.steps![k] || d.steps![k]!.stale || d.exec![k])) continue;
-    if (Object.values(d.exec).some((e) => e?.state === 'started' && e.by === member.catId)) continue;
+    if (Object.values(d.exec).some((e) => e?.by === member.catId)) continue;
     const s = RSI_CP_INIT.find((s) => s.section === plan.k)!;
     const base = Object.fromEntries(plan.deps.map((k) => [k, d.steps![k]!.rev]));
     const id = `${d.objective.id}-init-${plan.k}-${d.seq = (d.seq || 0) + 1}`;
@@ -83,7 +83,7 @@ export function kick(state: RsiState, id: string, now: number) {
     message(state, d, now, `七步都起草完了：还有 ${waiting.length} 项等你确认`, waiting.map((p) => p.title).join('、') + '。', 'ask', '在评估项页逐条确认或修改；都确认了才能开始评估。');
   }
   if (!done) d.drafted = false;
-  if (rsiExpReady(d)) message(state, d, now, `初始化完成：每晚 ${d.policy.schedule.window} 跑，第一晚只跑基线 v1`, `执行能力 ${d.executor.mcp}；看 ${d.metrics.version} 的 ${d.metrics.items.length} 条量尺。`, 'declare', '在评估项页点「开始评估」。');
+  if (rsiExpReady(d)) message(state, d, now, d.objective.projectPath ? '初始化完成：可以跑一轮' : `初始化完成：每晚 ${d.policy.schedule.window} 跑，第一晚只跑基线 v1`, `执行能力 ${d.executor.mcp}；看 ${d.metrics.version} 的 ${d.metrics.items.length} 条量尺。`, 'declare', '在评估项页点「开始评估」。');
   syncObjective(state, d);
 }
 
@@ -153,12 +153,17 @@ export function recordInitExecution(state: RsiState, id: string, section: Sectio
 export function rsiExpNew(state: RsiState, project: string, body: Data, now: number) {
   const fixture = createFixtures(now), templateId = project === 'pd-infer' ? 'pd-ttft' : 'cp-converge';
   const d = structuredClone(fixture.templates[templateId]);
-  const id = summaryOf(state, templateId) ? `obj-${randomUUID()}` : templateId;
+  const id = body.projectPath || summaryOf(state, templateId) ? `obj-${randomUUID()}` : templateId;
   const stop = [body.target && `达到「${body.target}」并复验稳定`, +body.stall && `连续 ${body.stall} 个周期没进步`, +body.rounds && `用满 ${body.rounds} 个周期`].filter(Boolean).join('，或') || '由你决定';
-  d.objective = { ...d.objective, id, name: body.statement, projectId: project, state: 'preparing', thread: null, currentVersion: 'v1', round: 0, budget: { rounds: +body.rounds || null, used: 0 }, goal: { ...d.objective.goal, statement: body.statement, good: '', adoptWhen: '', stopWhen: stop } };
+  d.objective = { ...d.objective, id, name: body.statement, projectId: project, ...(body.projectPath ? { projectPath: body.projectPath } : {}), state: 'preparing', thread: null, currentVersion: 'v1', round: 0, budget: { rounds: +body.rounds || null, used: 0 }, goal: { ...d.objective.goal, statement: body.statement, good: '', adoptWhen: '', stopWhen: stop } };
   d.rounds = []; d.messages = []; d.steps = {}; d.exec = {}; d.seq = 0;
   delete d.night;
   d.versions = [{ ...d.versions[0], current: true }];
+  if (body.projectPath) {
+    d.versions = [{ id: 'v1', parent: null, change: '初始版本', config: {}, commit: null, at: now, current: true }];
+    d.executor = { state: 'none', mcp: 'rsi.executor', ops: [], resultMap: [] };
+    delete d.upcoming;
+  }
   d.plan = RSI_CP_INIT.map((s) => ({ k: s.section, role: s.role, deps: [...s.deps] }));
   d.executor.state = 'none';
   d.prep = d.prep.map((p) => ({ ...p, value: '', state: 'uninvestigated', by: '', neededFrom: null, at: null, facts: null, can: null, rec: null, tag: null }));

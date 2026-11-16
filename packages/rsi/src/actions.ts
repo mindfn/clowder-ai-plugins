@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { runCycle } from './cycles.js';
 import { summaryOf, objectiveData } from './data.js';
 import { enqueue, kick, message, rsiExpNew, rsiExpReady, rsiExpStaleFrom, syncObjective } from './init.js';
 import type { Data, Experiment, RsiState, Section } from './types.js';
@@ -24,6 +25,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
   if (!state.objectives[project]) return { error: 'Project not found', status: 404 };
   const id = selected(state, body, query), o = summaryOf(state, id), d = state.experiments[id];
   switch (body.op) {
+    case 'refresh': return { ok: true };
     case 'new':
     case 'newExp': {
       if (state.projects.find((p) => p.id === project)!.exp) {
@@ -98,7 +100,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       Object.assign(item, { state: 'confirmed', isDefault: false, by: '你', at: now });
       if (edited) touched(state, d, item, now, '改了');
       else if (body.action === 'decide' && body.decision !== item.rec) touched(state, d, item, now, `把「${({ explore: '探索', fixed: '固定', excluded: '排除' } as Data)[body.decision]}」选给了`);
-      if (rsiExpReady(d)) message(state, d, now, '初始化完成', `每晚 ${d.policy.schedule.window} 跑，第一晚只跑基线 v1。`, 'declare');
+      if (rsiExpReady(d)) message(state, d, now, '初始化完成', d.objective.projectPath ? '在页面点跑一轮，按已提交的组和种子执行。' : `每晚 ${d.policy.schedule.window} 跑，第一晚只跑基线 v1。`, 'declare');
       syncObjective(state, d);
       return { ok: true };
     }
@@ -118,9 +120,12 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       kick(state, id, now);
       return { ok: true };
     }
+    case 'runCycle':
+      return d?.objective.projectPath ? runCycle(state, d, now) : { error: 'Select a real experimental project' };
     case 'life': {
       if (!o) return { error: 'Objective not found', status: 404 };
       if (!['start', 'pause', 'resume', 'retry', 'more'].includes(body.action)) return { error: 'Invalid lifecycle action' };
+      if (d?.objective.projectPath && (body.action === 'start' || body.action === 'retry')) return runCycle(state, d, now);
       const objective = d ? d.objective : o;
       if (body.action === 'start') {
         if (objective.state !== 'ready') return { error: 'Objective is not ready' };
@@ -194,6 +199,15 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       if (round.decision) return { error: 'Round already decided', status: 409 };
       round.decision = { pick: body.pick, directionId: body.directionId ?? null, note: body.note ?? '', by: '你', at: now };
       const n = round.n + 1, current = round.plan.groups[0];
+      if (d.objective.projectPath) {
+        const direction = round.report.directions.find((x: Data) => x.id === body.directionId);
+        d.versionRequest = { cycle: round.n, decision: round.decision, title: direction?.title || body.note || body.pick };
+        d.objective.state = 'running';
+        enqueue(state, d, 'agent', { member: d.members.find((m) => m.role === 'prepare')!.catId, action: 'version',
+          message: { title: '准备下一个版本', body: `按「${d.versionRequest.title}」出下一个版本。先调 rsi.task，改项目并提交 git 后调 rsi.version。` } });
+        syncObjective(state, d);
+        return { ok: true };
+      }
       d.objective.state = 'running'; d.objective.round = n;
       const plan = { baseline: false, groups: [{ id: `r${n}-control`, label: '当前版本对照', version: d.objective.currentVersion, vars: { ...current.vars }, control: true, confirm: false }], seeds: [...round.plan.seeds], window: d.policy.schedule.window, by: 'auto' };
       d.rounds.push({ n, version: d.objective.currentVersion, start: null, end: null, state: 'planned', plan, runs: [], report: null, decision: null, events: [] });
