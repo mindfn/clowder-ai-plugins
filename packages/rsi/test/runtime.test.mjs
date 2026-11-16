@@ -276,6 +276,15 @@ test('a real objective whose stop target names a metric needs that metric in ste
   assert.equal(s.groups[g.project].find((x) => x.forObjective === p.id).users, objective.name);
 });
 
+test('structured tool arguments passed as JSON text are read as the structures they describe', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  const d = (await f.read()).experiments[o.id], [section, execution] = Object.entries(d.exec).find(([k, e]) => k === 'goal' && e.state === 'started');
+  const task = await f.tool('task', {}, execution.by, o.thread), step = task.steps.find((s) => s.section === section);
+  const items = step.items.filter((i) => !i.userOwned).map((i) => ({ id: i.id, value: 'drafted' }));
+  const result = await f.tool('submit', { step: step.step, items: JSON.stringify(items), unknowns: '', next: '' }, execution.by, o.thread);
+  assert.equal(result.ok, true, JSON.stringify(result));
+});
+
 test('deleting an objective kills its run and removes its runs folder, data, pending messages and cycle notes; other objectives keep running', async (t) => {
   const f = await fixture(t), o = await f.create();
   await f.initialize(o, { groups: [{ id: 'control', label: 'Slow run', vars: { slow: true }, control: true }], seeds: [1] });

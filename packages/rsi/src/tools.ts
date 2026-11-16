@@ -58,7 +58,12 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
     ...(version ? { version: { ...version, next: '按方向修改项目并提交 git；调用 rsi.version({change,commit,config})。config 是 JSON 对象或项目内 JSON 文件路径。' } } : {}) };
 }
 
-export function toolAction(state: RsiState, method: string, input: Data, ctx: ToolContext, now: number): Data {
+// Some member runtimes hand nested arguments over as JSON text ("items": "[{…}]"); read them as the structures they describe.
+// Text that is not JSON (a shell command such as "[ -f train.py ]") stays as it is.
+const structured = (v: unknown) => { if (typeof v !== 'string' || !/^\s*[[{]/.test(v)) return v; try { return JSON.parse(v); } catch { return v; } };
+
+export function toolAction(state: RsiState, method: string, raw: Data, ctx: ToolContext, now: number): Data {
+  const input: Data = Object.fromEntries(Object.entries(raw || {}).map(([k, v]) => [k, structured(v)]));
   const d = Object.values(state.experiments).find((d) => d.objective.thread === ctx.threadId);
   if (!d?.objective.projectPath) return { error: 'No real RSI objective in this thread', status: 404 };
   if (!d.members.some((m) => m.catId === ctx.catId)) return { error: 'Not an objective member', status: 403 };
