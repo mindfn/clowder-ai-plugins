@@ -42,12 +42,23 @@ test('VM fields match responses captured by executing the original mock.js and a
 
 test('home follows an objective thread; unrelated threads preserve the page selection', async () => {
   const f = fixture(); await f.seed();
-  const response = await f.view({ project: 'cartpole', thread: 't-rsi-pd', list: 'true', wide: 'true' });
+  const response = await f.view({ project: 'cartpole', thread: 't-rsi-pd', pick: 'list' });
   assert.equal(response.payload.projectId, 'pd-infer');
   assert.deepEqual(response.payload.pick, { k: 'obj', id: 'pd-ttft', exp: true });
-  assert.equal(response.payload.panelList, false);
-  assert.equal(response.payload.wide, true);
+  assert.equal(response.payload.picked, true);
   assert.equal((await f.view({ project: 'pd-infer', pick: 'library', thread: 'unrelated' })).payload.pick.k, 'library');
+});
+
+test('home says whether the user picked something (a collapsed split shows its detail); pick list goes back to the list', async () => {
+  const f = fixture(); await f.seed();
+  const home = async (q) => (await f.view({ project: 'pd-infer', ...q })).payload;
+  const first = await home({});
+  assert.equal(first.picked, false);
+  assert.equal(first.pick.k, 'obj');
+  assert.deepEqual(await home({ pick: 'list' }).then((x) => [x.picked, x.pick]), [false, first.pick]);
+  assert.deepEqual(await home({ pick: 'caps' }).then((x) => [x.picked, x.pick.k]), [true, 'caps']);
+  assert.deepEqual(await home({ pick: `obj:${first.pick.id}` }).then((x) => [x.picked, x.pick.id]), [true, first.pick.id]);
+  assert.equal((await f.view({ project: 'cartpole', pick: 'obj:gone' })).payload.picked, false);
 });
 
 test('record, document, cards, and version selections consume their page-state queries', async () => {

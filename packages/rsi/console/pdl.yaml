@@ -22,7 +22,7 @@ views:
     page: true
     blocks:
       - type: split
-        picked: $.home.pick.id
+        picked: $.home.picked
         left:
           - type: head
             title: t:rsi.home.title
@@ -289,12 +289,11 @@ views:
     loading: t:rsi.console.loading
     error: t:rsi.console.error
   rsi.panel:
+    page: true
     blocks:
-      - type: each
-        from:
-          - {}
-        when: $.home.panelList
-        blocks:
+      - type: split
+        picked: $.home.picked
+        left:
           - type: head
             title: t:rsi.home.title
             help: t:rsi.home.help
@@ -476,24 +475,7 @@ views:
                   args:
                     k: pick
                     v: "@pickKey"
-          - type: toolbar
-            when:
-              of: $.home.pick.k
-              map:
-                none: false
-                _: true
-            items:
-              - type: button
-                label: t:rsi.console.openSelected
-                act: plugSet
-                args:
-                  k: list
-                  v: false
-      - type: each
-        from:
-          - {}
-        when: "!$.home.panelList"
-        blocks:
+        right:
           - type: empty
             icon: bolt
             text: t:rsi.noObjectivesHint
@@ -576,11 +558,11 @@ views:
       - other
       - t:rsi.home.help
     drill:
-      - when: "!$.home.panelList"
+      - when: $.home.picked
         act: plugSet
         args:
-          k: list
-          v: true
+          k: pick
+          v: list
     sources:
       home: home
       members: host:members
@@ -4846,7 +4828,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
   objective:
     path: rsi/view
@@ -4858,7 +4839,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
   exp:
     path: rsi/view
@@ -4870,7 +4850,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
   record:
     path: rsi/view
@@ -4882,7 +4861,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
       type: "@type"
       objective: "@objective"
@@ -4898,7 +4876,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
   todo:
     path: rsi/view
@@ -4910,7 +4887,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
   newExp:
     path: rsi/view
@@ -4922,7 +4898,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
   caps:
     path: rsi/view
@@ -4934,7 +4909,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
   cards:
     path: rsi/view
@@ -4946,7 +4920,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
       objective: "@objective"
   library:
@@ -4959,7 +4932,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
   doc:
     path: rsi/view
@@ -4971,7 +4943,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
       id: "@id"
   new:
@@ -4983,7 +4954,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: new
@@ -5006,7 +4976,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: life
@@ -5021,7 +4990,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: initRedo
@@ -5034,7 +5002,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: initRetry
@@ -5048,7 +5015,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: prep
@@ -5067,7 +5033,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: expDecide
@@ -5084,7 +5049,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: addMetric
@@ -5099,7 +5063,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: lock
@@ -5114,7 +5077,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: goVersion
@@ -5128,7 +5090,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: docAdd
@@ -5144,7 +5105,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: decide
@@ -5159,7 +5119,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: reeval
@@ -5174,7 +5133,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: go
@@ -5188,7 +5146,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: docConfirm
@@ -5202,7 +5159,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: docRemove
@@ -5216,7 +5172,6 @@ requests:
       tab: state.tab
       selO: state.selO
       selE: state.selE
-      list: state.list
       selC: state.selC
     body:
       op: policy

@@ -50,7 +50,6 @@
           "k": "none"
         },
         "hasObjectives": false,
-        "panelList": true,
         "navs": [
           {
             "k": "caps",
@@ -221,7 +220,6 @@
           "exp": true
         },
         "hasObjectives": true,
-        "panelList": false,
         "navs": [
           {
             "k": "caps",

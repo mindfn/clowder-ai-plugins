@@ -661,7 +661,6 @@ reeval:
 console:
   loading: 加载中…
   error: 加载失败
-  openSelected: 查看所选内容
 common:
   save: 保存
   delete: 删除

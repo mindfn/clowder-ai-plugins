@@ -4,11 +4,13 @@ import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData,
 const tc = (key: string, ...args: unknown[]) => ({ t: key, args });
 
 export function viewModel(state: RsiState, view: string, query: Data = {}): any {
+  // pick 'list' = back to the list (a collapsed split shows the list; side by side shows the default objective).
+  const picked = !!query.pick && query.pick !== 'list';
   const S: Data = {
-    rsiProject: query.project || 'cartpole', rsiPick: query.pick || 'obj:cp-converge',
-    rsiTab: query.tab || 'version', rsiPanelList: query.list === true || query.list === 'true',
+    rsiProject: query.project || 'cartpole', rsiPick: picked ? query.pick : 'obj:cp-converge', rsiPicked: picked,
+    rsiTab: query.tab || 'version',
     rsiSelO: query.selO || '', rsiSelE: query.selE || '', rsiSelC: query.selC || '',
-    panelWide: query.wide === true || query.wide === 'true', thread: query.thread,
+    thread: query.thread,
     dialog: query.dialog,
   };
   if (view === 'doc' && (query.id || query.doc)) S.dialog = { kind: 'rsiDoc', args: { id: query.id || query.doc } };
@@ -38,7 +40,7 @@ function rsiPick(objectives: any): any {
 function home(): any {
 
   const at = S.thread && threadObjective(S.thread);
-  if (at) { S.rsiPanelFor = S.thread; if (at.objectiveId) Object.assign(S, { rsiProject: at.projectId, rsiPick: 'obj:' + at.objectiveId, rsiPanelList: false }); }
+  if (at && at.objectiveId) Object.assign(S, { rsiProject: at.projectId, rsiPick: 'obj:' + at.objectiveId, rsiPicked: true });
   const pr = rsiProject(), todo = todoOf(state, { projectId: S.rsiProject }).items, pick = rsiPick(pr.objectives);
   const node = function (o: any): any { const kids = pr.objectives.filter(function (x: any): any { return x.parent === o.id; }); return Object.assign({}, o, { path: o.id, pickKey: 'obj:' + o.id, dir: kids.length > 0, selected: pick.k === 'obj' && pick.id === o.id }); };
 
@@ -47,7 +49,7 @@ function home(): any {
   const nodes: Data = { '': sorted.filter(function (o: any): any { return !o.parent; }).map(node) };
   sorted.forEach(function (o: any): any { if (o.parent) (nodes[o.parent] = nodes[o.parent] || []).push(node(o)); });
   return { projects: state.projects, projectId: S.rsiProject, nodes: nodes, pick: pick, hasObjectives: pr.objectives.length > 0,
-    wide: !!S.panelWide, panelList: !!S.rsiPanelList || pick.k === 'none',
+    picked: !!S.rsiPicked && pick.k !== 'none',
     navs: [{ k: 'caps', selected: pick.k === 'caps' }, { k: 'library', count: rsiDocs().filter(function (doc: any): any { return doc.state === 'pending'; }).length, selected: pick.k === 'library' }, { k: 'cards', count: todo.length, selected: pick.k === 'cards' }] };
 };
 

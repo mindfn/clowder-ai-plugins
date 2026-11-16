@@ -661,7 +661,6 @@ reeval:
 console:
   loading: Loading…
   error: Failed to load
-  openSelected: View selection
 common:
   save: Save
   delete: Delete
