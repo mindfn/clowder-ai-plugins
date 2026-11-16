@@ -1,16 +1,19 @@
-# RSI · 0.1.0-alpha.4
+# RSI · 0.1.0-alpha.7
 
-为项目创建评估项，成员完成初始化，插件在本机串行运行实验；评估成员交结论，你选方向，准备成员交新版本，再跑下一周期。演示项目保留原有数据和交互，不启动线程、成员或训练进程。
+为项目创建评估项，成员完成初始化，插件按已确认的时段运行实验；评估成员交结论，你选方向，准备成员交版本。每周期包含当前默认版对照，改动先成为候选，下周期用新种子确认后才采用。演示项目保留原有数据和交互。
 
 ## 使用
 
-1. 在宿主中启用插件，打开「RSI 能力进化」，新建评估项。项目默认「当前对话的项目」，也可选择宿主已有对话的项目目录或演示项目。准备成员默认 `codex`，评估成员默认 `cat-b5ddoo9l`（@kimi），仍可在对话框更换。
-2. 真实项目会创建 `RSI · <目标>` 对话，加入两位成员并打开。成员被精确唤醒后先调 `rsi.task`，调查项目后用 `rsi.submit` 提交自己的步骤。步骤 3 登记并预检执行方式，步骤 4 提交量尺，步骤 5 提交组 × 种子计划。页面中的人工确认项仍需你确认。
-3. 初始化就绪后点「开始评估」或「跑一轮」。运行记录包含组、种子、状态、耗时、配置、日志及各项实测指标。点「刷新进度」读取后台进展；当前宿主的 PDL 请求机制没有轮询或插件主动失效通知。
-4. 全部运行完成后插件唤醒评估成员。成员调 `rsi.task` 查看本周期计划和真实指标，再调 `rsi.conclude`。结论以普通富卡片发到对话，也出现在页面的评估/方向区域。
-5. 在页面选择方向或提交意见。插件叫醒准备成员，成员先调 `rsi.task`，修改项目并提交 git，再调 `rsi.version({change,commit,config})`。下一次「跑一轮」包含上一版本对照和新版本，沿用种子。
+1. 打开「RSI 能力进化」，新建评估项。选择项目、准备/评估成员，以及可组合的停止条件：目标、连续几个周期没进步、最多几个周期。留空就不设置这条。
+2. 真实项目创建评估项对话并精确唤醒成员。成员先调用 `rsi.task`，按七步调查项目，用 `rsi.submit` 交内容。第 3 步登记执行器并提交 `window:"每晚 20:00–08:00"`；也可在 `cp-trigger` 条目的 value 中写明时段。第 4 步交指标与护栏阈值，第 5 步交组和种子计划。人工确认仍在页面完成。
+3. 初始化就绪后点「开始评估」启用时段触发；`rsi.schedule` 每 3 分钟检查一次，按宿主机器本地时间处理跨午夜窗口。评估项正在运行、执行器空闲、上一周期已决定且没有等待新版本时才启动。也可保留手动「跑一轮」，不受时段限制。点「刷新进度」读取后台状态。
+4. 全部运行结束后，评估成员从 `rsi.task.evaluate` 读取本周期的 `comparison`、原始 `runs` 和以前周期的 `library`，提交 `rsi.conclude`。结论卡与页面都显示结果。比较仅使用本周期的 `control`；每组同时提供均值、样本标准差和逐种子值。区间是 **均值 ± 样本标准差**，不是置信区间；只有一个有效种子时标准差/上下界为 null。
+5. 首次胜出的组记为候选，默认版本保持不变。你作出决定后，下周期将候选和当前对照一起换新种子复验。保持改善且护栏通过才成为默认，版本记录保存确认周期和区间。复验真实失败就保留原默认；环境失败导致证据不足则保留候选再测。候选确认优先于新改动。
+6. 其他方向会叫醒准备成员。先 `rsi.task` 读要求，再交 `rsi.version({change,commit?,config})`。`commit` 是真实的 7–40 位 git SHA，改代码时必须提供；纯配置版本可省略。提交版本本身不会改变默认版。选「照旧」可直接继续当前默认，无需生成版本。
 
-成员通过宿主通用的 `plugin_list_tools` / `plugin_call` 使用 `rsi.task`、`rsi.submit`、`rsi.executor`、`rsi.version`、`rsi.conclude`；每个工具的 manifest 描述包含字段、例子和下一步。工具只接受宿主提供的 `catId/threadId/userId/invocationId/assertCurrent`，按对话解析评估项、检查轮次和成员，不接受输入里冒充身份。
+每次结论后检查停止条件。目标使用 `指标 id 或完整名称 ≥ 数字`（也支持 `<=`、`>=`、`≤`、`<`、`>`），例如 `score >= 0.9`；按本周期默认对照或刚确认的版本判断，候选的首次胜出不会单独满足目标。目标/最多周期达到后为 `done`；停滞达到后为 `paused`，推送原因卡，手动与定时均停止启动新周期。停滞按同周期改善计数，环境失败不计为停滞；暂停后可明确恢复。无数值比较式的文字目标保留在目标卡中，不自动猜测。
+
+每个结论周期写入资料库：试过的方向、结果和周期引用。评估成员的 `options:[{k,title,why,cites:[libraryId]}]` 在已有历史时必须引用至少一个历史周期条目；结论保留引用与评估成员署名。
 
 ## 执行方式
 
@@ -18,37 +21,40 @@
 
 ```json
 {
-  "preflight": "test -x .venv/bin/python && test -f train.py",
-  "submit": ".venv/bin/python train.py --config {config} --out {run} --seed {seed}",
-  "collect": "{run}/metrics.json"
+  "preflight": "python3 -c 'import json,platform; print(json.dumps({\"python\":platform.python_version()}))'",
+  "submit": "python3 train.py --config {config} --out {run} --seed {seed}",
+  "collect": "{run}/metrics.json",
+  "failureField": "failed"
 }
 ```
 
-`preflight` 立刻在项目目录运行；工具立即返回 `probing`，不等待长进程。预检通过且第 3 步的 items 已提交才完成该步。可以先交 items，再登记执行器；也可将同样的命令字段放在 `rsi.submit.executor`。失败会留在页面，点初始化「重试」后重新 task/executor。
+注册立即返回 `probing`；预检通过且第 3 步 items 已提交才完成。每个 run 还会在选定代码目录重新 preflight。可以先交 items，再登记执行器，也可把命令放在 `rsi.submit.executor`。失败可在页面重试。
 
-`submit` 必须在前台运行到训练结束。每个插件实例同时最多运行一个子进程任务，训练依组和种子串行进行。模板替换会做 shell 引号处理，不要再给占位符加引号：
+带 commit 的版本使用插件 `dataPath/worktrees/` 下独立、可复用的 detached git worktree；配置文件路径相对该 worktree 读取，所有执行命令也在其中运行。初始版本在执行器预检通过时冻结项目的 HEAD（如果项目有 git 提交），因此项目之后提交新代码不会改掉基线。没有 commit 的配置版本继续在项目目录运行。代码 worktree 在评估项完成/退役时移除；运行目录、指标和记录保留。执行器需自行提供可在 worktree 使用的 Python/依赖；未跟踪的 `.venv` 不会复制进去。
 
-- `{config}`：本次运行的 `config.json`；版本的 config 合并组 vars，再写入 seed。
+模板占位符由插件做 shell 引号处理，不要再包引号：
+
+- `{config}`：生成的 JSON 文件；版本 config、已确认变量、组 vars、seed 依次合并。
 - `{run}`：项目内 `runs/<objective>/<cycle>/<group>-s<seed>` 的绝对目录。
-- `{seed}`：本次种子整数。
+- `{seed}`：种子整数。周期内各组相同，之后周期使用未运行过的新种子。
+- `{job}`：异步执行器返回的原始 job id。
 
-`collect` 可为不含空格的 JSON 路径模板，或输出 JSON 的命令（例如 `cat {run}/metrics.json`）。默认从顶层或 `metrics` 对象按量尺 id 读取有限数值；嵌套字段可登记 `resultMap: [{metric:"score",field:"summary.score"}]`。量尺声明的指标都必须出现，否则本次运行失败。submit/collect 失败会自动重试一次，再失败则保留错误和失败卡，并将失败记录交给评估成员。
+`collect` 可为无空格的 JSON 路径模板，或输出 JSON 的命令（如 `cat {run}/metrics.json`）。按量尺 id 从顶层或 `metrics` 对象取值；嵌套字段可用 `resultMap:[{metric:"score",field:"summary.score"}]`。每个 run 保存实际 commit、配置 SHA-256、seed、OS/arch/chip；preflight 可输出 JSON `{python,driver,dataVersion}`，collect 可报告顶层 `dataVersion`。缺少报告的 Python/驱动/数据版本不凭空填充。
 
-执行器也保存 `get/cancel/analyze` 模板；本阶段不自动调用它们。停止插件会杀死自有进程组；重启不会接管旧训练，原运行和排队项变为失败、可重试，点「跑一轮」继续该周期。初始化成员被取消、失败或结束但未交内容时，会显示中断、失败或缺少提交，页面可重试。
-
-第 5 步的 `upcoming` 示例：
+护栏在第 4 步 metrics 中声明，例如：
 
 ```json
-{
-  "groups": [
-    {"id":"control","label":"对照","vars":{"lr":0.003},"control":true},
-    {"id":"change","label":"降低学习率","vars":{"lr":0.001}}
-  ],
-  "seeds": [11,23]
-}
+{"version":"E1","items":[
+  {"id":"score","name":"Score","how":"metrics.score","dir":"up"},
+  {"id":"cost","name":"Cost","how":"metrics.cost","dir":"down","guard":true,"threshold":2}
+]}
 ```
 
-`rsi.version.config` 是 JSON 对象或项目内 JSON 文件路径，`commit` 是准备成员实际提交的 git SHA。插件记录版本和配置，不切换项目 checkout；代码不同的对照需由训练命令或配置选择代码变体。尚未走查真实宿主中的模型训练，其他边界见 [GAPS.md](GAPS.md)。
+第一个非护栏指标决定改善方向；不合成总分。护栏自动锁定，必须有有限数值 threshold，`down` 要求每个种子不超过阈值，`up` 要求不低于阈值。任一种子越线，该组不能成为赢家；结论输入列出每项检查。
+
+非零退出、OOM、被杀、提交/轮询/收集过程失败是环境失败：自动重试一次，保留 attempts，仍失败发卡并继续其他组；不计入统计证据。运行结束后输出 NaN（裸 NaN 或字符串）、缺失指标、或 `failureField` 指定的非空失败字段，是实际结果：保留为 done、`error.kind:"real"`，不重试，也不能获胜。
+
+不带 `get` 的 submit 持续在前台运行；每个插件实例串行执行。声明 `get` 后，submit stdout 返回 job id 字符串或 `{"jobId":"..."}`。插件每秒调用 get，要求输出 JSON `{"state":"queued|running|done|failed|cancelled","exitCode":0,"reason":"..."}`；done 且退出码为零/未设置时 collect，其余终态按环境失败处理。可选 `cancel` 在停止时接收同一 `{job}`。无 cancel 时保存 job id，重启后继续 get，不重复 submit。前台运行重启后标中断，手动「跑一轮」续跑。`analyze` 模板仍只保存，未自动调用。
 
 ## HTTP 与持久化
 
@@ -64,9 +70,11 @@ outbox 的消息 ID 同时作为宿主 `idempotencyKey`。线程绑定、投递�
 
 ## 验证
 
+从仓库根目录运行：
+
 ```sh
 pnpm --filter @clowder-ai/rsi typecheck
 pnpm --filter @clowder-ai/rsi test
 ```
 
-测试保留原型 VM 对照、初始化依赖/过期/重试、owner 隔离和 CAS 检查；新增宿主桩和真实本地子进程集成，走三周期（各 2 组 × 2 种子）、结论/决策/版本、自动重试、预检失败、嵌套指标收集、执行事件竞态、停止与重启恢复。测试项目使用临时目录，演示 fixtures 没有真实目录或个人姓名。
+测试保留原型 VM 对照、初始化依赖/过期/重试、owner 隔离、CAS 与 outbox 检查。运行集成使用真实 Node/Python/sh 子进程：三周期、同周期对照、候选成功/拒绝/环境失败后再确认、阈值护栏、NaN/声明失败、环境指纹、目标/停滞/预算停止、假时钟窗口调度、异步 get/cancel/重启，以及有两次提交的临时 git 仓库验证代码隔离/复用/清理。未修改已通过隐私检查的演示 fixtures。宿主实机模型训练与其余 FLOW 边界见 [GAPS.md](GAPS.md)。

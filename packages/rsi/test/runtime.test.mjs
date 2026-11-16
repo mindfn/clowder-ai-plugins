@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { copyFile, access, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -26,14 +27,15 @@ try {
 `;
 
 async function until(read, predicate, description = 'state transition') {
-  const end = Date.now() + 6000;
-  while (Date.now() < end) { const value = await read(); if (predicate(value)) return value; await delay(10); }
+  const end = performance.now() + 60000;
+  while (performance.now() < end) { const value = await read(); if (predicate(value)) return value; await delay(100); }
   assert.fail(`Timed out: ${description}`);
 }
 
 async function fixture(t) {
   const project = await mkdtemp(join(tmpdir(), 'rsi phase2-'));
   await writeFile(join(project, 'simulate.mjs'), script);
+  for (const file of ['experiment.py', 'async-executor.sh']) await copyFile(new URL(`fixtures/${file}`, import.meta.url), join(project, file));
   const entries = new Map(), threads = [{ id: 'source', projectRef: project, lastActiveAt: 100 }], sends = [], subscriptions = [];
   let revision = 0, activation, sendHook;
   const storage = {
@@ -79,7 +81,7 @@ async function fixture(t) {
   const tool = (method, input, catId, threadId, invocationId = `${catId}-turn`) => activation.actions[`rsi.${method}`](input,
     { catId, threadId, userId: 'owner', invocationId, assertCurrent: async () => {} });
   const commands = { preflight: 'test -f simulate.mjs', submit: `'${process.execPath}' simulate.mjs {config} {run} {seed}`, collect: '{run}/metrics.json' };
-  async function initialize(objective, plan = { groups: [{ id: 'control', label: 'Control', vars: { delta: 0 }, control: true }, { id: 'change', label: 'Change', vars: { delta: 1 } }], seeds: [11, 23] }) {
+  async function initialize(objective, plan = { groups: [{ id: 'control', label: 'Control', vars: { delta: 0 }, control: true }, { id: 'change', label: 'Change', vars: { delta: 1 } }], seeds: [11, 23] }, options = {}) {
     for (let guard = 0; guard < 12; guard++) {
       const d = (await read()).experiments[objective.id];
       if (d.plan.every((p) => d.steps[p.k])) break;
@@ -88,7 +90,7 @@ async function fixture(t) {
       const step = task.steps.find((s) => s.section === section);
       assert.ok(step?.ask); assert.ok(step.items.every((i) => i.meaning && i.format && i.example));
       const result = await tool('submit', { step: step.step, items: step.items.filter((i) => !i.userOwned).map((i) => ({ id: i.id, value: `Observed ${i.title}` })),
-        unknowns: '', next: '', ...(section === 'rules' ? { metrics: { version: 'E1', items: [{ id: 'score', name: 'Score', how: 'metrics.score', dir: 'up' }] } } : {}),
+        unknowns: '', next: '', ...(section === 'run' ? { window: options.window || '20:00–08:00' } : {}), ...(section === 'rules' ? { metrics: options.metrics || { version: 'E1', items: [{ id: 'score', name: 'Score', how: 'metrics.score', dir: 'up' }] } } : {}),
         ...(section === 'design' ? { upcoming: plan } : {}) }, execution.by, objective.thread);
       assert.equal(result.ok, true, JSON.stringify(result));
       if (section === 'run') {
@@ -148,6 +150,9 @@ test('tools enforce caller, dependencies, complete input and owner CAS without d
   assert.equal((await f.tool('submit',{step:2,items:scope.items.filter((i)=>!i.userOwned).map((i)=>({id:i.id,value:'Scope'}))},'codex',o.thread)).ok,true);
   const rules = await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
   assert.ok(rules.steps[0].deps.every((d)=>d.version===1 && d.items.length));
+  const invalidGuard = await f.tool('submit', {step:4, items:rules.steps[0].items.map((i)=>({id:i.id,value:'metric'})), metrics:{version:'E1',items:[{id:'score',name:'Score',how:'score',dir:'up'},{id:'cost',name:'Cost',how:'cost',dir:'down',guard:true}]}}, 'cat-b5ddoo9l', o.thread);
+  assert.match(invalidGuard.error, /finite threshold/);
+  assert.equal((await f.read()).experiments[o.id].steps.rules, undefined);
   await f.http('POST',{op:'prep',objective:o.id,id:'cp-good',action:'edit',note:'',value:'New criterion'},{project:f.project});
   assert.equal((await f.tool('submit',{step:4,items:rules.steps[0].items.map((i)=>({id:i.id,value:'metric'}))},'cat-b5ddoo9l',o.thread)).status,409);
   const revised = await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
@@ -158,7 +163,7 @@ test('tools enforce caller, dependencies, complete input and owner CAS without d
 test('three real cycles execute groups × seeds serially, render measured runs, conclude, decide and use new versions', async (t) => {
   const f = await fixture(t), o = await f.create(); await f.initialize(o);
   for (let n = 1; n <= 3; n++) {
-    const started = await f.http('POST', { op: n === 1 ? 'life' : 'runCycle', action: 'start', objective: o.id }, {project:f.project});
+    const started = await f.http('POST', { op: 'runCycle', objective: o.id }, {project:f.project});
     assert.equal(started.status, 200, JSON.stringify(started));
     assert.ok((await f.http('POST',{op:'runCycle',objective:o.id})).error);
     const state = await until(f.read, (s) => s.experiments[o.id].rounds.at(-1)?.state === 'evaluating');
@@ -173,23 +178,29 @@ test('three real cycles execute groups × seeds serially, render measured runs, 
     const page = await f.http('GET',undefined,{view:'exp',project:f.project,pick:`obj:${o.id}`});
     assert.equal(page.cycle.runs.length,4); assert.equal(page.cycle.runs[0].metricRows[0].k,'Score');
     assert.ok(page.cycle.runs.every((r)=>typeof r.durationSeconds==='number'));
-    assert.equal((await f.tool('conclude',{cycle:n,verdict:'tune',findings:['Measured improvement'],options:[{k:'lower',title:'Lower rate',why:'Try a smaller update'}]},'codex',o.thread)).status,403);
-    assert.equal((await f.tool('conclude',{cycle:n,verdict:'tune',findings:['Measured improvement'],options:[{k:'lower',title:'Lower rate',why:'Try a smaller update'}]},'cat-b5ddoo9l',o.thread)).ok,true);
+    assert.equal((await f.tool('conclude',{cycle:n,verdict:'tune',findings:['Measured improvement'],options:[{k:'lower',title:'Lower rate',why:'Try a smaller update',cites:task.evaluate.library.map((d)=>d.id)}]},'codex',o.thread)).status,403);
+    assert.equal((await f.tool('conclude',{cycle:n,verdict:'tune',findings:['Measured improvement'],options:[{k:'lower',title:'Lower rate',why:'Try a smaller update',cites:task.evaluate.library.map((d)=>d.id)}]},'cat-b5ddoo9l',o.thread)).ok,true);
     const concluded=await f.http('GET',undefined,{view:'exp',project:f.project,pick:`obj:${o.id}`});
     assert.equal(concluded.cycle.waiting,true); assert.equal(concluded.cycle.report.directions[0].id,'lower');
     assert.ok(f.sends.some((s)=>s.payload.elements.some((e)=>e.kind==='rich_block' && e.payload.kind==='card' && e.payload.title.includes(`第 ${n} 周期结论`))));
     if(n===3) break;
     assert.equal((await f.http('POST',{op:'expDecide',objective:o.id,n,pick:'direction',directionId:'lower'},{project:f.project})).status,200);
-    assert.ok((await f.http('POST',{op:'runCycle',objective:o.id})).error);
-    const taskVersion=await f.tool('task',{},'codex',o.thread); assert.equal(taskVersion.version.title,'Lower rate');
-    if (n === 2) await writeFile(join(f.project, 'next-config.json'), JSON.stringify({delta: n*5}));
-    assert.equal((await f.tool('version',{change:`Delta ${n}`,commit:'abc1234',config:n===2?'next-config.json':{delta:n*5}},'codex',o.thread)).version,`v${n+1}`);
+    if (n === 1) {
+      assert.equal((await f.read()).experiments[o.id].candidate.cycle,1);
+    } else {
+      assert.ok((await f.http('POST',{op:'runCycle',objective:o.id})).error);
+      const taskVersion=await f.tool('task',{},'codex',o.thread); assert.equal(taskVersion.version.title,'Lower rate');
+      await writeFile(join(f.project, 'next-config.json'), JSON.stringify({delta:10}));
+      assert.equal((await f.tool('version',{change:'Delta 10',config:'next-config.json'},'codex',o.thread)).version,'v3');
+    }
   }
   const d=(await f.read()).experiments[o.id];
   assert.equal(d.rounds.length,3); assert.equal(d.versions.length,3);
-  assert.equal(d.rounds[1].runs.find((r)=>r.group==='change'&&r.seed===11).metrics.score,16);
-  assert.equal(d.rounds[2].runs.find((r)=>r.group==='change'&&r.seed===11).metrics.score,21);
-  assert.equal(d.rounds[2].runs.find((r)=>r.group==='control'&&r.seed===11).metrics.score,16);
+  assert.equal(d.objective.currentVersion,'v2');
+  assert.equal(d.rounds[1].confirmation.status,'confirmed');
+  assert.equal(d.rounds[1].runs.find((r)=>r.group==='change'&&r.seed===24).metrics.score,25);
+  assert.equal(d.rounds[2].runs.find((r)=>r.group==='change'&&r.seed===26).metrics.score,36);
+  assert.equal(d.rounds[2].runs.find((r)=>r.group==='control'&&r.seed===26).metrics.score,27);
   assert.equal((await readFile(join(f.project,'starts'),'utf8')).trim().split('\n').length,12);
 });
 
@@ -199,7 +210,8 @@ test('non-zero submit retries once, then persists failures and sends a failure c
   await f.http('POST',{op:'runCycle',objective:o.id});
   const state=await until(f.read,(s)=>s.experiments[o.id].rounds[0]?.state==='evaluating');
   const runs=state.experiments[o.id].rounds[0].runs;
-  assert.ok(runs.every((r)=>r.retries===1));
+  assert.ok(runs.filter((r)=>r.group!=='control').every((r)=>r.retries===1));
+  assert.ok(runs.filter((r)=>r.group==='control').every((r)=>r.retries===0));
   assert.ok(runs.filter((r)=>r.group==='once').every((r)=>r.state==='done'));
   assert.ok(runs.filter((r)=>r.group==='always').every((r)=>r.state==='failed'&&r.error.raw.includes('exited 7')));
   assert.equal(f.sends.filter((s)=>s.payload.elements[0].payload.text.includes('运行失败（已重试一次）')).length,2);
@@ -228,7 +240,7 @@ test('execution lifecycle uses v2 replyTo, tolerates send acknowledgement races 
 
 test('stop kills the owned process and restart restores subscriptions with failed-retryable interrupted runs', async (t) => {
   const f=await fixture(t),o=await f.create();
-  await f.initialize(o,{groups:[{id:'slow',label:'Slow run',vars:{slow:true}}],seeds:[1]});
+  await f.initialize(o,{groups:[{id:'control',label:'Slow run',vars:{slow:true},control:true}],seeds:[1]});
   await f.http('POST',{op:'runCycle',objective:o.id});
   const running=await until(f.read,(s)=>s.experiments[o.id].rounds[0]?.runs[0]?.state==='running');
   const directory=running.experiments[o.id].rounds[0].runs[0].directory;
@@ -278,5 +290,262 @@ test('collect commands and explicit nested result mappings read actual metrics',
   await f.initialize(o,{groups:[{id:'mapped',label:'Mapped output',vars:{delta:3}}],seeds:[7]});
   await f.http('POST',{op:'runCycle',objective:o.id});
   const d=(await until(f.read,(s)=>s.experiments[o.id].rounds[0]?.state==='evaluating')).experiments[o.id];
-  assert.equal(d.rounds[0].runs[0].metrics.score,10);assert.equal(d.rounds[0].runs[0].state,'done');
+  assert.equal(d.rounds[0].runs.find((r)=>r.group==='mapped').metrics.score,10);assert.ok(d.rounds[0].runs.every((r)=>r.state==='done'));
+});
+
+const plan = (vars = {}) => ({ groups: [{ id: 'change', label: 'Measured change', vars }], seeds: [11, 23] });
+const pythonExecutor = { preflight: `printf '%s\\n' '{"python":"fixture-python","driver":"fixture-driver"}'`, submit: 'python3 experiment.py {config} {run} {seed}', collect: '{run}/metrics.json' };
+const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+async function execute(f, o) {
+  const result = await f.http('POST', { op: 'runCycle', objective: o.id });
+  assert.equal(result.status, 200, JSON.stringify(result));
+  return (await until(f.read, (s) => s.experiments[o.id].rounds.at(-1)?.state === 'evaluating')).experiments[o.id].rounds.at(-1);
+}
+async function report(f, o, verdict = 'tune') {
+  const task = await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.ok(task.evaluate, JSON.stringify(task));
+  const result = await f.tool('conclude', { cycle: task.evaluate.cycle, verdict, findings: 'Measured against this cycle’s control',
+    options: [{ k: 'next', title: 'Next measurement', why: 'Check the evidence', cites: task.evaluate.library.map((d) => d.id) }] }, 'cat-b5ddoo9l', o.thread);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  return result;
+}
+async function decide(f, o, pick = 'same') {
+  const d = (await f.read()).experiments[o.id];
+  const result = await f.http('POST', { op: 'expDecide', objective: o.id, n: d.rounds.at(-1).n, pick, directionId: 'next' }, { project: f.project });
+  assert.equal(result.status, 200, JSON.stringify(result));
+}
+
+test('every plan includes the default control, exposes paired seeds, confirms once, and cites the cycle library', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  Object.assign(f.commands, pythonExecutor);
+  await f.initialize(o, plan({ delta: 2 }));
+  const first = await execute(f, o);
+  assert.equal(first.plan.groups[0].id, 'control');
+  assert.equal(first.plan.groups[0].version, 'v1');
+  assert.deepEqual(first.runs.filter((r) => r.group === 'control').map((r) => r.seed), [11, 23]);
+  const task = await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  const measured = task.evaluate.comparison;
+  assert.equal(measured.against, 'control'); assert.equal(measured.cycle, 1);
+  assert.equal(measured.groups.find((g) => g.group === 'change').delta, 2);
+  const cell = measured.matrix.find((m) => m.group === 'change');
+  assert.equal(cell.mean, 19); assert.deepEqual(cell.seeds.map((s) => s.value), [13, 25]);
+  assert.equal(cell.lo, cell.mean - cell.sd); assert.equal(cell.hi, cell.mean + cell.sd);
+  let result = await report(f, o);
+  assert.equal(result.confirmation.status, 'candidate');
+  let d = (await f.read()).experiments[o.id];
+  assert.equal(d.objective.currentVersion, 'v1');
+  assert.ok(d.upcoming.groups.find((g) => g.confirm));
+  assert.ok((await f.http('POST', { op: 'runCycle', objective: o.id })).error);
+  await decide(f, o);
+  const second = await execute(f, o);
+  assert.ok(second.plan.seeds.every((s) => !first.plan.seeds.includes(s)));
+  const secondTask = await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal(secondTask.evaluate.library.length, 1);
+  assert.equal(secondTask.evaluate.library[0].sources[0].cycle, 1);
+  assert.ok((await f.tool('conclude', { cycle: 2, verdict: 'keep', findings: 'Measured', options: [{ k: 'next', title: 'Next', why: 'Needs citations' }] }, 'cat-b5ddoo9l', o.thread)).error);
+  result = await report(f, o, 'keep');
+  assert.equal(result.comparison.groups.find((g) => g.group === 'change').delta, 2);
+  assert.equal(result.confirmation.status, 'confirmed');
+  d = (await f.read()).experiments[o.id];
+  assert.equal(d.objective.currentVersion, 'v2');
+  assert.equal(d.versions.find((v) => v.current).interval.mean, 26.5);
+  assert.ok(d.versions.find((v) => v.current).interval.spread > 0);
+  assert.equal((await f.read()).library[f.project].length, 2);
+  await decide(f, o);
+  const third = await execute(f, o);
+  assert.equal(third.plan.groups.length, 1);
+  assert.equal(third.plan.groups[0].version, 'v2');
+  assert.equal(third.runs[0].metrics.score, third.runs[0].seed + 2);
+});
+
+test('commit versions use reusable project worktrees and retire them after the last allowed cycle', async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.project, '.gitignore'), 'runs/\nplugin-data/\nstarts\nactive-run/\n');
+  git(f.project, 'init', '-b', 'main'); git(f.project, 'config', 'user.name', 'Fixture'); git(f.project, 'config', 'user.email', 'fixture@example.invalid');
+  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'Baseline fixture');
+  const initial = git(f.project, 'rev-parse', 'HEAD'), o = await f.create({ rounds: '3' });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Baseline', vars: {}, control: true }], seeds: [11, 23] });
+  const first = await execute(f, o);
+  assert.equal(first.runs[0].env.commit, initial);
+  const controlCwd = first.runs[0].cwd;
+  assert.ok(controlCwd.startsWith(f.host.dataPath));
+  await report(f, o, 'baseline'); await decide(f, o, 'direction');
+  await writeFile(join(f.project, 'simulate.mjs'), script.replace('(config.delta||0)', '(config.delta||0)+50'));
+  await writeFile(join(f.project, 'version-config.json'), '{"delta":3}');
+  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'Changed fixture');
+  const changed = git(f.project, 'rev-parse', 'HEAD');
+  await f.tool('task', {}, 'codex', o.thread);
+  assert.equal((await f.tool('version', { change: 'Code and config change', commit: changed, config: 'version-config.json' }, 'codex', o.thread)).version, 'v2');
+  assert.equal((await f.read()).experiments[o.id].objective.currentVersion, 'v1');
+  const second = await execute(f, o), control = second.runs.find((r) => r.group === 'control'), change = second.runs.find((r) => r.group === 'change');
+  assert.equal(control.cwd, controlCwd); assert.notEqual(change.cwd, control.cwd);
+  assert.equal(control.metrics.score, control.seed); assert.equal(change.metrics.score, change.seed + 53);
+  assert.equal(control.env.commit, initial); assert.equal(change.env.commit, changed);
+  assert.equal(git(change.cwd, 'rev-parse', 'HEAD'), changed); assert.equal(git(control.cwd, 'rev-parse', 'HEAD'), initial);
+  assert.equal(git(f.project, 'rev-parse', 'HEAD'), changed);
+  assert.match(change.env.configHash, /^[a-f0-9]{64}$/); assert.notEqual(change.env.configHash, control.env.configHash);
+  assert.equal(change.env.seed, change.seed); assert.ok(change.env.hardware.os && change.env.hardware.arch && change.env.hardware.chip);
+  await report(f, o); await decide(f, o);
+  const third = await execute(f, o);
+  assert.equal(third.runs.find((r) => r.group === 'change').cwd, change.cwd);
+  const result = await report(f, o, 'keep');
+  assert.equal(result.confirmation.status, 'confirmed'); assert.equal(result.stop.kind, 'maxCycles');
+  await until(f.read, (s) => s.experiments[o.id].versions.every((v) => !v.worktree), 'retired worktrees');
+  assert.equal(await access(controlCwd).then(() => true, () => false), false);
+  assert.equal(await access(change.cwd).then(() => true, () => false), false);
+  assert.ok(!git(f.project, 'worktree', 'list').includes('plugin-data'));
+  assert.ok((await f.http('POST', { op: 'runCycle', objective: o.id })).error);
+});
+
+test('a selection that loses on fresh seeds stays rejected and never replaces the default', async (t) => {
+  const f = await fixture(t), o = await f.create(); Object.assign(f.commands, pythonExecutor);
+  await f.initialize(o, plan({ delta: 10, only_selection: true }));
+  const saved = await f.storage.get(ownerKey('owner')), proposed = saved.value.experiments[o.id];
+  proposed.versions.push({id:'v2',parent:'v1',change:'Proposed config',config:{},commit:null,current:false,status:'proposed',at:Date.now()});
+  proposed.upcoming.groups[0].version = 'v2';
+  assert.equal((await f.storage.compareAndSet(ownerKey('owner'),saved.revision,saved.value)).applied,true);
+  await execute(f, o); assert.equal((await report(f, o)).confirmation.status, 'candidate'); await decide(f, o);
+  const round = await execute(f, o); assert.ok(round.plan.seeds.every((s) => s > 23));
+  assert.equal((await report(f, o)).confirmation.status, 'rejected');
+  const d = (await f.read()).experiments[o.id]; assert.equal(d.objective.currentVersion, 'v1'); assert.equal(d.candidate, undefined);
+  assert.equal(d.versions.find((v)=>v.id==='v2').status,'rejected');
+});
+
+test('threshold guardrails veto faster groups and conclusion inputs show each crossed seed', async (t) => {
+  const f = await fixture(t), o = await f.create(); Object.assign(f.commands, pythonExecutor);
+  await f.initialize(o, { groups: [{ id: 'unsafe', label: 'Higher score with violations', vars: { delta: 100, cost: 3, quality: 0 } },
+    { id: 'safe', label: 'Small safe gain', vars: { delta: 1 } }], seeds: [11, 23] }, { metrics: { version: 'E1', items: [
+    { id: 'score', name: 'Score', how: 'metrics.score', dir: 'up' },
+    { id: 'cost', name: 'Cost', how: 'metrics.cost', dir: 'down', guard: true, threshold: 2 },
+    { id: 'quality', name: 'Quality', how: 'metrics.quality', dir: 'up', guard: true, threshold: 1 },
+  ] } });
+  await execute(f, o);
+  const task = await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  const unsafe = task.evaluate.comparison.groups.find((g) => g.group === 'unsafe');
+  assert.equal(unsafe.mean, 117); assert.equal(unsafe.beatsControl, false); assert.equal(unsafe.eligible, false);
+  assert.equal(unsafe.guardrails.filter((g) => !g.pass).length, 4);
+  const result = await report(f, o); assert.equal(result.confirmation.group, 'safe');
+});
+
+test('non-zero and killed processes retry once without evidence; NaN and declared failures remain results', async (t) => {
+  const f = await fixture(t), o = await f.create(); Object.assign(f.commands, pythonExecutor, { failureField: 'failed' });
+  await f.initialize(o, { groups: [
+    { id: 'exit', label: 'Non-zero', vars: { exit: true } }, { id: 'kill', label: 'Killed', vars: { kill: true } },
+    { id: 'nan', label: 'NaN', vars: { nan: true } }, { id: 'real', label: 'Declared failure', vars: { failed: true, delta: 1000 } },
+    { id: 'good', label: 'Still runs', vars: { delta: 1 } },
+  ], seeds: [7] });
+  const round = await execute(f, o);
+  for (const group of ['exit', 'kill']) {
+    const run = round.runs.find((r) => r.group === group);
+    assert.equal(run.retries, 1); assert.equal(run.state, 'failed'); assert.equal(run.error.kind, 'env'); assert.equal(run.evidence, false);
+    assert.equal(run.attempts.length, 2); assert.ok(run.attempts.every((a) => a.error.kind === 'env'));
+  }
+  for (const group of ['nan', 'real']) {
+    const run = round.runs.find((r) => r.group === group);
+    assert.equal(run.retries, 0); assert.equal(run.state, 'done'); assert.equal(run.error.kind, 'real'); assert.equal(run.evidence, true);
+  }
+  assert.equal(round.runs.find((r) => r.group === 'nan').metrics.score, 'NaN');
+  const good = round.runs.find((r) => r.group === 'good'); assert.equal(good.state, 'done');
+  assert.equal(good.env.python, 'fixture-python'); assert.equal(good.env.driver, 'fixture-driver'); assert.equal(good.env.data, 'sample-data-v1');
+  const result = await report(f, o);
+  assert.equal(result.comparison.matrix.find((m) => m.group === 'exit').n, 0);
+  assert.equal(result.confirmation.group, 'good');
+});
+
+test('target adoption, cycle budget, and stall stop new cycles after conclusions and deliver reasons', async (t) => {
+  for (const condition of ['target', 'budget', 'stall']) await t.test(condition, async (t) => {
+    const f = await fixture(t), o = await f.create(condition === 'target' ? { target: 'Score ≥ 25' } : condition === 'budget' ? { rounds: '1' } : { stall: '2' });
+    Object.assign(f.commands, pythonExecutor);
+    await f.initialize(o, condition === 'target' ? plan({ delta: 10 }) : { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [11, 23] });
+    const cycles = condition === 'target' ? 2 : condition === 'budget' ? 1 : 3;
+    for (let n = 1; n <= cycles; n++) {
+      await execute(f, o); const result = await report(f, o);
+      if (n < cycles) { assert.equal(result.stop, null); await decide(f, o); }
+    }
+    const d = (await f.read()).experiments[o.id];
+    assert.equal(d.objective.state, condition === 'stall' ? 'paused' : 'done');
+    assert.equal(d.objective.stopReason.kind, condition === 'budget' ? 'maxCycles' : condition);
+    assert.ok(f.sends.some((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title === d.objective.stopReason.text)));
+    assert.ok((await f.http('POST', { op: 'runCycle', objective: o.id })).error);
+    await f.activation().actions['rsi.tick']();
+    assert.equal((await f.read()).experiments[o.id].rounds.length, cycles);
+  });
+});
+
+test('schedule handler uses the confirmed local window, readiness, idle state and previous decisions with a fake clock', async (t) => {
+  const f = await fixture(t), o = await f.create(); await f.initialize(o, plan({ delta: 1 }), { window: '每晚 20:00–08:00' });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 10, 15, 19, 59).getTime() });
+  const tick = () => f.activation().actions['rsi.tick']();
+  const at = (day, hour, minute = 0) => t.mock.timers.setTime(new Date(2026, 10, day, hour, minute).getTime());
+  await tick(); assert.equal((await f.read()).experiments[o.id].rounds.length, 0);
+  assert.equal((await f.http('POST', { op: 'life', action: 'start', objective: o.id })).status, 200);
+  await tick(); assert.equal((await f.read()).experiments[o.id].rounds.length, 0);
+  at(15, 20);
+  await Promise.all([tick(), tick()]);
+  assert.equal((await f.read()).experiments[o.id].rounds.length, 1);
+  await until(f.read, (s) => s.experiments[o.id].rounds[0].state === 'evaluating');
+  await tick(); assert.equal((await f.read()).experiments[o.id].rounds.length, 1);
+  await report(f, o); await tick(); assert.equal((await f.read()).experiments[o.id].rounds.length, 1);
+  await decide(f, o);
+  await f.http('POST', { op: 'life', action: 'pause', objective: o.id });
+  await tick(); assert.equal((await f.read()).experiments[o.id].rounds.length, 1);
+  await f.http('POST', { op: 'life', action: 'resume', objective: o.id });
+  at(16, 8); await tick(); assert.equal((await f.read()).experiments[o.id].rounds.length, 1);
+  at(16, 0); await tick(); assert.equal((await f.read()).experiments[o.id].rounds.length, 2);
+  await until(f.read, (s) => s.experiments[o.id].rounds[1].state === 'evaluating');
+  await report(f, o); await decide(f, o); at(16, 19); await tick();
+  assert.equal((await f.read()).experiments[o.id].rounds.length, 2);
+});
+
+const asyncExecutor = { preflight: 'test -f async-executor.sh', submit: 'sh async-executor.sh submit {config} {run} {seed}',
+  get: 'sh async-executor.sh get {run} {job}', cancel: 'sh async-executor.sh cancel {run} {job}', collect: '{run}/metrics.json' };
+
+test('async submit persists literal job ids, polls get to completion, then collects results', async (t) => {
+  const f = await fixture(t), o = await f.create(); Object.assign(f.commands, asyncExecutor);
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Async control', vars: {}, control: true }], seeds: [11, 23] });
+  const round = await execute(f, o);
+  assert.ok(round.runs.every((r) => r.state === 'done' && r.metrics.score === r.seed && r.attempts[0].jobId === 'job with spaces;literal'));
+  for (const run of round.runs) {
+    assert.equal((await readFile(join(run.directory, 'polls'), 'utf8')).trim(), '2');
+    assert.equal((await readFile(join(run.directory, 'submits'), 'utf8')).trim(), '1');
+  }
+});
+
+test('stopping async polling calls optional cancel and preserves retryable interruption', async (t) => {
+  const f = await fixture(t), o = await f.create(); Object.assign(f.commands, asyncExecutor);
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Async control', vars: {}, control: true }], seeds: [7] });
+  await f.http('POST', { op: 'runCycle', objective: o.id });
+  const state = await until(f.read, (s) => s.experiments[o.id].rounds[0]?.runs[0]?.jobId);
+  const directory = state.experiments[o.id].rounds[0].runs[0].directory;
+  await f.activation().stop();
+  assert.equal((await readFile(join(directory, 'cancelled'), 'utf8')).trim(), 'job with spaces;literal');
+  const d = (await f.read()).experiments[o.id]; assert.equal(d.rounds[0].state, 'interrupted'); assert.equal(d.rounds[0].runs[0].retryable, true);
+});
+
+test('async executors without cancel resume a persisted job after restart without resubmitting', async (t) => {
+  const f = await fixture(t), o = await f.create(); Object.assign(f.commands, asyncExecutor); delete f.commands.cancel;
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Async control', vars: {}, control: true }], seeds: [7] });
+  await f.http('POST', { op: 'runCycle', objective: o.id });
+  await until(f.read, (s) => s.experiments[o.id].rounds[0]?.runs[0]?.jobId);
+  await f.activation().stop(); f.start();
+  await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
+  const d = (await until(f.read, (s) => s.experiments[o.id].rounds[0].state === 'evaluating')).experiments[o.id];
+  const run = d.rounds[0].runs[0]; assert.equal(run.state, 'done'); assert.equal(run.metrics.score, 7);
+  assert.equal((await readFile(join(run.directory, 'submits'), 'utf8')).trim(), '1');
+});
+
+test('an environment failure during confirmation retains the candidate and does not count as a stall', async (t) => {
+  const f = await fixture(t), o = await f.create({ stall: '1' }); Object.assign(f.commands, pythonExecutor);
+  await f.initialize(o, plan({ delta: 2 }));
+  await execute(f, o); await report(f, o); await decide(f, o);
+  const source = await readFile(join(f.project, 'experiment.py'), 'utf8');
+  await writeFile(join(f.project, 'experiment.py'), source.replace("if config.get('kill'):", "if int(seed) > 23 and config.get('delta'):\n    sys.exit(9)\nif config.get('kill'):"));
+  await execute(f, o);
+  const result = await report(f, o, 'insufficient');
+  assert.equal(result.confirmation.status, 'insufficient'); assert.equal(result.stop, null);
+  let d = (await f.read()).experiments[o.id]; assert.ok(d.candidate); assert.equal(d.objective.progress.stall, 0); assert.equal(d.objective.currentVersion, 'v1');
+  await writeFile(join(f.project, 'experiment.py'), source);
+  await decide(f, o); const third = await execute(f, o); assert.ok(third.plan.seeds.every((s) => s > 25));
+  assert.equal((await report(f, o)).confirmation.status, 'confirmed');
+  d = (await f.read()).experiments[o.id]; assert.equal(d.objective.currentVersion, 'v2');
 });

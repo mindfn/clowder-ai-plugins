@@ -1,3 +1,5 @@
+import { runCycle } from './cycles.js';
+import { insideWindow } from './schedule.js';
 import { bindObjectiveThread, recordInitExecution } from './init.js';
 import { createRuns } from './runs.js';
 import { isState, record, retain } from './store.js';
@@ -75,6 +77,10 @@ export function createRuntime(host: RsiHost) {
       await retain(host.storage, key, (state) => {
         for (const d of Object.values(state.experiments).filter((d) => d.objective.projectPath)) {
           for (const round of d.rounds.filter((r: Data) => r.state === 'running')) {
+            if (d.executor.commands?.get && round.runs.some((r: Data) => r.jobId)) {
+              for (const run of round.runs.filter((r: Data) => r.state === 'running')) run.state = 'queued';
+              continue;
+            }
             round.state = 'interrupted'; round.end = Date.now();
             for (const run of round.runs.filter((r: Data) => ['running', 'queued'].includes(r.state))) Object.assign(run, {
               state: 'failed', retryable: true, end: Date.now(), error: { kind: 'env', step: 'restart', raw: '插件重启，运行已中断；点跑一轮重试。' } });
@@ -110,5 +116,21 @@ export function createRuntime(host: RsiHost) {
     }
     return receipt;
   }
-  return { start, flush, deliver, async stop() { stopped = true; await runs.stop(); await tail; } };
+  async function tick() {
+    if (stopped) return;
+    const owners = Object.entries(await host.storage.list()).filter(([key, entry]) => key.startsWith('rsi:') && isState(entry.value));
+    if (owners.some(([, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments).some((d) => d.objective.projectPath && (d.executor.state === 'probing' || d.rounds.some((r: Data) => r.state === 'running'))))) return;
+    for (const [key] of owners) {
+      let started = false;
+      await retain(host.storage, key, (state) => {
+        started = false;
+        const d = Object.values(state.experiments).find((d) => d.objective.projectPath && d.objective.state === 'running' && !d.versionRequest
+          && insideWindow(d.policy.schedule, Date.now()) && !d.rounds.some((r: Data) => ['running', 'evaluating', 'interrupted'].includes(r.state) || r.report && !r.decision));
+        if (d) started = !!runCycle(state, d, Date.now()).ok;
+      });
+      await flush(key);
+      if (started) return;
+    }
+  }
+  return { start, flush, deliver, tick, async stop() { stopped = true; await runs.stop(); await tail; } };
 }

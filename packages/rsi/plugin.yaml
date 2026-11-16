@@ -1,5 +1,5 @@
 pluginId: official.rsi
-version: 0.1.0-alpha.7
+version: 0.1.0-alpha.8
 contractVersion: 0.4.0-candidate.0
 name: RSI 能力进化
 description:
@@ -14,6 +14,11 @@ contributions:
   - { type: webhook, id: rsi.act, path: rsi/act, methods: [POST], action: { method: rsi.act } }
   - { type: identity, id: rsi.identity, displayName: RSI }
   - { type: message-subscription, id: rsi.execution, binding: rsi.identity, action: { method: rsi.delivery }, presentation: v2 }
+  - type: schedule
+    id: rsi.schedule
+    schedule: { kind: interval, everyMs: 180000 }
+    action: { method: rsi.tick }
+    policy: { overlap: skip, timeoutMs: 30000 }
   - type: tool
     id: rsi.task
     name: rsi.task
@@ -21,7 +26,7 @@ contributions:
       被 RSI 叫醒后首先调用 {}。只在评估项 thread 内、轮到你的成员身份下可用。
       返回项目目录、当前步骤、每个要填的 item 的 id/含义/格式/例子、依赖内容及版本；本次调用认领步骤，后续提交会检查这些版本。
       初始化按返回的 ask 调查项目，再调用 rsi.submit；第 3 步先登记 rsi.executor，第 4 步提交 metrics，第 5 步提交 upcoming 计划。
-      跑完周期后 evaluate 包含每组每种子的真实 runs/metrics，读完调 rsi.conclude；人工选方向后 version 包含修改要求，改项目、提交 git，再调 rsi.version。
+      跑完周期后 evaluate 包含每组每种子的真实 runs/metrics、comparison 中的均值±样本标准差、逐种子值与护栏检查，以及之前周期的 library，读完调 rsi.conclude；人工选方向后 version 包含修改要求，改项目、提交 git，再调 rsi.version。
     inputSchema: { type: object, properties: {}, additionalProperties: false }
     action: { method: rsi.task }
   - type: tool
@@ -31,8 +36,8 @@ contributions:
       提交 rsi.task 刚分给你的初始化步骤。step 用 1–7 或 goal/scope/run/rules/design/feedback/baseline。
       items 必须含本步全部非 userOwned 项，每项 {id,value,facts?:[{k,v}],can?,rec?:explore|fixed|excluded,tag?}；value 是非空字符串，unknowns/next 是字符串。
       例 {step:1,items:[{id:"cp-good",value:"同种子得分提高",facts:[{k:"依据",v:"README"}]},{id:"cp-adopt",value:"护栏通过后采用"}],unknowns:"配额未知",next:"确认条件"}。
-      第 3 步先用 rsi.executor 登记并通过预检，或附 executor 同样的命令字段；预检和本步提交都完成才进入下一步。
-      第 4 步必须附 metrics:{version:"E1",items:[{id:"score",name:"得分",how:"metrics.json 的 score",dir:"up",unit:"分",locked:true,guard:false}]}。
+      第 3 步带 window:"每晚 20:00–08:00"（或在 cp-trigger item 的 value 写明时段），先用 rsi.executor 登记并通过预检，或附 executor 同样的命令字段；预检和本步提交都完成才进入下一步。
+      第 4 步必须附 metrics:{version:"E1",items:[{id:"score",name:"得分",how:"metrics.json 的 score",dir:"up",unit:"分",locked:true,guard:false},{id:"cost",name:"成本",how:"metrics.cost",dir:"down",guard:true,threshold:2}]}。护栏必须有数值 threshold；dir:down 表示不得超过，up 表示不得低于。
       第 5 步必须附 upcoming:{groups:[{id:"control",label:"对照",vars:{},control:true},{id:"change",label:"改动",vars:{lr:0.001}}],seeds:[11,23]}；第 7 步可更新它。
       可附 goal 对象、docs:[{id,kind:project|provided|feedback,title,body,sources:[]}]。依赖版本变化会拒绝，重新 rsi.task；成功会持久化并叫醒依赖已齐的下一成员，用户项仍需页面确认。
     inputSchema:
@@ -61,18 +66,19 @@ contributions:
         executor: { type: object }
         metrics: { type: object }
         upcoming: { type: object }
+        window: { type: string }
         docs: { type: array, items: {type: object} }
     action: { method: rsi.submit }
   - type: tool
     id: rsi.executor
     name: rsi.executor
     description: >-
-      准备成员在第 3 步调用 rsi.task 后登记本机执行方式，必填 preflight/submit/collect，选填 get/cancel/analyze/resultMap。
-      所有命令在 task.projectPath 执行。例 {preflight:"test -f train.py",submit:".venv/bin/python train.py --config {config} --out {run} --seed {seed}",collect:"{run}/metrics.json"}。
+      准备成员在第 3 步调用 rsi.task 后登记本机执行方式，必填 preflight/submit/collect，选填 get/cancel/analyze/resultMap/failureField。
+      不带 commit 的配置版本在 task.projectPath 执行；带 commit 的版本在插件 dataPath 下该提交的独立 git worktree 执行。例 {preflight:"test -f train.py",submit:".venv/bin/python train.py --config {config} --out {run} --seed {seed}",collect:"{run}/metrics.json"}。
       {config} 是插件生成的 JSON 配置（版本 config 合并组 vars 和 seed）；{run} 是 runs/<objective>/<cycle>/<group>-s<seed>；{seed} 是整数；替换会做 shell 引号处理，不要再包引号。
-      collect 可为无空格的 JSON 路径模板，或输出 JSON 的命令。默认按量尺 id 读顶层或 metrics 对象里的有限数值；可传 resultMap:[{metric:"score",field:"summary.score"}]。
+      collect 可为无空格的 JSON 路径模板，或输出 JSON 的命令。默认按量尺 id 读顶层或 metrics 对象；NaN 与 failureField 指定字段的非空失败值算真实结果，不重试；可传 resultMap:[{metric:"score",field:"summary.score"}]。
       立即启动 preflight，工具返回 probing；通过才标执行器 passed。再用 rsi.submit 交第 3 步 items（也可先交，预检成功会完成它）。预检失败会显示失败，页面重试后重新 task/executor。
-      submit 在前台运行到完成，每台机器最多一个 run；非零退出或收集失败自动重试一次。get/cancel/analyze 模板保留供后续扩展，本阶段不自动调用。
+      不带 get 时 submit 在前台运行到完成；带 get 时 submit 输出 job id 字符串或 {"jobId":"..."}，get 使用 {job} 并输出 {"state":"queued|running|done|failed|cancelled","exitCode":0}，每秒轮询至 done，再 collect。停止时可调用 cancel；无 cancel 的持久任务重启后继续轮询。非零退出/OOM/被杀自动重试一次，不算结果。preflight 可输出 JSON {python,driver,dataVersion}；collect 可带 dataVersion。analyze 暂不自动调用。
     inputSchema:
       type: object
       additionalProperties: false
@@ -84,19 +90,20 @@ contributions:
         cancel: { type: string, minLength: 1 }
         collect: { type: string, minLength: 1 }
         analyze: { type: string, minLength: 1 }
+        failureField: { type: string, minLength: 1 }
         resultMap: { type: array, items: {type: object, required: [metric, field], properties: {metric: {type: string}, field: {type: string}}, additionalProperties: false} }
     action: { method: rsi.executor }
   - type: tool
     id: rsi.version
     name: rsi.version
     description: >-
-      人工在页面选完周期方向后，仅准备成员可用。先 rsi.task 读 version 要求，在项目目录修改代码或配置并提交 git，然后交 {change,commit,config}。
-      例 {change:"降低学习率",commit:"a1b2c3d",config:{lr:0.001,batch:8}}。commit 是 7–40 位 git 十六进制提交号；config 是 JSON 对象或项目内 JSON 文件路径。
-      插件记录 v2/v3…，下一次页面跑一轮使用新版本配置；保留上一版本对照及上一周期的种子，按各组 vars 覆盖 config。插件不替你提交代码；项目代码使用当前工作目录，代码差异须由执行命令/配置选择。
+      人工在页面选完周期方向后，仅准备成员可用。先 rsi.task 读 version 要求。改代码并提交 git 后交 {change,commit,config}；只改配置可省略 commit。
+      例 {change:"降低学习率",commit:"a1b2c3d",config:{lr:0.001,batch:8}}。若提供 commit，必须是 7–40 位 git 十六进制提交号；config 是 JSON 对象或项目内 JSON 文件路径。
+      插件记录 v2/v3…，默认版本保持不变。下一周期带当前默认对照；胜出只成为候选，下周期同轮对照、换新种子确认，保持改善且护栏通过后才采用。代码 worktree 在评估项完成/退役时移除。
     inputSchema:
       type: object
       additionalProperties: false
-      required: [change, commit, config]
+      required: [change, config]
       properties:
         change: { type: string, minLength: 1 }
         commit: { type: string, pattern: '^[a-fA-F0-9]{7,40}$' }
@@ -106,10 +113,10 @@ contributions:
     id: rsi.conclude
     name: rsi.conclude
     description: >-
-      本周期所有组×种子完成后，仅评估成员可用。先 rsi.task 读取 evaluate 的真实运行指标、失败记录和对照计划，再交 {cycle,verdict,findings,options:[{k,title,why}]}。
+      本周期所有组×种子完成后，仅评估成员可用。先 rsi.task 读取 evaluate.comparison 的同周期对照、逐组均值±标准差及逐种子值/护栏/失败记录，和 evaluate.library 的历史周期，再交 {cycle,verdict,findings,options:[{k,title,why,cites?:[libraryId]}]}。
       例 {cycle:1,verdict:"tune",findings:["改动组两个种子均提高得分，需新种子复验"],options:[{k:"lr",title:"降低学习率",why:"护栏稳定但收敛慢"}]}。
-      verdict 为 baseline/keep/tune/rollback/sunset/insufficient；findings 是非空字符串或字符串数组；options 的 k 必须互异。
-      成功会在 thread 发结论卡并在页面显示方向，等待用户通过 expDecide 选方向；随后叫醒准备成员生成下一版本。不要自行代替用户决策。
+      verdict 为 baseline/keep/tune/rollback/sunset/insufficient；findings 是非空字符串或字符串数组；options 的 k 必须互异；有历史周期条目时每个方向必须在 cites 引用至少一条。返回 comparison（均值/区间/逐种子值）、confirmation 和 stop。
+      成功会在 thread 发结论卡并在页面显示方向，等待用户通过 expDecide 选方向；候选先安排新种子确认，其他新方向叫醒准备成员生成下一版本；same 可按当前默认继续。目标/连续停滞/最多周期满足时自动完成或暂停，并发原因卡。不要自行代替用户决策。
     inputSchema:
       type: object
       additionalProperties: false
@@ -118,7 +125,7 @@ contributions:
         cycle: { type: integer, minimum: 1 }
         verdict: { type: string, enum: [baseline, keep, tune, rollback, sunset, insufficient] }
         findings: { oneOf: [{type: string, minLength: 1}, {type: array, minItems: 1, items: {type: string, minLength: 1}}] }
-        options: { type: array, minItems: 1, items: {type: object, required: [k, title, why], properties: {k: {type: string, minLength: 1}, title: {type: string, minLength: 1}, why: {type: string, minLength: 1}}, additionalProperties: false} }
+        options: { type: array, minItems: 1, items: {type: object, required: [k, title, why], properties: {k: {type: string, minLength: 1}, title: {type: string, minLength: 1}, why: {type: string, minLength: 1}, cites: {type: array, items: {type: string, minLength: 1}}}, additionalProperties: false} }
     action: { method: rsi.conclude }
 features:
   - id: rsi
@@ -129,6 +136,7 @@ features:
       - { type: webhook, id: rsi.act }
       - { type: identity, id: rsi.identity }
       - { type: message-subscription, id: rsi.execution }
+      - { type: schedule, id: rsi.schedule }
       - { type: tool, id: rsi.task }
       - { type: tool, id: rsi.submit }
       - { type: tool, id: rsi.executor }

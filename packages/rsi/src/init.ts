@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createFixtures, RSI_CP_INIT } from './fixtures.js';
+import { windowMinutes } from './schedule.js';
 import { summaryOf } from './data.js';
 import type { Data, Experiment, InitExecution, OutboxEntry, PrepItem, RsiState, Section } from './types.js';
 
@@ -98,6 +99,7 @@ export interface InitSubmission {
   metrics?: Data;
   docs?: Data[];
   upcoming?: Data;
+  window?: string;
 }
 
 export function submitInitStep(state: RsiState, id: string, submission: InitSubmission, now: number) {
@@ -121,7 +123,14 @@ export function submitInitStep(state: RsiState, id: string, submission: InitSubm
   if (old) rsiExpStaleFrom(d, section, true);
   if (submission.goal) Object.assign(d.objective.goal, submission.goal, { statement: d.objective.name });
   if (submission.executor) d.executor = structuredClone(submission.executor);
-  if (submission.metrics) d.metrics = structuredClone(submission.metrics);
+  if (submission.metrics) {
+    d.metrics = structuredClone(submission.metrics);
+    for (const metric of d.metrics.items) if (metric.guard) metric.locked = true;
+  }
+  if (section === 'run') {
+    const window = submission.window || submission.items.find((p) => p.id === 'cp-trigger')?.value;
+    if (windowMinutes(window)) d.policy.schedule.window = window;
+  }
   if (submission.upcoming) d.upcoming = structuredClone(submission.upcoming);
   const project = Object.keys(state.objectives).find((k) => state.objectives[k].some((o) => o.id === id))!;
   for (const doc of submission.docs || []) {
@@ -155,13 +164,14 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   const d = structuredClone(fixture.templates[templateId]);
   const id = body.projectPath || summaryOf(state, templateId) ? `obj-${randomUUID()}` : templateId;
   const stop = [body.target && `达到「${body.target}」并复验稳定`, +body.stall && `连续 ${body.stall} 个周期没进步`, +body.rounds && `用满 ${body.rounds} 个周期`].filter(Boolean).join('，或') || '由你决定';
-  d.objective = { ...d.objective, id, name: body.statement, projectId: project, ...(body.projectPath ? { projectPath: body.projectPath } : {}), state: 'preparing', thread: null, currentVersion: 'v1', round: 0, budget: { rounds: +body.rounds || null, used: 0 }, goal: { ...d.objective.goal, statement: body.statement, good: '', adoptWhen: '', stopWhen: stop } };
+  d.objective = { ...d.objective, id, name: body.statement, projectId: project, ...(body.projectPath ? { projectPath: body.projectPath } : {}), state: 'preparing', thread: null, currentVersion: 'v1', round: 0, budget: { rounds: +body.rounds || null, used: 0 }, stop: { target: body.target || null, stall: +body.stall || null, maxCycles: +body.rounds || null }, goal: { ...d.objective.goal, statement: body.statement, good: '', adoptWhen: '', stopWhen: stop } };
   d.rounds = []; d.messages = []; d.steps = {}; d.exec = {}; d.seq = 0;
   delete d.night;
   d.versions = [{ ...d.versions[0], current: true }];
   if (body.projectPath) {
-    d.versions = [{ id: 'v1', parent: null, change: '初始版本', config: {}, commit: null, at: now, current: true }];
+    d.versions = [{ id: 'v1', parent: null, change: '初始版本', config: {}, commit: null, snapshot: true, at: now, current: true }];
     d.executor = { state: 'none', mcp: 'rsi.executor', ops: [], resultMap: [] };
+    d.policy.schedule = { window: '' };
     delete d.upcoming;
   }
   d.plan = RSI_CP_INIT.map((s) => ({ k: s.section, role: s.role, deps: [...s.deps] }));

@@ -74,6 +74,7 @@ export function createRsi(host: RsiHost) {
       if (!result.error) await runtime.flush(key);
       return result;
     },
+    async tick() { await ready; await runtime.tick(); },
     deliver: runtime.deliver,
     stop: () => runtime.stop(),
   };

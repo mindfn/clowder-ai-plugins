@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { runCycle } from './cycles.js';
+import { controlGroup, runCycle } from './cycles.js';
+import { windowMinutes } from './schedule.js';
 import { summaryOf, objectiveData } from './data.js';
 import { enqueue, kick, message, rsiExpNew, rsiExpReady, rsiExpStaleFrom, syncObjective } from './init.js';
 import type { Data, Experiment, RsiState, Section } from './types.js';
@@ -32,6 +33,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         if (body.statement == null) return { ok: true, act: 'dialog', args: { kind: 'rsiNewExp' } };
         if (typeof body.statement !== 'string' || !body.statement.trim() || typeof body.prepare !== 'string' || !body.prepare || typeof body.evaluate !== 'string' || !body.evaluate)
           return { error: 'Provide a statement and prepare/evaluate member ids' };
+        if (['stall', 'rounds'].some((k) => body[k] !== undefined && body[k] !== '' && (!Number.isSafeInteger(+body[k]) || +body[k] < 1))) return { error: 'Stop cycle counts must be positive integers' };
         const objective = rsiExpNew(state, project, body, now);
         return objective.thread ? { ok: true, act: 'thread', args: { id: objective.thread } } : { ok: true };
       }
@@ -98,6 +100,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       if (body.action === 'edit') item.value = body.value;
       if (body.action === 'decide') item.decision = body.decision;
       Object.assign(item, { state: 'confirmed', isDefault: false, by: '你', at: now });
+      if (edited && item.id === 'cp-trigger' && windowMinutes(item.value)) d.policy.schedule.window = item.value;
       if (edited) touched(state, d, item, now, '改了');
       else if (body.action === 'decide' && body.decision !== item.rec) touched(state, d, item, now, `把「${({ explore: '探索', fixed: '固定', excluded: '排除' } as Data)[body.decision]}」选给了`);
       if (rsiExpReady(d)) message(state, d, now, '初始化完成', d.objective.projectPath ? '在页面点跑一轮，按已提交的组和种子执行。' : `每晚 ${d.policy.schedule.window} 跑，第一晚只跑基线 v1。`, 'declare');
@@ -125,9 +128,11 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
     case 'life': {
       if (!o) return { error: 'Objective not found', status: 404 };
       if (!['start', 'pause', 'resume', 'retry', 'more'].includes(body.action)) return { error: 'Invalid lifecycle action' };
-      if (d?.objective.projectPath && (body.action === 'start' || body.action === 'retry')) return runCycle(state, d, now);
+      if (d?.objective.projectPath && body.action === 'retry') return runCycle(state, d, now);
+      if (d?.objective.projectPath && ['done', 'retired'].includes(d.objective.state)) return { error: 'Objective has stopped' };
       const objective = d ? d.objective : o;
       if (body.action === 'start') {
+        if (d?.objective.projectPath && !windowMinutes(d.policy.schedule.window)) return { error: 'Submit and confirm the step-3 time window first, or use runCycle manually' };
         if (objective.state !== 'ready') return { error: 'Objective is not ready' };
         objective.state = d ? 'running' : 'baseline';
       } else if (body.action === 'pause') {
@@ -136,6 +141,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       } else if (body.action === 'resume') {
         if (objective.state !== 'paused') return { error: 'Objective is not paused' };
         objective.state = objective.resumeTo; delete objective.resumeTo;
+        if (objective.stopReason?.kind === 'stall') { delete objective.stopReason; objective.progress.stall = 0; }
       } else if (body.action === 'more') {
         if (d) d.objective.budget.rounds = (d.objective.budget.rounds || 0) + 10;
         else if (state.details[id]?.trigger) state.details[id].trigger.evals.max += 10;
@@ -200,6 +206,14 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       round.decision = { pick: body.pick, directionId: body.directionId ?? null, note: body.note ?? '', by: '你', at: now };
       const n = round.n + 1, current = round.plan.groups[0];
       if (d.objective.projectPath) {
+        if (['done', 'paused', 'retired'].includes(d.objective.state)) return { ok: true };
+        d.objective.state = 'running';
+        if (d.candidate || body.pick === 'same') {
+          if (!d.candidate) d.upcoming = { ...round.plan, groups: [controlGroup(d)] };
+          message(state, d, now, d.candidate ? '下一周期：确认赢家' : '下一周期：当前版本对照', '在已确认的时段运行，也可点「跑一轮」。', 'plan');
+          syncObjective(state, d);
+          return { ok: true };
+        }
         const direction = round.report.directions.find((x: Data) => x.id === body.directionId);
         d.versionRequest = { cycle: round.n, decision: round.decision, title: direction?.title || body.note || body.pick };
         d.objective.state = 'running';

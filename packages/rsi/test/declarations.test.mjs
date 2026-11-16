@@ -9,6 +9,9 @@ test('phase 2 declarations expose five documented tools, a v2 subscription and m
   const tools=manifest.contributions.filter((c)=>c.type==='tool');
   assert.deepEqual(tools.map((c)=>c.name),['rsi.task','rsi.submit','rsi.executor','rsi.version','rsi.conclude']);
   for(const tool of tools){assert.equal(tool.action.method,tool.name);assert.equal(tool.inputSchema.type,'object');assert.ok(tool.description.length>150);}
+  const schedule=manifest.contributions.find((c)=>c.type==='schedule');
+  assert.deepEqual(schedule.schedule,{kind:'interval',everyMs:180000});assert.equal(schedule.action.method,'rsi.tick');assert.equal(schedule.policy.overlap,'skip');
+  assert.ok(manifest.features[0].contributions.some((c)=>c.type==='schedule'&&c.id===schedule.id));
   assert.equal(manifest.contributions.find((c)=>c.type==='message-subscription').presentation,'v2');
   for(const file of ['package.json','npm-shrinkwrap.json'])assert.equal(JSON.parse(readFileSync(new URL(`../${file}`,import.meta.url),'utf8')).version,manifest.version);
 });

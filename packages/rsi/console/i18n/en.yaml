@@ -545,6 +545,7 @@ exp:
     _: "{0}"
   runs: Individual runs ({0})
   next:
+    done: Evaluation is complete; no further cycles will start
     decide: Results for {0} cycle {1} are ready; choose the next step. Tonight follows the current plan if you take no action.
     running: "{0} cycle {1} is running. Failures are reported immediately; other groups continue."
     ready: Initialization is complete and confirmed. Start evaluation; the first night runs only the baseline.

@@ -23,7 +23,7 @@ export function viewModel(state: RsiState, view: string, query: Data = {}): any 
     const d = state.experiments[id];
     if (!d || !objectiveData(state, id)) return null;
     const run = d.rounds.find((r: Data) => r.state === 'running');
-    return { ...d, upcoming: run ? run.plan : d.objective.state === 'ready' ? d.upcoming || null : null };
+    return { ...d, upcoming: run ? run.plan : d.objective.projectPath || d.objective.state === 'ready' ? d.upcoming || null : null };
   }
 function rsiProject(): any { return projectOf(state, { projectId: S.rsiProject }); }
 
@@ -149,19 +149,20 @@ function rsiExpData(): any { return experimentData(rsiPick(rsiProject().objectiv
 const RSI_LAYERS = ['execution', 'harness', 'rubric', 'observation'];
 function exp(): any {
   const d = rsiExpData(); if (!d) return null;
-  const o = d.objective, main = d.metrics.items[0].id, key = function (v: any): any { return o.id + '/' + v; };
+  const o = d.objective, main = d.metrics.items.find((m: Data) => !m.guard).id, key = function (v: any): any { return o.id + '/' + v; };
   const waiting = function (r: any): any { return !!r.report && !r.decision && r.state === 'done'; };
   const rounds = d.rounds.filter(function (r: any): any { return r.state !== 'planned'; }).map(function (r: any): any { return Object.assign({}, r, { k: d.rounds.filter(function (x: any): any { return x.version === r.version && x.n <= r.n; }).length }); });
   const dirOf = function (r: any): any { return r.decision && r.decision.directionId && r.report.directions.find(function (x: any): any { return x.id === r.decision.directionId; }); };
   const govOf = function (r: any): any { const x = dirOf(r); return waiting(r) ? 'pending' : !r.decision ? null : x ? (x.kind === 'code' ? (r.report.verdict === 'rollback' ? 'rollback' : 'evolve') : x.kind) : r.decision.pick; };
+  const focus = o.projectPath && rounds.find((r: Data) => waiting(r) || ['running', 'evaluating'].includes(r.state));
   const tree = rsiTree('rsiSelO', d.versions.map(function (v: any): any {
     return { key: key(v.id), parent: v.parent && key(v.parent),
       cycles: rounds.filter(function (r: any): any { return r.version === v.id; }).map(function (r: any): any { return { n: r.k, apply: r.runs.some(function (u: any): any { return u.error && u.error.kind === 'env'; }) ? 'failed' : 'done', collect: true, live: r.state === 'running', eval: r.report && r.report.verdict, gov: govOf(r) }; }),
-      data: Object.assign({}, v, { nodeState: v.current ? 'current' : '' }) };
-  }), { row: key(o.currentVersion) });
+      data: Object.assign({}, v, { nodeState: v.current ? 'current' : v.status === 'candidate' ? 'candidate' : '' }) };
+  }), { row: key(focus ? focus.version : o.currentVersion) });
   const ver = d.versions.find(function (v: any): any { return key(v.id) === tree.rowKey; }), m = /^c(\d+)\.(\w+)$/.exec(tree.stepKey);
   const r = m && rounds.find(function (x: any): any { return x.version === ver.id && x.k === +m[1]; });
-  const best = function (x: any): any { return x.report && x.report.matrix.filter(function (y: any): any { return y.metric === main && y.mean != null && x.plan.groups.find(function (g: any): any { return g.id === y.group; }).version === x.version; }).sort(function (a: any, b: any): any { return b.mean - a.mean; })[0]; };
+  const best = function (x: any): any { return x.report && x.report.matrix.filter(function (y: any): any { return y.metric === main && y.mean != null && (!o.projectPath || x.report.compare.groups?.some((g: Data) => g.group === y.group && g.eligible)) && x.plan.groups.find(function (g: any): any { return g.id === y.group; }).version === x.version; }).sort(function (a: any, b: any): any { return d.metrics.items.find((m: Data) => m.id === main).dir === 'down' ? a.mean - b.mean : b.mean - a.mean; })[0]; };
   const preds = ([] as Data[]).concat.apply([], rounds.map(function (x: any): any { return x.report ? x.report.predictions : []; }));
   const needYou = d.prep.filter(function (i: any): any { return i.neededFrom === 'human' && i.state !== 'confirmed'; }).length;
 
@@ -183,7 +184,7 @@ function exp(): any {
 
   const first = steps.filter(function (x: any): any { return x.items.some(function (y: any): any { return y.needYou; }); }).map(function (x: any): any { return { i: x.i, n: below(x.k).length }; }).sort(function (a: any, b: any): any { return b.n - a.n; })[0];
   const hint = first && first.n ? first : null;
-  const next = o.state === 'paused' ? { k: 'paused' } : wait ? { k: 'decide', v: wait.version, n: wait.k, go: at(wait, 'gov') } : run ? { k: 'running', v: run.version, n: run.k, go: at(run, 'collect') }
+  const next = o.state === 'done' ? { k: 'done' } : o.state === 'paused' ? { k: 'paused' } : wait ? { k: 'decide', v: wait.version, n: wait.k, go: at(wait, 'gov') } : run ? { k: 'running', v: run.version, n: run.k, go: at(run, 'collect') }
     : cut ? { k: 'cancelled', n: cut.i, by: cut.who } : doing.length ? { k: 'init', by: doing.map(function (x: any): any { return { who: x.who, i: x.i }; }), hint: hint }
     : o.state === 'ready' ? { k: 'ready' } : stale ? { k: 'stale', count: stale } : needYou ? { k: 'prep', count: needYou, hint: hint }
     : d.executor.state !== 'passed' ? { k: 'executor' } : { k: 'planned', window: d.policy.schedule.window };
@@ -202,7 +203,7 @@ function exp(): any {
   };
   return { id: o.id, name: o.name, state: o.state, projectPath: o.projectPath, goal: o.goal, thread: o.thread, next: next, now: now, tab: S.rsiTab, setup: rounds.length === 0,
     trend: rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, value: best(x).mean }; }),
-    trendMetric: d.metrics.items[0].name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.length },
+    trendMetric: d.metrics.items.find((m: Data) => m.id === main).name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.length },
     versions: tree.rows, ver: ver, step: m ? m[2] : 'node',
     cycle: r && Object.assign({}, r, { waiting: waiting(r), groups: groupsOf(r),
       runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { durationSeconds: u.start ? Math.round(((u.end || Date.now()) - u.start) / 1000) : null, metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })), groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),
