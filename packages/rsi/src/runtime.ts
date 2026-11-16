@@ -43,7 +43,7 @@ export function createRuntime(host: RsiHost) {
           await retain(host.storage, key, (next) => { next.outbox.find((e) => e.id === entry.id)!.sent = Date.now(); });
           continue;
         }
-        const content = [entry.message?.title, entry.kind === 'agent' ? `@${entry.member} 先调用 rsi.task 读取当前任务和依据版本。` : '', entry.message?.body, entry.message?.ask].filter(Boolean).join('\n\n');
+        const content = [entry.message?.title, entry.kind === 'agent' ? '先调用 rsi.task 读取当前任务和依据版本。' : '', entry.message?.body, entry.message?.ask].filter(Boolean).join('\n\n');
         const sent = await host.messaging.send({ threadId: d.objective.thread, idempotencyKey: entry.id,
           ...(entry.kind === 'agent' ? { wake: { catId: entry.member, exact: true as const } } : {}),
           payload: { provenance: { epistemicStatus: entry.kind === 'agent' ? 'user_intent' : 'observation' },

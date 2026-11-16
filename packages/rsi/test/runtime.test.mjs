@@ -76,7 +76,7 @@ async function fixture(t) {
     const state = await read(), d = Object.values(state.experiments).find((d) => d.objective.projectPath === project);
     return { id: d.objective.id, thread: result.args.id, result };
   };
-  const tool = (method, input, catId, threadId, invocationId = `${catId}-turn`) => activation.actions[`rsi.${method}`](input, undefined,
+  const tool = (method, input, catId, threadId, invocationId = `${catId}-turn`) => activation.actions[`rsi.${method}`](input,
     { catId, threadId, userId: 'owner', invocationId, assertCurrent: async () => {} });
   const commands = { preflight: 'test -f simulate.mjs', submit: `'${process.execPath}' simulate.mjs {config} {run} {seed}`, collect: '{run}/metrics.json' };
   async function initialize(objective, plan = { groups: [{ id: 'control', label: 'Control', vars: { delta: 0 }, control: true }, { id: 'change', label: 'Change', vars: { delta: 1 } }], seeds: [11, 23] }) {

@@ -64,7 +64,7 @@ export function rsiExpKick(experiment: Experiment, now: number): { experiment: E
     d.exec[plan.k] = { id, state: 'started', by: member.catId, base, ...rewrite };
     if (s.exec) d.executor.state = 'generating';
     const m = { id, at: now, kind: 'ask', round: 0, title: `初始化第 ${d.plan.indexOf(plan) + 1} 步${old ? '（按新版本重做）' : ''}`,
-      body: `@${member.catId} ${rewrite?.note || s.ask}` + (plan.deps.length ? '\n\n依据：' + plan.deps.map((k) => `第 ${d.plan.findIndex((p) => p.k === k) + 1} 步 v${base[k]}`).join('、') : ''), ask: '', ifIgnored: '' };
+      body: `@${member.name} ${rewrite?.note || s.ask}` + (plan.deps.length ? '\n\n依据：' + plan.deps.map((k) => `第 ${d.plan.findIndex((p) => p.k === k) + 1} 步 v${base[k]}`).join('、') : ''), ask: '', ifIgnored: '' };
     d.messages.push(m);
     outbox.push({ id, kind: 'agent', objective: d.objective.id, thread: d.objective.thread || null, member: member.catId, section: plan.k, executionId: id, base, message: m });
     if (rewrite) delete d.rewrites[plan.k];
@@ -176,7 +176,7 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   state.experiments[id] = d;
   state.objectives[project].push({ id, name: body.statement, parent: null, state: 'preparing', mode: 'exp', trigger: '', running: null, cycle: null, prediction: null, locked: 0 });
   enqueue(state, d, 'createThread', { project, title: `RSI · ${body.statement}` });
-  message(state, d, now, `新评估项：${body.statement}`, `何时停：${stop}。\n\n@${body.prepare} 负责准备；@${body.evaluate} 负责评估。初始化七步，按依赖往下做。`, 'goal');
+  message(state, d, now, `新评估项：${body.statement}`, `何时停：${stop}。\n\n@${d.members.find((m) => m.role === 'prepare')!.name} 负责准备；@${d.members.find((m) => m.role === 'evaluate')!.name} 负责评估。初始化七步，按依赖往下做。`, 'goal');
   kick(state, id, now);
   return state.experiments[id].objective;
 }
