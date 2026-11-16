@@ -59,6 +59,8 @@ test('home says whether the user picked something (a collapsed split shows its d
   assert.deepEqual(await home({ pick: 'caps' }).then((x) => [x.picked, x.pick.k]), [true, 'caps']);
   assert.deepEqual(await home({ pick: `obj:${first.pick.id}` }).then((x) => [x.picked, x.pick.id]), [true, first.pick.id]);
   assert.equal((await f.view({ project: 'cartpole', pick: 'obj:gone' })).payload.picked, false);
+  // A picked objective that was deleted: back at the list, the detail falls back to the first objective.
+  assert.deepEqual(await home({ pick: 'obj:gone' }).then((x) => [x.picked, x.pick.id]), [false, first.pick.id]);
 });
 
 test('record, document, cards, and version selections consume their page-state queries', async () => {

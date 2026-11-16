@@ -666,6 +666,14 @@ views:
             args:
               kind: msg
               t: $.exp.thread
+          - type: more
+            items:
+              - label: t:rsi.delete.action
+                act: dialog
+                args:
+                  kind: rsiDelete
+                  objective: $.exp.id
+                  name: $.exp.name
       - type: kv
         from:
           - k: t:rsi.exp.now.version
@@ -1776,6 +1784,14 @@ views:
             act: dialog
             args:
               kind: rsiPolicy
+          - type: more
+            items:
+              - label: t:rsi.delete.action
+                act: dialog
+                args:
+                  kind: rsiDelete
+                  objective: $.objective.id
+                  name: $.objective.name
       - type: text
         when: "!$.objective.setup"
         parts:
@@ -4617,6 +4633,18 @@ views:
     okArgs:
       request: reeval
       card: $.card
+  dlg.rsiDelete:
+    title:
+      t: rsi.delete.title
+      args:
+        - $.name
+    text: t:rsi.delete.text
+    ok: t:rsi.delete.ok
+    danger: true
+    okAct: plugin
+    okArgs:
+      request: delete
+      objective: $.objective
 rows:
   rsi.prep:
     layout: two
@@ -4980,6 +5008,19 @@ requests:
     body:
       op: life
       action: "@op"
+      objective: "@objective"
+  delete:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      selC: state.selC
+    body:
+      op: delete
       objective: "@objective"
   initRedo:
     path: rsi/act

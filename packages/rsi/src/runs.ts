@@ -17,7 +17,11 @@ const parseResult = (raw: string) => JSON.parse(raw.replace(/"(?:\\.|[^"\\])*"|\
 export function createRuns(host: RsiHost, changed: (key: string) => Promise<void>) {
   let stopped = false, again = false, child: ChildProcess | undefined, job: Promise<void> | undefined, remote: Data | undefined;
   let pollTimer: ReturnType<typeof setTimeout> | undefined, releasePoll: (() => void) | undefined;
+  // busy: the objective whose probe or run is executing; a deleted (dropped) objective starts no further command.
+  let busy: string | undefined;
+  const dropped = new Set<string>();
   async function command(template: string, cwd: string, values: Data) {
+    if (busy && dropped.has(busy)) return { code: -1, log: 'Objective deleted', stdout: '' };
     let log = '', stdout = '';
     const process = child = spawn('/bin/sh', ['-c', render(template, values)], { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     process.stdout!.on('data', (part) => { stdout = (stdout + part).slice(-16000); log = (log + part).slice(-16000); });
@@ -32,13 +36,14 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
 
   async function work() {
     while (!stopped) {
+      busy = undefined;
       const entries = await host.storage.list();
       const owners = Object.entries(entries).filter(([key, entry]) => key.startsWith('rsi:') && isState(entry.value));
       const retired = owners.flatMap(([key, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments)
         .filter((d) => d.objective.projectPath && ['done', 'retired'].includes(d.objective.state) && d.versions.some((v: Data) => v.worktree)).map((d) => ({ key, d })))[0];
       if (retired) {
         await removeVersionWorktrees(retired.d);
-        await retain(host.storage, retired.key, (state) => { for (const v of state.experiments[retired.d.objective.id].versions) delete v.worktree; });
+        await retain(host.storage, retired.key, (state) => { for (const v of state.experiments[retired.d.objective.id]?.versions || []) delete v.worktree; });
         continue;
       }
       const probe = owners.flatMap(([key, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments)
@@ -46,12 +51,13 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         .map((d) => ({ key, d })))[0];
       if (probe) {
         const { key, d } = probe, executionId = d.exec!.run!.id;
+        busy = d.objective.id;
         const result = await command(d.executor.commands.preflight, d.objective.projectPath, { config: '', run: '', seed: 0, job: '' });
         const commit = await projectCommit(d.objective.projectPath);
         if (stopped) return;
         await retain(host.storage, key, (state) => {
           const current = state.experiments[d.objective.id];
-          if (current.exec?.run?.id !== executionId || current.executor.state !== 'probing') return;
+          if (current?.exec?.run?.id !== executionId || current.executor.state !== 'probing') return;
           current.executor.state = result.code === 0 ? 'passed' : 'failed';
           current.executor.probe = { at: Date.now(), error: result.code === 0 ? null : result.log || `exit ${result.code}`, log: result.log };
           const initial = current.versions.find((v: Data) => v.snapshot);
@@ -75,12 +81,13 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       let acquired = false;
       await retain(host.storage, key, (state) => {
         acquired = false;
-        const objective = state.experiments[d.objective.id], current = objective.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
-        if (objective.objective.state !== 'running' || current?.state !== 'queued') return;
+        const objective = state.experiments[d.objective.id], current = objective?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
+        if (objective?.objective.state !== 'running' || current?.state !== 'queued') return;
         acquired = true;
         Object.assign(current, { state: 'running', start, end: null, directory });
       });
       if (!acquired || stopped) continue;
+      busy = d.objective.id;
       let metrics: Data = {}, env: Data = { seed: run.seed, hardware: { os: `${platform()} ${release()}`, arch: arch(), chip: cpus()[0]?.model || 'unknown' } };
       let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId;
       try {
@@ -89,6 +96,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         env.hw = `${env.hardware.os} / ${env.hardware.arch} / ${env.hardware.chip}`;
         await retain(host.storage, key, (state) => {
           const current = state.experiments[d.objective.id];
+          if (!current) return;
           if (version.commit) current.versions.find((v: Data) => v.id === version.id).worktree = cwd;
           Object.assign(current.rounds.find((r: Data) => r.n === round.n).runs.find((r: Data) => r.id === run.id), { cwd, env });
         });
@@ -118,7 +126,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             jobId = output.startsWith('{') ? parseResult(output).jobId : output;
             if (typeof jobId !== 'string' || !jobId.trim()) throw new Error('Async submit must return a jobId');
             values.job = jobId;
-            await retain(host.storage, key, (state) => { state.experiments[d.objective.id].rounds.find((r: Data) => r.n === round.n).runs.find((r: Data) => r.id === run.id).jobId = jobId; });
+            await retain(host.storage, key, (state) => { const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n).runs.find((r: Data) => r.id === run.id); if (entry) entry.jobId = jobId; });
           }
         }
         if (d.executor.commands.get) {
@@ -126,6 +134,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           step = 'get';
           for (;;) {
             if (stopped) return;
+            if (remote?.dropped) throw new Error('Objective deleted');
             const polled = await command(d.executor.commands.get, cwd, values);
             log = (log + polled.log).slice(-16000);
             if (stopped) return;
@@ -171,7 +180,9 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       remote = undefined;
       if (stopped) return;
       await retain(host.storage, key, (state) => {
-        const current = state.experiments[d.objective.id], cycle = current.rounds.find((r: Data) => r.n === round.n), entry = cycle.runs.find((r: Data) => r.id === run.id);
+        const current = state.experiments[d.objective.id];
+        if (!current) return;
+        const cycle = current.rounds.find((r: Data) => r.n === round.n), entry = cycle.runs.find((r: Data) => r.id === run.id);
         if (entry.state !== 'running') return;
         const end = Date.now(), failure = error ? { kind, step, raw: error } : null;
         Object.assign(entry, { end, metrics, env, log, error: failure, evidence: !error || kind === 'real' });
@@ -192,6 +203,20 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
     }
   }
   return {
+    // Deleting objectives: an async job is cancelled, a running command is killed, and no further command starts for them.
+    async drop(ids: string[]) {
+      const job = remote && ids.includes(remote.objective) ? remote : undefined;
+      if (job) { job.dropped = true; clearTimeout(pollTimer); releasePoll?.(); }
+      if (job?.cancel) {
+        const cancelled = await command(job.cancel, job.cwd, job.values);
+        if (cancelled.code !== 0) host.log('error', 'RSI remote cancellation failed for a deleted objective', { jobId: job.values.job, error: cancelled.log });
+      }
+      for (const id of ids) dropped.add(id);
+      if (busy && ids.includes(busy) && child?.pid) {
+        try { process.kill(-child.pid, 'SIGKILL'); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+      }
+    },
     wake() {
       if (stopped) return;
       if (job) { again = true; return; }
@@ -211,7 +236,9 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         const cancelled = await command(active.cancel, active.cwd, active.values);
         if (cancelled.code !== 0) { host.log('error', 'RSI remote cancellation failed; job retained', { jobId: active.values.job, error: cancelled.log }); return; }
         await retain(host.storage, active.key, (state) => {
-          const cycle = state.experiments[active.objective].rounds.find((r: Data) => r.n === active.cycle), run = cycle.runs.find((r: Data) => r.id === active.run);
+          const cycle = state.experiments[active.objective]?.rounds.find((r: Data) => r.n === active.cycle);
+          if (!cycle) return;
+          const run = cycle.runs.find((r: Data) => r.id === active.run);
           delete run.jobId;
           cycle.state = 'interrupted';
           Object.assign(run, { state: 'failed', retryable: true, end: Date.now(), error: { kind: 'env', step: 'cancel', raw: '插件停止，已调用 cancel；可重试。' } });

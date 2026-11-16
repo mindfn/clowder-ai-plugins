@@ -1,8 +1,11 @@
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { runCycle } from './cycles.js';
 import { insideWindow } from './schedule.js';
 import { bindObjectiveThread, recordInitExecution } from './init.js';
 import { createRuns } from './runs.js';
 import { isState, record, retain } from './store.js';
+import { removeVersionWorktrees } from './versions.js';
 import type { Data, Experiment, RsiHost, Section } from './types.js';
 
 function executionEvents(state: import('./types.js').RsiState, d: Experiment) {
@@ -28,6 +31,8 @@ export function createRuntime(host: RsiHost) {
   let stopped = false, tail = Promise.resolve();
   const runs = createRuns(host, flush);
   const subscribe = (threadId: string) => host.messaging.subscribe({ threadId, method: 'rsi.delivery' });
+  // Marks a delivered entry; an entry deleted with its objective meanwhile is skipped.
+  const mark = (next: import('./types.js').RsiState, id: string, extra: Data = {}) => { const e = next.outbox.find((x) => x.id === id); if (e) Object.assign(e, { sent: Date.now(), ...extra }); return e; };
 
   async function deliverOutbox(key: string) {
     while (!stopped) {
@@ -41,15 +46,12 @@ export function createRuntime(host: RsiHost) {
         const thread = d.objective.thread || (await host.threads.create({ title: entry.title, projectRef: d.objective.projectPath,
           participants: [...new Set(d.members.filter((m) => ['prepare', 'evaluate'].includes(m.role)).map((m) => m.catId))] })).id;
         if (stopped) return;
-        await retain(host.storage, key, (next) => {
-          bindObjectiveThread(next, entry.objective, thread);
-          next.outbox.find((e) => e.id === entry.id)!.sent = Date.now();
-        });
+        await retain(host.storage, key, (next) => { if (mark(next, entry.id)) bindObjectiveThread(next, entry.objective, thread); });
         await subscribe(thread);
       } else if (entry.kind === 'message' || entry.kind === 'agent') {
         if (!d.objective.thread) return;
         if (entry.kind === 'agent' && entry.section && d.exec?.[entry.section as Section]?.id !== entry.executionId) {
-          await retain(host.storage, key, (next) => { next.outbox.find((e) => e.id === entry.id)!.sent = Date.now(); });
+          await retain(host.storage, key, (next) => { mark(next, entry.id); });
           continue;
         }
         const content = [entry.message?.title, entry.kind === 'agent' ? '先调用 rsi.task 读取当前任务和依据版本。' : '', entry.message?.body, entry.message?.ask].filter(Boolean).join('\n\n');
@@ -60,12 +62,9 @@ export function createRuntime(host: RsiHost) {
               ...(entry.kind === 'message' && ['goal', 'conclusion', 'failed', 'plan'].includes(entry.message.kind) ? [{ elementId: `${entry.id}-card`, kind: 'rich_block' as const,
                 payload: { id: entry.id, kind: 'card' as const, v: 1 as const, title: entry.message.title, bodyMarkdown: [entry.message.body, entry.message.ask].filter(Boolean).join('\n\n') } }] : [])] } });
         if (stopped) return;
-        await retain(host.storage, key, (next) => {
-          Object.assign(next.outbox.find((e) => e.id === entry.id)!, { sent: Date.now(), messageId: sent.messageId });
-          executionEvents(next, next.experiments[entry.objective]);
-        });
+        await retain(host.storage, key, (next) => { if (mark(next, entry.id, { messageId: sent.messageId })) executionEvents(next, next.experiments[entry.objective]); });
       } else {
-        await retain(host.storage, key, (next) => { next.outbox.find((e) => e.id === entry.id)!.sent = Date.now(); });
+        await retain(host.storage, key, (next) => { mark(next, entry.id); });
       }
     }
   }
@@ -113,6 +112,7 @@ export function createRuntime(host: RsiHost) {
       if (!d) continue;
       await retain(host.storage, key, (state) => {
         const current = state.experiments[d.objective.id];
+        if (!current) return;
         current.lifecycle ||= {};
         if (input.state === 'started' && typeof input.replyTo === 'string') current.lifecycle[input.executionId] ||= { replyTo: input.replyTo };
         if (input.state === 'settled' && current.lifecycle[input.executionId]) current.lifecycle[input.executionId].outcome = input.outcome;
@@ -139,5 +139,14 @@ export function createRuntime(host: RsiHost) {
       if (started) return;
     }
   }
-  return { start, flush, deliver, tick, async stop() { stopped = true; await runs.stop(); await tail; } };
+  // Deleted objectives: stop their run, then remove their runs folder in the project and their version worktrees.
+  async function drop(removed: Experiment[]) {
+    await runs.drop(removed.map((d) => d.objective.id));
+    for (const d of removed.filter((d) => d.objective.projectPath)) {
+      const log = (what: string) => (error: unknown) => host.log('error', `RSI could not remove a deleted objective's ${what}`, { objective: d.objective.id, error: String(error) });
+      if (/^[\w-]+$/.test(d.objective.id)) await rm(join(d.objective.projectPath, 'runs', d.objective.id), { recursive: true, force: true }).catch(log('runs'));
+      await removeVersionWorktrees(d).catch(log('worktrees'));
+    }
+  }
+  return { start, flush, deliver, tick, drop, async stop() { stopped = true; await runs.stop(); await tail; } };
 }

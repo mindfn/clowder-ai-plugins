@@ -27,6 +27,21 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
   const id = selected(state, body, query), o = summaryOf(state, id), d = state.experiments[id];
   switch (body.op) {
     case 'refresh': return { ok: true };
+    case 'delete': {
+      // The objective and its sub-objectives, with their data, pending messages and cycle notes. Files are removed by the runtime; the thread stays.
+      const owner = Object.keys(state.objectives).find((k) => state.objectives[k].some((x) => x.id === body.objective));
+      if (!owner) return { error: 'Objective not found', status: 404 };
+      const list = state.objectives[owner], gone = new Set<string>([body.objective]);
+      for (let more = true; more;) { more = false; for (const x of list) if (gone.has(x.parent) && !gone.has(x.id)) { gone.add(x.id); more = true; } }
+      state.objectives[owner] = list.filter((x) => !gone.has(x.id));
+      for (const x of gone) { delete state.experiments[x]; delete state.details[x]; }
+      state.outbox = state.outbox.filter((e) => !gone.has(e.objective));
+      state.library[owner] = (state.library[owner] || []).flatMap((doc) => {
+        const rest = (doc.objectives || []).filter((x: string) => !gone.has(x));
+        return doc.cycle && doc.objectives?.length && !rest.length ? [] : [{ ...doc, objectives: rest }];
+      });
+      return { ok: true };
+    }
     case 'new':
     case 'newExp': {
       if (state.projects.find((p) => p.id === project)!.exp) {

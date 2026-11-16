@@ -264,6 +264,31 @@ test('stop kills the owned process and restart restores subscriptions with faile
   assert.equal(d.rounds.length,1);assert.equal(d.rounds[0].runs[0].state,'done');
 });
 
+test('deleting an objective kills its run and removes its runs folder, data, pending messages and cycle notes; other objectives keep running', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Slow run', vars: { slow: true }, control: true }], seeds: [1] });
+  await f.http('POST', { op: 'runCycle', objective: o.id });
+  const running = await until(f.read, (s) => s.experiments[o.id].rounds[0]?.runs[0]?.state === 'running');
+  const pid = await until(() => readFile(join(running.experiments[o.id].rounds[0].runs[0].directory, 'pid'), 'utf8').then(Number, () => null), (p) => p !== null, 'child process start');
+  const stored = await f.storage.get(ownerKey('owner'));
+  stored.value.library[f.project].push({ id: `${o.id}-cycle-1`, kind: 'feedback', title: 'c1', objectives: [o.id], cycle: 1 }, { id: 'shared', kind: 'provided', title: 's', objectives: [o.id, 'other'] });
+  assert.ok((await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value)).applied);
+  assert.equal((await f.http('POST', { op: 'delete', objective: o.id }, { project: f.project })).status, 200);
+  await until(async () => { try { process.kill(pid, 0); return false; } catch { return true; } }, Boolean, 'run killed');
+  const s = await f.read();
+  assert.equal(s.experiments[o.id], undefined);
+  assert.ok(!Object.values(s.objectives).flat().some((x) => x.id === o.id));
+  assert.ok(!s.outbox.some((e) => e.objective === o.id));
+  assert.deepEqual(s.library[f.project].filter((d) => [`${o.id}-cycle-1`, 'shared'].includes(d.id)).map((d) => [d.id, d.objectives]), [['shared', ['other']]]);
+  await assert.rejects(access(join(f.project, 'runs', o.id)));
+  assert.equal((await f.http('POST', { op: 'delete', objective: o.id }, { project: f.project })).status, 404);
+  await rm(join(f.project, 'active-run'), { recursive: true, force: true });   // the killed run could not release the simulator's lock
+  const next = await f.create();
+  await f.initialize(next, { groups: [{ id: 'control', label: 'Control', vars: { delta: 0 }, control: true }], seeds: [1] });
+  await f.http('POST', { op: 'runCycle', objective: next.id });
+  await until(f.read, (s) => s.experiments[next.id].rounds[0]?.state === 'evaluating', 'the next objective runs');
+});
+
 
 test('preflight failure cannot complete step 3; retry probes again before accepting its submission', async (t) => {
   const f=await fixture(t),o=await f.create();

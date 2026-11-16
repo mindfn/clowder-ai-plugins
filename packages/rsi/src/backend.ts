@@ -4,7 +4,7 @@ import { createRuntime } from './runtime.js';
 import { mergeProjects, projects } from './projects.js';
 import { isState, load, ownerKey, record, update } from './store.js';
 import { toolAction } from './tools.js';
-import type { Data, OwnerContext, RsiHost, ToolContext } from './types.js';
+import type { Data, Experiment, OwnerContext, RsiHost, ToolContext } from './types.js';
 export { ownerKey } from './store.js';
 
 export function json(status: number, payload: unknown) {
@@ -41,17 +41,19 @@ export function createRsi(host: RsiHost) {
       if (!thread?.projectRef) return json(400, { error: 'The current conversation has no project' });
       body.project = thread.projectRef;
     }
-    let created: string | undefined;
+    let created: string | undefined, removed: Experiment[] = [];
     const result = await update(host.storage, key, (next) => {
       mergeProjects(next, live);
       const project = next.projects.find((p) => p.id === (body.project || query.project));
       body.projectPath = project?.projectPath;
-      const before = next.outbox.length;
+      const before = next.outbox.length, had = { ...next.experiments };
       const result = act(next, body, query, Date.now());
       created = next.outbox.slice(before).find((e) => e.kind === 'createThread')?.objective;
+      removed = Object.values(had).filter((d) => !next.experiments[d.objective.id]);
       return result;
     }, () => context.assertCurrent());
     if (result.error) { const { status = 400, ...payload } = result; return json(status, payload); }
+    if (removed.length) await runtime.drop(removed);
     await runtime.flush(key);
     if (created) {
       const saved = await host.storage.get(key);
