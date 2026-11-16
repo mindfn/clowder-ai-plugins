@@ -55,6 +55,9 @@ test('home says whether the user picked something (a collapsed split shows its d
   const first = await home({});
   assert.equal(first.picked, false);
   assert.equal(first.pick.k, 'obj');
+  // The head's 新建评估项 opens the experimental dialog only for experimental projects.
+  assert.equal(first.exp, true);
+  assert.equal((await f.view({ project: 'notes-agent' })).payload.exp, false);
   assert.deepEqual(await home({ pick: 'list' }).then((x) => [x.picked, x.pick]), [false, first.pick]);
   assert.deepEqual(await home({ pick: 'caps' }).then((x) => [x.picked, x.pick.k]), [true, 'caps']);
   assert.deepEqual(await home({ pick: `obj:${first.pick.id}` }).then((x) => [x.picked, x.pick.id]), [true, first.pick.id]);

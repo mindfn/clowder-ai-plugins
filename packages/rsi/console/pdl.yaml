@@ -28,35 +28,23 @@ views:
             title: t:rsi.home.title
             help: t:rsi.home.help
             actions:
-              - type: more
-                items:
-                  - from: $.home.projects
-                    item:
-                      label: t:rsi.new
-                      act: dialog
-                      args:
-                        kind: rsiNewExp
-                        thread: $.currentThread.id
-                        projects: $.home.projects
-                        cats: $.members.defaultCatOptions
-                      when:
-                        - of: "@id"
-                          gte: $.home.projectId
-                        - of: $.home.projectId
-                          gte: "@id"
-                        - "@exp"
-                  - from: $.home.projects
-                    item:
-                      label: t:rsi.new
-                      act: dialog
-                      args:
-                        kind: rsiNew
-                      when:
-                        - of: "@id"
-                          gte: $.home.projectId
-                        - of: $.home.projectId
-                          gte: "@id"
-                        - "!@exp"
+              - type: button
+                label: t:rsi.new
+                act: dialog
+                args:
+                  kind: rsiNewExp
+                  thread: $.currentThread.id
+                  projects: $.home.projects
+                  cats: $.members.defaultCatOptions
+                disabled: $.pending
+                when: $.home.exp
+              - type: button
+                label: t:rsi.new
+                act: dialog
+                args:
+                  kind: rsiNew
+                disabled: $.pending
+                when: "!$.home.exp"
           - type: toolbar
             items:
               - type: select
@@ -201,15 +189,13 @@ views:
                       when: "@running"
                   cur: "@selected"
                   acts:
-                    - label: t:rsi.moreActions
-                      icon: more
-                      items:
-                        - label: t:rsi.delete.action
-                          act: dialog
-                          args:
-                            kind: rsiDelete
-                            objective: "@id"
-                            name: "@name"
+                    - label: t:rsi.delete.action
+                      icon: delete
+                      act: dialog
+                      args:
+                        kind: rsiDelete
+                        objective: "@id"
+                        name: "@name"
                 select:
                   act: plugSet
                   args:
@@ -308,35 +294,23 @@ views:
             title: t:rsi.home.title
             help: t:rsi.home.help
             actions:
-              - type: more
-                items:
-                  - from: $.home.projects
-                    item:
-                      label: t:rsi.new
-                      act: dialog
-                      args:
-                        kind: rsiNewExp
-                        thread: $.currentThread.id
-                        projects: $.home.projects
-                        cats: $.members.defaultCatOptions
-                      when:
-                        - of: "@id"
-                          gte: $.home.projectId
-                        - of: $.home.projectId
-                          gte: "@id"
-                        - "@exp"
-                  - from: $.home.projects
-                    item:
-                      label: t:rsi.new
-                      act: dialog
-                      args:
-                        kind: rsiNew
-                      when:
-                        - of: "@id"
-                          gte: $.home.projectId
-                        - of: $.home.projectId
-                          gte: "@id"
-                        - "!@exp"
+              - type: button
+                label: t:rsi.new
+                act: dialog
+                args:
+                  kind: rsiNewExp
+                  thread: $.currentThread.id
+                  projects: $.home.projects
+                  cats: $.members.defaultCatOptions
+                disabled: $.pending
+                when: $.home.exp
+              - type: button
+                label: t:rsi.new
+                act: dialog
+                args:
+                  kind: rsiNew
+                disabled: $.pending
+                when: "!$.home.exp"
           - type: toolbar
             items:
               - type: select
@@ -481,15 +455,13 @@ views:
                       when: "@running"
                   cur: "@selected"
                   acts:
-                    - label: t:rsi.moreActions
-                      icon: more
-                      items:
-                        - label: t:rsi.delete.action
-                          act: dialog
-                          args:
-                            kind: rsiDelete
-                            objective: "@id"
-                            name: "@name"
+                    - label: t:rsi.delete.action
+                      icon: delete
+                      act: dialog
+                      args:
+                        kind: rsiDelete
+                        objective: "@id"
+                        name: "@name"
                 select:
                   act: plugSet
                   args:
@@ -686,14 +658,15 @@ views:
             args:
               kind: msg
               t: $.exp.thread
-          - type: more
-            items:
-              - label: t:rsi.delete.action
-                act: dialog
-                args:
-                  kind: rsiDelete
-                  objective: $.exp.id
-                  name: $.exp.name
+          - type: button
+            iconOnly: true
+            icon: delete
+            label: t:rsi.delete.action
+            act: dialog
+            args:
+              kind: rsiDelete
+              objective: $.exp.id
+              name: $.exp.name
       - type: kv
         from:
           - k: t:rsi.exp.now.version
@@ -1804,14 +1777,15 @@ views:
             act: dialog
             args:
               kind: rsiPolicy
-          - type: more
-            items:
-              - label: t:rsi.delete.action
-                act: dialog
-                args:
-                  kind: rsiDelete
-                  objective: $.objective.id
-                  name: $.objective.name
+          - type: button
+            iconOnly: true
+            icon: delete
+            label: t:rsi.delete.action
+            act: dialog
+            args:
+              kind: rsiDelete
+              objective: $.objective.id
+              name: $.objective.name
       - type: text
         when: "!$.objective.setup"
         parts:

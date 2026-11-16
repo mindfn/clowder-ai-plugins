@@ -677,4 +677,3 @@ delete:
   title: Delete “{0}”?
   text: This deletes the objective (and its sub-objectives) with its setup, cycle results and conclusions, unsent messages, its run folder under runs/ in the project, and the code copies the plugin made for it; a running training is stopped. Its conversation thread stays; delete it yourself if you no longer need it. This cannot be undone.
   ok: Delete
-moreActions: More actions

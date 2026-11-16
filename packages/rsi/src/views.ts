@@ -49,6 +49,7 @@ function home(): any {
   const nodes: Data = { '': sorted.filter(function (o: any): any { return !o.parent; }).map(node) };
   sorted.forEach(function (o: any): any { if (o.parent) (nodes[o.parent] = nodes[o.parent] || []).push(node(o)); });
   return { projects: state.projects, projectId: S.rsiProject, nodes: nodes, pick: pick, hasObjectives: pr.objectives.length > 0,
+    exp: !!state.projects.find(function (p: any): any { return p.id === S.rsiProject; })?.exp,
     picked: !!S.rsiPicked && pick.k !== 'none' && (pick.k !== 'obj' || S.rsiPick === 'obj:' + pick.id),
     navs: [{ k: 'caps', selected: pick.k === 'caps' }, { k: 'library', count: rsiDocs().filter(function (doc: any): any { return doc.state === 'pending'; }).length, selected: pick.k === 'library' }, { k: 'cards', count: todo.length, selected: pick.k === 'cards' }] };
 };
