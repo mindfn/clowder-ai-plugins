@@ -143,6 +143,9 @@ const directionsFrom = (options: Data[], member: Data, taken: string[]) => optio
   id: taken.includes(o.k) ? `${o.k}-${member.catId}` : o.k, title: o.title, why: o.why, ...(text(o.kind) ? { kind: o.kind } : {}), ...(text(o.target) ? { target: o.target.trim() } : {}),
   by: member.catId, model: member.model, expect: '', cites: o.cites || [] }));
 
+// Analysts are members chosen for the role; demo placeholders (no member id, kept by objectives created before alpha.24) never act.
+export const analystsOf = (d: Experiment) => d.members.filter((m) => m.role === 'analyze' && m.catId);
+
 // Analysts that have not proposed within this long are left out and the conclusion goes out without them.
 export const ANALYSIS_LIMIT = 20 * 60_000;
 
@@ -153,7 +156,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   const round = d.rounds.find((r: Data) => r.n === input.cycle && r.state === 'evaluating');
   if (!round) return { error: 'Cycle is not awaiting evaluation' };
   // With analysts the evaluator judges the cycle and may leave the directions to them.
-  const analysts = d.members.filter((m) => m.role === 'analyze'), options = input.options === undefined && analysts.length ? [] : input.options;
+  const analysts = analystsOf(d), options = input.options === undefined && analysts.length ? [] : input.options;
   if (!['baseline', 'keep', 'tune', 'rollback', 'sunset', 'insufficient'].includes(input.verdict)
     || !(text(input.findings) || Array.isArray(input.findings) && input.findings.length && input.findings.every(text))
     || (!analysts.length || options.length) && badOptions(state, d, options, round.n)) return { error: 'Provide verdict, findings and distinct options {k,title,why,kind?,target?,cites?}; cite previous cycle library entries when available' };
@@ -221,7 +224,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
 function conclusionCard(state: RsiState, d: Experiment, round: Data, now: number, stopped?: Data | null) {
   const report = round.report, nameOf = (id: string) => d.members.find((m) => m.catId === id)?.name || id, several = new Set(report.directions.map((x: Data) => x.by)).size > 1;
   const lines = report.directions.map((x: Data) => `${x.id} · ${x.title}${several ? `（${nameOf(x.by)}）` : ''}：${x.why}`);
-  const analysts = d.members.filter((m) => m.role === 'analyze').length, missing = round.analysis?.missing || [];
+  const analysts = analystsOf(d).length, missing = round.analysis?.missing || [];
   const verdict = analysts > 1 && !stopped ? `\n\n${report.agree ? '分析成员意见一致，可以直接采纳。' : '几个分析成员意见不一致，需要你判断。'}` : '';
   const absent = missing.length ? `\n\n${missing.map(nameOf).join('、')} 没在时限内给方向。` : '';
   message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${report.outcome}\n\n${lines.join('\n')}${verdict}${absent}${stopped ? '' : '\n\n在 RSI 页面选择方向。'}`, 'conclusion');
@@ -244,7 +247,7 @@ export function propose(state: RsiState, d: Experiment, input: Data, catId: stri
 export function finishAnalysis(state: RsiState, d: Experiment, round: Data, now: number) {
   const missing = round.analysis.waiting;
   round.analysis = { ...round.analysis, waiting: [], missing };
-  const firsts = d.members.filter((m) => m.role === 'analyze' && !missing.includes(m.catId)).map((m) => round.report.directions.find((x: Data) => x.by === m.catId)).filter(Boolean);
+  const firsts = analystsOf(d).filter((m) => !missing.includes(m.catId!)).map((m) => round.report.directions.find((x: Data) => x.by === m.catId)).filter(Boolean);
   round.report.agree = firsts.length < 2 || firsts.every((x: Data) => x.kind && x.target && x.kind === firsts[0].kind && x.target === firsts[0].target);
   conclusionCard(state, d, round, now);
   syncObjective(state, d);

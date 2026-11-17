@@ -470,9 +470,13 @@ test('the page wakes the evaluator again for a cycle that waits for its conclusi
 
 test('analysts propose after the evaluator concludes; the conclusion card waits for them and says whether they agree', async (t) => {
   const f = await fixture(t), o = await f.create(); await f.initialize(o);
+  // An objective created before alpha.24 still holds demo placeholders (analysts without a member id); they never act.
+  const stored = await f.storage.get(ownerKey('owner'));
+  stored.value.experiments[o.id].members.push({ role: 'analyze', name: '分析甲', model: 'claude-opus-5-5' });
+  await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value);
   const cats = [{ id: 'ana-1', name: '甲', model: 'm1' }, { id: 'ana-2', name: '乙', model: 'm2' }];
   for (const c of cats) assert.equal((await f.http('POST', { op: 'analystAdd', objective: o.id, catId: c.id, cats })).status, 200);
-  assert.deepEqual((await f.read()).experiments[o.id].members.filter((m) => m.role === 'analyze').map((m) => [m.catId, m.name, m.model]), [['ana-1', '甲', 'm1'], ['ana-2', '乙', 'm2']]);
+  assert.deepEqual((await f.read()).experiments[o.id].members.filter((m) => m.role === 'analyze' && m.catId).map((m) => [m.catId, m.name, m.model]), [['ana-1', '甲', 'm1'], ['ana-2', '乙', 'm2']]);
   const round = await execute(f, o);
   await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
   // The evaluator judges the cycle; with analysts it may leave the directions to them.
@@ -483,6 +487,7 @@ test('analysts propose after the evaluator concludes; the conclusion card waits 
   assert.equal(cards().length, 0);
   const page = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
   assert.equal(page.next.k, 'analyzing'); assert.equal(page.next.by, '甲、乙');
+  assert.ok(page.members.every((m) => m.catId));
   // An analyst proposes on the turn it claimed with rsi.task.
   assert.equal((await f.tool('propose', { cycle: round.n, options: [{ k: 'x', title: 'X', why: 'y' }] }, 'ana-1', o.thread)).status, 403);
   const task = await f.tool('task', {}, 'ana-1', o.thread);
