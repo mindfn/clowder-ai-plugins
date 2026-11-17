@@ -4,7 +4,7 @@ import { ANALYSIS_LIMIT, finishAnalysis, runCycle } from './cycles.js';
 import { insideWindow } from './schedule.js';
 import { bindObjectiveThread, recordInitExecution } from './init.js';
 import { createRuns } from './runs.js';
-import { isState, record, retain } from './store.js';
+import { compact, isState, record, retain } from './store.js';
 import { removeVersionWorktrees } from './versions.js';
 import type { Data, Experiment, RsiHost, Section } from './types.js';
 
@@ -38,7 +38,13 @@ export function createRuntime(host: RsiHost) {
   const runs = createRuns(host, flush);
   const subscribe = (threadId: string) => host.messaging.subscribe({ threadId, method: 'rsi.delivery' });
   // Marks a delivered entry; an entry deleted with its objective meanwhile is skipped.
-  const mark = (next: import('./types.js').RsiState, id: string, extra: Data = {}) => { const e = next.outbox.find((x) => x.id === id); if (e) Object.assign(e, { sent: Date.now(), ...extra }); return e; };
+  // A delivered message leaves the outbox (it stays in the objective's messages); an agent request stays, its reply is matched to it.
+  const mark = (next: import('./types.js').RsiState, id: string, extra: Data = {}) => {
+    const e = next.outbox.find((x) => x.id === id);
+    if (e) Object.assign(e, { sent: Date.now(), ...extra });
+    if (e?.kind === 'message') next.outbox.splice(next.outbox.indexOf(e), 1);
+    return e;
+  };
 
   async function deliverOutbox(key: string) {
     while (!stopped) {
@@ -87,6 +93,8 @@ export function createRuntime(host: RsiHost) {
       const real = Object.values(stored.value.experiments).filter((d) => d.objective.projectPath);
       if (!real.length) continue;
       await retain(host.storage, key, (state) => {
+        // A state grown past the Host's size limit by earlier versions is compacted before anything else is written.
+        compact(state);
         for (const d of Object.values(state.experiments).filter((d) => d.objective.projectPath)) {
           for (const round of d.rounds.filter((r: Data) => r.state === 'running')) {
             if (d.executor.commands?.get && round.runs.some((r: Data) => r.jobId)) {

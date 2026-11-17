@@ -5,7 +5,7 @@ import { arch, cpus, platform, release } from 'node:os';
 import { join, resolve } from 'node:path';
 import { finishCycle } from './cycles.js';
 import { message, recordInitExecution, submitInitStep } from './init.js';
-import { isState, record, retain } from './store.js';
+import { clip, isState, LOG_KEEP, record, retain } from './store.js';
 import { projectCommit, removeVersionWorktrees, versionDirectory } from './versions.js';
 import type { Data, RsiHost } from './types.js';
 
@@ -70,7 +70,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           const current = state.experiments[d.objective.id];
           if (current?.exec?.run?.id !== executionId || current.executor.state !== 'probing') return;
           current.executor.state = result.code === 0 ? 'passed' : 'failed';
-          current.executor.probe = { at: Date.now(), error: result.code === 0 ? null : result.log || `exit ${result.code}`, log: result.log };
+          current.executor.probe = { at: Date.now(), error: result.code === 0 ? null : clip(result.log || `exit ${result.code}`), log: result.log.slice(-LOG_KEEP) };
           const initial = current.versions.find((v: Data) => v.snapshot);
           if (result.code === 0 && initial) { initial.commit = commit; delete initial.snapshot; }
           const pending = current.executor.pending;
@@ -200,13 +200,15 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       }
       remote = undefined;
       if (stopped) return;
+      // The full log stays with the run; the state keeps its tail.
+      if (await exists(directory)) await writeFile(join(directory, 'rsi.log'), log);
       await retain(host.storage, key, (state) => {
         const current = state.experiments[d.objective.id];
         if (!current) return;
         const cycle = current.rounds.find((r: Data) => r.n === round.n), entry = cycle.runs.find((r: Data) => r.id === run.id);
         if (entry.state !== 'running') return;
-        const end = Date.now(), failure = error ? { kind, step, raw: error } : null;
-        Object.assign(entry, { end, metrics, env, log, error: failure, evidence: !error || kind === 'real' });
+        const end = Date.now(), failure = error ? { kind, step, raw: clip(error) } : null;
+        Object.assign(entry, { end, metrics, env, log: log.slice(-LOG_KEEP), error: failure, evidence: !error || kind === 'real' });
         entry.attempts ||= [];
         entry.attempts.push({ start, end, env, metrics, error: failure, jobId: jobId || null });
         delete entry.jobId;
@@ -216,7 +218,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         } else {
           entry.state = error && kind === 'env' ? 'failed' : 'done';
           entry.retryable = false;
-          if (error && kind === 'env') message(state, current, end, '运行失败（已重试一次）', `${entry.id}\n${error}`, 'failed');
+          if (error && kind === 'env') message(state, current, end, '运行失败（已重试一次）', `${entry.id}\n${clip(error)}`, 'failed');
         }
         finishCycle(state, current, cycle, end);
       });

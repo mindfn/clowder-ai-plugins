@@ -658,6 +658,36 @@ test('a prediction whose metric left the scale is recorded as unresolved and sta
   assert.ok(f.sends.some((s) => JSON.stringify(s.payload).includes('无法核对')));
 });
 
+test('a run keeps the tail of its log in the state and the whole log in its directory', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  Object.assign(f.commands, { submit: `head -c 20000 /dev/zero | tr '\\0' x; printf '{"metrics":{"score":1}}' > {run}/metrics.json` });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [5] });
+  const run = (await execute(f, o)).runs[0];
+  assert.equal(run.state, 'done', JSON.stringify(run.error));
+  assert.ok(run.log.length <= 2000, String(run.log.length));
+  // The runner keeps the last 16,000 characters of each command; all of them are in the file.
+  assert.ok((await readFile(join(run.directory, 'rsi.log'), 'utf8')).length >= 15000);
+});
+
+test('a state grown past the storage limit by earlier versions is compacted when the plugin starts', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [5] });
+  await execute(f, o);
+  const stored = await f.storage.get(ownerKey('owner'));
+  const run = stored.value.experiments[o.id].rounds[0].runs[0];
+  Object.assign(run, { log: 'x'.repeat(50000), error: { kind: 'env', step: 'submit', raw: 'y'.repeat(50000) } });
+  stored.value.outbox.push({ id: 'old-message', kind: 'message', objective: o.id, sent: 1, message: { title: 't', body: 'z'.repeat(50000) } });
+  await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value);
+  await f.activation().stop();
+  f.start();
+  await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
+  const after = await f.read(), compacted = after.experiments[o.id].rounds[0].runs[0];
+  assert.ok(compacted.log.length <= 2000); assert.ok(compacted.error.raw.length < 2100);
+  assert.ok(!after.outbox.some((e) => e.id === 'old-message'));
+  // The demo data alone is about 240 KB; what remains of this objective is small again.
+  assert.ok(JSON.stringify(after).length < 400000);
+});
+
 test('every plan includes the default control, exposes paired seeds, confirms once, and cites the cycle library', async (t) => {
   const f = await fixture(t), o = await f.create();
   Object.assign(f.commands, pythonExecutor);
