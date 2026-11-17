@@ -136,8 +136,9 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
   if (input.docs !== undefined && (!Array.isArray(input.docs) || input.docs.some((doc: unknown) => !record(doc) || !text(doc.id) || !text(doc.title) || !text(doc.body) || !['project', 'provided', 'feedback'].includes(doc.kind)))) return { error: 'Docs require id, title, body and kind' };
   if (section === 'rules' && (!record(input.metrics) || !text(input.metrics.version) || !Array.isArray(input.metrics.items) || !input.metrics.items.length
     || input.metrics.items.some((m: unknown) => !record(m) || !text(m.id) || !text(m.name) || !text(m.how) || !['up', 'down'].includes(m.dir) || m.guard !== undefined && typeof m.guard !== 'boolean' || m.guard && (typeof m.threshold !== 'number' || !Number.isFinite(m.threshold)))
+    || input.metrics.items.some((m: Data) => m.minDelta !== undefined && !(typeof m.minDelta === 'number' && Number.isFinite(m.minDelta) && m.minDelta >= 0))
     || !input.metrics.items.some((m: Data) => !m.guard)
-    || new Set(input.metrics.items.map((m: Data) => m.id)).size !== input.metrics.items.length)) return { error: 'Step 4 requires metrics {version,items:[{id,name,how,dir:up|down,guard?,threshold?}]}; guardrails require a finite threshold' };
+    || new Set(input.metrics.items.map((m: Data) => m.id)).size !== input.metrics.items.length)) return { error: 'Step 4 requires metrics {version,items:[{id,name,how,dir:up|down,guard?,threshold?,minDelta?}]}; guardrails require a finite threshold; minDelta is a number ≥ 0' };
   // A real objective's stop target names a metric; step 4 must define it, or the target could never be checked.
   const stopMetric = section === 'rules' && d.objective.projectPath && STOP_TARGET.exec(d.objective.stop?.target || '')?.[1].trim();
   if (stopMetric && !input.metrics.items.some((m: Data) => m.id === stopMetric || m.name === stopMetric))

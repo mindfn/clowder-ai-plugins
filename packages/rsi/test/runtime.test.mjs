@@ -571,6 +571,19 @@ test('when only one analyst proposes in time, the card names the missing one and
   assert.match(card, /乙 没在时限内给方向/); assert.doesNotMatch(card, /意见一致|意见不一致/);
 });
 
+test('a gain smaller than the main metric’s minimum valid improvement does not beat the control', async (t) => {
+  for (const [minDelta, wins] of [[5, false], [0.5, true]]) {
+    const f = await fixture(t), o = await f.create();
+    // The change group scores one more than the control (score = seed + delta).
+    await f.initialize(o, undefined, { metrics: { version: 'E1', items: [{ id: 'score', name: 'Score', how: 'metrics.score', dir: 'up', minDelta }] } });
+    const round = await execute(f, o);
+    await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+    const result = await f.tool('conclude', { cycle: round.n, verdict: 'tune', findings: 'Measured', options: [{ k: 'next', title: 'Next', why: 'w' }] }, 'cat-b5ddoo9l', o.thread);
+    assert.equal(result.comparison.groups.find((g) => g.group === 'change').beatsControl, wins, `minDelta ${minDelta}`);
+    assert.equal(!!(await f.read()).experiments[o.id].candidate, wins);
+  }
+});
+
 test('every plan includes the default control, exposes paired seeds, confirms once, and cites the cycle library', async (t) => {
   const f = await fixture(t), o = await f.create();
   Object.assign(f.commands, pythonExecutor);

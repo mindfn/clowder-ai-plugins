@@ -99,7 +99,8 @@ export function comparison(d: Experiment, round: Data) {
     const eligible = comparable && valid(g.id) && result?.n === round.plan.seeds.length && guardrails.every((g: Data) => g.pass);
     const delta = typeof result?.mean === 'number' && typeof reference?.mean === 'number' ? result.mean - reference.mean : null;
     return { group: g.id, version: g.version, control: !!g.control, mean: result?.mean ?? null, delta, eligible, guardrails,
-      beatsControl: !g.control && eligible && (main.dir === 'up' ? delta! > 0 : delta! < 0) };
+      // A win must reach the main metric's minimum valid improvement (minDelta, 0 when not declared).
+      beatsControl: !g.control && eligible && (main.dir === 'up' ? delta! > 0 && delta! >= (main.minDelta || 0) : delta! < 0 && -delta! >= (main.minDelta || 0)) };
   });
   return { cycle: round.n, against: control?.id || null, metric: main?.id, dir: main?.dir, comparable, groups, matrix: cells };
 }

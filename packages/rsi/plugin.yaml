@@ -1,5 +1,5 @@
 pluginId: official.rsi
-version: 0.1.0-alpha.34
+version: 0.1.0-alpha.35
 contractVersion: 0.4.0-candidate.0
 name: RSI 能力进化
 description:
@@ -37,7 +37,7 @@ contributions:
       items 必须含本步全部非 userOwned 项，每项 {id,value,facts?:[{k,v}],can?,rec?:explore|fixed|excluded,tag?}；value 是非空字符串，unknowns/next 是字符串。
       例 {step:1,items:[{id:"cp-good",value:"同种子得分提高",facts:[{k:"依据",v:"README"}]},{id:"cp-adopt",value:"护栏通过后采用"}],unknowns:"配额未知",next:"确认条件"}。
       第 3 步带 window:"每晚 20:00–08:00"（或在 cp-trigger item 的 value 写明时段），先用 rsi.executor 登记并通过预检，或附 executor 同样的命令字段；预检和本步提交都完成才进入下一步。
-      第 4 步必须附 metrics:{version:"E1",items:[{id:"score",name:"得分",how:"metrics.json 的 score",dir:"up",unit:"分",locked:true,guard:false},{id:"cost",name:"成本",how:"metrics.cost",dir:"down",guard:true,threshold:2}]}。护栏必须有数值 threshold；dir:down 表示不得超过，up 表示不得低于。
+      第 4 步必须附 metrics:{version:"E1",items:[{id:"score",name:"得分",how:"metrics.json 的 score",dir:"up",unit:"分",locked:true,guard:false},{id:"cost",name:"成本",how:"metrics.cost",dir:"down",guard:true,threshold:2}]}。护栏必须有数值 threshold；dir:down 表示不得超过，up 表示不得低于。主指标（第一个非护栏量尺）可带 minDelta：改动组至少比同周期对照提升这么多才算赢，判候选、复验和是否有进步都按它；不写为 0。
       第 5 步必须附 upcoming:{groups:[{id:"control",label:"对照",vars:{},control:true},{id:"change",label:"改动",vars:{lr:0.001}}],seeds:[11,23]}；第 7 步可更新它。
       可附 goal 对象、docs:[{id,kind:project|provided|feedback,title,body,sources:[]}]。依赖版本变化会拒绝，重新 rsi.task；成功会持久化并叫醒依赖已齐的下一成员，用户项仍需页面确认。
     inputSchema:
