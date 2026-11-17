@@ -81,9 +81,11 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     return task(state, d, ctx);
   }
   if (method === 'rsi.conclude') {
-    const round = d.rounds.find((r: Data) => r.n === input.cycle);
-    if (d.members.find((m) => m.role === 'evaluate')?.catId !== ctx.catId || round?.invocationId !== ctx.invocationId) return { error: 'Call rsi.task on the evaluation turn first', status: 403 };
-    return conclude(state, d, input, now);
+    // The cycle may arrive as text ("1"); a cycle that does not exist says so instead of asking for rsi.task.
+    const cycle = Number(input.cycle), round = d.rounds.find((r: Data) => r.n === cycle);
+    if (!round) return { error: `Cycle ${JSON.stringify(input.cycle)} not found: pass the number in rsi.task evaluate.cycle`, status: 404 };
+    if (d.members.find((m) => m.role === 'evaluate')?.catId !== ctx.catId || round.invocationId !== ctx.invocationId) return { error: 'Call rsi.task on the evaluation turn first', status: 403 };
+    return conclude(state, d, { ...input, cycle }, now);
   }
   if (method === 'rsi.version') {
     if (d.members.find((m) => m.role === 'prepare')?.catId !== ctx.catId || d.versionRequest?.invocationId !== ctx.invocationId) return { error: 'Call rsi.task on the version turn first', status: 403 };

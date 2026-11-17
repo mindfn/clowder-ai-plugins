@@ -285,6 +285,19 @@ test('structured tool arguments passed as JSON text are read as the structures t
   assert.equal(result.ok, true, JSON.stringify(result));
 });
 
+test('a conclusion may name its cycle as text; a cycle that does not exist is reported as such', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  Object.assign(f.commands, pythonExecutor);
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [11] });
+  await execute(f, o);
+  const task = await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  const missing = await f.tool('conclude', { cycle: '9', verdict: 'tune', findings: 'x', options: [{ k: 'a', title: 'A', why: 'w' }] }, 'cat-b5ddoo9l', o.thread);
+  assert.equal(missing.status, 404); assert.match(missing.error, /not found/);
+  const result = await f.tool('conclude', { cycle: String(task.evaluate.cycle), verdict: 'tune', findings: 'Measured',
+    options: [{ k: 'next', title: 'Next', why: 'w', cites: task.evaluate.library.map((d) => d.id) }] }, 'cat-b5ddoo9l', o.thread);
+  assert.equal(result.ok, true, JSON.stringify(result));
+});
+
 test('deleting an objective kills its run and removes its runs folder, data, pending messages and cycle notes; other objectives keep running', async (t) => {
   const f = await fixture(t), o = await f.create();
   await f.initialize(o, { groups: [{ id: 'control', label: 'Slow run', vars: { slow: true }, control: true }], seeds: [1] });
