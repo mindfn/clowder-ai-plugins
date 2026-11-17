@@ -73,7 +73,7 @@ export function finishCycle(state: RsiState, d: Experiment, round: Data, now: nu
 // Wakes the evaluate member for a cycle that waits for its conclusion (after the runs, and again from the page when that turn ended without one).
 export function askEvaluation(state: RsiState, d: Experiment, round: Data) {
   enqueue(state, d, 'agent', { member: d.members.find((m) => m.role === 'evaluate')!.catId, cycle: round.n,
-    message: { title: `第 ${round.n} 周期跑完`, body: `第 ${round.n} 周期跑完，调 rsi.task 看同周期对照、各组均值和逐种子结果，再调 rsi.conclude。` } });
+    message: { title: `第 ${round.n} 周期跑完`, body: `第 ${round.n} 周期跑完，调 rsi.task 看同周期对照、各组均值和逐种子结果，再调 rsi.conclude。${EXPECT_HINT}` } });
 }
 
 export function matrix(d: Experiment, round: Data) {
@@ -151,6 +151,9 @@ const directionsFrom = (d: Experiment, options: Data[], member: Data, taken: str
 
 // Analysts are members chosen for the role; demo placeholders (no member id, kept by objectives created before alpha.24) never act.
 export const analystsOf = (d: Experiment) => d.members.filter((m) => m.role === 'analyze' && m.catId);
+
+// Every request for directions says that a direction may predict its effect (checked by the plugin once its version runs).
+const EXPECT_HINT = '方向可以带 expect {lo,hi}：你预期选了它之后，主指标相对同周期对照变化多少；版本跑完后插件自动核对，算进命中率。';
 
 // Analysts that have not proposed within this long are left out and the conclusion goes out without them.
 export const ANALYSIS_LIMIT = 20 * 60_000;
@@ -234,7 +237,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     // The analysts receive the same report and propose side by side; the conclusion card waits for them.
     round.analysis = { waiting: analysts.map((m) => m.catId), since: now };
     for (const m of analysts) enqueue(state, d, 'agent', { member: m.catId, cycle: round.n, action: 'direction', message: { title: `第 ${round.n} 周期：请给方向`,
-      body: `评估成员的结论是 ${input.verdict}：${round.report.headline}。调 rsi.task 看同周期对照、各组结果和之前的周期，再调 rsi.propose 交你的方向；几个分析成员的方向会署名并列，交给用户选。` } });
+      body: `评估成员的结论是 ${input.verdict}：${round.report.headline}。调 rsi.task 看同周期对照、各组结果和之前的周期，再调 rsi.propose 交你的方向；几个分析成员的方向会署名并列，交给用户选。${EXPECT_HINT}` } });
   } else conclusionCard(state, d, round, now, stopped);
   state.library[d.objective.projectId].push({ id: `${d.objective.id}-cycle-${round.n}`, kind: 'feedback', title: `第 ${round.n} 周期：${round.report.headline}`, body: `${round.plan.groups.filter((g: Data) => !g.control).map((g: Data) => `${g.label} (${g.version}) ${JSON.stringify(g.vars)}`).join('\n') || '当前版本基线'}\n\n${findings}${outcome}`,
     objectives: [d.objective.id], cycle: round.n, tried: round.plan.groups.filter((g: Data) => !g.control), result: { verdict: input.verdict, comparison: compared, confirmation }, sources: [{ objective: d.objective.id, cycle: round.n }], state: 'confirmed', by: member.catId, at: now });
