@@ -782,6 +782,17 @@ views:
                 map:
                   init: true
                   _: false
+            - type: button
+              label: t:rsi.exp.wakeAgain
+              act: plugin
+              args:
+                request: evalAgain
+              disabled: $.pending
+              when:
+                of: $.exp.next.k
+                map:
+                  evaluating: true
+                  _: false
       - type: each
         from:
           - {}
@@ -5160,6 +5171,15 @@ requests:
       thread: host:currentThread.id
     body:
       op: initRedo
+  evalAgain:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: evalAgain
   initRetry:
     path: rsi/act
     method: POST

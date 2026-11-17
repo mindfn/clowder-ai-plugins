@@ -59,9 +59,14 @@ export function finishCycle(state: RsiState, d: Experiment, round: Data, now: nu
   if (round.state !== 'running' || round.runs.some((r: Data) => r.state === 'queued' || r.state === 'running')) return;
   round.state = 'evaluating'; round.end = now;
   d.objective.budget.used++;
+  askEvaluation(state, d, round);
+  syncObjective(state, d);
+}
+
+// Wakes the evaluate member for a cycle that waits for its conclusion (after the runs, and again from the page when that turn ended without one).
+export function askEvaluation(state: RsiState, d: Experiment, round: Data) {
   enqueue(state, d, 'agent', { member: d.members.find((m) => m.role === 'evaluate')!.catId, cycle: round.n,
     message: { title: `第 ${round.n} 周期跑完`, body: `第 ${round.n} 周期跑完，调 rsi.task 看同周期对照、各组均值和逐种子结果，再调 rsi.conclude。` } });
-  syncObjective(state, d);
 }
 
 export function matrix(d: Experiment, round: Data) {
@@ -110,13 +115,16 @@ function stopAfterConclusion(state: RsiState, d: Experiment, round: Data, compar
     : stop?.maxCycles && d.objective.budget.used >= stop.maxCycles ? { kind: 'maxCycles', text: `已完成最多 ${stop.maxCycles} 个周期` }
     : stop?.stall && progress.stall >= stop.stall ? { kind: 'stall', text: `连续 ${stop.stall} 个周期没进步，已暂停` }
     : round.report.verdict === 'sunset' ? { kind: 'sunset', text: '本周期结论：停止评估' } : null;
-  if (!reason) return;
+  if (!reason) return null;
   d.objective.stopReason = { ...reason, cycle: round.n, at: now };
   d.objective.state = reason.kind === 'stall' ? 'paused' : 'done';
   if (reason.kind === 'stall') d.objective.resumeTo = 'running';
   round.decision = { pick: 'same', note: reason.text, by: 'RSI', at: now };
-  message(state, d, now, reason.text, `第 ${round.n} 周期结论后停止启动新周期。`, 'conclusion');
+  return reason;
 }
+
+// Four significant digits, never in exponent form (0.5075000000000001 → 0.5075, 1234.567 → 1235).
+const short = (x: number) => String(Number(x.toPrecision(4)));
 
 export function conclude(state: RsiState, d: Experiment, input: Data, now: number) {
   const round = d.rounds.find((r: Data) => r.n === input.cycle && r.state === 'evaluating');
@@ -173,11 +181,13 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   round.state = 'done';
   d.objective.state = 'pending';
   const interval = confirmation?.interval;
-  const outcome = confirmation ? `\n\n${confirmation.status === 'candidate' ? '候选：下一周期换新种子确认赢家，默认版本保持当前对照。' : confirmation.status === 'confirmed' ? `确认赢家，采用 ${confirmation.version}：${interval.mean} ± ${interval.spread ?? '无法估计'}。` : confirmation.status === 'insufficient' ? '复验环境失败，证据不足；保留候选，下周期换新种子继续确认。' : '复验未保持改善，保留当前默认版本。'}` : '';
-  message(state, d, now, `第 ${round.n} 周期结论 · ${input.verdict}`, `${findings}${outcome}\n\n${input.options.map((o: Data) => `${o.k} · ${o.title}：${o.why}`).join('\n')}\n\n在 RSI 页面选择方向。`, 'conclusion');
+  const outcome = confirmation ? `\n\n${confirmation.status === 'candidate' ? '候选：下一周期换新种子确认赢家，默认版本保持当前对照。' : confirmation.status === 'confirmed' ? `确认赢家，采用 ${confirmation.version}：${short(interval.mean)} ± ${interval.spread == null ? '无法估计' : short(interval.spread)}。` : confirmation.status === 'insufficient' ? '复验环境失败，证据不足；保留候选，下周期换新种子继续确认。' : '复验未保持改善，保留当前默认版本。'}` : '';
+  // A conclusion that stops the objective asks for no direction; its stop card follows it.
+  const stopped = stopAfterConclusion(state, d, round, compared, !!winner, now);
+  message(state, d, now, `第 ${round.n} 周期结论 · ${input.verdict}`, `${findings}${outcome}\n\n${input.options.map((o: Data) => `${o.k} · ${o.title}：${o.why}`).join('\n')}${stopped ? '' : '\n\n在 RSI 页面选择方向。'}`, 'conclusion');
+  if (stopped) message(state, d, now, stopped.text, `第 ${round.n} 周期结论后停止启动新周期。`, 'conclusion');
   state.library[d.objective.projectId].push({ id: `${d.objective.id}-cycle-${round.n}`, kind: 'feedback', title: `第 ${round.n} 周期：${round.report.headline}`, body: `${round.plan.groups.filter((g: Data) => !g.control).map((g: Data) => `${g.label} (${g.version}) ${JSON.stringify(g.vars)}`).join('\n') || '当前版本基线'}\n\n${findings}${outcome}`,
     objectives: [d.objective.id], cycle: round.n, tried: round.plan.groups.filter((g: Data) => !g.control), result: { verdict: input.verdict, comparison: compared, confirmation }, sources: [{ objective: d.objective.id, cycle: round.n }], state: 'confirmed', by: member.catId, at: now });
-  stopAfterConclusion(state, d, round, compared, !!winner, now);
   syncObjective(state, d);
   return { ok: true, comparison: compared, confirmation, stop: d.objective.stopReason || null };
 }

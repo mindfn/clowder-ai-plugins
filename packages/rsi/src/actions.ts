@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { controlGroup, runCycle } from './cycles.js';
+import { askEvaluation, controlGroup, runCycle } from './cycles.js';
 import { windowMinutes } from './schedule.js';
 import { summaryOf, objectiveData } from './data.js';
 import { enqueue, kick, message, rsiExpNew, rsiExpReady, rsiExpStaleFrom, stopOf, stopText, syncObjective } from './init.js';
@@ -162,6 +162,12 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         if (d.steps[section]?.stale) d.steps[section]!.redo = true;
       }
       kick(state, id, now);
+      return { ok: true };
+    }
+    case 'evalAgain': {
+      const round = d?.rounds.find((r: Data) => r.state === 'evaluating');
+      if (!d || !round) return { error: 'No cycle is waiting for its conclusion', status: 404 };
+      askEvaluation(state, d, round);
       return { ok: true };
     }
     case 'runCycle':

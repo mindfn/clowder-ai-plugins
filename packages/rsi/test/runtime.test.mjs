@@ -213,6 +213,9 @@ test('three real cycles execute groups × seeds serially, render measured runs, 
   assert.equal(d.rounds.length,3); assert.equal(d.versions.length,3);
   assert.equal(d.objective.currentVersion,'v2');
   assert.equal(d.rounds[1].confirmation.status,'confirmed');
+  // The adoption names the interval in short numbers.
+  const adopted=d.messages.find((m)=>m.body.includes('确认赢家，采用 v2'));
+  assert.match(adopted.body,/确认赢家，采用 v2：\d+(\.\d{1,4})? ± (\d+(\.\d{1,4})?|无法估计)。/);
   assert.equal(d.rounds[1].runs.find((r)=>r.group==='change'&&r.seed===24).metrics.score,25);
   assert.equal(d.rounds[2].runs.find((r)=>r.group==='change'&&r.seed===26).metrics.score,36);
   assert.equal(d.rounds[2].runs.find((r)=>r.group==='control'&&r.seed===26).metrics.score,27);
@@ -401,6 +404,19 @@ test('a real objective has only the members chosen for it, with their names and 
   assert.equal((await execute(f, o)).n, 2);
 });
 
+test('the page wakes the evaluator again for a cycle that waits for its conclusion', async (t) => {
+  const f = await fixture(t), o = await f.create(); await f.initialize(o);
+  assert.equal((await f.http('POST', { op: 'evalAgain', objective: o.id })).status, 404);
+  await execute(f, o);
+  const asked = async () => f.sends.filter((s) => s.wake?.catId === 'cat-b5ddoo9l' && s.payload.elements[0].payload.text.includes('第 1 周期跑完')).length;
+  await until(asked, (n) => n === 1, 'evaluation request');
+  // Its turn ended without a conclusion: the notice offers 重新叫醒, which sends the same request again.
+  assert.equal((await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` })).next.k, 'evaluating');
+  assert.equal((await f.http('POST', { op: 'evalAgain', objective: o.id })).status, 200);
+  await until(asked, (n) => n === 2, 'second evaluation request');
+  await report(f, o);
+});
+
 test('every plan includes the default control, exposes paired seeds, confirms once, and cites the cycle library', async (t) => {
   const f = await fixture(t), o = await f.create();
   Object.assign(f.commands, pythonExecutor);
@@ -552,6 +568,10 @@ test('target adoption, cycle budget, and stall stop new cycles after conclusions
     assert.equal(d.objective.state, condition === 'stall' ? 'paused' : 'done');
     assert.equal(d.objective.stopReason.kind, condition === 'budget' ? 'maxCycles' : condition);
     assert.ok(f.sends.some((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title === d.objective.stopReason.text)));
+    // The last conclusion asks for no direction; its stop card comes after it.
+    const titles = d.messages.map((m) => m.title), last = d.messages.find((m) => m.title.startsWith(`第 ${cycles} 周期结论`));
+    assert.ok(!last.body.includes('在 RSI 页面选择方向'));
+    assert.ok(titles.indexOf(last.title) < titles.indexOf(d.objective.stopReason.text));
     assert.ok((await f.http('POST', { op: 'runCycle', objective: o.id })).error);
     await f.activation().actions['rsi.tick']();
     assert.equal((await f.read()).experiments[o.id].rounds.length, cycles);
