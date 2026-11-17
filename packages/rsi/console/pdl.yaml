@@ -944,6 +944,25 @@ views:
                     text: "@model"
                     mono: true
                   w: id
+              acts:
+                - label: t:rsi.exp.analystRemove
+                  icon: delete
+                  act: plugin
+                  args:
+                    request: analystRemove
+                    catId: "@catId"
+                  when:
+                    of: "@role"
+                    map:
+                      analyze: true
+                      _: false
+          - type: button
+            label: t:rsi.exp.analystAdd
+            when: $.exp.projectPath
+            act: dialog
+            args:
+              kind: rsiAnalystAdd
+              cats: $.members.defaultCatOptions
           - type: label
             text: t:rsi.exp.policyTitle
           - type: kv
@@ -1753,6 +1772,7 @@ views:
                   w: id
     sources:
       exp: exp
+      members: host:members
     loading: t:rsi.console.loading
     error: t:rsi.console.error
   rsi.objective:
@@ -4709,6 +4729,27 @@ views:
       request: new
       thread: $.thread
       cats: $.cats
+  dlg.rsiAnalystAdd:
+    title: t:rsi.exp.analystDialog.title
+    help: t:rsi.exp.analystDialog.help
+    fields:
+      - id: dlg-analyst
+        label: t:rsi.exp.analystDialog.member
+        options:
+          - from: $.cats
+            item:
+              v: "@id"
+              label:
+                t: rsi.memberOption
+                args:
+                  - "@name"
+                  - "@id"
+        arg: catId
+    ok: t:rsi.exp.analystDialog.ok
+    okAct: plugin
+    okArgs:
+      request: analystAdd
+      cats: $.cats
   dlg.rsiNew:
     title: t:rsi.new
     fields:
@@ -5193,6 +5234,27 @@ requests:
       thread: host:currentThread.id
     body:
       op: evalAgain
+  analystAdd:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: analystAdd
+      catId: "@catId"
+      cats: "@cats"
+  analystRemove:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: analystRemove
+      catId: "@catId"
   initRetry:
     path: rsi/act
     method: POST

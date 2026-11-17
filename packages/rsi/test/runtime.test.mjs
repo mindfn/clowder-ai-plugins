@@ -468,6 +468,59 @@ test('the page wakes the evaluator again for a cycle that waits for its conclusi
   await report(f, o);
 });
 
+test('analysts propose after the evaluator concludes; the conclusion card waits for them and says whether they agree', async (t) => {
+  const f = await fixture(t), o = await f.create(); await f.initialize(o);
+  const cats = [{ id: 'ana-1', name: '甲', model: 'm1' }, { id: 'ana-2', name: '乙', model: 'm2' }];
+  for (const c of cats) assert.equal((await f.http('POST', { op: 'analystAdd', objective: o.id, catId: c.id, cats })).status, 200);
+  assert.deepEqual((await f.read()).experiments[o.id].members.filter((m) => m.role === 'analyze').map((m) => [m.catId, m.name, m.model]), [['ana-1', '甲', 'm1'], ['ana-2', '乙', 'm2']]);
+  const round = await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  // The evaluator judges the cycle; with analysts it may leave the directions to them.
+  const concluded = await f.tool('conclude', { cycle: round.n, verdict: 'tune', findings: ['Measured against the control'] }, 'cat-b5ddoo9l', o.thread);
+  assert.equal(concluded.ok, true, JSON.stringify(concluded)); assert.deepEqual(concluded.analysts, ['ana-1', 'ana-2']);
+  const cards = () => f.sends.filter((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title?.startsWith(`第 ${round.n} 周期结论`)));
+  await until(async () => f.sends.filter((s) => ['ana-1', 'ana-2'].includes(s.wake?.catId)).length, (n) => n === 2, 'analyst wakes');
+  assert.equal(cards().length, 0);
+  const page = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
+  assert.equal(page.next.k, 'analyzing'); assert.equal(page.next.by, '甲、乙');
+  // An analyst proposes on the turn it claimed with rsi.task.
+  assert.equal((await f.tool('propose', { cycle: round.n, options: [{ k: 'x', title: 'X', why: 'y' }] }, 'ana-1', o.thread)).status, 403);
+  const task = await f.tool('task', {}, 'ana-1', o.thread);
+  assert.equal(task.analyze.cycle, round.n); assert.equal(task.analyze.report.verdict, 'tune'); assert.ok(task.analyze.comparison);
+  assert.equal((await f.tool('propose', { cycle: round.n, options: [{ k: 'lr', title: 'Lower rate', why: 'Smaller steps', kind: 'variable', target: 'lr' }] }, 'ana-1', o.thread)).ok, true);
+  assert.equal(cards().length, 0);
+  await f.tool('task', {}, 'ana-2', o.thread);
+  assert.equal((await f.tool('propose', { cycle: round.n, options: [{ k: 'lr', title: 'Lr 1e-5', why: 'Collapse risk', kind: 'variable', target: 'lr' }] }, 'ana-2', o.thread)).ok, true);
+  // All proposed: one card with both signed directions, marked as agreeing.
+  await until(async () => cards().length, (n) => n === 1, 'conclusion card');
+  assert.match(JSON.stringify(cards()[0].payload), /意见一致/);
+  const report = (await f.read()).experiments[o.id].rounds.at(-1).report;
+  assert.deepEqual(report.directions.map((x) => [x.id, x.by, x.model]), [['lr', 'ana-1', 'm1'], ['lr-ana-2', 'ana-2', 'm2']]);
+  assert.equal(report.agree, true);
+  assert.equal((await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` })).next.k, 'decide');
+  assert.equal((await f.http('POST', { op: 'expDecide', objective: o.id, n: round.n, pick: 'direction', directionId: 'lr-ana-2' }, { project: f.project })).status, 200);
+});
+
+test('analysts that change different things are marked for your judgment; one that does not propose in time is left out', async (t) => {
+  const f = await fixture(t), o = await f.create(); await f.initialize(o);
+  const cats = [{ id: 'ana-1', name: '甲', model: 'm1' }, { id: 'ana-2', name: '乙', model: 'm2' }, { id: 'ana-3', name: '丙', model: 'm3' }];
+  for (const c of cats) await f.http('POST', { op: 'analystAdd', objective: o.id, catId: c.id, cats });
+  const round = await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', { cycle: round.n, verdict: 'tune', findings: 'Measured' }, 'cat-b5ddoo9l', o.thread)).ok, true);
+  for (const [id, target] of [['ana-1', 'lr'], ['ana-2', 'steps']]) {
+    await f.tool('task', {}, id, o.thread);
+    assert.equal((await f.tool('propose', { cycle: round.n, options: [{ k: target, title: target, why: 'w', kind: 'variable', target }] }, id, o.thread)).ok, true);
+  }
+  // 丙 never proposes: after the time limit the schedule sends the conclusion without it.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 21 * 60_000 });
+  await f.activation().actions['rsi.tick']();
+  const r = (await f.read()).experiments[o.id].rounds.at(-1);
+  assert.deepEqual(r.analysis.missing, ['ana-3']); assert.equal(r.report.agree, false);
+  const card = f.sends.find((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title?.startsWith(`第 ${round.n} 周期结论`)));
+  assert.match(JSON.stringify(card.payload), /意见不一致/); assert.match(JSON.stringify(card.payload), /丙 没在时限内给方向/);
+});
+
 test('every plan includes the default control, exposes paired seeds, confirms once, and cites the cycle library', async (t) => {
   const f = await fixture(t), o = await f.create();
   Object.assign(f.commands, pythonExecutor);

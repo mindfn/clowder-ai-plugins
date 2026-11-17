@@ -130,19 +130,33 @@ function stopAfterConclusion(state: RsiState, d: Experiment, round: Data, compar
   return reason;
 }
 
+// Directions a member proposes for a cycle: distinct k, title and why; kind and target optional; cites must name an earlier cycle when there is one.
+function badOptions(state: RsiState, d: Experiment, options: unknown, cycle: number): boolean {
+  const previous = cycleLibrary(state, d).filter((doc: Data) => doc.cycle < cycle);
+  return !Array.isArray(options) || !options.length || options.some((o: unknown) => !record(o) || !text(o.k) || !text(o.title) || !text(o.why)
+      || o.target !== undefined && !text(o.target)
+      || o.cites !== undefined && (!Array.isArray(o.cites) || o.cites.some((id: unknown) => !text(id) || !state.library[d.objective.projectId].some((doc: Data) => doc.id === id)))
+      || previous.length && !o.cites?.some((id: string) => previous.some((doc: Data) => doc.id === id)))
+    || new Set(options.map((o: Data) => o.k)).size !== options.length;
+}
+const directionsFrom = (options: Data[], member: Data, taken: string[]) => options.map((o: Data) => ({
+  id: taken.includes(o.k) ? `${o.k}-${member.catId}` : o.k, title: o.title, why: o.why, ...(text(o.kind) ? { kind: o.kind } : {}), ...(text(o.target) ? { target: o.target.trim() } : {}),
+  by: member.catId, model: member.model, expect: '', cites: o.cites || [] }));
+
+// Analysts that have not proposed within this long are left out and the conclusion goes out without them.
+export const ANALYSIS_LIMIT = 20 * 60_000;
+
 // Four significant digits, never in exponent form (0.5075000000000001 → 0.5075, 1234.567 → 1235).
 const short = (x: number) => String(Number(x.toPrecision(4)));
 
 export function conclude(state: RsiState, d: Experiment, input: Data, now: number) {
   const round = d.rounds.find((r: Data) => r.n === input.cycle && r.state === 'evaluating');
   if (!round) return { error: 'Cycle is not awaiting evaluation' };
-  const previous = cycleLibrary(state, d);
+  // With analysts the evaluator judges the cycle and may leave the directions to them.
+  const analysts = d.members.filter((m) => m.role === 'analyze'), options = input.options === undefined && analysts.length ? [] : input.options;
   if (!['baseline', 'keep', 'tune', 'rollback', 'sunset', 'insufficient'].includes(input.verdict)
     || !(text(input.findings) || Array.isArray(input.findings) && input.findings.length && input.findings.every(text))
-    || !Array.isArray(input.options) || !input.options.length || input.options.some((o: unknown) => !record(o) || !text(o.k) || !text(o.title) || !text(o.why)
-      || o.cites !== undefined && (!Array.isArray(o.cites) || o.cites.some((id: unknown) => !text(id) || !state.library[d.objective.projectId].some((doc: Data) => doc.id === id)))
-      || previous.length && !o.cites?.some((id: string) => previous.some((doc: Data) => doc.id === id)))
-    || new Set(input.options.map((o: Data) => o.k)).size !== input.options.length) return { error: 'Provide verdict, findings and distinct options {k,title,why,cites?}; cite previous cycle library entries when available' };
+    || (!analysts.length || options.length) && badOptions(state, d, options, round.n)) return { error: 'Provide verdict, findings and distinct options {k,title,why,kind?,target?,cites?}; cite previous cycle library entries when available' };
   const findings = Array.isArray(input.findings) ? input.findings.join('\n') : input.findings, compared = comparison(d, round);
   const wins = compared.groups.filter((g: Data) => g.beatsControl).sort((a: Data, b: Data) => compared.dir === 'up' ? b.mean - a.mean : a.mean - b.mean);
   const winner = wins[0], candidate = d.candidate;
@@ -182,7 +196,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   const member = d.members.find((m) => m.role === 'evaluate')!;
   round.confirmation = confirmation;
   round.report = { verdict: input.verdict, headline: findings.split('\n')[0], summary: findings, matrix: compared.matrix,
-    predictions: [], asks: [], directions: input.options.map((o: Data) => ({ id: o.k, title: o.title, why: o.why, ...(text(o.kind) ? { kind: o.kind } : {}), by: member.catId, model: member.model, expect: '', cites: o.cites || [] })),
+    predictions: [], asks: [], directions: directionsFrom(options, member, []), agree: true,
     compare: { ...compared, note: '仅比较本周期 control；区间为种子均值 ± 样本标准差。' }, confirmation,
     attribution: { verdict: 'unresolved', primaryLayer: null, assessedLayers: [], competingLayers: [], uncertainty: 'interval', comparability: 'unchanged', reasons: [], evidence: [] } };
   round.state = 'done';
@@ -190,11 +204,48 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   const interval = confirmation?.interval;
   const outcome = confirmation ? `\n\n${confirmation.status === 'candidate' ? '候选：下一周期换新种子确认赢家，默认版本保持当前对照。' : confirmation.status === 'confirmed' ? `确认赢家，采用 ${confirmation.version}：${short(interval.mean)} ± ${interval.spread == null ? '无法估计' : short(interval.spread)}。` : confirmation.status === 'insufficient' ? '复验环境失败，证据不足；保留候选，下周期换新种子继续确认。' : '复验未保持改善，保留当前默认版本。'}` : '';
   // A conclusion that stops the objective asks for no direction; its stop card follows it.
+  round.report.outcome = outcome;
   const stopped = stopAfterConclusion(state, d, round, compared, !!winner, now);
-  message(state, d, now, `第 ${round.n} 周期结论 · ${input.verdict}`, `${findings}${outcome}\n\n${input.options.map((o: Data) => `${o.k} · ${o.title}：${o.why}`).join('\n')}${stopped ? '' : '\n\n在 RSI 页面选择方向。'}`, 'conclusion');
-  if (stopped) message(state, d, now, stopped.text, `第 ${round.n} 周期结论后停止启动新周期。`, 'conclusion');
+  if (analysts.length && !stopped) {
+    // The analysts receive the same report and propose side by side; the conclusion card waits for them.
+    round.analysis = { waiting: analysts.map((m) => m.catId), since: now };
+    for (const m of analysts) enqueue(state, d, 'agent', { member: m.catId, cycle: round.n, action: 'direction', message: { title: `第 ${round.n} 周期：请给方向`,
+      body: `评估成员的结论是 ${input.verdict}：${round.report.headline}。调 rsi.task 看同周期对照、各组结果和之前的周期，再调 rsi.propose 交你的方向；几个分析成员的方向会署名并列，交给用户选。` } });
+  } else conclusionCard(state, d, round, now, stopped);
   state.library[d.objective.projectId].push({ id: `${d.objective.id}-cycle-${round.n}`, kind: 'feedback', title: `第 ${round.n} 周期：${round.report.headline}`, body: `${round.plan.groups.filter((g: Data) => !g.control).map((g: Data) => `${g.label} (${g.version}) ${JSON.stringify(g.vars)}`).join('\n') || '当前版本基线'}\n\n${findings}${outcome}`,
     objectives: [d.objective.id], cycle: round.n, tried: round.plan.groups.filter((g: Data) => !g.control), result: { verdict: input.verdict, comparison: compared, confirmation }, sources: [{ objective: d.objective.id, cycle: round.n }], state: 'confirmed', by: member.catId, at: now });
   syncObjective(state, d);
-  return { ok: true, comparison: compared, confirmation, stop: d.objective.stopReason || null };
+  return { ok: true, comparison: compared, confirmation, stop: d.objective.stopReason || null, ...(round.analysis ? { analysts: round.analysis.waiting } : {}) };
+}
+
+function conclusionCard(state: RsiState, d: Experiment, round: Data, now: number, stopped?: Data | null) {
+  const report = round.report, nameOf = (id: string) => d.members.find((m) => m.catId === id)?.name || id, several = new Set(report.directions.map((x: Data) => x.by)).size > 1;
+  const lines = report.directions.map((x: Data) => `${x.id} · ${x.title}${several ? `（${nameOf(x.by)}）` : ''}：${x.why}`);
+  const analysts = d.members.filter((m) => m.role === 'analyze').length, missing = round.analysis?.missing || [];
+  const verdict = analysts > 1 && !stopped ? `\n\n${report.agree ? '分析成员意见一致，可以直接采纳。' : '几个分析成员意见不一致，需要你判断。'}` : '';
+  const absent = missing.length ? `\n\n${missing.map(nameOf).join('、')} 没在时限内给方向。` : '';
+  message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${report.outcome}\n\n${lines.join('\n')}${verdict}${absent}${stopped ? '' : '\n\n在 RSI 页面选择方向。'}`, 'conclusion');
+  if (stopped) message(state, d, now, stopped.text, `第 ${round.n} 周期结论后停止启动新周期。`, 'conclusion');
+}
+
+// An analyst's directions join the report; the last one (or the time limit) sends the conclusion card.
+export function propose(state: RsiState, d: Experiment, input: Data, catId: string, now: number) {
+  const round = d.rounds.find((r: Data) => r.n === input.cycle && r.analysis?.waiting.includes(catId));
+  if (!round) return { error: 'This cycle is not waiting for your directions', status: 409 };
+  if (badOptions(state, d, input.options, round.n)) return { error: 'Provide distinct options {k,title,why,kind?,target?,cites?}; cite previous cycle library entries when available' };
+  round.report.directions.push(...directionsFrom(input.options, d.members.find((m) => m.catId === catId)!, round.report.directions.map((x: Data) => x.id)));
+  round.analysis.waiting = round.analysis.waiting.filter((id: string) => id !== catId);
+  if (!round.analysis.waiting.length) finishAnalysis(state, d, round, now);
+  syncObjective(state, d);
+  return { ok: true, waiting: round.analysis.waiting.length };
+}
+
+// The analysts agree when their first directions change the same thing in the same way (same kind and target); without a target there is nothing to compare.
+export function finishAnalysis(state: RsiState, d: Experiment, round: Data, now: number) {
+  const missing = round.analysis.waiting;
+  round.analysis = { ...round.analysis, waiting: [], missing };
+  const firsts = d.members.filter((m) => m.role === 'analyze' && !missing.includes(m.catId)).map((m) => round.report.directions.find((x: Data) => x.by === m.catId)).filter(Boolean);
+  round.report.agree = firsts.length < 2 || firsts.every((x: Data) => x.kind && x.target && x.kind === firsts[0].kind && x.target === firsts[0].target);
+  conclusionCard(state, d, round, now);
+  syncObjective(state, d);
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { askEvaluation, controlGroup, runCycle } from './cycles.js';
+import { askEvaluation, controlGroup, finishAnalysis, runCycle } from './cycles.js';
 import { windowMinutes } from './schedule.js';
 import { summaryOf, objectiveData } from './data.js';
 import { enqueue, kick, message, rsiExpNew, rsiExpReady, rsiExpStaleFrom, stopOf, stopText, syncObjective } from './init.js';
@@ -165,6 +165,22 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         if (d.steps[section]?.stale) d.steps[section]!.redo = true;
       }
       kick(state, id, now);
+      return { ok: true };
+    }
+    case 'analystAdd':
+    case 'analystRemove': {
+      if (!d) return { error: 'Experiment not found', status: 404 };
+      if (typeof body.catId !== 'string' || !body.catId) return { error: 'Choose a member' };
+      d.members = d.members.filter((m) => !(m.role === 'analyze' && m.catId === body.catId));
+      if (body.op === 'analystAdd') {
+        const cat = Array.isArray(body.cats) ? body.cats.find((c: Data) => c.id === body.catId) : null;
+        d.members.push({ role: 'analyze', catId: body.catId, name: cat?.name || body.catId, model: cat?.model || '' });
+      }
+      // A removed analyst no longer holds up a conclusion.
+      else for (const r of d.rounds) if (r.analysis?.waiting.includes(body.catId)) {
+        r.analysis.waiting = r.analysis.waiting.filter((id: string) => id !== body.catId);
+        if (!r.analysis.waiting.length) finishAnalysis(state, d, r, now);
+      }
       return { ok: true };
     }
     case 'evalAgain': {

@@ -4,10 +4,10 @@ import test from 'node:test';
 import {parse} from 'yaml';
 const load=(file)=>parse(readFileSync(new URL(`../${file}`,import.meta.url),'utf8'));
 
-test('phase 2 declarations expose five documented tools, a v2 subscription and matching release versions',()=>{
+test('phase 2 declarations expose six documented tools, a v2 subscription and matching release versions',()=>{
   const manifest=load('plugin.yaml');
   const tools=manifest.contributions.filter((c)=>c.type==='tool');
-  assert.deepEqual(tools.map((c)=>c.name),['rsi.task','rsi.submit','rsi.executor','rsi.version','rsi.conclude']);
+  assert.deepEqual(tools.map((c)=>c.name),['rsi.task','rsi.submit','rsi.executor','rsi.version','rsi.conclude','rsi.propose']);
   for(const tool of tools){assert.equal(tool.action.method,tool.name);assert.equal(tool.inputSchema.type,'object');assert.ok(tool.description.length>150);}
   const schedule=manifest.contributions.find((c)=>c.type==='schedule');
   assert.deepEqual(schedule.schedule,{kind:'interval',everyMs:180000});assert.equal(schedule.action.method,'rsi.tick');assert.equal(schedule.policy.overlap,'skip');

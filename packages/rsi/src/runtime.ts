@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { runCycle } from './cycles.js';
+import { ANALYSIS_LIMIT, finishAnalysis, runCycle } from './cycles.js';
 import { insideWindow } from './schedule.js';
 import { bindObjectiveThread, recordInitExecution } from './init.js';
 import { createRuns } from './runs.js';
@@ -30,7 +30,7 @@ function executionEvents(state: import('./types.js').RsiState, d: Experiment) {
 // How a woken member calls the RSI tools: they are plugin tools reached through plugin_call (lazily loaded, so search for it);
 // a member that could not find it once read its credential file and called the host by hand.
 export const AGENT_HOW = '先用 plugin_call 读取当前任务和依据版本：plugin_call({ pluginId: "official.rsi", contributionId: "rsi.task", toolName: "rsi.task", arguments: {} })。'
-  + 'rsi.submit、rsi.executor、rsi.conclude、rsi.version 也都经 plugin_call 调用（contributionId 和 toolName 都写工具名）。'
+  + 'rsi.submit、rsi.executor、rsi.conclude、rsi.propose、rsi.version 也都经 plugin_call 调用（contributionId 和 toolName 都写工具名）。'
   + 'plugin_call 不在一开始的工具里时，先按名字搜 plugin_call；不要读凭据文件自己请求宿主接口。';
 
 export function createRuntime(host: RsiHost) {
@@ -137,6 +137,8 @@ export function createRuntime(host: RsiHost) {
       let started = false;
       await retain(host.storage, key, (state) => {
         started = false;
+        // Analysts that have not proposed in time are left out; the conclusion goes out with the directions there are.
+        for (const x of Object.values(state.experiments)) for (const r of x.rounds) if (r.analysis?.waiting.length && Date.now() - r.analysis.since > ANALYSIS_LIMIT) finishAnalysis(state, x, r, Date.now());
         const d = Object.values(state.experiments).find((d) => d.objective.projectPath && d.objective.state === 'running' && !d.versionRequest
           && insideWindow(d.policy.schedule, Date.now()) && !d.rounds.some((r: Data) => ['running', 'evaluating'].includes(r.state) || r.state === 'interrupted' && r.autoResumed || r.report && !r.decision));
         if (!d) return;

@@ -1,6 +1,6 @@
 import { RSI_CP_INIT, createFixtures } from './fixtures.js';
 import { submitInitStep, enqueue, kick, STOP_TARGET, syncObjective } from './init.js';
-import { conclude, comparison, controlGroup, cycleLibrary, freshSeeds, validPlan } from './cycles.js';
+import { conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, validPlan } from './cycles.js';
 import { windowMinutes } from './schedule.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, PrepItem, RsiState, Section, ToolContext } from './types.js';
@@ -51,11 +51,16 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
   });
   const evaluate = d.members.find((m) => m.role === 'evaluate')?.catId === ctx.catId && d.rounds.find((r: Data) => r.state === 'evaluating');
   const version = d.members.find((m) => m.role === 'prepare')?.catId === ctx.catId && d.versionRequest;
-  if (!steps.length && !evaluate && !version) return { error: 'It is not this member’s turn', status: 403 };
+  const analyze = d.rounds.find((r: Data) => r.analysis?.waiting.includes(ctx.catId));
+  if (!steps.length && !evaluate && !version && !analyze) return { error: 'It is not this member’s turn', status: 403 };
   if (evaluate) evaluate.invocationId = ctx.invocationId;
+  if (analyze) (analyze.analysis.turns ||= {})[ctx.catId] = ctx.invocationId;
   if (version) version.invocationId = ctx.invocationId;
   return { objective: d.objective, projectPath: d.objective.projectPath, steps, versions: d.versions,
     stepVersions: d.steps, ...(evaluate ? { evaluate: { cycle: evaluate.n, plan: evaluate.plan, runs: evaluate.runs, metrics: evaluate.metrics || d.metrics, comparison: comparison(d, evaluate), library: cycleLibrary(state, d), next: '调用 rsi.conclude 提交 verdict/findings/options；方向 cites 引用之前周期的资料库条目。' } } : {}),
+    ...(analyze ? { analyze: { cycle: analyze.n, report: { verdict: analyze.report.verdict, findings: analyze.report.summary, confirmation: analyze.confirmation }, plan: analyze.plan, runs: analyze.runs,
+      metrics: analyze.metrics || d.metrics, comparison: comparison(d, analyze), library: cycleLibrary(state, d),
+      next: '调用 rsi.propose({cycle,options:[{k,title,why,kind?,target?,cites?}]}) 交你的方向。target 写这个方向要改的对象（例如 lr、group_size、train.py 的奖励），几个分析成员的第一方向种类和对象都相同就算意见一致。' } } : {}),
     ...(version ? { version: { ...version, next: '按方向修改项目并提交 git；调用 rsi.version({change,commit,config})。config 是 JSON 对象或项目内 JSON 文件路径。' } } : {}) };
 }
 
@@ -87,6 +92,12 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     if (!round) return { error: `Cycle ${JSON.stringify(input.cycle)} not found: pass the number in rsi.task evaluate.cycle`, status: 404 };
     if (d.members.find((m) => m.role === 'evaluate')?.catId !== ctx.catId || round.invocationId !== ctx.invocationId) return { error: 'Call rsi.task on the evaluation turn first', status: 403 };
     return conclude(state, d, { ...input, cycle }, now);
+  }
+  if (method === 'rsi.propose') {
+    const cycle = Number(input.cycle), round = d.rounds.find((r: Data) => r.n === cycle);
+    if (!round) return { error: `Cycle ${JSON.stringify(input.cycle)} not found: pass the number in rsi.task analyze.cycle`, status: 404 };
+    if (round.analysis?.turns?.[ctx.catId] !== ctx.invocationId) return { error: 'Call rsi.task on the direction turn first', status: 403 };
+    return propose(state, d, { ...input, cycle }, ctx.catId, now);
   }
   if (method === 'rsi.version') {
     if (d.members.find((m) => m.role === 'prepare')?.catId !== ctx.catId || d.versionRequest?.invocationId !== ctx.invocationId) return { error: 'Call rsi.task on the version turn first', status: 403 };

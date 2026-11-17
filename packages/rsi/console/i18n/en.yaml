@@ -548,6 +548,7 @@ exp:
     decide: Results for {0} cycle {1} are ready; choose the next step. Tonight follows the current plan if you take no action.
     running: "{0} cycle {1} is running. Failures are reported immediately; other groups continue."
     evaluating: "{0} cycle {1} has finished; waiting for {4} to conclude. No new cycle starts before the conclusion."
+    analyzing: "Results for {0} cycle {1} are in; waiting for {4} to propose directions. The conclusion card goes out when all have proposed (or after 20 minutes)."
     resuming: "{0} cycle {1} was interrupted by a plugin restart. Within the run window the schedule resumes the remaining runs once; you can also use Run one cycle now."
     interrupted: "{0} cycle {1} was interrupted again. The schedule has already resumed it once and will not again; use Run one cycle to finish it."
     ready: Initialization is complete and confirmed. Start evaluation; the first night runs only the baseline.
@@ -595,7 +596,14 @@ exp:
   firstOf: ; confirm step {0} first; {1} later steps depend on it
   doingOf: "{0} is working on step {1}"
   doingAlso: ", {0} is working on step {1}"
+  analystDialog:
+    title: Add an analyst
+    member: Member
+    help: After each cycle every analyst proposes directions, signed side by side for you to choose; when their first directions change the same thing, they agree.
+    ok: Add
   continueAfterDone: Change when to stop and continue
+  analystAdd: Add an analyst
+  analystRemove: Remove analyst
   wakeAgain: Wake again
   waitOnOf: Waiting for step {0} to be submitted
   depsOf: Based on step {0}

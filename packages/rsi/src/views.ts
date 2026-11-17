@@ -164,7 +164,8 @@ const RSI_LAYERS = ['execution', 'harness', 'rubric', 'observation'];
 function exp(): any {
   const d = rsiExpData(); if (!d) return null;
   const o = d.objective, main = d.metrics.items.find((m: Data) => !m.guard).id, key = function (v: any): any { return o.id + '/' + v; };
-  const waiting = function (r: any): any { return !!r.report && !r.decision && r.state === 'done'; };
+  // A cycle whose analysts are still proposing is not yet waiting for the decision.
+  const waiting = function (r: any): any { return !!r.report && !r.decision && r.state === 'done' && !(r.analysis && r.analysis.waiting.length); };
   const tested = d.rounds.map(function (r: any): any { return Object.assign({}, r, { version: testedVersion(r.plan) }); });
   const rounds = tested.filter(function (r: any): any { return r.state !== 'planned'; }).map(function (r: any): any { return Object.assign({}, r, { k: tested.filter(function (x: any): any { return x.version === r.version && x.n <= r.n; }).length }); });
   const dirOf = function (r: any): any { return r.decision && r.decision.directionId && r.report.directions.find(function (x: any): any { return x.id === r.decision.directionId; }); };
@@ -194,7 +195,7 @@ function exp(): any {
       : items.every(function (x: any): any { return x.state === 'confirmed'; }) ? 'confirmed' : has('preparing') ? 'preparing' : has('submitted') ? 'submitted' : 'uninvestigated' };
   });
   const at = function (x: any, step: any): any { return 'version|' + key(x.version) + '>c' + x.k + '.' + step; };
-  const wait = rounds.find(waiting), run = rounds.find(function (x: any): any { return x.state === 'running'; }), ev = rounds.find(function (x: any): any { return x.state === 'evaluating'; }), halted = rounds.find(function (x: any): any { return x.state === 'interrupted'; });
+  const wait = rounds.find(waiting), run = rounds.find(function (x: any): any { return x.state === 'running'; }), ev = rounds.find(function (x: any): any { return x.state === 'evaluating'; }), halted = rounds.find(function (x: any): any { return x.state === 'interrupted'; }), an = rounds.find(function (x: any): any { return x.analysis && x.analysis.waiting.length; });
   const memberName = function (role: any): any { return nameOf((d.members.find(function (m: any): any { return m.role === role; }) || {}).catId); };
   const doing = steps.filter(function (x: any): any { return x.state === 'preparing'; }), cut = steps.find(function (x: any): any { return x.state === 'cancelled'; }), stale = steps.filter(function (x: any): any { return x.state === 'stale'; }).length;
 
@@ -202,6 +203,7 @@ function exp(): any {
   const hint = first && first.n ? tc('rsi.exp.firstOf', first.i, first.n) : '';
   const next = o.state === 'done' ? { k: 'done', stop: (d.prep.find(function (p: any): any { return p.section === 'goal' && p.id.endsWith('-stop'); }) || {}).id } : o.state === 'paused' ? { k: 'paused' } : wait ? { k: 'decide', v: wait.version, n: wait.k, go: at(wait, 'gov') } : run ? { k: 'running', v: run.version, n: run.k, go: at(run, 'collect') }
     : ev ? { k: 'evaluating', v: ev.version, n: ev.k, by: memberName('evaluate'), go: at(ev, 'collect') }
+    : an ? { k: 'analyzing', v: an.version, n: an.k, by: an.analysis.waiting.map(nameOf).join('、'), go: at(an, 'gov') }
     : halted ? { k: halted.autoResumed ? 'interrupted' : 'resuming', v: halted.version, n: halted.k, go: at(halted, 'collect') }
     : cut ? { k: 'cancelled', n: cut.i, by: cut.who } : doing.length ? { k: 'init', by: doing.map(function (x: any): any { return { who: x.who, i: x.i, k: x.k }; }), hint: hint }
     : o.state === 'ready' ? { k: 'ready' } : stale ? { k: 'stale', count: stale } : needYou ? { k: 'prep', count: needYou, hint: hint }

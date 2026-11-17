@@ -5,7 +5,7 @@ import { confirmAll, draftAll, fixture } from './helpers.mjs';
 
 test('entry point exposes owner-scoped actions and persists seeded state across handler recreation', async () => {
   const f = fixture();
-  assert.deepEqual(Object.keys(f.start().actions), ['rsi.view', 'rsi.act', 'rsi.task', 'rsi.submit', 'rsi.executor', 'rsi.version', 'rsi.conclude', 'rsi.tick', 'rsi.delivery']);
+  assert.deepEqual(Object.keys(f.start().actions), ['rsi.view', 'rsi.act', 'rsi.task', 'rsi.submit', 'rsi.executor', 'rsi.version', 'rsi.conclude', 'rsi.propose', 'rsi.tick', 'rsi.delivery']);
   assert.equal((await f.view()).status, 200);
   const seeded = await f.storage.get(ownerKey('owner-a'));
   assert.ok(seeded.revision); assert.equal(seeded.value.projects.length, 6);
