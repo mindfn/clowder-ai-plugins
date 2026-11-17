@@ -1589,7 +1589,9 @@ views:
                                 pick: direction
                                 directionId: "@id"
                                 note: ""
-                              when: $.exp.cycle.waiting
+                              when:
+                                - $.exp.cycle.waiting
+                                - "!$.exp.candidate"
                               disabled: $.pending
                       expand:
                         - type: markdown
@@ -1611,7 +1613,9 @@ views:
                       title: "@text"
                   - type: toolbar
                     items:
-                      - when: $.exp.cycle.waiting
+                      - when:
+                          - $.exp.cycle.waiting
+                          - "!$.exp.candidate"
                         type: button
                         label: t:rsi.exp.pick.info
                         act: dialog
@@ -1620,7 +1624,9 @@ views:
                           n: $.exp.cycle.n
                           pick: info
                         disabled: $.pending
-                      - when: $.exp.cycle.waiting
+                      - when:
+                          - $.exp.cycle.waiting
+                          - "!$.exp.candidate"
                         type: button
                         label: t:rsi.exp.pick.addVar
                         act: dialog
@@ -1629,7 +1635,9 @@ views:
                           n: $.exp.cycle.n
                           pick: addVar
                         disabled: $.pending
-                      - when: $.exp.cycle.waiting
+                      - when:
+                          - $.exp.cycle.waiting
+                          - "!$.exp.candidate"
                         type: button
                         label: t:rsi.exp.pick.metric
                         act: dialog
@@ -1638,7 +1646,9 @@ views:
                           n: $.exp.cycle.n
                           pick: metric
                         disabled: $.pending
-                      - when: $.exp.cycle.waiting
+                      - when:
+                          - $.exp.cycle.waiting
+                          - "!$.exp.candidate"
                         type: button
                         label: t:rsi.exp.pick.goal
                         act: dialog

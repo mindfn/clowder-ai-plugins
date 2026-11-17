@@ -423,6 +423,8 @@ test('collect commands and explicit nested result mappings read actual metrics',
   assert.equal(d.rounds[0].runs.find((r)=>r.group==='mapped').metrics.score,10);assert.ok(d.rounds[0].runs.every((r)=>r.state==='done'));
 });
 
+// A change that loses leaves no winner to confirm, so the analysts are asked for directions.
+const losing = { groups: [{ id: 'control', label: 'Control', vars: { delta: 0 }, control: true }, { id: 'change', label: 'Change', vars: { delta: -1 } }], seeds: [11, 23] };
 const plan = (vars = {}) => ({ groups: [{ id: 'change', label: 'Measured change', vars }], seeds: [11, 23] });
 const pythonExecutor = { preflight: `printf '%s\\n' '{"python":"fixture-python","driver":"fixture-driver"}'`, submit: 'python3 experiment.py {config} {run} {seed}', collect: '{run}/metrics.json' };
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -471,7 +473,7 @@ test('the page wakes the evaluator again for a cycle that waits for its conclusi
 });
 
 test('analysts propose after the evaluator concludes; the conclusion card waits for them and says whether they agree', async (t) => {
-  const f = await fixture(t), o = await f.create(); await f.initialize(o);
+  const f = await fixture(t), o = await f.create(); await f.initialize(o, losing);
   // An objective created before alpha.24 still holds demo placeholders (analysts without a member id); they never act.
   const stored = await f.storage.get(ownerKey('owner'));
   stored.value.experiments[o.id].members.push({ role: 'analyze', name: '分析甲', model: 'claude-opus-5-5' });
@@ -509,7 +511,7 @@ test('analysts propose after the evaluator concludes; the conclusion card waits 
 });
 
 test('analysts that change different things are marked for your judgment; one that does not propose in time is left out', async (t) => {
-  const f = await fixture(t), o = await f.create(); await f.initialize(o);
+  const f = await fixture(t), o = await f.create(); await f.initialize(o, losing);
   const cats = [{ id: 'ana-1', name: '甲', model: 'm1' }, { id: 'ana-2', name: '乙', model: 'm2' }, { id: 'ana-3', name: '丙', model: 'm3' }];
   for (const c of cats) await f.http('POST', { op: 'analystAdd', objective: o.id, catId: c.id, cats });
   const round = await execute(f, o);
@@ -560,7 +562,7 @@ test('a chosen direction’s numeric prediction is checked when its version firs
 });
 
 test('when only one analyst proposes in time, the card names the missing one and claims no agreement', async (t) => {
-  const f = await fixture(t), o = await f.create(); await f.initialize(o);
+  const f = await fixture(t), o = await f.create(); await f.initialize(o, losing);
   const cats = [{ id: 'ana-1', name: '甲', model: 'm1' }, { id: 'ana-2', name: '乙', model: 'm2' }];
   for (const c of cats) await f.http('POST', { op: 'analystAdd', objective: o.id, catId: c.id, cats });
   const round = await execute(f, o);
@@ -618,7 +620,7 @@ test('an execution fix replaces the default without competing with it; the cycle
 });
 
 test('an analyst timeout sends the conclusion even while another objective is running', async (t) => {
-  const f = await fixture(t), a = await f.create(); await f.initialize(a);
+  const f = await fixture(t), a = await f.create(); await f.initialize(a, losing);
   await f.http('POST', { op: 'analystAdd', objective: a.id, catId: 'ana-1', cats: [{ id: 'ana-1', name: '甲', model: 'm1' }] });
   const round = await execute(f, a);
   await f.tool('task', {}, 'cat-b5ddoo9l', a.thread);
@@ -782,6 +784,24 @@ test('a selection that loses on fresh seeds stays rejected and never replaces th
   assert.equal((await report(f, o)).confirmation.status, 'rejected');
   const d = (await f.read()).experiments[o.id]; assert.equal(d.objective.currentVersion, 'v1'); assert.equal(d.candidate, undefined);
   assert.equal(d.versions.find((v)=>v.id==='v2').status,'rejected');
+});
+
+test('a winner waiting for confirmation asks the analysts for nothing: the next cycle is the confirmation', async (t) => {
+  const f = await fixture(t), o = await f.create(); Object.assign(f.commands, pythonExecutor);
+  await f.initialize(o, plan({ delta: 10, only_selection: true }));
+  const saved = await f.storage.get(ownerKey('owner')), proposed = saved.value.experiments[o.id];
+  proposed.versions.push({id:'v2',parent:'v1',change:'Proposed config',config:{},commit:null,current:false,status:'proposed',at:Date.now()});
+  proposed.upcoming.groups[0].version = 'v2';
+  assert.equal((await f.storage.compareAndSet(ownerKey('owner'),saved.revision,saved.value)).applied,true);
+  assert.equal((await f.http('POST', { op: 'analystAdd', objective: o.id, catId: 'ana-1', cats: [{ id: 'ana-1', name: '甲', model: 'm1' }] })).status, 200);
+  const round = await execute(f, o), result = await report(f, o);
+  assert.equal(result.confirmation.status, 'candidate'); assert.equal(result.analysts, undefined);
+  const cards = () => f.sends.filter((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title?.startsWith(`第 ${round.n} 周期结论`)));
+  await until(async () => cards().length, (n) => n === 1, 'conclusion card');
+  assert.equal(f.sends.filter((s) => s.wake?.catId === 'ana-1').length, 0);
+  assert.match(JSON.stringify(cards()[0].payload), /照旧/);
+  const page = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
+  assert.equal(page.next.k, 'decide'); assert.equal(page.candidate, 'v2');
 });
 
 test('threshold guardrails veto faster groups and conclusion inputs show each crossed seed', async (t) => {
