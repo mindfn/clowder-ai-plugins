@@ -81,10 +81,11 @@ async function fixture(t) {
   const tool = (method, input, catId, threadId, invocationId = `${catId}-turn`) => activation.actions[`rsi.${method}`](input,
     { catId, threadId, userId: 'owner', invocationId, assertCurrent: async () => {} });
   const commands = { preflight: 'test -f simulate.mjs', submit: `'${process.execPath}' simulate.mjs {config} {run} {seed}`, collect: '{run}/metrics.json' };
-  async function initialize(objective, plan = { groups: [{ id: 'control', label: 'Control', vars: { delta: 0 }, control: true }, { id: 'change', label: 'Change', vars: { delta: 1 } }], seeds: [11, 23] }, options = {}) {
+  // Members submit every step they are working on (first submissions and redos), then the user confirms what changed.
+  async function prepare(objective, plan = { groups: [{ id: 'control', label: 'Control', vars: { delta: 0 }, control: true }, { id: 'change', label: 'Change', vars: { delta: 1 } }], seeds: [11, 23] }, options = {}) {
     for (let guard = 0; guard < 12; guard++) {
       const d = (await read()).experiments[objective.id];
-      if (d.plan.every((p) => d.steps[p.k])) break;
+      if (d.plan.every((p) => d.steps[p.k] && !d.steps[p.k].stale)) break;
       const [section, execution] = Object.entries(d.exec).find(([, e]) => e.state === 'started');
       const task = await tool('task', {}, execution.by, objective.thread);
       const step = task.steps.find((s) => s.section === section);
@@ -104,11 +105,13 @@ async function fixture(t) {
     for (const item of d.prep.filter((p) => p.neededFrom === 'human' && p.state !== 'confirmed')) {
       assert.equal((await http('POST', { op: 'prep', objective: objective.id, id: item.id, action: 'confirm' }, { project })).status, 200);
     }
-    d = (await read()).experiments[objective.id];
-    assert.equal(d.objective.state, 'ready');
+  }
+  async function initialize(objective, plan, options) {
+    await prepare(objective, plan, options);
+    assert.equal((await read()).experiments[objective.id].objective.state, 'ready');
   }
   t.after(async () => { await activation.stop(); await rm(project, { recursive: true, force: true }); });
-  return { project, host, storage, sends, subscriptions, threads, http, read, create, tool, initialize, commands, start,
+  return { project, host, storage, sends, subscriptions, threads, http, read, create, tool, prepare, initialize, commands, start,
     activation: () => activation, onSend(fn) { sendHook = fn; } };
 }
 
@@ -181,6 +184,8 @@ test('three real cycles execute groups × seeds serially, render measured runs, 
     assert.ok(f.sends.some((s)=>s.wake?.catId==='cat-b5ddoo9l' && s.payload.elements[0].payload.text.includes(`第 ${n} 周期跑完`)));
     const page = await f.http('GET',undefined,{view:'exp',project:f.project,pick:`obj:${o.id}`});
     assert.equal(page.cycle.runs.length,4); assert.equal(page.cycle.runs[0].metricRows[0].k,'Score');
+    // While the evaluator works, the notice says whose conclusion the page waits for.
+    assert.equal(page.next.k,'evaluating'); assert.equal(page.next.v,round.version); assert.ok(page.next.by);
     assert.ok(page.cycle.runs.every((r)=>typeof r.durationSeconds==='number'));
     assert.equal((await f.tool('conclude',{cycle:n,verdict:'tune',findings:['Measured improvement'],options:[{k:'lower',title:'Lower rate',why:'Try a smaller update',cites:task.evaluate.library.map((d)=>d.id)}]},'codex',o.thread)).status,403);
     assert.equal((await f.tool('conclude',{cycle:n,verdict:'tune',findings:['Measured improvement'],options:[{k:'lower',title:'Lower rate',why:'Try a smaller update',cites:task.evaluate.library.map((d)=>d.id)}]},'cat-b5ddoo9l',o.thread)).ok,true);
@@ -376,6 +381,17 @@ async function decide(f, o, pick = 'same') {
   const result = await f.http('POST', { op: 'expDecide', objective: o.id, n: d.rounds.at(-1).n, pick, directionId: 'next' }, { project: f.project });
   assert.equal(result.status, 200, JSON.stringify(result));
 }
+
+test('a step rewritten after the start holds the next cycle until it is submitted again and confirmed', async (t) => {
+  const f = await fixture(t), o = await f.create(); await f.initialize(o);
+  await execute(f, o); await report(f, o); await decide(f, o);
+  const item = (await f.read()).experiments[o.id].prep.find((p) => p.section === 'rules');
+  assert.equal((await f.http('POST', { op: 'prep', objective: o.id, id: item.id, action: 'agent', note: 'Recalibrate the guard' }, { project: f.project })).status, 200);
+  assert.match((await f.http('POST', { op: 'runCycle', objective: o.id })).error, /Preparation is being redone/);
+  await f.prepare(o, undefined, { metrics: { version: 'E2', items: [{ id: 'score', name: 'Score', how: 'metrics.score', dir: 'up' }] } });
+  assert.equal((await f.read()).experiments[o.id].metrics.version, 'E2');
+  assert.equal((await execute(f, o)).n, 2);
+});
 
 test('every plan includes the default control, exposes paired seeds, confirms once, and cites the cycle library', async (t) => {
   const f = await fixture(t), o = await f.create();

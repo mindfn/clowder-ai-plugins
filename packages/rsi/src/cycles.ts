@@ -1,4 +1,4 @@
-import { enqueue, message, STOP_TARGET, syncObjective } from './init.js';
+import { enqueue, message, prepSettled, STOP_TARGET, syncObjective } from './init.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, RsiState } from './types.js';
 
@@ -23,6 +23,8 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
   if (d.executor.state !== 'passed' || !d.executor.commands) return { error: 'Register and pass rsi.executor first' };
   if (!['ready', 'running', 'pending'].includes(d.objective.state)) return { error: 'Objective is not ready' };
   if (d.versionRequest) return { error: 'The prepare member must submit rsi.version first' };
+  // A step rewritten after the start holds the next cycle until it is submitted again and confirmed.
+  if (!prepSettled(d)) return { error: 'Preparation is being redone: wait for the members, then confirm the changed items' };
   if (d.rounds.some((r: Data) => ['running', 'evaluating'].includes(r.state) || r.report && !r.decision)) return { error: 'Finish the current cycle first' };
   let round = d.rounds.find((r: Data) => r.state === 'interrupted');
   if (round) {

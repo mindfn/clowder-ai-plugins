@@ -43,9 +43,12 @@ export function rsiExpStaleFrom(d: Experiment, section: Section, redo = false): 
   return stale;
 }
 
+// Every step submitted and current, nobody still working on one, and every item the user owns confirmed.
+export const prepSettled = (d: Experiment) => !Object.keys(d.exec || {}).length && d.plan.every((s) => d.steps?.[s.k] && !d.steps[s.k]!.stale)
+  && !d.prep.some((x) => x.neededFrom === 'human' && x.state !== 'confirmed');
+
 export function rsiExpReady(d: Experiment): boolean {
-  if (d.objective.state !== 'preparing' || Object.keys(d.exec || {}).length || d.plan.some((s) => !d.steps?.[s.k] || d.steps[s.k]!.stale)
-    || d.prep.some((x) => x.neededFrom === 'human' && x.state !== 'confirmed')) return false;
+  if (d.objective.state !== 'preparing' || !prepSettled(d)) return false;
   d.objective.state = 'ready';
   return true;
 }
