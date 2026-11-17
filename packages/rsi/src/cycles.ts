@@ -167,7 +167,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   const member = d.members.find((m) => m.role === 'evaluate')!;
   round.confirmation = confirmation;
   round.report = { verdict: input.verdict, headline: findings.split('\n')[0], summary: findings, matrix: compared.matrix,
-    predictions: [], asks: [], directions: input.options.map((o: Data) => ({ id: o.k, title: o.title, why: o.why, kind: 'code', by: member.catId, model: member.model, expect: '', cites: o.cites || [] })),
+    predictions: [], asks: [], directions: input.options.map((o: Data) => ({ id: o.k, title: o.title, why: o.why, ...(text(o.kind) ? { kind: o.kind } : {}), by: member.catId, model: member.model, expect: '', cites: o.cites || [] })),
     compare: { ...compared, note: '仅比较本周期 control；区间为种子均值 ± 样本标准差。' }, confirmation,
     attribution: { verdict: 'unresolved', primaryLayer: null, assessedLayers: [], competingLayers: [], uncertainty: 'interval', comparability: 'unchanged', reasons: [], evidence: [] } };
   round.state = 'done';

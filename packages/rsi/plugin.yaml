@@ -1,5 +1,5 @@
 pluginId: official.rsi
-version: 0.1.0-alpha.24
+version: 0.1.0-alpha.25
 contractVersion: 0.4.0-candidate.0
 name: RSI 能力进化
 description:
@@ -113,7 +113,7 @@ contributions:
     id: rsi.conclude
     name: rsi.conclude
     description: >-
-      本周期所有组×种子完成后，仅评估成员可用。先 rsi.task 读取 evaluate.comparison 的同周期对照、逐组均值±标准差及逐种子值/护栏/失败记录，和 evaluate.library 的历史周期，再交 {cycle,verdict,findings,options:[{k,title,why,cites?:[libraryId]}]}。
+      本周期所有组×种子完成后，仅评估成员可用。先 rsi.task 读取 evaluate.comparison 的同周期对照、逐组均值±标准差及逐种子值/护栏/失败记录，和 evaluate.library 的历史周期，再交 {cycle,verdict,findings,options:[{k,title,why,kind?,cites?:[libraryId]}]}；kind 说明方向是哪一类：code 改代码、variable 调变量、metric 改指标、goal 改目标、discriminate 区分实验，不写就不标类别。
       例 {cycle:1,verdict:"tune",findings:["改动组两个种子均提高得分，需新种子复验"],options:[{k:"lr",title:"降低学习率",why:"护栏稳定但收敛慢"}]}。
       verdict 为 baseline/keep/tune/rollback/sunset/insufficient；findings 是非空字符串或字符串数组；options 的 k 必须互异；有历史周期条目时每个方向必须在 cites 引用至少一条。返回 comparison（均值/区间/逐种子值）、confirmation 和 stop。
       成功会在 thread 发结论卡并在页面显示方向，等待用户通过 expDecide 选方向；候选先安排新种子确认，其他新方向叫醒准备成员生成下一版本；same 可按当前默认继续。目标/连续停滞/最多周期满足时自动完成或暂停，并发原因卡。不要自行代替用户决策。
@@ -125,7 +125,7 @@ contributions:
         cycle: { type: integer, minimum: 1 }
         verdict: { type: string, enum: [baseline, keep, tune, rollback, sunset, insufficient] }
         findings: { oneOf: [{type: string, minLength: 1}, {type: array, minItems: 1, items: {type: string, minLength: 1}}] }
-        options: { type: array, minItems: 1, items: {type: object, required: [k, title, why], properties: {k: {type: string, minLength: 1}, title: {type: string, minLength: 1}, why: {type: string, minLength: 1}, cites: {type: array, items: {type: string, minLength: 1}}}, additionalProperties: false} }
+        options: { type: array, minItems: 1, items: {type: object, required: [k, title, why], properties: {k: {type: string, minLength: 1}, title: {type: string, minLength: 1}, why: {type: string, minLength: 1}, kind: {type: string, enum: [code, variable, metric, goal, discriminate]}, cites: {type: array, items: {type: string, minLength: 1}}}, additionalProperties: false} }
     action: { method: rsi.conclude }
 features:
   - id: rsi
