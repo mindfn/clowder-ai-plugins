@@ -726,6 +726,7 @@ views:
             stale: warn
             ready: warn
             cancelled: warn
+            interrupted: warn
             _: info
         text:
           t: rsi.exp.next

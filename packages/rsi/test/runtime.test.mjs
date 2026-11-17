@@ -198,6 +198,9 @@ test('three real cycles execute groups × seeds serially, render measured runs, 
       assert.equal((await f.read()).experiments[o.id].candidate.cycle,1);
     } else {
       assert.ok((await f.http('POST',{op:'runCycle',objective:o.id})).error);
+      // Until the version arrives, the notice says who prepares it and for which direction.
+      const asked=await f.http('GET',undefined,{view:'exp',project:f.project,pick:`obj:${o.id}`});
+      assert.equal(asked.next.k,'version'); assert.equal(asked.next.v,'Lower rate'); assert.ok(asked.next.by);
       const taskVersion=await f.tool('task',{},'codex',o.thread); assert.equal(taskVersion.version.title,'Lower rate');
       await writeFile(join(f.project, 'next-config.json'), JSON.stringify({delta:10}));
       assert.equal((await f.tool('version',{change:'Delta 10',config:'next-config.json'},'codex',o.thread)).version,'v3');
@@ -259,7 +262,8 @@ test('stop kills the owned process and restart restores subscriptions with faile
   await rm(join(f.project,'active-run'),{recursive:true,force:true});
   const subscriptions=f.subscriptions.length;
   f.start();
-  await f.http('GET',undefined,{view:'exp',project:f.project,pick:`obj:${o.id}`});
+  // The page says the cycle was interrupted and does not resume on its own.
+  assert.equal((await f.http('GET',undefined,{view:'exp',project:f.project,pick:`obj:${o.id}`})).next.k,'interrupted');
   let d=(await f.read()).experiments[o.id];
   assert.equal(d.rounds[0].state,'interrupted'); assert.equal(d.rounds[0].runs[0].state,'failed'); assert.equal(d.rounds[0].runs[0].retryable,true);
   assert.equal(f.subscriptions.length,subscriptions+1);
