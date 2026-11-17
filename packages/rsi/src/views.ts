@@ -235,7 +235,8 @@ function exp(): any {
     });
   };
   return { id: o.id, name: o.name, state: o.state, projectPath: o.projectPath, goal: o.goal, thread: o.thread, next: next, now: now, tab: S.rsiTab, setup: rounds.length === 0,
-    trend: rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, value: best(x).mean }; }),
+    // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
+    trend: rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, value: Number(best(x).mean.toPrecision(4)) }; }),
     trendMetric: d.metrics.items.find((m: Data) => m.id === main).name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.length },
     versions: tree.rows, ver: ver, step: m ? m[2] : 'node',
     cycle: r && Object.assign({}, r, { waiting: waiting(r), groups: groupsOf(r),

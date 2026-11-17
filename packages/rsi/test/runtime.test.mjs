@@ -552,6 +552,7 @@ test('a chosen direction’s numeric prediction is checked when its version firs
   assert.equal(d.versions[1].prediction.checked.result, 'hit');
   const page = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
   assert.deepEqual(page.hitRate, { hit: 1, all: 1 });
+  assert.ok(page.trend.every((x) => String(x.value).length <= 7));
   assert.ok(f.sends.some((s) => JSON.stringify(s.payload).includes('预测核对')));
 });
 
