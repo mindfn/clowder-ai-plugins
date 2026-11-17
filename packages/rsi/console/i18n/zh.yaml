@@ -511,6 +511,7 @@ exp:
     metric: 改指标
     goal: 改目标
     discriminate: 区分实验
+    execution: 修执行
     _: "{0}"
   picked: 已采纳
   expect: 预期 {0}

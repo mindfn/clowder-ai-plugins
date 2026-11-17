@@ -1,5 +1,5 @@
 import { RSI_CP_INIT, createFixtures } from './fixtures.js';
-import { submitInitStep, enqueue, kick, STOP_TARGET, syncObjective } from './init.js';
+import { submitInitStep, enqueue, kick, message, STOP_TARGET, syncObjective } from './init.js';
 import { conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, validPlan } from './cycles.js';
 import { windowMinutes } from './schedule.js';
 import { record, text } from './store.js';
@@ -106,7 +106,15 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     d.versions.push({ id, parent: previous, change: input.change, commit: input.commit || null, config: input.config, at: now, current: false, status: 'proposed',
       ...(d.versionRequest.prediction ? { prediction: d.versionRequest.prediction } : {}) });
     const last = d.rounds.find((r: Data) => r.n === d.versionRequest.cycle);
-    d.upcoming = { ...last.plan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d),
+    if (d.versionRequest.direct) {
+      // An execution fix becomes the default at once (keeping the default's variables); the next cycle runs it as the control.
+      const version = d.versions.find((v: Data) => v.id === id);
+      Object.assign(version, { status: 'confirmed', direct: true, vars: d.versions.find((v: Data) => v.id === previous)?.vars || {} });
+      for (const v of d.versions) v.current = v.id === id;
+      d.objective.currentVersion = id;
+      d.upcoming = { ...last.plan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d)], afterFix: id };
+      message(state, d, now, `执行修复 ${id} 直接作为默认版本`, `${input.change}\n\n执行修复不和旧版本对比；下一周期用它跑当前版本对照，确认没有跑坏。`, 'plan');
+    } else d.upcoming = { ...last.plan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d),
       { id: 'change', label: input.change, version: id, vars: {}, control: false, confirm: false }] };
     delete d.versionRequest;
     syncObjective(state, d);

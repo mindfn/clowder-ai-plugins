@@ -511,6 +511,7 @@ exp:
     metric: Change metrics
     goal: Change goal
     discriminate: Discriminating experiment
+    execution: Execution fix
     _: "{0}"
   picked: Adopted
   expect: Expected {0}

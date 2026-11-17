@@ -111,7 +111,8 @@ export function cycleLibrary(state: RsiState, d: Experiment) {
 
 function stopAfterConclusion(state: RsiState, d: Experiment, round: Data, compared: Data, improved: boolean, now: number) {
   const progress = d.objective.progress ||= { stall: 0 }, stop = d.objective.stop;
-  if (compared.comparable && round.runs.every((r: Data) => r.error?.kind !== 'env')) progress.stall = improved || round.n === 1 ? 0 : progress.stall + 1;
+  // The cycle that checks an execution fix tried no improvement, so it does not count as a cycle without progress.
+  if (compared.comparable && round.runs.every((r: Data) => r.error?.kind !== 'env') && !round.plan.afterFix) progress.stall = improved || round.n === 1 ? 0 : progress.stall + 1;
   const target = stop?.target;
   const match = typeof target === 'string' && STOP_TARGET.exec(target);
   const metric = match && (round.metrics || d.metrics).items.find((m: Data) => m.id === match[1].trim() || m.name === match[1].trim());
@@ -221,6 +222,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     confirmation = { status: 'candidate', group: group.id, version: group.version, cycle: round.n };
     d.upcoming = { ...round.plan, groups: [controlGroup(d), { ...group, control: false, confirm: true }], seeds: freshSeeds(d, round.plan.seeds.length) };
   } else d.upcoming = { ...round.plan, seeds: freshSeeds(d, round.plan.seeds.length) };
+  if (d.upcoming) delete d.upcoming.afterFix;
   const member = d.members.find((m) => m.role === 'evaluate')!;
   round.confirmation = confirmation;
   round.report = { verdict: input.verdict, headline: findings.split('\n')[0], summary: findings, matrix: compared.matrix,

@@ -584,6 +584,28 @@ test('a gain smaller than the main metric’s minimum valid improvement does not
   }
 });
 
+test('an execution fix replaces the default without competing with it; the cycle that checks it does not count toward the stall', async (t) => {
+  const f = await fixture(t), o = await f.create({ stall: '1' });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: { delta: 0 }, control: true }], seeds: [11, 23] });
+  const first = await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  await f.tool('conclude', { cycle: first.n, verdict: 'insufficient', findings: 'A retry failed',
+    options: [{ k: 'retry-dir', title: 'Fix the retry directory', why: 'Retries reuse it', kind: 'execution' }] }, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.http('POST', { op: 'expDecide', objective: o.id, n: first.n, pick: 'direction', directionId: 'retry-dir' }, { project: f.project })).status, 200);
+  await f.tool('task', {}, 'codex', o.thread);
+  assert.equal((await f.tool('version', { change: 'Fix retries', config: {} }, 'codex', o.thread)).version, 'v2');
+  const d = (await f.read()).experiments[o.id];
+  assert.equal(d.objective.currentVersion, 'v2'); assert.equal(d.versions[1].direct, true);
+  assert.deepEqual(d.upcoming.groups.map((g) => [g.id, g.version, g.control]), [['control', 'v2', true]]);
+  // The cycle that checks the fix is not a cycle without progress (a stall limit of 1 would otherwise pause the objective).
+  const second = await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  const result = await f.tool('conclude', { cycle: second.n, verdict: 'keep', findings: 'Still runs',
+    options: [{ k: 'next', title: 'Next', why: 'w', cites: [`${o.id}-cycle-1`] }] }, 'cat-b5ddoo9l', o.thread);
+  assert.equal(result.stop, null, JSON.stringify(result.stop));
+  assert.equal((await f.read()).experiments[o.id].objective.state, 'pending');
+});
+
 test('every plan includes the default control, exposes paired seeds, confirms once, and cites the cycle library', async (t) => {
   const f = await fixture(t), o = await f.create();
   Object.assign(f.commands, pythonExecutor);
