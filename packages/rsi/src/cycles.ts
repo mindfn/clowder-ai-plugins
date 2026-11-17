@@ -19,6 +19,13 @@ export function controlGroup(d: Experiment): Data {
   return { id: 'control', label: '当前版本对照', version: version.id, vars: version.vars || {}, control: true, confirm: false };
 }
 
+// A cycle belongs to the version it tests: the first group other than the control that runs another version,
+// otherwise the control's version (a cycle that only tries variables on it).
+export function testedVersion(plan: Data): string {
+  const control = plan.groups.find((g: Data) => g.control);
+  return (plan.groups.find((g: Data) => !g.control && g.version && g.version !== control?.version) || control || plan.groups[0]).version;
+}
+
 export function runCycle(state: RsiState, d: Experiment, now: number): Data {
   if (d.executor.state !== 'passed' || !d.executor.commands) return { error: 'Register and pass rsi.executor first' };
   if (!['ready', 'running', 'pending'].includes(d.objective.state)) return { error: 'Objective is not ready' };
@@ -43,7 +50,7 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
     if (d.rounds.length) plan.seeds = freshSeeds(d, plan.seeds.length);
     const n = planned?.n || Math.max(0, ...d.rounds.map((r: Data) => r.n)) + 1;
     round = planned || { n };
-    Object.assign(round, { version: current.id, start: now, end: null, state: 'running', plan, metrics: structuredClone(d.metrics), report: null, decision: null, events: [],
+    Object.assign(round, { version: testedVersion(plan), start: now, end: null, state: 'running', plan, metrics: structuredClone(d.metrics), report: null, decision: null, events: [],
       runs: plan.groups.flatMap((g: Data) => plan.seeds.map((seed: number) => ({ id: `${d.objective.id}-${n}-${g.id}-s${seed}`, group: g.id, seed,
         state: 'queued', start: null, end: null, retries: 0, attempts: [], metrics: {}, artifacts: [], env: {}, log: '', error: null }))) });
     if (!planned) d.rounds.push(round);

@@ -594,6 +594,7 @@ exp:
   firstOf: ; confirm step {0} first; {1} later steps depend on it
   doingOf: "{0} is working on step {1}"
   doingAlso: ", {0} is working on step {1}"
+  continueAfterDone: Change when to stop and continue
   wakeAgain: Wake again
   waitOnOf: Waiting for step {0} to be submitted
   depsOf: Based on step {0}

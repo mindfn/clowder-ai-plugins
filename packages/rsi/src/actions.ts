@@ -42,7 +42,10 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       Object.assign(d.objective.budget ||= { used: 0 }, { rounds: limits.stop.maxCycles });
       const text = stopText(limits.stop), item = d.prep.find((p) => p.section === 'goal' && p.id.endsWith('-stop'));
       if (item) Object.assign(item, { value: text, state: 'confirmed', by: '你', mine: true, at: now });
-      message(state, d, now, '你改了何时停', text);
+      // A finished objective continues under the new conditions; they are checked again after the next conclusion.
+      const resumed = d.objective.state === 'done';
+      if (resumed) { delete d.objective.stopReason; d.objective.state = 'running'; syncObjective(state, d); }
+      message(state, d, now, resumed ? '你改了何时停，接着迭代' : '你改了何时停', text);
       return { ok: true };
     }
     case 'delete': {

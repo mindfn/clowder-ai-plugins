@@ -1,6 +1,7 @@
 import type { Data, RsiState } from './types.js';
 import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData, memberIds } from './data.js';
 import { timeRange } from './schedule.js';
+import { testedVersion } from './cycles.js';
 
 const tc = (key: string, ...args: unknown[]) => ({ t: key, args });
 
@@ -164,7 +165,8 @@ function exp(): any {
   const d = rsiExpData(); if (!d) return null;
   const o = d.objective, main = d.metrics.items.find((m: Data) => !m.guard).id, key = function (v: any): any { return o.id + '/' + v; };
   const waiting = function (r: any): any { return !!r.report && !r.decision && r.state === 'done'; };
-  const rounds = d.rounds.filter(function (r: any): any { return r.state !== 'planned'; }).map(function (r: any): any { return Object.assign({}, r, { k: d.rounds.filter(function (x: any): any { return x.version === r.version && x.n <= r.n; }).length }); });
+  const tested = d.rounds.map(function (r: any): any { return Object.assign({}, r, { version: testedVersion(r.plan) }); });
+  const rounds = tested.filter(function (r: any): any { return r.state !== 'planned'; }).map(function (r: any): any { return Object.assign({}, r, { k: tested.filter(function (x: any): any { return x.version === r.version && x.n <= r.n; }).length }); });
   const dirOf = function (r: any): any { return r.decision && r.decision.directionId && r.report.directions.find(function (x: any): any { return x.id === r.decision.directionId; }); };
   const govOf = function (r: any): any { const x = dirOf(r); return waiting(r) ? 'pending' : !r.decision ? null : x ? (x.kind === 'code' ? (r.report.verdict === 'rollback' ? 'rollback' : 'evolve') : x.kind) : r.decision.pick; };
   const focus = o.projectPath && rounds.find((r: Data) => waiting(r) || ['running', 'evaluating'].includes(r.state));
@@ -198,7 +200,7 @@ function exp(): any {
 
   const first = steps.filter(function (x: any): any { return x.items.some(function (y: any): any { return y.needYou; }); }).map(function (x: any): any { return { i: x.i, n: below(x.k).length }; }).sort(function (a: any, b: any): any { return b.n - a.n; })[0];
   const hint = first && first.n ? tc('rsi.exp.firstOf', first.i, first.n) : '';
-  const next = o.state === 'done' ? { k: 'done' } : o.state === 'paused' ? { k: 'paused' } : wait ? { k: 'decide', v: wait.version, n: wait.k, go: at(wait, 'gov') } : run ? { k: 'running', v: run.version, n: run.k, go: at(run, 'collect') }
+  const next = o.state === 'done' ? { k: 'done', stop: (d.prep.find(function (p: any): any { return p.section === 'goal' && p.id.endsWith('-stop'); }) || {}).id } : o.state === 'paused' ? { k: 'paused' } : wait ? { k: 'decide', v: wait.version, n: wait.k, go: at(wait, 'gov') } : run ? { k: 'running', v: run.version, n: run.k, go: at(run, 'collect') }
     : ev ? { k: 'evaluating', v: ev.version, n: ev.k, by: memberName('evaluate'), go: at(ev, 'collect') }
     : halted ? { k: 'interrupted', v: halted.version, n: halted.k, go: at(halted, 'collect') }
     : cut ? { k: 'cancelled', n: cut.i, by: cut.who } : doing.length ? { k: 'init', by: doing.map(function (x: any): any { return { who: x.who, i: x.i, k: x.k }; }), hint: hint }

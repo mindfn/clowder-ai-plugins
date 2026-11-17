@@ -783,6 +783,19 @@ views:
                   init: true
                   _: false
             - type: button
+              label: t:rsi.exp.continueAfterDone
+              act: plugin
+              args:
+                request: prep
+                id: $.exp.next.stop
+                op: edit
+              disabled: $.pending
+              when:
+                of: $.exp.next.k
+                map:
+                  done: true
+                  _: false
+            - type: button
               label: t:rsi.exp.wakeAgain
               act: plugin
               args:

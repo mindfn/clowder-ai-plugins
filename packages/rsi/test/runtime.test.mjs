@@ -211,6 +211,8 @@ test('three real cycles execute groups × seeds serially, render measured runs, 
   }
   const d=(await f.read()).experiments[o.id];
   assert.equal(d.rounds.length,3); assert.equal(d.versions.length,3);
+  // A cycle belongs to the version it tests: cycles 1–2 try and confirm a variable on v1, cycle 3 tests v3 against v2.
+  assert.deepEqual(d.rounds.map((r)=>r.version),['v1','v1','v3']);
   assert.equal(d.objective.currentVersion,'v2');
   assert.equal(d.rounds[1].confirmation.status,'confirmed');
   // The adoption names the interval in short numbers.
@@ -575,6 +577,14 @@ test('target adoption, cycle budget, and stall stop new cycles after conclusions
     assert.ok((await f.http('POST', { op: 'runCycle', objective: o.id })).error);
     await f.activation().actions['rsi.tick']();
     assert.equal((await f.read()).experiments[o.id].rounds.length, cycles);
+    if (condition !== 'target') return;
+    // A finished objective continues when its stop conditions change: the notice opens them, and the next cycle can run.
+    const page = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
+    assert.equal(page.next.k, 'done'); assert.ok(page.next.stop.endsWith('-stop'));
+    assert.equal((await f.http('POST', { op: 'prep', objective: o.id, id: page.next.stop, action: 'edit' })).act, 'dialog');
+    assert.equal((await f.http('POST', { op: 'stop', objective: o.id, target: 'Score ≥ 1000', stall: '', rounds: '' })).status, 200);
+    assert.equal((await f.read()).experiments[o.id].objective.state, 'running');
+    assert.equal((await execute(f, o)).n, cycles + 1);
   });
 });
 
