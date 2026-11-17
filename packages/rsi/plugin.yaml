@@ -1,5 +1,5 @@
 pluginId: official.rsi
-version: 0.1.0-alpha.36
+version: 0.1.0-alpha.37
 contractVersion: 0.4.0-candidate.0
 name: RSI 能力进化
 description:
@@ -119,7 +119,7 @@ contributions:
       例 {cycle:1,verdict:"tune",findings:["改动组两个种子均提高得分，需新种子复验"],options:[{k:"lr",title:"降低学习率",why:"护栏稳定但收敛慢"}]}。
       verdict 为 baseline/keep/tune/rollback/sunset/insufficient；findings 是非空字符串或字符串数组；options 的 k 必须互异；有历史周期条目时每个方向必须在 cites 引用至少一条。返回 comparison（均值/区间/逐种子值）、confirmation 和 stop。
       有分析成员时 options 可以省略：插件把这份结论发给分析成员，等他们用 rsi.propose 交齐方向（或等满 20 分钟）再发结论卡。方向可带 target（要改的对象，例如 lr），几个分析成员的第一方向种类和 target 相同就算意见一致。
-      kind:execution 是执行修复（重试、超时、目录这类不该改变测量结果的修复）：选中后出的版本直接成为默认，不进对比。方向可带数值预测 expect {lo,hi,metric?}：选中这个方向后出的版本，第一次和同周期对照比时，该指标（默认主指标）的差值落在 [lo,hi] 内算命中，结论卡和页面会显示命中率。
+      kind:execution 是执行修复（重试、超时、目录这类不该改变测量结果的修复）：选中后出的版本直接成为默认、不进对比，并沿用当前默认版本的 config 和变量，只换代码提交。方向可带数值预测 expect {lo,hi,metric?}：选中这个方向后出的版本，第一次和同周期对照比时，该指标（默认主指标）的差值落在 [lo,hi] 内算命中，结论卡和页面会显示命中率。
       成功会在 thread 发结论卡并在页面显示方向，等待用户通过 expDecide 选方向；候选先安排新种子确认，其他新方向叫醒准备成员生成下一版本；same 可按当前默认继续。目标/连续停滞/最多周期满足时自动完成或暂停，并发原因卡。不要自行代替用户决策。
     inputSchema:
       type: object

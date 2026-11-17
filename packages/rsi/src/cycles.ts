@@ -137,7 +137,8 @@ function badOptions(state: RsiState, d: Experiment, options: unknown, cycle: num
   const previous = cycleLibrary(state, d).filter((doc: Data) => doc.cycle < cycle);
   return !Array.isArray(options) || !options.length || options.some((o: unknown) => !record(o) || !text(o.k) || !text(o.title) || !text(o.why)
       || o.target !== undefined && !text(o.target)
-      || o.expect !== undefined && !(record(o.expect) && Number.isFinite(+o.expect.lo) && Number.isFinite(+o.expect.hi) && +o.expect.lo <= +o.expect.hi && (o.expect.metric === undefined || text(o.expect.metric)))
+      || o.expect !== undefined && !(record(o.expect) && Number.isFinite(+o.expect.lo) && Number.isFinite(+o.expect.hi) && +o.expect.lo <= +o.expect.hi
+        && (o.expect.metric === undefined || d.metrics.items.some((m: Data) => m.id === o.expect.metric)))
       || o.cites !== undefined && (!Array.isArray(o.cites) || o.cites.some((id: unknown) => !text(id) || !state.library[d.objective.projectId].some((doc: Data) => doc.id === id)))
       || previous.length && !o.cites?.some((id: string) => previous.some((doc: Data) => doc.id === id)))
     || new Set(options.map((o: Data) => o.k)).size !== options.length;
@@ -170,11 +171,17 @@ function checkPredictions(d: Experiment, round: Data, compared: Data): Data[] {
   return round.plan.groups.filter((g: Data) => !g.control).flatMap((g: Data) => {
     const p = d.versions.find((v: Data) => v.id === g.version)?.prediction;
     if (!p || p.checked || !compared.comparable) return [];
+    const who = `${d.members.find((m) => m.catId === p.by)?.name || p.by}：${p.text}`;
+    // The scale changed and no longer has the predicted metric: say so instead of leaving the prediction unchecked forever.
+    if (!(round.metrics || d.metrics).items.some((m: Data) => m.id === p.metric)) {
+      p.checked = { cycle: round.n, delta: null, result: 'unresolved' };
+      return [{ text: who, expect: p.expect, actual: `量尺里没有 ${p.metric}`, result: 'unresolved', by: p.by }];
+    }
     const value = mean(g.id, p.metric), base = mean(compared.against, p.metric);
     if (typeof value !== 'number' || typeof base !== 'number') return [];
     const delta = value - base, result = delta >= p.lo && delta <= p.hi ? 'hit' : 'miss';
     p.checked = { cycle: round.n, delta, result };
-    return [{ text: `${d.members.find((m) => m.catId === p.by)?.name || p.by}：${p.text}`, expect: p.expect, actual: `${p.metric} ${signed(delta)}`, result, by: p.by }];
+    return [{ text: who, expect: p.expect, actual: `${p.metric} ${signed(delta)}`, result, by: p.by }];
   });
 }
 
@@ -255,7 +262,7 @@ function conclusionCard(state: RsiState, d: Experiment, round: Data, now: number
   // Agreement is stated only when at least two analysts proposed: one analyst's directions cannot agree or disagree.
   const verdict = (round.analysis?.compared || 0) > 1 && !stopped ? `\n\n${report.agree ? '分析成员意见一致，可以直接采纳。' : '几个分析成员意见不一致，需要你判断。'}` : '';
   const absent = missing.length ? `\n\n${missing.map(nameOf).join('、')} 没在时限内给方向。` : '';
-  const checked = report.predictions.length ? `\n\n${report.predictions.map((p: Data) => `预测核对 · ${p.text}：预期 ${p.expect}，实际 ${p.actual}，${p.result === 'hit' ? '命中' : '未命中'}`).join('\n')}` : '';
+  const checked = report.predictions.length ? `\n\n${report.predictions.map((p: Data) => `预测核对 · ${p.text}：预期 ${p.expect}，实际 ${p.actual}，${p.result === 'hit' ? '命中' : p.result === 'unresolved' ? '无法核对' : '未命中'}`).join('\n')}` : '';
   message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${report.outcome}${checked}\n\n${lines.join('\n')}${verdict}${absent}${stopped ? '' : '\n\n在 RSI 页面选择方向。'}`, 'conclusion');
   if (stopped) message(state, d, now, stopped.text, `第 ${round.n} 周期结论后停止启动新周期。`, 'conclusion');
 }

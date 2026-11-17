@@ -237,7 +237,7 @@ function exp(): any {
   return { id: o.id, name: o.name, state: o.state, projectPath: o.projectPath, goal: o.goal, thread: o.thread, next: next, now: now, tab: S.rsiTab, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
     trend: rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, value: Number(best(x).mean.toPrecision(4)) }; }),
-    trendMetric: d.metrics.items.find((m: Data) => m.id === main).name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.length },
+    trendMetric: d.metrics.items.find((m: Data) => m.id === main).name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.filter(function (p: any): any { return p.result !== 'unresolved'; }).length },
     versions: tree.rows, ver: ver, step: m ? m[2] : 'node',
     cycle: r && Object.assign({}, r, { waiting: waiting(r), groups: groupsOf(r),
       runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { durationSeconds: u.start ? Math.round(((u.end || Date.now()) - u.start) / 1000) : null, metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })), groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),

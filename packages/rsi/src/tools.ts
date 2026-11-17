@@ -107,9 +107,10 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       ...(d.versionRequest.prediction ? { prediction: d.versionRequest.prediction } : {}) });
     const last = d.rounds.find((r: Data) => r.n === d.versionRequest.cycle);
     if (d.versionRequest.direct) {
-      // An execution fix becomes the default at once (keeping the default's variables); the next cycle runs it as the control.
-      const version = d.versions.find((v: Data) => v.id === id);
-      Object.assign(version, { status: 'confirmed', direct: true, vars: d.versions.find((v: Data) => v.id === previous)?.vars || {} });
+      // An execution fix becomes the default at once and keeps the default's configuration and variables, so only its code
+      // changes what runs; the next cycle runs it as the control.
+      const version = d.versions.find((v: Data) => v.id === id), before = d.versions.find((v: Data) => v.id === previous);
+      Object.assign(version, { status: 'confirmed', direct: true, config: before.config, vars: before.vars || {} });
       for (const v of d.versions) v.current = v.id === id;
       d.objective.currentVersion = id;
       d.upcoming = { ...last.plan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d)], afterFix: id };

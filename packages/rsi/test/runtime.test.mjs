@@ -533,6 +533,9 @@ test('a chosen direction’s numeric prediction is checked when its version firs
   await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: { delta: 0 }, control: true }], seeds: [11, 23] });
   const first = await execute(f, o);
   await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  // A prediction names a metric of the scale.
+  assert.ok((await f.tool('conclude', { cycle: first.n, verdict: 'tune', findings: 'Baseline measured',
+    options: [{ k: 'more', title: 'Raise delta', why: 'w', expect: { lo: 5, hi: 15, metric: 'nope' } }] }, 'cat-b5ddoo9l', o.thread)).error);
   // The evaluator predicts that raising delta adds 5 to 15 to the score.
   assert.equal((await f.tool('conclude', { cycle: first.n, verdict: 'tune', findings: 'Baseline measured',
     options: [{ k: 'more', title: 'Raise delta', why: 'The score follows delta', kind: 'variable', target: 'delta', expect: { lo: 5, hi: 15 } }] }, 'cat-b5ddoo9l', o.thread)).ok, true);
@@ -572,21 +575,26 @@ test('when only one analyst proposes in time, the card names the missing one and
 });
 
 test('a gain smaller than the main metric’s minimum valid improvement does not beat the control', async (t) => {
-  for (const [minDelta, wins] of [[5, false], [0.5, true]]) {
+  for (const [dir, minDelta, wins] of [['up', 5, false], ['up', 0.5, true], ['down', 5, false], ['down', 1, true]]) {
     const f = await fixture(t), o = await f.create();
-    // The change group scores one more than the control (score = seed + delta).
-    await f.initialize(o, undefined, { metrics: { version: 'E1', items: [{ id: 'score', name: 'Score', how: 'metrics.score', dir: 'up', minDelta }] } });
+    // The change group scores one more (up) or one less (down) than the control (score = seed + delta).
+    await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: { delta: 0 }, control: true }, { id: 'change', label: 'Change', vars: { delta: dir === 'up' ? 1 : -1 } }], seeds: [11, 23] },
+      { metrics: { version: 'E1', items: [{ id: 'score', name: 'Score', how: 'metrics.score', dir, minDelta }] } });
     const round = await execute(f, o);
     await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
     const result = await f.tool('conclude', { cycle: round.n, verdict: 'tune', findings: 'Measured', options: [{ k: 'next', title: 'Next', why: 'w' }] }, 'cat-b5ddoo9l', o.thread);
-    assert.equal(result.comparison.groups.find((g) => g.group === 'change').beatsControl, wins, `minDelta ${minDelta}`);
+    assert.equal(result.comparison.groups.find((g) => g.group === 'change').beatsControl, wins, `${dir} minDelta ${minDelta}`);
     assert.equal(!!(await f.read()).experiments[o.id].candidate, wins);
   }
 });
 
 test('an execution fix replaces the default without competing with it; the cycle that checks it does not count toward the stall', async (t) => {
   const f = await fixture(t), o = await f.create({ stall: '1' });
-  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: { delta: 0 }, control: true }], seeds: [11, 23] });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [11, 23] });
+  // The default's configuration sets delta 2 (score = seed + delta).
+  const stored = await f.storage.get(ownerKey('owner'));
+  stored.value.experiments[o.id].versions[0].config = { delta: 2 };
+  await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value);
   const first = await execute(f, o);
   await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
   await f.tool('conclude', { cycle: first.n, verdict: 'insufficient', findings: 'A retry failed',
@@ -596,14 +604,34 @@ test('an execution fix replaces the default without competing with it; the cycle
   assert.equal((await f.tool('version', { change: 'Fix retries', config: {} }, 'codex', o.thread)).version, 'v2');
   const d = (await f.read()).experiments[o.id];
   assert.equal(d.objective.currentVersion, 'v2'); assert.equal(d.versions[1].direct, true);
+  // The fix was submitted with an empty config; it keeps the default's.
+  assert.deepEqual(d.versions[1].config, { delta: 2 });
   assert.deepEqual(d.upcoming.groups.map((g) => [g.id, g.version, g.control]), [['control', 'v2', true]]);
   // The cycle that checks the fix is not a cycle without progress (a stall limit of 1 would otherwise pause the objective).
   const second = await execute(f, o);
+  assert.ok(second.runs.every((r) => r.metrics.score === r.seed + 2), JSON.stringify(second.runs.map((r) => [r.seed, r.metrics])));
   await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
   const result = await f.tool('conclude', { cycle: second.n, verdict: 'keep', findings: 'Still runs',
     options: [{ k: 'next', title: 'Next', why: 'w', cites: [`${o.id}-cycle-1`] }] }, 'cat-b5ddoo9l', o.thread);
   assert.equal(result.stop, null, JSON.stringify(result.stop));
   assert.equal((await f.read()).experiments[o.id].objective.state, 'pending');
+});
+
+test('an analyst timeout sends the conclusion even while another objective is running', async (t) => {
+  const f = await fixture(t), a = await f.create(); await f.initialize(a);
+  await f.http('POST', { op: 'analystAdd', objective: a.id, catId: 'ana-1', cats: [{ id: 'ana-1', name: '甲', model: 'm1' }] });
+  const round = await execute(f, a);
+  await f.tool('task', {}, 'cat-b5ddoo9l', a.thread);
+  await f.tool('conclude', { cycle: round.n, verdict: 'tune', findings: 'Measured' }, 'cat-b5ddoo9l', a.thread);
+  // A second objective in the project starts a slow run.
+  const created = await f.http('POST', { op: 'new', project: '', thread: 'source', statement: 'Another', prepare: 'codex', evaluate: 'cat-b5ddoo9l', cats: [] });
+  const b = { id: Object.values((await f.read()).experiments).find((d) => d.objective.projectPath === f.project && d.objective.id !== a.id).objective.id, thread: created.acts[0].args.id };
+  await f.initialize(b, { groups: [{ id: 'control', label: 'Slow run', vars: { slow: true }, control: true }], seeds: [1] });
+  await f.http('POST', { op: 'runCycle', objective: b.id });
+  await until(f.read, (s) => s.experiments[b.id].rounds[0]?.runs[0]?.state === 'running');
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 21 * 60_000 });
+  await f.activation().actions['rsi.tick']();
+  assert.deepEqual((await f.read()).experiments[a.id].rounds.at(-1).analysis.missing, ['ana-1']);
 });
 
 test('every plan includes the default control, exposes paired seeds, confirms once, and cites the cycle library', async (t) => {

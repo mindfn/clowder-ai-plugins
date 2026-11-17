@@ -1522,6 +1522,9 @@ views:
                                 miss:
                                   tone: danger
                                   text: t:rsi.pred.miss
+                                unresolved:
+                                  tone: warn
+                                  text: t:rsi.pred.unresolved
                                 _:
                                   tone: info
                                   text: t:rsi.pred.pending

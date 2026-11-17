@@ -131,14 +131,23 @@ export function createRuntime(host: RsiHost) {
   }
   async function tick() {
     if (stopped) return;
-    const owners = Object.entries(await host.storage.list()).filter(([key, entry]) => key.startsWith('rsi:') && isState(entry.value));
+    let owners = Object.entries(await host.storage.list()).filter(([key, entry]) => key.startsWith('rsi:') && isState(entry.value));
+    // Analysts that have not proposed in time are left out and the conclusion goes out with the directions there are,
+    // whatever else is running: the busy check below only guards starting a new cycle.
+    const overdue = (state: import('./types.js').RsiState) => Object.values(state.experiments).some((x) => x.rounds.some((r: Data) => r.analysis?.waiting.length && Date.now() - r.analysis.since > ANALYSIS_LIMIT));
+    for (const [key, entry] of owners) if (overdue(entry.value as import('./types.js').RsiState)) {
+      await retain(host.storage, key, (state) => {
+        for (const x of Object.values(state.experiments)) for (const r of x.rounds) if (r.analysis?.waiting.length && Date.now() - r.analysis.since > ANALYSIS_LIMIT) finishAnalysis(state, x, r, Date.now());
+      });
+      await flush(key);
+    }
+    if (stopped) return;
+    owners = Object.entries(await host.storage.list()).filter(([key, entry]) => key.startsWith('rsi:') && isState(entry.value));
     if (owners.some(([, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments).some((d) => d.objective.projectPath && (d.executor.state === 'probing' || d.rounds.some((r: Data) => r.state === 'running'))))) return;
     for (const [key] of owners) {
       let started = false;
       await retain(host.storage, key, (state) => {
         started = false;
-        // Analysts that have not proposed in time are left out; the conclusion goes out with the directions there are.
-        for (const x of Object.values(state.experiments)) for (const r of x.rounds) if (r.analysis?.waiting.length && Date.now() - r.analysis.since > ANALYSIS_LIMIT) finishAnalysis(state, x, r, Date.now());
         const d = Object.values(state.experiments).find((d) => d.objective.projectPath && d.objective.state === 'running' && !d.versionRequest
           && insideWindow(d.policy.schedule, Date.now()) && !d.rounds.some((r: Data) => ['running', 'evaluating'].includes(r.state) || r.state === 'interrupted' && r.autoResumed || r.report && !r.decision));
         if (!d) return;

@@ -139,6 +139,7 @@ pred:
   partial: Partly met
   miss: Missed
   pending: Awaiting check
+  unresolved: Cannot be checked
   expect: Predicted {0}
 decision:
   stalled: No result submitted

@@ -139,6 +139,7 @@ pred:
   partial: 部分兑现
   miss: 落空
   pending: 待核对
+  unresolved: 无法核对
   expect: 预测 {0}
 decision:
   stalled: 没回写
