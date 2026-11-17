@@ -245,8 +245,9 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
 function conclusionCard(state: RsiState, d: Experiment, round: Data, now: number, stopped?: Data | null) {
   const report = round.report, nameOf = (id: string) => d.members.find((m) => m.catId === id)?.name || id, several = new Set(report.directions.map((x: Data) => x.by)).size > 1;
   const lines = report.directions.map((x: Data) => `${x.id} · ${x.title}${several ? `（${nameOf(x.by)}）` : ''}：${x.why}`);
-  const analysts = analystsOf(d).length, missing = round.analysis?.missing || [];
-  const verdict = analysts > 1 && !stopped ? `\n\n${report.agree ? '分析成员意见一致，可以直接采纳。' : '几个分析成员意见不一致，需要你判断。'}` : '';
+  const missing = round.analysis?.missing || [];
+  // Agreement is stated only when at least two analysts proposed: one analyst's directions cannot agree or disagree.
+  const verdict = (round.analysis?.compared || 0) > 1 && !stopped ? `\n\n${report.agree ? '分析成员意见一致，可以直接采纳。' : '几个分析成员意见不一致，需要你判断。'}` : '';
   const absent = missing.length ? `\n\n${missing.map(nameOf).join('、')} 没在时限内给方向。` : '';
   const checked = report.predictions.length ? `\n\n${report.predictions.map((p: Data) => `预测核对 · ${p.text}：预期 ${p.expect}，实际 ${p.actual}，${p.result === 'hit' ? '命中' : '未命中'}`).join('\n')}` : '';
   message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${report.outcome}${checked}\n\n${lines.join('\n')}${verdict}${absent}${stopped ? '' : '\n\n在 RSI 页面选择方向。'}`, 'conclusion');
@@ -270,6 +271,7 @@ export function finishAnalysis(state: RsiState, d: Experiment, round: Data, now:
   const missing = round.analysis.waiting;
   round.analysis = { ...round.analysis, waiting: [], missing };
   const firsts = analystsOf(d).filter((m) => !missing.includes(m.catId!)).map((m) => round.report.directions.find((x: Data) => x.by === m.catId)).filter(Boolean);
+  round.analysis.compared = firsts.length;
   round.report.agree = firsts.length < 2 || firsts.every((x: Data) => x.kind && x.target && x.kind === firsts[0].kind && x.target === firsts[0].target);
   conclusionCard(state, d, round, now);
   syncObjective(state, d);

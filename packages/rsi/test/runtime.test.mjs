@@ -556,6 +556,21 @@ test('a chosen direction’s numeric prediction is checked when its version firs
   assert.ok(f.sends.some((s) => JSON.stringify(s.payload).includes('预测核对')));
 });
 
+test('when only one analyst proposes in time, the card names the missing one and claims no agreement', async (t) => {
+  const f = await fixture(t), o = await f.create(); await f.initialize(o);
+  const cats = [{ id: 'ana-1', name: '甲', model: 'm1' }, { id: 'ana-2', name: '乙', model: 'm2' }];
+  for (const c of cats) await f.http('POST', { op: 'analystAdd', objective: o.id, catId: c.id, cats });
+  const round = await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  await f.tool('conclude', { cycle: round.n, verdict: 'tune', findings: 'Measured' }, 'cat-b5ddoo9l', o.thread);
+  await f.tool('task', {}, 'ana-1', o.thread);
+  await f.tool('propose', { cycle: round.n, options: [{ k: 'lr', title: 'Lower rate', why: 'w', kind: 'variable', target: 'lr' }] }, 'ana-1', o.thread);
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 21 * 60_000 });
+  await f.activation().actions['rsi.tick']();
+  const card = JSON.stringify(f.sends.find((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title?.startsWith(`第 ${round.n} 周期结论`))).payload);
+  assert.match(card, /乙 没在时限内给方向/); assert.doesNotMatch(card, /意见一致|意见不一致/);
+});
+
 test('every plan includes the default control, exposes paired seeds, confirms once, and cites the cycle library', async (t) => {
   const f = await fixture(t), o = await f.create();
   Object.assign(f.commands, pythonExecutor);
