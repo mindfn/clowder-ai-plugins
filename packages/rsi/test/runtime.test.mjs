@@ -634,6 +634,30 @@ test('an analyst timeout sends the conclusion even while another objective is ru
   assert.deepEqual((await f.read()).experiments[a.id].rounds.at(-1).analysis.missing, ['ana-1']);
 });
 
+test('a prediction whose metric left the scale is recorded as unresolved and stays out of the hit rate', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: { delta: 0 }, control: true }], seeds: [11, 23] });
+  const first = await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  await f.tool('conclude', { cycle: first.n, verdict: 'tune', findings: 'Baseline measured',
+    options: [{ k: 'more', title: 'Raise delta', why: 'w', kind: 'variable', target: 'delta', expect: { lo: 5, hi: 15 } }] }, 'cat-b5ddoo9l', o.thread);
+  await f.http('POST', { op: 'expDecide', objective: o.id, n: first.n, pick: 'direction', directionId: 'more' }, { project: f.project });
+  await f.tool('task', {}, 'codex', o.thread);
+  await f.tool('version', { change: 'Delta 10', config: { delta: 10 } }, 'codex', o.thread);
+  // The scale changes before the version runs: the predicted metric is no longer on it.
+  const stored = await f.storage.get(ownerKey('owner'));
+  stored.value.experiments[o.id].versions[1].prediction.metric = 'retired';
+  await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value);
+  const second = await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  await f.tool('conclude', { cycle: second.n, verdict: 'keep', findings: 'Delta helps', options: [{ k: 'confirm', title: 'Confirm', why: 'Won', cites: [`${o.id}-cycle-1`] }] }, 'cat-b5ddoo9l', o.thread);
+  const d = (await f.read()).experiments[o.id];
+  assert.deepEqual(d.rounds[1].report.predictions.map((p) => [p.result, p.actual]), [['unresolved', '量尺里没有 retired']]);
+  assert.equal(d.versions[1].prediction.checked.result, 'unresolved');
+  assert.deepEqual((await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` })).hitRate, { hit: 0, all: 0 });
+  assert.ok(f.sends.some((s) => JSON.stringify(s.payload).includes('无法核对')));
+});
+
 test('every plan includes the default control, exposes paired seeds, confirms once, and cites the cycle library', async (t) => {
   const f = await fixture(t), o = await f.create();
   Object.assign(f.commands, pythonExecutor);
