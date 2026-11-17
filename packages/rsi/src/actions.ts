@@ -281,7 +281,8 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
           return { ok: true };
         }
         const direction = round.report.directions.find((x: Data) => x.id === body.directionId);
-        d.versionRequest = { cycle: round.n, decision: round.decision, title: direction?.title || body.note || body.pick };
+        d.versionRequest = { cycle: round.n, decision: round.decision, title: direction?.title || body.note || body.pick,
+          ...(direction?.predict ? { prediction: { ...direction.predict, by: direction.by, text: direction.title, expect: direction.expect, direction: direction.id, cycle: round.n } } : {}) };
         d.objective.state = 'running';
         enqueue(state, d, 'agent', { member: d.members.find((m) => m.role === 'prepare')!.catId, action: 'version',
           message: { title: '准备下一个版本', body: `按「${d.versionRequest.title}」出下一个版本。先调 rsi.task，改项目并提交 git 后调 rsi.version。` } });

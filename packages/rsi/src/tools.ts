@@ -103,7 +103,8 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     if (d.members.find((m) => m.role === 'prepare')?.catId !== ctx.catId || d.versionRequest?.invocationId !== ctx.invocationId) return { error: 'Call rsi.task on the version turn first', status: 403 };
     if (!text(input.change) || input.commit !== undefined && (!text(input.commit) || !/^[a-f0-9]{7,40}$/i.test(input.commit)) || !(record(input.config) || text(input.config))) return { error: 'Provide change, optional git commit (7–40 hex characters), and config (JSON object or JSON file path)' };
     const previous = d.objective.currentVersion, id = `v${d.versions.length + 1}`;
-    d.versions.push({ id, parent: previous, change: input.change, commit: input.commit || null, config: input.config, at: now, current: false, status: 'proposed' });
+    d.versions.push({ id, parent: previous, change: input.change, commit: input.commit || null, config: input.config, at: now, current: false, status: 'proposed',
+      ...(d.versionRequest.prediction ? { prediction: d.versionRequest.prediction } : {}) });
     const last = d.rounds.find((r: Data) => r.n === d.versionRequest.cycle);
     d.upcoming = { ...last.plan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d),
       { id: 'change', label: input.change, version: id, vars: {}, control: false, confirm: false }] };

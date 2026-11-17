@@ -135,13 +135,19 @@ function badOptions(state: RsiState, d: Experiment, options: unknown, cycle: num
   const previous = cycleLibrary(state, d).filter((doc: Data) => doc.cycle < cycle);
   return !Array.isArray(options) || !options.length || options.some((o: unknown) => !record(o) || !text(o.k) || !text(o.title) || !text(o.why)
       || o.target !== undefined && !text(o.target)
+      || o.expect !== undefined && !(record(o.expect) && Number.isFinite(+o.expect.lo) && Number.isFinite(+o.expect.hi) && +o.expect.lo <= +o.expect.hi && (o.expect.metric === undefined || text(o.expect.metric)))
       || o.cites !== undefined && (!Array.isArray(o.cites) || o.cites.some((id: unknown) => !text(id) || !state.library[d.objective.projectId].some((doc: Data) => doc.id === id)))
       || previous.length && !o.cites?.some((id: string) => previous.some((doc: Data) => doc.id === id)))
     || new Set(options.map((o: Data) => o.k)).size !== options.length;
 }
-const directionsFrom = (options: Data[], member: Data, taken: string[]) => options.map((o: Data) => ({
-  id: taken.includes(o.k) ? `${o.k}-${member.catId}` : o.k, title: o.title, why: o.why, ...(text(o.kind) ? { kind: o.kind } : {}), ...(text(o.target) ? { target: o.target.trim() } : {}),
-  by: member.catId, model: member.model, expect: '', cites: o.cites || [] }));
+const signed = (x: number) => (x >= 0 ? '+' : '') + short(x);
+// A direction may predict how its version changes a metric (the main one by default) against the same cycle's control: expect {lo, hi}.
+const directionsFrom = (d: Experiment, options: Data[], member: Data, taken: string[]) => options.map((o: Data) => {
+  const metric = record(o.expect) ? o.expect.metric || d.metrics.items.find((m: Data) => !m.guard)?.id : null;
+  const predict = metric ? { metric, lo: +o.expect.lo, hi: +o.expect.hi } : null;
+  return { id: taken.includes(o.k) ? `${o.k}-${member.catId}` : o.k, title: o.title, why: o.why, ...(text(o.kind) ? { kind: o.kind } : {}), ...(text(o.target) ? { target: o.target.trim() } : {}),
+    by: member.catId, model: member.model, expect: predict ? `${metric} ${signed(predict.lo)} ~ ${signed(predict.hi)}` : '', ...(predict ? { predict } : {}), cites: o.cites || [] };
+});
 
 // Analysts are members chosen for the role; demo placeholders (no member id, kept by objectives created before alpha.24) never act.
 export const analystsOf = (d: Experiment) => d.members.filter((m) => m.role === 'analyze' && m.catId);
@@ -151,6 +157,21 @@ export const ANALYSIS_LIMIT = 20 * 60_000;
 
 // Four significant digits, never in exponent form (0.5075000000000001 → 0.5075, 1234.567 → 1235).
 const short = (x: number) => String(Number(x.toPrecision(4)));
+
+// A version made for a predicting direction is checked the first time it runs against a comparable control: the change of the
+// predicted metric (its group mean minus the control mean) inside [lo, hi] is a hit.
+function checkPredictions(d: Experiment, round: Data, compared: Data): Data[] {
+  const mean = (group: string, metric: string) => compared.matrix.find((m: Data) => m.group === group && m.metric === metric)?.mean;
+  return round.plan.groups.filter((g: Data) => !g.control).flatMap((g: Data) => {
+    const p = d.versions.find((v: Data) => v.id === g.version)?.prediction;
+    if (!p || p.checked || !compared.comparable) return [];
+    const value = mean(g.id, p.metric), base = mean(compared.against, p.metric);
+    if (typeof value !== 'number' || typeof base !== 'number') return [];
+    const delta = value - base, result = delta >= p.lo && delta <= p.hi ? 'hit' : 'miss';
+    p.checked = { cycle: round.n, delta, result };
+    return [{ text: `${d.members.find((m) => m.catId === p.by)?.name || p.by}：${p.text}`, expect: p.expect, actual: `${p.metric} ${signed(delta)}`, result, by: p.by }];
+  });
+}
 
 export function conclude(state: RsiState, d: Experiment, input: Data, now: number) {
   const round = d.rounds.find((r: Data) => r.n === input.cycle && r.state === 'evaluating');
@@ -199,7 +220,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   const member = d.members.find((m) => m.role === 'evaluate')!;
   round.confirmation = confirmation;
   round.report = { verdict: input.verdict, headline: findings.split('\n')[0], summary: findings, matrix: compared.matrix,
-    predictions: [], asks: [], directions: directionsFrom(options, member, []), agree: true,
+    predictions: checkPredictions(d, round, compared), asks: [], directions: directionsFrom(d, options, member, []), agree: true,
     compare: { ...compared, note: '仅比较本周期 control；区间为种子均值 ± 样本标准差。' }, confirmation,
     attribution: { verdict: 'unresolved', primaryLayer: null, assessedLayers: [], competingLayers: [], uncertainty: 'interval', comparability: 'unchanged', reasons: [], evidence: [] } };
   round.state = 'done';
@@ -227,7 +248,8 @@ function conclusionCard(state: RsiState, d: Experiment, round: Data, now: number
   const analysts = analystsOf(d).length, missing = round.analysis?.missing || [];
   const verdict = analysts > 1 && !stopped ? `\n\n${report.agree ? '分析成员意见一致，可以直接采纳。' : '几个分析成员意见不一致，需要你判断。'}` : '';
   const absent = missing.length ? `\n\n${missing.map(nameOf).join('、')} 没在时限内给方向。` : '';
-  message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${report.outcome}\n\n${lines.join('\n')}${verdict}${absent}${stopped ? '' : '\n\n在 RSI 页面选择方向。'}`, 'conclusion');
+  const checked = report.predictions.length ? `\n\n${report.predictions.map((p: Data) => `预测核对 · ${p.text}：预期 ${p.expect}，实际 ${p.actual}，${p.result === 'hit' ? '命中' : '未命中'}`).join('\n')}` : '';
+  message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${report.outcome}${checked}\n\n${lines.join('\n')}${verdict}${absent}${stopped ? '' : '\n\n在 RSI 页面选择方向。'}`, 'conclusion');
   if (stopped) message(state, d, now, stopped.text, `第 ${round.n} 周期结论后停止启动新周期。`, 'conclusion');
 }
 
@@ -236,7 +258,7 @@ export function propose(state: RsiState, d: Experiment, input: Data, catId: stri
   const round = d.rounds.find((r: Data) => r.n === input.cycle && r.analysis?.waiting.includes(catId));
   if (!round) return { error: 'This cycle is not waiting for your directions', status: 409 };
   if (badOptions(state, d, input.options, round.n)) return { error: 'Provide distinct options {k,title,why,kind?,target?,cites?}; cite previous cycle library entries when available' };
-  round.report.directions.push(...directionsFrom(input.options, d.members.find((m) => m.catId === catId)!, round.report.directions.map((x: Data) => x.id)));
+  round.report.directions.push(...directionsFrom(d, input.options, d.members.find((m) => m.catId === catId)!, round.report.directions.map((x: Data) => x.id)));
   round.analysis.waiting = round.analysis.waiting.filter((id: string) => id !== catId);
   if (!round.analysis.waiting.length) finishAnalysis(state, d, round, now);
   syncObjective(state, d);

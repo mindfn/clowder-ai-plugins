@@ -528,6 +528,33 @@ test('analysts that change different things are marked for your judgment; one th
   assert.match(JSON.stringify(card.payload), /意见不一致/); assert.match(JSON.stringify(card.payload), /丙 没在时限内给方向/);
 });
 
+test('a chosen direction’s numeric prediction is checked when its version first runs against the control', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: { delta: 0 }, control: true }], seeds: [11, 23] });
+  const first = await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  // The evaluator predicts that raising delta adds 5 to 15 to the score.
+  assert.equal((await f.tool('conclude', { cycle: first.n, verdict: 'tune', findings: 'Baseline measured',
+    options: [{ k: 'more', title: 'Raise delta', why: 'The score follows delta', kind: 'variable', target: 'delta', expect: { lo: 5, hi: 15 } }] }, 'cat-b5ddoo9l', o.thread)).ok, true);
+  let d = (await f.read()).experiments[o.id];
+  assert.equal(d.rounds[0].report.directions[0].expect, 'score +5 ~ +15');
+  assert.equal((await f.http('POST', { op: 'expDecide', objective: o.id, n: first.n, pick: 'direction', directionId: 'more' }, { project: f.project })).status, 200);
+  await f.tool('task', {}, 'codex', o.thread);
+  assert.equal((await f.tool('version', { change: 'Delta 10', config: { delta: 10 } }, 'codex', o.thread)).version, 'v2');
+  assert.deepEqual((await f.read()).experiments[o.id].versions[1].prediction, { metric: 'score', lo: 5, hi: 15, by: 'cat-b5ddoo9l', text: 'Raise delta', expect: 'score +5 ~ +15', direction: 'more', cycle: 1 });
+  // v2 against the control: the score rises by 10, inside the predicted range.
+  const second = await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', { cycle: second.n, verdict: 'keep', findings: 'Delta helps',
+    options: [{ k: 'confirm', title: 'Confirm', why: 'Won', cites: [`${o.id}-cycle-1`] }] }, 'cat-b5ddoo9l', o.thread)).ok, true);
+  d = (await f.read()).experiments[o.id];
+  assert.deepEqual(d.rounds[1].report.predictions.map((p) => [p.result, p.actual, p.expect]), [['hit', 'score +10', 'score +5 ~ +15']]);
+  assert.equal(d.versions[1].prediction.checked.result, 'hit');
+  const page = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
+  assert.deepEqual(page.hitRate, { hit: 1, all: 1 });
+  assert.ok(f.sends.some((s) => JSON.stringify(s.payload).includes('预测核对')));
+});
+
 test('every plan includes the default control, exposes paired seeds, confirms once, and cites the cycle library', async (t) => {
   const f = await fixture(t), o = await f.create();
   Object.assign(f.commands, pythonExecutor);
