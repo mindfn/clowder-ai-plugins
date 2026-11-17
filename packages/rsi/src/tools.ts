@@ -10,12 +10,13 @@ export function executorInput(input: Data): boolean {
   return ['preflight', 'submit', 'collect'].every((k) => text(input[k]))
     && fields.every((k) => input[k] === undefined || text(input[k]))
     && (input.failureField === undefined || text(input.failureField))
+    && (input.timeout === undefined || Number.isSafeInteger(+input.timeout) && +input.timeout > 0)
     && (input.resultMap === undefined || Array.isArray(input.resultMap) && input.resultMap.every((m: unknown) => record(m) && text(m.metric) && text(m.field)));
 }
 
 function registerExecutor(state: RsiState, d: Experiment, input: Data) {
   const commands = Object.fromEntries(fields.filter((k) => input[k] !== undefined).map((k) => [k, input[k]]));
-  d.executor = { mcp: 'rsi.executor', state: 'probing', commands, failureField: input.failureField, resultMap: input.resultMap || [],
+  d.executor = { mcp: 'rsi.executor', state: 'probing', commands, failureField: input.failureField, resultMap: input.resultMap || [], ...(input.timeout !== undefined ? { timeout: +input.timeout } : {}),
     ops: Object.entries(commands).map(([op, command]) => ({ op, tool: command, params: {} })), pending: d.executor.pending?.executionId === d.exec!.run!.id ? d.executor.pending : undefined };
   enqueue(state, d, 'executor', { action: 'preflight', executionId: d.exec!.run!.id });
 }
@@ -101,7 +102,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
   }
   if (method === 'rsi.executor') {
     if (!claimed(d, 'run', ctx)) return { error: 'Call rsi.task on step 3 first; dependencies must be current', status: 403 };
-    if (!executorInput(input)) return { error: 'Provide preflight, submit and collect templates; get/cancel/analyze and resultMap are optional' };
+    if (!executorInput(input)) return { error: 'Provide preflight, submit and collect templates; get/cancel/analyze, resultMap and timeout (seconds) are optional' };
     if (d.executor.state === 'probing') return { error: 'Preflight is already running', status: 409 };
     registerExecutor(state, d, input);
     return { ok: true, state: 'probing' };

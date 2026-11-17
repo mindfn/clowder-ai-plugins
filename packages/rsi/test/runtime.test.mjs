@@ -19,8 +19,10 @@ try {
  await writeFile(run+'/pid',String(process.pid));
  await appendFile('starts',run+'\\n');
  if(config.slow) await new Promise(r=>setTimeout(r,30000));
- const attempt=await readFile(run+'/attempt','utf8').then(Number,()=>0)+1;
- await writeFile(run+'/attempt',String(attempt));
+ // Attempts are counted outside the run directory: a retry starts in an empty one.
+ const counter=process.cwd()+'/attempts-'+run.split('/').slice(-2).join('-');
+ const attempt=await readFile(counter,'utf8').then(Number,()=>0)+1;
+ await writeFile(counter,String(attempt));
  if(config.fail==='always'||config.fail==='once'&&attempt===1) {process.exitCode=7;}
  else await writeFile(run+'/metrics.json',JSON.stringify({metrics:{score:Number(seed)+(config.delta||0)}}));
 } finally {await rm(lock,{recursive:true,force:true});}
@@ -271,7 +273,7 @@ test('stop kills the owned process and restart restores subscriptions with faile
   const subscriptions=f.subscriptions.length;
   f.start();
   // The page says the cycle was interrupted and does not resume on its own.
-  assert.equal((await f.http('GET',undefined,{view:'exp',project:f.project,pick:`obj:${o.id}`})).next.k,'interrupted');
+  assert.equal((await f.http('GET',undefined,{view:'exp',project:f.project,pick:`obj:${o.id}`})).next.k,'resuming');
   let d=(await f.read()).experiments[o.id];
   assert.equal(d.rounds[0].state,'interrupted'); assert.equal(d.rounds[0].runs[0].state,'failed'); assert.equal(d.rounds[0].runs[0].retryable,true);
   assert.equal(f.subscriptions.length,subscriptions+1);
@@ -281,6 +283,53 @@ test('stop kills the owned process and restart restores subscriptions with faile
   assert.equal((await f.http('POST',{op:'runCycle',objective:o.id})).status,200);
   d=(await until(f.read,(s)=>s.experiments[o.id].rounds[0].state==='evaluating')).experiments[o.id];
   assert.equal(d.rounds.length,1);assert.equal(d.rounds[0].runs[0].state,'done');
+});
+
+test('a retried run starts in an empty run directory and keeps the earlier attempt beside it', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  // Like a training script that refuses an existing output folder, failing its first attempt.
+  Object.assign(f.commands, { submit: `mkdir {run}/adapter && { test -f retried || { touch retried; exit 3; }; } && printf '{"metrics":{"score":1}}' > {run}/metrics.json` });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [5] });
+  const run = (await execute(f, o)).runs[0];
+  assert.equal(run.state, 'done', JSON.stringify(run.error)); assert.equal(run.retries, 1);
+  await access(join(`${run.directory}.attempt-1`, 'adapter'));
+  assert.match(run.log, /attempt-1/);
+});
+
+test('a submit that runs past its limit is stopped and retried once as an environment failure', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  Object.assign(f.commands, { submit: 'sleep 30', timeout: 1 });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [5] });
+  const started = Date.now(), run = (await execute(f, o)).runs[0];
+  assert.equal(run.state, 'failed'); assert.equal(run.attempts.length, 2);
+  assert.match(run.error.raw, /超过 1 秒没结束/);
+  assert.ok(Date.now() - started < 20000);
+});
+
+test('the schedule resumes an interrupted cycle once; interrupted again, it waits for 跑一轮', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Slow run', vars: { slow: true }, control: true }], seeds: [1] }, { window: '每晚 20:00–08:00' });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 10, 15, 22, 0).getTime() });
+  const notice = async () => (await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` })).next.k;
+  // The plugin stops and starts again while the run executes (a new attempt has a new process).
+  let last = null;
+  const interrupt = async () => {
+    const running = await until(f.read, (s) => s.experiments[o.id].rounds[0]?.runs[0]?.state === 'running');
+    const directory = running.experiments[o.id].rounds[0].runs[0].directory;
+    last = await until(() => readFile(join(directory, 'pid'), 'utf8').then(Number, () => null), (p) => p !== null && p !== last, 'child process start');
+    await f.activation().stop();
+    await rm(join(f.project, 'active-run'), { recursive: true, force: true });
+    f.start();
+    return notice();
+  };
+  await f.http('POST', { op: 'runCycle', objective: o.id });
+  assert.equal(await interrupt(), 'resuming');
+  await f.activation().actions['rsi.tick']();
+  const d = (await f.read()).experiments[o.id];
+  assert.equal(d.rounds[0].state, 'running'); assert.equal(d.rounds[0].autoResumed, true);
+  assert.equal(await interrupt(), 'interrupted');
+  await f.activation().actions['rsi.tick']();
+  assert.equal((await f.read()).experiments[o.id].rounds[0].state, 'interrupted');
 });
 
 test('a real objective whose stop target names a metric needs that metric in step 4', async (t) => {

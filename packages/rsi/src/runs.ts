@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { arch, cpus, platform, release } from 'node:os';
 import { join, resolve } from 'node:path';
 import { finishCycle } from './cycles.js';
@@ -12,6 +12,7 @@ import type { Data, RsiHost } from './types.js';
 const quote = (value: string | number) => `'${String(value).replace(/'/g, `'"'"'`)}'`;
 const render = (command: string, values: Data) => command.replace(/\{(config|run|seed|job)\}/g, (_, k) => quote(values[k]));
 const field = (value: Data, path: string) => path.split('.').reduce((v: any, k) => v?.[k], value);
+const exists = (path: string) => stat(path).then(() => true, () => false);
 const parseResult = (raw: string) => JSON.parse(raw.replace(/"(?:\\.|[^"\\])*"|\bNaN\b|-?Infinity\b/g, (token) => token.startsWith('"') ? token : JSON.stringify(token)));
 
 export function createRuns(host: RsiHost, changed: (key: string) => Promise<void>) {
@@ -20,19 +21,29 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
   // busy: the objective whose probe or run is executing; a deleted (dropped) objective starts no further command.
   let busy: string | undefined;
   const dropped = new Set<string>();
-  async function command(template: string, cwd: string, values: Data) {
+  // limit (ms): a command still running then is stopped with its process group.
+  async function command(template: string, cwd: string, values: Data, limit = 0) {
     if (busy && dropped.has(busy)) return { code: -1, log: 'Objective deleted', stdout: '' };
     let log = '', stdout = '';
     const process = child = spawn('/bin/sh', ['-c', render(template, values)], { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     process.stdout!.on('data', (part) => { stdout = (stdout + part).slice(-16000); log = (log + part).slice(-16000); });
     process.stderr!.on('data', (part) => { log = (log + part).slice(-16000); });
+    const timer = limit ? setTimeout(() => {
+      log += `\n超过 ${Math.round(limit / 1000)} 秒没结束，已停止`;
+      try { globalThis.process.kill(-process.pid!, 'SIGKILL'); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') host.log('error', 'RSI could not stop a timed-out command', { error: String(error) }); }
+    }, limit) : undefined;
     const code = await new Promise<number>((done) => {
       process.once('error', (error) => { log += error.message; done(-1); });
       process.once('close', (exit, signal) => { if (signal) log += `\n${signal}`; done(exit ?? -1); });
     });
+    clearTimeout(timer);
     if (child === process) child = undefined;
     return { code, log, stdout };
   }
+
+  // The work loop starts no command once the plugin stops: stop() would otherwise wait for it to finish. stop() itself may still cancel a job.
+  const launch = (template: string, cwd: string, values: Data, limit = 0) => stopped ? Promise.resolve({ code: -1, log: 'Plugin stopped', stdout: '' }) : command(template, cwd, values, limit);
 
   async function work() {
     while (!stopped) {
@@ -52,7 +63,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       if (probe) {
         const { key, d } = probe, executionId = d.exec!.run!.id;
         busy = d.objective.id;
-        const result = await command(d.executor.commands.preflight, d.objective.projectPath, { config: '', run: '', seed: 0, job: '' });
+        const result = await launch(d.executor.commands.preflight, d.objective.projectPath, { config: '', run: '', seed: 0, job: '' });
         const commit = await projectCommit(d.objective.projectPath);
         if (stopped) return;
         await retain(host.storage, key, (state) => {
@@ -90,6 +101,9 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       busy = d.objective.id;
       let metrics: Data = {}, env: Data = { seed: run.seed, hardware: { os: `${platform()} ${release()}`, arch: arch(), chip: cpus()[0]?.model || 'unknown' } };
       let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId;
+      // The foreground submit's limit: the registered timeout, else three times this objective's longest successful attempt (at least 10 minutes); none before one has succeeded.
+      const succeeded = d.rounds.flatMap((r: Data) => r.runs.flatMap((x: Data) => (x.attempts || []).filter((a: Data) => !a.error).map((a: Data) => a.end - a.start)));
+      const limit = d.executor.timeout ? d.executor.timeout * 1000 : succeeded.length ? Math.max(600_000, 3 * Math.max(...succeeded)) : 0;
       try {
         const { cwd, commit } = await versionDirectory(host, key, d, version);
         env.commit = commit;
@@ -100,6 +114,13 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           if (version.commit) current.versions.find((v: Data) => v.id === version.id).worktree = cwd;
           Object.assign(current.rounds.find((r: Data) => r.n === round.n).runs.find((r: Data) => r.id === run.id), { cwd, env });
         });
+        // An attempt starts in an empty run directory; an earlier attempt's files are kept beside it. A persisted async job keeps writing into its own.
+        if (!jobId && await exists(directory)) {
+          let k = 1;
+          while (await exists(`${directory}.attempt-${k}`)) k++;
+          await rename(directory, `${directory}.attempt-${k}`);
+          log += `上一次尝试的文件保留在 ${directory}.attempt-${k}\n`;
+        }
         await mkdir(directory, { recursive: true });
         const base = typeof version.config === 'string' ? JSON.parse(await readFile(resolve(cwd, version.config), 'utf8')) : version.config;
         if (!record(base)) throw new Error('Version config must be a JSON object');
@@ -108,7 +129,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         await writeFile(configFile, config);
         const values: Data = { config: configFile, run: directory, seed: run.seed, job: jobId || '' };
         step = 'preflight';
-        const preflight = await command(d.executor.commands.preflight, cwd, values);
+        const preflight = await launch(d.executor.commands.preflight, cwd, values);
         log += preflight.log;
         if (preflight.code !== 0) throw new Error(`preflight exited ${preflight.code}: ${preflight.log}`);
         if (preflight.stdout.trim().startsWith('{')) {
@@ -117,7 +138,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         }
         if (!jobId) {
           step = 'submit';
-          const result = await command(d.executor.commands.submit, cwd, values);
+          const result = await launch(d.executor.commands.submit, cwd, values, limit);
           log += result.log;
           if (result.code !== 0) throw new Error(`submit exited ${result.code}: ${result.log}`);
           if (stopped) return;
@@ -135,7 +156,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           for (;;) {
             if (stopped) return;
             if (remote?.dropped) throw new Error('Objective deleted');
-            const polled = await command(d.executor.commands.get, cwd, values);
+            const polled = await launch(d.executor.commands.get, cwd, values);
             log = (log + polled.log).slice(-16000);
             if (stopped) return;
             if (polled.code !== 0) throw new Error(`get exited ${polled.code}: ${polled.log}`);
@@ -155,7 +176,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           const path = collect.replace(/\{(config|run|seed|job)\}/g, (_, k) => String(values[k]));
           raw = await readFile(resolve(cwd, path), 'utf8');
         } else {
-          const collected = await command(collect, cwd, values);
+          const collected = await launch(collect, cwd, values);
           log = (log + collected.log).slice(-16000);
           if (collected.code !== 0) throw new Error(`collect exited ${collected.code}: ${collected.log}`);
           raw = collected.stdout;

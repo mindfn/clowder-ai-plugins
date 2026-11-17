@@ -95,7 +95,7 @@ export function createRuntime(host: RsiHost) {
             }
             round.state = 'interrupted'; round.end = Date.now();
             for (const run of round.runs.filter((r: Data) => ['running', 'queued'].includes(r.state))) Object.assign(run, {
-              state: 'failed', retryable: true, end: Date.now(), error: { kind: 'env', step: 'restart', raw: '插件重启，运行已中断；点跑一轮重试。' } });
+              state: 'failed', retryable: true, end: Date.now(), error: { kind: 'env', step: 'restart', raw: '插件重启，运行已中断。' } });
           }
           if (d.executor.state === 'probing' && d.exec?.run) {
             d.executor.state = 'failed';
@@ -138,8 +138,12 @@ export function createRuntime(host: RsiHost) {
       await retain(host.storage, key, (state) => {
         started = false;
         const d = Object.values(state.experiments).find((d) => d.objective.projectPath && d.objective.state === 'running' && !d.versionRequest
-          && insideWindow(d.policy.schedule, Date.now()) && !d.rounds.some((r: Data) => ['running', 'evaluating', 'interrupted'].includes(r.state) || r.report && !r.decision));
-        if (d) started = !!runCycle(state, d, Date.now()).ok;
+          && insideWindow(d.policy.schedule, Date.now()) && !d.rounds.some((r: Data) => ['running', 'evaluating'].includes(r.state) || r.state === 'interrupted' && r.autoResumed || r.report && !r.decision));
+        if (!d) return;
+        // An interrupted cycle is resumed once by the schedule; interrupted again, it waits for 跑一轮.
+        const halted = d.rounds.find((r: Data) => r.state === 'interrupted');
+        started = !!runCycle(state, d, Date.now()).ok;
+        if (started && halted) { halted.autoResumed = true; halted.events.push({ at: Date.now(), kind: 'retry', text: '周期被插件重启打断，调度自动续跑一次' }); }
       });
       await flush(key);
       if (started) return;
