@@ -799,7 +799,7 @@ test('a winner waiting for confirmation asks the analysts for nothing: the next 
   const cards = () => f.sends.filter((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title?.startsWith(`第 ${round.n} 周期结论`)));
   await until(async () => cards().length, (n) => n === 1, 'conclusion card');
   assert.equal(f.sends.filter((s) => s.wake?.catId === 'ana-1').length, 0);
-  assert.match(JSON.stringify(cards()[0].payload), /照旧/);
+  assert.match(JSON.stringify(cards()[0].payload), /今晚照旧/);
   const page = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
   assert.equal(page.next.k, 'decide'); assert.equal(page.candidate, 'v2');
 });

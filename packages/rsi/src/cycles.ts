@@ -264,7 +264,7 @@ function conclusionCard(state: RsiState, d: Experiment, round: Data, now: number
   const verdict = (round.analysis?.compared || 0) > 1 && !stopped ? `\n\n${report.agree ? '分析成员意见一致，可以直接采纳。' : '几个分析成员意见不一致，需要你判断。'}` : '';
   const absent = missing.length ? `\n\n${missing.map(nameOf).join('、')} 没在时限内给方向。` : '';
   const checked = report.predictions.length ? `\n\n${report.predictions.map((p: Data) => `预测核对 · ${p.text}：预期 ${p.expect}，实际 ${p.actual}，${p.result === 'hit' ? '命中' : p.result === 'unresolved' ? '无法核对' : '未命中'}`).join('\n')}` : '';
-  message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${report.outcome}${checked}\n\n${lines.join('\n')}${verdict}${absent}${stopped ? '' : d.candidate ? '\n\n在 RSI 页面点「照旧」开始确认。' : '\n\n在 RSI 页面选择方向。'}`, 'conclusion');
+  message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${report.outcome}${checked}\n\n${lines.join('\n')}${verdict}${absent}${stopped ? '' : d.candidate ? '\n\n在 RSI 页面点「今晚照旧」，下一周期跑确认。' : '\n\n在 RSI 页面选择方向。'}`, 'conclusion');
   if (stopped) message(state, d, now, stopped.text, `第 ${round.n} 周期结论后停止启动新周期。`, 'conclusion');
 }
 
