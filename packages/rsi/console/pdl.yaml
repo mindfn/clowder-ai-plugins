@@ -899,12 +899,22 @@ views:
             from: $.exp.members
             row:
               layout: two
+              lead:
+                who: "@catId"
+                form: avatar
+                when: "@catId"
               title:
                 text:
                   t: rsi.exp.role
                   args:
                     - "@role"
-              sub: "@name"
+              sub:
+                parts:
+                  - who: "@catId"
+                    form: title
+                    when: "@catId"
+                  - text: "@name"
+                    when: "!@catId"
               cols:
                 - v:
                     text: "@model"
@@ -1496,6 +1506,9 @@ views:
                     row:
                       layout: two
                       key: "@id"
+                      lead:
+                        who: "@by"
+                        form: avatar
                       title: "@title"
                       inline:
                         - text:
@@ -1508,7 +1521,8 @@ views:
                       sub:
                         sep: " · "
                         parts:
-                          - text: "@by"
+                          - who: "@by"
+                            form: name
                           - text: "@model"
                             mono: true
                           - text:

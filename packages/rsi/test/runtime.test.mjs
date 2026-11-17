@@ -72,7 +72,8 @@ async function fixture(t) {
   };
   const read = async () => (await storage.get(ownerKey('owner')))?.value;
   const create = async (extra = {}) => {
-    const result = await http('POST', { op: 'new', project: '', thread: 'source', statement: 'Improve a measured score', prepare: 'codex', evaluate: 'cat-b5ddoo9l', ...extra });
+    const result = await http('POST', { op: 'new', project: '', thread: 'source', statement: 'Improve a measured score', prepare: 'codex', evaluate: 'cat-b5ddoo9l',
+      cats: [{ id: 'codex', name: '砚砚', model: 'gpt-5.6-sol' }, { id: 'cat-b5ddoo9l', name: '小狸', model: 'k3.1' }], ...extra });
     assert.equal(result.status, 200, JSON.stringify(result));
     assert.deepEqual(result.acts?.map((a) => a.act), ['thread', 'open'], JSON.stringify(result));
     const state = await read(), d = Object.values(state.experiments).find((d) => d.objective.projectPath === project);
@@ -386,8 +387,9 @@ async function decide(f, o, pick = 'same') {
   assert.equal(result.status, 200, JSON.stringify(result));
 }
 
-test('a step rewritten after the start holds the next cycle until it is submitted again and confirmed', async (t) => {
+test('a real objective has only the members chosen for it, with their names and models; a step rewritten after the start holds the next cycle until it is submitted again and confirmed', async (t) => {
   const f = await fixture(t), o = await f.create(); await f.initialize(o);
+  assert.deepEqual((await f.read()).experiments[o.id].members, [{ role: 'prepare', name: '砚砚', model: 'gpt-5.6-sol', catId: 'codex' }, { role: 'evaluate', name: '小狸', model: 'k3.1', catId: 'cat-b5ddoo9l' }]);
   await execute(f, o); await report(f, o); await decide(f, o);
   const item = (await f.read()).experiments[o.id].prep.find((p) => p.section === 'rules');
   assert.equal((await f.http('POST', { op: 'prep', objective: o.id, id: item.id, action: 'agent', note: 'Recalibrate the guard' }, { project: f.project })).status, 200);

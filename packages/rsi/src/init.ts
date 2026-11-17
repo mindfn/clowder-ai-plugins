@@ -195,7 +195,12 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   d.prep = d.prep.map((p) => ({ ...p, value: '', state: 'uninvestigated', by: '', neededFrom: null, at: null, facts: null, can: null, rec: null, tag: null }));
   // A real project's items are the members' own (they name, add and drop them); only the goal section's questions are fixed.
   if (body.projectPath) d.prep = d.prep.filter((p) => p.section === 'goal');
-  for (const role of ['prepare', 'evaluate']) Object.assign(d.members.find((m) => m.role === role)!, { catId: body[role], name: (Array.isArray(body.cats) && body.cats.find((c: Data) => c.id === body[role])?.name) || body[role], model: '' });
+  // A real project's members are the cats chosen here; the template's other roles are demo placeholders that never act.
+  if (body.projectPath) d.members = d.members.filter((m) => m.role === 'prepare' || m.role === 'evaluate');
+  for (const role of ['prepare', 'evaluate']) {
+    const cat = Array.isArray(body.cats) ? body.cats.find((c: Data) => c.id === body[role]) : null;
+    Object.assign(d.members.find((m) => m.role === role)!, { catId: body[role], name: cat?.name || body[role], model: cat?.model || '' });
+  }
   const goal = d.prep.find((p) => p.id.endsWith('-goal'))!;
   Object.assign(goal, { value: body.statement, state: 'confirmed', by: '你', mine: true, at: now });
   const stopItem = d.prep.find((p) => p.id.endsWith('-stop'));
