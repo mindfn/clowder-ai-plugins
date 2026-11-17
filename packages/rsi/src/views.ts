@@ -20,6 +20,18 @@ export function follow(state: RsiState, query: Data) {
   return { project, pick, tag, missing: !!projectQ && !state.projects.some((p) => p.id === projectQ) };
 }
 
+// A real objective's policy is what its cycles actually use: seeds per group from the next plan, the variables its groups have tried,
+// and every direction chosen by you (the demo's approval rules are not enforced here).
+function policyOf(d: Data, o: Data) {
+  if (!o.projectPath) return Object.assign({}, d.policy, { autoText: tc('rsi.exp.pol.autoText') });
+  const plan = d.upcoming || (d.rounds.length ? d.rounds[d.rounds.length - 1].plan : null), tried: Data = {};
+  for (const r of d.rounds) for (const g of r.plan.groups) if (!g.control) for (const [k, v] of Object.entries(g.vars || {})) {
+    const value = typeof v === 'string' ? v : JSON.stringify(v);
+    if (!(tried[k] ||= []).includes(value)) tried[k].push(value);
+  }
+  return Object.assign({}, d.policy, { seeds: plan ? plan.seeds.length : d.policy.seeds, vars: Object.entries(tried).map(([name, values]) => ({ name, values })), autoText: tc('rsi.exp.pol.manual') });
+}
+
 export function viewModel(state: RsiState, view: string, query: Data = {}): any {
   const at = follow(state, query);
   const S: Data = {
@@ -230,7 +242,7 @@ function exp(): any {
       runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { durationSeconds: u.start ? Math.round(((u.end || Date.now()) - u.start) / 1000) : null, metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })), groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),
       notAssessed: r.report && RSI_LAYERS.filter(function (l: any): any { return r.report.attribution.assessedLayers.indexOf(l) < 0; }),
       report: r.report && Object.assign({}, r.report, { directions: r.report.directions.map(function (x: any): any { return Object.assign({}, x, { picked: !!r.decision && r.decision.directionId === x.id }); }) }) }),
-    prep: { needYou: needYou, steps: steps }, executor: d.executor, members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, policy: d.policy, metrics: d.metrics,
+    prep: { needYou: needYou, steps: steps }, executor: d.executor, members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, policy: policyOf(d, o), metrics: d.metrics,
     eTree: [{ id: d.metrics.version }], cTree: [{ id: 'C1' }] };
 };
 function record(): any {

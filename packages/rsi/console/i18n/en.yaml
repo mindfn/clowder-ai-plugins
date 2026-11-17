@@ -662,6 +662,7 @@ exp:
     vars: Variables the agent may tune
     auto: Approval
     autoText: Code, metric, goal, and execution changes need your approval; agents may tune variables within the allowed bounds
+    manual: You choose every cycle’s direction on the page; the plugin does not tune variables on its own
   varOf: "{0}: {1}"
   dir:
     up: Higher is better

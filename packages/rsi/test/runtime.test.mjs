@@ -187,6 +187,8 @@ test('three real cycles execute groups × seeds serially, render measured runs, 
     assert.ok(f.sends.some((s)=>s.wake?.catId==='cat-b5ddoo9l' && s.payload.elements[0].payload.text.includes(`第 ${n} 周期跑完`)));
     const page = await f.http('GET',undefined,{view:'exp',project:f.project,pick:`obj:${o.id}`});
     assert.equal(page.cycle.runs.length,4); assert.equal(page.cycle.runs[0].metricRows[0].k,'Score');
+    // A real objective's policy shows what its cycles use, not the demo template's.
+    if (n===1) { assert.equal(page.policy.seeds,2); assert.deepEqual(page.policy.vars,[{name:'delta',values:['1']}]); assert.equal(page.policy.autoText.t,'rsi.exp.pol.manual'); }
     // While the evaluator works, the notice says whose conclusion the page waits for.
     assert.equal(page.next.k,'evaluating'); assert.equal(page.next.v,round.version); assert.ok(page.next.by);
     assert.ok(page.cycle.runs.every((r)=>typeof r.durationSeconds==='number'));

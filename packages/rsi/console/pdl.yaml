@@ -985,7 +985,7 @@ views:
                       - of: "@values"
                         sep: " / "
               - k: t:rsi.exp.pol.auto
-                v: t:rsi.exp.pol.autoText
+                v: $.exp.policy.autoText
       - type: toolbar
         when: "!$.exp.setup"
         items:
@@ -4669,7 +4669,7 @@ views:
                   - of: "@values"
                     sep: " / "
           - k: t:rsi.exp.pol.auto
-            v: t:rsi.exp.pol.autoText
+            v: $.exp.policy.autoText
     sources:
       exp: exp
       members: host:members
