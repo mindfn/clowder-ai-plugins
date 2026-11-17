@@ -4607,17 +4607,46 @@ views:
         from: $.exp.members
         row:
           layout: two
+          lead:
+            who: "@catId"
+            form: avatar
+            when: "@catId"
           title:
             text:
               t: rsi.exp.role
               args:
                 - "@role"
-          sub: "@name"
+          sub:
+            parts:
+              - who: "@catId"
+                form: title
+                when: "@catId"
+              - text: "@name"
+                when: "!@catId"
           cols:
             - v:
                 text: "@model"
                 mono: true
               w: id
+          acts:
+            - label: t:rsi.exp.analystRemove
+              icon: delete
+              act: plugin
+              args:
+                request: analystRemove
+                catId: "@catId"
+              when:
+                of: "@role"
+                map:
+                  analyze: true
+                  _: false
+      - type: button
+        label: t:rsi.exp.analystAdd
+        when: $.exp.projectPath
+        act: dialog
+        args:
+          kind: rsiAnalystAdd
+          cats: $.members.defaultCatOptions
       - type: label
         text: t:rsi.exp.policyTitle
       - type: kv
@@ -4643,6 +4672,7 @@ views:
             v: t:rsi.exp.pol.autoText
     sources:
       exp: exp
+      members: host:members
     loading: t:rsi.console.loading
     error: t:rsi.console.error
   dlg.rsiExpNote:
