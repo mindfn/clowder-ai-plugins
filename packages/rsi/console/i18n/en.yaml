@@ -340,7 +340,7 @@ newExp:
   iterate: Who carries out decisions
   iterateHelp: Changes the project along the direction you choose and makes the next version; one member
   stopTarget: Stop when this target is reached
-  stopTargetHelp: Write “metric comparison number”, e.g. accuracy ≥ 0.45; the metric must match a step-4 metric id or name. Combine these conditions; stop at the first one reached. Leave a condition blank to omit it.
+  stopTargetHelp: Write “metric comparison number”, e.g. accuracy ≥ 0.45; the metric must match a step-4 metric id or name. Leave it blank to omit it.
   stopRounds: Maximum cycles
   ok: Create and start initialization
 cards:

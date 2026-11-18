@@ -4507,10 +4507,6 @@ views:
         help: t:rsi.newExp.stopTargetHelp
         placeholder: accuracy ≥ 0.45
         arg: target
-      - id: dlg-rounds
-        label: t:rsi.newExp.stopRounds
-        value: "20"
-        arg: rounds
     blocks:
       - type: toolbar
         left:
@@ -4957,7 +4953,6 @@ requests:
       evaluate: "@evaluate"
       iterate: "@iterate"
       target: "@target"
-      rounds: "@rounds"
       name: "@name"
       cats: "@cats"
   life:

@@ -340,7 +340,7 @@ newExp:
   iterate: 谁来执行治理
   iterateHelp: 按你选的方向改项目、出新版本；只有一个成员
   stopTarget: 达到什么就停
-  stopTargetHelp: 写成「指标 比较符 数字」，比如 accuracy ≥ 0.45，指标要和第 4 步量尺的 id 或名称一致。两条可以组合，哪条先到就停；留空 = 不设这条
+  stopTargetHelp: 写成「指标 比较符 数字」，比如 accuracy ≥ 0.45，指标要和第 4 步量尺的 id 或名称一致；留空 = 不设这条
   stopRounds: 最多几个周期
   ok: 建好并开始初始化
 cards:
