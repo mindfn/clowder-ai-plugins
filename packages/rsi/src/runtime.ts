@@ -96,6 +96,8 @@ export function createRuntime(host: RsiHost) {
         // A state grown past the Host's size limit by earlier versions is compacted before anything else is written.
         compact(state);
         for (const d of Object.values(state.experiments).filter((d) => d.objective.projectPath)) {
+          // Objectives created before alpha.24 still hold the template's placeholder members (no cat; they never act), an iterator among them.
+          d.members = d.members.filter((m) => m.catId);
           // Objectives created before governance execution had its own member: the preparer keeps doing it.
           if (!d.members.some((m) => m.role === 'iterate')) d.members.push({ ...d.members.find((m) => m.role === 'prepare')!, role: 'iterate' });
           for (const round of d.rounds.filter((r: Data) => r.state === 'running')) {

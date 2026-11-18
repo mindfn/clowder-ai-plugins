@@ -815,12 +815,13 @@ test('governance execution is its own member: the version a decision asks for go
 
 test('an objective from before governance execution had its own member keeps the preparer doing it', async (t) => {
   const f = await fixture(t), o = await f.create();
+  // Like the objectives created before alpha.24, it still holds the template's placeholder members, an iterator without a cat among them.
   const stored = await f.storage.get(ownerKey('owner'));
-  stored.value.experiments[o.id].members = stored.value.experiments[o.id].members.filter((m) => m.role !== 'iterate');
+  stored.value.experiments[o.id].members = stored.value.experiments[o.id].members.filter((m) => m.role !== 'iterate').concat({ role: 'iterate', name: '迭代成员', model: 'claude-opus-5-5' }, { role: 'metrics', name: '指标成员', model: 'gpt-5.6' });
   assert.equal((await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value)).applied, true);
   await f.activation().stop(); f.start();
-  await until(f.read, (s) => s.experiments[o.id].members.some((m) => m.role === 'iterate'), 'governance member');
-  assert.deepEqual((await f.read()).experiments[o.id].members.filter((m) => m.role === 'iterate').map((m) => m.catId), ['codex']);
+  await until(f.read, (s) => s.experiments[o.id].members.every((m) => m.catId), 'placeholders removed');
+  assert.deepEqual((await f.read()).experiments[o.id].members.map((m) => [m.role, m.catId]), [['prepare', 'codex'], ['evaluate', 'cat-b5ddoo9l'], ['iterate', 'codex']]);
 });
 
 test('a winner waiting for confirmation asks the analysts for nothing: the next cycle is the confirmation', async (t) => {
