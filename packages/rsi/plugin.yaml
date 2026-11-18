@@ -1,5 +1,5 @@
 pluginId: official.rsi
-version: 0.1.0-alpha.41
+version: 0.1.0-alpha.42
 contractVersion: 0.4.0-candidate.0
 name: RSI 能力进化
 description:
@@ -8,7 +8,7 @@ description:
     en: Set objectives for a project; experiments run nightly, conclusions come back for you to choose the next direction.
 icon: { type: svg, src: assets/icon.svg }
 steps:
-  - text: 启用后，在左侧「RSI 能力进化」或工作台面板里新建评估项。
+  - text: 启用后，在工作台面板里打开「RSI 能力进化」，新建评估项。
 contributions:
   - { type: webhook, id: rsi.view, path: rsi/view, methods: [GET], action: { method: rsi.view } }
   - { type: webhook, id: rsi.act, path: rsi/act, methods: [POST], action: { method: rsi.act } }
