@@ -50,7 +50,7 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
       ...(p.k === 'design' || p.k === 'baseline' ? { upcoming: { groups: [{ id: 'control', label: '对照', vars: {}, control: true }, { id: 'change', label: '一个改动', vars: { '<配置里的键>': '<新取值>' } }], seeds: [11, 23] } } : {}) };
   });
   const evaluate = d.members.find((m) => m.role === 'evaluate')?.catId === ctx.catId && d.rounds.find((r: Data) => r.state === 'evaluating');
-  const version = d.members.find((m) => m.role === 'prepare')?.catId === ctx.catId && d.versionRequest;
+  const version = d.members.find((m) => m.role === 'iterate')?.catId === ctx.catId && d.versionRequest;
   const analyze = d.rounds.find((r: Data) => r.analysis?.waiting.includes(ctx.catId));
   if (!steps.length && !evaluate && !version && !analyze) return { error: 'It is not this member’s turn', status: 403 };
   if (evaluate) evaluate.invocationId = ctx.invocationId;
@@ -100,7 +100,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     return propose(state, d, { ...input, cycle }, ctx.catId, now);
   }
   if (method === 'rsi.version') {
-    if (d.members.find((m) => m.role === 'prepare')?.catId !== ctx.catId || d.versionRequest?.invocationId !== ctx.invocationId) return { error: 'Call rsi.task on the version turn first', status: 403 };
+    if (d.members.find((m) => m.role === 'iterate')?.catId !== ctx.catId || d.versionRequest?.invocationId !== ctx.invocationId) return { error: 'Call rsi.task on the version turn first', status: 403 };
     if (!text(input.change) || input.commit !== undefined && (!text(input.commit) || !/^[a-f0-9]{7,40}$/i.test(input.commit)) || !(record(input.config) || text(input.config))) return { error: 'Provide change, optional git commit (7–40 hex characters), and config (JSON object or JSON file path)' };
     const previous = d.objective.currentVersion, id = `v${d.versions.length + 1}`;
     d.versions.push({ id, parent: previous, change: input.change, commit: input.commit || null, config: input.config, at: now, current: false, status: 'proposed',
@@ -113,7 +113,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       Object.assign(version, { status: 'confirmed', direct: true, config: before.config, vars: before.vars || {} });
       for (const v of d.versions) v.current = v.id === id;
       d.objective.currentVersion = id;
-      d.upcoming = { ...last.plan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d)], afterFix: id };
+      d.upcoming = { ...last.plan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d)] };
       message(state, d, now, `执行修复 ${id} 直接作为默认版本`, `${input.change}\n\n执行修复不和旧版本对比；下一周期用它跑当前版本对照，确认没有跑坏。`, 'plan');
     } else d.upcoming = { ...last.plan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d),
       { id: 'change', label: input.change, version: id, vars: {}, control: false, confirm: false }] };

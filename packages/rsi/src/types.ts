@@ -3,7 +3,7 @@ export type Section = 'goal' | 'scope' | 'run' | 'rules' | 'design' | 'feedback'
 
 export interface InitPlan extends Data {
   section: Section;
-  role: 'prepare' | 'evaluate' | 'analyze';
+  role: 'prepare' | 'evaluate' | 'analyze' | 'iterate';
   deps: Section[];
   ask: string;
   human?: string[];

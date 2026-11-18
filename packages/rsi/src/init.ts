@@ -170,10 +170,10 @@ export const STOP_TARGET = /^(.*?)\s*(>=|<=|≥|≤|>|<)\s*(-?\d+(?:\.\d+)?(?:e[
 export function stopOf(input: Data): Data {
   const target = typeof input.target === 'string' ? input.target.trim() : '';
   if (target && !STOP_TARGET.exec(target)?.[1].trim()) return { error: '「达到什么就停」要写成「指标 比较符 数字」，比如 accuracy ≥ 0.45；不需要就留空' };
-  if (['stall', 'rounds'].some((k) => input[k] != null && input[k] !== '' && (!Number.isSafeInteger(+input[k]) || +input[k] < 1))) return { error: 'Stop cycle counts must be positive integers' };
-  return { stop: { target: target || null, stall: +input.stall || null, maxCycles: +input.rounds || null } };
+  if (input.rounds != null && input.rounds !== '' && (!Number.isSafeInteger(+input.rounds) || +input.rounds < 1)) return { error: 'The cycle limit must be a positive integer' };
+  return { stop: { target: target || null, maxCycles: +input.rounds || null } };
 }
-export const stopText = (stop: Data) => [stop.target && `达到「${stop.target}」并复验稳定`, stop.stall && `连续 ${stop.stall} 个周期没进步`, stop.maxCycles && `用满 ${stop.maxCycles} 个周期`].filter(Boolean).join('，或') || '由你决定';
+export const stopText = (stop: Data) => [stop.target && `达到「${stop.target}」并复验稳定`, stop.maxCycles && `用满 ${stop.maxCycles} 个周期`].filter(Boolean).join('，或') || '由你决定';
 
 export function rsiExpNew(state: RsiState, project: string, body: Data, now: number) {
   const fixture = createFixtures(now), templateId = project === 'pd-infer' ? 'pd-ttft' : 'cp-converge';
@@ -196,10 +196,12 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   // A real project's items are the members' own (they name, add and drop them); only the goal section's questions are fixed.
   if (body.projectPath) d.prep = d.prep.filter((p) => p.section === 'goal');
   // A real project's members are the cats chosen here; the template's other roles are demo placeholders that never act.
-  if (body.projectPath) d.members = d.members.filter((m) => m.role === 'prepare' || m.role === 'evaluate');
-  for (const role of ['prepare', 'evaluate']) {
-    const cat = Array.isArray(body.cats) ? body.cats.find((c: Data) => c.id === body[role]) : null;
-    Object.assign(d.members.find((m) => m.role === role)!, { catId: body[role], name: cat?.name || body[role], model: cat?.model || '' });
+  if (body.projectPath) d.members = d.members.filter((m) => ['prepare', 'iterate', 'evaluate'].includes(m.role));
+  for (const role of ['prepare', 'iterate', 'evaluate']) {
+    // Governance execution (the version a decision asks for) is its own member; without a choice the preparer does it.
+    const catId = role === 'iterate' ? body.iterate || body.prepare : body[role];
+    const cat = Array.isArray(body.cats) ? body.cats.find((c: Data) => c.id === catId) : null;
+    Object.assign(d.members.find((m) => m.role === role)!, { catId, name: cat?.name || catId, model: cat?.model || '' });
   }
   const goal = d.prep.find((p) => p.id.endsWith('-goal'))!;
   Object.assign(goal, { value: body.statement, state: 'confirmed', by: '你', mine: true, at: now });
@@ -209,7 +211,7 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   state.experiments[id] = d;
   state.objectives[project].push({ id, name: body.statement, parent: null, state: 'preparing', mode: 'exp', trigger: '', running: null, cycle: null, prediction: null, locked: 0 });
   enqueue(state, d, 'createThread', { project, title: `RSI · ${body.statement}` });
-  message(state, d, now, `新评估项：${body.statement}`, `何时停：${stop}。\n\n@${d.members.find((m) => m.role === 'prepare')!.name} 负责准备；@${d.members.find((m) => m.role === 'evaluate')!.name} 负责评估。初始化七步，按依赖往下做。`, 'goal');
+  message(state, d, now, `新评估项：${body.statement}`, `何时停：${stop}。\n\n@${d.members.find((m) => m.role === 'prepare')!.name} 负责准备；@${d.members.find((m) => m.role === 'evaluate')!.name} 负责评估；@${d.members.find((m) => m.role === 'iterate')!.name} 负责治理执行（按你选的方向出新版本）。初始化七步，按依赖往下做。`, 'goal');
   kick(state, id, now);
   return state.experiments[id].objective;
 }

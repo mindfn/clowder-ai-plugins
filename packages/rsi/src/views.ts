@@ -219,7 +219,7 @@ function exp(): any {
     : halted ? { k: halted.autoResumed ? 'interrupted' : 'resuming', v: halted.version, n: halted.k, go: at(halted, 'collect') }
     : cut ? { k: 'cancelled', n: cut.i, by: cut.who } : doing.length ? { k: 'init', by: doing.map(function (x: any): any { return { who: x.who, i: x.i, k: x.k }; }), hint: hint }
     : o.state === 'ready' ? { k: 'ready' } : stale ? { k: 'stale', count: stale } : needYou ? { k: 'prep', count: needYou, hint: hint }
-    : d.versionRequest ? { k: 'version', v: d.versionRequest.title, by: memberName('prepare') }
+    : d.versionRequest ? { k: 'version', v: d.versionRequest.title, by: memberName('iterate') }
     : d.executor.state !== 'passed' ? { k: 'executor' } : { k: 'planned', window: d.policy.schedule.window };
 
   const cur = d.versions.find(function (v: any): any { return v.current; }), rules = steps.find(function (x: any): any { return x.k === 'rules'; }), ruled = ['submitted', 'confirmed', 'stale'].indexOf(rules.state) >= 0;

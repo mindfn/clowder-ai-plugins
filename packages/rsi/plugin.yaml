@@ -1,5 +1,5 @@
 pluginId: official.rsi
-version: 0.1.0-alpha.42
+version: 0.1.0-alpha.43
 contractVersion: 0.4.0-candidate.0
 name: RSI 能力进化
 description:
@@ -37,7 +37,7 @@ contributions:
       items 必须含本步全部非 userOwned 项，每项 {id,value,facts?:[{k,v}],can?,rec?:explore|fixed|excluded,tag?}；value 是非空字符串，unknowns/next 是字符串。
       例 {step:1,items:[{id:"cp-good",value:"同种子得分提高",facts:[{k:"依据",v:"README"}]},{id:"cp-adopt",value:"护栏通过后采用"}],unknowns:"配额未知",next:"确认条件"}。
       第 3 步带 window:"每晚 20:00–08:00"（或在 cp-trigger item 的 value 写明时段），先用 rsi.executor 登记并通过预检，或附 executor 同样的命令字段；预检和本步提交都完成才进入下一步。
-      第 4 步必须附 metrics:{version:"E1",items:[{id:"score",name:"得分",how:"metrics.json 的 score",dir:"up",unit:"分",locked:true,guard:false},{id:"cost",name:"成本",how:"metrics.cost",dir:"down",guard:true,threshold:2}]}。护栏必须有数值 threshold；dir:down 表示不得超过，up 表示不得低于。主指标（第一个非护栏量尺）可带 minDelta：改动组至少比同周期对照提升这么多才算赢，判候选、复验和是否有进步都按它；不写为 0。
+      第 4 步必须附 metrics:{version:"E1",items:[{id:"score",name:"得分",how:"metrics.json 的 score",dir:"up",unit:"分",locked:true,guard:false},{id:"cost",name:"成本",how:"metrics.cost",dir:"down",guard:true,threshold:2}]}。护栏必须有数值 threshold；dir:down 表示不得超过，up 表示不得低于。主指标（第一个非护栏量尺）可带 minDelta：改动组至少比同周期对照提升这么多才算赢，判候选和复验都按它；不写为 0。
       第 5 步必须附 upcoming:{groups:[{id:"control",label:"对照",vars:{},control:true},{id:"change",label:"改动",vars:{lr:0.001}}],seeds:[11,23]}；第 7 步可更新它。
       可附 goal 对象、docs:[{id,kind:project|provided|feedback,title,body,sources:[]}]。依赖版本变化会拒绝，重新 rsi.task；成功会持久化并叫醒依赖已齐的下一成员，用户项仍需页面确认。
     inputSchema:
@@ -99,7 +99,7 @@ contributions:
     id: rsi.version
     name: rsi.version
     description: >-
-      人工在页面选完周期方向后，仅准备成员可用。先 rsi.task 读 version 要求。改代码并提交 git 后交 {change,commit,config}；只改配置可省略 commit。
+      人工在页面选完周期方向后，仅治理执行成员可用。先 rsi.task 读 version 要求。改代码并提交 git 后交 {change,commit,config}；只改配置可省略 commit。
       例 {change:"降低学习率",commit:"a1b2c3d",config:{lr:0.001,batch:8}}。若提供 commit，必须是 7–40 位 git 十六进制提交号；config 是 JSON 对象或项目内 JSON 文件路径。
       插件记录 v2/v3…，默认版本保持不变。下一周期带当前默认对照；胜出只成为候选，下周期同轮对照、换新种子确认，保持改善且护栏通过后才采用。代码 worktree 在评估项完成/退役时移除。
     inputSchema:
@@ -120,7 +120,7 @@ contributions:
       verdict 为 baseline/keep/tune/rollback/sunset/insufficient；findings 是非空字符串或字符串数组；options 的 k 必须互异；有历史周期条目时每个方向必须在 cites 引用至少一条。返回 comparison（均值/区间/逐种子值）、confirmation 和 stop。
       有分析成员时 options 可以省略：插件把这份结论发给分析成员，等他们用 rsi.propose 交齐方向（或等满 20 分钟）再发结论卡。方向可带 target（要改的对象，例如 lr），几个分析成员的第一方向种类和 target 相同就算意见一致。
       kind:execution 是执行修复（重试、超时、目录这类不该改变测量结果的修复）：选中后出的版本直接成为默认、不进对比，并沿用当前默认版本的 config 和变量，只换代码提交。方向可带数值预测 expect {lo,hi,metric?}：选中这个方向后出的版本，第一次和同周期对照比时，该指标（默认主指标）的差值落在 [lo,hi] 内算命中，结论卡和页面会显示命中率。
-      成功会在 thread 发结论卡并在页面显示方向，等待用户通过 expDecide 选方向；候选先安排新种子确认，其他新方向叫醒准备成员生成下一版本；same 可按当前默认继续。目标/连续停滞/最多周期满足时自动完成或暂停，并发原因卡。不要自行代替用户决策。
+      成功会在 thread 发结论卡并在页面显示方向，等待用户通过 expDecide 选方向；候选先安排新种子确认，其他新方向叫醒准备成员生成下一版本；same 可按当前默认继续。目标或最多周期满足时自动完成，并发原因卡。不要自行代替用户决策。
     inputSchema:
       type: object
       additionalProperties: false

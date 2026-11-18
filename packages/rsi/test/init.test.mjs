@@ -126,13 +126,13 @@ test('何时停 is one setting: a target must read "metric comparison number"; e
   const f = fixture(); await f.seed();
   const bad = await f.act({ op: 'new', statement: 'x', prepare: 'prepare-id', evaluate: 'evaluate-id', target: 'accuracy ≥ 0.45（备注）' });
   assert.equal(bad.status, 400); assert.match(bad.payload.error, /指标 比较符 数字/);
-  const id = await f.newObjective({ target: 'accuracy ≥ 0.45', stall: '3', rounds: '5' });
+  const id = await f.newObjective({ target: 'accuracy ≥ 0.45', rounds: '5' });
   const stopItem = (s) => s.experiments[id].prep.find((p) => p.id.endsWith('-stop'));
   const dialog = await f.act({ op: 'prep', objective: id, id: stopItem(await f.read()).id, action: 'edit' });
-  assert.deepEqual(dialog.payload.args, { kind: 'rsiStop', objective: id, target: 'accuracy ≥ 0.45', stall: 3, rounds: 5 });
-  assert.equal((await f.act({ op: 'stop', objective: id, target: 'accuracy ≥ 0.5', stall: '', rounds: '4' })).status, 200);
+  assert.deepEqual(dialog.payload.args, { kind: 'rsiStop', objective: id, target: 'accuracy ≥ 0.45', rounds: 5 });
+  assert.equal((await f.act({ op: 'stop', objective: id, target: 'accuracy ≥ 0.5', rounds: '4' })).status, 200);
   const s = await f.read();
-  assert.deepEqual(s.experiments[id].objective.stop, { target: 'accuracy ≥ 0.5', stall: null, maxCycles: 4 });
+  assert.deepEqual(s.experiments[id].objective.stop, { target: 'accuracy ≥ 0.5', maxCycles: 4 });
   assert.equal(s.experiments[id].objective.budget.rounds, 4);
   assert.equal(stopItem(s).value, '达到「accuracy ≥ 0.5」并复验稳定，或用满 4 个周期');
   assert.equal((await f.act({ op: 'stop', objective: id, target: '准确率高一点' })).status, 400);

@@ -450,7 +450,8 @@ async function decide(f, o, pick = 'same') {
 
 test('a real objective has only the members chosen for it, with their names and models; a step rewritten after the start holds the next cycle until it is submitted again and confirmed', async (t) => {
   const f = await fixture(t), o = await f.create(); await f.initialize(o);
-  assert.deepEqual((await f.read()).experiments[o.id].members, [{ role: 'prepare', name: '砚砚', model: 'gpt-5.6-sol', catId: 'codex' }, { role: 'evaluate', name: '小狸', model: 'k3.1', catId: 'cat-b5ddoo9l' }]);
+  // Governance execution was not chosen separately, so the preparer does it.
+  assert.deepEqual((await f.read()).experiments[o.id].members, [{ role: 'prepare', name: '砚砚', model: 'gpt-5.6-sol', catId: 'codex' }, { role: 'evaluate', name: '小狸', model: 'k3.1', catId: 'cat-b5ddoo9l' }, { role: 'iterate', name: '砚砚', model: 'gpt-5.6-sol', catId: 'codex' }]);
   await execute(f, o); await report(f, o); await decide(f, o);
   const item = (await f.read()).experiments[o.id].prep.find((p) => p.section === 'rules');
   assert.equal((await f.http('POST', { op: 'prep', objective: o.id, id: item.id, action: 'agent', note: 'Recalibrate the guard' }, { project: f.project })).status, 200);
@@ -591,8 +592,8 @@ test('a gain smaller than the main metric’s minimum valid improvement does not
   }
 });
 
-test('an execution fix replaces the default without competing with it; the cycle that checks it does not count toward the stall', async (t) => {
-  const f = await fixture(t), o = await f.create({ stall: '1' });
+test('an execution fix replaces the default without competing with it', async (t) => {
+  const f = await fixture(t), o = await f.create();
   await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [11, 23] });
   // The default's configuration sets delta 2 (score = seed + delta).
   const stored = await f.storage.get(ownerKey('owner'));
@@ -610,7 +611,7 @@ test('an execution fix replaces the default without competing with it; the cycle
   // The fix was submitted with an empty config; it keeps the default's.
   assert.deepEqual(d.versions[1].config, { delta: 2 });
   assert.deepEqual(d.upcoming.groups.map((g) => [g.id, g.version, g.control]), [['control', 'v2', true]]);
-  // The cycle that checks the fix is not a cycle without progress (a stall limit of 1 would otherwise pause the objective).
+  // The next cycle runs the fix as the control.
   const second = await execute(f, o);
   assert.ok(second.runs.every((r) => r.metrics.score === r.seed + 2), JSON.stringify(second.runs.map((r) => [r.seed, r.metrics])));
   await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
@@ -800,6 +801,28 @@ test('a run whose full log cannot be written still records its result', async (t
   assert.deepEqual(logs.map(([level, message]) => [level, message]), [['error', 'RSI could not write the full run log']]); assert.match(logs[0][2], /EISDIR/);
 });
 
+test('governance execution is its own member: the version a decision asks for goes to them, not to the preparer', async (t) => {
+  const f = await fixture(t), o = await f.create({ iterate: 'cat-iter', cats: [{ id: 'codex', name: '砚砚', model: 'gpt-5.6-sol' }, { id: 'cat-b5ddoo9l', name: '小狸', model: 'k3.1' }, { id: 'cat-iter', name: '金渐层', model: 'deepseek-v4-pro' }] });
+  await f.initialize(o, losing);
+  const round = await execute(f, o); await report(f, o);
+  assert.equal((await f.http('POST', { op: 'expDecide', objective: o.id, n: round.n, pick: 'direction', directionId: 'next' }, { project: f.project })).status, 200);
+  await until(async () => f.sends.filter((s) => s.wake?.catId === 'cat-iter').length, (n) => n === 1, 'version wake');
+  assert.equal((await f.tool('task', {}, 'codex', o.thread)).status, 403);
+  assert.ok((await f.tool('task', {}, 'cat-iter', o.thread)).version);
+  assert.equal((await f.tool('version', { change: 'Next', config: {} }, 'cat-iter', o.thread)).version, 'v2');
+  assert.deepEqual((await f.read()).experiments[o.id].members.filter((m) => m.role === 'iterate').map((m) => [m.catId, m.name]), [['cat-iter', '金渐层']]);
+});
+
+test('an objective from before governance execution had its own member keeps the preparer doing it', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  const stored = await f.storage.get(ownerKey('owner'));
+  stored.value.experiments[o.id].members = stored.value.experiments[o.id].members.filter((m) => m.role !== 'iterate');
+  assert.equal((await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value)).applied, true);
+  await f.activation().stop(); f.start();
+  await until(f.read, (s) => s.experiments[o.id].members.some((m) => m.role === 'iterate'), 'governance member');
+  assert.deepEqual((await f.read()).experiments[o.id].members.filter((m) => m.role === 'iterate').map((m) => m.catId), ['codex']);
+});
+
 test('a winner waiting for confirmation asks the analysts for nothing: the next cycle is the confirmation', async (t) => {
   const f = await fixture(t), o = await f.create(); Object.assign(f.commands, pythonExecutor);
   await f.initialize(o, plan({ delta: 10, only_selection: true }));
@@ -859,18 +882,18 @@ test('non-zero and killed processes retry once without evidence; NaN and declare
   assert.equal(result.confirmation.group, 'good');
 });
 
-test('target adoption, cycle budget, and stall stop new cycles after conclusions and deliver reasons', async (t) => {
-  for (const condition of ['target', 'budget', 'stall']) await t.test(condition, async (t) => {
-    const f = await fixture(t), o = await f.create(condition === 'target' ? { target: 'Score ≥ 25' } : condition === 'budget' ? { rounds: '1' } : { stall: '2' });
+test('target adoption and the cycle budget stop new cycles after conclusions and deliver reasons', async (t) => {
+  for (const condition of ['target', 'budget']) await t.test(condition, async (t) => {
+    const f = await fixture(t), o = await f.create(condition === 'target' ? { target: 'Score ≥ 25' } : { rounds: '1' });
     Object.assign(f.commands, pythonExecutor);
     await f.initialize(o, condition === 'target' ? plan({ delta: 10 }) : { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [11, 23] });
-    const cycles = condition === 'target' ? 2 : condition === 'budget' ? 1 : 3;
+    const cycles = condition === 'target' ? 2 : 1;
     for (let n = 1; n <= cycles; n++) {
       await execute(f, o); const result = await report(f, o);
       if (n < cycles) { assert.equal(result.stop, null); await decide(f, o); }
     }
     const d = (await f.read()).experiments[o.id];
-    assert.equal(d.objective.state, condition === 'stall' ? 'paused' : 'done');
+    assert.equal(d.objective.state, 'done');
     assert.equal(d.objective.stopReason.kind, condition === 'budget' ? 'maxCycles' : condition);
     assert.ok(f.sends.some((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title === d.objective.stopReason.text)));
     // The last conclusion asks for no direction; its stop card comes after it.
@@ -885,7 +908,7 @@ test('target adoption, cycle budget, and stall stop new cycles after conclusions
     const page = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
     assert.equal(page.next.k, 'done'); assert.ok(page.next.stop.endsWith('-stop'));
     assert.equal((await f.http('POST', { op: 'prep', objective: o.id, id: page.next.stop, action: 'edit' })).act, 'dialog');
-    assert.equal((await f.http('POST', { op: 'stop', objective: o.id, target: 'Score ≥ 1000', stall: '', rounds: '' })).status, 200);
+    assert.equal((await f.http('POST', { op: 'stop', objective: o.id, target: 'Score ≥ 1000', rounds: '' })).status, 200);
     assert.equal((await f.read()).experiments[o.id].objective.state, 'running');
     assert.equal((await execute(f, o)).n, cycles + 1);
   });
@@ -953,8 +976,8 @@ test('async executors without cancel resume a persisted job after restart withou
   assert.equal((await readFile(join(run.directory, 'submits'), 'utf8')).trim(), '1');
 });
 
-test('an environment failure during confirmation retains the candidate, does not count as a stall and asks no analyst', async (t) => {
-  const f = await fixture(t), o = await f.create({ stall: '1' }); Object.assign(f.commands, pythonExecutor);
+test('an environment failure during confirmation retains the candidate and asks no analyst', async (t) => {
+  const f = await fixture(t), o = await f.create(); Object.assign(f.commands, pythonExecutor);
   await f.initialize(o, plan({ delta: 2 }));
   await f.http('POST', { op: 'analystAdd', objective: o.id, catId: 'ana-1', cats: [{ id: 'ana-1', name: '甲', model: 'm1' }] });
   await execute(f, o); await report(f, o); await decide(f, o);
@@ -965,7 +988,7 @@ test('an environment failure during confirmation retains the candidate, does not
   assert.equal(result.confirmation.status, 'insufficient'); assert.equal(result.stop, null);
   // The candidate stays and the next cycle confirms it again: no analyst is asked.
   assert.equal(result.analysts, undefined);
-  let d = (await f.read()).experiments[o.id]; assert.ok(d.candidate); assert.equal(d.objective.progress.stall, 0); assert.equal(d.objective.currentVersion, 'v1');
+  let d = (await f.read()).experiments[o.id]; assert.ok(d.candidate); assert.equal(d.objective.currentVersion, 'v1');
   await writeFile(join(f.project, 'experiment.py'), source);
   await decide(f, o); const third = await execute(f, o); assert.ok(third.plan.seeds.every((s) => s > 25));
   const confirmed = await report(f, o); assert.equal(confirmed.confirmation.status, 'confirmed'); assert.deepEqual(confirmed.analysts, ['ana-1']);

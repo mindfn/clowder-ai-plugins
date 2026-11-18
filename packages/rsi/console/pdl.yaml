@@ -4192,10 +4192,6 @@ views:
         placeholder: accuracy ≥ 0.45
         value: $.target
         arg: target
-      - id: dlg-stall
-        label: t:rsi.newExp.stopStall
-        value: $.stall
-        arg: stall
       - id: dlg-rounds
         label: t:rsi.newExp.stopRounds
         value: $.rounds
@@ -4471,15 +4467,24 @@ views:
                   - "@name"
                   - "@id"
         arg: evaluate
+      - id: dlg-iterate
+        label: t:rsi.newExp.iterate
+        value: codex
+        options:
+          - from: $.cats
+            item:
+              v: "@id"
+              label:
+                t: rsi.memberOption
+                args:
+                  - "@name"
+                  - "@id"
+        arg: iterate
       - id: dlg-target
         label: t:rsi.newExp.stopTarget
         help: t:rsi.newExp.stopTargetHelp
         placeholder: accuracy ≥ 0.45
         arg: target
-      - id: dlg-stall
-        label: t:rsi.newExp.stopStall
-        value: "3"
-        arg: stall
       - id: dlg-rounds
         label: t:rsi.newExp.stopRounds
         value: "20"
@@ -4912,8 +4917,8 @@ requests:
       statement: "@statement"
       prepare: "@prepare"
       evaluate: "@evaluate"
+      iterate: "@iterate"
       target: "@target"
-      stall: "@stall"
       rounds: "@rounds"
       name: "@name"
       cats: "@cats"
@@ -4971,7 +4976,6 @@ requests:
       op: stop
       objective: "@objective"
       target: "@target"
-      stall: "@stall"
       rounds: "@rounds"
   initRedo:
     path: rsi/act

@@ -109,10 +109,8 @@ export function cycleLibrary(state: RsiState, d: Experiment) {
   return state.library[d.objective.projectId].filter((doc: Data) => doc.objectives.includes(d.objective.id) && doc.cycle);
 }
 
-function stopAfterConclusion(state: RsiState, d: Experiment, round: Data, compared: Data, improved: boolean, now: number) {
-  const progress = d.objective.progress ||= { stall: 0 }, stop = d.objective.stop;
-  // The cycle that checks an execution fix tried no improvement, so it does not count as a cycle without progress.
-  if (compared.comparable && round.runs.every((r: Data) => r.error?.kind !== 'env') && !round.plan.afterFix) progress.stall = improved || round.n === 1 ? 0 : progress.stall + 1;
+function stopAfterConclusion(state: RsiState, d: Experiment, round: Data, compared: Data, now: number) {
+  const stop = d.objective.stop;
   const target = stop?.target;
   const match = typeof target === 'string' && STOP_TARGET.exec(target);
   const metric = match && (round.metrics || d.metrics).items.find((m: Data) => m.id === match[1].trim() || m.name === match[1].trim());
@@ -122,12 +120,10 @@ function stopAfterConclusion(state: RsiState, d: Experiment, round: Data, compar
   const reached = eligible && cell && typeof cell.mean === 'number' && match && (['>=', '≥'].includes(match[2]) ? cell.mean >= +match[3] : ['<=', '≤'].includes(match[2]) ? cell.mean <= +match[3] : match[2] === '>' ? cell.mean > +match[3] : cell.mean < +match[3]);
   const reason = reached ? { kind: 'target', text: `达到目标：${target}` }
     : stop?.maxCycles && d.objective.budget.used >= stop.maxCycles ? { kind: 'maxCycles', text: `已完成最多 ${stop.maxCycles} 个周期` }
-    : stop?.stall && progress.stall >= stop.stall ? { kind: 'stall', text: `连续 ${stop.stall} 个周期没进步，已暂停` }
     : round.report.verdict === 'sunset' ? { kind: 'sunset', text: '本周期结论：停止评估' } : null;
   if (!reason) return null;
   d.objective.stopReason = { ...reason, cycle: round.n, at: now };
-  d.objective.state = reason.kind === 'stall' ? 'paused' : 'done';
-  if (reason.kind === 'stall') d.objective.resumeTo = 'running';
+  d.objective.state = 'done';
   round.decision = { pick: 'same', note: reason.text, by: 'RSI', at: now };
   return reason;
 }
@@ -229,7 +225,6 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     confirmation = { status: 'candidate', group: group.id, version: group.version, cycle: round.n };
     d.upcoming = { ...round.plan, groups: [controlGroup(d), { ...group, control: false, confirm: true }], seeds: freshSeeds(d, round.plan.seeds.length) };
   } else d.upcoming = { ...round.plan, seeds: freshSeeds(d, round.plan.seeds.length) };
-  if (d.upcoming) delete d.upcoming.afterFix;
   const member = d.members.find((m) => m.role === 'evaluate')!;
   round.confirmation = confirmation;
   round.report = { verdict: input.verdict, headline: findings.split('\n')[0], summary: findings, matrix: compared.matrix,
@@ -243,7 +238,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   // A conclusion that stops the objective asks for no direction; its stop card follows it.
   // Nor does one that leaves a winner to confirm: the next cycle is the confirmation whatever is picked.
   round.report.outcome = outcome;
-  const stopped = stopAfterConclusion(state, d, round, compared, !!winner, now);
+  const stopped = stopAfterConclusion(state, d, round, compared, now);
   if (analysts.length && !stopped && !d.candidate) {
     // The analysts receive the same report and propose side by side; the conclusion card waits for them.
     round.analysis = { waiting: analysts.map((m) => m.catId), since: now };

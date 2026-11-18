@@ -56,7 +56,7 @@ export function createRuntime(host: RsiHost) {
       const d = state.experiments[entry.objective];
       if (entry.kind === 'createThread') {
         const thread = d.objective.thread || (await host.threads.create({ title: entry.title, projectRef: d.objective.projectPath,
-          participants: [...new Set(d.members.filter((m) => ['prepare', 'evaluate'].includes(m.role)).map((m) => m.catId))] })).id;
+          participants: [...new Set(d.members.filter((m) => ['prepare', 'iterate', 'evaluate'].includes(m.role)).map((m) => m.catId))] })).id;
         if (stopped) return;
         await retain(host.storage, key, (next) => { if (mark(next, entry.id)) bindObjectiveThread(next, entry.objective, thread); });
         await subscribe(thread);
@@ -96,6 +96,8 @@ export function createRuntime(host: RsiHost) {
         // A state grown past the Host's size limit by earlier versions is compacted before anything else is written.
         compact(state);
         for (const d of Object.values(state.experiments).filter((d) => d.objective.projectPath)) {
+          // Objectives created before governance execution had its own member: the preparer keeps doing it.
+          if (!d.members.some((m) => m.role === 'iterate')) d.members.push({ ...d.members.find((m) => m.role === 'prepare')!, role: 'iterate' });
           for (const round of d.rounds.filter((r: Data) => r.state === 'running')) {
             if (d.executor.commands?.get && round.runs.some((r: Data) => r.jobId)) {
               for (const run of round.runs.filter((r: Data) => r.state === 'running')) run.state = 'queued';

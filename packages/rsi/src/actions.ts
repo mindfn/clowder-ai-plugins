@@ -120,7 +120,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       if (!item) return { error: 'Preparation item not found', status: 404 };
       if (body.action === 'edit' && body.note == null && item.id.endsWith('-stop') && d.objective.stop) {
         const s = d.objective.stop;
-        return { ok: true, act: 'dialog', args: { kind: 'rsiStop', objective: d.objective.id, target: s.target || '', stall: s.stall || '', rounds: s.maxCycles || '' } };
+        return { ok: true, act: 'dialog', args: { kind: 'rsiStop', objective: d.objective.id, target: s.target || '', rounds: s.maxCycles || '' } };
       }
       if (body.action === 'edit' && body.note == null) return { ok: true, act: 'dialog', args: { kind: 'rsiPrepEdit', id: item.id, title: item.title, value: item.value } };
       if (body.action === 'agent' || (body.action === 'edit' && body.note)) {
@@ -207,7 +207,6 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       } else if (body.action === 'resume') {
         if (objective.state !== 'paused') return { error: 'Objective is not paused' };
         objective.state = objective.resumeTo; delete objective.resumeTo;
-        if (objective.stopReason?.kind === 'stall') { delete objective.stopReason; objective.progress.stall = 0; }
       } else if (body.action === 'more') {
         if (d) d.objective.budget.rounds = (d.objective.budget.rounds || 0) + 10;
         else if (state.details[id]?.trigger) state.details[id].trigger.evals.max += 10;
@@ -286,7 +285,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         d.versionRequest = { cycle: round.n, decision: round.decision, title: direction?.title || body.note || body.pick, ...(direct ? { direct } : {}),
           ...(direction?.predict ? { prediction: { ...direction.predict, by: direction.by, text: direction.title, expect: direction.expect, direction: direction.id, cycle: round.n } } : {}) };
         d.objective.state = 'running';
-        enqueue(state, d, 'agent', { member: d.members.find((m) => m.role === 'prepare')!.catId, action: 'version',
+        enqueue(state, d, 'agent', { member: d.members.find((m) => m.role === 'iterate')!.catId, action: 'version',
           message: { title: '准备下一个版本', body: `按「${d.versionRequest.title}」出下一个版本。${direct ? '这是执行修复：不和当前版本对比，登记后直接作为默认版本，所以只修执行，不改训练和评测。' : ''}先调 rsi.task，改项目并提交 git 后调 rsi.version。` } });
         syncObjective(state, d);
         return { ok: true };

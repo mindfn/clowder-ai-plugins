@@ -334,9 +334,9 @@ newExp:
   statementHint: 比如：让算术题准确率提高，训练不崩
   prepare: 谁来初始化（读项目、起草）
   evaluate: 谁来评估（判指标）
+  iterate: 谁来执行治理（按你选的方向改项目、出新版本）
   stopTarget: 达到什么就停
-  stopTargetHelp: 写成「指标 比较符 数字」，比如 accuracy ≥ 0.45，指标要和第 4 步量尺的 id 或名称一致。三条可以组合，哪条先到就停；留空 = 不设这条
-  stopStall: 连续几个周期没进步就停
+  stopTargetHelp: 写成「指标 比较符 数字」，比如 accuracy ≥ 0.45，指标要和第 4 步量尺的 id 或名称一致。两条可以组合，哪条先到就停；留空 = 不设这条
   stopRounds: 最多几个周期
   ok: 建好并开始初始化
 cards:
@@ -654,7 +654,7 @@ exp:
     execute: 执行
     evaluate: 评估
     analyze: 分析
-    iterate: 迭代
+    iterate: 治理执行
     metrics: 指标
     _: "{0}"
   policyTitle: 策略

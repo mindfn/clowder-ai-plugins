@@ -40,7 +40,7 @@ export function fixture() {
     assert.equal((await storage.compareAndSet(ownerKey('owner-a'), null, createFixtures(now).state)).applied, true);
   };
   const newObjective = async (body = {}) => {
-    const result = await act({ op: 'new', statement: '训练更快、更稳地收敛', prepare: 'prepare-id', evaluate: 'evaluate-id', target: '平均回报 ≥ 475', stall: '3', rounds: '20', ...body });
+    const result = await act({ op: 'new', statement: '训练更快、更稳地收敛', prepare: 'prepare-id', evaluate: 'evaluate-id', target: '平均回报 ≥ 475', rounds: '20', ...body });
     assert.equal(result.status, 200, JSON.stringify(result.payload));
     return (await read()).objectives[body.project || 'cartpole'].at(-1).id;
   };
