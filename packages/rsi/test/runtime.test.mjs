@@ -17,6 +17,7 @@ const lock=process.cwd()+'/active-run';
 await mkdir(lock);
 try {
  await writeFile(run+'/pid',String(process.pid));
+ if(config.logDir) await mkdir(run+'/rsi.log');
  await appendFile('starts',run+'\\n');
  if(config.slow) await new Promise(r=>setTimeout(r,30000));
  // Attempts are counted outside the run directory: a retry starts in an empty one.
@@ -779,11 +780,24 @@ test('a selection that loses on fresh seeds stays rejected and never replaces th
   proposed.versions.push({id:'v2',parent:'v1',change:'Proposed config',config:{},commit:null,current:false,status:'proposed',at:Date.now()});
   proposed.upcoming.groups[0].version = 'v2';
   assert.equal((await f.storage.compareAndSet(ownerKey('owner'),saved.revision,saved.value)).applied,true);
+  await f.http('POST', { op: 'analystAdd', objective: o.id, catId: 'ana-1', cats: [{ id: 'ana-1', name: '甲', model: 'm1' }] });
   await execute(f, o); assert.equal((await report(f, o)).confirmation.status, 'candidate'); await decide(f, o);
   const round = await execute(f, o); assert.ok(round.plan.seeds.every((s) => s > 23));
-  assert.equal((await report(f, o)).confirmation.status, 'rejected');
+  // The confirmation is over, so the analysts are asked again.
+  const rejected = await report(f, o); assert.equal(rejected.confirmation.status, 'rejected'); assert.deepEqual(rejected.analysts, ['ana-1']);
   const d = (await f.read()).experiments[o.id]; assert.equal(d.objective.currentVersion, 'v1'); assert.equal(d.candidate, undefined);
   assert.equal(d.versions.find((v)=>v.id==='v2').status,'rejected');
+});
+
+test('a run whose full log cannot be written still records its result', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  // The project's command leaves a directory where the plugin writes the full log.
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: { delta: 0, logDir: true }, control: true }], seeds: [11] });
+  const logs = []; f.host.log = (level, message, fields) => logs.push([level, message, fields?.error]);
+  const round = await execute(f, o);
+  assert.deepEqual(round.runs.map((r) => [r.state, r.metrics.score]), [['done', 11]]);
+  // The failure is reported, not swallowed.
+  assert.deepEqual(logs.map(([level, message]) => [level, message]), [['error', 'RSI could not write the full run log']]); assert.match(logs[0][2], /EISDIR/);
 });
 
 test('a winner waiting for confirmation asks the analysts for nothing: the next cycle is the confirmation', async (t) => {
@@ -939,19 +953,22 @@ test('async executors without cancel resume a persisted job after restart withou
   assert.equal((await readFile(join(run.directory, 'submits'), 'utf8')).trim(), '1');
 });
 
-test('an environment failure during confirmation retains the candidate and does not count as a stall', async (t) => {
+test('an environment failure during confirmation retains the candidate, does not count as a stall and asks no analyst', async (t) => {
   const f = await fixture(t), o = await f.create({ stall: '1' }); Object.assign(f.commands, pythonExecutor);
   await f.initialize(o, plan({ delta: 2 }));
+  await f.http('POST', { op: 'analystAdd', objective: o.id, catId: 'ana-1', cats: [{ id: 'ana-1', name: '甲', model: 'm1' }] });
   await execute(f, o); await report(f, o); await decide(f, o);
   const source = await readFile(join(f.project, 'experiment.py'), 'utf8');
   await writeFile(join(f.project, 'experiment.py'), source.replace("if config.get('kill'):", "if int(seed) > 23 and config.get('delta'):\n    sys.exit(9)\nif config.get('kill'):"));
   await execute(f, o);
   const result = await report(f, o, 'insufficient');
   assert.equal(result.confirmation.status, 'insufficient'); assert.equal(result.stop, null);
+  // The candidate stays and the next cycle confirms it again: no analyst is asked.
+  assert.equal(result.analysts, undefined);
   let d = (await f.read()).experiments[o.id]; assert.ok(d.candidate); assert.equal(d.objective.progress.stall, 0); assert.equal(d.objective.currentVersion, 'v1');
   await writeFile(join(f.project, 'experiment.py'), source);
   await decide(f, o); const third = await execute(f, o); assert.ok(third.plan.seeds.every((s) => s > 25));
-  assert.equal((await report(f, o)).confirmation.status, 'confirmed');
+  const confirmed = await report(f, o); assert.equal(confirmed.confirmation.status, 'confirmed'); assert.deepEqual(confirmed.analysts, ['ana-1']);
   d = (await f.read()).experiments[o.id]; assert.equal(d.objective.currentVersion, 'v2');
 });
 

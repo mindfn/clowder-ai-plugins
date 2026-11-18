@@ -200,8 +200,8 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       }
       remote = undefined;
       if (stopped) return;
-      // The full log stays with the run; the state keeps its tail.
-      if (await exists(directory)) await writeFile(join(directory, 'rsi.log'), log);
+      // The full log stays with the run; the state keeps its tail. The run's result is recorded whether or not the file can be written.
+      if (await exists(directory)) await writeFile(join(directory, 'rsi.log'), log).catch((failure) => host.log('error', 'RSI could not write the full run log', { run: run.id, error: String(failure) }));
       await retain(host.storage, key, (state) => {
         const current = state.experiments[d.objective.id];
         if (!current) return;
