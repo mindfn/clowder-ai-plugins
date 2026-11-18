@@ -4512,17 +4512,22 @@ views:
         value: "20"
         arg: rounds
     blocks:
-      - type: label
-        text: t:rsi.newExp.discuss
       - type: toolbar
         left:
-          - type: tags
+          - type: text
+            text: t:rsi.newExp.discuss
+          - type: each
             from: $.home.draftAnalysts
-            remove:
-              act: plugin
-              label: t:rsi.newExp.discussRemove
-              args:
-                request: draftAnalystRemove
+            control:
+              type: chip
+              label: "@name"
+              x:
+                act: plugin
+                icon: close
+                label: t:rsi.newExp.discussRemove
+                args:
+                  request: draftAnalystRemove
+                  id: "@id"
         right:
           - type: button
             icon: plus
