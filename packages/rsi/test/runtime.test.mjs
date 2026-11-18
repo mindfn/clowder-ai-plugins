@@ -818,24 +818,24 @@ test('an objective from before governance execution had its own member keeps the
   // Like the objectives created before alpha.24, it still holds the template's placeholder members, an iterator without a cat among them.
   const stored = await f.storage.get(ownerKey('owner'));
   stored.value.experiments[o.id].members = stored.value.experiments[o.id].members.filter((m) => m.role !== 'iterate').concat({ role: 'iterate', name: '迭代成员', model: 'claude-opus-5-5' }, { role: 'metrics', name: '指标成员', model: 'gpt-5.6' });
+  // A dialog draft from alpha.45–46 held bare ids.
+  stored.value.draft = { analysts: ['cat-old'] };
   assert.equal((await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value)).applied, true);
   await f.activation().stop(); f.start();
   await until(f.read, (s) => s.experiments[o.id].members.every((m) => m.catId), 'placeholders removed');
   assert.deepEqual((await f.read()).experiments[o.id].members.map((m) => [m.role, m.catId]), [['prepare', 'codex'], ['evaluate', 'cat-b5ddoo9l'], ['iterate', 'codex']]);
+  assert.equal((await f.read()).draft, undefined);
 });
 
-test('discussion members are picked several at a time: the dialog keeps its picks as a draft, the objective page toggles them', async (t) => {
+test('discussion members picked in the new-objective dialog are a draft until the objective exists: one per pick, × takes one out', async (t) => {
   const f = await fixture(t);
   const cats = [{ id: 'codex', name: '砚砚', model: 'gpt-5.6-sol' }, { id: 'cat-b5ddoo9l', name: '小狸', model: 'k3.1' }, { id: 'ana-1', name: '甲', model: 'm1' }, { id: 'ana-2', name: '乙', model: 'm2' }];
-  // Picked in the new-objective dialog before the objective exists; a second click takes a member out again.
-  for (const id of ['ana-1', 'ana-2', 'ana-2']) assert.equal((await f.http('POST', { op: 'draftAnalyst', catId: id })).status, 200);
-  assert.deepEqual((await f.read()).draft.analysts, ['ana-1']);
+  for (const id of ['ana-1', 'ana-2']) assert.equal((await f.http('POST', { op: 'draftAnalyst', catId: id, cats })).status, 200);
+  assert.equal((await f.http('POST', { op: 'draftAnalyst', catId: 'ana-2', on: false })).status, 200);
+  assert.deepEqual((await f.read()).draft.analysts, [{ catId: 'ana-1', name: '甲', model: 'm1' }]);
   const o = await f.create({ cats }), created = await f.read();
   assert.deepEqual(created.experiments[o.id].members.filter((m) => m.role === 'analyze').map((m) => [m.catId, m.name, m.model]), [['ana-1', '甲', 'm1']]);
   assert.equal(created.draft, undefined);
-  // On the objective each pick adds or removes one member.
-  for (const id of ['ana-2', 'ana-1']) assert.equal((await f.http('POST', { op: 'analystToggle', objective: o.id, catId: id, cats })).status, 200);
-  assert.deepEqual((await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` })).analysts, ['ana-2']);
 });
 
 test('a winner waiting for confirmation asks the analysts for nothing: the next cycle is the confirmation', async (t) => {

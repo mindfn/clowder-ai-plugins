@@ -70,7 +70,7 @@ function home(): any {
   sorted.forEach(function (o: any): any { if (o.parent) (nodes[o.parent] = nodes[o.parent] || []).push(node(o)); });
   // A demo project (no project directory) says so; choices carry the conversation tag.
   const projects = state.projects.map(function (p: any): any { return Object.assign({}, p, { choice: p.id + S.tag, name: p.projectPath ? p.name : tc('rsi.demoProject', p.name) }); });
-  return { draftAnalysts: state.draft ? state.draft.analysts : [], projects: projects, projectId: S.rsiProject, projectChoice: S.rsiProject + S.tag, listKey: 'list' + S.tag, nodes: nodes, pick: pick, hasObjectives: pr.objectives.length > 0,
+  return { draftAnalysts: state.draft ? state.draft.analysts.map(function (a: any): any { return { id: a.catId, name: a.name }; }) : [], projects: projects, projectId: S.rsiProject, projectChoice: S.rsiProject + S.tag, listKey: 'list' + S.tag, nodes: nodes, pick: pick, hasObjectives: pr.objectives.length > 0,
     exp: !!state.projects.find(function (p: any): any { return p.id === S.rsiProject; })?.exp,
     picked: !!S.rsiPicked && pick.k !== 'none' && (pick.k !== 'obj' || S.rsiPick === 'obj:' + pick.id),
     navs: [{ k: 'caps', selected: pick.k === 'caps' }, { k: 'library', count: rsiDocs().filter(function (doc: any): any { return doc.state === 'pending'; }).length, selected: pick.k === 'library' }, { k: 'cards', count: todo.length, selected: pick.k === 'cards' }]
@@ -243,7 +243,7 @@ function exp(): any {
       runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { durationSeconds: u.start ? Math.round(((u.end || Date.now()) - u.start) / 1000) : null, metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })), groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),
       notAssessed: r.report && RSI_LAYERS.filter(function (l: any): any { return r.report.attribution.assessedLayers.indexOf(l) < 0; }),
       report: r.report && Object.assign({}, r.report, { directions: r.report.directions.map(function (x: any): any { return Object.assign({}, x, { picked: !!r.decision && r.decision.directionId === x.id }); }) }) }),
-    prep: { needYou: needYou, steps: steps }, executor: d.executor, members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, analysts: d.members.filter(function (m: any): any { return m.role === 'analyze' && m.catId; }).map(function (m: any): any { return m.catId; }), policy: policyOf(d, o), metrics: d.metrics,
+    prep: { needYou: needYou, steps: steps }, executor: d.executor, members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, policy: policyOf(d, o), metrics: d.metrics,
     eTree: [{ id: d.metrics.version }], cTree: [{ id: 'C1' }] };
 };
 function record(): any {

@@ -169,17 +169,17 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
     }
     case 'draftAnalyst': {
       if (typeof body.catId !== 'string' || !body.catId) return { error: 'Choose a member' };
-      const picked = state.draft?.analysts || [];
-      state.draft = { analysts: picked.includes(body.catId) ? picked.filter((id) => id !== body.catId) : [...picked, body.catId] };
+      // The new-objective dialog adds one member per pick and removes one per ×.
+      const others = (state.draft?.analysts || []).filter((a) => a.catId !== body.catId);
+      const cat = Array.isArray(body.cats) ? body.cats.find((c: Data) => c.id === body.catId) : null;
+      state.draft = { analysts: body.on === false ? others : [...others, { catId: body.catId, name: cat?.name || body.catId, model: cat?.model || '' }] };
       return { ok: true };
     }
     case 'analystAdd':
-    case 'analystRemove':
-    case 'analystToggle': {
+    case 'analystRemove': {
       if (!d) return { error: 'Experiment not found', status: 404 };
       if (typeof body.catId !== 'string' || !body.catId) return { error: 'Choose a member' };
-      // The discussion picker toggles one member per click.
-      const add = body.op === 'analystToggle' ? !d.members.some((m) => m.role === 'analyze' && m.catId === body.catId) : body.op === 'analystAdd';
+      const add = body.op === 'analystAdd';
       d.members = d.members.filter((m) => !(m.role === 'analyze' && m.catId === body.catId));
       if (add) {
         const cat = Array.isArray(body.cats) ? body.cats.find((c: Data) => c.id === body.catId) : null;

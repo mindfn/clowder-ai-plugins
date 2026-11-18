@@ -204,10 +204,7 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
     Object.assign(d.members.find((m) => m.role === role)!, { catId, name: cat?.name || catId, model: cat?.model || '' });
   }
   // The discussion members picked in the dialog were kept as a draft until the objective existed.
-  if (body.projectPath) for (const catId of state.draft?.analysts || []) {
-    const cat = Array.isArray(body.cats) ? body.cats.find((c: Data) => c.id === catId) : null;
-    d.members.push({ role: 'analyze', catId, name: cat?.name || catId, model: cat?.model || '' });
-  }
+  if (body.projectPath) for (const a of state.draft?.analysts || []) d.members.push({ role: 'analyze', ...a });
   delete state.draft;
   const goal = d.prep.find((p) => p.id.endsWith('-goal'))!;
   Object.assign(goal, { value: body.statement, state: 'confirmed', by: '你', mine: true, at: now });

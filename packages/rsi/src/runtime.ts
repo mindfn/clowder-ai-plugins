@@ -95,6 +95,8 @@ export function createRuntime(host: RsiHost) {
       await retain(host.storage, key, (state) => {
         // A state grown past the Host's size limit by earlier versions is compacted before anything else is written.
         compact(state);
+        // A dialog draft from alpha.45–46 holds bare ids, not members; the dialog starts empty again.
+        if (state.draft?.analysts.some((a) => typeof a === 'string')) delete state.draft;
         for (const d of Object.values(state.experiments).filter((d) => d.objective.projectPath)) {
           // Objectives created before alpha.24 still hold the template's placeholder members (no cat; they never act), an iterator among them.
           d.members = d.members.filter((m) => m.catId);

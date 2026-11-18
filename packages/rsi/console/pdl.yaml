@@ -674,21 +674,23 @@ views:
                     map:
                       analyze: true
                       _: false
-          - type: label
-            text: t:rsi.exp.discuss
+          - type: button
+            icon: plus
+            label: t:rsi.exp.discussAdd
             when: $.exp.projectPath
-          - type: select
-            variant: member
-            multi: true
-            id: rsi-exp-discuss
-            label: t:rsi.exp.discuss
-            when: $.exp.projectPath
-            options: $.members.onOpts
-            value: $.exp.analysts
-            act: plugin
-            args:
-              request: analystToggle
-              cats: $.members.defaultCatOptions
+            items:
+              - from: $.members.defaultCatOptions
+                item:
+                  label:
+                    t: rsi.memberOption
+                    args:
+                      - "@name"
+                      - "@id"
+                  act: plugin
+                  args:
+                    request: analystAdd
+                    v: "@id"
+                    cats: $.members.defaultCatOptions
           - type: label
             text: t:rsi.exp.policyTitle
           - type: kv
@@ -4375,21 +4377,23 @@ views:
                 map:
                   analyze: true
                   _: false
-      - type: label
-        text: t:rsi.exp.discuss
+      - type: button
+        icon: plus
+        label: t:rsi.exp.discussAdd
         when: $.exp.projectPath
-      - type: select
-        variant: member
-        multi: true
-        id: rsi-prep-discuss
-        label: t:rsi.exp.discuss
-        when: $.exp.projectPath
-        options: $.members.onOpts
-        value: $.exp.analysts
-        act: plugin
-        args:
-          request: analystToggle
-          cats: $.members.defaultCatOptions
+        items:
+          - from: $.members.defaultCatOptions
+            item:
+              label:
+                t: rsi.memberOption
+                args:
+                  - "@name"
+                  - "@id"
+              act: plugin
+              args:
+                request: analystAdd
+                v: "@id"
+                cats: $.members.defaultCatOptions
       - type: label
         text: t:rsi.exp.policyTitle
       - type: kv
@@ -4439,6 +4443,7 @@ views:
       directionId: $.directionId
   dlg.rsiNewExp:
     title: t:rsi.new
+    wide: true
     help: t:rsi.newExp.help
     fields:
       - id: dlg-project
@@ -4485,6 +4490,7 @@ views:
         arg: evaluate
       - id: dlg-iterate
         label: t:rsi.newExp.iterate
+        help: t:rsi.newExp.iterateHelp
         value: codex
         options:
           - from: $.cats
@@ -4508,19 +4514,32 @@ views:
     blocks:
       - type: label
         text: t:rsi.newExp.discuss
-      - type: text
-        variant: meta
-        text: t:rsi.newExp.discussHelp
-      - type: select
-        variant: member
-        multi: true
-        id: rsi-new-discuss
-        label: t:rsi.newExp.discuss
-        options: $.members.onOpts
-        value: $.home.draftAnalysts
-        act: plugin
-        args:
-          request: draftAnalyst
+      - type: toolbar
+        left:
+          - type: tags
+            from: $.home.draftAnalysts
+            remove:
+              act: plugin
+              label: t:rsi.newExp.discussRemove
+              args:
+                request: draftAnalystRemove
+        right:
+          - type: button
+            icon: plus
+            label: t:rsi.newExp.discussAdd
+            items:
+              - from: $.members.defaultCatOptions
+                item:
+                  label:
+                    t: rsi.memberOption
+                    args:
+                      - "@name"
+                      - "@id"
+                  act: plugin
+                  args:
+                    request: draftAnalystAdd
+                    v: "@id"
+                    cats: $.members.defaultCatOptions
     sources:
       home: home
       members: host:members
@@ -5023,7 +5042,7 @@ requests:
     body:
       op: analystRemove
       catId: "@catId"
-  analystToggle:
+  analystAdd:
     path: rsi/act
     method: POST
     query:
@@ -5031,10 +5050,21 @@ requests:
       pick: state.pick
       thread: host:currentThread.id
     body:
-      op: analystToggle
-      catId: "@id"
+      op: analystAdd
+      catId: "@v"
       cats: "@cats"
-  draftAnalyst:
+  draftAnalystAdd:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: draftAnalyst
+      catId: "@v"
+      cats: "@cats"
+  draftAnalystRemove:
     path: rsi/act
     method: POST
     query:
@@ -5044,6 +5074,7 @@ requests:
     body:
       op: draftAnalyst
       catId: "@id"
+      on: false
   initRetry:
     path: rsi/act
     method: POST
