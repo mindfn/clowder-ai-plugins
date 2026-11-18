@@ -674,12 +674,20 @@ views:
                     map:
                       analyze: true
                       _: false
-          - type: button
-            label: t:rsi.exp.analystAdd
+          - type: label
+            text: t:rsi.exp.discuss
             when: $.exp.projectPath
-            act: dialog
+          - type: select
+            variant: member
+            multi: true
+            id: rsi-exp-discuss
+            label: t:rsi.exp.discuss
+            when: $.exp.projectPath
+            options: $.members.onOpts
+            value: $.exp.analysts
+            act: plugin
             args:
-              kind: rsiAnalystAdd
+              request: analystToggle
               cats: $.members.defaultCatOptions
           - type: label
             text: t:rsi.exp.policyTitle
@@ -4367,12 +4375,20 @@ views:
                 map:
                   analyze: true
                   _: false
-      - type: button
-        label: t:rsi.exp.analystAdd
+      - type: label
+        text: t:rsi.exp.discuss
         when: $.exp.projectPath
-        act: dialog
+      - type: select
+        variant: member
+        multi: true
+        id: rsi-prep-discuss
+        label: t:rsi.exp.discuss
+        when: $.exp.projectPath
+        options: $.members.onOpts
+        value: $.exp.analysts
+        act: plugin
         args:
-          kind: rsiAnalystAdd
+          request: analystToggle
           cats: $.members.defaultCatOptions
       - type: label
         text: t:rsi.exp.policyTitle
@@ -4489,32 +4505,30 @@ views:
         label: t:rsi.newExp.stopRounds
         value: "20"
         arg: rounds
+    blocks:
+      - type: label
+        text: t:rsi.newExp.discuss
+      - type: text
+        variant: meta
+        text: t:rsi.newExp.discussHelp
+      - type: select
+        variant: member
+        multi: true
+        id: rsi-new-discuss
+        label: t:rsi.newExp.discuss
+        options: $.members.onOpts
+        value: $.home.draftAnalysts
+        act: plugin
+        args:
+          request: draftAnalyst
+    sources:
+      home: home
+      members: host:members
     ok: t:rsi.newExp.ok
     okAct: plugin
     okArgs:
       request: new
       thread: $.thread
-      cats: $.cats
-  dlg.rsiAnalystAdd:
-    title: t:rsi.exp.analystDialog.title
-    help: t:rsi.exp.analystDialog.help
-    fields:
-      - id: dlg-analyst
-        label: t:rsi.exp.analystDialog.member
-        options:
-          - from: $.cats
-            item:
-              v: "@id"
-              label:
-                t: rsi.memberOption
-                args:
-                  - "@name"
-                  - "@id"
-        arg: catId
-    ok: t:rsi.exp.analystDialog.ok
-    okAct: plugin
-    okArgs:
-      request: analystAdd
       cats: $.cats
   dlg.rsiNew:
     title: t:rsi.new
@@ -4999,17 +5013,6 @@ requests:
       thread: host:currentThread.id
     body:
       op: evalAgain
-  analystAdd:
-    path: rsi/act
-    method: POST
-    query:
-      project: state.project
-      pick: state.pick
-      thread: host:currentThread.id
-    body:
-      op: analystAdd
-      catId: "@catId"
-      cats: "@cats"
   analystRemove:
     path: rsi/act
     method: POST
@@ -5020,6 +5023,27 @@ requests:
     body:
       op: analystRemove
       catId: "@catId"
+  analystToggle:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: analystToggle
+      catId: "@id"
+      cats: "@cats"
+  draftAnalyst:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: draftAnalyst
+      catId: "@id"
   initRetry:
     path: rsi/act
     method: POST

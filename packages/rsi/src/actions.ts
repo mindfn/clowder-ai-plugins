@@ -167,12 +167,21 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       kick(state, id, now);
       return { ok: true };
     }
+    case 'draftAnalyst': {
+      if (typeof body.catId !== 'string' || !body.catId) return { error: 'Choose a member' };
+      const picked = state.draft?.analysts || [];
+      state.draft = { analysts: picked.includes(body.catId) ? picked.filter((id) => id !== body.catId) : [...picked, body.catId] };
+      return { ok: true };
+    }
     case 'analystAdd':
-    case 'analystRemove': {
+    case 'analystRemove':
+    case 'analystToggle': {
       if (!d) return { error: 'Experiment not found', status: 404 };
       if (typeof body.catId !== 'string' || !body.catId) return { error: 'Choose a member' };
+      // The discussion picker toggles one member per click.
+      const add = body.op === 'analystToggle' ? !d.members.some((m) => m.role === 'analyze' && m.catId === body.catId) : body.op === 'analystAdd';
       d.members = d.members.filter((m) => !(m.role === 'analyze' && m.catId === body.catId));
-      if (body.op === 'analystAdd') {
+      if (add) {
         const cat = Array.isArray(body.cats) ? body.cats.find((c: Data) => c.id === body.catId) : null;
         d.members.push({ role: 'analyze', catId: body.catId, name: cat?.name || body.catId, model: cat?.model || '' });
       }

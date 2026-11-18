@@ -334,6 +334,8 @@ newExp:
   statementHint: e.g. raise arithmetic accuracy without the training collapsing
   prepare: Who initializes (reviews and drafts)
   evaluate: Who evaluates (judges metrics)
+  discuss: Who discusses directions (several allowed)
+  discussHelp: After each cycle every analyst proposes directions, signed side by side for you to choose; when their first directions change the same thing, they agree.
   iterate: Who carries out decisions (changes the project, makes the next version)
   stopTarget: Stop when this target is reached
   stopTargetHelp: Write “metric comparison number”, e.g. accuracy ≥ 0.45; the metric must match a step-4 metric id or name. Combine these conditions; stop at the first one reached. Leave a condition blank to omit it.
@@ -598,13 +600,8 @@ exp:
   firstOf: ; confirm step {0} first; {1} later steps depend on it
   doingOf: "{0} is working on step {1}"
   doingAlso: ", {0} is working on step {1}"
-  analystDialog:
-    title: Add an analyst
-    member: Member
-    help: After each cycle every analyst proposes directions, signed side by side for you to choose; when their first directions change the same thing, they agree.
-    ok: Add
   continueAfterDone: Change when to stop and continue
-  analystAdd: Add an analyst
+  discuss: Direction discussion (several)
   analystRemove: Remove analyst
   wakeAgain: Wake again
   waitOnOf: Waiting for step {0} to be submitted

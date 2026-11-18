@@ -61,6 +61,8 @@ export interface OutboxEntry extends Data {
 
 export interface RsiState {
   now: number;
+  // Discussion members picked in the new-objective dialog before the objective exists.
+  draft?: { analysts: string[] };
   projects: Data[];
   analysis: Record<string, Data>;
   groups: Record<string, Data[]>;

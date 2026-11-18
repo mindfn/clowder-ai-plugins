@@ -334,6 +334,8 @@ newExp:
   statementHint: 比如：让算术题准确率提高，训练不崩
   prepare: 谁来初始化（读项目、起草）
   evaluate: 谁来评估（判指标）
+  discuss: 谁来讨论方案（可多选）
+  discussHelp: 分析成员在每个周期结论出来后各自给方向，署名并列交给你选；几个人的第一方向改的是同一个对象时，算意见一致。
   iterate: 谁来执行治理（按你选的方向改项目、出新版本）
   stopTarget: 达到什么就停
   stopTargetHelp: 写成「指标 比较符 数字」，比如 accuracy ≥ 0.45，指标要和第 4 步量尺的 id 或名称一致。两条可以组合，哪条先到就停；留空 = 不设这条
@@ -598,13 +600,8 @@ exp:
   firstOf: ；可以先确认第 {0} 步，后面 {1} 步依赖它
   doingOf: "{0} 在做第 {1} 步"
   doingAlso: "，{0} 在做第 {1} 步"
-  analystDialog:
-    title: 添加分析成员
-    member: 成员
-    help: 分析成员在每个周期结论出来后各自给方向，署名并列交给你选；几个人的第一方向改的是同一个对象时，算意见一致。
-    ok: 添加
   continueAfterDone: 改何时停，接着迭代
-  analystAdd: 添加分析成员
+  discuss: 方案讨论（可多选）
   analystRemove: 移出分析成员
   wakeAgain: 重新叫醒
   waitOnOf: 等第 {0} 步提交
