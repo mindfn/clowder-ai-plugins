@@ -16,6 +16,20 @@ export function message(state: RsiState, d: Experiment, now: number, title: stri
   d.messages.push(entry.message);
 }
 
+// A member as the member dialogs pass its cat (the Host's member rows): name, model and handle, the first mention pattern
+// (e.g. @gemini) people type to mention it; a cat without one leaves no handle.
+export function setMember(m: Data, catId: string, cats: unknown) {
+  const cat = Array.isArray(cats) ? cats.find((c: Data) => c.id === catId) : null;
+  delete m.handle;
+  return Object.assign(m, { catId, name: cat?.name || catId, model: cat?.model || '' }, cat?.handle ? { handle: cat.handle } : {});
+}
+// A write that passes the rows refreshes every member found in them, not only the one it changes.
+export function refreshMembers(members: Data[], cats: unknown) {
+  for (const m of members) if (Array.isArray(cats) && cats.some((c: Data) => c.id === m.catId)) setMember(m, m.catId, cats);
+}
+// A message names a member to act like any routing message: its handle at a line start; without one its plain name, no @.
+export const mention = (m: Data) => m.handle || m.name;
+
 export function syncObjective(state: RsiState, d: Experiment) {
   const o = summaryOf(state, d.objective.id)!;
   o.state = d.objective.state;
@@ -68,7 +82,7 @@ export function rsiExpKick(experiment: Experiment, now: number): { experiment: E
     d.exec[plan.k] = { id, state: 'started', by: member.catId, base, ...rewrite };
     if (s.exec) d.executor.state = 'generating';
     const m = { id, at: now, kind: 'ask', round: 0, title: `初始化第 ${d.plan.indexOf(plan) + 1} 步${old ? '（按新版本重做）' : ''}`,
-      body: `@${member.name} ${rewrite?.note || s.ask}` + (plan.deps.length ? '\n\n依据：' + plan.deps.map((k) => `第 ${d.plan.findIndex((p) => p.k === k) + 1} 步 v${base[k]}`).join('、') : ''), ask: '', ifIgnored: '' };
+      body: (plan.deps.length ? '依据：' + plan.deps.map((k) => `第 ${d.plan.findIndex((p) => p.k === k) + 1} 步 v${base[k]}`).join('、') + '\n\n' : '') + `${mention(member)} ${rewrite?.note || s.ask}`, ask: '', ifIgnored: '' };
     d.messages.push(m);
     outbox.push({ id, kind: 'agent', objective: d.objective.id, thread: d.objective.thread || null, member: member.catId, section: plan.k, executionId: id, base, message: m });
     if (rewrite) delete d.rewrites[plan.k];
@@ -216,11 +230,11 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   for (const role of ['prepare', 'iterate', 'evaluate']) {
     // Governance execution (the version a decision asks for) is its own member; without a choice the preparer does it.
     const catId = role === 'iterate' ? body.iterate || body.prepare : body[role];
-    const cat = Array.isArray(body.cats) ? body.cats.find((c: Data) => c.id === catId) : null;
-    Object.assign(d.members.find((m) => m.role === role)!, { catId, name: cat?.name || catId, model: cat?.model || '' });
+    setMember(d.members.find((m) => m.role === role)!, catId, body.cats);
   }
   // The discussion members picked in the dialog were kept as a draft until the objective existed.
   if (body.projectPath) for (const a of state.draft?.analysts || []) d.members.push({ role: 'analyze', ...a });
+  refreshMembers(d.members, body.cats);
   delete state.draft;
   const goal = d.prep.find((p) => p.id.endsWith('-goal'))!;
   Object.assign(goal, { value: body.statement, state: 'confirmed', by: '你', mine: true, at: now });
@@ -234,7 +248,8 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   state.experiments[id] = d;
   state.objectives[project].push({ id, name: body.statement, parent: null, state: 'preparing', mode: 'exp', trigger: '', running: null, cycle: null, prediction: null, locked: 0 });
   enqueue(state, d, 'createThread', { project, title: `RSI · ${body.statement}` });
-  message(state, d, now, `新评估项：${body.statement}`, `何时停：${stop}。\n\n@${d.members.find((m) => m.role === 'prepare')!.name} 负责准备；@${d.members.find((m) => m.role === 'evaluate')!.name} 负责评估；@${d.members.find((m) => m.role === 'iterate')!.name} 负责治理执行（按你选的方向出新版本）。初始化七步，按依赖往下做。`, 'goal');
+  const who = (role: string) => mention(d.members.find((m) => m.role === role)!);
+  message(state, d, now, `新评估项：${body.statement}`, `何时停：${stop}。\n\n${who('prepare')} 负责准备\n${who('evaluate')} 负责评估\n${who('iterate')} 负责治理执行（按你选的方向出新版本）\n\n初始化七步，按依赖往下做。`, 'goal');
   kick(state, id, now);
   return state.experiments[id].objective;
 }

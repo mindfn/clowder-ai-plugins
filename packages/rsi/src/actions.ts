@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { askEvaluation, controlGroup, finishAnalysis, requestVersion, runCycle } from './cycles.js';
 import { windowMinutes } from './schedule.js';
 import { summaryOf, objectiveData } from './data.js';
-import { enqueue, kick, message, rsiExpNew, rsiExpReady, rsiExpStaleFrom, stopOf, stopText, syncObjective, repairCount, repairText, REPAIR_DEFAULT, prepSettled, AUTO, autoKinds, autoKey, autoText } from './init.js';
+import { enqueue, kick, mention, message, refreshMembers, rsiExpNew, rsiExpReady, rsiExpStaleFrom, setMember, stopOf, stopText, syncObjective, repairCount, repairText, REPAIR_DEFAULT, prepSettled, AUTO, autoKinds, autoKey, autoText } from './init.js';
 import type { Data, Experiment, RsiState, Section } from './types.js';
 
 function selected(state: RsiState, body: Data, query: Data) {
@@ -52,15 +52,14 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       // The single-member roles can change at any time; work waiting for a role goes to its new member.
       if (!d) return { error: 'Experiment not found', status: 404 };
       const roles = (['prepare', 'evaluate', 'iterate'] as const).filter((role) => typeof body[role] === 'string' && body[role] && body[role] !== d.members.find((m) => m.role === role)?.catId);
+      refreshMembers(d.members, body.cats);
       for (const role of roles) {
-        const cat = Array.isArray(body.cats) ? body.cats.find((c: Data) => c.id === body[role]) : null;
-        Object.assign(d.members.find((m) => m.role === role)!, { catId: body[role], name: cat?.name || body[role], model: cat?.model || '' });
-        const member = d.members.find((m) => m.role === role)!;
+        const member = setMember(d.members.find((m) => m.role === role)!, body[role], body.cats);
         message(state, d, now, `你把${{ prepare: '初始化', evaluate: '评估', iterate: '治理执行' }[role]}成员换成了 ${member.name}`, '之后这个角色的活都派给 TA。', 'members');
         const waiting = role === 'evaluate' ? d.rounds.find((r: Data) => r.state === 'evaluating') : null;
         if (waiting) askEvaluation(state, d, waiting);
         else if (role === 'iterate' && d.versionRequest || role === 'prepare' && !prepSettled(d))
-          enqueue(state, d, 'agent', { member: member.catId!, action: role === 'iterate' ? 'version' : 'prepare', message: { title: '接手', body: '这个角色换成了你：先调 rsi.task 看轮到你的事。' } });
+          enqueue(state, d, 'agent', { member: member.catId, action: role === 'iterate' ? 'version' : 'prepare', message: { title: '接手', body: `${mention(member)} 这个角色换成了你：先调 rsi.task 看轮到你的事。` } });
       }
       syncObjective(state, d);
       return { ok: true };
@@ -218,8 +217,8 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       if (typeof body.catId !== 'string' || !body.catId) return { error: 'Choose a member' };
       // The new-objective dialog adds one member per pick and removes one per ×.
       const others = (state.draft?.analysts || []).filter((a) => a.catId !== body.catId);
-      const cat = Array.isArray(body.cats) ? body.cats.find((c: Data) => c.id === body.catId) : null;
-      state.draft = { analysts: body.on === false ? others : [...others, { catId: body.catId, name: cat?.name || body.catId, model: cat?.model || '' }] };
+      refreshMembers(others, body.cats);
+      state.draft = { analysts: body.on === false ? others : [...others, setMember({}, body.catId, body.cats)] };
       return { ok: true };
     }
     case 'analystAdd':
@@ -228,10 +227,8 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       if (typeof body.catId !== 'string' || !body.catId) return { error: 'Choose a member' };
       const add = body.op === 'analystAdd';
       d.members = d.members.filter((m) => !(m.role === 'analyze' && m.catId === body.catId));
-      if (add) {
-        const cat = Array.isArray(body.cats) ? body.cats.find((c: Data) => c.id === body.catId) : null;
-        d.members.push({ role: 'analyze', catId: body.catId, name: cat?.name || body.catId, model: cat?.model || '' });
-      }
+      refreshMembers(d.members, body.cats);
+      if (add) d.members.push(setMember({ role: 'analyze' }, body.catId, body.cats));
       // A removed analyst no longer holds up a conclusion.
       else for (const r of d.rounds) if (r.analysis?.waiting.includes(body.catId)) {
         r.analysis.waiting = r.analysis.waiting.filter((id: string) => id !== body.catId);

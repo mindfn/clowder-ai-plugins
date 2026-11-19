@@ -33,7 +33,7 @@ views:
                   kind: rsiNewExp
                   thread: $.currentThread.id
                   projects: $.home.projects
-                  cats: $.members.defaultCatOptions
+                  cats: $.members.rows
                 disabled: $.pending
                 when: $.home.exp
               - type: button
@@ -111,7 +111,7 @@ views:
                           kind: rsiNewExp
                           thread: $.currentThread.id
                           projects: $.home.projects
-                          cats: $.members.defaultCatOptions
+                          cats: $.members.rows
                         disabled: $.pending
                         when: "@exp"
                       - type: button
@@ -229,7 +229,7 @@ views:
                       kind: rsiNewExp
                       thread: $.currentThread.id
                       projects: $.home.projects
-                      cats: $.members.defaultCatOptions
+                      cats: $.members.rows
                     disabled: $.pending
                     when: "@exp"
                   - type: button
@@ -672,7 +672,7 @@ views:
               prepare: $.exp.memberIds.prepare
               evaluate: $.exp.memberIds.evaluate
               iterate: $.exp.memberIds.iterate
-              cats: $.members.defaultCatOptions
+              cats: $.members.rows
           - type: toolbar
             when: $.exp.projectPath
             left:
@@ -695,18 +695,19 @@ views:
                 iconOnly: true
                 label: t:rsi.exp.discussAdd
                 items:
-                - from: $.members.defaultCatOptions
+                - from: $.members.rows
                   item:
                     label:
                       t: rsi.memberOption
                       args:
                         - "@name"
-                        - "@id"
+                        - "@handle"
                     act: plugin
                     args:
                       request: analystAdd
                       v: "@id"
-                      cats: $.members.defaultCatOptions
+                      cats: $.members.rows
+                    when: "@on"
           - type: label
             text: t:rsi.exp.policyTitle
           - type: kv
@@ -3163,7 +3164,7 @@ views:
                   kind: rsiNewExp
                   thread: $.currentThread.id
                   projects: $.home.projects
-                  cats: $.members.defaultCatOptions
+                  cats: $.members.rows
                 disabled: $.pending
                 when: "@exp"
               - type: button
@@ -3246,7 +3247,7 @@ views:
                   kind: rsiNewExp
                   thread: $.currentThread.id
                   projects: $.home.projects
-                  cats: $.members.defaultCatOptions
+                  cats: $.members.rows
                 disabled: $.pending
                 when: "@exp"
               - type: button
@@ -4241,7 +4242,8 @@ views:
                 t: rsi.memberOption
                 args:
                   - "@name"
-                  - "@id"
+                  - "@handle"
+              when: "@on"
         arg: prepare
       - id: dlg-evaluate
         label: t:rsi.newExp.evaluate
@@ -4254,7 +4256,8 @@ views:
                 t: rsi.memberOption
                 args:
                   - "@name"
-                  - "@id"
+                  - "@handle"
+              when: "@on"
         arg: evaluate
       - id: dlg-iterate
         label: t:rsi.newExp.iterate
@@ -4268,7 +4271,8 @@ views:
                 t: rsi.memberOption
                 args:
                   - "@name"
-                  - "@id"
+                  - "@handle"
+              when: "@on"
         arg: iterate
     ok: t:rsi.common.save
     okAct: plugin
@@ -4473,7 +4477,7 @@ views:
           prepare: $.exp.memberIds.prepare
           evaluate: $.exp.memberIds.evaluate
           iterate: $.exp.memberIds.iterate
-          cats: $.members.defaultCatOptions
+          cats: $.members.rows
       - type: toolbar
         when: $.exp.projectPath
         left:
@@ -4496,18 +4500,19 @@ views:
             iconOnly: true
             label: t:rsi.exp.discussAdd
             items:
-            - from: $.members.defaultCatOptions
+            - from: $.members.rows
               item:
                 label:
                   t: rsi.memberOption
                   args:
                     - "@name"
-                    - "@id"
+                    - "@handle"
                 act: plugin
                 args:
                   request: analystAdd
                   v: "@id"
-                  cats: $.members.defaultCatOptions
+                  cats: $.members.rows
+                when: "@on"
       - type: label
         text: t:rsi.exp.policyTitle
       - type: kv
@@ -4587,7 +4592,8 @@ views:
                 t: rsi.memberOption
                 args:
                   - "@name"
-                  - "@id"
+                  - "@handle"
+              when: "@on"
         arg: prepare
       - id: dlg-evaluate
         label: t:rsi.newExp.evaluate
@@ -4600,7 +4606,8 @@ views:
                 t: rsi.memberOption
                 args:
                   - "@name"
-                  - "@id"
+                  - "@handle"
+              when: "@on"
         arg: evaluate
       - id: dlg-iterate
         label: t:rsi.newExp.iterate
@@ -4614,7 +4621,8 @@ views:
                 t: rsi.memberOption
                 args:
                   - "@name"
-                  - "@id"
+                  - "@handle"
+              when: "@on"
         arg: iterate
       - id: dlg-target
         label: t:rsi.newExp.stopTarget
@@ -4660,18 +4668,19 @@ views:
             iconOnly: true
             label: t:rsi.newExp.discussAdd
             items:
-              - from: $.members.defaultCatOptions
+              - from: $.members.rows
                 item:
                   label:
                     t: rsi.memberOption
                     args:
                       - "@name"
-                      - "@id"
+                      - "@handle"
                   act: plugin
                   args:
                     request: draftAnalystAdd
                     v: "@id"
-                    cats: $.members.defaultCatOptions
+                    cats: $.members.rows
+                  when: "@on"
     sources:
       home: home
       members: host:members

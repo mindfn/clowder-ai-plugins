@@ -101,7 +101,7 @@ contributions:
     id: rsi.version
     name: rsi.version
     description: >-
-      人工在页面选完周期方向后，或周期运行失败、插件派来修复时（rsi.task 的 version.repair 写明失败的组、种子、错误和日志），仅治理执行成员可用。修复时只修让它跑不起来的问题，修好提交后照常交 {change,commit,config}，插件用修好的版本重跑这一周期的计划；修不了就交 {cannot:"原因"}，交给评估成员下结论。先 rsi.task 读 version 要求。改代码并提交 git 后交 {change,commit,config}；只改配置可省略 commit。
+      人工在页面选完周期方向后，或周期运行失败、插件派来修复时（rsi.task 的 version.repair 写明失败的组、种子、错误和日志），仅治理执行成员可用。修复时只修让它跑不起来的问题，修好提交后照常交 {change,commit,config}，插件用修好的版本重跑这一周期的计划；修不了就交 {cannot:"原因"}，交给评估成员下结论。先 rsi.task 读 version 要求。改代码并提交 git 后交 {change,commit,config}；只改配置可省略 commit。在单独的 git worktree 里、自己的分支上改并在那里提交；不要在项目目录本身改文件、提交、切分支、stash 或 reset（用户的工作区里可能有还没提交的改动）。
       例 {change:"降低学习率",commit:"a1b2c3d",config:{lr:0.001,batch:8}}。若提供 commit，必须是 7–40 位 git 十六进制提交号；config 是 JSON 对象或项目内 JSON 文件路径。
       插件记录 v2/v3…，默认版本保持不变。下一周期带当前默认对照；胜出只成为候选，下周期同轮对照、换新种子确认，保持改善且护栏通过后才采用。代码 worktree 在评估项完成/退役时移除。
     inputSchema:

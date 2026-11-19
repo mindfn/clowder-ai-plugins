@@ -1,4 +1,4 @@
-import { AUTO, enqueue, message, prepSettled, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
+import { AUTO, enqueue, mention, message, prepSettled, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
 import { insideWindow, windowEnd, windowStart } from './schedule.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, RsiState } from './types.js';
@@ -78,6 +78,8 @@ export function finishCycle(state: RsiState, d: Experiment, round: Data, now: nu
 
 // A repair stops at the night's allowance, after the same failure three times in a row, or when the member takes longer than REPAIR_WAIT.
 export const REPAIR_SAME = 3, REPAIR_WAIT = 60 * 60_000;
+// The project directory is the user's working tree and may hold work not yet committed: versions are made beside it.
+const WORKTREE = '在单独的 git worktree 里、自己的分支上改并在那里提交；不要在项目目录本身改文件、提交、切分支、stash 或 reset（用户的工作区里可能有还没提交的改动）。';
 const signatureOf = (run: Data) => String(run.error?.analysis || run.error?.raw || '').split('\n').map((l) => l.trim()).filter(Boolean).pop()?.replace(/\d+/g, '#').slice(0, 200) || '未知错误';
 
 function requestRepair(state: RsiState, d: Experiment, round: Data, now: number) {
@@ -91,7 +93,7 @@ function requestRepair(state: RsiState, d: Experiment, round: Data, now: number)
   d.versionRequest = { cycle: round.n, title: `修第 ${round.n} 周期的运行失败`, direct: true, since: now, decision: null,
     repair: { signature, failures: failed.slice(0, 5).map((r: Data) => ({ run: r.id, group: r.group, seed: r.seed, step: r.error?.step, error: r.error?.raw, analysis: r.error?.analysis || null, log: String(r.log || '').slice(-1500) })) } };
   enqueue(state, d, 'agent', { member: member.catId, action: 'version', message: { title: `第 ${round.n} 周期运行失败，请修`,
-    body: `${failed.length} 次运行失败：${signature}。这是执行修复：只修让它跑不起来的问题，不改训练和评测。先调 rsi.task 看失败详情；修好提交 git 后调 rsi.version，插件用修好的版本重跑这一周期的计划。修不了就调 rsi.version({cannot:"原因"})，交给评估成员下结论。本晚还能自动修 ${left} 次。` } });
+    body: `${mention(member)} ${failed.length} 次运行失败：${signature}。这是执行修复：只修让它跑不起来的问题，不改训练和评测。先调 rsi.task 看失败详情；修好提交 git 后调 rsi.version，插件用修好的版本重跑这一周期的计划。${WORKTREE}修不了就调 rsi.version({cannot:"原因"})，交给评估成员下结论。本晚还能自动修 ${left} 次。` } });
   message(state, d, now, `第 ${round.n} 周期运行失败，交给 ${member.name} 修`, `错误：${signature}\n\n修好后用修好的版本重跑这一周期的计划；本晚还能自动修 ${left} 次。`, 'plan');
   return true;
 }
@@ -109,8 +111,9 @@ export function abandonRepair(state: RsiState, d: Experiment, reason: string, no
 
 // Wakes the evaluate member for a cycle that waits for its conclusion (after the runs, and again from the page when that turn ended without one).
 export function askEvaluation(state: RsiState, d: Experiment, round: Data) {
-  enqueue(state, d, 'agent', { member: d.members.find((m) => m.role === 'evaluate')!.catId, cycle: round.n,
-    message: { title: `第 ${round.n} 周期跑完`, body: `第 ${round.n} 周期跑完，调 rsi.task 看同周期对照、各组均值和逐种子结果，再调 rsi.conclude。${EXPECT_HINT}` } });
+  const member = d.members.find((m) => m.role === 'evaluate')!;
+  enqueue(state, d, 'agent', { member: member.catId, cycle: round.n,
+    message: { title: `第 ${round.n} 周期跑完`, body: `${mention(member)} 第 ${round.n} 周期跑完，调 rsi.task 看同周期对照、各组均值和逐种子结果，再调 rsi.conclude。${EXPECT_HINT}` } });
 }
 
 export function matrix(d: Experiment, round: Data) {
@@ -285,7 +288,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     // The analysts receive the same report and propose side by side; the conclusion card waits for them.
     round.analysis = { waiting: analysts.map((m) => m.catId), since: now };
     for (const m of analysts) enqueue(state, d, 'agent', { member: m.catId, cycle: round.n, action: 'direction', message: { title: `第 ${round.n} 周期：请给方向`,
-      body: `评估成员的结论是 ${input.verdict}：${round.report.headline}。调 rsi.task 看同周期对照、各组结果和之前的周期，再调 rsi.propose 交你的方向；几个分析成员的方向会署名并列，交给用户选。${EXPECT_HINT}` } });
+      body: `${mention(m)} 评估成员的结论是 ${input.verdict}：${round.report.headline}。调 rsi.task 看同周期对照、各组结果和之前的周期，再调 rsi.propose 交你的方向；几个分析成员的方向会署名并列，交给用户选。${EXPECT_HINT}` } });
   } else conclusionCard(state, d, round, now, stopped);
   state.library[d.objective.projectId].push({ id: `${d.objective.id}-cycle-${round.n}`, kind: 'feedback', title: `第 ${round.n} 周期：${round.report.headline}`, body: `${round.plan.groups.filter((g: Data) => !g.control).map((g: Data) => `${g.label} (${g.version}) ${JSON.stringify(g.vars)}`).join('\n') || '当前版本基线'}\n\n${findings}${outcome}`,
     objectives: [d.objective.id], cycle: round.n, tried: round.plan.groups.filter((g: Data) => !g.control), result: { verdict: input.verdict, comparison: compared, confirmation }, sources: [{ objective: d.objective.id, cycle: round.n }], state: 'confirmed', by: member.catId, at: now });
@@ -336,8 +339,9 @@ export function requestVersion(state: RsiState, d: Experiment, round: Data) {
   d.versionRequest = { cycle: round.n, decision: round.decision, title: direction?.title || round.decision.note || round.decision.pick, ...(direct ? { direct } : {}),
     ...(direction?.predict ? { prediction: { ...direction.predict, by: direction.by, text: direction.title, expect: direction.expect, direction: direction.id, cycle: round.n } } : {}) };
   d.objective.state = 'running';
-  enqueue(state, d, 'agent', { member: d.members.find((m) => m.role === 'iterate')!.catId, action: 'version',
-    message: { title: '准备下一个版本', body: `按「${d.versionRequest.title}」出下一个版本。${direct ? '这是执行修复：不和当前版本对比，登记后直接作为默认版本，所以只修执行，不改训练和评测。' : ''}先调 rsi.task，改项目并提交 git 后调 rsi.version。` } });
+  const member = d.members.find((m) => m.role === 'iterate')!;
+  enqueue(state, d, 'agent', { member: member.catId, action: 'version',
+    message: { title: '准备下一个版本', body: `${mention(member)} 按「${d.versionRequest.title}」出下一个版本。${direct ? '这是执行修复：不和当前版本对比，登记后直接作为默认版本，所以只修执行，不改训练和评测。' : ''}先调 rsi.task，改项目并提交 git 后调 rsi.version。${WORKTREE}` } });
   syncObjective(state, d);
 }
 

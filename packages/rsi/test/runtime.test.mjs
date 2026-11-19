@@ -78,7 +78,7 @@ async function fixture(t) {
   // The suite runs at any hour: the night decides nothing by itself unless a test asks for it.
   const create = async (extra = {}) => {
     const result = await http('POST', { op: 'new', project: '', thread: 'source', statement: 'Improve a measured score', prepare: 'codex', evaluate: 'cat-b5ddoo9l',
-      cats: [{ id: 'codex', name: '砚砚', model: 'gpt-5.6-sol' }, { id: 'cat-b5ddoo9l', name: '小狸', model: 'k3.1' }], auto: 'none', ...extra });
+      cats: [{ id: 'codex', name: '砚砚', model: 'gpt-5.6-sol', handle: '@codex', on: true }, { id: 'cat-b5ddoo9l', name: '小狸', model: 'k3.1', handle: '@kimi', on: true }], auto: 'none', ...extra });
     assert.equal(result.status, 200, JSON.stringify(result));
     assert.deepEqual(result.acts?.map((a) => a.act), ['thread', 'open'], JSON.stringify(result));
     const state = await read(), d = Object.values(state.experiments).find((d) => d.objective.projectPath === project);
@@ -140,6 +140,34 @@ test('host projects, current-thread dialog selection, real threads and exact wak
   assert.equal((await f.http('POST', { op: 'new', project: '', thread: 'missing', statement: 'x', prepare: 'a', evaluate: 'b' })).status, 400);
   assert.equal((await f.http('POST', { op: 'new', project: 'cartpole', projectPath: '/ignored-owner-input', statement: 'Demo', prepare: 'a', evaluate: 'b' })).status, 200);
   assert.equal(f.sends.length, 3); assert.equal(f.threads.length, 2);
+});
+
+const textOf = (send) => send.payload.elements[0].payload.text;
+const creationCard = (f) => textOf(f.sends.find((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title.startsWith('新评估项'))));
+// The first word of a wake's last line: who it hands the work to.
+const handedTo = (f) => f.sends.filter((s) => s.wake).map((s) => textOf(s).split('\n').at(-1).split(' ')[0]);
+
+test('messages mention a member by its handle at a line start, like any routing message, never by @nickname', async (t) => {
+  const f = await fixture(t); await f.create();
+  const card = creationCard(f).split('\n');
+  for (const line of ['@codex 负责准备', '@kimi 负责评估', '@codex 负责治理执行（按你选的方向出新版本）']) assert.ok(card.includes(line), card.join('\n'));
+  assert.doesNotMatch(card.join('\n'), /@砚砚|@小狸/);
+  assert.deepEqual(handedTo(f), ['@kimi', '@codex']);
+});
+
+test('a member without a handle is named without @; saving the members with the same roles fills the handles in', async (t) => {
+  const f = await fixture(t), o = await f.create({ cats: [{ id: 'codex', name: '砚砚', model: 'gpt-5.6-sol', on: true }, { id: 'cat-b5ddoo9l', name: '小狸', model: 'k3.1', on: true }] });
+  assert.ok(creationCard(f).split('\n').includes('砚砚 负责准备') && !creationCard(f).includes('@'), creationCard(f));
+  assert.deepEqual(handedTo(f), ['小狸', '砚砚']);
+  assert.ok((await f.read()).experiments[o.id].members.every((m) => !('handle' in m)));
+  const sent = f.sends.length;
+  assert.equal((await f.http('POST', { op: 'members', objective: o.id, prepare: 'codex', evaluate: 'cat-b5ddoo9l', iterate: 'codex',
+    cats: [{ id: 'codex', name: '砚砚', model: 'gpt-5.6-sol', handle: '@codex', on: true }, { id: 'cat-b5ddoo9l', name: '小狸', model: 'k3.1', handle: '@kimi', on: true }] })).status, 200);
+  assert.deepEqual((await f.read()).experiments[o.id].members.map((m) => [m.role, m.handle]), [['prepare', '@codex'], ['evaluate', '@kimi'], ['iterate', '@codex']]);
+  // Nobody changed roles, so nothing is announced; the next step handed on mentions the handle.
+  assert.equal(f.sends.length, sent);
+  assert.equal((await f.http('POST', { op: 'initRetry', objective: o.id, k: 'goal', force: true })).status, 200);
+  assert.equal(handedTo(f).at(-1), '@kimi');
 });
 
 test('tools enforce caller, dependencies, complete input and owner CAS without delivering rejected writes', async (t) => {
@@ -455,7 +483,7 @@ async function decide(f, o, pick = 'same') {
 test('a real objective has only the members chosen for it, with their names and models; a step rewritten after the start holds the next cycle until it is submitted again and confirmed', async (t) => {
   const f = await fixture(t), o = await f.create(); await f.initialize(o);
   // Governance execution was not chosen separately, so the preparer does it.
-  assert.deepEqual((await f.read()).experiments[o.id].members, [{ role: 'prepare', name: '砚砚', model: 'gpt-5.6-sol', catId: 'codex' }, { role: 'evaluate', name: '小狸', model: 'k3.1', catId: 'cat-b5ddoo9l' }, { role: 'iterate', name: '砚砚', model: 'gpt-5.6-sol', catId: 'codex' }]);
+  assert.deepEqual((await f.read()).experiments[o.id].members, [{ role: 'prepare', name: '砚砚', model: 'gpt-5.6-sol', catId: 'codex', handle: '@codex' }, { role: 'evaluate', name: '小狸', model: 'k3.1', catId: 'cat-b5ddoo9l', handle: '@kimi' }, { role: 'iterate', name: '砚砚', model: 'gpt-5.6-sol', catId: 'codex', handle: '@codex' }]);
   await execute(f, o); await report(f, o); await decide(f, o);
   const item = (await f.read()).experiments[o.id].prep.find((p) => p.section === 'rules');
   assert.equal((await f.http('POST', { op: 'prep', objective: o.id, id: item.id, action: 'agent', note: 'Recalibrate the guard' }, { project: f.project })).status, 200);
@@ -825,11 +853,14 @@ test('a run whose full log cannot be written still records its result', async (t
 });
 
 test('governance execution is its own member: the version a decision asks for goes to them, not to the preparer', async (t) => {
-  const f = await fixture(t), o = await f.create({ iterate: 'cat-iter', cats: [{ id: 'codex', name: '砚砚', model: 'gpt-5.6-sol' }, { id: 'cat-b5ddoo9l', name: '小狸', model: 'k3.1' }, { id: 'cat-iter', name: '金渐层', model: 'deepseek-v4-pro' }] });
+  const f = await fixture(t), o = await f.create({ iterate: 'cat-iter', cats: [{ id: 'codex', name: '砚砚', model: 'gpt-5.6-sol' }, { id: 'cat-b5ddoo9l', name: '小狸', model: 'k3.1' }, { id: 'cat-iter', name: '金渐层', model: 'deepseek-v4-pro', handle: '@deepseek', on: true }] });
   await f.initialize(o, losing);
   const round = await execute(f, o); await report(f, o);
   assert.equal((await f.http('POST', { op: 'expDecide', objective: o.id, n: round.n, pick: 'direction', directionId: 'next' }, { project: f.project })).status, 200);
   await until(async () => f.sends.filter((s) => s.wake?.catId === 'cat-iter').length, (n) => n === 1, 'version wake');
+  // The version is asked of the member by handle, to be made beside the user's working tree.
+  const asked = textOf(f.sends.find((s) => s.wake?.catId === 'cat-iter')).split('\n').at(-1);
+  assert.ok(asked.startsWith('@deepseek 按「') && asked.includes('在单独的 git worktree 里'), asked);
   assert.equal((await f.tool('task', {}, 'codex', o.thread)).status, 403);
   assert.ok((await f.tool('task', {}, 'cat-iter', o.thread)).version);
   assert.equal((await f.tool('version', { change: 'Next', config: {} }, 'cat-iter', o.thread)).version, 'v2');
@@ -856,8 +887,9 @@ test('discussion members picked in the new-objective dialog are a draft until th
   for (const id of ['ana-1', 'ana-2']) assert.equal((await f.http('POST', { op: 'draftAnalyst', catId: id, cats })).status, 200);
   assert.equal((await f.http('POST', { op: 'draftAnalyst', catId: 'ana-2', on: false })).status, 200);
   assert.deepEqual((await f.read()).draft.analysts, [{ catId: 'ana-1', name: '甲', model: 'm1' }]);
-  const o = await f.create({ cats }), created = await f.read();
-  assert.deepEqual(created.experiments[o.id].members.filter((m) => m.role === 'analyze').map((m) => [m.catId, m.name, m.model]), [['ana-1', '甲', 'm1']]);
+  // The rows passed on creation fill in what the draft did not know yet.
+  const o = await f.create({ cats: cats.map((c) => ({ ...c, handle: `@${c.id}`, on: true })) }), created = await f.read();
+  assert.deepEqual(created.experiments[o.id].members.filter((m) => m.role === 'analyze').map((m) => [m.catId, m.name, m.model, m.handle]), [['ana-1', '甲', 'm1', '@ana-1']]);
   assert.equal(created.draft, undefined);
 });
 
@@ -1096,7 +1128,8 @@ test('a cycle whose runs fail goes to the governance member, who fixes it, and t
   await writeFile(join(f.project, 'broken'), '');
   let d = (await failing(f, o)).experiments[o.id];
   assert.equal(d.rounds[0].state, 'repairing');
-  await until(async () => f.sends.filter((s) => s.wake?.catId === 'codex').length, (n) => n >= 1, 'repair wake');
+  const repair = textOf(await until(async () => f.sends.find((s) => s.wake?.catId === 'codex' && textOf(s).startsWith('第 1 周期运行失败，请修')), Boolean, 'repair wake'));
+  assert.ok(repair.split('\n').at(-1).startsWith('@codex ') && repair.includes('在单独的 git worktree 里'), repair);
   const task = await f.tool('task', {}, 'codex', o.thread);
   assert.equal(task.version.repair.signature, 'missing build: broken marker');
   assert.equal(task.version.repair.failures[0].step, 'submit');

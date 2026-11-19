@@ -713,4 +713,4 @@ delete:
 stop:
   title: Change when to stop
 demoProject: "{0} (demo)"
-memberOption: "{0} (@{1})"
+memberOption: "{0} {1}"
