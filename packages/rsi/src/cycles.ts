@@ -156,6 +156,8 @@ const EXPECT_HINT = '方向可以带 expect {lo,hi}：你预期选了它之后�
 
 // Analysts that have not proposed within this long are left out and the conclusion goes out without them.
 export const ANALYSIS_LIMIT = 20 * 60_000;
+// A conclusion nobody decides within this inside the run window goes on with its plan (FLOW §1.5: 没回应，到点用默认 / 照旧).
+export const DECISION_WAIT = 30 * 60_000;
 
 // Four significant digits, never in exponent form (0.5075000000000001 → 0.5075, 1234.567 → 1235).
 const short = (x: number) => String(Number(x.toPrecision(4)));
@@ -252,6 +254,8 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
 }
 
 function conclusionCard(state: RsiState, d: Experiment, round: Data, now: number, stopped?: Data | null) {
+  // From here the conclusion waits for your decision (a stopping one is already decided).
+  if (!round.decision) round.asked = now;
   const report = round.report, nameOf = (id: string) => d.members.find((m) => m.catId === id)?.name || id, several = new Set(report.directions.map((x: Data) => x.by)).size > 1;
   const lines = report.directions.map((x: Data) => `${x.id} · ${x.title}${several ? `（${nameOf(x.by)}）` : ''}：${x.why}`);
   const missing = round.analysis?.missing || [];
@@ -276,6 +280,14 @@ export function propose(state: RsiState, d: Experiment, input: Data, catId: stri
 }
 
 // The analysts agree when their first directions change the same thing in the same way (same kind and target); without a target there is nothing to compare.
+// Nobody decided in time: the plan the conclusion set goes on — a candidate is confirmed, otherwise the same groups run again on fresh seeds. Nothing is changed.
+export function decideByDefault(state: RsiState, d: Experiment, round: Data, now: number) {
+  round.decision = { pick: 'same', note: `${DECISION_WAIT / 60_000} 分钟没人回应，按当前计划继续`, by: 'RSI', at: now };
+  d.objective.state = 'running';
+  message(state, d, now, `第 ${round.n} 周期：没人回应，按当前计划继续`, d.candidate ? '下一周期换新种子复验候选。' : '下一周期按同样的组换新种子再跑一轮，不改任何东西。下一个结论出来时可以再选方向。', 'plan');
+  syncObjective(state, d);
+}
+
 export function finishAnalysis(state: RsiState, d: Experiment, round: Data, now: number) {
   const missing = round.analysis.waiting;
   round.analysis = { ...round.analysis, waiting: [], missing };

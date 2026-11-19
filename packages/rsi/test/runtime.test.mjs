@@ -961,6 +961,29 @@ test('schedule handler uses the confirmed local window, readiness, idle state an
   assert.equal((await f.read()).experiments[o.id].rounds.length, 2);
 });
 
+test('a conclusion nobody decides within 30 minutes of the run window goes on with its plan', async (t) => {
+  const f = await fixture(t), o = await f.create(); await f.initialize(o, losing, { window: '每晚 20:00–08:00' });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 10, 15, 19, 59).getTime() });
+  const tick = () => f.activation().actions['rsi.tick']();
+  const at = (day, hour, minute = 0) => t.mock.timers.setTime(new Date(2026, 10, day, hour, minute).getTime());
+  assert.equal((await f.http('POST', { op: 'life', action: 'start', objective: o.id })).status, 200);
+  at(15, 20); await tick();
+  await until(f.read, (s) => s.experiments[o.id].rounds[0]?.state === 'evaluating');
+  await report(f, o);
+  // Still within the wait: the conclusion waits for you.
+  at(15, 20, 29); await tick();
+  let d = (await f.read()).experiments[o.id];
+  assert.equal(d.rounds[0].decision, null); assert.equal(d.objective.state, 'pending');
+  // Past it: RSI decides to go on with the plan the conclusion set, and the next cycle starts.
+  at(15, 20, 31); await tick();
+  d = (await f.read()).experiments[o.id];
+  assert.deepEqual([d.rounds[0].decision.pick, d.rounds[0].decision.by], ['same', 'RSI']);
+  assert.equal(d.rounds.length, 2);
+  assert.deepEqual(d.rounds[1].plan.groups.map((g) => g.id), d.rounds[0].plan.groups.map((g) => g.id));
+  assert.ok(d.rounds[1].plan.seeds.every((s) => !d.rounds[0].plan.seeds.includes(s)));
+  assert.ok(f.sends.some((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title === '第 1 周期：没人回应，按当前计划继续')));
+});
+
 const asyncExecutor = { preflight: 'test -f async-executor.sh', submit: 'sh async-executor.sh submit {config} {run} {seed}',
   get: 'sh async-executor.sh get {run} {job}', cancel: 'sh async-executor.sh cancel {run} {job}', collect: '{run}/metrics.json' };
 

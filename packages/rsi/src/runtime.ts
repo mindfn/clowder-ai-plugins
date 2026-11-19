@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ANALYSIS_LIMIT, finishAnalysis, runCycle } from './cycles.js';
+import { ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAnalysis, runCycle } from './cycles.js';
 import { insideWindow } from './schedule.js';
 import { bindObjectiveThread, recordInitExecution } from './init.js';
 import { createRuns } from './runs.js';
@@ -146,12 +146,19 @@ export function createRuntime(host: RsiHost) {
   async function tick() {
     if (stopped) return;
     let owners = Object.entries(await host.storage.list()).filter(([key, entry]) => key.startsWith('rsi:') && isState(entry.value));
-    // Analysts that have not proposed in time are left out and the conclusion goes out with the directions there are,
-    // whatever else is running: the busy check below only guards starting a new cycle.
-    const overdue = (state: import('./types.js').RsiState) => Object.values(state.experiments).some((x) => x.rounds.some((r: Data) => r.analysis?.waiting.length && Date.now() - r.analysis.since > ANALYSIS_LIMIT));
-    for (const [key, entry] of owners) if (overdue(entry.value as import('./types.js').RsiState)) {
+    // Analysts that have not proposed in time are left out and the conclusion goes out with the directions there are;
+    // a conclusion nobody decided in time inside the run window goes on with its plan. Whatever else is running:
+    // the busy check below only guards starting a new cycle.
+    const now = Date.now();
+    const analysisLate = (r: Data) => r.analysis?.waiting.length && now - r.analysis.since > ANALYSIS_LIMIT;
+    const decisionLate = (x: Experiment, r: Data) => x.objective.state === 'pending' && r.asked && !r.decision && now - r.asked > DECISION_WAIT && insideWindow(x.policy.schedule, now);
+    const late = (state: import('./types.js').RsiState) => Object.values(state.experiments).some((x) => x.rounds.some((r: Data) => analysisLate(r) || decisionLate(x, r)));
+    for (const [key, entry] of owners) if (late(entry.value as import('./types.js').RsiState)) {
       await retain(host.storage, key, (state) => {
-        for (const x of Object.values(state.experiments)) for (const r of x.rounds) if (r.analysis?.waiting.length && Date.now() - r.analysis.since > ANALYSIS_LIMIT) finishAnalysis(state, x, r, Date.now());
+        for (const x of Object.values(state.experiments)) for (const r of x.rounds) {
+          if (analysisLate(r)) finishAnalysis(state, x, r, now);
+          else if (decisionLate(x, r)) decideByDefault(state, x, r, now);
+        }
       });
       await flush(key);
     }
