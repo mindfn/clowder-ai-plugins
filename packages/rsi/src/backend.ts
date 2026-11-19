@@ -83,7 +83,9 @@ export function createRsi(host: RsiHost) {
         // Steps that became this member's while it is still in this turn: tell it here instead of waking it again.
         const mine = state.outbox.slice(before).filter((e) => e.kind === 'agent' && e.member === ctx.catId && !e.sent);
         for (const e of mine) e.inTurn = ctx.invocationId;
-        return mine.length ? { ...result, next: `第 ${mine.map((e) => state.experiments[e.objective].plan.findIndex((p) => p.k === e.section) + 1).join('、')} 步也轮到你了：接着调用 rsi.task 做，不用等新的消息。` } : result;
+        const steps = mine.filter((e) => e.section).map((e) => state.experiments[e.objective].plan.findIndex((p) => p.k === e.section) + 1);
+        const turns = [...(steps.length ? [`第 ${steps.join('、')} 步`] : []), ...mine.filter((e) => !e.section).map((e) => `「${e.message?.title}」`)].join('、');
+        return mine.length ? { ...result, next: `${turns}也轮到你了：接着调用 rsi.task 做，不用等新的消息。` } : result;
       }, () => ctx.assertCurrent());
       if (!result.error) await runtime.flush(key);
       return result;

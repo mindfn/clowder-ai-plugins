@@ -615,6 +615,7 @@ exp:
   doingAlso: "，{0} 在做第 {1} 步"
   continueAfterDone: 改何时停，接着迭代
   discussAdd: 加方案讨论成员
+  discussLabel: 方案讨论
   membersEdit: 改成员
   analystRemove: 移出分析成员
   wakeAgain: 重新叫醒
@@ -677,6 +678,8 @@ exp:
     auto: 审批
     autoText: 改代码 / 指标 / 目标 / 执行方式要你批；范围内调变量 agent 自定
     manual: 每个周期的方向都由你在页面上选；插件不会自己调变量
+    nightBoth: 运行时段内，结论的第一方向是执行修复或调变量、且分析成员意见一致时，插件直接采纳；其余由你在页面上选
+    nightExecution: 运行时段内，结论的第一方向是执行修复时插件直接采纳；其余由你在页面上选
   varOf: "{0}：{1}"
   dir:
     up: 越高越好

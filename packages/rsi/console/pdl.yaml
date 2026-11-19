@@ -638,7 +638,7 @@ views:
           - type: label
             text: t:rsi.exp.members
           - type: list
-            from: $.exp.members
+            from: $.exp.roleMembers
             row:
               layout: two
               lead:
@@ -662,18 +662,6 @@ views:
                     text: "@model"
                     mono: true
                   w: id
-              acts:
-                - label: t:rsi.exp.analystRemove
-                  icon: delete
-                  act: plugin
-                  args:
-                    request: analystRemove
-                    catId: "@catId"
-                  when:
-                    of: "@role"
-                    map:
-                      analyze: true
-                      _: false
           - type: button
             label: t:rsi.exp.membersEdit
             when: $.exp.projectPath
@@ -685,23 +673,40 @@ views:
               evaluate: $.exp.memberIds.evaluate
               iterate: $.exp.memberIds.iterate
               cats: $.members.defaultCatOptions
-          - type: button
-            icon: plus
-            label: t:rsi.exp.discussAdd
+          - type: toolbar
             when: $.exp.projectPath
-            items:
-              - from: $.members.defaultCatOptions
-                item:
-                  label:
-                    t: rsi.memberOption
+            left:
+              - type: text
+                text: t:rsi.exp.discussLabel
+              - type: each
+                from: $.exp.discussion
+                control:
+                  type: chip
+                  label: "@name"
+                  x:
+                    act: plugin
+                    icon: close
+                    label: t:rsi.exp.analystRemove
                     args:
-                      - "@name"
-                      - "@id"
-                  act: plugin
-                  args:
-                    request: analystAdd
-                    v: "@id"
-                    cats: $.members.defaultCatOptions
+                      request: analystRemove
+                      catId: "@id"
+              - type: button
+                icon: plus
+                iconOnly: true
+                label: t:rsi.exp.discussAdd
+                items:
+                - from: $.members.defaultCatOptions
+                  item:
+                    label:
+                      t: rsi.memberOption
+                      args:
+                        - "@name"
+                        - "@id"
+                    act: plugin
+                    args:
+                      request: analystAdd
+                      v: "@id"
+                      cats: $.members.defaultCatOptions
           - type: label
             text: t:rsi.exp.policyTitle
           - type: kv
@@ -4434,7 +4439,7 @@ views:
       - type: label
         text: t:rsi.exp.members
       - type: list
-        from: $.exp.members
+        from: $.exp.roleMembers
         row:
           layout: two
           lead:
@@ -4458,18 +4463,6 @@ views:
                 text: "@model"
                 mono: true
               w: id
-          acts:
-            - label: t:rsi.exp.analystRemove
-              icon: delete
-              act: plugin
-              args:
-                request: analystRemove
-                catId: "@catId"
-              when:
-                of: "@role"
-                map:
-                  analyze: true
-                  _: false
       - type: button
         label: t:rsi.exp.membersEdit
         when: $.exp.projectPath
@@ -4481,23 +4474,40 @@ views:
           evaluate: $.exp.memberIds.evaluate
           iterate: $.exp.memberIds.iterate
           cats: $.members.defaultCatOptions
-      - type: button
-        icon: plus
-        label: t:rsi.exp.discussAdd
+      - type: toolbar
         when: $.exp.projectPath
-        items:
-          - from: $.members.defaultCatOptions
-            item:
-              label:
-                t: rsi.memberOption
+        left:
+          - type: text
+            text: t:rsi.exp.discussLabel
+          - type: each
+            from: $.exp.discussion
+            control:
+              type: chip
+              label: "@name"
+              x:
+                act: plugin
+                icon: close
+                label: t:rsi.exp.analystRemove
                 args:
-                  - "@name"
-                  - "@id"
-              act: plugin
-              args:
-                request: analystAdd
-                v: "@id"
-                cats: $.members.defaultCatOptions
+                  request: analystRemove
+                  catId: "@id"
+          - type: button
+            icon: plus
+            iconOnly: true
+            label: t:rsi.exp.discussAdd
+            items:
+            - from: $.members.defaultCatOptions
+              item:
+                label:
+                  t: rsi.memberOption
+                  args:
+                    - "@name"
+                    - "@id"
+                act: plugin
+                args:
+                  request: analystAdd
+                  v: "@id"
+                  cats: $.members.defaultCatOptions
       - type: label
         text: t:rsi.exp.policyTitle
       - type: kv
@@ -4645,9 +4655,9 @@ views:
                 args:
                   request: draftAnalystRemove
                   id: "@id"
-        right:
           - type: button
             icon: plus
+            iconOnly: true
             label: t:rsi.newExp.discussAdd
             items:
               - from: $.members.defaultCatOptions

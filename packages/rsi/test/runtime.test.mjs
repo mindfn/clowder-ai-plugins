@@ -1157,6 +1157,9 @@ test('members can be changed after creation; work waiting for a role goes to its
   assert.equal((await f.tool('task', {}, 'cat-new', o.thread)).evaluate.cycle, round.n);
   const page = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
   assert.deepEqual(page.memberIds, { prepare: 'codex', evaluate: 'cat-new', iterate: 'codex' });
+  // Single-member roles are listed; discussion members are the chips of their own row; the policy row says what the night may decide.
+  assert.deepEqual(page.roleMembers.map((m) => m.role), ['prepare', 'evaluate', 'iterate']); assert.deepEqual(page.discussion, []);
+  assert.equal(page.policy.autoText.t, 'rsi.exp.pol.manual');
 });
 
 const asyncExecutor = { preflight: 'test -f async-executor.sh', submit: 'sh async-executor.sh submit {config} {run} {seed}',

@@ -615,6 +615,7 @@ exp:
   doingAlso: ", {0} is working on step {1}"
   continueAfterDone: Change when to stop and continue
   discussAdd: Add a discussion member
+  discussLabel: Direction discussion
   membersEdit: Change members
   analystRemove: Remove analyst
   wakeAgain: Wake again
@@ -677,6 +678,8 @@ exp:
     auto: Approval
     autoText: Code, metric, goal, and execution changes need your approval; agents may tune variables within the allowed bounds
     manual: You choose every cycle’s direction on the page; the plugin does not tune variables on its own
+    nightBoth: In the run window the plugin adopts a conclusion’s first direction when it is an execution fix or a variable change and the analysts agree; you choose the rest on the page
+    nightExecution: In the run window the plugin adopts a conclusion’s first direction when it is an execution fix; you choose the rest on the page
   varOf: "{0}: {1}"
   dir:
     up: Higher is better
