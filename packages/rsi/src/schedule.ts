@@ -24,3 +24,11 @@ export function windowStart(schedule: Data, now: number) {
   const date = new Date(now), start = new Date(date.getFullYear(), date.getMonth(), date.getDate(), Math.floor(window[0] / 60), window[0] % 60).getTime();
   return start <= now ? start : start - 24 * 3_600_000;
 }
+
+// When the last window closed: the latest end at or before now; without a window, null.
+export function windowEnd(schedule: Data, now: number) {
+  const window = windowMinutes(schedule.window);
+  if (!window) return null;
+  const date = new Date(now), end = new Date(date.getFullYear(), date.getMonth(), date.getDate(), Math.floor(window[1] / 60), window[1] % 60).getTime();
+  return end <= now ? end : end - 24 * 3_600_000;
+}

@@ -1,5 +1,5 @@
 import { AUTO, enqueue, message, prepSettled, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
-import { insideWindow, windowStart } from './schedule.js';
+import { insideWindow, windowEnd, windowStart } from './schedule.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, RsiState } from './types.js';
 
@@ -366,4 +366,32 @@ export function finishAnalysis(state: RsiState, d: Experiment, round: Data, now:
   round.report.agree = firsts.length < 2 || firsts.every((x: Data) => x.kind && x.target && x.kind === firsts[0].kind && x.target === firsts[0].target);
   conclusionCard(state, d, round, now);
   syncObjective(state, d);
+}
+
+// The run window that closed last with what happened in it (cycles started, the schedule's decisions, repairs), until it is summarized; null when nothing did.
+export function nightDue(d: Experiment, now: number) {
+  const end = windowEnd(d.policy.schedule, now);
+  if (!d.objective.projectPath || !end || d.digestAt === end) return null;
+  const start = windowStart(d.policy.schedule, end), inside = (at: number) => at >= start && at < end;
+  const night = { start, end, cycles: d.rounds.filter((r: Data) => inside(r.start)), decided: d.rounds.filter((r: Data) => r.decision?.by === 'RSI' && inside(r.decision.at)), repairs: (d.repairs || []).filter((x: Data) => inside(x.at)) };
+  return night.cycles.length || night.decided.length || night.repairs.length ? night : null;
+}
+
+// The morning summary (PHASE3 §4), once per window: built from the records alone, never from what members wrote.
+export function nightDigest(state: RsiState, d: Experiment, now: number) {
+  const night = nightDue(d, now);
+  if (!night) return;
+  d.digestAt = night.end;
+  const outcome = (r: Data) => r.report ? `${r.report.verdict} · ${r.report.headline}` : r.state === 'repaired' ? `已修复，由 ${r.repairedBy} 重跑`
+    : ({ evaluating: r.runs.some((u: Data) => u.state === 'failed') ? '运行失败，交给评估' : '跑完，等结论', repairing: '运行失败，正在修', interrupted: '被插件重启打断' } as Data)[r.state] || '还在跑';
+  // The decision that stopped the objective is told under 现在, not counted as 照旧.
+  const same = night.decided.filter((r: Data) => r.decision.pick === 'same' && r.n !== d.objective.stopReason?.cycle).length;
+  const own = [same && `照旧 ${same} 次`, ...night.decided.filter((r: Data) => r.decision.pick === 'direction')
+    .map((r: Data) => `按规则采纳「${r.report.directions.find((x: Data) => x.id === r.decision.directionId).title}」`)].filter(Boolean).join('；');
+  const waiting = d.rounds.find((r: Data) => r.report && !r.decision && !r.analysis?.waiting.length), ask = d.versionRequest;
+  const status = d.objective.state === 'done' ? `已结束（${d.objective.stopReason.text}）` : waiting ? `第 ${waiting.n} 周期的结论等你定`
+    : ask ? `等 ${d.members.find((m) => m.role === 'iterate')!.name} ${ask.repair ? `修第 ${ask.cycle} 周期的运行失败` : `按「${ask.title}」出版本`}` : '';
+  const opened = new Date(night.start);
+  message(state, d, now, `夜间总结 · ${opened.getMonth() + 1}月${opened.getDate()}日`, [night.cycles.map((r: Data) => `第 ${r.n} 周期（${r.version}）：${outcome(r)}`).join('\n'),
+    own && `夜里自己定的：${own}`, night.repairs.map((x: Data) => `${x.version} 修了「${x.signature}」`).join('\n'), status && `现在：${status}`].filter(Boolean).join('\n\n'), 'digest');
 }

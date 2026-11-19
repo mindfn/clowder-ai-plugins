@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { abandonRepair, ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAnalysis, REPAIR_WAIT, runCycle } from './cycles.js';
+import { abandonRepair, ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAnalysis, nightDigest, nightDue, REPAIR_WAIT, runCycle } from './cycles.js';
 import { insideWindow } from './schedule.js';
 import { bindObjectiveThread, recordInitExecution } from './init.js';
 import { createRuns } from './runs.js';
@@ -71,7 +71,7 @@ export function createRuntime(host: RsiHost) {
           ...(entry.kind === 'agent' && !entry.inTurn ? { wake: { catId: entry.member, exact: true as const } } : {}),
           payload: { provenance: { epistemicStatus: entry.kind === 'agent' ? 'user_intent' : 'observation' },
             elements: [{ elementId: entry.id, kind: 'text', payload: { text: content } },
-              ...(entry.kind === 'message' && ['goal', 'conclusion', 'failed', 'plan'].includes(entry.message.kind) ? [{ elementId: `${entry.id}-card`, kind: 'rich_block' as const,
+              ...(entry.kind === 'message' && ['goal', 'conclusion', 'failed', 'plan', 'digest'].includes(entry.message.kind) ? [{ elementId: `${entry.id}-card`, kind: 'rich_block' as const,
                 payload: { id: entry.id, kind: 'card' as const, v: 1 as const, title: entry.message.title, bodyMarkdown: [entry.message.body, entry.message.ask].filter(Boolean).join('\n\n') } }] : [])] } });
         if (stopped) return;
         await retain(host.storage, key, (next) => { if (mark(next, entry.id, { messageId: sent.messageId })) executionEvents(next, next.experiments[entry.objective]); });
@@ -153,7 +153,7 @@ export function createRuntime(host: RsiHost) {
     const analysisLate = (r: Data) => r.analysis?.waiting.length && now - r.analysis.since > ANALYSIS_LIMIT;
     const decisionLate = (x: Experiment, r: Data) => x.objective.state === 'pending' && r.asked && !r.decision && now - r.asked > DECISION_WAIT && insideWindow(x.policy.schedule, now);
     const repairLate = (x: Experiment) => x.versionRequest?.repair && now - x.versionRequest.since > REPAIR_WAIT;
-    const late = (state: import('./types.js').RsiState) => Object.values(state.experiments).some((x) => repairLate(x) || x.rounds.some((r: Data) => analysisLate(r) || decisionLate(x, r)));
+    const late = (state: import('./types.js').RsiState) => Object.values(state.experiments).some((x) => repairLate(x) || nightDue(x, now) || x.rounds.some((r: Data) => analysisLate(r) || decisionLate(x, r)));
     for (const [key, entry] of owners) if (late(entry.value as import('./types.js').RsiState)) {
       await retain(host.storage, key, (state) => {
         for (const x of Object.values(state.experiments)) if (repairLate(x)) abandonRepair(state, x, `${REPAIR_WAIT / 60_000} 分钟内没修好`, now);
@@ -161,6 +161,8 @@ export function createRuntime(host: RsiHost) {
           if (analysisLate(r)) finishAnalysis(state, x, r, now);
           else if (decisionLate(x, r)) decideByDefault(state, x, r, now);
         }
+        // A closed window's summary goes last, so it tells where things stand after the checks above.
+        for (const x of Object.values(state.experiments)) nightDigest(state, x, now);
       });
       await flush(key);
     }

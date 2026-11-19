@@ -1123,7 +1123,8 @@ test('a repair the member cannot make, or does not make in time, goes to the eva
   t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 61 * 60_000 });
   await f.activation().actions['rsi.tick']();
   d = (await f.read()).experiments[o.id];
-  assert.equal(d.rounds.at(-1).state, 'evaluating'); assert.ok(d.messages.at(-1).body.includes('60 分钟内没修好'));
+  // Run in the hour before 08:00, the same tick also sends the summary of the window that just closed.
+  assert.equal(d.rounds.at(-1).state, 'evaluating'); assert.ok(d.messages.some((m) => m.body.includes('60 分钟内没修好')));
 });
 
 test('how many failures a night fixes by itself is set at creation and changed later; 0 leaves failures to the evaluator', async (t) => {
@@ -1143,6 +1144,36 @@ test('how many failures a night fixes by itself is set at creation and changed l
   assert.equal((await f.http('POST', { op: 'repair', objective: o.id, repair: '0' })).status, 200);
   d = (await f.read()).experiments[o.id];
   assert.equal(d.policy.repair, 0); assert.match(d.prep.find((p) => p.id.endsWith('-repair')).value, /^不自动修/);
+});
+
+test('the first tick after a run window closes sends one summary of it built from the records; a quiet night sends none', async (t) => {
+  const f = await fixture(t), o = await f.create({ auto: 'default' }); breakable(f);
+  await f.initialize(o, losing);
+  await writeFile(join(f.project, 'broken'), '');
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 10, 15, 19, 59).getTime() });
+  const tick = () => f.activation().actions['rsi.tick']();
+  const at = (day, hour, minute = 0) => t.mock.timers.setTime(new Date(2026, 10, day, hour, minute).getTime());
+  const digests = () => f.sends.flatMap((s) => s.payload.elements).filter((e) => e.kind === 'rich_block' && e.payload.title.startsWith('夜间总结'));
+  assert.equal((await f.http('POST', { op: 'life', action: 'start', objective: o.id })).status, 200);
+  // Cycle 1 fails and v2 repairs it; cycle 2 reruns its plan and goes on by 照旧; cycle 3's variable is adopted by rule.
+  at(15, 20); await tick();
+  await until(f.read, (s) => s.experiments[o.id].rounds[0]?.state === 'repairing');
+  await f.tool('task', {}, 'codex', o.thread); await rm(join(f.project, 'broken'));
+  assert.equal((await f.tool('version', { change: 'Fix the build', config: {} }, 'codex', o.thread)).version, 'v2');
+  await tick();
+  await until(f.read, (s) => s.experiments[o.id].rounds[1]?.state === 'evaluating');
+  await report(f, o);
+  at(15, 20, 31); await tick();
+  await until(f.read, (s) => s.experiments[o.id].rounds[2]?.state === 'evaluating');
+  await concludeAt(t, f, o, night, [{ k: 'lr', title: 'Lower rate', kind: 'variable' }]);
+  at(16, 7, 59); await tick(); assert.equal(digests().length, 0);
+  at(16, 8, 1); await tick();
+  assert.deepEqual(digests().map((e) => [e.payload.title, e.payload.bodyMarkdown]), [['夜间总结 · 11月15日', [
+    '第 1 周期（v1）：已修复，由 v2 重跑\n第 2 周期（v2）：tune · Measured against this cycle’s control\n第 3 周期（v2）：tune · Measured',
+    '夜里自己定的：照旧 1 次；按规则采纳「Lower rate」', 'v2 修了「missing build: broken marker」', '现在：等 砚砚 按「Lower rate」出版本'].join('\n\n')]]);
+  at(16, 8, 4); await tick(); assert.equal(digests().length, 1);
+  // The next night nothing starts, is decided or repaired.
+  at(17, 8, 1); await tick(); assert.equal(digests().length, 1);
 });
 
 test('members can be changed after creation; work waiting for a role goes to its new member', async (t) => {
