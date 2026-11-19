@@ -330,6 +330,7 @@ newOk: Create
 noObjectives: No objectives yet
 noObjectivesHint: This project has no objectives yet. Create one with what to improve and when to stop; an agent will read the project, draft execution and metrics in the objective thread, and list them for your confirmation.
 repairDialog: Fixing failures at night
+autoDialog: Directions decided at night
 newExp:
   help: The plugin creates an objective thread and initializes it in seven steps, mentioning the member responsible for each step. Agents keep drafting; items needing your judgment appear on the objective page. The machine and time window are drafted in step 3 after the agent reviews the project.
   statement: What to improve (one sentence)
@@ -345,6 +346,11 @@ newExp:
   stopTargetHelp: Write “metric comparison number”, e.g. accuracy ≥ 0.45; the metric must match a step-4 metric id or name. Leave it blank to omit it.
   repair: Failures to fix by itself per night (0 = off)
   repairHelp: A failed run goes to the governance member, who fixes it, and the cycle runs again; every fix is a version you can roll back; the same error three times in a row stops it for you
+  auto: Directions the night may decide by itself
+  autoHelp: Inside the run window, a conclusion whose first direction is of a kind chosen here is adopted at once (several analysts must agree) and the governance member makes its version; changing the code, metrics, goal or how it runs always waits for you
+  autoDefault: Execution fixes and variables (default)
+  autoExecution: Execution fixes only
+  autoNone: Everything waits for me
   stopRounds: Maximum cycles
   ok: Create and start initialization
 cards:

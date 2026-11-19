@@ -330,6 +330,7 @@ newOk: 新建
 noObjectives: 还没有评估项
 noObjectivesHint: 这个项目还没有评估项。新建一个：说清楚要改进什么、什么时候停；怎么跑、看哪些指标由 agent 读项目后在评估项 thread 里起草，再列给你确认。
 repairDialog: 夜里出错自动修
+autoDialog: 夜里可以自己定的方向
 newExp:
   help: 建好后插件会建一个评估项 thread，按七步初始化，每步 @ 负责的成员；agent 一直往下起草，要你判断的在评估项页逐条列出。机器和时段不用现在填，第 3 步由 agent 查项目后起草。
   statement: 要改进什么（一句话）
@@ -346,6 +347,11 @@ newExp:
   stopRounds: 最多几个周期
   repair: 夜里出错自动修几次（0 = 不修）
   repairHelp: 运行失败时交给治理执行成员当场修、修完重跑这一周期；每次修复都是一个版本，可以回退；同一个错误连续 3 次就停下等你
+  auto: 夜里可以自己定的方向
+  autoHelp: 时段内结论出来后，第一方向是这里选的类别就直接采纳（几位分析成员要意见一致），交给治理执行成员出版本接着跑；改代码、指标、目标、执行方式总要你批
+  autoDefault: 执行修复和调变量（默认）
+  autoExecution: 只有执行修复
+  autoNone: 都等我定
   ok: 建好并开始初始化
 cards:
   none: 没有待处理的事

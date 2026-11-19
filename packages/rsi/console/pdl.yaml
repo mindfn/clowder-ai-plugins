@@ -4284,6 +4284,26 @@ views:
     okArgs:
       request: repair
       objective: $.objective
+  dlg.rsiAuto:
+    title: t:rsi.autoDialog
+    fields:
+      - id: dlg-auto
+        label: t:rsi.newExp.auto
+        help: t:rsi.newExp.autoHelp
+        value: $.auto
+        options:
+          - v: default
+            label: t:rsi.newExp.autoDefault
+          - v: execution
+            label: t:rsi.newExp.autoExecution
+          - v: none
+            label: t:rsi.newExp.autoNone
+        arg: auto
+    ok: t:rsi.common.save
+    okAct: plugin
+    okArgs:
+      request: auto
+      objective: $.objective
   dlg.rsiGroupRename:
     title: t:rsi.common.rename
     fields:
@@ -4596,6 +4616,18 @@ views:
         help: t:rsi.newExp.repairHelp
         value: "5"
         arg: repair
+      - id: dlg-auto
+        label: t:rsi.newExp.auto
+        help: t:rsi.newExp.autoHelp
+        value: default
+        options:
+          - v: default
+            label: t:rsi.newExp.autoDefault
+          - v: execution
+            label: t:rsi.newExp.autoExecution
+          - v: none
+            label: t:rsi.newExp.autoNone
+        arg: auto
     blocks:
       - type: toolbar
         left:
@@ -5043,6 +5075,7 @@ requests:
       iterate: "@iterate"
       target: "@target"
       repair: "@repair"
+      auto: "@auto"
       name: "@name"
       cats: "@cats"
   life:
@@ -5125,6 +5158,17 @@ requests:
       op: repair
       objective: "@objective"
       repair: "@repair"
+  auto:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: auto
+      objective: "@objective"
+      auto: "@auto"
   initRedo:
     path: rsi/act
     method: POST

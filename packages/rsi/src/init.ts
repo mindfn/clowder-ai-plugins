@@ -181,6 +181,14 @@ export function repairCount(value: unknown): { count: number } | { error: string
   return Number.isSafeInteger(n) && n >= 0 && n <= 20 ? { count: n } : { error: '「夜里出错自动修几次」要写 0–20 的整数，0 = 不自动修' };
 }
 export const repairText = (n: number) => n ? `运行失败时交给治理执行成员修，修完重跑这一周期；每晚最多 ${n} 次，同一个错误连续 3 次就停下等你` : '不自动修：运行失败时交给评估成员下结论，等你决定';
+// Which kinds of direction a night adopts without a person (PHASE3 §2); by default FLOW §3's: execution fixes and variables within the declared scope.
+export const AUTO: Record<string, string[]> = { default: ['execution', 'variable'], execution: ['execution'], none: [] };
+export function autoKinds(value: unknown): { kinds: string[] } | { error: string } {
+  const key = value == null || value === '' ? 'default' : value;
+  return typeof key === 'string' && Object.hasOwn(AUTO, key) ? { kinds: [...AUTO[key]] } : { error: '「夜里可以自己定的方向」只能选执行修复和调变量、只有执行修复或都等我定' };
+}
+export const autoKey = (kinds: string[]) => Object.keys(AUTO).find((k) => AUTO[k].join() === kinds.join());
+export const autoText = (kinds: string[]) => kinds.length ? `${kinds.includes('variable') ? '执行修复和调变量：时段内结论的第一方向是这两类' : '只有执行修复：时段内结论的第一方向是执行修复'}就直接采纳（几位分析成员要意见一致），有候选时直接复验；其余等你定` : '都等你定：夜里不自己采纳方向，也不直接复验候选';
 export const stopText = (stop: Data) => [stop.target && `达到「${stop.target}」并复验稳定`, stop.maxCycles && `用满 ${stop.maxCycles} 个周期`].filter(Boolean).join('，或') || '由你决定';
 
 export function rsiExpNew(state: RsiState, project: string, body: Data, now: number) {
@@ -221,6 +229,8 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   else d.prep.push({ id: `${id}-stop`, section: 'goal', title: '何时停', value: stop, state: 'confirmed', neededFrom: null, mine: true, by: '你', at: now });
   d.policy.repair = (repairCount(body.repair) as { count: number }).count;
   d.prep.push({ id: `${id}-repair`, section: 'goal', title: '夜里出错自动修', value: repairText(d.policy.repair), state: 'confirmed', neededFrom: null, mine: true, by: '你', at: now });
+  d.policy.auto = (autoKinds(body.auto) as { kinds: string[] }).kinds;
+  d.prep.push({ id: `${id}-auto`, section: 'goal', title: '夜里可以自己定的方向', value: autoText(d.policy.auto), state: 'confirmed', neededFrom: null, mine: true, by: '你', at: now });
   state.experiments[id] = d;
   state.objectives[project].push({ id, name: body.statement, parent: null, state: 'preparing', mode: 'exp', trigger: '', running: null, cycle: null, prediction: null, locked: 0 });
   enqueue(state, d, 'createThread', { project, title: `RSI · ${body.statement}` });

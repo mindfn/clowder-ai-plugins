@@ -75,9 +75,10 @@ async function fixture(t) {
     return { status: response.status, ...JSON.parse(response.body) };
   };
   const read = async () => (await storage.get(ownerKey('owner')))?.value;
+  // The suite runs at any hour: the night decides nothing by itself unless a test asks for it.
   const create = async (extra = {}) => {
     const result = await http('POST', { op: 'new', project: '', thread: 'source', statement: 'Improve a measured score', prepare: 'codex', evaluate: 'cat-b5ddoo9l',
-      cats: [{ id: 'codex', name: '砚砚', model: 'gpt-5.6-sol' }, { id: 'cat-b5ddoo9l', name: '小狸', model: 'k3.1' }], ...extra });
+      cats: [{ id: 'codex', name: '砚砚', model: 'gpt-5.6-sol' }, { id: 'cat-b5ddoo9l', name: '小狸', model: 'k3.1' }], auto: 'none', ...extra });
     assert.equal(result.status, 200, JSON.stringify(result));
     assert.deepEqual(result.acts?.map((a) => a.act), ['thread', 'open'], JSON.stringify(result));
     const state = await read(), d = Object.values(state.experiments).find((d) => d.objective.projectPath === project);
@@ -982,6 +983,91 @@ test('a conclusion nobody decides within 30 minutes of the run window goes on wi
   assert.deepEqual(d.rounds[1].plan.groups.map((g) => g.id), d.rounds[0].plan.groups.map((g) => g.id));
   assert.ok(d.rounds[1].plan.seeds.every((s) => !d.rounds[0].plan.seeds.includes(s)));
   assert.ok(f.sends.some((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title === '第 1 周期：没人回应，按当前计划继续')));
+});
+
+const night = new Date(2026, 10, 15, 22).getTime(), day = new Date(2026, 10, 15, 12).getTime();
+// Concludes the latest cycle at the given time with these directions, each citing the earlier cycles.
+async function concludeAt(t, f, o, time, options) {
+  t.mock.timers.setTime(time);
+  const task = await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  const result = await f.tool('conclude', { cycle: task.evaluate.cycle, verdict: 'tune', findings: 'Measured',
+    options: options.map((x) => ({ why: 'w', ...x, cites: task.evaluate.library.map((d) => d.id) })) }, 'cat-b5ddoo9l', o.thread);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  return (await f.read()).experiments[o.id];
+}
+
+test('inside the run window the first direction of a kind the objective allows is adopted without a person; other kinds, and conclusions outside the window, wait', async (t) => {
+  const f = await fixture(t), o = await f.create({ auto: 'default' }); await f.initialize(o, losing);
+  t.mock.timers.enable({ apis: ['Date'], now: day });
+  for (const [time, kind] of [[day, 'variable'], [night, 'code']]) {
+    await execute(f, o);
+    const d = await concludeAt(t, f, o, time, [{ k: 'lr', title: 'Lower rate', kind }]);
+    assert.equal(d.rounds.at(-1).decision, null); assert.equal(d.versionRequest, undefined); assert.equal(d.objective.state, 'pending');
+    await decide(f, o);
+  }
+  await execute(f, o);
+  const d = await concludeAt(t, f, o, night, [{ k: 'lr', title: 'Lower rate', kind: 'variable', expect: { lo: 0, hi: 1 } }, { k: 'rewrite', title: 'Rewrite', kind: 'code' }]);
+  assert.deepEqual([d.rounds[2].decision.pick, d.rounds[2].decision.directionId, d.rounds[2].decision.by], ['direction', 'lr', 'RSI']);
+  // As if picked on the page: the version request carries the direction's prediction and wakes the governance member.
+  assert.equal(d.versionRequest.title, 'Lower rate'); assert.equal(d.versionRequest.prediction.direction, 'lr');
+  await until(async () => f.sends.some((s) => s.wake?.catId === 'codex' && s.payload.elements[0].payload.text.includes('按「Lower rate」出下一个版本')), Boolean, 'version wake');
+  assert.ok(f.sends.some((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title === '第 3 周期：夜里按规则采纳「Lower rate」')));
+});
+
+test('at night the analysts’ first direction is adopted only when they agree, the first analyst’s for them', async (t) => {
+  const f = await fixture(t), o = await f.create(); await f.initialize(o, losing);
+  // An objective created before the setting has none: the default applies.
+  const stored = await f.storage.get(ownerKey('owner'));
+  delete stored.value.experiments[o.id].policy.auto;
+  assert.ok((await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value)).applied);
+  const cats = [{ id: 'ana-1', name: '甲', model: 'm1' }, { id: 'ana-2', name: '乙', model: 'm2' }];
+  for (const c of cats) await f.http('POST', { op: 'analystAdd', objective: o.id, catId: c.id, cats });
+  t.mock.timers.enable({ apis: ['Date'], now: night });
+  for (const [target, agree] of [['steps', false], ['lr', true]]) {
+    const round = await execute(f, o);
+    await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+    assert.equal((await f.tool('conclude', { cycle: round.n, verdict: 'tune', findings: 'Measured' }, 'cat-b5ddoo9l', o.thread)).ok, true);
+    // 乙 proposes first; 甲, the first analyst, still speaks for them.
+    for (const [id, x] of [['ana-2', target], ['ana-1', 'lr']]) {
+      const task = await f.tool('task', {}, id, o.thread);
+      assert.equal((await f.tool('propose', { cycle: round.n, options: [{ k: x, title: x, why: 'w', kind: 'variable', target: x, cites: task.analyze.library.map((d) => d.id) }] }, id, o.thread)).ok, true);
+    }
+    const r = (await f.read()).experiments[o.id].rounds.at(-1);
+    assert.equal(r.report.agree, agree);
+    if (agree) assert.deepEqual([r.decision.directionId, r.decision.by], ['lr-ana-1', 'RSI']);
+    else { assert.equal(r.decision, null); await decide(f, o); }
+  }
+});
+
+test('inside the run window a candidate is confirmed at once', async (t) => {
+  const f = await fixture(t), o = await f.create({ auto: 'execution' }); await f.initialize(o);
+  t.mock.timers.enable({ apis: ['Date'], now: night });
+  await execute(f, o);
+  const d = await concludeAt(t, f, o, night, [{ k: 'lr', title: 'Lower rate', kind: 'code' }]);
+  assert.equal(d.candidate.cycle, 1);
+  assert.deepEqual([d.rounds[0].decision.pick, d.rounds[0].decision.by, d.rounds[0].decision.note], ['same', 'RSI', '有候选：直接换新种子复验']);
+  await f.activation().actions['rsi.tick']();
+  const rounds = (await f.read()).experiments[o.id].rounds;
+  assert.equal(rounds.length, 2); assert.ok(rounds[1].plan.groups.some((g) => g.confirm));
+});
+
+test('what the night may decide by itself is chosen at creation and changed later; 都等我定 adopts nothing', async (t) => {
+  const f = await fixture(t);
+  assert.match((await f.http('POST', { op: 'new', project: '', thread: 'source', statement: 'X', prepare: 'codex', evaluate: 'cat-b5ddoo9l', auto: 'code', cats: [] })).error, /夜里可以自己定的方向/);
+  // Left empty, it is the default.
+  const o = await f.create({ auto: '' });
+  let d = (await f.read()).experiments[o.id], item = d.prep.find((p) => p.id.endsWith('-auto'));
+  assert.deepEqual(d.policy.auto, ['execution', 'variable']); assert.equal(item.title, '夜里可以自己定的方向'); assert.match(item.value, /^执行修复和调变量/);
+  assert.deepEqual((await f.http('POST', { op: 'prep', objective: o.id, id: item.id, action: 'edit' })).args, { kind: 'rsiAuto', objective: o.id, auto: 'default' });
+  assert.equal((await f.http('POST', { op: 'auto', objective: o.id, auto: 'all' })).status, 400);
+  assert.equal((await f.http('POST', { op: 'auto', objective: o.id, auto: 'none' })).status, 200);
+  d = (await f.read()).experiments[o.id];
+  assert.deepEqual(d.policy.auto, []); assert.match(d.prep.find((p) => p.id === item.id).value, /^都等你定/);
+  assert.ok(d.messages.some((m) => m.title === '你改了夜里可以自己定的方向'));
+  await f.initialize(o, losing);
+  t.mock.timers.enable({ apis: ['Date'], now: night });
+  await execute(f, o);
+  assert.equal((await concludeAt(t, f, o, night, [{ k: 'lr', title: 'Lower rate', kind: 'variable' }])).rounds[0].decision, null);
 });
 
 // The project is broken until the marker file goes: a stand-in for the code a governance member fixes.

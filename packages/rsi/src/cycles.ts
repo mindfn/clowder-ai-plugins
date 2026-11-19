@@ -1,5 +1,5 @@
-import { enqueue, message, prepSettled, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
-import { windowStart } from './schedule.js';
+import { AUTO, enqueue, message, prepSettled, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
+import { insideWindow, windowStart } from './schedule.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, RsiState } from './types.js';
 
@@ -301,6 +301,40 @@ function conclusionCard(state: RsiState, d: Experiment, round: Data, now: number
   const checked = report.predictions.length ? `\n\n${report.predictions.map((p: Data) => `预测核对 · ${p.text}：预期 ${p.expect}，实际 ${p.actual}，${p.result === 'hit' ? '命中' : p.result === 'unresolved' ? '无法核对' : '未命中'}`).join('\n')}` : '';
   message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${report.outcome}${checked}\n\n${lines.join('\n')}${verdict}${absent}${stopped ? '' : d.candidate ? '\n\n在 RSI 页面点「今晚照旧」，下一周期跑确认。' : '\n\n在 RSI 页面选择方向。'}`, 'conclusion');
   if (stopped) message(state, d, now, stopped.text, `第 ${round.n} 周期结论后停止启动新周期。`, 'conclusion');
+  if (!round.decision) decideAtNight(state, d, round, now);
+}
+
+// Inside the run window a conclusion that starts waiting goes on by the rules declared at creation (PHASE3 §2): a candidate is
+// confirmed at once; otherwise the first direction is adopted, as if picked on the page, when its kind is allowed and the analysts agree.
+function decideAtNight(state: RsiState, d: Experiment, round: Data, now: number) {
+  const auto: string[] = d.policy.auto ?? AUTO.default;
+  // 都等我定 leaves even a candidate's confirmation to you (or to 照旧 after DECISION_WAIT).
+  if (!auto.length || d.objective.state !== 'pending' || !insideWindow(d.policy.schedule, now)) return;
+  if (d.candidate) {
+    round.decision = { pick: 'same', note: '有候选：直接换新种子复验', by: 'RSI', at: now };
+    d.objective.state = 'running';
+    message(state, d, now, `第 ${round.n} 周期：有候选，直接换新种子复验`, '复验只换种子、不改任何东西，不用等人：下一周期跑确认。', 'plan');
+    return;
+  }
+  // The first analyst who proposed speaks for them (two or more must agree); without one, the evaluator's first direction.
+  const firsts = analystsOf(d).map((m) => round.report.directions.find((x: Data) => x.by === m.catId)).filter(Boolean), first = firsts[0] || round.report.directions[0];
+  if (!first || firsts.length > 1 && !round.report.agree || !auto.includes(first.kind)) return;
+  round.decision = { pick: 'direction', directionId: first.id, note: '夜里按规则采纳', by: 'RSI', at: now };
+  message(state, d, now, `第 ${round.n} 周期：夜里按规则采纳「${first.title}」`, `${first.why}\n\n这类方向声明时定了夜里可以自己定：交给 ${d.members.find((m) => m.role === 'iterate')!.name} 出版本，出好后接着跑。`, 'plan');
+  requestVersion(state, d, round);
+}
+
+// A pick that changes something asks the governance member for its version, whether made on the page or by the night's rules.
+export function requestVersion(state: RsiState, d: Experiment, round: Data) {
+  const direction = round.report.directions.find((x: Data) => x.id === round.decision.directionId);
+  // An execution fix must not change what is measured: its version replaces the default directly instead of competing with it.
+  const direct = direction?.kind === 'execution';
+  d.versionRequest = { cycle: round.n, decision: round.decision, title: direction?.title || round.decision.note || round.decision.pick, ...(direct ? { direct } : {}),
+    ...(direction?.predict ? { prediction: { ...direction.predict, by: direction.by, text: direction.title, expect: direction.expect, direction: direction.id, cycle: round.n } } : {}) };
+  d.objective.state = 'running';
+  enqueue(state, d, 'agent', { member: d.members.find((m) => m.role === 'iterate')!.catId, action: 'version',
+    message: { title: '准备下一个版本', body: `按「${d.versionRequest.title}」出下一个版本。${direct ? '这是执行修复：不和当前版本对比，登记后直接作为默认版本，所以只修执行，不改训练和评测。' : ''}先调 rsi.task，改项目并提交 git 后调 rsi.version。` } });
+  syncObjective(state, d);
 }
 
 // An analyst's directions join the report; the last one (or the time limit) sends the conclusion card.

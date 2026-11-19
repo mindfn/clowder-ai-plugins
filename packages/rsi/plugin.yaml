@@ -121,7 +121,7 @@ contributions:
       verdict 为 baseline/keep/tune/rollback/sunset/insufficient；findings 是非空字符串或字符串数组；options 的 k 必须互异；有历史周期条目时每个方向必须在 cites 引用至少一条。返回 comparison（均值/区间/逐种子值）、confirmation 和 stop。
       有分析成员时 options 可以省略：插件把这份结论发给分析成员，等他们用 rsi.propose 交齐方向（或等满 20 分钟）再发结论卡。方向可带 target（要改的对象，例如 lr），几个分析成员的第一方向种类和 target 相同就算意见一致。
       kind:execution 是执行修复（重试、超时、目录这类不该改变测量结果的修复）：选中后出的版本直接成为默认、不进对比，并沿用当前默认版本的 config 和变量，只换代码提交。方向可带数值预测 expect {lo,hi,metric?}：选中这个方向后出的版本，第一次和同周期对照比时，该指标（默认主指标）的差值落在 [lo,hi] 内算命中，结论卡和页面会显示命中率。
-      成功会在 thread 发结论卡并在页面显示方向，等待用户通过 expDecide 选方向；候选先安排新种子确认，其他新方向叫醒准备成员生成下一版本；same 可按当前默认继续。目标或最多周期满足时自动完成，并发原因卡。不要自行代替用户决策。
+      成功会在 thread 发结论卡并在页面显示方向，等待用户通过 expDecide 选方向；候选先安排新种子确认，其他新方向叫醒准备成员生成下一版本；same 可按当前默认继续。运行时段内，第一方向（有分析成员时看他们的，几位要意见一致）的 kind 属于评估项允许夜里自己定的类别（默认 execution 和 variable）时，插件不等人直接采纳。目标或最多周期满足时自动完成，并发原因卡。不要自行代替用户决策。
     inputSchema:
       type: object
       additionalProperties: false
@@ -138,7 +138,7 @@ contributions:
     description: >-
       评估成员交了周期结论后，插件叫醒的分析成员可用。先 rsi.task 读 analyze（评估结论、同周期对照、各组结果、之前周期的资料库），再交 {cycle,options:[{k,title,why,kind?,target?,cites?}]}。
       例 {cycle:3,options:[{k:"steps",title:"训练步数 150 → 300",why:"第 150 步时训练准确率还在上升",kind:"variable",target:"steps",cites:["<资料库 id>"]}]}。
-      kind 为 code/variable/metric/goal/discriminate；target 写这个方向要改的对象；k 互异；有历史周期条目时每个方向必须在 cites 引用至少一条。几个分析成员的方向署名并列；全部交齐（或等满 20 分钟）插件发结论卡，第一方向种类和 target 都相同时标为意见一致。
+      kind 为 code/variable/metric/goal/discriminate；target 写这个方向要改的对象；k 互异；有历史周期条目时每个方向必须在 cites 引用至少一条。几个分析成员的方向署名并列；全部交齐（或等满 20 分钟）插件发结论卡，第一方向种类和 target 都相同时标为意见一致。运行时段内，意见一致（只有一位时看他的）且第一方向的 kind 属于评估项允许夜里自己定的类别（默认 execution 和 variable）时，插件不等人直接采纳。
     inputSchema:
       type: object
       additionalProperties: false

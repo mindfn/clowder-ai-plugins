@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { askEvaluation, controlGroup, finishAnalysis, runCycle } from './cycles.js';
+import { askEvaluation, controlGroup, finishAnalysis, requestVersion, runCycle } from './cycles.js';
 import { windowMinutes } from './schedule.js';
 import { summaryOf, objectiveData } from './data.js';
-import { enqueue, kick, message, rsiExpNew, rsiExpReady, rsiExpStaleFrom, stopOf, stopText, syncObjective, repairCount, repairText, REPAIR_DEFAULT, prepSettled } from './init.js';
+import { enqueue, kick, message, rsiExpNew, rsiExpReady, rsiExpStaleFrom, stopOf, stopText, syncObjective, repairCount, repairText, REPAIR_DEFAULT, prepSettled, AUTO, autoKinds, autoKey, autoText } from './init.js';
 import type { Data, Experiment, RsiState, Section } from './types.js';
 
 function selected(state: RsiState, body: Data, query: Data) {
@@ -76,6 +76,17 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       message(state, d, now, '你改了夜里出错自动修', text);
       return { ok: true };
     }
+    case 'auto': {
+      if (!d) return { error: 'Experiment not found', status: 404 };
+      const auto = autoKinds(body.auto);
+      if ('error' in auto) return auto;
+      d.policy.auto = auto.kinds;
+      const text = autoText(auto.kinds), item = d.prep.find((p) => p.section === 'goal' && p.id.endsWith('-auto'));
+      if (item) Object.assign(item, { value: text, state: 'confirmed', by: '你', mine: true, at: now });
+      else d.prep.push({ id: `${d.objective.id}-auto`, section: 'goal', title: '夜里可以自己定的方向', value: text, state: 'confirmed', neededFrom: null, mine: true, by: '你', at: now });
+      message(state, d, now, '你改了夜里可以自己定的方向', text);
+      return { ok: true };
+    }
     case 'delete': {
       // The objective and its sub-objectives, with their data, pending messages and cycle notes. Files are removed by the runtime; the thread stays.
       const owner = Object.keys(state.objectives).find((k) => state.objectives[k].some((x) => x.id === body.objective));
@@ -102,6 +113,8 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         if (limits.error) return limits;
         const repair = repairCount(body.repair);
         if ('error' in repair) return repair;
+        const auto = autoKinds(body.auto);
+        if ('error' in auto) return auto;
         const objective = rsiExpNew(state, project, body, now);
         return objective.thread ? { ok: true, act: 'thread', args: { id: objective.thread } } : { ok: true };
       }
@@ -154,6 +167,8 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       }
       if (body.action === 'edit' && body.note == null && item.id.endsWith('-repair'))
         return { ok: true, act: 'dialog', args: { kind: 'rsiRepair', objective: d.objective.id, repair: String(d.policy.repair ?? REPAIR_DEFAULT) } };
+      if (body.action === 'edit' && body.note == null && item.id.endsWith('-auto'))
+        return { ok: true, act: 'dialog', args: { kind: 'rsiAuto', objective: d.objective.id, auto: autoKey(d.policy.auto ?? AUTO.default) } };
       if (body.action === 'edit' && body.note == null) return { ok: true, act: 'dialog', args: { kind: 'rsiPrepEdit', id: item.id, title: item.title, value: item.value } };
       if (body.action === 'agent' || (body.action === 'edit' && body.note)) {
         if (body.note !== undefined && typeof body.note !== 'string') return { error: 'Invalid rewrite note' };
@@ -320,15 +335,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
           syncObjective(state, d);
           return { ok: true };
         }
-        const direction = round.report.directions.find((x: Data) => x.id === body.directionId);
-        // An execution fix must not change what is measured: its version replaces the default directly instead of competing with it.
-        const direct = direction?.kind === 'execution';
-        d.versionRequest = { cycle: round.n, decision: round.decision, title: direction?.title || body.note || body.pick, ...(direct ? { direct } : {}),
-          ...(direction?.predict ? { prediction: { ...direction.predict, by: direction.by, text: direction.title, expect: direction.expect, direction: direction.id, cycle: round.n } } : {}) };
-        d.objective.state = 'running';
-        enqueue(state, d, 'agent', { member: d.members.find((m) => m.role === 'iterate')!.catId, action: 'version',
-          message: { title: '准备下一个版本', body: `按「${d.versionRequest.title}」出下一个版本。${direct ? '这是执行修复：不和当前版本对比，登记后直接作为默认版本，所以只修执行，不改训练和评测。' : ''}先调 rsi.task，改项目并提交 git 后调 rsi.version。` } });
-        syncObjective(state, d);
+        requestVersion(state, d, round);
         return { ok: true };
       }
       d.objective.state = 'running'; d.objective.round = n;
