@@ -236,7 +236,8 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       }
       // A job past its timeout, or failing for good, is cancelled so that nothing is left behind remotely.
       if ((timedOut || final) && cancel && where?.values.job) log = (log + (await launch(cancel, where.cwd, where.values)).log).slice(-16000);
-      if (stopped) return;
+      // A deleted objective's run is neither logged nor recorded: its folder is being removed.
+      if (stopped || dropped.has(d.objective.id)) return;
       // The full log stays with the run; the state keeps its tail. The run's result is recorded whether or not the file can be written.
       if (await exists(directory)) await writeFile(join(directory, 'rsi.log'), log).catch((failure) => host.log('error', 'RSI could not write the full run log', { run: run.id, error: String(failure) }));
       await retain(host.storage, key, (state) => {
