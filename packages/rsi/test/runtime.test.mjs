@@ -165,6 +165,8 @@ test('tools enforce caller, dependencies, complete input and owner CAS without d
   assert.ok(rules.steps[0].deps.every((d)=>d.version===1 && d.items.length));
   const invalidGuard = await f.tool('submit', {step:4, items:rules.steps[0].examples.map((x)=>({id:`own-${x.id}`,title:`Own ${x.title}`,value:'metric'})), metrics:{version:'E1',items:[{id:'score',name:'Score',how:'score',dir:'up'},{id:'cost',name:'Cost',how:'cost',dir:'down',guard:true}]}}, 'cat-b5ddoo9l', o.thread);
   assert.match(invalidGuard.error, /finite threshold/);
+  const conflictingThresholds = await f.tool('submit', {step:4, items:rules.steps[0].examples.map((x)=>({id:`own-${x.id}`,title:`Own ${x.title}`,value:'metric'})), metrics:{version:'E1',items:[{id:'score',name:'Score',how:'score',dir:'up',minDelta:1,margin:1}]}}, 'cat-b5ddoo9l', o.thread);
+  assert.match(conflictingThresholds.error, /不能同时.*minDelta.*margin/);
   assert.equal((await f.read()).experiments[o.id].steps.rules, undefined);
   await f.http('POST',{op:'prep',objective:o.id,id:'cp-good',action:'edit',note:'',value:'New criterion'},{project:f.project});
   assert.equal((await f.tool('submit',{step:4,items:rules.steps[0].items.map((i)=>({id:i.id,value:'metric'}))},'cat-b5ddoo9l',o.thread)).status,409);
@@ -591,6 +593,19 @@ test('a gain smaller than the main metric’s minimum valid improvement does not
     const result = await f.tool('conclude', { cycle: round.n, verdict: 'tune', findings: 'Measured', options: [{ k: 'next', title: 'Next', why: 'w' }] }, 'cat-b5ddoo9l', o.thread);
     assert.equal(result.comparison.groups.find((g) => g.group === 'change').beatsControl, wins, `${dir} minDelta ${minDelta}`);
     assert.equal(!!(await f.read()).experiments[o.id].candidate, wins);
+  }
+});
+
+test('a main metric’s non-inferiority margin accepts only changes within the allowed loss', async (t) => {
+  for (const [dir, delta, margin, passes] of [['up', -1, 1, true], ['up', -2, 1, false], ['down', 1, 1, true], ['down', 2, 1, false]]) {
+    const f = await fixture(t), o = await f.create();
+    await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: { delta: 0 }, control: true }, { id: 'change', label: 'Change', vars: { delta } }], seeds: [11, 23] },
+      { metrics: { version: 'E1', items: [{ id: 'score', name: 'Score', how: 'metrics.score', dir, margin }] } });
+    const round = await execute(f, o);
+    await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+    const result = await f.tool('conclude', { cycle: round.n, verdict: 'tune', findings: 'Measured', options: [{ k: 'next', title: 'Next', why: 'w' }] }, 'cat-b5ddoo9l', o.thread);
+    assert.equal(result.comparison.groups.find((g) => g.group === 'change').beatsControl, passes, `${dir} delta ${delta} margin ${margin}`);
+    assert.equal(!!(await f.read()).experiments[o.id].candidate, passes);
   }
 });
 

@@ -159,8 +159,11 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
   if (section === 'rules' && (!record(input.metrics) || !text(input.metrics.version) || !Array.isArray(input.metrics.items) || !input.metrics.items.length
     || input.metrics.items.some((m: unknown) => !record(m) || !text(m.id) || !text(m.name) || !text(m.how) || !['up', 'down'].includes(m.dir) || m.guard !== undefined && typeof m.guard !== 'boolean' || m.guard && (typeof m.threshold !== 'number' || !Number.isFinite(m.threshold)))
     || input.metrics.items.some((m: Data) => m.minDelta !== undefined && !(typeof m.minDelta === 'number' && Number.isFinite(m.minDelta) && m.minDelta >= 0))
+    || input.metrics.items.some((m: Data) => m.margin !== undefined && !(typeof m.margin === 'number' && Number.isFinite(m.margin) && m.margin >= 0))
     || !input.metrics.items.some((m: Data) => !m.guard)
-    || new Set(input.metrics.items.map((m: Data) => m.id)).size !== input.metrics.items.length)) return { error: 'Step 4 requires metrics {version,items:[{id,name,how,dir:up|down,guard?,threshold?,minDelta?}]}; guardrails require a finite threshold; minDelta is a number ≥ 0' };
+    || new Set(input.metrics.items.map((m: Data) => m.id)).size !== input.metrics.items.length)) return { error: 'Step 4 requires metrics {version,items:[{id,name,how,dir:up|down,guard?,threshold?,minDelta?,margin?}]}; guardrails require a finite threshold; minDelta and margin are numbers ≥ 0' };
+  if (section === 'rules' && input.metrics.items.some((m: Data) => m.minDelta !== undefined && m.margin !== undefined))
+    return { error: '同一主指标不能同时设置 minDelta 和 margin：请选择最小有效提升或非劣效容差。' };
   // A real objective's stop target names a metric; step 4 must define it, or the target could never be checked.
   const stopMetric = section === 'rules' && d.objective.projectPath && STOP_TARGET.exec(d.objective.stop?.target || '')?.[1].trim();
   if (stopMetric && !input.metrics.items.some((m: Data) => m.id === stopMetric || m.name === stopMetric))
