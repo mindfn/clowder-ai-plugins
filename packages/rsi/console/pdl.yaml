@@ -675,6 +675,17 @@ views:
                       analyze: true
                       _: false
           - type: button
+            label: t:rsi.exp.membersEdit
+            when: $.exp.projectPath
+            act: dialog
+            args:
+              kind: rsiMembers
+              objective: $.exp.id
+              prepare: $.exp.memberIds.prepare
+              evaluate: $.exp.memberIds.evaluate
+              iterate: $.exp.memberIds.iterate
+              cats: $.members.defaultCatOptions
+          - type: button
             icon: plus
             label: t:rsi.exp.discussAdd
             when: $.exp.projectPath
@@ -4211,6 +4222,68 @@ views:
     okArgs:
       request: stop
       objective: $.objective
+  dlg.rsiMembers:
+    title: t:rsi.exp.membersEdit
+    fields:
+      - id: dlg-prepare
+        label: t:rsi.newExp.prepare
+        value: $.prepare
+        options:
+          - from: $.cats
+            item:
+              v: "@id"
+              label:
+                t: rsi.memberOption
+                args:
+                  - "@name"
+                  - "@id"
+        arg: prepare
+      - id: dlg-evaluate
+        label: t:rsi.newExp.evaluate
+        value: $.evaluate
+        options:
+          - from: $.cats
+            item:
+              v: "@id"
+              label:
+                t: rsi.memberOption
+                args:
+                  - "@name"
+                  - "@id"
+        arg: evaluate
+      - id: dlg-iterate
+        label: t:rsi.newExp.iterate
+        help: t:rsi.newExp.iterateHelp
+        value: $.iterate
+        options:
+          - from: $.cats
+            item:
+              v: "@id"
+              label:
+                t: rsi.memberOption
+                args:
+                  - "@name"
+                  - "@id"
+        arg: iterate
+    ok: t:rsi.common.save
+    okAct: plugin
+    okArgs:
+      request: members
+      objective: $.objective
+      cats: $.cats
+  dlg.rsiRepair:
+    title: t:rsi.repairDialog
+    fields:
+      - id: dlg-repair
+        label: t:rsi.newExp.repair
+        help: t:rsi.newExp.repairHelp
+        value: $.repair
+        arg: repair
+    ok: t:rsi.common.save
+    okAct: plugin
+    okArgs:
+      request: repair
+      objective: $.objective
   dlg.rsiGroupRename:
     title: t:rsi.common.rename
     fields:
@@ -4378,6 +4451,17 @@ views:
                   analyze: true
                   _: false
       - type: button
+        label: t:rsi.exp.membersEdit
+        when: $.exp.projectPath
+        act: dialog
+        args:
+          kind: rsiMembers
+          objective: $.exp.id
+          prepare: $.exp.memberIds.prepare
+          evaluate: $.exp.memberIds.evaluate
+          iterate: $.exp.memberIds.iterate
+          cats: $.members.defaultCatOptions
+      - type: button
         icon: plus
         label: t:rsi.exp.discussAdd
         when: $.exp.projectPath
@@ -4507,6 +4591,11 @@ views:
         help: t:rsi.newExp.stopTargetHelp
         placeholder: accuracy ≥ 0.45
         arg: target
+      - id: dlg-repair
+        label: t:rsi.newExp.repair
+        help: t:rsi.newExp.repairHelp
+        value: "5"
+        arg: repair
     blocks:
       - type: toolbar
         left:
@@ -4953,6 +5042,7 @@ requests:
       evaluate: "@evaluate"
       iterate: "@iterate"
       target: "@target"
+      repair: "@repair"
       name: "@name"
       cats: "@cats"
   life:
@@ -5010,6 +5100,31 @@ requests:
       objective: "@objective"
       target: "@target"
       rounds: "@rounds"
+  members:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: members
+      objective: "@objective"
+      prepare: "@prepare"
+      evaluate: "@evaluate"
+      iterate: "@iterate"
+      cats: "@cats"
+  repair:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: repair
+      objective: "@objective"
+      repair: "@repair"
   initRedo:
     path: rsi/act
     method: POST

@@ -16,3 +16,11 @@ export function insideWindow(schedule: Data, now: number) {
   const [start, end] = window, date = new Date(now), minute = date.getHours() * 60 + date.getMinutes();
   return start < end ? minute >= start && minute < end : minute >= start || minute < end;
 }
+
+// When tonight's window opened: the latest start at or before now; without a window, twelve hours ago.
+export function windowStart(schedule: Data, now: number) {
+  const window = windowMinutes(schedule.window);
+  if (!window) return now - 12 * 3_600_000;
+  const date = new Date(now), start = new Date(date.getFullYear(), date.getMonth(), date.getDate(), Math.floor(window[0] / 60), window[0] % 60).getTime();
+  return start <= now ? start : start - 24 * 3_600_000;
+}

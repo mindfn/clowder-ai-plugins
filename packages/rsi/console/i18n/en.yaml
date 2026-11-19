@@ -329,6 +329,7 @@ newName: Goal
 newOk: Create
 noObjectives: No objectives yet
 noObjectivesHint: This project has no objectives yet. Create one with what to improve and when to stop; an agent will read the project, draft execution and metrics in the objective thread, and list them for your confirmation.
+repairDialog: Fixing failures at night
 newExp:
   help: The plugin creates an objective thread and initializes it in seven steps, mentioning the member responsible for each step. Agents keep drafting; items needing your judgment appear on the objective page. The machine and time window are drafted in step 3 after the agent reviews the project.
   statement: What to improve (one sentence)
@@ -342,6 +343,8 @@ newExp:
   iterateHelp: Changes the project along the direction you choose and makes the next version; one member
   stopTarget: Stop when this target is reached
   stopTargetHelp: Write “metric comparison number”, e.g. accuracy ≥ 0.45; the metric must match a step-4 metric id or name. Leave it blank to omit it.
+  repair: Failures to fix by itself per night (0 = off)
+  repairHelp: A failed run goes to the governance member, who fixes it, and the cycle runs again; every fix is a version you can roll back; the same error three times in a row stops it for you
   stopRounds: Maximum cycles
   ok: Create and start initialization
 cards:
@@ -565,6 +568,7 @@ exp:
     prep: "{2} items await your confirmation; all must be confirmed before evaluation starts{5}"
     stale: "{2} steps used an older revision. Redo with the new revision to mention members in dependency order."
     version: "Waiting for {4} to prepare the next version for “{0}”; the next cycle compares it with the current version."
+    repair: "Cycle {0} had failed runs; waiting for {4} to fix them, then the cycle's plan runs again on the fixed version"
     executor: Execution is not connected; no runs will start until it is ready
     planned: The next cycle runs at {3}
     _: ""
@@ -605,6 +609,7 @@ exp:
   doingAlso: ", {0} is working on step {1}"
   continueAfterDone: Change when to stop and continue
   discussAdd: Add a discussion member
+  membersEdit: Change members
   analystRemove: Remove analyst
   wakeAgain: Wake again
   waitOnOf: Waiting for step {0} to be submitted

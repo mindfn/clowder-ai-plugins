@@ -1,6 +1,6 @@
 import { RSI_CP_INIT, createFixtures } from './fixtures.js';
 import { submitInitStep, enqueue, kick, message, STOP_TARGET, syncObjective } from './init.js';
-import { conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, validPlan } from './cycles.js';
+import { abandonRepair, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, validPlan } from './cycles.js';
 import { windowMinutes } from './schedule.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, PrepItem, RsiState, Section, ToolContext } from './types.js';
@@ -63,7 +63,7 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
     ...(analyze ? { analyze: { cycle: analyze.n, report: { verdict: analyze.report.verdict, findings: analyze.report.summary, confirmation: analyze.confirmation }, plan: analyze.plan, runs: analyze.runs,
       metrics: analyze.metrics || d.metrics, comparison: comparison(d, analyze), library: cycleLibrary(state, d),
       next: '调用 rsi.propose({cycle,options:[{k,title,why,kind?,target?,cites?}]}) 交你的方向。target 写这个方向要改的对象（例如 lr、group_size、train.py 的奖励），几个分析成员的第一方向种类和对象都相同就算意见一致。' } } : {}),
-    ...(version ? { version: { ...version, next: '按方向修改项目并提交 git；调用 rsi.version({change,commit,config})。config 是 JSON 对象或项目内 JSON 文件路径。' } } : {}) };
+    ...(version ? { version: { ...version, next: version.repair ? '修好让它跑不起来的问题并提交 git，调用 rsi.version({change,commit,config})，插件用修好的版本重跑这一周期的计划；修不了就调 rsi.version({cannot:"原因"})。' : '按方向修改项目并提交 git；调用 rsi.version({change,commit,config})。config 是 JSON 对象或项目内 JSON 文件路径。' } } : {}) };
 }
 
 // Some member runtimes hand nested arguments over as JSON text ("items": "[{…}]"); read them as the structures they describe.
@@ -103,6 +103,8 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
   }
   if (method === 'rsi.version') {
     if (d.members.find((m) => m.role === 'iterate')?.catId !== ctx.catId || d.versionRequest?.invocationId !== ctx.invocationId) return { error: 'Call rsi.task on the version turn first', status: 403 };
+    // A repair the member cannot make goes to the evaluator instead.
+    if (d.versionRequest.repair && text(input.cannot)) { abandonRepair(state, d, `${d.members.find((m) => m.role === 'iterate')!.name} 说修不了：${input.cannot}`, now); return { ok: true, evaluating: true }; }
     if (!text(input.change) || input.commit !== undefined && (!text(input.commit) || !/^[a-f0-9]{7,40}$/i.test(input.commit)) || !(record(input.config) || text(input.config))) return { error: 'Provide change, optional git commit (7–40 hex characters), and config (JSON object or JSON file path)' };
     const previous = d.objective.currentVersion, id = `v${d.versions.length + 1}`;
     d.versions.push({ id, parent: previous, change: input.change, commit: input.commit || null, config: input.config, at: now, current: false, status: 'proposed',
@@ -115,8 +117,16 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       Object.assign(version, { status: 'confirmed', direct: true, config: before.config, vars: before.vars || {} });
       for (const v of d.versions) v.current = v.id === id;
       d.objective.currentVersion = id;
-      d.upcoming = { ...last.plan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d)] };
-      message(state, d, now, `执行修复 ${id} 直接作为默认版本`, `${input.change}\n\n执行修复不和旧版本对比；下一周期用它跑当前版本对照，确认没有跑坏。`, 'plan');
+      if (d.versionRequest.repair) {
+        // A repair reruns the failed cycle's plan on the fixed version; the failed cycle stays as it ran, marked repaired, and is not evaluated.
+        Object.assign(last, { state: 'repaired', repairedBy: id });
+        (d.repairs ||= []).push({ at: now, cycle: last.n, version: id, signature: d.versionRequest.repair.signature });
+        d.upcoming = { ...last.plan, baseline: false, groups: last.plan.groups.map((g: Data) => (g.version || previous) === previous ? { ...g, version: id } : g) };
+        message(state, d, now, `执行修复 ${id}：重跑第 ${last.n} 周期的计划`, `${input.change}\n\n修的是：${d.versionRequest.repair.signature}`, 'plan');
+      } else {
+        d.upcoming = { ...last.plan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d)] };
+        message(state, d, now, `执行修复 ${id} 直接作为默认版本`, `${input.change}\n\n执行修复不和旧版本对比；下一周期用它跑当前版本对照，确认没有跑坏。`, 'plan');
+      }
     } else d.upcoming = { ...last.plan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d),
       { id: 'change', label: input.change, version: id, vars: {}, control: false, confirm: false }] };
     delete d.versionRequest;

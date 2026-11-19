@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAnalysis, runCycle } from './cycles.js';
+import { abandonRepair, ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAnalysis, REPAIR_WAIT, runCycle } from './cycles.js';
 import { insideWindow } from './schedule.js';
 import { bindObjectiveThread, recordInitExecution } from './init.js';
 import { createRuns } from './runs.js';
@@ -152,9 +152,11 @@ export function createRuntime(host: RsiHost) {
     const now = Date.now();
     const analysisLate = (r: Data) => r.analysis?.waiting.length && now - r.analysis.since > ANALYSIS_LIMIT;
     const decisionLate = (x: Experiment, r: Data) => x.objective.state === 'pending' && r.asked && !r.decision && now - r.asked > DECISION_WAIT && insideWindow(x.policy.schedule, now);
-    const late = (state: import('./types.js').RsiState) => Object.values(state.experiments).some((x) => x.rounds.some((r: Data) => analysisLate(r) || decisionLate(x, r)));
+    const repairLate = (x: Experiment) => x.versionRequest?.repair && now - x.versionRequest.since > REPAIR_WAIT;
+    const late = (state: import('./types.js').RsiState) => Object.values(state.experiments).some((x) => repairLate(x) || x.rounds.some((r: Data) => analysisLate(r) || decisionLate(x, r)));
     for (const [key, entry] of owners) if (late(entry.value as import('./types.js').RsiState)) {
       await retain(host.storage, key, (state) => {
+        for (const x of Object.values(state.experiments)) if (repairLate(x)) abandonRepair(state, x, `${REPAIR_WAIT / 60_000} 分钟内没修好`, now);
         for (const x of Object.values(state.experiments)) for (const r of x.rounds) {
           if (analysisLate(r)) finishAnalysis(state, x, r, now);
           else if (decisionLate(x, r)) decideByDefault(state, x, r, now);

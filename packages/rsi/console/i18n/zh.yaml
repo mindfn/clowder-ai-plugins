@@ -329,6 +329,7 @@ newName: 目标
 newOk: 新建
 noObjectives: 还没有评估项
 noObjectivesHint: 这个项目还没有评估项。新建一个：说清楚要改进什么、什么时候停；怎么跑、看哪些指标由 agent 读项目后在评估项 thread 里起草，再列给你确认。
+repairDialog: 夜里出错自动修
 newExp:
   help: 建好后插件会建一个评估项 thread，按七步初始化，每步 @ 负责的成员；agent 一直往下起草，要你判断的在评估项页逐条列出。机器和时段不用现在填，第 3 步由 agent 查项目后起草。
   statement: 要改进什么（一句话）
@@ -343,6 +344,8 @@ newExp:
   stopTarget: 达到什么就停
   stopTargetHelp: 写成「指标 比较符 数字」，比如 accuracy ≥ 0.45，指标要和第 4 步量尺的 id 或名称一致；留空 = 不设这条
   stopRounds: 最多几个周期
+  repair: 夜里出错自动修几次（0 = 不修）
+  repairHelp: 运行失败时交给治理执行成员当场修、修完重跑这一周期；每次修复都是一个版本，可以回退；同一个错误连续 3 次就停下等你
   ok: 建好并开始初始化
 cards:
   none: 没有待处理的事
@@ -565,6 +568,7 @@ exp:
     prep: 还有 {2} 项等你确认，都确认了才能开始评估{5}
     stale: 有 {2} 步依据的是改之前的版本，点「按新版本重做」按依赖顺序重新 @ 成员
     version: "等 {4} 按「{0}」出下一个版本；交上来后，下一个周期拿它和当前版本对照"
+    repair: "第 {0} 周期有运行失败，等 {4} 修；修好后用修好的版本重跑这一周期的计划"
     executor: 执行方式还没接通，接通前不会开跑
     planned: 下一个周期在 {3} 跑
     _: ""
@@ -605,6 +609,7 @@ exp:
   doingAlso: "，{0} 在做第 {1} 步"
   continueAfterDone: 改何时停，接着迭代
   discussAdd: 加方案讨论成员
+  membersEdit: 改成员
   analystRemove: 移出分析成员
   wakeAgain: 重新叫醒
   waitOnOf: 等第 {0} 步提交

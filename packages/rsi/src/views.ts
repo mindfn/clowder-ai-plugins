@@ -219,7 +219,7 @@ function exp(): any {
     : halted ? { k: halted.autoResumed ? 'interrupted' : 'resuming', v: halted.version, n: halted.k, go: at(halted, 'collect') }
     : cut ? { k: 'cancelled', n: cut.i, by: cut.who } : doing.length ? { k: 'init', by: doing.map(function (x: any): any { return { who: x.who, i: x.i, k: x.k }; }), hint: hint }
     : o.state === 'ready' ? { k: 'ready' } : stale ? { k: 'stale', count: stale } : needYou ? { k: 'prep', count: needYou, hint: hint }
-    : d.versionRequest ? { k: 'version', v: d.versionRequest.title, by: memberName('iterate') }
+    : d.versionRequest ? (d.versionRequest.repair ? { k: 'repair', v: d.versionRequest.cycle, by: memberName('iterate') } : { k: 'version', v: d.versionRequest.title, by: memberName('iterate') })
     : d.executor.state !== 'passed' ? { k: 'executor' } : { k: 'planned', window: d.policy.schedule.window };
 
   const cur = d.versions.find(function (v: any): any { return v.current; }), rules = steps.find(function (x: any): any { return x.k === 'rules'; }), ruled = ['submitted', 'confirmed', 'stale'].indexOf(rules.state) >= 0;
@@ -243,7 +243,7 @@ function exp(): any {
       runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { durationSeconds: u.start ? Math.round(((u.end || Date.now()) - u.start) / 1000) : null, metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })), groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),
       notAssessed: r.report && RSI_LAYERS.filter(function (l: any): any { return r.report.attribution.assessedLayers.indexOf(l) < 0; }),
       report: r.report && Object.assign({}, r.report, { directions: r.report.directions.map(function (x: any): any { return Object.assign({}, x, { picked: !!r.decision && r.decision.directionId === x.id }); }) }) }),
-    prep: { needYou: needYou, steps: steps }, executor: d.executor, members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, policy: policyOf(d, o), metrics: d.metrics,
+    prep: { needYou: needYou, steps: steps }, executor: d.executor, members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, memberIds: { prepare: (d.members.find(function (m: any): any { return m.role === 'prepare'; }) || {}).catId, evaluate: (d.members.find(function (m: any): any { return m.role === 'evaluate'; }) || {}).catId, iterate: (d.members.find(function (m: any): any { return m.role === 'iterate'; }) || {}).catId }, policy: policyOf(d, o), metrics: d.metrics,
     eTree: [{ id: d.metrics.version }], cTree: [{ id: 'C1' }] };
 };
 function record(): any {

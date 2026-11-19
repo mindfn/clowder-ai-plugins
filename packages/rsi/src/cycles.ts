@@ -1,4 +1,5 @@
-import { enqueue, message, prepSettled, STOP_TARGET, syncObjective } from './init.js';
+import { enqueue, message, prepSettled, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
+import { windowStart } from './schedule.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, RsiState } from './types.js';
 
@@ -64,8 +65,43 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
 
 export function finishCycle(state: RsiState, d: Experiment, round: Data, now: number) {
   if (round.state !== 'running' || round.runs.some((r: Data) => r.state === 'queued' || r.state === 'running')) return;
-  round.state = 'evaluating'; round.end = now;
+  round.end = now;
+  // Runs of the default version that failed for environment or execution reasons go to the governance member to fix first (PHASE3 §1).
+  if (!requestRepair(state, d, round, now)) {
+    round.state = 'evaluating';
+    d.objective.budget.used++;
+    askEvaluation(state, d, round);
+  }
+  syncObjective(state, d);
+}
+
+// A repair stops at the night's allowance, after the same failure three times in a row, or when the member takes longer than REPAIR_WAIT.
+export const REPAIR_SAME = 3, REPAIR_WAIT = 60 * 60_000;
+const signatureOf = (run: Data) => String(run.error?.analysis || run.error?.raw || '').split('\n').map((l) => l.trim()).filter(Boolean).pop()?.replace(/\d+/g, '#').slice(0, 200) || '未知错误';
+
+function requestRepair(state: RsiState, d: Experiment, round: Data, now: number) {
+  const failed = round.runs.filter((r: Data) => r.state === 'failed' && (round.plan.groups.find((g: Data) => g.id === r.group)?.version || d.objective.currentVersion) === d.objective.currentVersion);
+  const member = d.members.find((m) => m.role === 'iterate');
+  if (!failed.length || !member?.catId) return false;
+  const since = windowStart(d.policy.schedule, now), left = (d.policy.repair ?? REPAIR_DEFAULT) - (d.repairs || []).filter((x: Data) => x.at >= since).length;
+  const signature = signatureOf(failed[0]), recent = (d.repairs || []).slice(1 - REPAIR_SAME);
+  if (left <= 0 || recent.length === REPAIR_SAME - 1 && recent.every((x: Data) => x.signature === signature)) return false;
+  round.state = 'repairing';
+  d.versionRequest = { cycle: round.n, title: `修第 ${round.n} 周期的运行失败`, direct: true, since: now, decision: null,
+    repair: { signature, failures: failed.slice(0, 5).map((r: Data) => ({ run: r.id, group: r.group, seed: r.seed, step: r.error?.step, error: r.error?.raw, analysis: r.error?.analysis || null, log: String(r.log || '').slice(-1500) })) } };
+  enqueue(state, d, 'agent', { member: member.catId, action: 'version', message: { title: `第 ${round.n} 周期运行失败，请修`,
+    body: `${failed.length} 次运行失败：${signature}。这是执行修复：只修让它跑不起来的问题，不改训练和评测。先调 rsi.task 看失败详情；修好提交 git 后调 rsi.version，插件用修好的版本重跑这一周期的计划。修不了就调 rsi.version({cannot:"原因"})，交给评估成员下结论。本晚还能自动修 ${left} 次。` } });
+  message(state, d, now, `第 ${round.n} 周期运行失败，交给 ${member.name} 修`, `错误：${signature}\n\n修好后用修好的版本重跑这一周期的计划；本晚还能自动修 ${left} 次。`, 'plan');
+  return true;
+}
+
+// A repair that does not come (the member cannot make it, or takes too long): the failed cycle goes to its conclusion as before.
+export function abandonRepair(state: RsiState, d: Experiment, reason: string, now: number) {
+  const round = d.rounds.find((r: Data) => r.n === d.versionRequest.cycle);
+  delete d.versionRequest;
+  round.state = 'evaluating';
   d.objective.budget.used++;
+  message(state, d, now, `第 ${round.n} 周期的运行失败没有修好`, `${reason}\n\n交给评估成员下结论。`, 'plan');
   askEvaluation(state, d, round);
   syncObjective(state, d);
 }

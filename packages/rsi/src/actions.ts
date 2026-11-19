@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { askEvaluation, controlGroup, finishAnalysis, runCycle } from './cycles.js';
 import { windowMinutes } from './schedule.js';
 import { summaryOf, objectiveData } from './data.js';
-import { enqueue, kick, message, rsiExpNew, rsiExpReady, rsiExpStaleFrom, stopOf, stopText, syncObjective } from './init.js';
+import { enqueue, kick, message, rsiExpNew, rsiExpReady, rsiExpStaleFrom, stopOf, stopText, syncObjective, repairCount, repairText, REPAIR_DEFAULT, prepSettled } from './init.js';
 import type { Data, Experiment, RsiState, Section } from './types.js';
 
 function selected(state: RsiState, body: Data, query: Data) {
@@ -48,6 +48,34 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       message(state, d, now, resumed ? '你改了何时停，接着迭代' : '你改了何时停', text);
       return { ok: true };
     }
+    case 'members': {
+      // The single-member roles can change at any time; work waiting for a role goes to its new member.
+      if (!d) return { error: 'Experiment not found', status: 404 };
+      const roles = (['prepare', 'evaluate', 'iterate'] as const).filter((role) => typeof body[role] === 'string' && body[role] && body[role] !== d.members.find((m) => m.role === role)?.catId);
+      for (const role of roles) {
+        const cat = Array.isArray(body.cats) ? body.cats.find((c: Data) => c.id === body[role]) : null;
+        Object.assign(d.members.find((m) => m.role === role)!, { catId: body[role], name: cat?.name || body[role], model: cat?.model || '' });
+        const member = d.members.find((m) => m.role === role)!;
+        message(state, d, now, `你把${{ prepare: '初始化', evaluate: '评估', iterate: '治理执行' }[role]}成员换成了 ${member.name}`, '之后这个角色的活都派给 TA。', 'members');
+        const waiting = role === 'evaluate' ? d.rounds.find((r: Data) => r.state === 'evaluating') : null;
+        if (waiting) askEvaluation(state, d, waiting);
+        else if (role === 'iterate' && d.versionRequest || role === 'prepare' && !prepSettled(d))
+          enqueue(state, d, 'agent', { member: member.catId!, action: role === 'iterate' ? 'version' : 'prepare', message: { title: '接手', body: '这个角色换成了你：先调 rsi.task 看轮到你的事。' } });
+      }
+      syncObjective(state, d);
+      return { ok: true };
+    }
+    case 'repair': {
+      if (!d) return { error: 'Experiment not found', status: 404 };
+      const repair = repairCount(body.repair);
+      if ('error' in repair) return repair;
+      d.policy.repair = repair.count;
+      const text = repairText(repair.count), item = d.prep.find((p) => p.section === 'goal' && p.id.endsWith('-repair'));
+      if (item) Object.assign(item, { value: text, state: 'confirmed', by: '你', mine: true, at: now });
+      else d.prep.push({ id: `${d.objective.id}-repair`, section: 'goal', title: '夜里出错自动修', value: text, state: 'confirmed', neededFrom: null, mine: true, by: '你', at: now });
+      message(state, d, now, '你改了夜里出错自动修', text);
+      return { ok: true };
+    }
     case 'delete': {
       // The objective and its sub-objectives, with their data, pending messages and cycle notes. Files are removed by the runtime; the thread stays.
       const owner = Object.keys(state.objectives).find((k) => state.objectives[k].some((x) => x.id === body.objective));
@@ -72,6 +100,8 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
           return { error: 'Provide a statement and prepare/evaluate member ids' };
         const limits = stopOf(body);
         if (limits.error) return limits;
+        const repair = repairCount(body.repair);
+        if ('error' in repair) return repair;
         const objective = rsiExpNew(state, project, body, now);
         return objective.thread ? { ok: true, act: 'thread', args: { id: objective.thread } } : { ok: true };
       }
@@ -122,6 +152,8 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         const s = d.objective.stop;
         return { ok: true, act: 'dialog', args: { kind: 'rsiStop', objective: d.objective.id, target: s.target || '', rounds: s.maxCycles || '' } };
       }
+      if (body.action === 'edit' && body.note == null && item.id.endsWith('-repair'))
+        return { ok: true, act: 'dialog', args: { kind: 'rsiRepair', objective: d.objective.id, repair: String(d.policy.repair ?? REPAIR_DEFAULT) } };
       if (body.action === 'edit' && body.note == null) return { ok: true, act: 'dialog', args: { kind: 'rsiPrepEdit', id: item.id, title: item.title, value: item.value } };
       if (body.action === 'agent' || (body.action === 'edit' && body.note)) {
         if (body.note !== undefined && typeof body.note !== 'string') return { error: 'Invalid rewrite note' };

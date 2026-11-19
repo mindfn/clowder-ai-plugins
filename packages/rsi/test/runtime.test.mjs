@@ -231,7 +231,7 @@ test('three real cycles execute groups × seeds serially, render measured runs, 
 });
 
 test('non-zero submit retries once, then persists failures and sends a failure card', async (t) => {
-  const f=await fixture(t),o=await f.create();
+  const f=await fixture(t),o=await f.create({ repair: '0' });
   await f.initialize(o,{groups:[{id:'once',label:'Retry succeeds',vars:{fail:'once'}},{id:'always',label:'Fails twice',vars:{fail:'always'}}],seeds:[1,2]});
   await f.http('POST',{op:'runCycle',objective:o.id});
   const state=await until(f.read,(s)=>s.experiments[o.id].rounds[0]?.state==='evaluating');
@@ -301,7 +301,7 @@ test('a retried run starts in an empty run directory and keeps the earlier attem
 });
 
 test('a submit that runs past its limit is stopped and retried once as an environment failure', async (t) => {
-  const f = await fixture(t), o = await f.create();
+  const f = await fixture(t), o = await f.create({ repair: '0' });
   Object.assign(f.commands, { submit: 'sleep 30', timeout: 1 });
   await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [5] });
   const started = Date.now(), run = (await execute(f, o)).runs[0];
@@ -880,7 +880,7 @@ test('threshold guardrails veto faster groups and conclusion inputs show each cr
 });
 
 test('non-zero and killed processes retry once without evidence; NaN and declared failures remain results', async (t) => {
-  const f = await fixture(t), o = await f.create(); Object.assign(f.commands, pythonExecutor, { failureField: 'failed' });
+  const f = await fixture(t), o = await f.create({ repair: '0' }); Object.assign(f.commands, pythonExecutor, { failureField: 'failed' });
   await f.initialize(o, { groups: [
     { id: 'exit', label: 'Non-zero', vars: { exit: true } }, { id: 'kill', label: 'Killed', vars: { kill: true } },
     { id: 'nan', label: 'NaN', vars: { nan: true } }, { id: 'real', label: 'Declared failure', vars: { failed: true, delta: 1000 } },
@@ -984,6 +984,95 @@ test('a conclusion nobody decides within 30 minutes of the run window goes on wi
   assert.ok(f.sends.some((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title === '第 1 周期：没人回应，按当前计划继续')));
 });
 
+// The project is broken until the marker file goes: a stand-in for the code a governance member fixes.
+const breakable = (f) => Object.assign(f.commands, { submit: `test ! -f broken && ${f.commands.submit}`, analyze: 'echo "missing build: broken marker"' });
+const failing = (f, o) => f.http('POST', { op: 'runCycle', objective: o.id }).then(() => until(f.read, (s) => ['repairing', 'evaluating'].includes(s.experiments[o.id].rounds.at(-1)?.state)));
+const one = { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [11] };
+
+test('a cycle whose runs fail goes to the governance member, who fixes it, and the plan runs again on the fixed version', async (t) => {
+  const f = await fixture(t), o = await f.create(); breakable(f);
+  await f.initialize(o, losing);
+  await writeFile(join(f.project, 'broken'), '');
+  let d = (await failing(f, o)).experiments[o.id];
+  assert.equal(d.rounds[0].state, 'repairing');
+  await until(async () => f.sends.filter((s) => s.wake?.catId === 'codex').length, (n) => n >= 1, 'repair wake');
+  const task = await f.tool('task', {}, 'codex', o.thread);
+  assert.equal(task.version.repair.signature, 'missing build: broken marker');
+  assert.equal(task.version.repair.failures[0].step, 'submit');
+  await rm(join(f.project, 'broken'));
+  assert.equal((await f.tool('version', { change: 'Fix the build', config: {} }, 'codex', o.thread)).version, 'v2');
+  d = (await f.read()).experiments[o.id];
+  assert.equal(d.rounds[0].state, 'repaired'); assert.equal(d.objective.currentVersion, 'v2'); assert.equal(d.repairs.length, 1);
+  assert.deepEqual(d.upcoming.groups.map((g) => [g.id, g.version]), [['control', 'v2'], ['change', 'v2']]);
+  const again = await execute(f, o);
+  assert.ok(again.runs.every((r) => r.state === 'done' && !r.error));
+  assert.ok(f.sends.some((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title === '第 1 周期运行失败，交给 砚砚 修')));
+});
+
+test('the same failure three times in a row goes to the evaluator', async (t) => {
+  const f = await fixture(t), o = await f.create(); breakable(f);
+  await f.initialize(o, one);
+  await writeFile(join(f.project, 'broken'), '');
+  for (const n of [1, 2]) {
+    assert.equal((await failing(f, o)).experiments[o.id].rounds.at(-1).state, 'repairing');
+    await f.tool('task', {}, 'codex', o.thread);
+    assert.equal((await f.tool('version', { change: `Attempt ${n}`, config: {} }, 'codex', o.thread)).version, `v${n + 1}`);
+  }
+  assert.equal((await failing(f, o)).experiments[o.id].rounds.at(-1).state, 'evaluating');
+});
+
+test('a repair the member cannot make, or does not make in time, goes to the evaluator', async (t) => {
+  const f = await fixture(t), o = await f.create(); breakable(f);
+  await f.initialize(o, one);
+  await writeFile(join(f.project, 'broken'), '');
+  await failing(f, o);
+  await f.tool('task', {}, 'codex', o.thread);
+  assert.equal((await f.tool('version', { cannot: 'Needs a driver upgrade' }, 'codex', o.thread)).evaluating, true);
+  let d = (await f.read()).experiments[o.id];
+  assert.equal(d.rounds[0].state, 'evaluating'); assert.equal(d.versionRequest, undefined);
+  assert.ok(d.messages.some((m) => m.title === '第 1 周期的运行失败没有修好' && m.body.includes('Needs a driver upgrade')));
+  await report(f, o, 'insufficient'); await decide(f, o);
+  // The next failure waits for its repair; an hour later the schedule gives it to the evaluator.
+  assert.equal((await failing(f, o)).experiments[o.id].rounds.at(-1).state, 'repairing');
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 61 * 60_000 });
+  await f.activation().actions['rsi.tick']();
+  d = (await f.read()).experiments[o.id];
+  assert.equal(d.rounds.at(-1).state, 'evaluating'); assert.ok(d.messages.at(-1).body.includes('60 分钟内没修好'));
+});
+
+test('how many failures a night fixes by itself is set at creation and changed later; 0 leaves failures to the evaluator', async (t) => {
+  const f = await fixture(t);
+  assert.ok((await f.http('POST', { op: 'new', project: '', thread: 'source', statement: 'X', prepare: 'codex', evaluate: 'cat-b5ddoo9l', repair: 'many', cats: [] })).error);
+  const o = await f.create({ repair: '1' }); breakable(f);
+  let d = (await f.read()).experiments[o.id], item = d.prep.find((p) => p.id.endsWith('-repair'));
+  assert.equal(d.policy.repair, 1); assert.match(item.value, /每晚最多 1 次/);
+  assert.deepEqual((await f.http('POST', { op: 'prep', objective: o.id, id: item.id, action: 'edit' })).args, { kind: 'rsiRepair', objective: o.id, repair: '1' });
+  await f.initialize(o, one);
+  await writeFile(join(f.project, 'broken'), '');
+  // The night's one repair is used...
+  await failing(f, o); await f.tool('task', {}, 'codex', o.thread);
+  await f.tool('version', { change: 'Attempt', config: {} }, 'codex', o.thread);
+  // ...so the next failure goes to the evaluator.
+  assert.equal((await failing(f, o)).experiments[o.id].rounds.at(-1).state, 'evaluating');
+  assert.equal((await f.http('POST', { op: 'repair', objective: o.id, repair: '0' })).status, 200);
+  d = (await f.read()).experiments[o.id];
+  assert.equal(d.policy.repair, 0); assert.match(d.prep.find((p) => p.id.endsWith('-repair')).value, /^不自动修/);
+});
+
+test('members can be changed after creation; work waiting for a role goes to its new member', async (t) => {
+  const f = await fixture(t), o = await f.create(); await f.initialize(o, losing);
+  const round = await execute(f, o);
+  const cats = [{ id: 'codex', name: '砚砚', model: 'gpt-5.6-sol' }, { id: 'cat-b5ddoo9l', name: '小狸', model: 'k3.1' }, { id: 'cat-new', name: '新评估', model: 'm9' }];
+  assert.equal((await f.http('POST', { op: 'members', objective: o.id, prepare: 'codex', evaluate: 'cat-new', iterate: 'codex', cats })).status, 200);
+  assert.deepEqual((await f.read()).experiments[o.id].members.filter((m) => m.role === 'evaluate').map((m) => [m.catId, m.name, m.model]), [['cat-new', '新评估', 'm9']]);
+  // The cycle waiting for its conclusion goes to the new evaluator; the old one has no turn.
+  await until(async () => f.sends.filter((s) => s.wake?.catId === 'cat-new').length, (n) => n === 1, 'new evaluator wake');
+  assert.equal((await f.tool('task', {}, 'cat-b5ddoo9l', o.thread)).status, 403);
+  assert.equal((await f.tool('task', {}, 'cat-new', o.thread)).evaluate.cycle, round.n);
+  const page = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
+  assert.deepEqual(page.memberIds, { prepare: 'codex', evaluate: 'cat-new', iterate: 'codex' });
+});
+
 const asyncExecutor = { preflight: 'test -f async-executor.sh', submit: 'sh async-executor.sh submit {config} {run} {seed}',
   get: 'sh async-executor.sh get {run} {job}', cancel: 'sh async-executor.sh cancel {run} {job}', collect: '{run}/metrics.json' };
 
@@ -1022,7 +1111,7 @@ test('async executors without cancel resume a persisted job after restart withou
 });
 
 test('an environment failure during confirmation retains the candidate and asks no analyst', async (t) => {
-  const f = await fixture(t), o = await f.create(); Object.assign(f.commands, pythonExecutor);
+  const f = await fixture(t), o = await f.create({ repair: '0' }); Object.assign(f.commands, pythonExecutor);
   await f.initialize(o, plan({ delta: 2 }));
   await f.http('POST', { op: 'analystAdd', objective: o.id, catId: 'ana-1', cats: [{ id: 'ana-1', name: '甲', model: 'm1' }] });
   await execute(f, o); await report(f, o); await decide(f, o);

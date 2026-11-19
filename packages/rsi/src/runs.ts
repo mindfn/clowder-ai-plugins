@@ -111,6 +111,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       // The foreground submit's limit: the registered timeout, else three times this objective's longest successful attempt (at least 10 minutes); none before one has succeeded.
       const succeeded = d.rounds.flatMap((r: Data) => r.runs.flatMap((x: Data) => (x.attempts || []).filter((a: Data) => !a.error).map((a: Data) => a.end - a.start)));
       const limit = d.executor.timeout ? d.executor.timeout * 1000 : succeeded.length ? Math.max(600_000, 3 * Math.max(...succeeded)) : 0;
+      let where: { cwd: string; values: Data } | undefined;
       try {
         const { cwd, commit } = await versionDirectory(host, key, d, version);
         env.commit = commit;
@@ -135,6 +136,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         env.config = env.configHash = createHash('sha256').update(config).digest('hex');
         await writeFile(configFile, config);
         const values: Data = { config: configFile, run: directory, seed: run.seed, job: jobId || '' };
+        where = { cwd, values };
         step = 'preflight';
         const preflight = await launch(d.executor.commands.preflight, cwd, values);
         log += preflight.log;
@@ -207,6 +209,13 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       }
       remote = undefined;
       if (stopped) return;
+      // A run that fails for good (after its retry) is analysed for its error signature by the executor's analyze command, when registered.
+      let analysis: string | undefined;
+      if (error && kind === 'env' && run.retries >= 1 && d.executor.commands.analyze && where) {
+        const analysed = await launch(d.executor.commands.analyze, where.cwd, where.values);
+        analysis = clip((analysed.stdout.trim() || analysed.log).trim());
+      }
+      if (stopped) return;
       // The full log stays with the run; the state keeps its tail. The run's result is recorded whether or not the file can be written.
       if (await exists(directory)) await writeFile(join(directory, 'rsi.log'), log).catch((failure) => host.log('error', 'RSI could not write the full run log', { run: run.id, error: String(failure) }));
       await retain(host.storage, key, (state) => {
@@ -214,7 +223,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         if (!current) return;
         const cycle = current.rounds.find((r: Data) => r.n === round.n), entry = cycle.runs.find((r: Data) => r.id === run.id);
         if (entry.state !== 'running') return;
-        const end = Date.now(), failure = error ? { kind, step, raw: clip(error) } : null;
+        const end = Date.now(), failure = error ? { kind, step, raw: clip(error), ...(analysis ? { analysis } : {}) } : null;
         Object.assign(entry, { end, metrics, env, log: log.slice(-LOG_KEEP), error: failure, evidence: !error || kind === 'real' });
         entry.attempts ||= [];
         entry.attempts.push({ start, end, env, metrics, error: failure, jobId: jobId || null });

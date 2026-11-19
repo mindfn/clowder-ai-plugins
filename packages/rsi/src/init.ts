@@ -173,6 +173,14 @@ export function stopOf(input: Data): Data {
   if (input.rounds != null && input.rounds !== '' && (!Number.isSafeInteger(+input.rounds) || +input.rounds < 1)) return { error: 'The cycle limit must be a positive integer' };
   return { stop: { target: target || null, maxCycles: +input.rounds || null } };
 }
+// How many failed cycles a night fixes by itself (PHASE3 §1): the governance member fixes them and the cycle reruns; 0 turns it off.
+export const REPAIR_DEFAULT = 5;
+export function repairCount(value: unknown): { count: number } | { error: string } {
+  if (value == null || value === '') return { count: REPAIR_DEFAULT };
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n >= 0 && n <= 20 ? { count: n } : { error: '「夜里出错自动修几次」要写 0–20 的整数，0 = 不自动修' };
+}
+export const repairText = (n: number) => n ? `运行失败时交给治理执行成员修，修完重跑这一周期；每晚最多 ${n} 次，同一个错误连续 3 次就停下等你` : '不自动修：运行失败时交给评估成员下结论，等你决定';
 export const stopText = (stop: Data) => [stop.target && `达到「${stop.target}」并复验稳定`, stop.maxCycles && `用满 ${stop.maxCycles} 个周期`].filter(Boolean).join('，或') || '由你决定';
 
 export function rsiExpNew(state: RsiState, project: string, body: Data, now: number) {
@@ -211,6 +219,8 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   const stopItem = d.prep.find((p) => p.id.endsWith('-stop'));
   if (stopItem) Object.assign(stopItem, { value: stop, state: 'confirmed', by: '你', mine: true, at: now });
   else d.prep.push({ id: `${id}-stop`, section: 'goal', title: '何时停', value: stop, state: 'confirmed', neededFrom: null, mine: true, by: '你', at: now });
+  d.policy.repair = (repairCount(body.repair) as { count: number }).count;
+  d.prep.push({ id: `${id}-repair`, section: 'goal', title: '夜里出错自动修', value: repairText(d.policy.repair), state: 'confirmed', neededFrom: null, mine: true, by: '你', at: now });
   state.experiments[id] = d;
   state.objectives[project].push({ id, name: body.statement, parent: null, state: 'preparing', mode: 'exp', trigger: '', running: null, cycle: null, prediction: null, locked: 0 });
   enqueue(state, d, 'createThread', { project, title: `RSI · ${body.statement}` });
