@@ -46,6 +46,8 @@ async function fixture(t) {
     async list() { return clone(Object.fromEntries(entries)); },
     async get(key) { return clone(entries.get(key)); },
     async compareAndSet(key, expected, value) {
+      // The Host refuses a value over 1 MiB (plugin-private-storage.ts).
+      if (Buffer.byteLength(JSON.stringify(value)) > 1024 * 1024) throw new TypeError('plugin storage value exceeds 1048576 bytes');
       if ((entries.get(key)?.revision ?? null) !== expected) return { applied: false };
       entries.set(key, { revision: ++revision, value: clone(value) }); return { applied: true };
     },
@@ -735,6 +737,50 @@ test('a state grown past the storage limit by earlier versions is compacted when
   assert.ok(!after.outbox.some((e) => e.id === 'old-message'));
   // The demo data alone is about 240 KB; what remains of this objective is small again.
   assert.ok(JSON.stringify(after).length < 400000);
+});
+
+test('a conclusion stores its comparison once and its library note only the outcome; the page, the tools and the next cycle still read them', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  // Each run writes more log than a closed cycle keeps.
+  Object.assign(f.commands, { submit: `head -c 3000 /dev/zero | tr '\\0' x; ${f.commands.submit}` });
+  await f.initialize(o);
+  const ran = await execute(f, o);
+  assert.ok(ran.runs.every((r) => r.log.length === 2000 && r.attempts[0].env.seed === r.seed));
+  // The member's reply still has the cells.
+  assert.equal((await report(f, o)).comparison.matrix.length, 2);
+  const round = (await f.read()).experiments[o.id].rounds[0];
+  assert.equal(round.report.compare.matrix, undefined); assert.equal(round.report.matrix.length, 2);
+  assert.ok(round.runs.every((r) => r.log.length === 400 && r.attempts.every((a) => !a.env && !a.metrics && a.end >= a.start)));
+  const page = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
+  assert.deepEqual([page.cycle.report.compare.comparable, page.cycle.report.compare.against], [true, 'control']);
+  assert.deepEqual(page.cycle.groups.map((g) => [g.id, g.score.mean]), [['control', 17], ['change', 18]]);
+  assert.deepEqual(page.trend, [{ n: 1, version: 'v1', value: 18 }]);
+  // The next cycle's evaluator reads the note's outcome and cites it.
+  await decide(f, o);
+  await execute(f, o);
+  const task = await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.deepEqual(task.evaluate.library.map((doc) => doc.result), [{ verdict: 'tune', metric: 'score', means: { control: 17, change: 18 }, confirmation: { status: 'candidate', version: 'v1' } }]);
+  assert.equal((await report(f, o, 'keep')).confirmation.status, 'confirmed');
+});
+
+test('a write still past the Host’s 1 MiB value after compaction is refused with its size: the page and the member are told and nothing is stored', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [5] });
+  const round = await execute(f, o);
+  const stored = async () => { const s = await f.storage.get(ownerKey('owner')); return { revision: s.revision, bytes: Buffer.byteLength(JSON.stringify(s.value)) }; };
+  let before = await stored();
+  const added = await f.http('POST', { op: 'docAdd', title: 'Too large', body: 'x'.repeat(1024 * 1024) }, { project: f.project });
+  assert.equal(added.status, 507); assert.match(added.error, /^RSI 状态超过宿主 1 MiB 上限（\d+ 字节，上限 1048576 字节）/);
+  assert.deepEqual(await stored(), before);
+  // Less room left than a conclusion takes: the evaluator is told why rsi.conclude failed, and the cycle still waits for it.
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  const full = await f.storage.get(ownerKey('owner'));
+  full.value.details.padding = { text: 'x'.repeat(1024 * 1024 - Buffer.byteLength(JSON.stringify(full.value)) - 100) };
+  assert.ok((await f.storage.compareAndSet(ownerKey('owner'), full.revision, full.value)).applied);
+  before = await stored();
+  const concluded = await f.tool('conclude', { cycle: round.n, verdict: 'baseline', findings: 'Measured', options: [{ k: 'next', title: 'Next', why: 'w' }] }, 'cat-b5ddoo9l', o.thread);
+  assert.equal(concluded.status, 507); assert.match(concluded.error, /^RSI 状态超过宿主 1 MiB 上限（\d+ 字节/);
+  assert.deepEqual(await stored(), before); assert.equal((await f.read()).experiments[o.id].rounds[0].state, 'evaluating');
 });
 
 test('every plan includes the default control, exposes paired seeds, confirms once, and cites the cycle library', async (t) => {

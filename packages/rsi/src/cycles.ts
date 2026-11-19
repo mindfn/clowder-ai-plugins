@@ -1,6 +1,6 @@
 import { AUTO, enqueue, mention, message, prepSettled, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
 import { insideWindow, windowEnd, windowStart } from './schedule.js';
-import { record, text } from './store.js';
+import { cycleResult, record, text } from './store.js';
 import type { Data, Experiment, RsiState } from './types.js';
 
 export function validPlan(plan: unknown): plan is Data {
@@ -270,11 +270,12 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     confirmation = { status: 'candidate', group: group.id, version: group.version, cycle: round.n };
     d.upcoming = { ...round.plan, groups: [controlGroup(d), { ...group, control: false, confirm: true }], seeds: freshSeeds(d, round.plan.seeds.length) };
   } else d.upcoming = { ...round.plan, seeds: freshSeeds(d, round.plan.seeds.length) };
-  const member = d.members.find((m) => m.role === 'evaluate')!;
+  const member = d.members.find((m) => m.role === 'evaluate')!, { matrix: cells, ...compare } = compared;
   round.confirmation = confirmation;
-  round.report = { verdict: input.verdict, headline: findings.split('\n')[0], summary: findings, matrix: compared.matrix,
+  // The comparison's cells are stored once, as the report's matrix.
+  round.report = { verdict: input.verdict, headline: findings.split('\n')[0], summary: findings, matrix: cells,
     predictions: checkPredictions(d, round, compared), asks: [], directions: directionsFrom(d, options, member, []), agree: true,
-    compare: { ...compared, note: '仅比较本周期 control；区间为种子均值 ± 样本标准差。' }, confirmation,
+    compare: { ...compare, note: '仅比较本周期 control；区间为种子均值 ± 样本标准差。' }, confirmation,
     attribution: { verdict: 'unresolved', primaryLayer: null, assessedLayers: [], competingLayers: [], uncertainty: 'interval', comparability: 'unchanged', reasons: [], evidence: [] } };
   round.state = 'done';
   d.objective.state = 'pending';
@@ -291,7 +292,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
       body: `${mention(m)} 评估成员的结论是 ${input.verdict}：${round.report.headline}。调 rsi.task 看同周期对照、各组结果和之前的周期，再调 rsi.propose 交你的方向；几个分析成员的方向会署名并列，交给用户选。${EXPECT_HINT}` } });
   } else conclusionCard(state, d, round, now, stopped);
   state.library[d.objective.projectId].push({ id: `${d.objective.id}-cycle-${round.n}`, kind: 'feedback', title: `第 ${round.n} 周期：${round.report.headline}`, body: `${round.plan.groups.filter((g: Data) => !g.control).map((g: Data) => `${g.label} (${g.version}) ${JSON.stringify(g.vars)}`).join('\n') || '当前版本基线'}\n\n${findings}${outcome}`,
-    objectives: [d.objective.id], cycle: round.n, tried: round.plan.groups.filter((g: Data) => !g.control), result: { verdict: input.verdict, comparison: compared, confirmation }, sources: [{ objective: d.objective.id, cycle: round.n }], state: 'confirmed', by: member.catId, at: now });
+    objectives: [d.objective.id], cycle: round.n, tried: round.plan.groups.filter((g: Data) => !g.control), result: cycleResult(input.verdict, compared, confirmation), sources: [{ objective: d.objective.id, cycle: round.n }], state: 'confirmed', by: member.catId, at: now });
   syncObjective(state, d);
   return { ok: true, comparison: compared, confirmation, stop: d.objective.stopReason || null, ...(round.analysis ? { analysts: round.analysis.waiting } : {}) };
 }
