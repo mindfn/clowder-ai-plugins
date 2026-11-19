@@ -4,6 +4,7 @@ import { conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, 
 import { windowMinutes } from './schedule.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, PrepItem, RsiState, Section, ToolContext } from './types.js';
+import { platform } from 'node:os';
 
 const fields = ['preflight', 'submit', 'get', 'cancel', 'collect', 'analyze'];
 export function executorInput(input: Data): boolean {
@@ -57,7 +58,8 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
   if (analyze) (analyze.analysis.turns ||= {})[ctx.catId] = ctx.invocationId;
   if (version) version.invocationId = ctx.invocationId;
   return { objective: d.objective, projectPath: d.objective.projectPath, steps, versions: d.versions,
-    stepVersions: d.steps, ...(evaluate ? { evaluate: { cycle: evaluate.n, plan: evaluate.plan, runs: evaluate.runs, metrics: evaluate.metrics || d.metrics, comparison: comparison(d, evaluate), library: cycleLibrary(state, d), next: '调用 rsi.conclude 提交 verdict/findings/options；方向 cites 引用之前周期的资料库条目。' } } : {}),
+    // The shell that runs the registered commands, so members write commands that run on this host.
+    shell: platform() === 'win32' ? 'cmd' : 'sh', stepVersions: d.steps, ...(evaluate ? { evaluate: { cycle: evaluate.n, plan: evaluate.plan, runs: evaluate.runs, metrics: evaluate.metrics || d.metrics, comparison: comparison(d, evaluate), library: cycleLibrary(state, d), next: '调用 rsi.conclude 提交 verdict/findings/options；方向 cites 引用之前周期的资料库条目。' } } : {}),
     ...(analyze ? { analyze: { cycle: analyze.n, report: { verdict: analyze.report.verdict, findings: analyze.report.summary, confirmation: analyze.confirmation }, plan: analyze.plan, runs: analyze.runs,
       metrics: analyze.metrics || d.metrics, comparison: comparison(d, analyze), library: cycleLibrary(state, d),
       next: '调用 rsi.propose({cycle,options:[{k,title,why,kind?,target?,cites?}]}) 交你的方向。target 写这个方向要改的对象（例如 lr、group_size、train.py 的奖励），几个分析成员的第一方向种类和对象都相同就算意见一致。' } } : {}),

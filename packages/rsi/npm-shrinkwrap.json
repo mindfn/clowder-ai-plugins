@@ -1,12 +1,12 @@
 {
   "name": "@clowder-ai/rsi",
-  "version": "0.1.0-alpha.51",
+  "version": "0.1.0-alpha.52",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "@clowder-ai/rsi",
-      "version": "0.1.0-alpha.51",
+      "version": "0.1.0-alpha.52",
       "license": "MIT",
       "engines": { "node": ">=22.18.0" }
     }

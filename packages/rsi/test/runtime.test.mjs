@@ -7,6 +7,7 @@ import { basename, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import plugin from '../dist/index.js';
 import { ownerKey } from '../dist/backend.js';
+import { quote } from '../dist/runs.js';
 
 const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 const script = `
@@ -788,6 +789,12 @@ test('a selection that loses on fresh seeds stays rejected and never replaces th
   const rejected = await report(f, o); assert.equal(rejected.confirmation.status, 'rejected'); assert.deepEqual(rejected.analysts, ['ana-1']);
   const d = (await f.read()).experiments[o.id]; assert.equal(d.objective.currentVersion, 'v1'); assert.equal(d.candidate, undefined);
   assert.equal(d.versions.find((v)=>v.id==='v2').status,'rejected');
+});
+
+test('placeholders are quoted for the shell that runs the command: sh, or cmd on Windows', () => {
+  assert.equal(quote("it's here", false), `'it'"'"'s here'`);
+  assert.equal(quote('C:\\runs\\a b', true), '"C:\\runs\\a b"');
+  assert.equal(quote('say "hi"', true), '"say ""hi"""');
 });
 
 test('a run whose full log cannot be written still records its result', async (t) => {

@@ -9,7 +9,14 @@ import { clip, isState, LOG_KEEP, record, retain } from './store.js';
 import { projectCommit, removeVersionWorktrees, versionDirectory } from './versions.js';
 import type { Data, RsiHost } from './types.js';
 
-const quote = (value: string | number) => `'${String(value).replace(/'/g, `'"'"'`)}'`;
+// A registered command runs in the host system's shell, like any spawned command: sh, or cmd on Windows. What it does is the members' business.
+const windows = platform() === 'win32';
+export const quote = (value: string | number, win = windows) => win ? `"${String(value).replace(/"/g, '""')}"` : `'${String(value).replace(/'/g, `'"'"'`)}'`;
+// A stopped command takes what it started with it: its process group, or its process tree on Windows.
+function killTree(pid: number) {
+  if (windows) spawn('taskkill', ['/pid', String(pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true });
+  else process.kill(-pid, 'SIGKILL');
+}
 const render = (command: string, values: Data) => command.replace(/\{(config|run|seed|job)\}/g, (_, k) => quote(values[k]));
 const field = (value: Data, path: string) => path.split('.').reduce((v: any, k) => v?.[k], value);
 const exists = (path: string) => stat(path).then(() => true, () => false);
@@ -25,12 +32,12 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
   async function command(template: string, cwd: string, values: Data, limit = 0) {
     if (busy && dropped.has(busy)) return { code: -1, log: 'Objective deleted', stdout: '' };
     let log = '', stdout = '';
-    const process = child = spawn('/bin/sh', ['-c', render(template, values)], { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const process = child = spawn(render(template, values), { cwd, shell: true, detached: !windows, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     process.stdout!.on('data', (part) => { stdout = (stdout + part).slice(-16000); log = (log + part).slice(-16000); });
     process.stderr!.on('data', (part) => { log = (log + part).slice(-16000); });
     const timer = limit ? setTimeout(() => {
       log += `\n超过 ${Math.round(limit / 1000)} 秒没结束，已停止`;
-      try { globalThis.process.kill(-process.pid!, 'SIGKILL'); }
+      try { killTree(process.pid!); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') host.log('error', 'RSI could not stop a timed-out command', { error: String(error) }); }
     }, limit) : undefined;
     const code = await new Promise<number>((done) => {
@@ -236,7 +243,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       }
       for (const id of ids) dropped.add(id);
       if (busy && ids.includes(busy) && child?.pid) {
-        try { process.kill(-child.pid, 'SIGKILL'); }
+        try { killTree(child.pid); }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
       }
     },
@@ -250,7 +257,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       stopped = true;
       clearTimeout(pollTimer); releasePoll?.();
       if (child?.pid) {
-        try { process.kill(-child.pid, 'SIGKILL'); }
+        try { killTree(child.pid); }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
       }
       await job;
