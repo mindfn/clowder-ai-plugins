@@ -14,6 +14,7 @@ now:
   collecting: 采集 {0} / {1}
   locate: 定位
 state:
+  done: 已结束
   collecting: 采集中
   pending: 等待决定
   baseline: 基线周期
@@ -634,6 +635,7 @@ exp:
       soon: 马上开跑
       pending: 等你决定后，今晚 {0}
       paused: 已暂停
+      done: 已结束
       _: ""
   executor: 执行方式（插件 MCP 代理）
   ex:

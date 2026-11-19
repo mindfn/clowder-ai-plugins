@@ -14,6 +14,7 @@ now:
   collecting: Collected {0} / {1}
   locate: Locate
 state:
+  done: Finished
   collecting: Collecting
   pending: Awaiting decision
   baseline: Baseline cycle
@@ -634,6 +635,7 @@ exp:
       soon: Starting soon
       pending: Waiting for your decision, tonight {0}
       paused: Paused
+      done: Finished
       _: ""
   executor: Execution (plugin MCP proxy)
   ex:
