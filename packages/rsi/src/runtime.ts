@@ -168,6 +168,10 @@ export function createRuntime(host: RsiHost) {
     }
     if (stopped) return;
     owners = Object.entries(await host.storage.list()).filter(([key, entry]) => key.startsWith('rsi:') && isState(entry.value));
+    // A cycle the schedule started stops its running run once its window has closed; waking the runs on every tick continues it when the window opens.
+    runs.hold(owners.flatMap(([, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments)
+      .flatMap((d) => d.rounds.filter((r: Data) => r.scheduled && r.state === 'running' && !insideWindow(d.policy.schedule, now)).flatMap((r: Data) => r.runs.map((x: Data) => x.id)))));
+    runs.wake();
     if (owners.some(([, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments).some((d) => d.objective.projectPath && (d.executor.state === 'probing' || d.rounds.some((r: Data) => r.state === 'running'))))) return;
     for (const [key] of owners) {
       let started = false;
@@ -177,8 +181,10 @@ export function createRuntime(host: RsiHost) {
           && insideWindow(d.policy.schedule, Date.now()) && !d.rounds.some((r: Data) => ['running', 'evaluating'].includes(r.state) || r.state === 'interrupted' && r.autoResumed || r.report && !r.decision));
         if (!d) return;
         // An interrupted cycle is resumed once by the schedule; interrupted again, it waits for 跑一轮.
-        const halted = d.rounds.find((r: Data) => r.state === 'interrupted');
-        started = !!runCycle(state, d, Date.now()).ok;
+        const halted = d.rounds.find((r: Data) => r.state === 'interrupted'), result = runCycle(state, d, Date.now());
+        started = !!result.ok;
+        // A cycle the schedule starts keeps to its window; one started with 跑一轮 does not.
+        if (started) d.rounds.find((r: Data) => r.n === result.cycle).scheduled = true;
         if (started && halted) { halted.autoResumed = true; halted.events.push({ at: Date.now(), kind: 'retry', text: '周期被插件重启打断，调度自动续跑一次' }); }
       });
       await flush(key);

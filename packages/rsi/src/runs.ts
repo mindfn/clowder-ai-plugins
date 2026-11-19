@@ -5,6 +5,7 @@ import { arch, cpus, platform, release } from 'node:os';
 import { join, resolve } from 'node:path';
 import { finishCycle } from './cycles.js';
 import { message, recordInitExecution, submitInitStep } from './init.js';
+import { insideWindow } from './schedule.js';
 import { clip, isState, LOG_KEEP, record, retain } from './store.js';
 import { projectCommit, removeVersionWorktrees, versionDirectory } from './versions.js';
 import type { Data, RsiHost } from './types.js';
@@ -17,16 +18,16 @@ function killTree(pid: number) {
   if (windows) spawn('taskkill', ['/pid', String(pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true });
   else process.kill(-pid, 'SIGKILL');
 }
-const render = (command: string, values: Data) => command.replace(/\{(config|run|seed|job)\}/g, (_, k) => quote(values[k]));
+const render = (command: string, values: Data) => command.replace(/\{(config|run|seed|job|start|end)\}/g, (_, k) => quote(values[k]));
 const field = (value: Data, path: string) => path.split('.').reduce((v: any, k) => v?.[k], value);
 const exists = (path: string) => stat(path).then(() => true, () => false);
 const parseResult = (raw: string) => JSON.parse(raw.replace(/"(?:\\.|[^"\\])*"|\bNaN\b|-?Infinity\b/g, (token) => token.startsWith('"') ? token : JSON.stringify(token)));
 
 export function createRuns(host: RsiHost, changed: (key: string) => Promise<void>) {
-  let stopped = false, again = false, child: ChildProcess | undefined, job: Promise<void> | undefined, remote: Data | undefined;
+  let stopped = false, again = false, held = false, child: ChildProcess | undefined, job: Promise<void> | undefined, remote: Data | undefined;
   let pollTimer: ReturnType<typeof setTimeout> | undefined, releasePoll: (() => void) | undefined;
-  // busy: the objective whose probe or run is executing; a deleted (dropped) objective starts no further command.
-  let busy: string | undefined;
+  // busy: the objective whose probe or run is executing, runId: that run; a deleted (dropped) objective starts no further command.
+  let busy: string | undefined, runId: string | undefined;
   const dropped = new Set<string>();
   // limit (ms): a command still running then is stopped with its process group.
   async function command(template: string, cwd: string, values: Data, limit = 0) {
@@ -49,12 +50,12 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
     return { code, log, stdout };
   }
 
-  // The work loop starts no command once the plugin stops: stop() would otherwise wait for it to finish. stop() itself may still cancel a job.
-  const launch = (template: string, cwd: string, values: Data, limit = 0) => stopped ? Promise.resolve({ code: -1, log: 'Plugin stopped', stdout: '' }) : command(template, cwd, values, limit);
+  // The work loop starts no command once the plugin stops (stop() would otherwise wait for it to finish; stop() itself may still cancel a job) or its run is held.
+  const launch = (template: string, cwd: string, values: Data, limit = 0) => stopped || held ? Promise.resolve({ code: -1, log: held ? 'Run window closed' : 'Plugin stopped', stdout: '' }) : command(template, cwd, values, limit);
 
   async function work() {
     while (!stopped) {
-      busy = undefined;
+      busy = runId = undefined; held = false;
       const entries = await host.storage.list();
       const owners = Object.entries(entries).filter(([key, entry]) => key.startsWith('rsi:') && isState(entry.value));
       const retired = owners.flatMap(([key, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments)
@@ -90,12 +91,14 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       }
       const queued = owners.flatMap(([key, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments)
         .filter((d) => d.objective.projectPath && d.objective.state === 'running')
-        .flatMap((d) => d.rounds.filter((r: Data) => r.state === 'running').flatMap((round: Data) => round.runs.filter((run: Data) => run.state === 'queued').map((run: Data) => ({ key, d, round, run })))))[0];
+        // A cycle the schedule started runs only inside its window.
+        .flatMap((d) => d.rounds.filter((r: Data) => r.state === 'running' && (!r.scheduled || insideWindow(d.policy.schedule, Date.now()))).flatMap((round: Data) => round.runs.filter((run: Data) => run.state === 'queued').map((run: Data) => ({ key, d, round, run })))))[0];
       if (!queued) return;
       const { key, d, round, run } = queued;
       const group = round.plan.groups.find((g: Data) => g.id === run.group), version = d.versions.find((v: Data) => v.id === group.version);
       const directory = join(d.objective.projectPath, 'runs', d.objective.id, String(round.n), `${group.id}-s${run.seed}`);
-      const configFile = join(directory, 'config.json'), start = Date.now();
+      // A persisted async job keeps the start of the attempt that submitted it: its {start} and timeout count from there.
+      const configFile = join(directory, 'config.json'), start = run.jobId ? run.start : Date.now();
       let acquired = false;
       await retain(host.storage, key, (state) => {
         acquired = false;
@@ -105,9 +108,9 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         Object.assign(current, { state: 'running', start, end: null, directory });
       });
       if (!acquired || stopped) continue;
-      busy = d.objective.id;
+      busy = d.objective.id; runId = run.id;
       let metrics: Data = {}, env: Data = { seed: run.seed, hardware: { os: `${platform()} ${release()}`, arch: arch(), chip: cpus()[0]?.model || 'unknown' } };
-      let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId;
+      let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId, timedOut = false;
       // The foreground submit's limit: the registered timeout, else three times this objective's longest successful attempt (at least 10 minutes); none before one has succeeded.
       const succeeded = d.rounds.flatMap((r: Data) => r.runs.flatMap((x: Data) => (x.attempts || []).filter((a: Data) => !a.error).map((a: Data) => a.end - a.start)));
       const limit = d.executor.timeout ? d.executor.timeout * 1000 : succeeded.length ? Math.max(600_000, 3 * Math.max(...succeeded)) : 0;
@@ -135,7 +138,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         const config = JSON.stringify({ ...base, ...version.vars, ...group.vars, seed: run.seed }, null, 2) + '\n';
         env.config = env.configHash = createHash('sha256').update(config).digest('hex');
         await writeFile(configFile, config);
-        const values: Data = { config: configFile, run: directory, seed: run.seed, job: jobId || '' };
+        const values: Data = { config: configFile, run: directory, seed: run.seed, job: jobId || '', start: Math.floor(start / 1000) };
         where = { cwd, values };
         step = 'preflight';
         const preflight = await launch(d.executor.commands.preflight, cwd, values);
@@ -145,6 +148,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           const reported = parseResult(preflight.stdout);
           for (const name of ['python', 'driver', 'dataVersion']) if (reported[name] !== undefined) env[name === 'dataVersion' ? 'data' : name] = reported[name];
         }
+        const since = jobId ? start : Date.now();
         if (!jobId) {
           step = 'submit';
           const result = await launch(d.executor.commands.submit, cwd, values, limit);
@@ -172,17 +176,19 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             const status = parseResult(polled.stdout);
             if (status.state === 'done' && (status.exitCode === undefined || status.exitCode === 0)) break;
             if (!['queued', 'running'].includes(status.state)) throw new Error(`Remote job ${status.state}, exit ${status.exitCode ?? 'unknown'}: ${status.reason || ''}`);
-            await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, 1000); });
+            if (d.executor.timeout && Date.now() - since > d.executor.timeout * 1000) { timedOut = true; throw new Error(`异步任务超过 ${d.executor.timeout} 秒没结束`); }
+            await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, (d.executor.poll || 1) * 1000); });
             releasePoll = undefined; pollTimer = undefined;
           }
           remote = undefined;
         }
         if (stopped) return;
+        values.end = Math.floor(Date.now() / 1000);
         step = 'collect';
         const collect = d.executor.commands.collect as string;
         let raw: string;
         if (/\.json$/.test(collect) && !/\s/.test(collect)) {
-          const path = collect.replace(/\{(config|run|seed|job)\}/g, (_, k) => String(values[k]));
+          const path = collect.replace(/\{(config|run|seed|job|start|end)\}/g, (_, k) => String(values[k]));
           raw = await readFile(resolve(cwd, path), 'utf8');
         } else {
           const collected = await launch(collect, cwd, values);
@@ -209,12 +215,27 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       }
       remote = undefined;
       if (stopped) return;
+      const final = error && kind === 'env' && run.retries >= 1, cancel = d.executor.commands.cancel;
+      // Held at its window's end, the run waits in the queue for the next night as if it had not started; a job that is not cancelled is polled again.
+      if (held && error && kind === 'env') {
+        const cancelled = !!cancel && !!where?.values.job && (await command(cancel, where.cwd, where.values)).code === 0;
+        await retain(host.storage, key, (state) => {
+          const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
+          if (entry?.state !== 'running') return;
+          Object.assign(entry, { state: 'queued', end: Date.now() });
+          if (cancelled) delete entry.jobId;
+        });
+        continue;
+      }
       // A run that fails for good (after its retry) is analysed for its error signature by the executor's analyze command, when registered.
       let analysis: string | undefined;
-      if (error && kind === 'env' && run.retries >= 1 && d.executor.commands.analyze && where) {
+      if (final && d.executor.commands.analyze && where) {
+        where.values.end ??= Math.floor(Date.now() / 1000);
         const analysed = await launch(d.executor.commands.analyze, where.cwd, where.values);
         analysis = clip((analysed.stdout.trim() || analysed.log).trim());
       }
+      // A job past its timeout, or failing for good, is cancelled so that nothing is left behind remotely.
+      if ((timedOut || final) && cancel && where?.values.job) log = (log + (await launch(cancel, where.cwd, where.values)).log).slice(-16000);
       if (stopped) return;
       // The full log stays with the run; the state keeps its tail. The run's result is recorded whether or not the file can be written.
       if (await exists(directory)) await writeFile(join(directory, 'rsi.log'), log).catch((failure) => host.log('error', 'RSI could not write the full run log', { run: run.id, error: String(failure) }));
@@ -252,6 +273,16 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       }
       for (const id of ids) dropped.add(id);
       if (busy && ids.includes(busy) && child?.pid) {
+        try { killTree(child.pid); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+      }
+    },
+    // The window of the cycle the schedule started closed: its running run is stopped and waits, like its queued ones, for the window to open again.
+    hold(ids: string[]) {
+      if (held || !runId || !ids.includes(runId)) return;
+      held = true;
+      clearTimeout(pollTimer); releasePoll?.();
+      if (child?.pid) {
         try { killTree(child.pid); }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
       }

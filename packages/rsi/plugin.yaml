@@ -73,14 +73,14 @@ contributions:
     id: rsi.executor
     name: rsi.executor
     description: >-
-      准备成员在第 3 步调用 rsi.task 后登记本机执行方式，必填 preflight/submit/collect，选填 get/cancel/analyze/resultMap/failureField/timeout。
-      timeout 是前台 submit 的秒数上限，超过就停止并按环境失败重试一次；不写时取本评估项最长一次成功运行的 3 倍（至少 10 分钟），还没有成功运行时不限。每次重试从空的 {run} 目录开始，上一次尝试的文件改名为 {run}.attempt-N 保留。
+      准备成员在第 3 步调用 rsi.task 后登记本机执行方式，必填 preflight/submit/collect，选填 get/cancel/analyze/resultMap/failureField/timeout/poll。
+      timeout 是前台 submit 的秒数上限，超过就停止并按环境失败重试一次；不写时取本评估项最长一次成功运行的 3 倍（至少 10 分钟），还没有成功运行时不限；带 get 时它也限制异步任务从 submit 到查询结束的总时长，超过就调 cancel，同样按环境失败重试一次。每次重试从空的 {run} 目录开始，上一次尝试的文件改名为 {run}.attempt-N 保留。
       命令由宿主系统的 shell 执行（macOS/Linux 是 sh，Windows 是 cmd；rsi.task 的 shell 字段写明），插件只负责按时拉起、记录和停止，不管命令内容；占位符按这个 shell 加引号。
       不带 commit 的配置版本在 task.projectPath 执行；带 commit 的版本在插件 dataPath 下该提交的独立 git worktree 执行，worktree 里只有已提交的文件：.venv 等未提交的环境写项目里的绝对路径。例 {preflight:"test -f train.py",submit:".venv/bin/python train.py --config {config} --out {run} --seed {seed}",collect:"{run}/metrics.json"}。
-      {config} 是插件生成的 JSON 配置（版本 config 合并组 vars 和 seed）；{run} 是 runs/<objective>/<cycle>/<group>-s<seed>；{seed} 是整数；替换会做 shell 引号处理，不要再包引号。
+      {config} 是插件生成的 JSON 配置（版本 config 合并组 vars 和 seed）；{run} 是 runs/<objective>/<cycle>/<group>-s<seed>；{seed} 是整数；{start} 是本次运行开始、{end} 是 submit/get 结束的 epoch 秒（{end} 只给 collect 和 analyze），用来从跨运行累积的日志里切出这一次；替换会做 shell 引号处理，不要再包引号。
       collect 可为无空格的 JSON 路径模板，或输出 JSON 的命令。默认按量尺 id 读顶层或 metrics 对象；NaN 与 failureField 指定字段的非空失败值算真实结果，不重试；可传 resultMap:[{metric:"score",field:"summary.score"}]。
       立即启动 preflight，工具返回 probing；通过才标执行器 passed。再用 rsi.submit 交第 3 步 items（也可先交，预检成功会完成它）。预检失败会显示失败，页面重试后重新 task/executor。
-      不带 get 时 submit 在前台运行到完成；带 get 时 submit 输出 job id 字符串或 {"jobId":"..."}，get 使用 {job} 并输出 {"state":"queued|running|done|failed|cancelled","exitCode":0}，每秒轮询至 done，再 collect。停止时可调用 cancel；无 cancel 的持久任务重启后继续轮询。非零退出/OOM/被杀自动重试一次，不算结果。preflight 可输出 JSON {python,driver,dataVersion}；collect 可带 dataVersion。analyze 暂不自动调用。
+      不带 get 时 submit 在前台运行到完成；带 get 时 submit 输出 job id 字符串或 {"jobId":"..."}，get 使用 {job} 并输出 {"state":"queued|running|done|failed|cancelled","exitCode":0}，每 poll 秒（默认 1）轮询至 done，再 collect。停止或超时时调用 cancel；无 cancel 的持久任务重启后继续轮询。非零退出/OOM/被杀自动重试一次，不算结果；重试后仍失败时先跑 analyze 取错误特征，再调 cancel 清理。preflight 可输出 JSON {python,driver,dataVersion}；collect 可带 dataVersion。调度在运行时段里开的周期只在时段内跑：时段外不开新运行，时段结束时停掉正在跑的（杀掉命令或 cancel 任务），放回队列下一晚接着跑，不算重试；「跑一轮」开的不受时段限制。
     inputSchema:
       type: object
       additionalProperties: false
@@ -94,6 +94,7 @@ contributions:
         analyze: { type: string, minLength: 1 }
         failureField: { type: string, minLength: 1 }
         timeout: { type: integer, minimum: 1 }
+        poll: { type: integer, minimum: 1 }
         resultMap: { type: array, items: {type: object, required: [metric, field], properties: {metric: {type: string}, field: {type: string}}, additionalProperties: false} }
     action: { method: rsi.executor }
   - type: tool

@@ -37,7 +37,8 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
   let round = d.rounds.find((r: Data) => r.state === 'interrupted');
   if (round) {
     for (const run of round.runs) if (run.retryable) Object.assign(run, { state: 'queued', retryable: false, error: null });
-    round.state = 'running'; round.end = null;
+    // Resumed with 跑一轮 it no longer keeps to the window; the schedule marks what it resumes again.
+    round.state = 'running'; round.end = null; delete round.scheduled;
   } else {
     const planned = d.rounds.find((r: Data) => r.state === 'planned');
     const plan = structuredClone(planned?.plan || d.upcoming);

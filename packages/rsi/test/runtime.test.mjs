@@ -1230,6 +1230,72 @@ test('async executors without cancel resume a persisted job after restart withou
   assert.equal((await readFile(join(run.directory, 'submits'), 'utf8')).trim(), '1');
 });
 
+test('async jobs are polled at the registered interval; past the timeout a job is cancelled and retried once as an environment failure', async (t) => {
+  const f = await fixture(t), o = await f.create({ repair: '0' });
+  // The stuck group's job never leaves running.
+  Object.assign(f.commands, asyncExecutor, { get: `grep -q stuck {config} && echo '{"state":"running"}' || ${asyncExecutor.get}`, cancel: 'echo {job} >> cancels', poll: 2, timeout: 2 });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }, { id: 'stuck', label: 'Stuck', vars: { stuck: true } }], seeds: [11] });
+  const [done, stuck] = (await execute(f, o)).runs;
+  // Done at its second get, two seconds after the first.
+  assert.equal(done.state, 'done'); assert.ok(done.end - done.start >= 2000, String(done.end - done.start));
+  assert.equal(stuck.state, 'failed'); assert.equal(stuck.attempts.length, 2); assert.match(stuck.error.raw, /超过 2 秒没结束/);
+  // Each attempt's job is cancelled once, the one that fails for good too.
+  assert.deepEqual((await readFile(join(f.project, 'cancels'), 'utf8')).trim().split('\n'), ['job with spaces;literal', 'job with spaces;literal']);
+});
+
+test('a job that fails for good is cancelled once; its first failure is retried without', async (t) => {
+  const f = await fixture(t), o = await f.create({ repair: '0' });
+  Object.assign(f.commands, asyncExecutor, { get: `echo '{"state":"failed","reason":"node lost"}'`, cancel: 'echo {job} >> cancels' });
+  await f.initialize(o, one);
+  const run = (await execute(f, o)).runs[0];
+  assert.equal(run.state, 'failed'); assert.equal(run.attempts.length, 2);
+  assert.equal((await readFile(join(f.project, 'cancels'), 'utf8')).trim(), 'job with spaces;literal');
+});
+
+test('a cycle the schedule started stops at its window’s end and goes on the next night; one started from the page does not stop', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  // A run counts its start, then sleeps as long as the project's nap file says.
+  Object.assign(f.commands, { submit: `echo {seed} >> starts && sleep "$(cat nap)" && echo '{"score":1}' > {run}/metrics.json` });
+  await writeFile(join(f.project, 'nap'), '30');
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [1, 2] }, { window: '每晚 20:00–08:00' });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 10, 15, 19, 59).getTime() });
+  const tick = () => f.activation().actions['rsi.tick']();
+  const at = (day, hour) => t.mock.timers.setTime(new Date(2026, 10, day, hour).getTime());
+  const starts = () => readFile(join(f.project, 'starts'), 'utf8').then((s) => s.split('\n').length - 1, () => 0);
+  assert.equal((await f.http('POST', { op: 'life', action: 'start', objective: o.id })).status, 200);
+  at(15, 20); await tick();
+  await until(starts, (n) => n === 1, 'first run');
+  // At the window's end the running run is stopped and waits with the queued one, counting no retry or attempt.
+  at(16, 8); await tick();
+  let d = (await until(f.read, (s) => s.experiments[o.id].rounds[0].runs[0].state === 'queued', 'held run')).experiments[o.id];
+  assert.equal(d.rounds[0].state, 'running');
+  assert.deepEqual(d.rounds[0].runs.map((r) => [r.state, r.retries, r.attempts.length]), [['queued', 0, 0], ['queued', 0, 0]]);
+  // The next night both run once the window opens.
+  await writeFile(join(f.project, 'nap'), '0');
+  at(16, 20); await tick();
+  d = (await until(f.read, (s) => s.experiments[o.id].rounds[0].state === 'evaluating')).experiments[o.id];
+  assert.ok(d.rounds[0].runs.every((r) => r.state === 'done' && r.attempts.length === 1 && r.start >= new Date(2026, 10, 16, 20).getTime()));
+  assert.equal(await starts(), 3);
+  // Started with 跑一轮 outside the window, a cycle's run goes on through the tick.
+  await report(f, o); await decide(f, o);
+  await writeFile(join(f.project, 'nap'), '1');
+  at(17, 12);
+  assert.equal((await f.http('POST', { op: 'runCycle', objective: o.id })).status, 200);
+  await until(starts, (n) => n === 4, 'page run');
+  await tick();
+  d = (await until(f.read, (s) => s.experiments[o.id].rounds[1]?.state === 'evaluating')).experiments[o.id];
+  assert.ok(d.rounds[1].runs.every((r) => r.state === 'done')); assert.equal(await starts(), 5);
+});
+
+test('collect gets the run’s start and the end of its submit in epoch seconds, to cut its part out of logs that accumulate across runs', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  f.commands.collect = 'echo {start} {end} > {run}/span && cat {run}/metrics.json';
+  await f.initialize(o, one);
+  const run = (await execute(f, o)).runs[0];
+  const [start, end] = (await readFile(join(run.directory, 'span'), 'utf8')).split(' ').map(Number);
+  assert.equal(start, Math.floor(run.start / 1000)); assert.ok(start <= end && end <= run.end / 1000, `${start} ${end}`);
+});
+
 test('an environment failure during confirmation retains the candidate and asks no analyst', async (t) => {
   const f = await fixture(t), o = await f.create({ repair: '0' }); Object.assign(f.commands, pythonExecutor);
   await f.initialize(o, plan({ delta: 2 }));
