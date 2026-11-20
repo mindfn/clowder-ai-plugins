@@ -1166,28 +1166,32 @@ views:
                       inline:
                         - text: "@version"
                           variant: badge
-                        - chip: t:rsi.exp.control
-                          when: "@control"
-                        - chip: t:rsi.exp.confirm
-                          when: "@confirm"
-                        - status:
-                            tone: ok
-                            text: t:rsi.exp.cmp.beats
-                          when: "@beats"
-                        - status:
-                            of: "@out"
-                            map:
-                              control:
-                                tone: warn
-                                text: t:rsi.exp.cmp.out.control
-                              guard:
-                                tone: danger
-                                text: t:rsi.exp.cmp.out.guard
-                              runs:
-                                tone: warn
-                                text: t:rsi.exp.cmp.out.runs
-                              _: ""
-                          when: "@out"
+                      more:
+                        - type: text
+                          parts:
+                            - status:
+                                of: "@standing"
+                                map:
+                                  beats:
+                                    tone: ok
+                                    text: t:rsi.exp.cmp.standing.beats
+                                  below:
+                                    tone: ""
+                                    text: t:rsi.exp.cmp.standing.below
+                                  control:
+                                    tone: warn
+                                    text: t:rsi.exp.cmp.standing.control
+                                  guard:
+                                    tone: danger
+                                    text: t:rsi.exp.cmp.standing.guard
+                                  runs:
+                                    tone: warn
+                                    text: t:rsi.exp.cmp.standing.runs
+                                  _: ""
+                            - text: t:rsi.exp.confirm
+                              variant: badge
+                              when: "@confirm"
+                      moreWhen: "@standing"
                       cols:
                         - v:
                             - text: "@mean"
@@ -1275,17 +1279,11 @@ views:
                                 when: "@state"
                   - type: text
                     variant: meta
-                    parts:
-                      - text:
-                          of: $.exp.cycle.report.compare.comparable
-                          map:
-                            "true":
-                              t: rsi.exp.comparable
-                              args:
-                                - $.exp.cycle.report.compare.against
-                            _: t:rsi.exp.noCompare
-                      - text: " · "
-                      - text: $.exp.cycle.report.compare.note
+                    tone: warn
+                    when:
+                      - "!$.exp.cycle.report.compare.comparable"
+                      - "!$.exp.cycle.compare.result"
+                    text: t:rsi.exp.noCompare
                   - type: label
                     text: t:rsi.exp.conclusion
                   - type: text
@@ -1315,29 +1313,31 @@ views:
                       - text: $.exp.cycle.report.headline
                         strong: true
                   - type: markdown
-                    text: $.exp.cycle.report.summary
+                    text: $.exp.cycle.body
                   - type: label
                     text: t:rsi.exp.attribution
+                    when: $.exp.cycle.attribution
                   - type: kv
+                    when: $.exp.cycle.attribution
                     from:
                       - k: t:rsi.exp.attr.verdict
                         v:
                           t: rsi.exp.attrVerdict
                           args:
-                            - $.exp.cycle.report.attribution.verdict
+                            - $.exp.cycle.attribution.verdict
                       - k: t:rsi.exp.attr.primary
                         v:
-                          of: $.exp.cycle.report.attribution.primaryLayer
+                          of: $.exp.cycle.attribution.primaryLayer
                           map:
                             execution: t:rsi.exp.layer.execution
                             harness: t:rsi.exp.layer.harness
                             rubric: t:rsi.exp.layer.rubric
                             observation: t:rsi.exp.layer.observation
                             _: ""
-                        when: $.exp.cycle.report.attribution.primaryLayer
+                        when: $.exp.cycle.attribution.primaryLayer
                       - k: t:rsi.exp.attr.assessed
                         v:
-                          of: $.exp.cycle.report.attribution.assessedLayers
+                          of: $.exp.cycle.attribution.assessedLayers
                           sep: 、
                           item:
                             of: "@"
@@ -1362,7 +1362,7 @@ views:
                         when: $.exp.cycle.notAssessed
                       - k: t:rsi.exp.attr.competing
                         v:
-                          of: $.exp.cycle.report.attribution.competingLayers
+                          of: $.exp.cycle.attribution.competingLayers
                           sep: 、
                           item:
                             of: "@"
@@ -1372,19 +1372,19 @@ views:
                               rubric: t:rsi.exp.layer.rubric
                               observation: t:rsi.exp.layer.observation
                               _: "@"
-                        when: $.exp.cycle.report.attribution.competingLayers
+                        when: $.exp.cycle.attribution.competingLayers
                       - k: t:rsi.exp.attr.uncertainty
                         v:
                           t: rsi.exp.uncertainty
                           args:
-                            - $.exp.cycle.report.attribution.uncertainty
+                            - $.exp.cycle.attribution.uncertainty
                       - k: t:rsi.exp.attr.comparability
                         v:
                           t: rsi.exp.comparability
                           args:
-                            - $.exp.cycle.report.attribution.comparability
+                            - $.exp.cycle.attribution.comparability
                   - type: list
-                    from: $.exp.cycle.report.attribution.evidence
+                    from: $.exp.cycle.attribution.evidence
                     label: t:rsi.exp.attr.evidence
                     optional: true
                     row:
@@ -1436,27 +1436,37 @@ views:
                   - $.exp.cycle.discussion
                 blocks:
                   - type: notice
+                    tone: info
                     when:
                       of: $.exp.cycle.discussion.status
                       map:
-                        count: false
-                        _: true
+                        proposing: true
+                        _: false
+                    parts:
+                      - t: rsi.exp.disc.proposing
+                        args:
+                          - parts: $.exp.cycle.discussion.waiting
+                            each:
+                              who: "@"
+                              form: name
+                            sep: 、
+                          - $.exp.cycle.discussion.done
+                          - $.exp.cycle.discussion.asked
+                  - type: notice
+                    when:
+                      of: $.exp.cycle.discussion.status
+                      map:
+                        agree: true
+                        split: true
+                        _: false
                     tone:
                       of: $.exp.cycle.discussion.status
                       map:
                         split: warn
-                        agree: ok
-                        _: info
+                        _: ok
                     text:
                       of: $.exp.cycle.discussion.status
                       map:
-                        proposing:
-                          t: rsi.exp.disc.proposing
-                          args:
-                            - of: $.exp.cycle.discussion.waiting
-                              sep: 、
-                            - $.exp.cycle.discussion.done
-                            - $.exp.cycle.discussion.asked
                         agree:
                           t: rsi.exp.disc.agree
                           args:
@@ -1476,11 +1486,14 @@ views:
                   - type: notice
                     tone: warn
                     when: $.exp.cycle.discussion.missing
-                    text:
-                      t: rsi.exp.disc.missing
-                      args:
-                        - of: $.exp.cycle.discussion.missing
-                          sep: 、
+                    parts:
+                      - t: rsi.exp.disc.missing
+                        args:
+                          - parts: $.exp.cycle.discussion.missing
+                            each:
+                              who: "@"
+                              form: name
+                            sep: 、
                   - type: label
                     text: t:rsi.exp.disc.firsts
                     help: t:rsi.exp.disc.rule
@@ -1490,28 +1503,18 @@ views:
                     from: $.exp.cycle.discussion.firsts
                     optional: true
                     row: rsi.first
-                  - type: each
-                    from: $.exp.cycle.discussion.members
-                    blocks:
-                      - type: text
-                        parts:
-                          - who: "@id"
-                            form: avatar
-                          - who: "@id"
-                            form: name
-                          - text: "@model"
-                            mono: true
-                            when: "@model"
-                          - text: t:rsi.exp.role.evaluate
-                            variant: badge
-                            when: "@evaluator"
-                          - text: t:rsi.exp.role.analyze
-                            variant: badge
-                            when: "@analyst"
-                      - type: list
-                        id: rsi-exp-dirs
-                        from: "@directions"
-                        row: rsi.direction
+                  - type: list
+                    id: rsi-exp-dirs
+                    groups: $.exp.cycle.discussion.members
+                    group:
+                      count: ""
+                      title:
+                        t: rsi.exp.disc.member
+                        args:
+                          - "@role"
+                          - "@name"
+                          - "@model"
+                    row: rsi.direction
               - type: each
                 from:
                   - {}
@@ -1695,9 +1698,9 @@ views:
                                 args:
                                   - $.exp.cycle.gov.adopted.title
                               when: $.exp.cycle.gov.adopted
-                            - who: $.exp.cycle.gov.adopted.by
-                              form: name
-                              when: $.exp.cycle.gov.adopted
+                      - k: t:rsi.exp.gov.from
+                        who: $.exp.cycle.gov.adopted.by
+                        when: $.exp.cycle.gov.adopted
                       - k: t:rsi.exp.gov.by
                         v:
                           sep: " · "
@@ -5038,16 +5041,21 @@ rows:
   rsi.direction:
     layout: two
     key: "@id"
-    title: "@title"
-    inline:
-      - chip: t:rsi.exp.disc.first
-        when: "@first"
+    lead:
+      who: "@by"
+      form: avatar
+    title:
       - text:
           t: rsi.exp.dirKind
           args:
             - "@kind"
         variant: badge
         when: "@kind"
+      - text: "@title"
+    titleWrap: open
+    inline:
+      - chip: t:rsi.exp.disc.first
+        when: "@first"
       - chip: t:rsi.exp.picked
         when: "@picked"
     sub:
@@ -5095,14 +5103,16 @@ rows:
     lead:
       who: "@by"
       form: avatar
-    title: "@title"
-    inline:
+    title:
       - text:
           t: rsi.exp.dirKind
           args:
             - "@kind"
         variant: badge
         when: "@kind"
+      - text: "@title"
+    titleWrap: open
+    inline:
       - chip: t:rsi.exp.picked
         when: "@picked"
     sub:

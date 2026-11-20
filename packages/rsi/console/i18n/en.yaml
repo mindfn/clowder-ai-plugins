@@ -513,8 +513,9 @@ exp:
     cross: Crossed
     seedsOf: Seed {0}
     seed: Seed {0}
-    beats: Beats the control
-    out:
+    standing:
+      beats: Beats the control
+      below: Does not beat the control
       control: "Not counted: the control did not finish"
       guard: "Not counted: guardrail crossed"
       runs: "Not counted: runs did not finish"
@@ -527,7 +528,6 @@ exp:
       incomparable: The control did not finish, so this cycle is not compared
       baseline: This cycle ran only the current version as control
   conclusion: The evaluator's conclusion
-  comparable: Comparable with control group {0}
   noCompare: No control group (baseline)
   attribution: Attribution
   attr:
@@ -602,6 +602,11 @@ exp:
       target: "The discussion members' first choices differ: all {0}, but different targets"
       untargeted: "The discussion members' first choices cannot be compared: a kind or target is missing"
     missing: "{0} did not propose within 20 minutes and are left out"
+    member:
+      both: "{0} · {1} · Evaluation · Discussion"
+      evaluate: "{0} · {1} · Evaluation"
+      analyze: "{0} · {1} · Discussion"
+      other: "{0} · {1}"
   gov:
     ask:
       confirm: "Next cycle confirms candidate {0} ({1}): press “Keep tonight as planned” to confirm it as planned"
@@ -617,6 +622,7 @@ exp:
     note: You write a note, {0} makes a new version from it, and the next cycle compares it with the current version {1}
     chosen: Chosen
     adopted: "“{0}”"
+    from: Proposed by
     by: Decided by
     byRule: The plugin, by rule
     led: Then

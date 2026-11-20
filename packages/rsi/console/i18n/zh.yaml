@@ -513,8 +513,9 @@ exp:
     cross: 越线
     seedsOf: 种子 {0}
     seed: 种子 {0}
-    beats: 胜过对照
-    out:
+    standing:
+      beats: 胜过对照
+      below: 没胜过对照
       control: 不计入：对照没跑全
       guard: 不计入：护栏越线
       runs: 不计入：运行没跑全
@@ -527,7 +528,6 @@ exp:
       incomparable: 对照组没跑全，这一周期不和对照比较
       baseline: 这一周期只跑了当前版本对照
   conclusion: 评估成员的结论
-  comparable: 和对照组 {0} 可比
   noCompare: 没有对照（基线）
   attribution: 归因
   attr:
@@ -602,6 +602,11 @@ exp:
       target: 方案讨论成员的首选不一致：都是{0}，改的对象不同
       untargeted: 方案讨论成员的首选没法比：有人没写类别或改的对象
     missing: "{0} 没在 20 分钟内给方向，没算进来"
+    member:
+      both: "{0} · {1} · 评估 · 方案讨论"
+      evaluate: "{0} · {1} · 评估"
+      analyze: "{0} · {1} · 方案讨论"
+      other: "{0} · {1}"
   gov:
     ask:
       confirm: 下一周期是候选 {0}（{1}）的复验：点「今晚照旧」按计划复验
@@ -617,6 +622,7 @@ exp:
     note: 你写一段说明，{0} 按说明出新版本，下一周期拿它和当前版本 {1} 对照
     chosen: 选了
     adopted: 「{0}」
+    from: 方向来自
     by: 谁定的
     byRule: 插件按规则
     led: 接着

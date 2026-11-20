@@ -170,7 +170,7 @@ function arith({ analysts = [], seeds = [11, 23], groups = GROUPS, values = VALU
   d.rounds.push({ n: 1, version: 'v1', start: now, end: now + 60000, state: 'evaluating', plan: { groups, seeds }, metrics: structuredClone(d.metrics), report: null, decision: null, events: [], runs });
   d.objective.state = 'running';
   const x = { s, d, id: o.id };
-  x.conclude = (options) => assert.equal(conclude(s, d, { cycle: 1, verdict: 'tune', findings: 'f', ...(options ? { options } : {}) }, now).ok, true);
+  x.conclude = (options, findings = 'f') => assert.equal(conclude(s, d, { cycle: 1, verdict: 'tune', findings, ...(options ? { options } : {}) }, now).ok, true);
   x.propose = (catId, options) => assert.equal(propose(s, d, { cycle: 1, options }, catId, now).ok, true);
   x.view = (step) => viewModel(s, 'exp', { project: P, pick: `obj:${o.id}`, ...(step ? { selO: `${o.id}/v1>c1.${step}` } : {}) });
   x.steps = (vm) => vm.versions[0].steps;
@@ -180,25 +180,28 @@ const option = (k, kind, target, expect) => ({ k, title: k, why: 'w', kind, ...(
 
 test('evaluation compares every metric with the same cycle’s control: the main metric, then guardrails, then the rest; per group mean ± SD, signed difference, better or worse, guardrail crossings and per-seed values', () => {
   const x = arith();
-  x.conclude([option('confirm', 'variable', 'reward_weights.format')]);
+  x.conclude([option('confirm', 'variable', 'reward_weights.format')], 'format-zero 胜出\nlr-low 末窗越线');
   const vm = x.view('eval'), c = vm.cycle.compare, metric = (id) => c.metrics.find((m) => m.id === id), cell = (m, g) => metric(m).items.find((r) => r.id === g);
   assert.deepEqual(c.metrics.map((m) => [m.id, m.role]), [['accuracy', 'main'], ['signal', 'guard'], ['tail', 'guard'], ['format_rate', 'other'], ['wall', 'other']]);
   assert.deepEqual(metric('accuracy').items.map((r) => r.id), ['control', 'lr-low', 'format-zero']);
   assert.deepEqual([metric('accuracy').rule, metric('accuracy').ruleValue, metric('signal').limit, metric('signal').threshold], ['minDelta', 0.05, 'up', 0.3]);
   assert.deepEqual([c.seeds, c.single, c.result, c.group, c.version, c.lead], [2, false, 'candidate', 'format-zero', 'v1', '+0.1225']);
-  const main = (g) => { const r = cell('accuracy', g); return [r.mean, r.sd, r.delta, r.better, r.beats, r.out]; };
-  assert.deepEqual(main('control'), ['0.0775', '0.003536', null, '', false, '']);
+  const main = (g) => { const r = cell('accuracy', g); return [r.mean, r.sd, r.delta, r.better, r.standing]; };
+  assert.deepEqual(main('control'), ['0.0775', '0.003536', null, '', '']);
   // lr-low improves most but crossed a guardrail, so it does not count; format-zero beats the control.
-  assert.deepEqual(main('lr-low'), ['0.515', '0.007071', '+0.4375', 'better', false, 'guard']);
-  assert.deepEqual(main('format-zero'), ['0.2', '0.01414', '+0.1225', 'better', true, '']);
+  assert.deepEqual(main('lr-low'), ['0.515', '0.007071', '+0.4375', 'better', 'guard']);
+  assert.deepEqual(main('format-zero'), ['0.2', '0.01414', '+0.1225', 'better', 'beats']);
+  assert.ok(c.metrics.slice(1).every((m) => m.items.every((r) => r.standing === '')));
   // Lower is better for the wall time; a worse secondary metric says so.
   assert.deepEqual([cell('wall', 'format-zero').delta, cell('wall', 'format-zero').better, cell('wall', 'lr-low').better, cell('format_rate', 'format-zero').better], ['-10', 'better', 'same', 'worse']);
   // Guardrails pass or fail per group and name the seeds that crossed; the per-seed values mark them.
   assert.deepEqual([cell('signal', 'control').guard, cell('signal', 'control').crossed, cell('signal', 'lr-low').guard, cell('tail', 'lr-low').crossed], ['fail', [23], 'pass', [11]]);
   assert.deepEqual(cell('signal', 'control').seeds, [{ seed: 11, value: '0.35', state: '' }, { seed: 23, value: '0.25', state: 'cross' }]);
   assert.equal(cell('format_rate', 'control').guard, '');
-  // The stepper shows the difference of the group made a candidate.
+  // The stepper shows the difference of the group that beats the control.
   assert.equal(x.steps(vm).find((s) => s.k === 'eval').delta, '+0.1225');
+  // The headline is said once: the prose is the rest of the findings. The conclusion's placeholder attribution is no attribution.
+  assert.deepEqual([vm.cycle.report.headline, vm.cycle.body, vm.cycle.attribution], ['format-zero 胜出', 'lr-low 末窗越线', null]);
   // 采集 shows each run's main metric, 应用 object variables as JSON.
   assert.deepEqual([vm.cycle.main.name, vm.cycle.runs[0].value], ['holdout accuracy', '0.08']);
   assert.deepEqual(vm.cycle.groups.map((g) => g.varsText), ['', 'lr=0.00003', 'reward_weights={"correctness":1,"format":0}']);
@@ -208,15 +211,16 @@ test('a single seed is a single result without SD; a change that crossed a guard
   const groups = GROUPS.slice(0, 2), values = { control: [VALUES.control[0]], 'lr-low': [VALUES['lr-low'][0]] };
   const x = arith({ seeds: [12], groups, values });
   x.conclude([option('lr', 'variable', 'lr')]);
-  const c = x.view('eval').cycle.compare, row = c.metrics[0].items[1];
-  assert.deepEqual([c.single, c.seeds, c.result, c.lead], [true, 1, 'none', '+0.44']);
+  const vm = x.view('eval'), c = vm.cycle.compare, row = c.metrics[0].items[1];
+  // The only change improves the main metric but does not count, so the stepper shows no difference.
+  assert.deepEqual([c.single, c.seeds, c.result, c.lead, x.steps(vm).find((s) => s.k === 'eval').delta], [true, 1, 'none', null, null]);
   assert.ok(c.metrics.every((m) => m.items.every((r) => r.sd === null && r.n === 1 && !r.partial)));
-  assert.deepEqual([row.mean, row.delta, row.beats, row.out, c.metrics.find((m) => m.id === 'tail').items[1].crossed], ['0.52', '+0.44', false, 'guard', [12]]);
+  assert.deepEqual([row.mean, row.delta, row.standing, c.metrics.find((m) => m.id === 'tail').items[1].crossed], ['0.52', '+0.44', 'guard', [12]]);
   const y = arith({ seeds: [12], groups, values });
   Object.assign(y.d.rounds[0].runs[0], { state: 'failed', metrics: {}, error: { kind: 'env', raw: 'killed' } });
   y.conclude([option('lr', 'variable', 'lr')]);
   const d = y.view('eval').cycle.compare;
-  assert.deepEqual([d.result, d.metrics[0].items[0].mean, d.metrics[0].items[0].seeds[0].state, d.metrics[0].items[1].out, d.metrics[0].items[1].delta], ['incomparable', null, 'env', 'control', null]);
+  assert.deepEqual([d.result, d.metrics[0].items[0].mean, d.metrics[0].items[0].seeds[0].state, d.metrics[0].items[1].standing, d.metrics[0].items[1].delta], ['incomparable', null, 'env', 'control', null]);
 });
 
 test('the discussion is its own stage, reachable while discussion members still propose; it groups directions by member, shows a member’s repeats once, names who did not propose and says where the 首选 differ', () => {
@@ -229,7 +233,9 @@ test('the discussion is its own stage, reachable while discussion members still 
   assert.deepEqual([vm.step, vm.next.k, vm.next.go.endsWith('/v1>c1.discuss')], ['discuss', 'analyzing', true]);
   assert.deepEqual(x.steps(vm).map((s) => s.k), ['apply', 'collect', 'eval', 'discuss']);
   assert.deepEqual((({ result, done, asked, missing }) => ({ result, done, asked, missing }))(x.steps(vm).at(-1)), { result: 'proposing', done: 1, asked: 4, missing: 0 });
-  assert.deepEqual([vm.cycle.discussion.waiting, vm.cycle.gov.ask], [['小狸', '乙', '丙'], '']);
+  assert.deepEqual([vm.cycle.discussion.waiting.map((m) => m.name), vm.cycle.gov.ask], [['小狸', '乙', '丙'], '']);
+  // Nothing beats the control, so the stepper shows no difference.
+  assert.equal(x.steps(vm).find((s) => s.k === 'eval').delta, null);
   // The evaluator, also a discussion member, proposes its own directions again; 丙 does not propose in time.
   x.propose('ev', own);
   x.propose('a2', [option('reward', 'code', 'reward.py')]);
@@ -237,9 +243,9 @@ test('the discussion is its own stage, reachable while discussion members still 
   vm = x.view('discuss');
   const disc = vm.cycle.discussion;
   assert.equal(x.d.rounds[0].report.agree, false);
-  assert.deepEqual([disc.status, disc.differ, disc.missing, disc.done, disc.asked, disc.count], ['split', 'kind', ['丙'], 3, 4, 5]);
-  assert.deepEqual(disc.members.map((m) => [m.id, m.evaluator, m.analyst, m.directions.map((d) => [d.title, d.first])]), [
-    ['ev', true, true, [['tail-mean', true], ['lr-5e-5', false]]], ['a1', false, true, [['lr', true], ['temperature', false]]], ['a2', false, true, [['reward', true]]]]);
+  assert.deepEqual([disc.status, disc.differ, disc.missing.map((m) => m.name), disc.done, disc.asked, disc.count], ['split', 'kind', ['丙'], 3, 4, 5]);
+  assert.deepEqual(disc.members.map((m) => [m.id, m.name, m.role, m.items.map((d) => [d.title, d.first])]), [
+    ['ev', '小狸', 'both', [['tail-mean', true], ['lr-5e-5', false]]], ['a1', '甲', 'analyze', [['lr', true], ['temperature', false]]], ['a2', '乙', 'analyze', [['reward', true]]]]);
   assert.deepEqual(disc.firsts.map((f) => [f.by, f.title, f.kind, f.target]), [['ev', 'tail-mean', 'metric', 'tail'], ['a1', 'lr', 'variable', 'lr'], ['a2', 'reward', 'code', 'reward.py']]);
   assert.deepEqual(x.steps(vm).slice(-2).map((s) => [s.k, s.result, s.missing]), [['discuss', 'split', 1], ['gov', 'pending', undefined]]);
   assert.deepEqual([vm.cycle.gov.ask, vm.cycle.gov.choices, vm.cycle.gov.discuss.endsWith('/v1>c1.discuss')], ['split', [{ k: 'same' }, { k: 'note' }], true]);
@@ -271,10 +277,44 @@ test('governance names what you decide and records what was chosen, by whom and 
   assert.deepEqual(act(x.s, { op: 'expDecide', objective: x.id, n: 1, pick: 'direction', directionId: 'lr2' }, { project: P }, now), { ok: true });
   let vm = x.view('gov');
   assert.deepEqual([vm.cycle.gov.ask, vm.cycle.gov.choices, vm.cycle.gov.adopted.title, vm.cycle.gov.adopted.by, vm.cycle.gov.led], ['', [], 'lr2', 'a2', { k: 'version', title: 'lr2' }]);
-  assert.deepEqual([vm.cycle.decision.by, x.steps(vm).at(-1).result, vm.cycle.discussion.members[1].directions[0].picked], ['你', 'variable', true]);
+  assert.deepEqual([vm.cycle.decision.by, x.steps(vm).at(-1).result, vm.cycle.discussion.members[1].items[0].picked], ['你', 'variable', true]);
   // Once the next cycle runs, that is what the decision led to.
   delete x.d.versionRequest;
   x.d.rounds.push({ n: 2, version: 'v1', start: now, end: null, state: 'running', plan: { groups: [GROUPS[0]], seeds: [24, 25] }, runs: [], report: null, decision: null, events: [] });
   vm = x.view('gov');
   assert.deepEqual(vm.cycle.gov.led, { k: 'cycle', n: 2, version: 'v1', go: `${x.id}/v1>c2.collect` });
+});
+
+test('a discussion member who did not propose is named by the objective’s members in any role; one the objective no longer knows is left to the Host to name', () => {
+  const x = arith({ analysts: [['a1', '甲'], ['it', '砚砚'], ['gone', '走了']], values: SPLIT });
+  x.conclude(); x.propose('a1', [option('lr', 'variable', 'lr')]);
+  finishAnalysis(x.s, x.d, x.d.rounds[0], now);
+  // Both leave the discussion afterwards: 砚砚 is still the governance member, gone is no member at all.
+  for (const catId of ['it', 'gone']) assert.equal(act(x.s, { op: 'analystRemove', objective: x.id, catId }, { project: P }, now).ok, true);
+  assert.deepEqual(x.view('discuss').cycle.discussion.missing.map((m) => [m.kind, m.catId, m.name]), [['member', 'it', '砚砚'], ['member', 'gone', undefined]]);
+});
+
+test('a member’s repeated direction is shown once as the copy that says more, with the citations of both, and stays adopted when either copy was', () => {
+  const x = arith({ analysts: [['ev', '小狸'], ['a1', '甲']], values: SPLIT });
+  x.s.library[P].push(...['doc-a', 'doc-b'].map((id) => ({ id, kind: 'project', title: id, objectives: [], state: 'confirmed' })));
+  x.conclude([{ ...option('a', 'variable', 'lr'), cites: ['doc-a'] }]);
+  x.propose('ev', [{ ...option('a', 'variable', 'lr', { lo: 0.1, hi: 0.2 }), cites: ['doc-b'] }]);
+  x.propose('a1', [option('b', 'code', 'reward.py')]);
+  assert.deepEqual(act(x.s, { op: 'expDecide', objective: x.id, n: 1, pick: 'direction', directionId: 'a' }, { project: P }, now), { ok: true });
+  const { members, firsts } = x.view('discuss').cycle.discussion, kept = members[0].items;
+  assert.deepEqual(kept.map((d) => [d.id, d.cites, d.expect, d.first, d.picked]), [['a-ev', ['doc-a', 'doc-b'], 'accuracy +0.1 ~ +0.2', true, true]]);
+  assert.equal(firsts[0], kept[0]);
+});
+
+test('an attribution is shown only when the evaluator assessed a layer; the demo’s are', () => {
+  const fixture = createFixtures(now), state = fixture.state;
+  state.experiments['cp-converge'] = fixture.templates['cp-converge'];
+  state.objectives.cartpole.push({ id: 'cp-converge', name: '训练更快、更稳地收敛', parent: null, state: 'pending', mode: 'exp', trigger: '18:00–08:00', running: { o: 'v2' }, cycle: null, prediction: null, locked: 0 });
+  const demo = viewModel(state, 'exp', { project: 'cartpole', selO: 'cp-converge/v2>c2.eval' }).cycle;
+  // Unresolved, but after assessing every layer: that is an attribution.
+  assert.deepEqual([demo.attribution.verdict, demo.attribution.assessedLayers.length, demo.attribution.competingLayers, demo.body], ['unresolved', 4, ['harness', 'observation'], demo.report.summary]);
+  const x = arith();
+  x.conclude([option('confirm', 'variable', 'reward_weights.format')]);
+  assert.equal(x.d.rounds[0].report.attribution.verdict, 'unresolved');
+  assert.equal(x.view('eval').cycle.attribution, null);
 });

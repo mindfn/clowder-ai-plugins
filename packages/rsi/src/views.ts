@@ -204,34 +204,37 @@ function exp(): any {
       return { key: m.id + '/' + g.id, id: g.id, label: g.label, version: g.version, control: !!g.control, confirm: !!g.confirm, mean: num(c?.mean), sd: num(c?.sd), n: c ? c.n : 0, partial: !!c && c.n > 0 && c.n < r.plan.seeds.length,
         delta: delta === null ? null : delta ? signed(delta) : '0', better: delta === null ? '' : delta === 0 ? 'same' : (delta > 0) === (m.dir === 'up') ? 'better' : 'worse',
         guard: checks.length ? (crossed.length ? 'fail' : 'pass') : '', crossed,
-        // The main metric decides: a group beats the control, or does not count (its runs or the control's did not all finish, or it crossed a guardrail).
-        beats: m === lead && !!j?.beatsControl, out: m === lead && j && !g.control && !j.eligible ? (!report.compare.comparable ? 'control' : j.guardrails.some((x: Data) => !x.pass) ? 'guard' : 'runs') : '',
+        // The main metric decides: a group beats the control, does not, or does not count (its runs or the control's did not all finish, or it crossed a guardrail).
+        standing: m === lead && j && !g.control ? (j.beatsControl ? 'beats' : j.eligible ? 'below' : !report.compare.comparable ? 'control' : j.guardrails.some((x: Data) => !x.pass) ? 'guard' : 'runs') : '',
         seeds: c?.seeds?.map((s: Data) => ({ seed: s.seed, value: num(s.value), state: crossed.includes(s.seed) ? 'cross' : s.error ? (s.error.kind === 'env' ? 'env' : 'failed') : s.state === 'done' ? '' : 'failed' })) };
     };
     const conf = report.confirmation, mean = (g: Data) => cell(g.id, lead.id)?.mean;
-    const counts = (g: Data) => judged(g.id)?.eligible ? 1 : 0, ranked = groups.filter((g: Data) => !g.control && typeof mean(g) === 'number')
-      .sort((a: Data, b: Data) => counts(b) - counts(a) || (lead.dir === 'down' ? mean(a) - mean(b) : mean(b) - mean(a)));
+    const winners = groups.filter((g: Data) => judged(g.id)?.beatsControl).sort((a: Data, b: Data) => lead.dir === 'down' ? mean(a) - mean(b) : mean(b) - mean(a));
     const metrics = [lead, ...items.filter((m: Data) => m.guard), ...items.filter((m: Data) => m !== lead && !m.guard)].map((m: Data) => ({ id: m.id, name: m.name, role: m === lead ? 'main' : m.guard ? 'guard' : 'other', dir: m.dir,
       rule: m !== lead ? '' : m.margin !== undefined ? 'margin' : m.minDelta ? 'minDelta' : '', ruleValue: m.margin ?? m.minDelta, limit: m.guard && typeof m.threshold === 'number' ? m.dir : '', threshold: m.threshold,
       items: groups.map((g: Data) => row(g, m)) }));
     return { seeds: r.plan.seeds.length, single: r.plan.seeds.length === 1, metrics, group: conf?.group, version: conf?.version,
       result: conf ? conf.status : !report.compare.groups ? '' : groups.length < 2 ? 'baseline' : !report.compare.comparable ? 'incomparable' : 'none',
-      // The difference the stepper shows: the group being confirmed or made a candidate, else the best of the others that count.
-      lead: metrics[0].items.find((x: Data) => x.id === (conf ? conf.group : ranked[0]?.id))?.delta };
+      // The difference the stepper shows: that of the best group that beats the control; none when no group does.
+      lead: winners.length ? metrics[0].items.find((x: Data) => x.id === winners[0].id)!.delta : null };
   };
+  // A member as the Host draws one (who): its name among this objective's members, any role; else the Host's name for it, else its id.
+  const memberOf = (id: string) => ({ kind: 'member', catId: id, name: d.members.find((m: Data) => m.catId === id)?.name });
   // A cycle's discussion (cycles.ts conclude, propose, finishAnalysis): the directions by member, in the order they first proposed, a member's
-  // exact repeats shown once (the same title and kind, as when the evaluator is also a discussion member); a member's first direction is their
-  // 首选. When two or more discussion members proposed, the conclusion's rule (report.agree) said whether their 首选 agree; here only where they differ.
+  // exact repeats shown once (the same title and kind, as when the evaluator is also a discussion member: the copy that says more, with the
+  // citations of both); a member's first direction is their 首选. When two or more discussion members proposed, the conclusion's rule
+  // (report.agree) said whether their 首选 agree; here only where they differ.
   const discussionOf = function (r: Data) {
     const dirs = r.report.directions, asked = r.analysis, still: string[] = asked ? asked.waiting : [], late: string[] = asked && asked.missing || [];
     if (!dirs.length && !asked) return null;
     const analysts = analystsOf(d), evaluator = d.members.find((m: Data) => m.role === 'evaluate')?.catId, picked = (x: Data) => !!r.decision && r.decision.directionId === x.id, members: Data[] = [];
+    const says = (x: Data) => [x.cites.length, x.target, x.expect, x.predict].filter(Boolean).length;
     for (const x of dirs) {
       let m = members.find((y) => y.id === x.by);
-      if (!m) members.push(m = { id: x.by, model: x.model, evaluator: x.by === evaluator, analyst: analysts.some((a) => a.catId === x.by), directions: [] });
-      const same = m.directions.find((y: Data) => y.title === x.title && y.kind === x.kind);
-      if (same) same.picked = same.picked || picked(x);
-      else m.directions.push(Object.assign({}, x, { picked: picked(x), first: !m.directions.length }));
+      if (!m) members.push(m = { id: x.by, name: nameOf(x.by), model: x.model, evaluator: x.by === evaluator, analyst: analysts.some((a) => a.catId === x.by), items: [] });
+      const at = m.items.findIndex((y: Data) => y.title === x.title && y.kind === x.kind), y = m.items[at];
+      if (at < 0) m.items.push(Object.assign({}, x, { picked: picked(x), first: !m.items.length }));
+      else m.items[at] = Object.assign({}, says(x) > says(y) ? x : y, { cites: [...new Set([...y.cites, ...x.cites])], picked: y.picked || picked(x), first: y.first });
     }
     // The 首选 the rule compares: the first direction of each discussion member who proposed.
     const firsts = asked ? analysts.filter((a) => !still.includes(a.catId) && !late.includes(a.catId)).map((a) => dirs.find((x: Data) => x.by === a.catId)).filter(Boolean) : [];
@@ -239,8 +242,9 @@ function exp(): any {
     return { status: still.length ? 'proposing' : firsts.length > 1 ? (r.report.agree ? 'agree' : 'split') : 'count',
       differ: firsts.length < 2 ? '' : kinds.size > 1 && !kinds.has('') ? 'kind' : kinds.has('') || targets.has('') ? 'untargeted' : targets.size > 1 ? 'target'
         : new Set(firsts.map((x: Data) => JSON.stringify(x.predict || null))).size > 1 ? 'effect' : 'same',
-      kind: firsts[0]?.kind, target: firsts[0]?.target, done: firsts.length, asked: firsts.length + still.length + late.length, waiting: still.map(nameOf), missing: late.map(nameOf),
-      count: members.reduce((n, m) => n + m.directions.length, 0), members, firsts: members.map((m) => Object.assign({}, m.directions[0], { evaluator: m.evaluator, analyst: m.analyst })) };
+      kind: firsts[0]?.kind, target: firsts[0]?.target, done: firsts.length, asked: firsts.length + still.length + late.length, waiting: still.map(memberOf), missing: late.map(memberOf),
+      count: members.reduce((n, m) => n + m.items.length, 0), firsts: members.map((m) => m.items[0]),
+      members: members.map((m) => Object.assign(m, { role: m.evaluator && m.analyst ? 'both' : m.evaluator ? 'evaluate' : m.analyst ? 'analyze' : 'other' })) };
   };
   // What deciding a cycle does (actions.ts expDecide, cycles.ts requestVersion): while it waits, what the choice is; once decided, what was
   // chosen, by whom, and what came of it — the version being made for it, the next cycle, or the objective's end.
@@ -315,6 +319,10 @@ function exp(): any {
     cycle: r && Object.assign({}, r, { waiting: waiting(r), groups: groupsOf(r), main: mainOf(r),
       runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { value: num(u.metrics[mainOf(r).id]), durationSeconds: u.start ? Math.round(((u.end || Date.now()) - u.start) / 1000) : null, metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })), groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),
       notAssessed: r.report && RSI_LAYERS.filter(function (l: any): any { return r.report.attribution.assessedLayers.indexOf(l) < 0; }),
+      // A conclusion stores a placeholder attribution (no layer assessed): only one that assessed a layer is an attribution.
+      attribution: r.report && r.report.attribution.assessedLayers.length ? r.report.attribution : null,
+      // The findings after their first line, which is the headline.
+      body: r.report && (r.report.summary.startsWith(r.report.headline) ? r.report.summary.slice(r.report.headline.length).trim() : r.report.summary),
       compare: r.report && compareOf(r), discussion: r.report && discussionOf(r), gov: r.report && govFor(r) }),
     prep: { needYou: needYou, steps: steps }, executor: d.executor, members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, roleMembers: o.projectPath ? d.members.filter(function (m: any): any { return m.catId && m.role !== 'analyze'; }) : d.members, discussion: d.members.filter(function (m: any): any { return m.role === 'analyze' && m.catId; }).map(function (m: any): any { return { id: m.catId, name: m.name }; }), memberIds: { prepare: (d.members.find(function (m: any): any { return m.role === 'prepare'; }) || {}).catId, evaluate: (d.members.find(function (m: any): any { return m.role === 'evaluate'; }) || {}).catId, iterate: (d.members.find(function (m: any): any { return m.role === 'iterate'; }) || {}).catId }, policy: policyOf(d, o), metrics: d.metrics,
     eTree: [{ id: d.metrics.version }], cTree: [{ id: 'C1' }] };
