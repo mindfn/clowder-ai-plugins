@@ -170,13 +170,19 @@ export function createRuntime(host: RsiHost) {
       .flatMap((d) => d.rounds.filter((r: Data) => r.scheduled && r.state === 'running' && !insideWindow(d.policy.schedule, now)).flatMap((r: Data) => r.runs.map((x: Data) => x.id)))));
     runs.wake();
     if (owners.some(([, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments).some((d) => d.objective.projectPath && (d.executor.state === 'probing' || d.rounds.some((r: Data) => r.state === 'running'))))) return;
-    for (const [key] of owners) {
+    // Objectives take turns: of those that may start a cycle, the one whose last cycle started longest ago goes first,
+    // and one that cannot start leaves the turn to the next.
+    const due = (d: Experiment) => d.objective.projectPath && d.objective.state === 'running' && !d.versionRequest
+      && insideWindow(d.policy.schedule, Date.now()) && !d.rounds.some((r: Data) => ['running', 'evaluating'].includes(r.state) || r.state === 'interrupted' && r.autoResumed || r.report && !r.decision);
+    const lastStart = (d: Experiment) => Math.max(0, ...d.rounds.map((r: Data) => r.start || 0));
+    const turns = owners.flatMap(([key, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments).filter(due)
+      .map((d) => ({ key, id: d.objective.id, last: lastStart(d) }))).sort((x, y) => x.last - y.last);
+    for (const { key, id } of turns) {
       let started = false;
       await retain(host.storage, key, (state) => {
         started = false;
-        const d = Object.values(state.experiments).find((d) => d.objective.projectPath && d.objective.state === 'running' && !d.versionRequest
-          && insideWindow(d.policy.schedule, Date.now()) && !d.rounds.some((r: Data) => ['running', 'evaluating'].includes(r.state) || r.state === 'interrupted' && r.autoResumed || r.report && !r.decision));
-        if (!d) return;
+        const d = state.experiments[id];
+        if (!d || !due(d)) return;
         // An interrupted cycle is resumed once by the schedule; interrupted again, it waits for 跑一轮.
         const halted = d.rounds.find((r: Data) => r.state === 'interrupted'), result = runCycle(state, d, Date.now());
         started = !!result.ok;

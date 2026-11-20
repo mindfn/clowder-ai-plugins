@@ -92,7 +92,9 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       const queued = owners.flatMap(([key, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments)
         .filter((d) => d.objective.projectPath && d.objective.state === 'running')
         // A cycle the schedule started runs only inside its window.
-        .flatMap((d) => d.rounds.filter((r: Data) => r.state === 'running' && (!r.scheduled || insideWindow(d.policy.schedule, Date.now()))).flatMap((round: Data) => round.runs.filter((run: Data) => run.state === 'queued').map((run: Data) => ({ key, d, round, run })))))[0];
+        .flatMap((d) => d.rounds.filter((r: Data) => r.state === 'running' && (!r.scheduled || insideWindow(d.policy.schedule, Date.now()))).flatMap((round: Data) => round.runs.filter((run: Data) => run.state === 'queued').map((run: Data) => ({ key, d, round, run })))))
+        // The cycle that started first runs first, whichever objective it belongs to.
+        .sort((x, y) => x.round.start - y.round.start)[0];
       if (!queued) return;
       const { key, d, round, run } = queued;
       const group = round.plan.groups.find((g: Data) => g.id === run.group), version = d.versions.find((v: Data) => v.id === group.version);

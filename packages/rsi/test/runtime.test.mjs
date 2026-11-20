@@ -79,11 +79,12 @@ async function fixture(t) {
   const read = async () => (await storage.get(ownerKey('owner')))?.value;
   // The suite runs at any hour: the night decides nothing by itself unless a test asks for it.
   const create = async (extra = {}) => {
+    const before = new Set(Object.keys((await read())?.experiments || {}));
     const result = await http('POST', { op: 'new', project: '', thread: 'source', statement: 'Improve a measured score', prepare: 'codex', evaluate: 'cat-b5ddoo9l',
       cats: [{ id: 'codex', name: '砚砚', model: 'gpt-5.6-sol', handle: '@codex', on: true }, { id: 'cat-b5ddoo9l', name: '小狸', model: 'k3.1', handle: '@kimi', on: true }], auto: 'none', ...extra });
     assert.equal(result.status, 200, JSON.stringify(result));
     assert.deepEqual(result.acts?.map((a) => a.act), ['thread', 'open'], JSON.stringify(result));
-    const state = await read(), d = Object.values(state.experiments).find((d) => d.objective.projectPath === project);
+    const state = await read(), d = Object.values(state.experiments).find((d) => d.objective.projectPath === project && !before.has(d.objective.id));
     return { id: d.objective.id, thread: result.acts[0].args.id, result };
   };
   const tool = (method, input, catId, threadId, invocationId = `${catId}-turn`) => activation.actions[`rsi.${method}`](input,
@@ -1053,6 +1054,37 @@ test('schedule handler uses the confirmed local window, readiness, idle state an
   await until(f.read, (s) => s.experiments[o.id].rounds[1].state === 'evaluating');
   await report(f, o); await decide(f, o); at(16, 19); await tick();
   assert.equal((await f.read()).experiments[o.id].rounds.length, 2);
+});
+
+test('objectives sharing a run window take turns: the one whose last cycle started longest ago starts next', async (t) => {
+  const f = await fixture(t), a = await f.create(), b = await f.create();
+  for (const o of [a, b]) await f.initialize(o, plan({ delta: 1 }), { window: '每晚 20:00–08:00' });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 10, 15, 19, 59).getTime() });
+  for (const o of [a, b]) assert.equal((await f.http('POST', { op: 'life', action: 'start', objective: o.id })).status, 200);
+  const order = [];
+  for (const minute of [1, 2, 3]) {
+    const at = new Date(2026, 10, 15, 20, minute).getTime();
+    t.mock.timers.setTime(at);
+    await f.activation().actions['rsi.tick']();
+    const s = await f.read(), started = [a, b].find((o) => s.experiments[o.id].rounds.some((r) => r.start === at));
+    assert.ok(started, `a cycle starts at 20:0${minute}`);
+    order.push(started === a ? 'a' : 'b');
+    await until(f.read, (s) => s.experiments[started.id].rounds.find((r) => r.start === at).state === 'evaluating');
+    await report(f, started); await decide(f, started);
+  }
+  assert.deepEqual(order, ['a', 'b', 'a']);
+});
+
+test('the runs of a cycle started later wait for those of one started earlier, whichever objective it belongs to', async (t) => {
+  const f = await fixture(t), a = await f.create(), b = await f.create();
+  for (const o of [a, b]) await f.initialize(o, plan({ delta: 1 }));
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 10, 15, 12, 0).getTime() });
+  assert.equal((await f.http('POST', { op: 'runCycle', objective: b.id })).status, 200);
+  t.mock.timers.setTime(new Date(2026, 10, 15, 12, 1).getTime());
+  assert.equal((await f.http('POST', { op: 'runCycle', objective: a.id })).status, 200);
+  await until(f.read, (s) => [a, b].every((o) => s.experiments[o.id].rounds[0].state === 'evaluating'), 'both cycles ran');
+  const starts = (await readFile(join(f.project, 'starts'), 'utf8')).trim().split('\n').map((run) => run.includes(b.id) ? 'b' : 'a');
+  assert.deepEqual(starts, ['b', 'b', 'b', 'b', 'a', 'a', 'a', 'a']);
 });
 
 test('a conclusion nobody decides within 30 minutes of the run window goes on with its plan', async (t) => {
