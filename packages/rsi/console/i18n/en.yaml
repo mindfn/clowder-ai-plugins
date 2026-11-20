@@ -35,8 +35,11 @@ step:
   collect: Collect
   collectLive: Collect · In progress
   eval: Evaluate · {1}
+  discuss: Discuss · {1}
   gov: Govern · {0}
   cycles: "{0} cycles"
+  doneOf: "{0}/{1}"
+  missingOf: "{0} missing"
 evalResult:
   stalled: No result submitted
   tune: Keep tuning
@@ -46,11 +49,16 @@ evalResult:
   baseline: Baseline
   proposal: Change proposed
   switch: New version needed
+discussResult:
+  proposing: In progress
+  agree: Agreed
+  split: Split
+  count: "{0} directions"
 govResult:
   stalled: No result submitted
   evolve: Evolve
   rollback: Roll back
-  pending: Awaiting decision
+  pending: Your call
   switch: Switch version
   variable: Tune variables
   metric: Change metrics
@@ -66,6 +74,7 @@ stepName:
   apply: Apply
   collect: Collect
   eval: Evaluate
+  discuss: Discuss
   gov: Govern
 detail:
   node: "{0}"
@@ -407,10 +416,7 @@ library:
   sources: Evidence
   refs: References read for this evaluation
 exp:
-  ms: "{0}  [{1}, {2}]"
-  sdOf: σ {0}
   seedsOf: "{0}"
-  minOf: "{0} min"
   control: Control
   confirm: Confirm winner
   failedOf: "{0} failures"
@@ -483,8 +489,44 @@ exp:
     approved: Your approved plan
     baseline: Baseline
     _: "{0}"
-  results: Group results (primary metric mean [95% interval] · Standard deviation across seeds · Duration)
-  conclusion: Conclusion
+  cmp:
+    label: "Each metric: mean ± sample standard deviation over seeds ({0} seeds per group); difference = group − same-cycle control"
+    single: "Each metric: one seed per group, a single result with no spread across seeds; difference = group − same-cycle control"
+    head:
+      main: "{0} · Main metric · {1}{2}"
+      guard: "{0} · Guardrail{3}"
+      other: "{0} · {1}"
+    rule:
+      minDelta: " · wins only if better than the control by at least {0}"
+      margin: " · passes unless worse than the control by more than {0}"
+    limit:
+      down: ": every seed at most {0}"
+      up: ": every seed at least {0}"
+    sd: ± {0}
+    partial: "{0}/{1} seeds with a result"
+    none: No result
+    delta:
+      better: "{0} better"
+      worse: "{0} worse"
+      same: Even
+    pass: Kept
+    cross: Crossed
+    seedsOf: Seed {0}
+    seed: Seed {0}
+    beats: Beats the control
+    out:
+      control: "Not counted: the control did not finish"
+      guard: "Not counted: guardrail crossed"
+      runs: "Not counted: runs did not finish"
+    result:
+      candidate: "{0} ({1}) beats the same-cycle control: it becomes the candidate, confirmed next cycle on fresh seeds; the default version stays"
+      confirmed: "Confirmed: the candidate still beats the same-cycle control; {1} becomes the default version"
+      rejected: "Not confirmed: candidate {1} did not beat the same-cycle control this time; it is not adopted and the default stays"
+      insufficient: "The confirmation hit environment failures: the candidate is kept and confirmed again next cycle on fresh seeds"
+      none: No group beat the same-cycle control; the default version stays
+      incomparable: The control did not finish, so this cycle is not compared
+      baseline: This cycle ran only the current version as control
+  conclusion: The evaluator's conclusion
   comparable: Comparable with control group {0}
   noCompare: No control group (baseline)
   attribution: Attribution
@@ -518,8 +560,6 @@ exp:
     _: "{0}"
   predictions: Prediction checks
   predOf: Predicted {0} · Actual {1}
-  directions: Directions from analysis members
-  disagree: Analysis members disagree; your judgment is needed
   dirKind:
     code: Change code
     variable: Tune variables
@@ -547,8 +587,43 @@ exp:
     goal: Change goal
     same: Keep tonight as planned
     _: "{0}"
-  decided: "{1} chose “{0}” · {2}"
   note: Note
+  disc:
+    firsts: Everyone's first choice
+    rule: A first choice is a member's first direction. When two or more discussion members propose, their first choices agree only if both the kind and the target are the same; one without a target does not agree. At night only agreeing first choices are adopted by rule
+    first: First choice
+    target: "Changes: {0}"
+    proposing: "{0} still proposing ({1}/{2} in); summed up when all are in or after 20 minutes"
+    agree:
+      same: "The discussion members' first choices agree: {0} · {1}"
+      effect: "The discussion members' first choices agree ({0} · {1}) but expect different effects"
+    split:
+      kind: "The discussion members' first choices differ: different kinds"
+      target: "The discussion members' first choices differ: all {0}, but different targets"
+      untargeted: "The discussion members' first choices cannot be compared: a kind or target is missing"
+    missing: "{0} did not propose within 20 minutes and are left out"
+  gov:
+    ask:
+      confirm: "Next cycle confirms candidate {0} ({1}): press “Keep tonight as planned” to confirm it as planned"
+      split: "First choices differ: adopt one of them, or keep tonight as planned"
+      agree: "First choices agree: adopt it, or choose something else"
+      choose: Adopt a direction, or keep tonight as planned
+      empty: "No directions: write a note for {0} to make a version, or keep tonight as planned"
+    adopt: "Adopt: {0} makes a new version from the direction and the next cycle compares it with the current version {1}; an execution fix becomes the default once fixed"
+    others: All directions
+    same: The current version {0} runs again on fresh seeds; nothing changes
+    sameConfirm: "Next cycle confirms candidate {0} ({1}): fresh seeds, compared with the current version {2} again"
+    noteTitle: Write a note for a version
+    note: You write a note, {0} makes a new version from it, and the next cycle compares it with the current version {1}
+    chosen: Chosen
+    adopted: "“{0}”"
+    by: Decided by
+    byRule: The plugin, by rule
+    led: Then
+    ledCycle: "{1} · Cycle {0}"
+    ledVersion: "Waiting for {0} to make a version for “{1}”"
+    ledStop: "Objective ended: {0}"
+    ledLater: The next cycle has not started
   send: Send to iteration member
   events: Events this night
   event:
@@ -558,7 +633,7 @@ exp:
     rerun: Rerun
     merged: Merged
     _: "{0}"
-  runs: Individual runs ({0})
+  runs: "Individual runs ({0}) · main metric: {1}"
   next:
     done: Evaluation is complete; no further cycles will start
     decide: Results for {0} cycle {1} are ready; choose the next step. Tonight follows the current plan if you take no action.

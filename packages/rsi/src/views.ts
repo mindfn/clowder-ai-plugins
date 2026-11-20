@@ -2,7 +2,7 @@ import { AUTO, autoKey } from './init.js';
 import type { Data, RsiState } from './types.js';
 import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData, memberIds } from './data.js';
 import { timeRange } from './schedule.js';
-import { testedVersion } from './cycles.js';
+import { analystsOf, short, signed, testedVersion } from './cycles.js';
 
 const tc = (key: string, ...args: unknown[]) => ({ t: key, args });
 
@@ -85,8 +85,9 @@ function rsiTree(tree: any, rows: any, def: any): any {
   const out = rows.map(function (r: any, i: any): any {
     const sel = r.key === rowKey, vis = (sel && m && r.cycles.find(function (c: any): any { return c.n === +m[1]; })) || r.cycles[r.cycles.length - 1], steps: Data[] = [];
     if (vis && vis.apply) steps.push({ k: 'apply', n: vis.n, result: vis.apply, step: 'c' + vis.n + '.apply' });
-    if (vis && vis.collect) steps.push({ k: 'collect', n: vis.n, live: vis.live, step: 'c' + vis.n + '.collect' });
-    if (vis && vis.eval) steps.push({ k: 'eval', n: vis.n, result: vis.eval, step: 'c' + vis.n + '.eval' });
+    if (vis && vis.collect) steps.push({ k: 'collect', n: vis.n, live: vis.live, done: vis.done, total: vis.total, step: 'c' + vis.n + '.collect' });
+    if (vis && vis.eval) steps.push({ k: 'eval', n: vis.n, result: vis.eval, delta: vis.delta, step: 'c' + vis.n + '.eval' });
+    if (vis && vis.discuss) steps.push(Object.assign({ k: 'discuss', n: vis.n, step: 'c' + vis.n + '.discuss' }, vis.discuss));
     if (vis && vis.gov) steps.push({ k: 'gov', result: vis.gov, step: 'c' + vis.n + '.gov' });
     else if (r.gov) steps.push({ k: 'gov', result: r.gov, step: 'gov' });
     return { r: r, sel: sel, steps: steps, pick: r.cycles.length > 1 ? { id: 'rsi-cyc-' + tree + '-' + i, tree: tree, value: r.key + '>' + stepOf(vis), options: r.cycles.map(function (c: any): any { return { v: r.key + '>' + stepOf(c), n: c.n, total: r.cycles.length }; }) } : null };
@@ -177,16 +178,89 @@ const RSI_LAYERS = ['execution', 'harness', 'rubric', 'observation'];
 function exp(): any {
   const d = rsiExpData(); if (!d) return null;
   const o = d.objective, main = d.metrics.items.find((m: Data) => !m.guard).id, key = function (v: any): any { return o.id + '/' + v; };
+  const nameOf = function (id: any): any { const m = d.members.find(function (m: any): any { return m.catId === id; }); return m ? m.name : id; };
+  const memberName = function (role: any): any { return nameOf((d.members.find(function (m: any): any { return m.role === role; }) || {}).catId); };
+  const num = (x: unknown) => typeof x === 'number' && Number.isFinite(x) ? short(x) : null;
+  // A cycle's metrics are the scale it ran with; the first that is not a guardrail is its main metric.
+  const mainOf = (r: Data) => (r.metrics || d.metrics).items.find((m: Data) => !m.guard);
   // A cycle whose analysts are still proposing is not yet waiting for the decision.
   const waiting = function (r: any): any { return !!r.report && !r.decision && r.state === 'done' && !(r.analysis && r.analysis.waiting.length); };
   const tested = d.rounds.map(function (r: any): any { return Object.assign({}, r, { version: testedVersion(r.plan) }); });
   const rounds = tested.filter(function (r: any): any { return r.state !== 'planned'; }).map(function (r: any): any { return Object.assign({}, r, { k: tested.filter(function (x: any): any { return x.version === r.version && x.n <= r.n; }).length }); });
   const dirOf = function (r: any): any { return r.decision && r.decision.directionId && r.report.directions.find(function (x: any): any { return x.id === r.decision.directionId; }); };
   const govOf = function (r: any): any { const x = dirOf(r); return waiting(r) ? 'pending' : !r.decision ? null : x ? (x.kind === 'code' ? (r.report.verdict === 'rollback' ? 'rollback' : 'evolve') : x.kind) : r.decision.pick; };
-  const focus = o.projectPath && rounds.find((r: Data) => waiting(r) || ['running', 'evaluating'].includes(r.state));
+  const sel = (x: Data, step: string) => key(x.version) + '>c' + x.k + '.' + step;
+  // A concluded cycle's numbers, from the comparison stored with its report (cycles.ts comparison): a block per metric — the main one, then
+  // the guardrails, then the rest — and in it a row per group, the control first: mean and sample SD over the seeds, the difference from the
+  // same cycle's control, better or worse by the metric's direction, and on a guardrail whether every seed kept to it.
+  const compareOf = function (r: Data) {
+    const report = r.report, items = (r.metrics || d.metrics).items, lead = mainOf(r);
+    const groups = [...r.plan.groups.filter((g: Data) => g.control), ...r.plan.groups.filter((g: Data) => !g.control)], control = groups.find((g: Data) => g.control);
+    const cell = (g: string, m: string) => report.matrix.find((c: Data) => c.group === g && c.metric === m), judged = (g: string) => report.compare.groups?.find((x: Data) => x.group === g);
+    const row = (g: Data, m: Data) => {
+      const c = cell(g.id, m.id), base = control && !g.control ? cell(control.id, m.id) : null, j = judged(g.id);
+      const delta = typeof c?.mean === 'number' && typeof base?.mean === 'number' ? c.mean - base.mean : null;
+      const checks = m.guard && j ? j.guardrails.filter((x: Data) => x.metric === m.id) : [], crossed = checks.filter((x: Data) => !x.pass).map((x: Data) => x.seed);
+      return { key: m.id + '/' + g.id, id: g.id, label: g.label, version: g.version, control: !!g.control, confirm: !!g.confirm, mean: num(c?.mean), sd: num(c?.sd), n: c ? c.n : 0, partial: !!c && c.n > 0 && c.n < r.plan.seeds.length,
+        delta: delta === null ? null : delta ? signed(delta) : '0', better: delta === null ? '' : delta === 0 ? 'same' : (delta > 0) === (m.dir === 'up') ? 'better' : 'worse',
+        guard: checks.length ? (crossed.length ? 'fail' : 'pass') : '', crossed,
+        // The main metric decides: a group beats the control, or does not count (its runs or the control's did not all finish, or it crossed a guardrail).
+        beats: m === lead && !!j?.beatsControl, out: m === lead && j && !g.control && !j.eligible ? (!report.compare.comparable ? 'control' : j.guardrails.some((x: Data) => !x.pass) ? 'guard' : 'runs') : '',
+        seeds: c?.seeds?.map((s: Data) => ({ seed: s.seed, value: num(s.value), state: crossed.includes(s.seed) ? 'cross' : s.error ? (s.error.kind === 'env' ? 'env' : 'failed') : s.state === 'done' ? '' : 'failed' })) };
+    };
+    const conf = report.confirmation, mean = (g: Data) => cell(g.id, lead.id)?.mean;
+    const counts = (g: Data) => judged(g.id)?.eligible ? 1 : 0, ranked = groups.filter((g: Data) => !g.control && typeof mean(g) === 'number')
+      .sort((a: Data, b: Data) => counts(b) - counts(a) || (lead.dir === 'down' ? mean(a) - mean(b) : mean(b) - mean(a)));
+    const metrics = [lead, ...items.filter((m: Data) => m.guard), ...items.filter((m: Data) => m !== lead && !m.guard)].map((m: Data) => ({ id: m.id, name: m.name, role: m === lead ? 'main' : m.guard ? 'guard' : 'other', dir: m.dir,
+      rule: m !== lead ? '' : m.margin !== undefined ? 'margin' : m.minDelta ? 'minDelta' : '', ruleValue: m.margin ?? m.minDelta, limit: m.guard && typeof m.threshold === 'number' ? m.dir : '', threshold: m.threshold,
+      items: groups.map((g: Data) => row(g, m)) }));
+    return { seeds: r.plan.seeds.length, single: r.plan.seeds.length === 1, metrics, group: conf?.group, version: conf?.version,
+      result: conf ? conf.status : !report.compare.groups ? '' : groups.length < 2 ? 'baseline' : !report.compare.comparable ? 'incomparable' : 'none',
+      // The difference the stepper shows: the group being confirmed or made a candidate, else the best of the others that count.
+      lead: metrics[0].items.find((x: Data) => x.id === (conf ? conf.group : ranked[0]?.id))?.delta };
+  };
+  // A cycle's discussion (cycles.ts conclude, propose, finishAnalysis): the directions by member, in the order they first proposed, a member's
+  // exact repeats shown once (the same title and kind, as when the evaluator is also a discussion member); a member's first direction is their
+  // 首选. When two or more discussion members proposed, the conclusion's rule (report.agree) said whether their 首选 agree; here only where they differ.
+  const discussionOf = function (r: Data) {
+    const dirs = r.report.directions, asked = r.analysis, still: string[] = asked ? asked.waiting : [], late: string[] = asked && asked.missing || [];
+    if (!dirs.length && !asked) return null;
+    const analysts = analystsOf(d), evaluator = d.members.find((m: Data) => m.role === 'evaluate')?.catId, picked = (x: Data) => !!r.decision && r.decision.directionId === x.id, members: Data[] = [];
+    for (const x of dirs) {
+      let m = members.find((y) => y.id === x.by);
+      if (!m) members.push(m = { id: x.by, model: x.model, evaluator: x.by === evaluator, analyst: analysts.some((a) => a.catId === x.by), directions: [] });
+      const same = m.directions.find((y: Data) => y.title === x.title && y.kind === x.kind);
+      if (same) same.picked = same.picked || picked(x);
+      else m.directions.push(Object.assign({}, x, { picked: picked(x), first: !m.directions.length }));
+    }
+    // The 首选 the rule compares: the first direction of each discussion member who proposed.
+    const firsts = asked ? analysts.filter((a) => !still.includes(a.catId) && !late.includes(a.catId)).map((a) => dirs.find((x: Data) => x.by === a.catId)).filter(Boolean) : [];
+    const kinds = new Set(firsts.map((x: Data) => x.kind || '')), targets = new Set(firsts.map((x: Data) => x.target || ''));
+    return { status: still.length ? 'proposing' : firsts.length > 1 ? (r.report.agree ? 'agree' : 'split') : 'count',
+      differ: firsts.length < 2 ? '' : kinds.size > 1 && !kinds.has('') ? 'kind' : kinds.has('') || targets.has('') ? 'untargeted' : targets.size > 1 ? 'target'
+        : new Set(firsts.map((x: Data) => JSON.stringify(x.predict || null))).size > 1 ? 'effect' : 'same',
+      kind: firsts[0]?.kind, target: firsts[0]?.target, done: firsts.length, asked: firsts.length + still.length + late.length, waiting: still.map(nameOf), missing: late.map(nameOf),
+      count: members.reduce((n, m) => n + m.directions.length, 0), members, firsts: members.map((m) => Object.assign({}, m.directions[0], { evaluator: m.evaluator, analyst: m.analyst })) };
+  };
+  // What deciding a cycle does (actions.ts expDecide, cycles.ts requestVersion): while it waits, what the choice is; once decided, what was
+  // chosen, by whom, and what came of it — the version being made for it, the next cycle, or the objective's end.
+  const govFor = function (r: Data) {
+    const disc = discussionOf(r), later = rounds.find((x: Data) => x.n > r.n), ask = d.versionRequest && d.versionRequest.cycle === r.n ? d.versionRequest : null;
+    return { ask: !waiting(r) ? '' : d.candidate ? 'confirm' : !r.report.directions.length ? 'empty' : ['split', 'agree'].includes(disc!.status) ? disc!.status : 'choose',
+      choices: !waiting(r) ? [] : d.candidate ? [{ k: 'same' }] : [{ k: 'same' }, { k: 'note' }], candidate: d.candidate && { group: d.candidate.id, version: d.candidate.version }, current: o.currentVersion, iterate: memberName('iterate'),
+      discuss: disc && sel(r, 'discuss'), adopted: dirOf(r) || null,
+      led: !r.decision ? null : ask ? { k: 'version', title: ask.title } : later ? { k: 'cycle', n: later.k, version: later.version, go: sel(later, later.report ? 'eval' : 'collect') }
+        : o.stopReason && o.stopReason.cycle === r.n ? { k: 'stop', text: o.stopReason.text } : { k: 'later' } };
+  };
+  const focus = o.projectPath && rounds.find((r: Data) => waiting(r) || r.analysis?.waiting.length || ['running', 'evaluating'].includes(r.state));
   const tree = rsiTree('rsiSelO', d.versions.map(function (v: any): any {
     return { key: key(v.id), parent: v.parent && key(v.parent),
-      cycles: rounds.filter(function (r: any): any { return r.version === v.id; }).map(function (r: any): any { return { n: r.k, apply: r.runs.some(function (u: any): any { return u.error && u.error.kind === 'env'; }) ? 'failed' : 'done', collect: true, live: r.state === 'running', eval: r.report && r.report.verdict, gov: govOf(r) }; }),
+      cycles: rounds.filter(function (r: any): any { return r.version === v.id; }).map(function (r: any): any {
+        const live = r.state === 'running', disc = r.report && discussionOf(r);
+        return { n: r.k, apply: r.runs.some(function (u: any): any { return u.error && u.error.kind === 'env'; }) ? 'failed' : 'done', collect: true, live: live,
+          done: live ? r.runs.filter((u: Data) => u.state === 'done' || u.state === 'failed').length : null, total: r.runs.length, eval: r.report && r.report.verdict, delta: r.report && compareOf(r).lead,
+          discuss: disc && { result: disc.status, count: disc.count, done: disc.done, asked: disc.asked, missing: disc.missing.length }, gov: govOf(r) };
+      }),
       data: Object.assign({}, v, { nodeState: v.current ? 'current' : v.status === 'candidate' ? 'candidate' : '' }) };
   }), { row: key(focus ? focus.version : o.currentVersion) });
   const ver = d.versions.find(function (v: any): any { return key(v.id) === tree.rowKey; }), m = /^c(\d+)\.(\w+)$/.exec(tree.stepKey);
@@ -197,7 +271,6 @@ function exp(): any {
 
   const no = function (k: any): any { return d.plan.findIndex(function (p: any): any { return p.k === k; }) + 1; };
   const below = function (k: any): any { const out: any[] = []; (function walk(x: any): any { d.plan.forEach(function (p: any): any { if (p.deps.indexOf(x) >= 0 && out.indexOf(p.k) < 0) { out.push(p.k); walk(p.k); } }); })(k); return out; };
-  const nameOf = function (id: any): any { const m = d.members.find(function (m: any): any { return m.catId === id; }); return m ? m.name : id; };
   const steps = d.plan.map(function (p: any, i: any): any {
     const k = p.k, items = d.prep.filter(function (x: any): any { return x.section === k; }).map(function (x: any): any { return Object.assign({}, x, { needYou: x.neededFrom === 'human' && x.state !== 'confirmed', by: x.by && nameOf(x.by) }); });
     const has = function (st: any): any { return items.some(function (x: any): any { return x.state === st; }); }, ex = d.exec && d.exec[k], st = d.steps && d.steps[k];
@@ -207,16 +280,15 @@ function exp(): any {
       state: ex ? ({ started: 'preparing', cancelled: 'cancelled', failed: 'failed', blocked: 'blocked', missing: 'missing' } as Data)[ex.state] : d.steps && st && st.stale ? 'stale' : d.steps && !st ? (missing.length ? 'waiting' : 'queued')
       : items.every(function (x: any): any { return x.state === 'confirmed'; }) ? 'confirmed' : has('preparing') ? 'preparing' : has('submitted') ? 'submitted' : 'uninvestigated' };
   });
-  const at = function (x: any, step: any): any { return 'version|' + key(x.version) + '>c' + x.k + '.' + step; };
+  const at = function (x: any, step: any): any { return 'version|' + sel(x, step); };
   const wait = rounds.find(waiting), run = rounds.find(function (x: any): any { return x.state === 'running'; }), ev = rounds.find(function (x: any): any { return x.state === 'evaluating'; }), halted = rounds.find(function (x: any): any { return x.state === 'interrupted'; }), an = rounds.find(function (x: any): any { return x.analysis && x.analysis.waiting.length; });
-  const memberName = function (role: any): any { return nameOf((d.members.find(function (m: any): any { return m.role === role; }) || {}).catId); };
   const doing = steps.filter(function (x: any): any { return x.state === 'preparing'; }), cut = steps.find(function (x: any): any { return x.state === 'cancelled'; }), stale = steps.filter(function (x: any): any { return x.state === 'stale'; }).length;
 
   const first = steps.filter(function (x: any): any { return x.items.some(function (y: any): any { return y.needYou; }); }).map(function (x: any): any { return { i: x.i, n: below(x.k).length }; }).sort(function (a: any, b: any): any { return b.n - a.n; })[0];
   const hint = first && first.n ? tc('rsi.exp.firstOf', first.i, first.n) : '';
   const next = o.state === 'done' ? { k: 'done', stop: (d.prep.find(function (p: any): any { return p.section === 'goal' && p.id.endsWith('-stop'); }) || {}).id } : o.state === 'paused' ? { k: 'paused' } : wait ? { k: 'decide', v: wait.version, n: wait.k, go: at(wait, 'gov') } : run ? { k: 'running', v: run.version, n: run.k, go: at(run, 'collect') }
     : ev ? { k: 'evaluating', v: ev.version, n: ev.k, by: memberName('evaluate'), go: at(ev, 'collect') }
-    : an ? { k: 'analyzing', v: an.version, n: an.k, by: an.analysis.waiting.map(nameOf).join('、'), go: at(an, 'gov') }
+    : an ? { k: 'analyzing', v: an.version, n: an.k, by: an.analysis.waiting.map(nameOf).join('、'), go: at(an, 'discuss') }
     : halted ? { k: halted.autoResumed ? 'interrupted' : 'resuming', v: halted.version, n: halted.k, go: at(halted, 'collect') }
     : cut ? { k: 'cancelled', n: cut.i, by: cut.who } : doing.length ? { k: 'init', by: doing.map(function (x: any): any { return { who: x.who, i: x.i, k: x.k }; }), hint: hint }
     : o.state === 'ready' ? { k: 'ready' } : stale ? { k: 'stale', count: stale } : needYou ? { k: 'prep', count: needYou, hint: hint }
@@ -229,9 +301,9 @@ function exp(): any {
     exec: d.executor.state === 'passed' ? d.executor.mcp : null, metrics: ruled ? d.metrics.items.map(function (x: any): any { return x.name + (x.line ? ' ' + x.line : ''); }).join('；') : null, e: d.metrics.version };
   const groupsOf = function (x: any): any {
     return x.plan.groups.map(function (g: any): any {
-      const cell: Data = {}; x.report && x.report.matrix.filter(function (y: any): any { return y.group === g.id; }).forEach(function (y: any): any { cell[y.metric] = y; });
       const runs = x.runs.filter(function (u: any): any { return u.group === g.id; });
-      return Object.assign({}, g, cell, { varsText: Object.keys(g.vars).map(function (k: any): any { return k + '=' + g.vars[k]; }).join(' '), failed: runs.filter(function (u: any): any { return u.state === 'failed'; }).length,
+      // A variable may hold an object (reward weights): it reads as JSON.
+      return Object.assign({}, g, { varsText: Object.entries(g.vars).map(([k, v]) => k + '=' + (typeof v === 'string' ? v : JSON.stringify(v))).join(' '), failed: runs.filter(function (u: any): any { return u.state === 'failed'; }).length,
         doneN: runs.filter(function (u: any): any { return u.state === 'done' || u.state === 'failed'; }).length, total: runs.length });
     });
   };
@@ -240,10 +312,10 @@ function exp(): any {
     trend: rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, value: Number(best(x).mean.toPrecision(4)) }; }),
     trendMetric: d.metrics.items.find((m: Data) => m.id === main).name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.filter(function (p: any): any { return p.result !== 'unresolved'; }).length },
     versions: tree.rows, ver: ver, step: m ? m[2] : 'node', candidate: d.candidate ? d.candidate.version : null,
-    cycle: r && Object.assign({}, r, { waiting: waiting(r), groups: groupsOf(r),
-      runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { durationSeconds: u.start ? Math.round(((u.end || Date.now()) - u.start) / 1000) : null, metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })), groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),
+    cycle: r && Object.assign({}, r, { waiting: waiting(r), groups: groupsOf(r), main: mainOf(r),
+      runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { value: num(u.metrics[mainOf(r).id]), durationSeconds: u.start ? Math.round(((u.end || Date.now()) - u.start) / 1000) : null, metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })), groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),
       notAssessed: r.report && RSI_LAYERS.filter(function (l: any): any { return r.report.attribution.assessedLayers.indexOf(l) < 0; }),
-      report: r.report && Object.assign({}, r.report, { directions: r.report.directions.map(function (x: any): any { return Object.assign({}, x, { picked: !!r.decision && r.decision.directionId === x.id }); }) }) }),
+      compare: r.report && compareOf(r), discussion: r.report && discussionOf(r), gov: r.report && govFor(r) }),
     prep: { needYou: needYou, steps: steps }, executor: d.executor, members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, roleMembers: o.projectPath ? d.members.filter(function (m: any): any { return m.catId && m.role !== 'analyze'; }) : d.members, discussion: d.members.filter(function (m: any): any { return m.role === 'analyze' && m.catId; }).map(function (m: any): any { return { id: m.catId, name: m.name }; }), memberIds: { prepare: (d.members.find(function (m: any): any { return m.role === 'prepare'; }) || {}).catId, evaluate: (d.members.find(function (m: any): any { return m.role === 'evaluate'; }) || {}).catId, iterate: (d.members.find(function (m: any): any { return m.role === 'iterate'; }) || {}).catId }, policy: policyOf(d, o), metrics: d.metrics,
     eTree: [{ id: d.metrics.version }], cTree: [{ id: 'C1' }] };
 };

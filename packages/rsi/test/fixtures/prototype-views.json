@@ -936,6 +936,15 @@
                 "selected": false
               },
               {
+                "k": "discuss",
+                "n": 1,
+                "result": "count",
+                "count": 3,
+                "step": "c1.discuss",
+                "pick": "cp-converge/v1>c1.discuss",
+                "selected": false
+              },
+              {
                 "k": "gov",
                 "result": "evolve",
                 "step": "c1.gov",
@@ -1005,6 +1014,15 @@
                 "selected": false
               },
               {
+                "k": "discuss",
+                "n": 3,
+                "result": "count",
+                "count": 3,
+                "step": "c3.discuss",
+                "pick": "cp-converge/v2>c3.discuss",
+                "selected": false
+              },
+              {
                 "k": "gov",
                 "result": "pending",
                 "step": "c3.gov",
@@ -1053,6 +1071,15 @@
                 "selected": false
               },
               {
+                "k": "discuss",
+                "n": 1,
+                "result": "count",
+                "count": 1,
+                "step": "c1.discuss",
+                "pick": "cp-converge/v3>c1.discuss",
+                "selected": false
+              },
+              {
                 "k": "gov",
                 "result": "rollback",
                 "step": "c1.gov",
@@ -1078,42 +1105,6 @@
             },
             "control": true,
             "confirm": false,
-            "return": {
-              "group": "r5-control",
-              "metric": "return",
-              "mean": 472,
-              "sd": 6,
-              "lo": 464,
-              "hi": 479,
-              "n": 5
-            },
-            "steps": {
-              "group": "r5-control",
-              "metric": "steps",
-              "mean": 60823,
-              "sd": 3075,
-              "lo": 57006,
-              "hi": 64640,
-              "n": 5
-            },
-            "sd": {
-              "group": "r5-control",
-              "metric": "sd",
-              "mean": 6,
-              "sd": 0,
-              "lo": 6,
-              "hi": 6,
-              "n": 5
-            },
-            "wall": {
-              "group": "r5-control",
-              "metric": "wall",
-              "mean": 299,
-              "sd": 10,
-              "lo": 287,
-              "hi": 312,
-              "n": 5
-            },
             "varsText": "lr=1e-3 batch=16 entropy=0.01",
             "failed": 0,
             "doneN": 5,
@@ -1130,42 +1121,6 @@
             },
             "control": false,
             "confirm": true,
-            "return": {
-              "group": "r5-confirm",
-              "metric": "return",
-              "mean": 472,
-              "sd": 6,
-              "lo": 468,
-              "hi": 476,
-              "n": 10
-            },
-            "steps": {
-              "group": "r5-confirm",
-              "metric": "steps",
-              "mean": 61000,
-              "sd": 3050,
-              "lo": 58818,
-              "hi": 63182,
-              "n": 10
-            },
-            "sd": {
-              "group": "r5-confirm",
-              "metric": "sd",
-              "mean": 6,
-              "sd": 0,
-              "lo": 6,
-              "hi": 6,
-              "n": 10
-            },
-            "wall": {
-              "group": "r5-confirm",
-              "metric": "wall",
-              "mean": 300,
-              "sd": 10,
-              "lo": 293,
-              "hi": 307,
-              "n": 10
-            },
             "varsText": "lr=1e-3 batch=16 entropy=0.01",
             "failed": 0,
             "doneN": 10,
@@ -1278,6 +1233,15 @@
                 "selected": false
               },
               {
+                "k": "discuss",
+                "n": 1,
+                "result": "count",
+                "count": 3,
+                "step": "c1.discuss",
+                "pick": "cp-converge/v1>c1.discuss",
+                "selected": false
+              },
+              {
                 "k": "gov",
                 "result": "evolve",
                 "step": "c1.gov",
@@ -1347,6 +1311,15 @@
                 "selected": false
               },
               {
+                "k": "discuss",
+                "n": 3,
+                "result": "count",
+                "count": 3,
+                "step": "c3.discuss",
+                "pick": "cp-converge/v2>c3.discuss",
+                "selected": false
+              },
+              {
                 "k": "gov",
                 "result": "pending",
                 "step": "c3.gov",
@@ -1395,6 +1368,15 @@
                 "selected": false
               },
               {
+                "k": "discuss",
+                "n": 1,
+                "result": "count",
+                "count": 1,
+                "step": "c1.discuss",
+                "pick": "cp-converge/v3>c1.discuss",
+                "selected": false
+              },
+              {
                 "k": "gov",
                 "result": "rollback",
                 "step": "c1.gov",
@@ -1420,42 +1402,6 @@
             },
             "control": true,
             "confirm": true,
-            "return": {
-              "group": "r4-control",
-              "metric": "return",
-              "mean": 468,
-              "sd": 11,
-              "lo": 454,
-              "hi": 482,
-              "n": 5
-            },
-            "steps": {
-              "group": "r4-control",
-              "metric": "steps",
-              "mean": 65000,
-              "sd": 3250,
-              "lo": 60966,
-              "hi": 69034,
-              "n": 5
-            },
-            "sd": {
-              "group": "r4-control",
-              "metric": "sd",
-              "mean": 11,
-              "sd": 0,
-              "lo": 11,
-              "hi": 11,
-              "n": 5
-            },
-            "wall": {
-              "group": "r4-control",
-              "metric": "wall",
-              "mean": 300,
-              "sd": 10,
-              "lo": 288,
-              "hi": 312,
-              "n": 5
-            },
             "varsText": "lr=1e-3 batch=16 entropy=0.01",
             "failed": 0,
             "doneN": 5,
@@ -1472,42 +1418,6 @@
             },
             "control": false,
             "confirm": false,
-            "return": {
-              "group": "r4-v3",
-              "metric": "return",
-              "mean": 441,
-              "sd": 73,
-              "lo": 350,
-              "hi": 532,
-              "n": 5
-            },
-            "steps": {
-              "group": "r4-v3",
-              "metric": "steps",
-              "mean": 78000,
-              "sd": 3900,
-              "lo": 73159,
-              "hi": 82842,
-              "n": 5
-            },
-            "sd": {
-              "group": "r4-v3",
-              "metric": "sd",
-              "mean": 73,
-              "sd": 0,
-              "lo": 73,
-              "hi": 73,
-              "n": 5
-            },
-            "wall": {
-              "group": "r4-v3",
-              "metric": "wall",
-              "mean": 360,
-              "sd": 10,
-              "lo": 348,
-              "hi": 372,
-              "n": 5
-            },
             "varsText": "lr=1e-3 batch=16 entropy=0.01",
             "failed": 1,
             "doneN": 6,
@@ -1620,6 +1530,15 @@
                 "selected": false
               },
               {
+                "k": "discuss",
+                "n": 1,
+                "result": "count",
+                "count": 3,
+                "step": "c1.discuss",
+                "pick": "cp-converge/v1>c1.discuss",
+                "selected": false
+              },
+              {
                 "k": "gov",
                 "result": "evolve",
                 "step": "c1.gov",
@@ -1689,6 +1608,15 @@
                 "selected": false
               },
               {
+                "k": "discuss",
+                "n": 3,
+                "result": "count",
+                "count": 3,
+                "step": "c3.discuss",
+                "pick": "cp-converge/v2>c3.discuss",
+                "selected": false
+              },
+              {
                 "k": "gov",
                 "result": "pending",
                 "step": "c3.gov",
@@ -1737,6 +1665,15 @@
                 "selected": true
               },
               {
+                "k": "discuss",
+                "n": 1,
+                "result": "count",
+                "count": 1,
+                "step": "c1.discuss",
+                "pick": "cp-converge/v3>c1.discuss",
+                "selected": false
+              },
+              {
                 "k": "gov",
                 "result": "rollback",
                 "step": "c1.gov",
@@ -1762,42 +1699,6 @@
             },
             "control": true,
             "confirm": true,
-            "return": {
-              "group": "r4-control",
-              "metric": "return",
-              "mean": 468,
-              "sd": 11,
-              "lo": 454,
-              "hi": 482,
-              "n": 5
-            },
-            "steps": {
-              "group": "r4-control",
-              "metric": "steps",
-              "mean": 65000,
-              "sd": 3250,
-              "lo": 60966,
-              "hi": 69034,
-              "n": 5
-            },
-            "sd": {
-              "group": "r4-control",
-              "metric": "sd",
-              "mean": 11,
-              "sd": 0,
-              "lo": 11,
-              "hi": 11,
-              "n": 5
-            },
-            "wall": {
-              "group": "r4-control",
-              "metric": "wall",
-              "mean": 300,
-              "sd": 10,
-              "lo": 288,
-              "hi": 312,
-              "n": 5
-            },
             "varsText": "lr=1e-3 batch=16 entropy=0.01",
             "failed": 0,
             "doneN": 5,
@@ -1814,42 +1715,6 @@
             },
             "control": false,
             "confirm": false,
-            "return": {
-              "group": "r4-v3",
-              "metric": "return",
-              "mean": 441,
-              "sd": 73,
-              "lo": 350,
-              "hi": 532,
-              "n": 5
-            },
-            "steps": {
-              "group": "r4-v3",
-              "metric": "steps",
-              "mean": 78000,
-              "sd": 3900,
-              "lo": 73159,
-              "hi": 82842,
-              "n": 5
-            },
-            "sd": {
-              "group": "r4-v3",
-              "metric": "sd",
-              "mean": 73,
-              "sd": 0,
-              "lo": 73,
-              "hi": 73,
-              "n": 5
-            },
-            "wall": {
-              "group": "r4-v3",
-              "metric": "wall",
-              "mean": 360,
-              "sd": 10,
-              "lo": 348,
-              "hi": 372,
-              "n": 5
-            },
             "varsText": "lr=1e-3 batch=16 entropy=0.01",
             "failed": 1,
             "doneN": 6,

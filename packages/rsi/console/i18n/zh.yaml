@@ -35,8 +35,11 @@ step:
   collect: 采集
   collectLive: 采集 · 进行中
   eval: 评估 · {1}
+  discuss: 讨论 · {1}
   gov: 治理 · {0}
   cycles: "{0} 个周期"
+  doneOf: "{0}/{1}"
+  missingOf: 缺 {0} 人
 evalResult:
   stalled: 没回写
   tune: 继续调
@@ -46,11 +49,16 @@ evalResult:
   baseline: 基线
   proposal: 提出修改
   switch: 需要换版
+discussResult:
+  proposing: 讨论中
+  agree: 一致
+  split: 有分歧
+  count: "{0} 个方向"
 govResult:
   stalled: 没回写
   evolve: 演进
   rollback: 回退
-  pending: 等待决定
+  pending: 等你定
   switch: 换版
   variable: 调变量
   metric: 改指标
@@ -66,6 +74,7 @@ stepName:
   apply: 应用
   collect: 采集
   eval: 评估
+  discuss: 讨论
   gov: 治理
 detail:
   node: "{0}"
@@ -407,10 +416,7 @@ library:
   sources: 依据
   refs: 这次评估读的资料
 exp:
-  ms: "{0}  [{1}, {2}]"
-  sdOf: σ {0}
   seedsOf: "{0} 个"
-  minOf: "{0} 分"
   control: 对照
   confirm: 确认赢家
   failedOf: "{0} 次失败"
@@ -483,8 +489,44 @@ exp:
     approved: 你批准的计划
     baseline: 基线
     _: "{0}"
-  results: 各组结果（主指标均值 [95% 区间] · 种子间标准差 · 耗时）
-  conclusion: 结论
+  cmp:
+    label: 各指标：均值 ± 种子间样本标准差（每组 {0} 个种子）；差值 = 本组 − 同周期对照
+    single: 各指标：每组只有 1 个种子，是单次结果，没有种子间标准差；差值 = 本组 − 同周期对照
+    head:
+      main: "{0} · 主指标 · {1}{2}"
+      guard: "{0} · 护栏{3}"
+      other: "{0} · {1}"
+    rule:
+      minDelta: " · 至少比对照好 {0} 才算赢"
+      margin: " · 不比对照差超过 {0} 就算过"
+    limit:
+      down: "：每次都不超过 {0}"
+      up: "：每次都不低于 {0}"
+    sd: ± {0}
+    partial: "{0}/{1} 次有结果"
+    none: 没有结果
+    delta:
+      better: "{0} 更好"
+      worse: "{0} 更差"
+      same: 持平
+    pass: 通过
+    cross: 越线
+    seedsOf: 种子 {0}
+    seed: 种子 {0}
+    beats: 胜过对照
+    out:
+      control: 不计入：对照没跑全
+      guard: 不计入：护栏越线
+      runs: 不计入：运行没跑全
+    result:
+      candidate: "{0}（{1}）胜过同周期对照：成为候选，下一周期换新种子复验，默认版本暂不变"
+      confirmed: 复验通过：候选仍胜过同周期对照，{1} 成为默认版本
+      rejected: 复验没保持住：候选 {1} 这次没胜过同周期对照，不采用，默认版本不变
+      insufficient: 复验时环境失败，证据不足：保留候选，下一周期换新种子再复验
+      none: 没有组胜过同周期对照，默认版本不变
+      incomparable: 对照组没跑全，这一周期不和对照比较
+      baseline: 这一周期只跑了当前版本对照
+  conclusion: 评估成员的结论
   comparable: 和对照组 {0} 可比
   noCompare: 没有对照（基线）
   attribution: 归因
@@ -518,8 +560,6 @@ exp:
     _: "{0}"
   predictions: 预测核对
   predOf: 预测 {0} · 实际 {1}
-  directions: 方向（各分析成员）
-  disagree: 几个分析成员意见不一致，需要你判断
   dirKind:
     code: 改代码
     variable: 调变量
@@ -547,8 +587,43 @@ exp:
     goal: 改目标
     same: 今晚照旧
     _: "{0}"
-  decided: "{1} 选了「{0}」 · {2}"
   note: 说明
+  disc:
+    firsts: 各成员的首选
+    rule: 首选是每人的第一个方向。两位以上方案讨论成员给了方向时，首选的类别和改的对象都相同才算一致，没写改的对象算不一致；夜里只在一致时按规则自动采纳
+    first: 首选
+    target: 改：{0}
+    proposing: "{0} 还在给方向（已交 {1}/{2}）；都交了或等满 20 分钟就汇总"
+    agree:
+      same: 方案讨论成员的首选一致：{0} · {1}
+      effect: 方案讨论成员的首选一致（{0} · {1}），但预期效果不同
+    split:
+      kind: 方案讨论成员的首选不一致：类别不同
+      target: 方案讨论成员的首选不一致：都是{0}，改的对象不同
+      untargeted: 方案讨论成员的首选没法比：有人没写类别或改的对象
+    missing: "{0} 没在 20 分钟内给方向，没算进来"
+  gov:
+    ask:
+      confirm: 下一周期是候选 {0}（{1}）的复验：点「今晚照旧」按计划复验
+      split: 首选不一致：采纳其中一个，或今晚照旧
+      agree: 首选一致：可以直接采纳，也可以选别的
+      choose: 采纳一个方向，或今晚照旧
+      empty: 没有方向：写说明让 {0} 出版本，或今晚照旧
+    adopt: 采纳：{0} 按这个方向出新版本，下一周期拿它和当前版本 {1} 对照；修执行的方向修好后直接成为默认版本
+    others: 看全部方向
+    same: 当前版本 {0} 换新种子再跑一轮，什么都不改
+    sameConfirm: 下一周期复验候选 {0}（{1}）：换新种子，再和当前版本 {2} 比一次
+    noteTitle: 写说明出版本
+    note: 你写一段说明，{0} 按说明出新版本，下一周期拿它和当前版本 {1} 对照
+    chosen: 选了
+    adopted: 「{0}」
+    by: 谁定的
+    byRule: 插件按规则
+    led: 接着
+    ledCycle: "{1} · 周期 {0}"
+    ledVersion: 等 {0} 按「{1}」出版本
+    ledStop: 评估项结束：{0}
+    ledLater: 下一周期还没开始
   send: 发给迭代成员
   events: 这晚发生的事
   event:
@@ -558,7 +633,7 @@ exp:
     rerun: 补跑
     merged: 已合入
     _: "{0}"
-  runs: 每次运行（{0}）
+  runs: 每次运行（{0}） · 主指标：{1}
   next:
     done: 评估已完成，不再启动新周期
     decide: "{0} 周期 {1} 的结论出来了，等你选下一步；不处理今晚照当前计划跑"

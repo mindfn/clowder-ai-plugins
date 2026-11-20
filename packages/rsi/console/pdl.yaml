@@ -825,6 +825,14 @@ views:
                             - t: rsi.evalResult
                               args:
                                 - "@result"
+                        discuss:
+                          t: rsi.step.discuss
+                          args:
+                            - "@n"
+                            - t: rsi.discussResult
+                              args:
+                                - "@result"
+                                - "@count"
                         gov:
                           t: rsi.step.gov
                           args:
@@ -835,6 +843,37 @@ views:
                           t: rsi.step.cycles
                           args:
                             - "@count"
+                    faint:
+                      of: "@k"
+                      map:
+                        collect:
+                          of: "@live"
+                          map:
+                            "true":
+                              t: rsi.step.doneOf
+                              args:
+                                - "@done"
+                                - "@total"
+                            _: ""
+                        eval: "@delta"
+                        discuss:
+                          of: "@result"
+                          map:
+                            proposing:
+                              t: rsi.step.doneOf
+                              args:
+                                - "@done"
+                                - "@asked"
+                            _:
+                              of: "@missing"
+                              gte: 1
+                              map:
+                                "true":
+                                  t: rsi.step.missingOf
+                                  args:
+                                    - "@missing"
+                                _: ""
+                        _: ""
                     pressed: "@selected"
                     tone:
                       of: "@result"
@@ -842,6 +881,7 @@ views:
                         pending: warn
                         rollback: warn
                         failed: warn
+                        split: warn
                         _: ""
                     act: plugSet
                     args:
@@ -981,6 +1021,7 @@ views:
                       t: rsi.exp.runs
                       args:
                         - $.exp.cycle.runs.length
+                        - $.exp.cycle.main.name
                     from: $.exp.cycle.runs
                     row:
                       layout: two
@@ -1004,10 +1045,10 @@ views:
                             when: "@retries"
                       cols:
                         - v:
-                            text: "@metrics.return"
+                            text: "@value"
                             num: true
-                            when: "@metrics.return"
-                          w: num
+                            when: "@value"
+                          w: auto
                         - v:
                             status:
                               of: "@state"
@@ -1068,6 +1109,185 @@ views:
                       eval: true
                   - $.exp.cycle.report
                 blocks:
+                  - type: notice
+                    when: $.exp.cycle.compare.result
+                    tone:
+                      of: $.exp.cycle.compare.result
+                      map:
+                        candidate: ok
+                        confirmed: ok
+                        rejected: warn
+                        insufficient: warn
+                        incomparable: warn
+                        _: info
+                    text:
+                      t: rsi.exp.cmp.result
+                      args:
+                        - $.exp.cycle.compare.result
+                        - $.exp.cycle.compare.group
+                        - $.exp.cycle.compare.version
+                  - type: list
+                    id: rsi-exp-compare
+                    label:
+                      of: $.exp.cycle.compare.single
+                      map:
+                        "true": t:rsi.exp.cmp.single
+                        _:
+                          t: rsi.exp.cmp.label
+                          args:
+                            - $.exp.cycle.compare.seeds
+                    groups: $.exp.cycle.compare.metrics
+                    group:
+                      count: ""
+                      title:
+                        t: rsi.exp.cmp.head
+                        args:
+                          - "@role"
+                          - "@name"
+                          - t: rsi.exp.dir
+                            args:
+                              - "@dir"
+                          - t: rsi.exp.cmp.rule
+                            args:
+                              - "@rule"
+                              - "@ruleValue"
+                          - t: rsi.exp.cmp.limit
+                            args:
+                              - "@limit"
+                              - "@threshold"
+                    expand: many
+                    row:
+                      layout: line
+                      key: "@key"
+                      title:
+                        text: "@id"
+                        mono: true
+                        tip: "@label"
+                      inline:
+                        - text: "@version"
+                          variant: badge
+                        - chip: t:rsi.exp.control
+                          when: "@control"
+                        - chip: t:rsi.exp.confirm
+                          when: "@confirm"
+                        - status:
+                            tone: ok
+                            text: t:rsi.exp.cmp.beats
+                          when: "@beats"
+                        - status:
+                            of: "@out"
+                            map:
+                              control:
+                                tone: warn
+                                text: t:rsi.exp.cmp.out.control
+                              guard:
+                                tone: danger
+                                text: t:rsi.exp.cmp.out.guard
+                              runs:
+                                tone: warn
+                                text: t:rsi.exp.cmp.out.runs
+                              _: ""
+                          when: "@out"
+                      cols:
+                        - v:
+                            - text: "@mean"
+                              num: true
+                              when: "@mean"
+                            - text:
+                                t: rsi.exp.cmp.sd
+                                args:
+                                  - "@sd"
+                              num: true
+                              when: "@sd"
+                            - text:
+                                t: rsi.exp.cmp.partial
+                                args:
+                                  - "@n"
+                                  - $.exp.cycle.compare.seeds
+                              when: "@partial"
+                            - text: t:rsi.exp.cmp.none
+                              when: "!@mean"
+                          w: auto
+                        - v:
+                            text:
+                              t: rsi.exp.cmp.delta
+                              args:
+                                - "@better"
+                                - "@delta"
+                            tone:
+                              of: "@better"
+                              map:
+                                better: ok
+                                worse: danger
+                                _: ""
+                            num: true
+                          w: auto
+                          when: "@better"
+                        - v:
+                            - status:
+                                of: "@guard"
+                                map:
+                                  pass:
+                                    tone: ok
+                                    text: t:rsi.exp.cmp.pass
+                                  fail:
+                                    tone: danger
+                                    text: t:rsi.exp.cmp.cross
+                                  _: ""
+                            - text:
+                                t: rsi.exp.cmp.seedsOf
+                                args:
+                                  - of: "@crossed"
+                                    sep: 、
+                              when: "@crossed"
+                          w: auto
+                          when: "@guard"
+                      expand:
+                        - type: list
+                          inline: true
+                          from: "@seeds"
+                          row:
+                            layout: record
+                            title:
+                              t: rsi.exp.cmp.seed
+                              args:
+                                - "@seed"
+                            cols:
+                              - v:
+                                  text: "@value"
+                                  num: true
+                                w: auto
+                              - v:
+                                  status:
+                                    of: "@state"
+                                    map:
+                                      cross:
+                                        tone: danger
+                                        text: t:rsi.exp.cmp.cross
+                                      env:
+                                        tone: warn
+                                        text: t:rsi.exp.err.env
+                                      failed:
+                                        tone: danger
+                                        text: t:rsi.exp.err.real
+                                      _: ""
+                                w: auto
+                                when: "@state"
+                  - type: text
+                    variant: meta
+                    parts:
+                      - text:
+                          of: $.exp.cycle.report.compare.comparable
+                          map:
+                            "true":
+                              t: rsi.exp.comparable
+                              args:
+                                - $.exp.cycle.report.compare.against
+                            _: t:rsi.exp.noCompare
+                      - text: " · "
+                      - text: $.exp.cycle.report.compare.note
+                  - type: label
+                    text: t:rsi.exp.conclusion
                   - type: text
                     parts:
                       - status:
@@ -1096,75 +1316,6 @@ views:
                         strong: true
                   - type: markdown
                     text: $.exp.cycle.report.summary
-                  - type: text
-                    variant: meta
-                    parts:
-                      - text:
-                          of: $.exp.cycle.report.compare.comparable
-                          map:
-                            "true":
-                              t: rsi.exp.comparable
-                              args:
-                                - $.exp.cycle.report.compare.against
-                            _: t:rsi.exp.noCompare
-                      - text: " · "
-                      - text: $.exp.cycle.report.compare.note
-                  - type: list
-                    id: rsi-exp-groups
-                    label: t:rsi.exp.results
-                    from: $.exp.cycle.groups
-                    row:
-                      layout: two
-                      key: "@id"
-                      title: "@label"
-                      inline:
-                        - chip: t:rsi.exp.control
-                          when: "@control"
-                        - chip: t:rsi.exp.confirm
-                          when: "@confirm"
-                      sub:
-                        sep: " · "
-                        parts:
-                          - text: "@version"
-                            mono: true
-                          - text: "@varsText"
-                            mono: true
-                            when: "@varsText"
-                      cols:
-                        - v:
-                            text:
-                              t: rsi.exp.ms
-                              args:
-                                - "@return.mean"
-                                - "@return.lo"
-                                - "@return.hi"
-                            when: "@return.mean"
-                            num: true
-                          w: auto
-                        - v:
-                            text:
-                              t: rsi.exp.sdOf
-                              args:
-                                - "@sd.mean"
-                            when: "@sd.mean"
-                            num: true
-                          w: num
-                        - v:
-                            text:
-                              t: rsi.exp.minOf
-                              args:
-                                - "@wall.mean"
-                            when: "@wall.mean"
-                            num: true
-                          w: num
-                        - v:
-                            text:
-                              t: rsi.exp.failedOf
-                              args:
-                                - "@failed"
-                            tone: danger
-                          w: label
-                          when: "@failed"
                   - type: label
                     text: t:rsi.exp.attribution
                   - type: kv
@@ -1281,74 +1432,246 @@ views:
                   - of: $.exp.step
                     map:
                       _: false
+                      discuss: true
+                  - $.exp.cycle.discussion
+                blocks:
+                  - type: notice
+                    when:
+                      of: $.exp.cycle.discussion.status
+                      map:
+                        count: false
+                        _: true
+                    tone:
+                      of: $.exp.cycle.discussion.status
+                      map:
+                        split: warn
+                        agree: ok
+                        _: info
+                    text:
+                      of: $.exp.cycle.discussion.status
+                      map:
+                        proposing:
+                          t: rsi.exp.disc.proposing
+                          args:
+                            - of: $.exp.cycle.discussion.waiting
+                              sep: 、
+                            - $.exp.cycle.discussion.done
+                            - $.exp.cycle.discussion.asked
+                        agree:
+                          t: rsi.exp.disc.agree
+                          args:
+                            - $.exp.cycle.discussion.differ
+                            - t: rsi.exp.dirKind
+                              args:
+                                - $.exp.cycle.discussion.kind
+                            - $.exp.cycle.discussion.target
+                        split:
+                          t: rsi.exp.disc.split
+                          args:
+                            - $.exp.cycle.discussion.differ
+                            - t: rsi.exp.dirKind
+                              args:
+                                - $.exp.cycle.discussion.kind
+                        _: ""
+                  - type: notice
+                    tone: warn
+                    when: $.exp.cycle.discussion.missing
+                    text:
+                      t: rsi.exp.disc.missing
+                      args:
+                        - of: $.exp.cycle.discussion.missing
+                          sep: 、
+                  - type: label
+                    text: t:rsi.exp.disc.firsts
+                    help: t:rsi.exp.disc.rule
+                    when: $.exp.cycle.discussion.firsts
+                  - type: list
+                    id: rsi-exp-firsts
+                    from: $.exp.cycle.discussion.firsts
+                    optional: true
+                    row: rsi.first
+                  - type: each
+                    from: $.exp.cycle.discussion.members
+                    blocks:
+                      - type: text
+                        parts:
+                          - who: "@id"
+                            form: avatar
+                          - who: "@id"
+                            form: name
+                          - text: "@model"
+                            mono: true
+                            when: "@model"
+                          - text: t:rsi.exp.role.evaluate
+                            variant: badge
+                            when: "@evaluator"
+                          - text: t:rsi.exp.role.analyze
+                            variant: badge
+                            when: "@analyst"
+                      - type: list
+                        id: rsi-exp-dirs
+                        from: "@directions"
+                        row: rsi.direction
+              - type: each
+                from:
+                  - {}
+                when:
+                  - of: $.exp.step
+                    map:
+                      _: false
                       gov: true
                   - $.exp.cycle.report
                 blocks:
                   - type: notice
                     tone: warn
-                    when:
-                      - "!$.exp.cycle.report.agree"
-                      - $.exp.cycle.waiting
-                    text: t:rsi.exp.disagree
+                    when: $.exp.cycle.gov.ask
+                    text:
+                      of: $.exp.cycle.gov.ask
+                      map:
+                        confirm:
+                          t: rsi.exp.gov.ask.confirm
+                          args:
+                            - $.exp.cycle.gov.candidate.group
+                            - $.exp.cycle.gov.candidate.version
+                        empty:
+                          t: rsi.exp.gov.ask.empty
+                          args:
+                            - $.exp.cycle.gov.iterate
+                        split: t:rsi.exp.gov.ask.split
+                        agree: t:rsi.exp.gov.ask.agree
+                        _: t:rsi.exp.gov.ask.choose
                   - type: list
-                    id: rsi-exp-dirs
-                    label: t:rsi.exp.directions
-                    from: $.exp.cycle.report.directions
+                    id: rsi-exp-gov-firsts
+                    label: t:rsi.exp.disc.firsts
+                    when:
+                      - $.exp.cycle.waiting
+                      - "!$.exp.candidate"
+                    from: $.exp.cycle.discussion.firsts
+                    optional: true
+                    actions:
+                      - type: button
+                        link: true
+                        label: t:rsi.exp.gov.others
+                        act: plugSet
+                        args:
+                          k: selO
+                          v: $.exp.cycle.gov.discuss
+                    row: rsi.first
+                  - type: text
+                    variant: meta
+                    when:
+                      - $.exp.cycle.waiting
+                      - "!$.exp.candidate"
+                      - $.exp.cycle.discussion.firsts
+                    text:
+                      t: rsi.exp.gov.adopt
+                      args:
+                        - $.exp.cycle.gov.iterate
+                        - $.exp.cycle.gov.current
+                  - type: list
+                    id: rsi-exp-gov-choices
+                    from: $.exp.cycle.gov.choices
+                    optional: true
                     row:
-                      layout: two
-                      key: "@id"
-                      lead:
-                        who: "@by"
-                        form: avatar
-                      title: "@title"
-                      inline:
-                        - text:
-                            t: rsi.exp.dirKind
-                            args:
-                              - "@kind"
-                          variant: badge
-                          when: "@kind"
-                        - chip: t:rsi.exp.picked
-                          when: "@picked"
+                      layout: item
+                      key: "@k"
+                      title:
+                        text:
+                          of: "@k"
+                          map:
+                            same: t:rsi.exp.pick.same
+                            _: t:rsi.exp.gov.noteTitle
                       sub:
-                        sep: " · "
-                        parts:
-                          - who: "@by"
-                            form: name
-                          - text: "@model"
-                            mono: true
-                            when: "@model"
-                          - text:
-                              t: rsi.exp.expect
+                        text:
+                          of: "@k"
+                          map:
+                            same:
+                              of: $.exp.cycle.gov.ask
+                              map:
+                                confirm:
+                                  t: rsi.exp.gov.sameConfirm
+                                  args:
+                                    - $.exp.cycle.gov.candidate.group
+                                    - $.exp.cycle.gov.candidate.version
+                                    - $.exp.cycle.gov.current
+                                _:
+                                  t: rsi.exp.gov.same
+                                  args:
+                                    - $.exp.cycle.gov.current
+                            _:
+                              t: rsi.exp.gov.note
                               args:
-                                - "@expect"
-                            when: "@expect"
+                                - $.exp.cycle.gov.iterate
+                                - $.exp.cycle.gov.current
+                      subLines: 2
                       cols:
                         - control:
                             - type: button
-                              label: t:rsi.exp.adopt
+                              label: t:rsi.exp.pick.same
                               act: plugin
                               args:
                                 request: expDecide
                                 n: $.exp.cycle.n
-                                pick: direction
-                                directionId: "@id"
+                                pick: same
                                 note: ""
                               when:
-                                - $.exp.cycle.waiting
-                                - "!$.exp.candidate"
+                                of: "@k"
+                                map:
+                                  same: true
+                                  _: false
                               disabled: $.pending
-                      expand:
-                        - type: markdown
-                          text: "@why"
-                        - type: text
-                          variant: meta
-                          parts:
-                            - text: t:rsi.exp.cites
-                            - text:
-                                of: "@cites"
-                                sep: 、
-                          when: "@cites"
+                            - type: button
+                              label: t:rsi.exp.pick.info
+                              act: dialog
+                              args:
+                                kind: rsiExpNote
+                                n: $.exp.cycle.n
+                                pick: info
+                              when:
+                                of: "@k"
+                                map:
+                                  note: true
+                                  _: false
+                              disabled: $.pending
+                            - type: button
+                              label: t:rsi.exp.pick.addVar
+                              act: dialog
+                              args:
+                                kind: rsiExpNote
+                                n: $.exp.cycle.n
+                                pick: addVar
+                              when:
+                                of: "@k"
+                                map:
+                                  note: true
+                                  _: false
+                              disabled: $.pending
+                            - type: button
+                              label: t:rsi.exp.pick.metric
+                              act: dialog
+                              args:
+                                kind: rsiExpNote
+                                n: $.exp.cycle.n
+                                pick: metric
+                              when:
+                                of: "@k"
+                                map:
+                                  note: true
+                                  _: false
+                              disabled: $.pending
+                            - type: button
+                              label: t:rsi.exp.pick.goal
+                              act: dialog
+                              args:
+                                kind: rsiExpNote
+                                n: $.exp.cycle.n
+                                pick: goal
+                              when:
+                                of: "@k"
+                                map:
+                                  note: true
+                                  _: false
+                              disabled: $.pending
                   - type: list
                     label: t:rsi.exp.asks
                     optional: true
@@ -1356,79 +1679,65 @@ views:
                     row:
                       layout: line
                       title: "@text"
-                  - type: toolbar
-                    items:
-                      - when:
-                          - $.exp.cycle.waiting
-                          - "!$.exp.candidate"
-                        type: button
-                        label: t:rsi.exp.pick.info
-                        act: dialog
-                        args:
-                          kind: rsiExpNote
-                          n: $.exp.cycle.n
-                          pick: info
-                        disabled: $.pending
-                      - when:
-                          - $.exp.cycle.waiting
-                          - "!$.exp.candidate"
-                        type: button
-                        label: t:rsi.exp.pick.addVar
-                        act: dialog
-                        args:
-                          kind: rsiExpNote
-                          n: $.exp.cycle.n
-                          pick: addVar
-                        disabled: $.pending
-                      - when:
-                          - $.exp.cycle.waiting
-                          - "!$.exp.candidate"
-                        type: button
-                        label: t:rsi.exp.pick.metric
-                        act: dialog
-                        args:
-                          kind: rsiExpNote
-                          n: $.exp.cycle.n
-                          pick: metric
-                        disabled: $.pending
-                      - when:
-                          - $.exp.cycle.waiting
-                          - "!$.exp.candidate"
-                        type: button
-                        label: t:rsi.exp.pick.goal
-                        act: dialog
-                        args:
-                          kind: rsiExpNote
-                          n: $.exp.cycle.n
-                          pick: goal
-                        disabled: $.pending
-                      - when: $.exp.cycle.waiting
-                        type: button
-                        label: t:rsi.exp.pick.same
-                        act: plugin
-                        args:
-                          request: expDecide
-                          n: $.exp.cycle.n
-                          pick: same
-                          note: ""
-                        disabled: $.pending
-                  - type: text
-                    variant: meta
+                  - type: kv
                     when: $.exp.cycle.decision
-                    parts:
-                      - text:
-                          t: rsi.exp.decided
+                    from:
+                      - k: t:rsi.exp.gov.chosen
+                        v:
+                          sep: " "
+                          parts:
+                            - text:
+                                t: rsi.exp.pickName
+                                args:
+                                  - $.exp.cycle.decision.pick
+                            - text:
+                                t: rsi.exp.gov.adopted
+                                args:
+                                  - $.exp.cycle.gov.adopted.title
+                              when: $.exp.cycle.gov.adopted
+                            - who: $.exp.cycle.gov.adopted.by
+                              form: name
+                              when: $.exp.cycle.gov.adopted
+                      - k: t:rsi.exp.gov.by
+                        v:
+                          sep: " · "
+                          parts:
+                            - text:
+                                of: $.exp.cycle.decision.by
+                                map:
+                                  RSI: t:rsi.exp.gov.byRule
+                                  _: $.exp.cycle.decision.by
+                            - text:
+                                of: $.exp.cycle.decision.at
+                                fmt: stamp
+                      - k: t:rsi.exp.note
+                        v: $.exp.cycle.decision.note
+                      - k: t:rsi.exp.gov.led
+                        v:
+                          t: rsi.exp.gov.ledCycle
                           args:
-                            - t: rsi.exp.pickName
+                            - $.exp.cycle.gov.led.n
+                            - $.exp.cycle.gov.led.version
+                        act: plugSet
+                        args:
+                          k: selO
+                          v: $.exp.cycle.gov.led.go
+                        when: $.exp.cycle.gov.led.go
+                      - k: t:rsi.exp.gov.led
+                        v:
+                          of: $.exp.cycle.gov.led.k
+                          map:
+                            version:
+                              t: rsi.exp.gov.ledVersion
                               args:
-                                - $.exp.cycle.decision.pick
-                            - $.exp.cycle.decision.by
-                            - of: $.exp.cycle.decision.at
-                              fmt: ago
-                      - text: " · "
-                        when: $.exp.cycle.decision.note
-                      - text: $.exp.cycle.decision.note
-                        when: $.exp.cycle.decision.note
+                                - $.exp.cycle.gov.iterate
+                                - $.exp.cycle.gov.led.title
+                            stop:
+                              t: rsi.exp.gov.ledStop
+                              args:
+                                - $.exp.cycle.gov.led.text
+                            _: t:rsi.exp.gov.ledLater
+                        when: "!$.exp.cycle.gov.led.go"
       - type: each
         from:
           - {}
@@ -4726,6 +5035,113 @@ views:
       request: delete
       objective: $.objective
 rows:
+  rsi.direction:
+    layout: two
+    key: "@id"
+    title: "@title"
+    inline:
+      - chip: t:rsi.exp.disc.first
+        when: "@first"
+      - text:
+          t: rsi.exp.dirKind
+          args:
+            - "@kind"
+        variant: badge
+        when: "@kind"
+      - chip: t:rsi.exp.picked
+        when: "@picked"
+    sub:
+      sep: " · "
+      parts:
+        - text:
+            t: rsi.exp.disc.target
+            args:
+              - "@target"
+          when: "@target"
+        - text:
+            t: rsi.exp.expect
+            args:
+              - "@expect"
+          when: "@expect"
+    cols:
+      - control:
+          - type: button
+            label: t:rsi.exp.adopt
+            act: plugin
+            args:
+              request: expDecide
+              n: $.exp.cycle.n
+              pick: direction
+              directionId: "@id"
+              note: ""
+            when:
+              - $.exp.cycle.waiting
+              - "!$.exp.candidate"
+            disabled: $.pending
+    expand:
+      - type: markdown
+        text: "@why"
+      - type: text
+        variant: meta
+        parts:
+          - text: t:rsi.exp.cites
+          - text:
+              of: "@cites"
+              sep: 、
+        when: "@cites"
+  rsi.first:
+    layout: two
+    key: "@id"
+    lead:
+      who: "@by"
+      form: avatar
+    title: "@title"
+    inline:
+      - text:
+          t: rsi.exp.dirKind
+          args:
+            - "@kind"
+        variant: badge
+        when: "@kind"
+      - chip: t:rsi.exp.picked
+        when: "@picked"
+    sub:
+      sep: " · "
+      parts:
+        - who: "@by"
+          form: name
+        - text:
+            t: rsi.exp.disc.target
+            args:
+              - "@target"
+          when: "@target"
+        - text:
+            t: rsi.exp.expect
+            args:
+              - "@expect"
+          when: "@expect"
+    cols:
+      - control:
+          - type: button
+            label: t:rsi.exp.adopt
+            act: plugin
+            args:
+              request: expDecide
+              n: $.exp.cycle.n
+              pick: direction
+              directionId: "@id"
+              note: ""
+            when:
+              - $.exp.cycle.waiting
+              - "!$.exp.candidate"
+              - of: $.exp.step
+                map:
+                  _: false
+                  gov: true
+            disabled: $.pending
+    expand:
+      - type: markdown
+        text: "@why"
   rsi.prep:
     layout: two
     key: "@id"

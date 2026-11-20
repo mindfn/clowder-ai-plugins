@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { act } from '../dist/actions.js';
+import { conclude, finishAnalysis, propose } from '../dist/cycles.js';
 import { createFixtures } from '../dist/fixtures.js';
+import { rsiExpNew } from '../dist/init.js';
 import { viewModel } from '../dist/views.js';
 import { fixture, now } from './helpers.mjs';
 
@@ -139,4 +142,139 @@ test('record, document, cards, and version selections consume their page-state q
   const traceRecord = await f.view({ view: 'record', type: 'trace', objective: detail.id, cycle: trace.cycleId, id: trace.id });
   assert.equal(traceRecord.payload.type, 'trace');
   assert.equal((await f.view({ project: 'pd-infer', view: 'doc', id: 'missing' })).payload, null);
+});
+
+// A real objective with one cycle of three groups × two seeds, waiting for its conclusion; values per group and seed are its metrics in order.
+const P = '/work/arith';
+const METRICS = [{ id: 'accuracy', name: 'holdout accuracy', dir: 'up', guard: false, minDelta: 0.05 }, { id: 'format_rate', name: '格式正确率', dir: 'up', guard: false },
+  { id: 'signal', name: '训练信号步占比', dir: 'up', guard: true, threshold: 0.3 }, { id: 'tail', name: '末窗 train accuracy', dir: 'up', guard: true, threshold: 0.05 }, { id: 'wall', name: 'wall_time_s', dir: 'down', guard: false }];
+const GROUPS = [{ id: 'control', label: '当前版本对照', version: 'v1', vars: {}, control: true, confirm: false },
+  { id: 'lr-low', label: '只降学习率', version: 'v1', vars: { lr: 0.00003 }, control: false, confirm: false },
+  { id: 'format-zero', label: '去掉格式奖励', version: 'v1', vars: { reward_weights: { correctness: 1, format: 0 } }, control: false, confirm: false }];
+// The control crosses the signal guardrail on seed 23; lr-low is best but crosses the tail one on seed 11; format-zero wins.
+const VALUES = { control: [[0.08, 0.9, 0.35, 0.06, 100], [0.075, 0.8, 0.25, 0.07, 110]], 'lr-low': [[0.52, 0.95, 0.4, 0.04, 100], [0.51, 0.85, 0.42, 0.06, 110]],
+  'format-zero': [[0.21, 0.5, 0.33, 0.08, 90], [0.19, 0.4, 0.31, 0.09, 100]] };
+// No winner: format-zero also crosses the signal guardrail.
+const SPLIT = { ...VALUES, control: [[0.08, 0.9, 0.35, 0.06, 100], [0.075, 0.8, 0.33, 0.07, 110]], 'format-zero': [[0.21, 0.5, 0.2, 0.08, 90], [0.19, 0.4, 0.31, 0.09, 100]] };
+function arith({ analysts = [], seeds = [11, 23], groups = GROUPS, values = VALUES } = {}) {
+  const s = createFixtures(now).state;
+  s.projects.unshift({ id: P, name: 'arith', projectPath: P, exp: true });
+  s.objectives[P] = []; s.groups[P] = []; s.units[P] = []; s.library[P] = [];
+  s.draft = { analysts: analysts.map(([catId, name]) => ({ catId, name, model: `m-${catId}` })) };
+  const o = rsiExpNew(s, P, { statement: '算术题准确率', prepare: 'it', evaluate: 'ev', iterate: 'it', projectPath: P, auto: 'none',
+    cats: [{ id: 'ev', name: '小狸', model: 'k3.1' }, { id: 'it', name: '砚砚', model: 'gpt-5.6' }] }, now);
+  const d = s.experiments[o.id];
+  d.metrics = { version: 'E1', items: METRICS };
+  const runs = groups.flatMap((g) => seeds.map((seed, i) => ({ id: `${o.id}-1-${g.id}-s${seed}`, group: g.id, seed, state: 'done', start: now, end: now + 60000, retries: 0, attempts: [],
+    metrics: Object.fromEntries(METRICS.map((m, k) => [m.id, values[g.id][i][k]])), artifacts: [], env: {}, log: '', error: null })));
+  d.rounds.push({ n: 1, version: 'v1', start: now, end: now + 60000, state: 'evaluating', plan: { groups, seeds }, metrics: structuredClone(d.metrics), report: null, decision: null, events: [], runs });
+  d.objective.state = 'running';
+  const x = { s, d, id: o.id };
+  x.conclude = (options) => assert.equal(conclude(s, d, { cycle: 1, verdict: 'tune', findings: 'f', ...(options ? { options } : {}) }, now).ok, true);
+  x.propose = (catId, options) => assert.equal(propose(s, d, { cycle: 1, options }, catId, now).ok, true);
+  x.view = (step) => viewModel(s, 'exp', { project: P, pick: `obj:${o.id}`, ...(step ? { selO: `${o.id}/v1>c1.${step}` } : {}) });
+  x.steps = (vm) => vm.versions[0].steps;
+  return x;
+}
+const option = (k, kind, target, expect) => ({ k, title: k, why: 'w', kind, ...(target ? { target } : {}), ...(expect ? { expect } : {}) });
+
+test('evaluation compares every metric with the same cycle’s control: the main metric, then guardrails, then the rest; per group mean ± SD, signed difference, better or worse, guardrail crossings and per-seed values', () => {
+  const x = arith();
+  x.conclude([option('confirm', 'variable', 'reward_weights.format')]);
+  const vm = x.view('eval'), c = vm.cycle.compare, metric = (id) => c.metrics.find((m) => m.id === id), cell = (m, g) => metric(m).items.find((r) => r.id === g);
+  assert.deepEqual(c.metrics.map((m) => [m.id, m.role]), [['accuracy', 'main'], ['signal', 'guard'], ['tail', 'guard'], ['format_rate', 'other'], ['wall', 'other']]);
+  assert.deepEqual(metric('accuracy').items.map((r) => r.id), ['control', 'lr-low', 'format-zero']);
+  assert.deepEqual([metric('accuracy').rule, metric('accuracy').ruleValue, metric('signal').limit, metric('signal').threshold], ['minDelta', 0.05, 'up', 0.3]);
+  assert.deepEqual([c.seeds, c.single, c.result, c.group, c.version, c.lead], [2, false, 'candidate', 'format-zero', 'v1', '+0.1225']);
+  const main = (g) => { const r = cell('accuracy', g); return [r.mean, r.sd, r.delta, r.better, r.beats, r.out]; };
+  assert.deepEqual(main('control'), ['0.0775', '0.003536', null, '', false, '']);
+  // lr-low improves most but crossed a guardrail, so it does not count; format-zero beats the control.
+  assert.deepEqual(main('lr-low'), ['0.515', '0.007071', '+0.4375', 'better', false, 'guard']);
+  assert.deepEqual(main('format-zero'), ['0.2', '0.01414', '+0.1225', 'better', true, '']);
+  // Lower is better for the wall time; a worse secondary metric says so.
+  assert.deepEqual([cell('wall', 'format-zero').delta, cell('wall', 'format-zero').better, cell('wall', 'lr-low').better, cell('format_rate', 'format-zero').better], ['-10', 'better', 'same', 'worse']);
+  // Guardrails pass or fail per group and name the seeds that crossed; the per-seed values mark them.
+  assert.deepEqual([cell('signal', 'control').guard, cell('signal', 'control').crossed, cell('signal', 'lr-low').guard, cell('tail', 'lr-low').crossed], ['fail', [23], 'pass', [11]]);
+  assert.deepEqual(cell('signal', 'control').seeds, [{ seed: 11, value: '0.35', state: '' }, { seed: 23, value: '0.25', state: 'cross' }]);
+  assert.equal(cell('format_rate', 'control').guard, '');
+  // The stepper shows the difference of the group made a candidate.
+  assert.equal(x.steps(vm).find((s) => s.k === 'eval').delta, '+0.1225');
+  // 采集 shows each run's main metric, 应用 object variables as JSON.
+  assert.deepEqual([vm.cycle.main.name, vm.cycle.runs[0].value], ['holdout accuracy', '0.08']);
+  assert.deepEqual(vm.cycle.groups.map((g) => g.varsText), ['', 'lr=0.00003', 'reward_weights={"correctness":1,"format":0}']);
+});
+
+test('a single seed is a single result without SD; a change that crossed a guardrail does not count, and a control that did not finish compares nothing', () => {
+  const groups = GROUPS.slice(0, 2), values = { control: [VALUES.control[0]], 'lr-low': [VALUES['lr-low'][0]] };
+  const x = arith({ seeds: [12], groups, values });
+  x.conclude([option('lr', 'variable', 'lr')]);
+  const c = x.view('eval').cycle.compare, row = c.metrics[0].items[1];
+  assert.deepEqual([c.single, c.seeds, c.result, c.lead], [true, 1, 'none', '+0.44']);
+  assert.ok(c.metrics.every((m) => m.items.every((r) => r.sd === null && r.n === 1 && !r.partial)));
+  assert.deepEqual([row.mean, row.delta, row.beats, row.out, c.metrics.find((m) => m.id === 'tail').items[1].crossed], ['0.52', '+0.44', false, 'guard', [12]]);
+  const y = arith({ seeds: [12], groups, values });
+  Object.assign(y.d.rounds[0].runs[0], { state: 'failed', metrics: {}, error: { kind: 'env', raw: 'killed' } });
+  y.conclude([option('lr', 'variable', 'lr')]);
+  const d = y.view('eval').cycle.compare;
+  assert.deepEqual([d.result, d.metrics[0].items[0].mean, d.metrics[0].items[0].seeds[0].state, d.metrics[0].items[1].out, d.metrics[0].items[1].delta], ['incomparable', null, 'env', 'control', null]);
+});
+
+test('the discussion is its own stage, reachable while discussion members still propose; it groups directions by member, shows a member’s repeats once, names who did not propose and says where the 首选 differ', () => {
+  const x = arith({ analysts: [['ev', '小狸'], ['a1', '甲'], ['a2', '乙'], ['a3', '丙']], values: SPLIT });
+  const own = [option('tail-mean', 'metric', 'tail'), option('lr-5e-5', 'variable', 'lr')];
+  x.conclude(own);
+  x.propose('a1', [option('lr', 'variable', 'lr'), option('temperature', 'variable', 'temperature')]);
+  // Still proposing: the page opens on this cycle's discussion, the stepper says how many proposed, and there is no decision yet.
+  let vm = x.view();
+  assert.deepEqual([vm.step, vm.next.k, vm.next.go.endsWith('/v1>c1.discuss')], ['discuss', 'analyzing', true]);
+  assert.deepEqual(x.steps(vm).map((s) => s.k), ['apply', 'collect', 'eval', 'discuss']);
+  assert.deepEqual((({ result, done, asked, missing }) => ({ result, done, asked, missing }))(x.steps(vm).at(-1)), { result: 'proposing', done: 1, asked: 4, missing: 0 });
+  assert.deepEqual([vm.cycle.discussion.waiting, vm.cycle.gov.ask], [['小狸', '乙', '丙'], '']);
+  // The evaluator, also a discussion member, proposes its own directions again; 丙 does not propose in time.
+  x.propose('ev', own);
+  x.propose('a2', [option('reward', 'code', 'reward.py')]);
+  finishAnalysis(x.s, x.d, x.d.rounds[0], now);
+  vm = x.view('discuss');
+  const disc = vm.cycle.discussion;
+  assert.equal(x.d.rounds[0].report.agree, false);
+  assert.deepEqual([disc.status, disc.differ, disc.missing, disc.done, disc.asked, disc.count], ['split', 'kind', ['丙'], 3, 4, 5]);
+  assert.deepEqual(disc.members.map((m) => [m.id, m.evaluator, m.analyst, m.directions.map((d) => [d.title, d.first])]), [
+    ['ev', true, true, [['tail-mean', true], ['lr-5e-5', false]]], ['a1', false, true, [['lr', true], ['temperature', false]]], ['a2', false, true, [['reward', true]]]]);
+  assert.deepEqual(disc.firsts.map((f) => [f.by, f.title, f.kind, f.target]), [['ev', 'tail-mean', 'metric', 'tail'], ['a1', 'lr', 'variable', 'lr'], ['a2', 'reward', 'code', 'reward.py']]);
+  assert.deepEqual(x.steps(vm).slice(-2).map((s) => [s.k, s.result, s.missing]), [['discuss', 'split', 1], ['gov', 'pending', undefined]]);
+  assert.deepEqual([vm.cycle.gov.ask, vm.cycle.gov.choices, vm.cycle.gov.discuss.endsWith('/v1>c1.discuss')], ['split', [{ k: 'same' }, { k: 'note' }], true]);
+});
+
+test('where agreeing 首选 still differ, and why 首选 without a target cannot agree, are told apart', () => {
+  const discuss = (a1, a2) => {
+    const x = arith({ analysts: [['a1', '甲'], ['a2', '乙']], values: SPLIT });
+    x.conclude(); x.propose('a1', [a1]); x.propose('a2', [a2]);
+    const { status, differ, kind, target } = x.view('discuss').cycle.discussion;
+    return [x.d.rounds[0].report.agree, status, differ, kind, target];
+  };
+  assert.deepEqual(discuss(option('lr', 'variable', 'lr'), option('lr2', 'variable', 'lr')), [true, 'agree', 'same', 'variable', 'lr']);
+  assert.deepEqual(discuss(option('lr', 'variable', 'lr', { lo: 0.1, hi: 0.2 }), option('lr2', 'variable', 'lr', { lo: 0.2, hi: 0.4 })), [true, 'agree', 'effect', 'variable', 'lr']);
+  assert.deepEqual(discuss(option('lr', 'variable', 'lr'), option('t', 'variable', 'temperature')), [false, 'split', 'target', 'variable', 'lr']);
+  assert.deepEqual(discuss(option('lr', 'variable', 'lr'), option('lr2', 'variable')), [false, 'split', 'untargeted', 'variable', 'lr']);
+});
+
+test('governance names what you decide and records what was chosen, by whom and what came of it', () => {
+  // A candidate: the next cycle is its confirmation, and 今晚照旧 is the only choice.
+  const w = arith();
+  w.conclude([option('confirm', 'variable', 'reward_weights.format')]);
+  const g = w.view('gov').cycle.gov;
+  assert.deepEqual([g.ask, g.candidate, g.choices, g.current, g.iterate], ['confirm', { group: 'format-zero', version: 'v1' }, [{ k: 'same' }], 'v1', '砚砚']);
+  // An adopted direction: who proposed it, and the version the governance member is asked for.
+  const x = arith({ analysts: [['a1', '甲'], ['a2', '乙']], values: SPLIT });
+  x.conclude(); x.propose('a1', [option('lr', 'variable', 'lr')]); x.propose('a2', [option('lr2', 'variable', 'lr')]);
+  assert.equal(x.view('gov').cycle.gov.ask, 'agree');
+  assert.deepEqual(act(x.s, { op: 'expDecide', objective: x.id, n: 1, pick: 'direction', directionId: 'lr2' }, { project: P }, now), { ok: true });
+  let vm = x.view('gov');
+  assert.deepEqual([vm.cycle.gov.ask, vm.cycle.gov.choices, vm.cycle.gov.adopted.title, vm.cycle.gov.adopted.by, vm.cycle.gov.led], ['', [], 'lr2', 'a2', { k: 'version', title: 'lr2' }]);
+  assert.deepEqual([vm.cycle.decision.by, x.steps(vm).at(-1).result, vm.cycle.discussion.members[1].directions[0].picked], ['你', 'variable', true]);
+  // Once the next cycle runs, that is what the decision led to.
+  delete x.d.versionRequest;
+  x.d.rounds.push({ n: 2, version: 'v1', start: now, end: null, state: 'running', plan: { groups: [GROUPS[0]], seeds: [24, 25] }, runs: [], report: null, decision: null, events: [] });
+  vm = x.view('gov');
+  assert.deepEqual(vm.cycle.gov.led, { k: 'cycle', n: 2, version: 'v1', go: `${x.id}/v1>c2.collect` });
 });

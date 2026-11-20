@@ -182,7 +182,7 @@ function badOptions(state: RsiState, d: Experiment, options: unknown, cycle: num
       || previous.length && !o.cites?.some((id: string) => previous.some((doc: Data) => doc.id === id)))
     || new Set(options.map((o: Data) => o.k)).size !== options.length;
 }
-const signed = (x: number) => (x >= 0 ? '+' : '') + short(x);
+export const signed = (x: number) => (x >= 0 ? '+' : '') + short(x);
 // A direction may predict how its version changes a metric (the main one by default) against the same cycle's control: expect {lo, hi}.
 const directionsFrom = (d: Experiment, options: Data[], member: Data, taken: string[]) => options.map((o: Data) => {
   const metric = record(o.expect) ? o.expect.metric || d.metrics.items.find((m: Data) => !m.guard)?.id : null;
@@ -203,7 +203,7 @@ export const ANALYSIS_LIMIT = 20 * 60_000;
 export const DECISION_WAIT = 30 * 60_000;
 
 // Four significant digits, never in exponent form (0.5075000000000001 → 0.5075, 1234.567 → 1235).
-const short = (x: number) => String(Number(x.toPrecision(4)));
+export const short = (x: number) => String(Number(x.toPrecision(4)));
 
 // A version made for a predicting direction is checked the first time it runs against a comparable control: the change of the
 // predicted metric (its group mean minus the control mean) inside [lo, hi] is a hit.
