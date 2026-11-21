@@ -796,7 +796,7 @@ exp:
   evalSkipped: "本周期因运行失败进入执行修复，已跳过评估。"
   evalPending: "待采集完成后进入评估。"
   evalMetrics: "本周期评估指标（{0}）"
-  discSkipped: "本周期因运行失败进入执行修复，已跳过方案讨论。"
+  discSkipped: "本周期已跳过方案讨论（未配置讨论成员或已转入执行修复）。"
   discPending: "待评估完成后进入方案讨论。"
   govPending: "待前序阶段完成后进入治理决策。"
   retryStage: 重新触发

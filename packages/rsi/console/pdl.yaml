@@ -1331,6 +1331,81 @@ views:
               - type: each
                 from:
                   - {}
+                when: $.exp.cycle.stage
+                blocks:
+                  - type: settings
+                    when:
+                      - $.exp.cycle.stage.canEdit
+                      - "!$.exp.cycle.stage.multi"
+                    rows:
+                      - label: t:rsi.exp.stepMemberLabel
+                        help: t:rsi.exp.execStageMemberHelp
+                        control:
+                          type: select
+                          id: rsi-cycle-stage-member
+                          label: t:rsi.exp.stepMemberLabel
+                          value: $.exp.cycle.stage.value
+                          options:
+                            - from: $.members.rows
+                              item:
+                                v: "@id"
+                                label:
+                                  t: rsi.memberOption
+                                  args:
+                                    - "@name"
+                                    - "@handle"
+                                when: "@on"
+                          change: plugin
+                          args:
+                            request: memberRole
+                            objective: $.exp.id
+                            role: $.exp.cycle.stage.role
+                            cats: $.members.rows
+                  - type: settings
+                    when:
+                      - $.exp.cycle.stage.canEdit
+                      - $.exp.cycle.stage.multi
+                    rows:
+                      - label: t:rsi.exp.execStageDiscussMembers
+                        help: t:rsi.exp.execStageMemberHelp
+                        control:
+                          type: select
+                          id: rsi-cycle-stage-discuss
+                          multi: true
+                          label: t:rsi.exp.execStageDiscussMembers
+                          none: t:rsi.exp.execStageDiscussNone
+                          value: $.exp.cycle.stage.values
+                          options:
+                            - from: $.members.rows
+                              item:
+                                v: "@id"
+                                label:
+                                  t: rsi.memberOption
+                                  args:
+                                    - "@name"
+                                    - "@handle"
+                                when: "@on"
+                          act: plugin
+                          args:
+                            request: analystToggle
+                            objective: $.exp.id
+                            cats: $.members.rows
+                  - type: text
+                    variant: meta
+                    when:
+                      - "!$.exp.cycle.stage.canEdit"
+                      - $.exp.cycle.stage.ownerNames
+                    text:
+                      t: rsi.exp.stageOwnerOf
+                      args:
+                        - of: $.exp.cycle.stage.archived
+                          map:
+                            "true": t:rsi.exp.stageOwnerArchived
+                            _: t:rsi.exp.stageOwnerUpcoming
+                        - $.exp.cycle.stage.ownerNames
+              - type: each
+                from:
+                  - {}
                 when:
                   of: $.exp.step
                   map:
@@ -1510,14 +1585,6 @@ views:
                       eval: true
                   - "!$.exp.cycle.report"
                 blocks:
-                  - type: text
-                    variant: meta
-                    when: $.exp.cycle.stageOwners.eval.name
-                    text:
-                      t: rsi.exp.stageOwnerOf
-                      args:
-                        - t: rsi.exp.stageOwnerUpcoming
-                        - $.exp.cycle.stageOwners.eval.name
                   - type: notice
                     tone: info
                     when: $.exp.cycle.evaluating
@@ -1579,17 +1646,6 @@ views:
                       eval: true
                   - $.exp.cycle.report
                 blocks:
-                  - type: text
-                    variant: meta
-                    when: $.exp.cycle.stageOwners.eval.name
-                    text:
-                      t: rsi.exp.stageOwnerOf
-                      args:
-                        - of: $.exp.cycle.stageOwners.eval.archived
-                          map:
-                            "true": t:rsi.exp.stageOwnerArchived
-                            _: t:rsi.exp.stageOwnerUpcoming
-                        - $.exp.cycle.stageOwners.eval.name
                   - type: notice
                     when: $.exp.cycle.compare.result
                     tone:
@@ -1963,14 +2019,6 @@ views:
                       discuss: true
                   - "!$.exp.cycle.discussion"
                 blocks:
-                  - type: text
-                    variant: meta
-                    when: $.exp.cycle.stageOwners.discuss.name
-                    text:
-                      t: rsi.exp.stageOwnerOf
-                      args:
-                        - t: rsi.exp.stageOwnerUpcoming
-                        - $.exp.cycle.stageOwners.discuss.name
                   - type: notice
                     tone: info
                     text:
@@ -2085,14 +2133,6 @@ views:
                       gov: true
                   - "!$.exp.cycle.gov"
                 blocks:
-                  - type: text
-                    variant: meta
-                    when: $.exp.cycle.stageOwners.gov.name
-                    text:
-                      t: rsi.exp.stageOwnerOf
-                      args:
-                        - t: rsi.exp.stageOwnerUpcoming
-                        - $.exp.cycle.stageOwners.gov.name
                   - type: notice
                     tone: info
                     text: t:rsi.exp.govPending
@@ -2106,17 +2146,6 @@ views:
                       gov: true
                   - $.exp.cycle.gov
                 blocks:
-                  - type: text
-                    variant: meta
-                    when: $.exp.cycle.stageOwners.gov.name
-                    text:
-                      t: rsi.exp.stageOwnerOf
-                      args:
-                        - of: $.exp.cycle.stageOwners.gov.archived
-                          map:
-                            "true": t:rsi.exp.stageOwnerArchived
-                            _: t:rsi.exp.stageOwnerUpcoming
-                        - $.exp.cycle.stageOwners.gov.name
                   - type: notice
                     tone: info
                     when:

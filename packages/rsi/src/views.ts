@@ -197,7 +197,7 @@ function rsiTree(tree: any, rows: any, def: any): any {
     return { r: r, sel: sel, steps: steps, pick: r.cycles.length > 1 ? { id: 'rsi-cyc-' + tree + '-' + i, tree: tree, value: r.key + '>' + stepOf(vis), options: r.cycles.map(function (c: any): any { return { v: r.key + '>' + stepOf(c), n: c.n, total: r.cycles.length }; }) } : null };
   });
   const row = out.find(function (x: any): any { return x.sel; });
-  const activeStep = row && ([...row.steps].reverse().find(function (x: any): any { return x.result !== 'waiting'; }) || row.steps[row.steps.length - 1]);
+  const activeStep = row && ([...row.steps].reverse().find(function (x: any): any { return x.result !== 'waiting' && x.result !== 'skipped'; }) || row.steps[row.steps.length - 1]);
   const stepKey = has && row && (parts[1] === 'node' || row.steps.some(function (x: any): any { return x.step === parts[1]; })) ? parts[1] : activeStep ? activeStep.step : 'node';
   return { rowKey: rowKey, stepKey: stepKey, rows: out.map(function (x: any): any {
     return Object.assign({}, x.r.data, { key: x.r.key, parentKey: x.r.parent, selected: x.sel, nodeSelected: x.sel && stepKey === 'node', pick: x.r.key + '>node', cyclePick: x.pick,
@@ -416,6 +416,11 @@ function exp(): any {
   const focus = o.projectPath && rounds.find((r: Data) => waiting(r) || r.analysis?.waiting.length || ['running', 'evaluating', 'repairing'].includes(r.state));
   const hasAnalysts = d.members.some((m: Data) => m.role === 'analyze' && m.catId);
   const evalStateOf = (r: Data) => r.report ? 'done' : r.state === 'evaluating' ? 'pending' : (r.state === 'repaired' || r.state === 'repairing') ? 'skipped' : 'waiting';
+  const discussStateOf = (r: Data) => {
+    const disc = r.report ? discussionOf(r) : null;
+    if (disc) return disc.status;
+    return (!hasAnalysts || r.state === 'repaired' || r.state === 'repairing') ? 'skipped' : 'waiting';
+  };
   const evalMetricsOf = (r: Data) => {
     const m = r.metrics || d.metrics || { version: '', items: [] };
     return {
@@ -432,7 +437,7 @@ function exp(): any {
         return { n: r.k, apply: r.runs.some(function (u: any): any { return u.error && u.error.kind === 'env'; }) ? 'failed' : 'done', collect: true, live: live,
           done: live ? r.runs.filter((u: Data) => u.state === 'done' || u.state === 'failed').length : null, total: r.runs.length,
           eval: r.report ? r.report.verdict : evalStateOf(r), delta: r.report && compareOf(r).lead,
-          discuss: disc ? { result: disc.status, count: disc.count, done: disc.done, asked: disc.asked, missing: disc.missing.length } : (hasAnalysts ? { result: bypassed ? 'skipped' : 'waiting', count: 0 } : null),
+          discuss: disc ? { result: disc.status, count: disc.count, done: disc.done, asked: disc.asked, missing: disc.missing.length } : (o.projectPath ? { result: (!hasAnalysts || bypassed) ? 'skipped' : 'waiting', count: 0 } : null),
           gov: govOf(r) || 'waiting' };
       }),
       data: Object.assign({}, v, { nodeState: v.current ? 'current' : v.status === 'candidate' ? 'candidate' : '' }) };
@@ -639,14 +644,67 @@ function exp(): any {
       gov: { name: govDone && govArchived ? govArchived : memberName('iterate'), archived: govDone },
     };
   };
+  const latestRoundN = rounds.length ? rounds[rounds.length - 1].n : null;
+  const stageOfCycle = (r: Data, step: string) => {
+    if (!['apply', 'eval', 'discuss', 'gov'].includes(step)) return null;
+    const isLatest = r.n === latestRoundN;
+    const ownersByRole = (role: string): { id: string; name: string }[] => d.members.filter((m: Data) => m.role === role && m.catId).map((m: Data) => ({ id: m.catId, name: m.name }));
+    const archivedDiscuss = Array.isArray(r.stageMembers?.discuss) ? r.stageMembers.discuss.map((m: Data) => ({ id: m.catId, name: m.name })) : [];
+    const evalDone = !!r.report;
+    const discussDone = !!r.report && !(r.analysis?.waiting?.length);
+    const govDone = !!(r.stageMembers?.gov || ((r.decision || r.state === 'repaired') && !d.versionRequest));
+    const defs: Record<string, { role: string; multi: boolean; state: string; archived: boolean; owners: { id: string; name: string }[] }> = {
+      apply: {
+        role: 'prepare', multi: false,
+        state: r.runs.some((u: Data) => u.error?.kind === 'env') ? 'failed' : 'done',
+        archived: !isLatest,
+        owners: r.stageMembers?.apply ? [{ id: r.stageMembers.apply.catId, name: r.stageMembers.apply.name }] : ownersByRole('prepare'),
+      },
+      eval: {
+        role: 'evaluate', multi: false,
+        state: evalStateOf(r),
+        archived: evalDone,
+        owners: evalDone && r.stageMembers?.eval ? [{ id: r.stageMembers.eval.catId, name: r.stageMembers.eval.name }] : ownersByRole('evaluate'),
+      },
+      discuss: {
+        role: 'analyze', multi: true,
+        state: discussStateOf(r),
+        archived: discussDone,
+        owners: (discussDone && archivedDiscuss.length) ? archivedDiscuss : ownersByRole('analyze'),
+      },
+      gov: {
+        role: 'iterate', multi: false,
+        state: govOf(r) || 'waiting',
+        archived: govDone,
+        owners: r.stageMembers?.gov ? [{ id: r.stageMembers.gov.catId, name: r.stageMembers.gov.name }] : ownersByRole('iterate'),
+      },
+    };
+    const s = defs[step];
+    const liveOwners = ownersByRole(s.role);
+    return {
+      cycle: r.n,
+      stage: step,
+      state: s.state,
+      role: s.role,
+      multi: s.multi,
+      archived: s.archived,
+      canEdit: !!o.projectPath && isLatest,
+      owners: s.owners,
+      ownerNames: s.owners.map((x) => x.name).join('、'),
+      value: liveOwners[0]?.id || '',
+      values: liveOwners.map((x) => x.id),
+    };
+  };
+  const currentStep = m ? m[2] : 'node';
   const liveNow = Date.now();
   const schedNow = state.now && Math.abs(liveNow - state.now) < 36 * 3_600_000 ? state.now : liveNow;
   return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, projectPath: o.projectPath, goal: o.goal, goalQuote, editingGoal: S.rsiEditGoal, execStatus, execFlow, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
     trend: rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, value: Number(best(x).mean.toPrecision(4)) }; }),
     trendMetric: d.metrics.items.find((m: Data) => m.id === main).name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.filter(function (p: any): any { return p.result !== 'unresolved'; }).length },
-    versions: tree.rows, ver: ver, step: m ? m[2] : 'node', candidate: d.candidate ? d.candidate.version : null,
-    cycle: r && Object.assign({}, r, { waiting: waiting(r), evaluating: r.state === 'evaluating', evalState: evalStateOf(r), discussState: (r.state === 'repaired' || r.state === 'repairing') ? 'skipped' : 'waiting', evalMetrics: evalMetricsOf(r), groups: groupsOf(r), main: mainOf(r),
+    versions: tree.rows, ver: ver, step: currentStep, candidate: d.candidate ? d.candidate.version : null,
+    cycle: r && Object.assign({}, r, { waiting: waiting(r), evaluating: r.state === 'evaluating', evalState: evalStateOf(r), discussState: discussStateOf(r), evalMetrics: evalMetricsOf(r), groups: groupsOf(r), main: mainOf(r),
+      stage: stageOfCycle(r, currentStep),
       stageOwners: stageOwnersOf(r),
       runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { value: num(u.metrics[mainOf(r).id]), durationSeconds: u.start ? Math.round(((u.end || Date.now()) - u.start) / 1000) : null, metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })), groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),
       notAssessed: r.report && RSI_LAYERS.filter(function (l: any): any { return r.report.attribution.assessedLayers.indexOf(l) < 0; }),

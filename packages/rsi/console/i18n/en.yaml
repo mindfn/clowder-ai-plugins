@@ -796,7 +796,7 @@ exp:
   evalSkipped: "Skipped evaluation because this cycle entered execution repair after run failures."
   evalPending: "Waiting for collection to finish before evaluation."
   evalMetrics: "Cycle evaluation metrics ({0})"
-  discSkipped: "Skipped discussion because this cycle entered execution repair after run failures."
+  discSkipped: "Skipped discussion (no discussion members configured or entered execution repair)."
   discPending: "Waiting for evaluation to finish before discussion."
   govPending: "Waiting for prior stages to finish before governance."
   retryStage: Re-trigger
