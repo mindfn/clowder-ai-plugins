@@ -294,6 +294,33 @@ test('exit-0 preflight with multi-line NDJSON diagnostic stdout proceeds to subm
   assert.equal(run.error,null);
 });
 
+test('re-running Step 3 executor probe executes preflight in currentVersion worktree when currentVersion has a commit', async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.project, '.gitignore'), 'runs/\nplugin-data/\nstarts\nactive-run/\n');
+  git(f.project, 'init', '-b', 'main'); git(f.project, 'config', 'user.name', 'Fixture'); git(f.project, 'config', 'user.email', 'fixture@example.invalid');
+  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'Baseline fixture');
+  const o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [1] });
+  const wt = join(f.project, '..', `probe-wt-${Date.now()}`);
+  git(f.project, 'worktree', 'add', '-b', 'feat/probe-worktree-test', wt, 'HEAD');
+  t.after(() => { try { git(f.project, 'worktree', 'remove', '--force', wt); } catch {} });
+  await writeFile(join(wt, 'only-in-version.sh'), '#!/bin/sh\necho \'{"ok":true}\'\n');
+  git(wt, 'add', 'only-in-version.sh'); git(wt, 'commit', '-m', 'add version-only preflight');
+  const commit = git(wt, 'rev-parse', 'HEAD');
+  await retain(f.storage, ownerKey('owner'), (state) => {
+    const d = state.experiments[o.id];
+    d.versions.push({ id: 'v2', commit, config: 'config.json', vars: {} });
+    d.objective.currentVersion = 'v2';
+  });
+  await f.http('POST', { op: 'initStepRefresh', objective: o.id, k: 'run' }, { project: f.project });
+  const by = (await f.read()).experiments[o.id].exec.run.by;
+  await f.tool('task', {}, by, o.thread);
+  const res = await f.tool('executor', { ...f.commands, preflight: 'sh only-in-version.sh' }, by, o.thread);
+  assert.equal(res.state, 'probing', JSON.stringify(res));
+  const after = await until(f.read, (s) => s.experiments[o.id].executor.state !== 'probing');
+  assert.equal(after.experiments[o.id].executor.state, 'passed', JSON.stringify(after.experiments[o.id].executor.probe));
+});
+
 test('execution lifecycle uses v2 replyTo, tolerates send acknowledgement races and rejects late old-step events', async (t) => {
   const f=await fixture(t);
   f.onSend(async (s)=>{

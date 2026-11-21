@@ -72,7 +72,9 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       if (probe) {
         const { key, d } = probe, executionId = d.exec!.run!.id;
         busy = d.objective.id;
-        const result = await launch(d.executor.commands.preflight, d.objective.projectPath, { config: '', run: '', seed: 0, job: '' });
+        const probeVersion = d.versions.find((v: Data) => v.id === d.objective.currentVersion && v.commit);
+        const probeCwd = probeVersion ? (await versionDirectory(host, key, d, probeVersion)).cwd : d.objective.projectPath;
+        const result = await launch(d.executor.commands.preflight, probeCwd, { config: '', run: '', seed: 0, job: '' });
         const commit = await projectCommit(d.objective.projectPath);
         if (stopped) return;
         await retain(host.storage, key, (state) => {
