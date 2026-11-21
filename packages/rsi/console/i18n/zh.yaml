@@ -359,6 +359,9 @@ schedule:
   start: 开始时间
   end: 结束时间
   timeHelp: 按本机时区生效；支持跨午夜（如 20:00 至 08:00）；「不限制」模式可留空
+  maxRuns: 时间窗内最大执行次数（可选）
+  maxRunsHelp: 留空或填 0 表示不限制；填正整数则限制单个执行时间窗内最多自动启动的周期数
+  maxRunsPlaceholder: 不限制（留空或填正整数，如 3）
   customLabel: 自定义 / 追加规则（可选）
   customHelp: 每行或用分号隔开一条，命中任一条即可执行。支持日期范围、星期、时段组合
   customPlaceholder: "例：\n周一至周五 09:00–18:00\n周六至周日 全天\n2026-11-21~2026-11-30 08:00–20:00"
@@ -656,6 +659,21 @@ exp:
     ledVersion: 等 {0} 按「{1}」出版本
     ledStop: 评估项结束：{0}
     ledLater: 下一周期还没开始
+    changesTitle: 变更差异
+    prTitle: PR 标题
+    prUrl: PR 链接
+    changeItems: 指标 / 配置变更
+    diffFiles: 变更文件（点击查看差异）
+    diffUnified: 合并
+    diffSplit: 并排
+    diffClose: 收起差异
+    diffEmpty: 该文件没有文本差异
+    op:
+      add: 新增
+      del: 删除
+      set: 修改
+      modify: 修改
+      rename: 重命名
   send: 发给迭代成员
   events: 这晚发生的事
   event:
@@ -725,6 +743,32 @@ exp:
   dagShowOne: 仅看选中阶段
   dagReady: 就绪 · 开始评估
   dagReadyCanStart: 全部确认，可开始评估
+  dagReadyWaitFirst: 等待首次执行
+  dagReadySchedule: 计划执行时段
+  triggerNow: 立即触发执行
+  startScheduled: 按策略开启调度
+  stepMember: 成员
+  stepRev: 版本
+  stepRefresh: 重新分析
+  stepViewingOld: 当前查看的是历史版本快照（切换回最新版本可编辑或确认）
+  sec:
+    manage: 分析与管理
+    execute: 治理与执行
+    analysis: 1. 分析处理
+    members: 2. 执行成员
+    execPolicy: 3. 执行策略
+    approvalPolicy: 4. 审批策略
+  goalLabel: "目标："
+  snapshotTitle: "0. 执行快照："
+  snapshotLine: "{0}（{1}） · 指标 {2} · 停止条件：{3}"
+  noRoundsYet: 还没有执行周期记录。完成分析与就绪后，可立即触发首次执行或等待策略时段自动启动。
+  goManage: 去分析与管理
+  execRole:
+    prepare: 采集与准备
+    evaluate: 评估分析
+    iterate: 治理实施
+    analyze: 方案讨论
+    _: "{0}"
   dagReadyProgress: 完成进度
   dagReadyProgressOf: "{0} / {1} 步已确认"
   dagReadyRemain: 尚未完成
@@ -797,9 +841,15 @@ exp:
     _: "{0}"
   policyTitle: 策略
   pol:
-    schedule: 运行时段
+    schedule: 执行时段
     scheduleUnset: 未设置（点右上角修改）
-    editSchedule: 修改时段
+    editSchedule: 修改执行策略
+    maxRuns: 时间窗内最大执行次数
+    editAuto: 改审批边界
+    editRepair: 改出错自动修
+    editStop: 改何时停
+    repair: 出错自动修
+    stop: 何时停
     seeds: 每组种子
     vars: 允许 agent 调的变量
     auto: 审批

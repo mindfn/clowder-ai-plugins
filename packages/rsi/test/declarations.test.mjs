@@ -55,3 +55,22 @@ test('all thread navigation buttons use host act: thread with id, never legacy a
   assert.equal(expThreadFound,true);
   assert.equal(threadButtons,8);
 });
+
+test('i18n yaml packs parse cleanly and rsi.exp dual-tab removes trailing lineage tail clutter',()=>{
+  const zh=load('console/i18n/zh.yaml');
+  const en=load('console/i18n/en.yaml');
+  assert.equal(zh.exp.sec.manage,'分析与管理');
+  assert.equal(zh.exp.sec.execute,'治理与执行');
+  assert.equal(en.exp.sec.manage,'Analysis & Management');
+  assert.equal(en.exp.sec.execute,'Governance & Execution');
+  const pdl=load('console/pdl.yaml');
+  const walk=(value,visit)=>{if(!value||typeof value!=='object')return;visit(value);for(const child of Object.values(value))walk(child,visit);};
+  let expLineages=0;
+  walk(pdl.views['rsi.exp'],(node)=>{
+    if(node.use==='plugin:official.rsi/rsiLineage'&&node.props?.from==='$.exp.versions'){
+      expLineages++;
+      assert.equal(node.props.tail,undefined,'rsi.exp version lineage should not render redundant trailing conclusion text');
+    }
+  });
+  assert.equal(expLineages,1);
+});

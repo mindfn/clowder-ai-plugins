@@ -272,8 +272,19 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   } else d.upcoming = { ...round.plan, seeds: freshSeeds(d, round.plan.seeds.length) };
   const member = d.members.find((m) => m.role === 'evaluate')!, { matrix: cells, ...compare } = compared;
   round.confirmation = confirmation;
+  const comparisons = Array.isArray(input.comparisons)
+    ? input.comparisons.filter((c: unknown) => record(c) && text(c.title) && record(c.before) && record(c.after)).map((c: Data, i: number) => ({
+      id: text(c.id) ? c.id : `cmp-${round.n}-${i + 1}`,
+      title: c.title,
+      kind: ['chart', 'visual', 'artifact'].includes(c.kind) ? c.kind : 'visual',
+      note: typeof c.note === 'string' ? c.note : '',
+      before: { label: text(c.before.label) ? c.before.label : '前一轮', kind: ['image', 'video', 'audio', 'text'].includes(c.before.kind) ? c.before.kind : (text(c.before.src) ? 'image' : 'text'), ...(text(c.before.src) ? { src: c.before.src } : {}), ...(typeof c.before.text === 'string' ? { text: c.before.text } : {}), ...(typeof c.before.width === 'number' ? { width: c.before.width } : {}), ...(typeof c.before.height === 'number' ? { height: c.before.height } : {}) },
+      after: { label: text(c.after.label) ? c.after.label : '本轮', kind: ['image', 'video', 'audio', 'text'].includes(c.after.kind) ? c.after.kind : (text(c.after.src) ? 'image' : 'text'), ...(text(c.after.src) ? { src: c.after.src } : {}), ...(typeof c.after.text === 'string' ? { text: c.after.text } : {}), ...(typeof c.after.width === 'number' ? { width: c.after.width } : {}), ...(typeof c.after.height === 'number' ? { height: c.after.height } : {}) },
+    }))
+    : [];
   // The comparison's cells are stored once, as the report's matrix.
   round.report = { verdict: input.verdict, headline: findings.split('\n')[0], summary: findings, matrix: cells,
+    ...(comparisons.length ? { comparisons } : {}),
     predictions: checkPredictions(d, round, compared), asks: [], directions: directionsFrom(d, options, member, []), agree: true,
     compare: { ...compare, note: '仅比较本周期 control；区间为种子均值 ± 样本标准差。' }, confirmation,
     attribution: { verdict: 'unresolved', primaryLayer: null, assessedLayers: [], competingLayers: [], uncertainty: 'interval', comparability: 'unchanged', reasons: [], evidence: [] } };

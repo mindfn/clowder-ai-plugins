@@ -26,6 +26,8 @@ export interface ScheduleConfig {
   end?: string;
   custom?: string;
   cron?: string;
+  /** Max scheduled cycles inside a single window; null/omitted means unlimited. */
+  maxRuns?: number | null;
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -196,11 +198,27 @@ export function parseScheduleText(value: unknown): ScheduleConfig | null {
   return config;
 }
 
+export function parseMaxRuns(value: unknown): { maxRuns: number | null } | { error: string } {
+  if (value == null || value === '' || value === 0 || value === '0') return { maxRuns: null };
+  if (typeof value === 'string' && /^(?:不限制|无限制|不限|unlimited)$/i.test(value.trim())) return { maxRuns: null };
+  const n = Number(value);
+  if (!Number.isSafeInteger(n) || n < 1 || n > 1000) return { error: '时间窗内最大执行次数请填写正整数，或留空 / 填 0 表示不限制' };
+  return { maxRuns: n };
+}
+
+export function maxRunsText(schedule: Data | null | undefined): string {
+  const n = schedule?.maxRuns;
+  return typeof n === 'number' && n > 0 ? `最多 ${n} 次` : '不限制';
+}
+
 export function scheduleOf(input: Data): { schedule: ScheduleConfig } | { error: string } {
   const mode = (typeof input.mode === 'string' ? input.mode.trim() : '') as SchedulePreset;
   if (!['anytime', 'daytime_weekend', 'daily', 'weekdays', 'weekends', 'custom'].includes(mode)) {
     return { error: '请选择有效的执行模式（不限制 / 工作日白天+周末全天 / 每天固定时段 / 仅工作日 / 仅周末 / 自定义）' };
   }
+  const parsedMaxRuns = parseMaxRuns(input.maxRuns);
+  if ('error' in parsedMaxRuns) return parsedMaxRuns;
+  const maxRunsField = parsedMaxRuns.maxRuns ? { maxRuns: parsedMaxRuns.maxRuns } : {};
   const rawFrom = typeof input.dateFrom === 'string' ? input.dateFrom.trim() : '';
   const rawTo = typeof input.dateTo === 'string' ? input.dateTo.trim() : '';
   const dateFrom = rawFrom ? validDate(rawFrom) : undefined;
@@ -217,7 +235,7 @@ export function scheduleOf(input: Data): { schedule: ScheduleConfig } | { error:
     const parsed = parseScheduleText(rawCustom);
     if (!parsed) return { error: '自定义规则格式无法识别，例：「周一至周五 09:00–18:00；周六至周日 全天」或「2026-11-21~2026-11-30 09:00–18:00」' };
     if (parsed.mode === 'anytime') {
-      const cfg: ScheduleConfig = { mode: 'anytime', preset: 'anytime', ...(dateFrom ? { dateFrom } : {}), ...(dateTo ? { dateTo } : {}) };
+      const cfg: ScheduleConfig = { mode: 'anytime', preset: 'anytime', ...(dateFrom ? { dateFrom } : {}), ...(dateTo ? { dateTo } : {}), ...maxRunsField };
       cfg.window = scheduleSummary(cfg);
       return { schedule: cfg };
     }
@@ -229,18 +247,18 @@ export function scheduleOf(input: Data): { schedule: ScheduleConfig } | { error:
   if (mode === 'anytime') {
     if (dateFrom || dateTo) {
       const rules: ScheduleRule[] = [{ ...dateFields, start: '00:00', end: '24:00' }, ...extraRules];
-      const cfg: ScheduleConfig = { mode: 'rules', preset: 'anytime', rules, ...dateFields, ...(rawCustom ? { custom: rawCustom } : {}) };
+      const cfg: ScheduleConfig = { mode: 'rules', preset: 'anytime', rules, ...dateFields, ...(rawCustom ? { custom: rawCustom } : {}), ...maxRunsField };
       cfg.window = scheduleSummary(cfg);
       return { schedule: cfg };
     }
-    const cfg: ScheduleConfig = { mode: 'anytime', preset: 'anytime', window: '不限制（全天）' };
+    const cfg: ScheduleConfig = { mode: 'anytime', preset: 'anytime', window: '不限制（全天）', ...maxRunsField };
     return { schedule: cfg };
   }
 
   if (mode === 'custom') {
     if (!extraRules.length) return { error: '自定义模式请填写至少一条规则，例：「周一至周五 09:00–18:00」或「2026-11-21~2026-11-30 09:00–18:00」' };
     const rules = extraRules.map((r) => ({ ...dateFields, ...r }));
-    const cfg: ScheduleConfig = { mode: 'rules', preset: 'custom', rules, ...dateFields, custom: rawCustom };
+    const cfg: ScheduleConfig = { mode: 'rules', preset: 'custom', rules, ...dateFields, custom: rawCustom, ...maxRunsField };
     cfg.window = scheduleSummary(cfg);
     return { schedule: cfg };
   }
@@ -272,6 +290,7 @@ export function scheduleOf(input: Data): { schedule: ScheduleConfig } | { error:
     start: startClock.text,
     end: endClock.text,
     ...(rawCustom ? { custom: rawCustom } : {}),
+    ...maxRunsField,
   };
   cfg.window = scheduleSummary(cfg);
   return { schedule: cfg };
@@ -279,26 +298,27 @@ export function scheduleOf(input: Data): { schedule: ScheduleConfig } | { error:
 
 export function scheduleForm(schedule: Data | null | undefined) {
   const s = schedule || {};
+  const maxRuns = typeof s.maxRuns === 'number' && s.maxRuns > 0 ? String(s.maxRuns) : '';
   if (s.mode === 'anytime' || s.preset === 'anytime') {
-    return { mode: 'anytime', dateFrom: s.dateFrom || '', dateTo: s.dateTo || '', start: '', end: '', custom: s.custom || '' };
+    return { mode: 'anytime', dateFrom: s.dateFrom || '', dateTo: s.dateTo || '', start: '', end: '', custom: s.custom || '', maxRuns };
   }
   if (s.preset) {
-    return { mode: s.preset, dateFrom: s.dateFrom || '', dateTo: s.dateTo || '', start: s.start || '', end: s.end || '', custom: s.custom || '' };
+    return { mode: s.preset, dateFrom: s.dateFrom || '', dateTo: s.dateTo || '', start: s.start || '', end: s.end || '', custom: s.custom || '', maxRuns };
   }
   const parsed = parseScheduleText(s.window);
   if (parsed?.mode === 'anytime') {
-    return { mode: 'anytime', dateFrom: '', dateTo: '', start: '', end: '', custom: '' };
+    return { mode: 'anytime', dateFrom: '', dateTo: '', start: '', end: '', custom: '', maxRuns };
   }
   const legacy = windowMinutes(s.window);
   if (legacy && (!parsed?.rules || (parsed.rules.length === 1 && !parsed.rules[0].days && !parsed.rules[0].dateFrom && !parsed.rules[0].dateTo))) {
     const start = `${pad2(Math.floor(legacy[0] / 60))}:${pad2(legacy[0] % 60)}`;
     const end = legacy[1] === 1440 ? '24:00' : `${pad2(Math.floor(legacy[1] / 60))}:${pad2(legacy[1] % 60)}`;
-    return { mode: 'daily', dateFrom: '', dateTo: '', start, end, custom: '' };
+    return { mode: 'daily', dateFrom: '', dateTo: '', start, end, custom: '', maxRuns };
   }
   if (parsed?.rules?.length) {
-    return { mode: 'custom', dateFrom: '', dateTo: '', start: '', end: '', custom: parsed.rules.map(formatRule).join('\n') };
+    return { mode: 'custom', dateFrom: '', dateTo: '', start: '', end: '', custom: parsed.rules.map(formatRule).join('\n'), maxRuns };
   }
-  return { mode: 'daytime_weekend', dateFrom: '', dateTo: '', start: '09:00', end: '18:00', custom: '' };
+  return { mode: 'daytime_weekend', dateFrom: '', dateTo: '', start: '09:00', end: '18:00', custom: '', maxRuns };
 }
 
 function normalizedRules(schedule: Data | null | undefined): 'anytime' | ScheduleRule[] {
@@ -383,4 +403,12 @@ export function windowEnd(schedule: Data, now: number) {
   if (!simple) return null;
   const date = new Date(now), end = new Date(date.getFullYear(), date.getMonth(), date.getDate(), Math.floor(simple[1] / 60), simple[1] % 60).getTime();
   return end <= now ? end : end - 24 * 3_600_000;
+}
+
+export function withinWindowLimit(schedule: Data | null | undefined, rounds: Data[], now: number): boolean {
+  const maxRuns = schedule?.maxRuns;
+  if (typeof maxRuns !== 'number' || maxRuns <= 0) return true;
+  const since = windowStart(schedule!, now);
+  const count = rounds.filter((r) => r.scheduled && typeof r.start === 'number' && r.start >= since).length;
+  return count < maxRuns;
 }

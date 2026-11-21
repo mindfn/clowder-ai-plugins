@@ -374,12 +374,8 @@ test('initialization prep steps expose DAG depKeys, 5 normalized stages, auto-fo
   assert.equal(expRules.prep.steps.find((s) => s.k === 'rules').visible, true);
   assert.equal(expRules.prep.steps.find((s) => s.k === 'goal').visible, false);
 
-  // initStep=all expands all steps
-  const expAll = viewModel(state, 'exp', { project, pick: `obj:${id}`, initStep: 'all' });
-  assert.equal(expAll.prep.showAll, true);
-  assert.equal(expAll.prep.steps.every((s) => s.visible), true);
-  // Terminal convergence node merges all leaf steps (design, feedback, baseline)
-  const readyNode = expAll.prep.dagNodes.find((n) => n.k === 'ready');
+  // Single-step focus always stays clean (no showAll dump), and terminal ready node merges all leaf steps
+  const readyNode = expRules.prep.dagNodes.find((n) => n.k === 'ready');
   assert.equal(readyNode.terminal, true);
   assert.deepEqual(readyNode.depKeys, ['design', 'feedback', 'baseline']);
   assert.equal(readyNode.stage, 'waiting');
@@ -387,4 +383,85 @@ test('initialization prep steps expose DAG depKeys, 5 normalized stages, auto-fo
   assert.equal(expReady.prep.activeKey, 'ready');
   assert.equal(expReady.prep.ready.selected, true);
   assert.equal(expReady.prep.visibleSteps.length, 0);
+  // Default top-level section is manage during setup, switchable to execute
+  assert.equal(expReady.section, 'manage');
+  assert.equal(viewModel(state, 'exp', { project, pick: `obj:${id}`, expSec: 'execute' }).section, 'execute');
+});
+
+test('dual-tab console supports inline role switching, step history snapshots, eval visual comparisons, and click-to-open governance file diffs', () => {
+  const state = createFixtures(now).state;
+  const project = '/work/bge-console';
+  state.projects.unshift({ id: project, name: 'bge-console', projectPath: project, exp: true, hostKinds: ['mcp'] });
+  state.objectives[project] = []; state.groups[project] = []; state.units[project] = []; state.library[project] = [];
+  assert.equal(act(state, { op: 'new', statement: 'BGE rerank latency & quality', projectPath: project, prepare: 'codex', evaluate: 'kimi', cats: [{ id: 'codex', name: '砚砚' }, { id: 'kimi', name: '小狸' }, { id: 'gemini', name: '墨墨' }] }, { project }, now).ok, true);
+  const id = state.objectives[project][0].id;
+  const d = state.experiments[id];
+
+  // Inline member switch by role updates immediately
+  assert.equal(act(state, { op: 'members', objective: id, role: 'evaluate', v: 'gemini', cats: [{ id: 'gemini', name: '墨墨' }] }, { project }, now).ok, true);
+  assert.equal(viewModel(state, 'exp', { project, pick: `obj:${id}` }).memberIds.evaluate, 'gemini');
+
+  // Step history snapshots let users switch back to earlier revisions
+  d.steps.scope = { rev: 2, base: {}, stale: false, redo: false, unknowns: 'v2 unknown', next: '' };
+  d.stepHistory = {
+    scope: [
+      { rev: 1, at: now - 1000, by: 'codex', items: [{ id: 's1', section: 'scope', title: 'Old scope', value: 'v1 value', state: 'confirmed', neededFrom: null }], unknowns: 'v1 unknown', next: '' },
+      { rev: 2, at: now, by: 'codex', items: [{ id: 's1', section: 'scope', title: 'New scope', value: 'v2 value', state: 'confirmed', neededFrom: null }], unknowns: 'v2 unknown', next: '' },
+    ],
+  };
+  d.prep.push({ id: 's1', section: 'scope', title: 'New scope', value: 'v2 value', state: 'confirmed', neededFrom: null });
+  const oldSnap = viewModel(state, 'exp', { project, pick: `obj:${id}`, initStep: 'scope', initRev: 'scope:1' });
+  const scopeStep = oldSnap.prep.steps.find((s) => s.k === 'scope');
+  assert.equal(scopeStep.hasHistory, true);
+  assert.equal(scopeStep.viewingOld, true);
+  assert.equal(scopeStep.items[0].value, 'v1 value');
+
+  // Step refresh marks step stale+redo
+  assert.equal(act(state, { op: 'initStepRefresh', k: 'scope' }, { project, pick: `obj:${id}` }, now).ok, true);
+  const d2 = state.experiments[id];
+  assert.equal(d2.steps.scope.stale, true);
+
+  // Add a completed round with visual comparisons and governance file diffs
+  d2.metrics = { version: 'E1', items: [{ id: 'qps', name: '有效 QPS', how: 'metrics.qps', dir: 'up', guard: false }] };
+  const plan = { baseline: false, groups: [{ id: 'control', label: '对照', version: 'v1', vars: {}, control: true }], seeds: [1] };
+  d2.rounds.push({
+    n: 1, version: 'v1', start: now, end: now + 1000, state: 'evaluating', plan, metrics: structuredClone(d2.metrics),
+    runs: [{ id: 'r1', group: 'control', seed: 1, state: 'done', metrics: { qps: 42 }, env: {} }],
+    report: null, decision: null, events: [],
+  });
+  assert.equal(conclude(state, d2, {
+    cycle: 1, verdict: 'tune', findings: 'QPS +15%',
+    options: [{ k: 'batch', title: '增大 batch', why: '提升吞吐', kind: 'code' }],
+    comparisons: [{
+      id: 'cmp-img', title: '延迟分布对比', kind: 'chart',
+      before: { label: '前一轮 v1', kind: 'image', src: '/img/v1.png' },
+      after: { label: '本轮 v2', kind: 'image', src: '/img/v2.png' },
+    }],
+  }, now + 2000).ok, true);
+  d2.rounds[0].govChanges = {
+    pr: { id: '#42', title: 'Enable dynamic batching', url: 'https://example.com/pr/42' },
+    items: [{ op: 'set', name: 'batch_size', from: '8', to: '32' }, { op: 'add', name: 'fp16_cache', to: 'true' }],
+    files: [
+      { path: 'src/rerank.py', op: 'modify', added: 12, removed: 3, hunks: [['@@ -10,3 +10,5 @@', [[' ', 'def run():'], ['-', '  bs = 8'], ['+', '  bs = 32']]]] },
+      { path: 'config.yaml', op: 'modify', added: 1, removed: 1, hunks: [['@@ -1 +1 @@', [['-', 'bs: 8'], ['+', 'bs: 32']]]] },
+    ],
+  };
+
+  // With rounds, default section switches to execute; comparisons & file list render; diff stays closed until a file is clicked
+  const execVm = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v1>c1.eval` });
+  assert.equal(execVm.section, 'execute');
+  assert.equal(execVm.cycle.comparisons.length, 1);
+  assert.equal(execVm.cycle.comparisons[0].before.isMedia, true);
+  assert.equal(execVm.cycle.comparisons[0].after.src, '/img/v2.png');
+
+  const govClosed = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v1>c1.gov` });
+  assert.equal(govClosed.cycle.gov.pr.id, '#42');
+  assert.equal(govClosed.cycle.gov.changeItems[0].detail, '8 → 32');
+  assert.equal(govClosed.cycle.gov.diffFiles.length, 2);
+  assert.equal(govClosed.cycle.gov.selectedFile, null);
+
+  const govOpen = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v1>c1.gov`, govFile: 'src/rerank.py', govDiffMode: 'split' });
+  assert.equal(govOpen.cycle.gov.selectedFile.path, 'src/rerank.py');
+  assert.equal(govOpen.cycle.gov.diffMode, 'split');
+  assert.equal(govOpen.cycle.gov.selectedFile.hunks.length, 1);
 });

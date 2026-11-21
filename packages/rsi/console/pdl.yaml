@@ -310,39 +310,12 @@ views:
                 paused: warn
                 _: ""
           - type: button
-            label: t:rsi.phase2.refresh
-            when: $.exp.projectPath
-            act: plugin
-            args:
-              request: refresh
-            disabled: $.pending
-          - type: button
-            label: t:rsi.phase2.runCycle
-            when: $.exp.projectPath
-            act: plugin
-            args:
-              request: runCycle
-              objective: $.exp.id
-            disabled: $.pending
-          - type: button
-            when:
-              of: $.exp.state
-              map:
-                _: false
-                ready: true
-            primary: true
-            label: t:rsi.life.start
-            act: plugin
-            args:
-              request: life
-              op: start
-            disabled: $.pending
-          - type: button
             when:
               of: $.exp.state
               map:
                 ready: true
                 pending: true
+                running: true
                 _: false
             label: t:rsi.life.pause
             act: plugin
@@ -375,12 +348,6 @@ views:
               request: initRedo
             disabled: $.pending
           - type: button
-            when: "!$.exp.setup"
-            label: t:rsi.exp.declare
-            act: dialog
-            args:
-              kind: rsiExpPrep
-          - type: button
             when: $.exp.thread
             label: t:rsi.exp.thread
             act: thread
@@ -395,176 +362,121 @@ views:
               kind: rsiDelete
               objective: $.exp.id
               name: $.exp.name
-      - type: kv
+      - type: toolbar
+        items:
+          - type: seg
+            value: $.exp.section
+            options:
+              - v: manage
+                label: t:rsi.exp.sec.manage
+              - v: execute
+                label: t:rsi.exp.sec.execute
+            act: plugSet
+            args:
+              k: expSec
+      - type: each
         from:
-          - k: t:rsi.exp.now.version
-            v:
-              t: rsi.exp.now.versionOf
-              args:
-                - $.exp.now.version
-                - $.exp.now.change
-          - k: t:rsi.exp.now.when
-            v:
-              t: rsi.exp.now.whenOf
-              args:
-                - $.exp.now.when
-                - $.exp.now.window
-                - $.exp.now.v
-                - $.exp.now.n
-          - k: t:rsi.exp.now.how
-            v:
-              t: rsi.exp.now.howOf
-              args:
-                - $.exp.now.plan.groups
-                - $.exp.now.plan.seeds
-                - $.exp.now.exec
-            when: $.exp.now.plan
-          - k: t:rsi.exp.now.how
-            v:
-              t: rsi.exp.now.howLater
-              args:
-                - $.exp.now.when
-            when: "!$.exp.now.plan"
-          - k: t:rsi.exp.now.metrics
-            v:
-              t: rsi.exp.now.metricsOf
-              args:
-                - $.exp.now.e
-                - $.exp.now.metrics
-            when: $.exp.now.metrics
-          - k: t:rsi.exp.now.metrics
-            v: t:rsi.exp.now.later
-            when: "!$.exp.now.metrics"
-      - type: notice
-        tone:
-          of: $.exp.next.k
+          - {}
+        when:
+          of: $.exp.section
           map:
-            decide: warn
-            prep: warn
-            stale: warn
-            ready: warn
-            cancelled: warn
-            interrupted: warn
-            _: info
-        text:
-          t: rsi.exp.next
-          args:
-            - $.exp.next.k
-            - $.exp.next.v
-            - $.exp.next.n
-            - $.exp.next.count
-            - $.exp.next.window
-            - of: $.exp.next.k
-              map:
-                init:
-                  t: rsi.exp.doingOf
-                  args:
-                    - $.exp.next.by.0.who
-                    - $.exp.next.by.0.i
-                _: $.exp.next.by
-            - $.exp.next.hint
-            - of: $.exp.next.by.1.i
-              gte: 1
-              map:
-                "true":
-                  t: rsi.exp.doingAlso
-                  args:
-                    - $.exp.next.by.1.who
-                    - $.exp.next.by.1.i
-                _: ""
-        action:
-          type: stack
-          items:
-            - type: button
-              label: t:rsi.now.locate
-              act: plugSet
-              args:
-                k: selO
-                also:
-                  tab: version
-                v:
-                  of: $.exp.next.go
-                  slice:
-                    - 8
-              when: $.exp.next.go
-            - type: button
-              label: t:rsi.exp.wakeAgain
-              act: plugin
-              args:
-                request: initRetry
-                k: $.exp.next.by.0.k
-                force: "true"
-              disabled: $.pending
-              when:
-                of: $.exp.next.k
-                map:
-                  init: true
-                  _: false
-            - type: button
-              label: t:rsi.exp.continueAfterDone
-              act: plugin
-              args:
-                request: prep
-                id: $.exp.next.stop
-                op: edit
-              disabled: $.pending
-              when:
-                of: $.exp.next.k
-                map:
-                  done: true
-                  _: false
-            - type: button
-              label: t:rsi.exp.wakeAgain
-              act: plugin
-              args:
-                request: evalAgain
-              disabled: $.pending
-              when:
-                of: $.exp.next.k
-                map:
-                  evaluating: true
-                  _: false
-      - type: each
-        from:
-          - {}
-        when: $.exp.trend
+            manage: true
+            _: false
         blocks:
-          - type: label
+          - type: text
+            parts:
+              - text: t:rsi.exp.goalLabel
+                strong: true
+              - text: $.exp.goal.statement
+            when: $.exp.goal.statement
+          - type: text
+            variant: meta
+            parts:
+              - text: t:rsi.exp.snapshotTitle
+                strong: true
+              - text:
+                  t: rsi.exp.snapshotLine
+                  args:
+                    - $.exp.snapshot.version
+                    - $.exp.snapshot.change
+                    - $.exp.snapshot.metricVersion
+                    - $.exp.snapshot.stop
+          - type: notice
+            when:
+              of: $.exp.next.k
+              map:
+                decide: true
+                stale: true
+                cancelled: true
+                interrupted: true
+                done: true
+                paused: true
+                _: false
+            tone:
+              of: $.exp.next.k
+              map:
+                decide: warn
+                stale: warn
+                cancelled: warn
+                interrupted: warn
+                _: info
             text:
-              t: rsi.exp.trend
+              t: rsi.exp.next
               args:
-                - $.exp.trendMetric
-                - $.exp.hitRate.hit
-                - $.exp.hitRate.all
-          - type: component
-            use: plugin:official.rsi/rsiTrend
-            props:
-              from: $.exp.trend
-              label: t:rsi.exp.trendLabel
-      - type: each
-        from:
-          - {}
-        when: $.exp.setup
-        blocks:
-          - type: label
-            text: t:rsi.exp.dagTitle
+                - $.exp.next.k
+                - $.exp.next.v
+                - $.exp.next.n
+                - $.exp.next.count
+                - $.exp.next.window
+                - of: $.exp.next.k
+                  map:
+                    init:
+                      t: rsi.exp.doingOf
+                      args:
+                        - $.exp.next.by.0.who
+                        - $.exp.next.by.0.i
+                    _: $.exp.next.by
+                - $.exp.next.hint
+                - of: $.exp.next.by.1.i
+                  gte: 1
+                  map:
+                    "true":
+                      t: rsi.exp.doingAlso
+                      args:
+                        - $.exp.next.by.1.who
+                        - $.exp.next.by.1.i
+                    _: ""
             action:
               type: stack
               items:
                 - type: button
-                  label: t:rsi.exp.dagShowAll
+                  label: t:rsi.now.locate
                   act: plugSet
                   args:
-                    k: initStep
-                    v: all
-                  when: "!$.exp.prep.showAll"
+                    k: selO
+                    also:
+                      expSec: execute
+                      tab: version
+                    v:
+                      of: $.exp.next.go
+                      slice:
+                        - 8
+                  when: $.exp.next.go
                 - type: button
-                  label: t:rsi.exp.dagShowOne
-                  act: plugSet
+                  label: t:rsi.exp.continueAfterDone
+                  act: plugin
                   args:
-                    k: initStep
-                    v: $.exp.prep.activeKey
-                  when: $.exp.prep.showAll
+                    request: prep
+                    id: $.exp.next.stop
+                    op: edit
+                  disabled: $.pending
+                  when:
+                    of: $.exp.next.k
+                    map:
+                      done: true
+                      _: false
+          - type: label
+            text: t:rsi.exp.sec.analysis
           - type: component
             use: plugin:official.rsi/rsiInitDag
             props:
@@ -604,11 +516,20 @@ views:
                           text: t:rsi.exp.dagStage.done
                         pending:
                           tone: warn
-                          text: t:rsi.exp.dagReadyCanStart
+                          text: t:rsi.exp.dagReadyWaitFirst
                         _:
                           tone: ""
                           text: t:rsi.exp.dagStage.waiting
                 actions:
+                  - type: button
+                    primary: true
+                    label: t:rsi.exp.triggerNow
+                    act: plugin
+                    args:
+                      request: runCycle
+                      objective: $.exp.id
+                    when: $.exp.prep.ready.canTriggerNow
+                    disabled: $.pending
                   - type: button
                     primary: true
                     label: t:rsi.life.start
@@ -616,7 +537,19 @@ views:
                     args:
                       request: life
                       op: start
-                    when: $.exp.prep.ready.canStart
+                    when:
+                      - $.exp.prep.ready.canStart
+                      - "!$.exp.prep.ready.canTriggerNow"
+                    disabled: $.pending
+                  - type: button
+                    label: t:rsi.exp.startScheduled
+                    act: plugin
+                    args:
+                      request: life
+                      op: start
+                    when:
+                      - $.exp.prep.ready.canStart
+                      - $.exp.prep.ready.canTriggerNow
                     disabled: $.pending
                   - type: button
                     label: t:rsi.exp.pol.editSchedule
@@ -630,6 +563,7 @@ views:
                       start: $.exp.policy.schedule.form.start
                       end: $.exp.policy.schedule.form.end
                       custom: $.exp.policy.schedule.form.custom
+                      maxRuns: $.exp.policy.schedule.form.maxRuns
               - type: kv
                 from:
                   - k: t:rsi.exp.dagReadyProgress
@@ -644,12 +578,14 @@ views:
                       args:
                         - $.exp.prep.ready.remaining
                     when: $.exp.prep.ready.remaining
-                  - k: t:rsi.exp.pol.schedule
+                  - k: t:rsi.exp.dagReadySchedule
                     v: $.exp.prep.ready.schedule
                     when: $.exp.prep.ready.schedule
-                  - k: t:rsi.exp.pol.schedule
+                  - k: t:rsi.exp.dagReadySchedule
                     v: t:rsi.exp.pol.scheduleUnset
                     when: "!$.exp.prep.ready.schedule"
+                  - k: t:rsi.exp.pol.maxRuns
+                    v: $.exp.prep.ready.maxRunsText
           - type: each
             from: $.exp.prep.visibleSteps
             blocks:
@@ -710,15 +646,55 @@ views:
                         - "@waitOn"
                     when: "@waitOn"
                   - text:
-                      t: rsi.exp.initOut
-                      args:
-                        - "@k"
-                  - text:
                       t: rsi.exp.depsOf
                       args:
                         - "@deps"
                     when: "@deps"
                 actions:
+                  - type: select
+                    id: rsi-step-member
+                    prefix: t:rsi.exp.stepMember
+                    label: t:rsi.exp.stepMember
+                    value: "@ownerCatId"
+                    when: $.exp.projectPath
+                    options:
+                      - from: $.members.rows
+                        item:
+                          v: "@id"
+                          label:
+                            t: rsi.memberOption
+                            args:
+                              - "@name"
+                              - "@handle"
+                          when: "@on"
+                    change: plugin
+                    args:
+                      request: memberRole
+                      objective: $.exp.id
+                      role: "@role"
+                      cats: $.members.rows
+                  - type: select
+                    id: rsi-step-rev
+                    prefix: t:rsi.exp.stepRev
+                    label: t:rsi.exp.stepRev
+                    value: "@selectedRev"
+                    when: "@hasHistory"
+                    options:
+                      - from: "@revOptions"
+                        item:
+                          v: "@v"
+                          label: "@label"
+                    change: plugSet
+                    args:
+                      k: initRev
+                  - type: button
+                    label: t:rsi.exp.stepRefresh
+                    act: plugin
+                    args:
+                      request: initStepRefresh
+                      k: "@k"
+                    when: "@canRefresh"
+                    disabled: $.pending
                   - type: button
                     label: t:rsi.exp.retry
                     act: plugin
@@ -748,6 +724,10 @@ views:
                         preparing: true
                     disabled: $.pending
               - type: notice
+                tone: info
+                text: t:rsi.exp.stepViewingOld
+                when: "@viewingOld"
+              - type: notice
                 tone: danger
                 text: "@reason"
                 when: "@reason"
@@ -769,9 +749,21 @@ views:
                     - "@next"
                 when: "@next"
           - type: label
-            text: t:rsi.exp.members
+            text: t:rsi.exp.sec.members
+            action:
+              type: button
+              label: t:rsi.exp.membersEdit
+              when: $.exp.projectPath
+              act: dialog
+              args:
+                kind: rsiMembers
+                objective: $.exp.id
+                prepare: $.exp.memberIds.prepare
+                evaluate: $.exp.memberIds.evaluate
+                iterate: $.exp.memberIds.iterate
+                cats: $.members.rows
           - type: list
-            from: $.exp.roleMembers
+            from: $.exp.execStages
             row:
               layout: two
               lead:
@@ -780,7 +772,7 @@ views:
                 when: "@catId"
               title:
                 text:
-                  t: rsi.exp.role
+                  t: rsi.exp.execRole
                   args:
                     - "@role"
               sub:
@@ -791,21 +783,33 @@ views:
                   - text: "@name"
                     when: "!@catId"
               cols:
+                - control:
+                    - type: select
+                      id: rsi-exec-member
+                      label: t:rsi.exp.stepMember
+                      value: "@catId"
+                      when: $.exp.projectPath
+                      options:
+                        - from: $.members.rows
+                          item:
+                            v: "@id"
+                            label:
+                              t: rsi.memberOption
+                              args:
+                                - "@name"
+                                - "@handle"
+                            when: "@on"
+                      change: plugin
+                      args:
+                        request: memberRole
+                        objective: $.exp.id
+                        role: "@role"
+                        cats: $.members.rows
                 - v:
                     text: "@model"
                     mono: true
                   w: id
-          - type: button
-            label: t:rsi.exp.membersEdit
-            when: $.exp.projectPath
-            act: dialog
-            args:
-              kind: rsiMembers
-              objective: $.exp.id
-              prepare: $.exp.memberIds.prepare
-              evaluate: $.exp.memberIds.evaluate
-              iterate: $.exp.memberIds.iterate
-              cats: $.members.rows
+                  when: "!$.exp.projectPath"
           - type: toolbar
             when: $.exp.projectPath
             left:
@@ -842,7 +846,7 @@ views:
                       cats: $.members.rows
                     when: "@on"
           - type: label
-            text: t:rsi.exp.policyTitle
+            text: t:rsi.exp.sec.execPolicy
             action:
               type: button
               label: t:rsi.exp.pol.editSchedule
@@ -856,6 +860,7 @@ views:
                 start: $.exp.policy.schedule.form.start
                 end: $.exp.policy.schedule.form.end
                 custom: $.exp.policy.schedule.form.custom
+                maxRuns: $.exp.policy.schedule.form.maxRuns
           - type: kv
             from:
               - k: t:rsi.exp.pol.schedule
@@ -864,43 +869,110 @@ views:
               - k: t:rsi.exp.pol.schedule
                 v: t:rsi.exp.pol.scheduleUnset
                 when: "!$.exp.policy.schedule.window"
-              - k: t:rsi.exp.pol.seeds
-                v:
-                  t: rsi.exp.seedsOf
+              - k: t:rsi.exp.pol.maxRuns
+                v: $.exp.policy.schedule.maxRunsText
+          - type: label
+            text: t:rsi.exp.sec.approvalPolicy
+            action:
+              type: stack
+              when: $.exp.projectPath
+              items:
+                - type: button
+                  label: t:rsi.exp.pol.editAuto
+                  act: dialog
                   args:
-                    - $.exp.policy.seeds
-              - k: t:rsi.exp.pol.vars
-                v:
-                  of: $.exp.policy.vars
-                  sep: ；
-                  item:
-                    t: rsi.exp.varOf
-                    args:
-                      - "@name"
-                      - of: "@values"
-                        sep: " / "
+                    kind: rsiAuto
+                    objective: $.exp.id
+                    auto: $.exp.policy.autoKey
+                - type: button
+                  label: t:rsi.exp.pol.editRepair
+                  act: dialog
+                  args:
+                    kind: rsiRepair
+                    objective: $.exp.id
+                    repair: $.exp.policy.repair
+                - type: button
+                  label: t:rsi.exp.pol.editStop
+                  act: dialog
+                  args:
+                    kind: rsiStop
+                    objective: $.exp.id
+                    target: $.exp.policy.stopTarget
+                    rounds: $.exp.policy.stopRounds
+          - type: kv
+            from:
               - k: t:rsi.exp.pol.auto
                 v: $.exp.policy.autoText
-      - type: toolbar
-        when: "!$.exp.setup"
-        items:
-          - type: seg
-            value: $.exp.tab
-            options:
-              - v: version
-                label: t:rsi.tab.version
-              - v: metrics
-                label: t:rsi.tab.metrics
-              - v: collect
-                label: t:rsi.tab.collect
-            act: plugSet
-            args:
-              k: tab
+              - k: t:rsi.exp.pol.repair
+                v: $.exp.policy.repairText
+                when: $.exp.projectPath
+              - k: t:rsi.exp.pol.stop
+                v: $.exp.policy.stopText
+                when: $.exp.projectPath
       - type: each
         from:
           - {}
         when:
-          - "!$.exp.setup"
+          of: $.exp.section
+          map:
+            execute: true
+            _: false
+        blocks:
+          - type: empty
+            icon: bolt
+            text: t:rsi.exp.noRoundsYet
+            when: "!$.exp.hasRounds"
+            action:
+              type: button
+              primary: true
+              label: t:rsi.exp.goManage
+              act: plugSet
+              args:
+                k: expSec
+                v: manage
+                also:
+                  initStep: ready
+          - type: each
+            from:
+              - {}
+            when: $.exp.trend
+            blocks:
+              - type: label
+                text:
+                  t: rsi.exp.trend
+                  args:
+                    - $.exp.trendMetric
+                    - $.exp.hitRate.hit
+                    - $.exp.hitRate.all
+              - type: component
+                use: plugin:official.rsi/rsiTrend
+                props:
+                  from: $.exp.trend
+                  label: t:rsi.exp.trendLabel
+          - type: toolbar
+            when: $.exp.hasRounds
+            items:
+              - type: seg
+                value: $.exp.tab
+                options:
+                  - v: version
+                    label: t:rsi.tab.version
+                  - v: metrics
+                    label: t:rsi.tab.metrics
+                  - v: collect
+                    label: t:rsi.tab.collect
+                act: plugSet
+                args:
+                  k: tab
+      - type: each
+        from:
+          - {}
+        when:
+          - of: $.exp.section
+            map:
+              execute: true
+              _: false
+          - $.exp.hasRounds
           - of: $.exp.tab
             map:
               _: false
@@ -1037,13 +1109,6 @@ views:
                     args:
                       k: selO
                       v: "@pick"
-              tail:
-                sep: " · "
-                parts:
-                  - text: "@change"
-                  - text: "@pr"
-                    mono: true
-                    when: "@pr"
           - type: section
             title:
               of: $.exp.step
@@ -1434,6 +1499,53 @@ views:
                       - "!$.exp.cycle.report.compare.comparable"
                       - "!$.exp.cycle.compare.result"
                     text: t:rsi.exp.noCompare
+                  - type: each
+                    from: $.exp.cycle.comparisons
+                    blocks:
+                      - type: label
+                        text: "@title"
+                      - type: text
+                        variant: meta
+                        text: "@note"
+                        when: "@note"
+                      - type: split
+                        variant: compare
+                        left:
+                          - type: label
+                            text: "@before.label"
+                          - type: component
+                            use: media
+                            when: "@before.isMedia"
+                            props:
+                              id: "@before.id"
+                              kind: "@before.kind"
+                              src: "@before.src"
+                              label: "@before.label"
+                              width: "@before.width"
+                              height: "@before.height"
+                          - type: pre
+                            text: "@before.text"
+                            when:
+                              - "!@before.isMedia"
+                              - "@before.text"
+                        right:
+                          - type: label
+                            text: "@after.label"
+                          - type: component
+                            use: media
+                            when: "@after.isMedia"
+                            props:
+                              id: "@after.id"
+                              kind: "@after.kind"
+                              src: "@after.src"
+                              label: "@after.label"
+                              width: "@after.width"
+                              height: "@after.height"
+                          - type: pre
+                            text: "@after.text"
+                            when:
+                              - "!@after.isMedia"
+                              - "@after.text"
                   - type: label
                     text: t:rsi.exp.conclusion
                   - type: text
@@ -1891,11 +2003,134 @@ views:
                                 - $.exp.cycle.gov.led.text
                             _: t:rsi.exp.gov.ledLater
                         when: "!$.exp.cycle.gov.led.go"
+                  - type: each
+                    from:
+                      - {}
+                    when: $.exp.cycle.gov.hasDetails
+                    blocks:
+                      - type: label
+                        text: t:rsi.exp.gov.changesTitle
+                      - type: kv
+                        when: $.exp.cycle.gov.pr
+                        from:
+                          - k: t:rsi.exp.pr
+                            v: $.exp.cycle.gov.pr.id
+                          - k: t:rsi.exp.gov.prTitle
+                            v: $.exp.cycle.gov.pr.title
+                            when: $.exp.cycle.gov.pr.title
+                          - k: t:rsi.exp.gov.prUrl
+                            v: $.exp.cycle.gov.pr.url
+                            when: $.exp.cycle.gov.pr.url
+                      - type: list
+                        id: rsi-exp-gov-items
+                        label: t:rsi.exp.gov.changeItems
+                        optional: true
+                        from: $.exp.cycle.gov.changeItems
+                        row:
+                          layout: line
+                          key: "@key"
+                          title: "@name"
+                          inline:
+                            - status:
+                                of: "@op"
+                                map:
+                                  add:
+                                    tone: ok
+                                    text: t:rsi.exp.gov.op.add
+                                  del:
+                                    tone: danger
+                                    text: t:rsi.exp.gov.op.del
+                                  _:
+                                    tone: info
+                                    text: t:rsi.exp.gov.op.set
+                          cols:
+                            - v:
+                                text: "@detail"
+                                mono: true
+                              w: auto
+                      - type: list
+                        id: rsi-exp-gov-files
+                        label: t:rsi.exp.gov.diffFiles
+                        optional: true
+                        from: $.exp.cycle.gov.diffFiles
+                        row:
+                          layout: line
+                          key: "@path"
+                          title:
+                            text: "@path"
+                            mono: true
+                          inline:
+                            - status:
+                                of: "@op"
+                                map:
+                                  add:
+                                    tone: ok
+                                    text: t:rsi.exp.gov.op.add
+                                  delete:
+                                    tone: danger
+                                    text: t:rsi.exp.gov.op.del
+                                  rename:
+                                    tone: info
+                                    text: t:rsi.exp.gov.op.rename
+                                  _:
+                                    tone: info
+                                    text: t:rsi.exp.gov.op.modify
+                          cols:
+                            - v:
+                                text: "@stats"
+                                mono: true
+                              w: auto
+                              when: "@stats"
+                          cur: "@selected"
+                          act: plugSet
+                          args:
+                            k: govFile
+                            v: "@path"
+                      - type: each
+                        from:
+                          - {}
+                        when: $.exp.cycle.gov.selectedFile
+                        blocks:
+                          - type: toolbar
+                            left:
+                              - type: text
+                                text: $.exp.cycle.gov.selectedFile.path
+                                mono: true
+                                strong: true
+                            right:
+                              - type: seg
+                                value: $.exp.cycle.gov.diffMode
+                                options:
+                                  - v: unified
+                                    label: t:rsi.exp.gov.diffUnified
+                                  - v: split
+                                    label: t:rsi.exp.gov.diffSplit
+                                act: plugSet
+                                args:
+                                  k: govDiffMode
+                              - type: button
+                                icon: close
+                                iconOnly: true
+                                label: t:rsi.exp.gov.diffClose
+                                act: plugSet
+                                args:
+                                  k: govFile
+                                  v: ""
+                          - type: component
+                            use: diff
+                            props:
+                              hunks: $.exp.cycle.gov.selectedFile.hunks
+                              mode: $.exp.cycle.gov.diffMode
+                              empty: t:rsi.exp.gov.diffEmpty
       - type: each
         from:
           - {}
         when:
-          - "!$.exp.setup"
+          - of: $.exp.section
+            map:
+              execute: true
+              _: false
+          - $.exp.hasRounds
           - of: $.exp.tab
             map:
               _: false
@@ -1941,7 +2176,11 @@ views:
         from:
           - {}
         when:
-          - "!$.exp.setup"
+          - of: $.exp.section
+            map:
+              execute: true
+              _: false
+          - $.exp.hasRounds
           - of: $.exp.tab
             map:
               _: false
@@ -4812,6 +5051,12 @@ views:
         type: time
         value: $.end
         arg: end
+      - id: dlg-schedule-max-runs
+        label: t:rsi.schedule.maxRuns
+        help: t:rsi.schedule.maxRunsHelp
+        placeholder: t:rsi.schedule.maxRunsPlaceholder
+        value: $.maxRuns
+        arg: maxRuns
       - id: dlg-schedule-custom
         label: t:rsi.schedule.customLabel
         help: t:rsi.schedule.customHelp
@@ -5723,10 +5968,14 @@ requests:
       project: state.project
       pick: state.pick
       tab: state.tab
+      expSec: state.expSec
       selO: state.selO
       selE: state.selE
       selC: state.selC
       initStep: state.initStep
+      initRev: state.initRev
+      govFile: state.govFile
+      govDiffMode: state.govDiffMode
       thread: host:currentThread.id
   record:
     path: rsi/view
@@ -5947,6 +6196,29 @@ requests:
       op: auto
       objective: "@objective"
       auto: "@auto"
+  memberRole:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: members
+      objective: "@objective"
+      role: "@role"
+      v: "@v"
+      cats: "@cats"
+  initStepRefresh:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: initStepRefresh
+      k: "@k"
   schedule:
     path: rsi/act
     method: POST
@@ -5963,6 +6235,7 @@ requests:
       start: "@start"
       end: "@end"
       custom: "@custom"
+      maxRuns: "@maxRuns"
   initRedo:
     path: rsi/act
     method: POST

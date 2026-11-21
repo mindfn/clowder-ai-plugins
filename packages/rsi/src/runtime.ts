@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { abandonRepair, ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAnalysis, nightDigest, nightDue, REPAIR_WAIT, runCycle } from './cycles.js';
-import { insideWindow } from './schedule.js';
+import { insideWindow, withinWindowLimit } from './schedule.js';
 import { bindObjectiveThread, clipTitle, recordInitExecution, threadTitle } from './init.js';
 import { createRuns } from './runs.js';
 import { isState, record, retain } from './store.js';
@@ -173,7 +173,7 @@ export function createRuntime(host: RsiHost) {
     // Objectives take turns: of those that may start a cycle, the one whose last cycle started longest ago goes first,
     // and one that cannot start leaves the turn to the next.
     const due = (d: Experiment) => d.objective.projectPath && d.objective.state === 'running' && !d.versionRequest
-      && insideWindow(d.policy.schedule, Date.now()) && !d.rounds.some((r: Data) => ['running', 'evaluating'].includes(r.state) || r.state === 'interrupted' && r.autoResumed || r.report && !r.decision);
+      && insideWindow(d.policy.schedule, Date.now()) && withinWindowLimit(d.policy.schedule, d.rounds, Date.now()) && !d.rounds.some((r: Data) => ['running', 'evaluating'].includes(r.state) || r.state === 'interrupted' && r.autoResumed || r.report && !r.decision);
     const lastStart = (d: Experiment) => Math.max(0, ...d.rounds.map((r: Data) => r.start || 0));
     const turns = owners.flatMap(([key, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments).filter(due)
       .map((d) => ({ key, id: d.objective.id, last: lastStart(d) }))).sort((x, y) => x.last - y.last);

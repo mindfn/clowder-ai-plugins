@@ -359,6 +359,9 @@ schedule:
   start: Start time
   end: End time
   timeHelp: Local timezone; supports overnight windows (e.g. 20:00 to 08:00); leave blank for unrestricted
+  maxRuns: Max runs per window (optional)
+  maxRunsHelp: Leave blank or 0 for unlimited; set a positive integer to cap scheduled cycles within each window
+  maxRunsPlaceholder: Unlimited (leave blank or enter a positive integer, e.g. 3)
   customLabel: Custom / extra rules (optional)
   customHelp: One rule per line or separated by semicolons; matches if any rule applies
   customPlaceholder: "e.g.\nMon-Fri 09:00-18:00\nSat-Sun all day\n2026-11-21~2026-11-30 08:00-20:00"
@@ -656,6 +659,21 @@ exp:
     ledVersion: "Waiting for {0} to make a version for “{1}”"
     ledStop: "Objective ended: {0}"
     ledLater: The next cycle has not started
+    changesTitle: Concrete changes
+    prTitle: PR title
+    prUrl: PR link
+    changeItems: Metric / config changes
+    diffFiles: Changed files (click to view diff)
+    diffUnified: Unified
+    diffSplit: Split
+    diffClose: Close diff
+    diffEmpty: No text diff for this file
+    op:
+      add: Add
+      del: Delete
+      set: Change
+      modify: Modify
+      rename: Rename
   send: Send to iteration member
   events: Events this night
   event:
@@ -725,6 +743,32 @@ exp:
   dagShowOne: Show selected only
   dagReady: Ready · Start
   dagReadyCanStart: All confirmed, ready to start
+  dagReadyWaitFirst: Waiting for first run
+  dagReadySchedule: Planned window
+  triggerNow: Run now
+  startScheduled: Start on schedule
+  stepMember: Member
+  stepRev: Version
+  stepRefresh: Re-analyze
+  stepViewingOld: Viewing a historical snapshot (switch back to latest to edit or confirm)
+  sec:
+    manage: Analysis & Management
+    execute: Governance & Execution
+    analysis: 1. Analysis workflow
+    members: 2. Execution members
+    execPolicy: 3. Execution policy
+    approvalPolicy: 4. Approval policy
+  goalLabel: "Goal: "
+  snapshotTitle: "0. Snapshot: "
+  snapshotLine: "{0} ({1}) · Metrics {2} · Stop: {3}"
+  noRoundsYet: No execution cycles yet. Finish analysis to trigger the first run immediately or wait for the scheduled window.
+  goManage: Go to Analysis & Management
+  execRole:
+    prepare: Prepare & collect
+    evaluate: Evaluate
+    iterate: Govern & apply
+    analyze: Discussion
+    _: "{0}"
   dagReadyProgress: Progress
   dagReadyProgressOf: "{0} / {1} steps confirmed"
   dagReadyRemain: Remaining
@@ -798,8 +842,14 @@ exp:
   policyTitle: Policy
   pol:
     schedule: Run window
-    scheduleUnset: Not set (click Edit window)
-    editSchedule: Edit window
+    scheduleUnset: Not set (click Edit execution policy)
+    editSchedule: Edit execution policy
+    maxRuns: Max runs per window
+    editAuto: Edit approval
+    editRepair: Edit auto-repair
+    editStop: Edit stop condition
+    repair: Auto-repair
+    stop: Stop condition
     seeds: Seeds per group
     vars: Variables the agent may tune
     auto: Approval

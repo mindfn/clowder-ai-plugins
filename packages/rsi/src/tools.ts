@@ -108,9 +108,18 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     if (d.versionRequest.repair && text(input.cannot)) { abandonRepair(state, d, `${d.members.find((m) => m.role === 'iterate')!.name} 说修不了：${input.cannot}`, now); return { ok: true, evaluating: true }; }
     if (!text(input.change) || input.commit !== undefined && (!text(input.commit) || !/^[a-f0-9]{7,40}$/i.test(input.commit)) || !(record(input.config) || text(input.config))) return { error: 'Provide change, optional git commit (7–40 hex characters), and config (JSON object or JSON file path)' };
     const previous = d.objective.currentVersion, id = `v${d.versions.length + 1}`;
-    d.versions.push({ id, parent: previous, change: input.change, commit: input.commit || null, config: input.config, at: now, current: false, status: 'proposed',
-      ...(d.versionRequest.prediction ? { prediction: d.versionRequest.prediction } : {}) });
+    const changes = record(input.changes) ? {
+      ...(record(input.changes.pr) && text(input.changes.pr.id) ? { pr: { id: input.changes.pr.id, ...(text(input.changes.pr.url) ? { url: input.changes.pr.url } : {}), ...(text(input.changes.pr.title) ? { title: input.changes.pr.title } : {}), ...(text(input.changes.pr.state) ? { state: input.changes.pr.state } : {}) } } : {}),
+      ...(Array.isArray(input.changes.files) ? { files: input.changes.files.filter((f: unknown) => record(f) && text(f.path)).map((f: Data) => ({ path: f.path, op: ['modify', 'add', 'delete', 'rename'].includes(f.op) ? f.op : 'modify', ...(typeof f.added === 'number' ? { added: f.added } : {}), ...(typeof f.removed === 'number' ? { removed: f.removed } : {}), ...(Array.isArray(f.hunks) ? { hunks: f.hunks } : {}) })) } : {}),
+      ...(Array.isArray(input.changes.items) ? { items: input.changes.items.filter((it: unknown) => record(it) && text(it.name)).map((it: Data) => ({ op: ['set', 'add', 'del'].includes(it.op) ? it.op : 'set', name: it.name, ...(it.from !== undefined ? { from: String(it.from) } : {}), ...(it.to !== undefined ? { to: String(it.to) } : {}) })) } : {}),
+    } : null;
+    const versionRecord: Data = { id, parent: previous, change: input.change, commit: input.commit || null, config: input.config, at: now, current: false, status: 'proposed',
+      ...(changes ? { changes } : {}),
+      ...(changes?.pr?.id ? { pr: changes.pr.id } : {}),
+      ...(d.versionRequest.prediction ? { prediction: d.versionRequest.prediction } : {}) };
+    d.versions.push(versionRecord);
     const last = d.rounds.find((r: Data) => r.n === d.versionRequest.cycle);
+    if (last && changes) last.govChanges = structuredClone(changes);
     if (d.versionRequest.direct) {
       // An execution fix becomes the default at once and keeps the default's configuration and variables, so only its code
       // changes what runs; the next cycle runs it as the control.
@@ -145,7 +154,11 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
   const section = currentStep(d, input);
   const own = !!d.objective.projectPath && section !== 'goal';
   if (!section || !claimed(d, section, ctx)) return { error: 'Call rsi.task for the current step; dependencies or execution changed', status: 409 };
-  if (!Array.isArray(input.items) || !input.items.length || input.items.some((p: unknown) => !record(p) || !text(p.id) || !text(p.value)
+  if (!Array.isArray(input.items) || !input.items.length) {
+    const preview = typeof input.items === 'string' ? JSON.stringify(input.items.slice(0, 60)) : typeof input.items;
+    return { error: `items must be a non-empty JSON array of objects (received ${Array.isArray(input.items) ? 'empty array []' : preview}); pass an actual array [{id, value, ...}], not a JSON string` };
+  }
+  if (input.items.some((p: unknown) => !record(p) || !text(p.id) || !text(p.value)
     || p.facts !== undefined && (!Array.isArray(p.facts) || p.facts.some((f: unknown) => !record(f) || !text(f.k) || typeof f.v !== 'string'))
     || p.rec !== undefined && !['explore', 'fixed', 'excluded'].includes(p.rec)
     || p.can !== undefined && !text(p.can) || p.tag !== undefined && !text(p.tag))

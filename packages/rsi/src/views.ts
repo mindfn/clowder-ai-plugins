@@ -1,7 +1,7 @@
-import { AUTO, autoKey, clipTitle } from './init.js';
+import { AUTO, autoKey, clipTitle, prepSettled, REPAIR_DEFAULT, repairText, stopText } from './init.js';
 import type { Data, RsiState } from './types.js';
 import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData, memberIds } from './data.js';
-import { scheduleForm, scheduleSummary, timeRange } from './schedule.js';
+import { maxRunsText, scheduleForm, scheduleSummary, timeRange } from './schedule.js';
 import { analystsOf, short, signed, testedVersion } from './cycles.js';
 
 const tc = (key: string, ...args: unknown[]) => ({ t: key, args });
@@ -25,14 +25,17 @@ export function follow(state: RsiState, query: Data) {
 // and every direction chosen by you (the demo's approval rules are not enforced here).
 function policyOf(d: Data, o: Data) {
   const windowText = scheduleSummary(d.policy.schedule);
-  const schedule = { ...d.policy.schedule, window: windowText, form: scheduleForm(d.policy.schedule) };
-  if (!o.projectPath) return Object.assign({}, d.policy, { schedule, autoText: tc('rsi.exp.pol.autoText') });
+  const schedule = { ...d.policy.schedule, window: windowText, maxRuns: d.policy.schedule?.maxRuns ?? null, maxRunsText: maxRunsText(d.policy.schedule), form: scheduleForm(d.policy.schedule) };
+  const repair = d.policy.repair ?? REPAIR_DEFAULT;
+  const stop = o.stop || {};
+  const shared = { schedule, repair, repairText: repairText(repair), stopTarget: stop.target || '', stopRounds: stop.maxCycles || '', stopText: stopText(stop), autoKey: autoKey(d.policy.auto || AUTO.default) || 'default' };
+  if (!o.projectPath) return Object.assign({}, d.policy, shared, { autoText: tc('rsi.exp.pol.autoText') });
   const plan = d.upcoming || (d.rounds.length ? d.rounds[d.rounds.length - 1].plan : null), tried: Data = {};
   for (const r of d.rounds) for (const g of r.plan.groups) if (!g.control) for (const [k, v] of Object.entries(g.vars || {})) {
     const value = typeof v === 'string' ? v : JSON.stringify(v);
     if (!(tried[k] ||= []).includes(value)) tried[k].push(value);
   }
-  return Object.assign({}, d.policy, { schedule, seeds: plan ? plan.seeds.length : d.policy.seeds, vars: Object.entries(tried).map(([name, values]) => ({ name, values })), autoText: tc('rsi.exp.pol.' + (({ default: 'nightBoth', execution: 'nightExecution' } as Data)[autoKey(d.policy.auto || AUTO.default) || 'none'] || 'manual')) });
+  return Object.assign({}, d.policy, shared, { seeds: plan ? plan.seeds.length : d.policy.seeds, vars: Object.entries(tried).map(([name, values]) => ({ name, values })), autoText: tc('rsi.exp.pol.' + (({ default: 'nightBoth', execution: 'nightExecution' } as Data)[autoKey(d.policy.auto || AUTO.default) || 'none'] || 'manual')) });
 }
 
 export function viewModel(state: RsiState, view: string, query: Data = {}): any {
@@ -40,8 +43,12 @@ export function viewModel(state: RsiState, view: string, query: Data = {}): any 
   const S: Data = {
     rsiProject: at.project, rsiPick: at.pick || 'obj:cp-converge', rsiPicked: !!at.pick, tag: at.tag,
     rsiTab: query.tab || 'version',
+    rsiExpSec: typeof query.expSec === 'string' ? query.expSec : '',
     rsiSelO: query.selO || '', rsiSelE: query.selE || '', rsiSelC: query.selC || '',
     rsiInitStep: typeof query.initStep === 'string' ? query.initStep : '',
+    rsiInitRev: typeof query.initRev === 'string' ? query.initRev : '',
+    rsiGovFile: typeof query.govFile === 'string' ? query.govFile : '',
+    rsiGovDiffMode: query.govDiffMode === 'split' ? 'split' : 'unified',
     dialog: query.dialog,
   };
   if (view === 'doc' && (query.id || query.doc)) S.dialog = { kind: 'rsiDoc', args: { id: query.id || query.doc } };
@@ -253,9 +260,37 @@ function exp(): any {
   // chosen, by whom, and what came of it — the version being made for it, the next cycle, or the objective's end.
   const govFor = function (r: Data) {
     const disc = discussionOf(r), later = rounds.find((x: Data) => x.n > r.n), ask = d.versionRequest && d.versionRequest.cycle === r.n ? d.versionRequest : null;
+    const nextVer = later ? d.versions.find((v: Data) => v.id === later.version) : null;
+    const rawChanges = r.govChanges || nextVer?.changes || (r.decision?.pick === 'direction' && d.versions.find((v: Data) => v.parent === r.version && v.at >= (r.decision.at || 0))?.changes) || null;
+    const pr = rawChanges?.pr || (nextVer?.pr ? { id: nextVer.pr } : null);
+    const changeItems = (rawChanges?.items || []).map((it: Data, idx: number) => ({
+      key: `${it.op || 'set'}:${it.name}:${idx}`,
+      op: it.op || 'set',
+      name: it.name,
+      from: it.from ?? '',
+      to: it.to ?? '',
+      detail: it.op === 'add' ? `+ ${it.to ?? ''}` : it.op === 'del' ? `- ${it.from ?? ''}` : `${it.from ?? ''} → ${it.to ?? ''}`,
+    }));
+    const diffFiles = (rawChanges?.files || []).map((f: Data) => {
+      const added = typeof f.added === 'number' ? f.added : null;
+      const removed = typeof f.removed === 'number' ? f.removed : null;
+      const stats = [added != null ? `+${added}` : '', removed != null ? `-${removed}` : ''].filter(Boolean).join(' ');
+      return {
+        path: f.path,
+        op: f.op || 'modify',
+        added,
+        removed,
+        stats,
+        selected: S.rsiGovFile === f.path,
+        hunks: Array.isArray(f.hunks) ? f.hunks : [],
+      };
+    });
+    const selectedFile = diffFiles.find((f: Data) => f.path === S.rsiGovFile) || null;
+    const hasDetails = !!(pr || changeItems.length || diffFiles.length);
     return { ask: !waiting(r) ? '' : d.candidate ? 'confirm' : !r.report.directions.length ? 'empty' : ['split', 'agree'].includes(disc!.status) ? disc!.status : 'choose',
       choices: !waiting(r) ? [] : d.candidate ? [{ k: 'same' }] : [{ k: 'same' }, { k: 'note' }], candidate: d.candidate && { group: d.candidate.id, version: d.candidate.version }, current: o.currentVersion, iterate: memberName('iterate'),
       discuss: disc && sel(r, 'discuss'), adopted: dirOf(r) || null,
+      pr, changeItems, diffFiles, selectedFile, diffMode: S.rsiGovDiffMode, hasDetails,
       led: !r.decision ? null : ask ? { k: 'version', title: ask.title } : later ? { k: 'cycle', n: later.k, version: later.version, go: sel(later, later.report ? 'eval' : 'collect') }
         : o.stopReason && o.stopReason.cycle === r.n ? { k: 'stop', text: o.stopReason.text } : { k: 'later' } };
   };
@@ -290,10 +325,23 @@ function exp(): any {
     const state = ex ? ({ started: 'preparing', cancelled: 'cancelled', failed: 'failed', blocked: 'blocked', missing: 'missing' } as Data)[ex.state] : d.steps && st && st.stale ? 'stale' : d.steps && !st ? (missing.length ? 'waiting' : 'queued')
       : items.every(function (x: any): any { return x.state === 'confirmed'; }) ? 'confirmed' : has('preparing') ? 'preparing' : has('submitted') ? 'submitted' : 'uninvestigated';
     const stage = stageOf(state);
-    return { k: k, i: i + 1, role: p.role, owner: memberName(p.role), depKeys: [...p.deps], items: items, needCount: items.filter((x: any) => x.needYou).length, by: ex && ex.state === 'started' && nameOf(ex.by), who: ex && nameOf(ex.by), reason: ex && ex.reason || '', unknowns: st && st.unknowns, next: st && st.next,
+    const ownerMember = d.members.find((m: Data) => m.role === p.role);
+    const hist: Data[] = Array.isArray(d.stepHistory?.[k]) ? d.stepHistory[k] : [];
+    const latestRev = st?.rev || (hist.length ? hist[hist.length - 1].rev : 1);
+    const revOptions = hist.length > 1
+      ? [...hist].reverse().map((h: Data) => ({ v: `${k}:${h.rev}`, rev: h.rev, label: `v${h.rev}${h.rev === latestRev ? '（当前）' : ''}` }))
+      : [];
+    const pickedMatch = S.rsiInitRev && S.rsiInitRev.startsWith(`${k}:`) ? Number(S.rsiInitRev.slice(k.length + 1)) : null;
+    const pickedHist = pickedMatch && pickedMatch !== latestRev ? hist.find((h: Data) => h.rev === pickedMatch) : null;
+    const viewItems = pickedHist
+      ? (pickedHist.items || []).map((x: Data) => Object.assign({}, x, { needYou: false, by: x.by && nameOf(x.by) }))
+      : items;
+    return { k: k, i: i + 1, role: p.role, owner: memberName(p.role), ownerCatId: ownerMember?.catId || '', depKeys: [...p.deps], items: viewItems, needCount: items.filter((x: any) => x.needYou).length, by: ex && ex.state === 'started' && nameOf(ex.by), who: ex && nameOf(ex.by), reason: ex && ex.reason || '', unknowns: pickedHist ? pickedHist.unknowns : st && st.unknowns, next: pickedHist ? pickedHist.next : st && st.next,
+      canRefresh: !!o.projectPath && stage !== 'running' && stage !== 'waiting',
+      revOptions, hasHistory: revOptions.length > 1, selectedRev: pickedHist ? `${k}:${pickedHist.rev}` : `${k}:${latestRev}`, viewingOld: !!pickedHist,
       deps: p.deps.map(no).join('、'), waitOn: d.steps && !ex && !st && missing.join('、'), state, stage };
   });
-  const showAll = S.rsiInitStep === 'all';
+  const showAll = false;
   const leafKeys = d.plan.filter((p: Data) => !d.plan.some((other: Data) => other.deps.includes(p.k))).map((p: Data) => p.k);
   const doneCount = rawSteps.filter((s: Data) => s.stage === 'done').length;
   const readyStage = ['running', 'done', 'paused'].includes(o.state) ? 'done' : o.state === 'ready' ? 'pending' : 'waiting';
@@ -301,8 +349,8 @@ function exp(): any {
     ? { k: 'ready' }
     : rawSteps.find((s: Data) => s.stage === 'error') || rawSteps.find((s: Data) => s.stage === 'pending') || rawSteps.find((s: Data) => s.stage === 'running') || rawSteps.find((s: Data) => s.stage !== 'done') || rawSteps[0];
   const validKeys = new Set([...rawSteps.map((s: Data) => s.k), 'ready']);
-  const activeKey = !showAll && validKeys.has(S.rsiInitStep) ? S.rsiInitStep : defaultStep?.k || '';
-  const steps = rawSteps.map((s: Data) => Object.assign({}, s, { selected: !showAll && s.k === activeKey, visible: showAll || s.k === activeKey }));
+  const activeKey = validKeys.has(S.rsiInitStep) ? S.rsiInitStep : defaultStep?.k || '';
+  const steps = rawSteps.map((s: Data) => Object.assign({}, s, { selected: s.k === activeKey, visible: s.k === activeKey }));
   const readyNode = {
     k: 'ready',
     i: rawSteps.length + 1,
@@ -312,8 +360,8 @@ function exp(): any {
     state: readyStage === 'done' ? 'confirmed' : o.state === 'ready' ? 'ready' : 'waiting',
     owner: `${doneCount}/${rawSteps.length}`,
     needCount: o.state === 'ready' ? 1 : 0,
-    selected: !showAll && activeKey === 'ready',
-    visible: showAll || activeKey === 'ready',
+    selected: activeKey === 'ready',
+    visible: activeKey === 'ready',
   };
   const dagNodes = [...steps, readyNode];
   const readyInfo = {
@@ -324,8 +372,11 @@ function exp(): any {
     totalCount: rawSteps.length,
     remaining: rawSteps.filter((s: Data) => s.stage !== 'done').map((s: Data) => s.i).join('、'),
     schedule: scheduleSummary(d.policy.schedule),
+    maxRunsText: maxRunsText(d.policy.schedule),
     executorState: d.executor.state,
     canStart: o.state === 'ready',
+    waitingFirstRun: o.state === 'ready' && rounds.length === 0,
+    canTriggerNow: !!o.projectPath && d.executor.state === 'passed' && ['ready', 'running', 'pending'].includes(o.state) && prepSettled(d) && !d.versionRequest && !d.rounds.some((x: Data) => ['running', 'evaluating'].includes(x.state)),
   };
   const at = function (x: any, step: any): any { return 'version|' + sel(x, step); };
   const wait = rounds.find(waiting), run = rounds.find(function (x: any): any { return x.state === 'running'; }), ev = rounds.find(function (x: any): any { return x.state === 'evaluating'; }), halted = rounds.find(function (x: any): any { return x.state === 'interrupted'; }), an = rounds.find(function (x: any): any { return x.analysis && x.analysis.waiting.length; });
@@ -354,7 +405,29 @@ function exp(): any {
         doneN: runs.filter(function (u: any): any { return u.state === 'done' || u.state === 'failed'; }).length, total: runs.length });
     });
   };
-  return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, projectPath: o.projectPath, goal: o.goal, thread: o.thread, next: next, now: now, tab: S.rsiTab, setup: rounds.length === 0,
+  const expSection = ['manage', 'execute'].includes(S.rsiExpSec) ? S.rsiExpSec : (rounds.length === 0 ? 'manage' : 'execute');
+  const snapshot = {
+    version: cur.id,
+    change: cur.change,
+    metricVersion: d.metrics.version,
+    stop: stopText(o.stop || {}),
+    rounds: rounds.length,
+    window: scheduleSummary(d.policy.schedule),
+  };
+  const comparisonsOf = (r: Data) => (r.report?.comparisons || []).map((c: Data, idx: number) => ({
+    id: c.id || `cmp-${r.n}-${idx + 1}`,
+    title: c.title,
+    kind: c.kind || 'visual',
+    note: c.note || '',
+    before: Object.assign({}, c.before, { id: `${c.id || idx}-before`, isMedia: ['image', 'video', 'audio'].includes(c.before?.kind) && !!c.before?.src }),
+    after: Object.assign({}, c.after, { id: `${c.id || idx}-after`, isMedia: ['image', 'video', 'audio'].includes(c.after?.kind) && !!c.after?.src }),
+  }));
+  const stageMember = (role: string) => {
+    const m = d.members.find((x: Data) => x.role === role);
+    return { role, catId: m?.catId || '', name: m?.name || '', model: m?.model || '' };
+  };
+  const execStages = [stageMember('prepare'), stageMember('evaluate'), stageMember('iterate')];
+  return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, projectPath: o.projectPath, goal: o.goal, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
     trend: rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, value: Number(best(x).mean.toPrecision(4)) }; }),
     trendMetric: d.metrics.items.find((m: Data) => m.id === main).name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.filter(function (p: any): any { return p.result !== 'unresolved'; }).length },
@@ -366,8 +439,9 @@ function exp(): any {
       attribution: r.report && r.report.attribution.assessedLayers.length ? r.report.attribution : null,
       // The findings after their first line, which is the headline.
       body: r.report && (r.report.summary.startsWith(r.report.headline) ? r.report.summary.slice(r.report.headline.length).trim() : r.report.summary),
+      comparisons: r.report ? comparisonsOf(r) : [],
       compare: r.report && compareOf(r), discussion: r.report && discussionOf(r), gov: r.report && govFor(r) }),
-    prep: { needYou: needYou, steps: steps, dagNodes: dagNodes, visibleSteps: steps.filter((s: Data) => s.visible), ready: readyInfo, activeKey: activeKey, showAll: showAll }, executor: d.executor, members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, roleMembers: o.projectPath ? d.members.filter(function (m: any): any { return m.catId && m.role !== 'analyze'; }) : d.members, discussion: d.members.filter(function (m: any): any { return m.role === 'analyze' && m.catId; }).map(function (m: any): any { return { id: m.catId, name: m.name }; }), memberIds: { prepare: (d.members.find(function (m: any): any { return m.role === 'prepare'; }) || {}).catId, evaluate: (d.members.find(function (m: any): any { return m.role === 'evaluate'; }) || {}).catId, iterate: (d.members.find(function (m: any): any { return m.role === 'iterate'; }) || {}).catId }, policy: policyOf(d, o), metrics: d.metrics,
+    prep: { needYou: needYou, steps: steps, dagNodes: dagNodes, visibleSteps: steps.filter((s: Data) => s.visible), ready: readyInfo, activeKey: activeKey, showAll: showAll }, executor: d.executor, members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, roleMembers: o.projectPath ? d.members.filter(function (m: any): any { return m.catId && m.role !== 'analyze'; }) : d.members, execStages, discussion: d.members.filter(function (m: any): any { return m.role === 'analyze' && m.catId; }).map(function (m: any): any { return { id: m.catId, name: m.name }; }), memberIds: { prepare: (d.members.find(function (m: any): any { return m.role === 'prepare'; }) || {}).catId, evaluate: (d.members.find(function (m: any): any { return m.role === 'evaluate'; }) || {}).catId, iterate: (d.members.find(function (m: any): any { return m.role === 'iterate'; }) || {}).catId }, policy: policyOf(d, o), metrics: d.metrics,
     eTree: [{ id: d.metrics.version }], cTree: [{ id: 'C1' }] };
 };
 function record(): any {

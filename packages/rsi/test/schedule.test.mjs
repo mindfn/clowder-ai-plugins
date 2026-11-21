@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createFixtures } from '../dist/fixtures.js';
 import { act } from '../dist/actions.js';
 import { viewModel } from '../dist/views.js';
-import { hasValidSchedule, insideWindow, parseScheduleText, scheduleForm, scheduleOf, scheduleSummary } from '../dist/schedule.js';
+import { hasValidSchedule, insideWindow, maxRunsText, parseScheduleText, scheduleForm, scheduleOf, scheduleSummary, withinWindowLimit } from '../dist/schedule.js';
 
 const local = (y, m, d, hh, mm = 0) => new Date(y, m - 1, d, hh, mm, 0, 0).getTime();
 
@@ -78,4 +78,16 @@ test('op: schedule updates an objective schedule anytime, refreshes views and si
   state.experiments[id].objective.state = 'ready';
   assert.deepEqual(act(state, { op: 'life', objective: id, action: 'start' }, { project }, now), { ok: true });
   assert.equal(state.experiments[id].objective.state, 'running');
+
+  // maxRunsPerWindow: unlimited by default, enforces cap when set
+  assert.equal(exp.policy.schedule.maxRunsText, '不限制');
+  const capped = scheduleOf({ mode: 'anytime', maxRuns: '2' });
+  assert.ok('schedule' in capped);
+  assert.equal(capped.schedule.maxRuns, 2);
+  assert.equal(maxRunsText(capped.schedule), '最多 2 次');
+  assert.equal(scheduleForm(capped.schedule).maxRuns, '2');
+  assert.equal(withinWindowLimit(capped.schedule, [{ scheduled: true, start: now - 1000 }], now), true);
+  assert.equal(withinWindowLimit(capped.schedule, [{ scheduled: true, start: now - 2000 }, { scheduled: true, start: now - 1000 }], now), false);
+  assert.equal(withinWindowLimit(scheduleOf({ mode: 'anytime', maxRuns: '' }).schedule, [{ scheduled: true, start: now - 2000 }, { scheduled: true, start: now - 1000 }], now), true);
+  assert.ok('error' in scheduleOf({ mode: 'anytime', maxRuns: '-1' }));
 });

@@ -51,11 +51,15 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
     case 'members': {
       // The single-member roles can change at any time; work waiting for a role goes to its new member.
       if (!d) return { error: 'Experiment not found', status: 404 };
-      const roles = (['prepare', 'evaluate', 'iterate'] as const).filter((role) => typeof body[role] === 'string' && body[role] && body[role] !== d.members.find((m) => m.role === role)?.catId);
+      const singleRole = typeof body.role === 'string' && ['prepare', 'evaluate', 'iterate'].includes(body.role) && typeof body.v === 'string' && body.v
+        ? { [body.role]: body.v } : {};
+      const input: Data = { ...body, ...singleRole };
+      const roles = (['prepare', 'evaluate', 'iterate'] as const).filter((role) => typeof input[role] === 'string' && input[role] && input[role] !== d.members.find((m) => m.role === role)?.catId);
       refreshMembers(d.members, body.cats);
       for (const role of roles) {
-        const member = setMember(d.members.find((m) => m.role === role)!, body[role], body.cats);
-        message(state, d, now, `你把${{ prepare: '初始化', evaluate: '评估', iterate: '治理执行' }[role]}成员换成了 ${member.name}`, '之后这个角色的活都派给 TA。', 'members');
+        const existing = d.members.find((m) => m.role === role);
+        const member = existing ? setMember(existing, input[role], body.cats) : (() => { const m = setMember({ role }, input[role], body.cats); d.members.push(m); return m; })();
+        message(state, d, now, `你把${{ prepare: '初始化/准备', evaluate: '评估', iterate: '治理执行' }[role]}成员换成了 ${member.name}`, '之后这个角色的活都派给 TA。', 'members');
         const waiting = role === 'evaluate' ? d.rounds.find((r: Data) => r.state === 'evaluating') : null;
         if (waiting) askEvaluation(state, d, waiting);
         else if (role === 'iterate' && d.versionRequest || role === 'prepare' && !prepSettled(d))
@@ -218,11 +222,21 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       return { ok: true };
     }
     case 'initRedo':
+    case 'initStepRefresh':
     case 'initRetry': {
       if (!d || !o) return { error: 'Experiment not found', status: 404 };
       d.steps ||= {}; d.exec ||= {};
       if (body.op === 'initRedo') {
         for (const p of d.plan) if (d.steps[p.k]?.stale) d.steps[p.k]!.redo = true;
+      } else if (body.op === 'initStepRefresh') {
+        const section = body.k as Section;
+        if (!d.plan.some((p) => p.k === section)) return { error: 'Initialization step not found', status: 404 };
+        delete d.exec[section];
+        const prev = d.steps[section];
+        if (prev) { prev.stale = true; prev.redo = true; }
+        rsiExpStaleFrom(d, section, false);
+        if (d.objective.state === 'ready') d.objective.state = 'preparing';
+        message(state, d, now, `你触发了第 ${d.plan.findIndex((p) => p.k === section) + 1} 步重新分析`, '将按当前成员重新调研并保留历史版本快照。');
       } else {
         const section = body.k as Section;
         if (!d.plan.some((p) => p.k === section)) return { error: 'Initialization step not found', status: 404 };

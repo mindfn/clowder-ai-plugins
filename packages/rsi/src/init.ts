@@ -136,11 +136,17 @@ export function submitInitStep(state: RsiState, id: string, submission: InitSubm
     const human = config.human?.includes(p.id) || p.neededFrom === 'human' || (real && section !== 'goal' && !!config.human?.length);
     return { ...p, state: human ? 'submitted' as const : 'confirmed' as const, neededFrom: human ? 'human' as const : null, by: execution.by, at: now, decision: undefined };
   });
-  d.prep = d.prep.filter((p) => p.section !== section).concat(items, d.prep.filter((p) => p.section === section && p.mine && !items.some((x) => x.id === p.id)));
-  d.steps![section] = { rev: old ? old.rev + 1 : 1, base: execution.base, stale: moved, redo: false, unknowns: submission.unknowns, next: submission.next };
+  const sectionItems = items.concat(d.prep.filter((p) => p.section === section && p.mine && !items.some((x) => x.id === p.id)));
+  d.prep = d.prep.filter((p) => p.section !== section).concat(sectionItems);
+  const nextRev = old ? old.rev + 1 : 1;
+  d.steps![section] = { rev: nextRev, base: execution.base, stale: moved, redo: false, unknowns: submission.unknowns, next: submission.next };
+  d.stepHistory ||= {};
+  const hist = (d.stepHistory[section] ||= []);
+  hist.push({ rev: nextRev, at: now, by: execution.by, items: structuredClone(sectionItems), unknowns: submission.unknowns || '', next: submission.next || '' });
+  if (hist.length > 20) hist.splice(0, hist.length - 20);
   delete d.exec![section];
   if (old) rsiExpStaleFrom(d, section, true);
-  if (submission.goal) Object.assign(d.objective.goal, submission.goal, { statement: d.objective.name });
+  if (submission.goal) Object.assign(d.objective.goal, submission.goal, { statement: d.objective.goal?.statement || d.objective.name });
   if (submission.executor) d.executor = structuredClone(submission.executor);
   if (submission.metrics) {
     d.metrics = structuredClone(submission.metrics);
