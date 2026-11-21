@@ -805,20 +805,16 @@ views:
                       - type: list
                         from: "@items"
                         row: rsi.prep
-                      - type: list
-                        label: t:rsi.exp.stepUnknownsLabel
-                        optional: true
-                        from: "@unknownList"
-                        row:
-                          layout: record
-                          title: "@"
-                      - type: list
-                        label: t:rsi.exp.stepNextLabel
-                        optional: true
-                        from: "@nextList"
-                        row:
-                          layout: record
-                          title: "@"
+                      - type: notice
+                        tone: warn
+                        strong: t:rsi.exp.stepUnknownsLabel
+                        items: "@unknownList"
+                        when: "@unknownList"
+                      - type: notice
+                        tone: info
+                        strong: t:rsi.exp.stepNextLabel
+                        items: "@nextList"
+                        when: "@nextList"
           - type: section
             title: t:rsi.exp.sec.execStages
             blocks:
