@@ -70,6 +70,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       const input: Data = { ...body, ...singleRole };
       const roles = (['prepare', 'evaluate', 'iterate'] as const).filter((role) => typeof input[role] === 'string' && input[role] && input[role] !== d.members.find((m) => m.role === role)?.catId);
       refreshMembers(d.members, body.cats);
+      if (d.stepMembers) refreshMembers(Object.values(d.stepMembers), body.cats);
       for (const role of roles) {
         const existing = d.members.find((m) => m.role === role);
         const member = existing ? setMember(existing, input[role], body.cats) : (() => { const m = setMember({ role }, input[role], body.cats); d.members.push(m); return m; })();
@@ -306,6 +307,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       const add = body.op === 'analystAdd' || (body.op === 'analystToggle' && !exists);
       d.members = d.members.filter((m) => !(m.role === 'analyze' && m.catId === catId));
       refreshMembers(d.members, body.cats);
+      if (d.stepMembers) refreshMembers(Object.values(d.stepMembers), body.cats);
       if (add) {
         const added = setMember({ role: 'analyze' }, catId, body.cats);
         d.members.push(added);

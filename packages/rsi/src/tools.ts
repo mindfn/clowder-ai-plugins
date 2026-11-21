@@ -24,8 +24,36 @@ function registerExecutor(state: RsiState, d: Experiment, input: Data) {
 }
 
 function currentStep(d: Experiment, input: Data) {
-  const plan = typeof input.step === 'number' ? d.plan[input.step - 1] : d.plan.find((p) => p.k === input.step);
+  const raw = input.step;
+  const num = typeof raw === 'number' ? raw : typeof raw === 'string' && /^[1-7]$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
+  const plan = Number.isInteger(num) ? d.plan[num - 1] : d.plan.find((p) => p.k === raw);
   return plan?.k;
+}
+
+function normalizeFacts(raw: unknown): { k: string; v: string }[] | undefined | null {
+  if (raw === undefined) return undefined;
+  if (Array.isArray(raw)) {
+    const out: { k: string; v: string }[] = [];
+    for (const f of raw) {
+      if (typeof f === 'string') {
+        const s = f.trim();
+        if (!s) return null;
+        const m = /^([^:：]{1,40})[:：]\s*(.+)$/.exec(s);
+        out.push(m ? { k: m[1].trim(), v: m[2].trim() } : { k: '依据', v: s });
+      } else if (record(f) && text(f.k) && typeof f.v === 'string') {
+        out.push({ k: f.k, v: f.v });
+      } else {
+        return null;
+      }
+    }
+    return out;
+  }
+  if (record(raw)) {
+    const entries = Object.entries(raw);
+    if (entries.some(([k, v]) => !k.trim() || typeof v !== 'string')) return null;
+    return entries.map(([k, v]) => ({ k: k.trim(), v: v as string }));
+  }
+  return null;
 }
 
 function claimed(d: Experiment, section: Section, ctx: ToolContext) {
@@ -42,7 +70,7 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
     const prototype = RSI_CP_INIT.find((s) => s.section === p.k)!;
     return { step: d.plan.indexOf(p) + 1, section: p.k, executionId: ex.id, ask: prototype.ask,
       items: d.prep.filter((item) => item.section === p.k).map((item) => ({ id: item.id, title: item.title, meaning: item.title,
-        value: item.value, userOwned: !!item.mine, format: 'value: string; facts?: [{k:string,v:string}]; can?: string; rec?: explore|fixed|excluded; tag?: string',
+        value: item.value, userOwned: !!item.mine, format: 'value: string; facts?: string[]（如 ["依据：README"]，兼容 [{k,v}]）; can?: string; rec?: explore|fixed|excluded; tag?: string；已有条目也可用顶层 2 层 values: { "<id>": "<值>" } 简写',
         example: template.prep.find((p) => p.id === item.id)?.value || '填写项目中的观察、依据和建议。' })),
       ...(d.objective.projectPath && p.k !== 'goal' ? { itemsAreYours: '这一步的条目由你按这个项目来定：每条自己起 id（小写、短横线）和 title，按项目实际增删；重做时没再提交的条目会被去掉。下面 examples 是另一个项目（CartPole 强化学习）的写法，只看结构，不要照抄名字。',
         examples: template.prep.filter((x) => x.section === p.k).map((x) => ({ id: x.id, title: x.title, value: x.value })) } : {}),
@@ -108,14 +136,15 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     if (d.members.find((m) => m.role === 'iterate')?.catId !== ctx.catId || d.versionRequest?.invocationId !== ctx.invocationId) return { error: 'Call rsi.task on the version turn first', status: 403 };
     // A repair the member cannot make goes to the evaluator instead.
     if (d.versionRequest.repair && text(input.cannot)) { abandonRepair(state, d, `${d.members.find((m) => m.role === 'iterate')!.name} 说修不了：${input.cannot}`, now); return { ok: true, evaluating: true }; }
-    if (!text(input.change) || input.commit !== undefined && (!text(input.commit) || !/^[a-f0-9]{7,40}$/i.test(input.commit)) || !(record(input.config) || text(input.config))) return { error: 'Provide change, optional git commit (7–40 hex characters), and config (JSON object or JSON file path)' };
+    const configVal = input.config !== undefined ? input.config : text(input.configPath) ? input.configPath : undefined;
+    if (!text(input.change) || input.commit !== undefined && (!text(input.commit) || !/^[a-f0-9]{7,40}$/i.test(input.commit)) || !(record(configVal) || text(configVal))) return { error: 'Provide change, optional git commit (7–40 hex characters), and config (JSON object or JSON file path / configPath)' };
     const previous = d.objective.currentVersion, id = `v${d.versions.length + 1}`;
     const changes = record(input.changes) ? {
       ...(record(input.changes.pr) && text(input.changes.pr.id) ? { pr: { id: input.changes.pr.id, ...(text(input.changes.pr.url) ? { url: input.changes.pr.url } : {}), ...(text(input.changes.pr.title) ? { title: input.changes.pr.title } : {}), ...(text(input.changes.pr.state) ? { state: input.changes.pr.state } : {}) } } : {}),
       ...(Array.isArray(input.changes.files) ? { files: input.changes.files.filter((f: unknown) => record(f) && text(f.path)).map((f: Data) => ({ path: f.path, op: ['modify', 'add', 'delete', 'rename'].includes(f.op) ? f.op : 'modify', ...(typeof f.added === 'number' ? { added: f.added } : {}), ...(typeof f.removed === 'number' ? { removed: f.removed } : {}), ...(Array.isArray(f.hunks) ? { hunks: f.hunks } : {}) })) } : {}),
       ...(Array.isArray(input.changes.items) ? { items: input.changes.items.filter((it: unknown) => record(it) && text(it.name)).map((it: Data) => ({ op: ['set', 'add', 'del'].includes(it.op) ? it.op : 'set', name: it.name, ...(it.from !== undefined ? { from: String(it.from) } : {}), ...(it.to !== undefined ? { to: String(it.to) } : {}) })) } : {}),
     } : null;
-    const versionRecord: Data = { id, parent: previous, change: input.change, commit: input.commit || null, config: input.config, at: now, current: false, status: 'proposed',
+    const versionRecord: Data = { id, parent: previous, change: input.change, commit: input.commit || null, config: configVal, at: now, current: false, status: 'proposed',
       ...(changes ? { changes } : {}),
       ...(changes?.pr?.id ? { pr: changes.pr.id } : {}),
       ...(d.versionRequest.prediction ? { prediction: d.versionRequest.prediction } : {}) };
@@ -161,19 +190,30 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
   const section = currentStep(d, input);
   const own = !!d.objective.projectPath && section !== 'goal';
   if (!section || !claimed(d, section, ctx)) return { error: 'Call rsi.task for the current step; dependencies or execution changed', status: 409 };
-  if (!Array.isArray(input.items) || !input.items.length) {
-    const preview = typeof input.items === 'string' ? JSON.stringify(input.items.slice(0, 60)) : typeof input.items;
-    return { error: `items must be a non-empty JSON array of objects (received ${Array.isArray(input.items) ? 'empty array []' : preview}); pass an actual array [{id, value, ...}], not a JSON string` };
+  const rawItems = Array.isArray(input.items)
+    ? input.items
+    : input.items === undefined && record(input.values)
+      ? Object.entries(input.values).map(([id, value]) => ({ id, value }))
+      : input.items;
+  if (!Array.isArray(rawItems) || !rawItems.length) {
+    const preview = typeof rawItems === 'string' ? JSON.stringify(rawItems.slice(0, 60)) : typeof rawItems;
+    return { error: `items must be a non-empty JSON array of objects (received ${Array.isArray(rawItems) ? 'empty array []' : preview}); pass items: [{id, value, facts?: ["依据：..."]}] or 2-level values: { "<id>": "<value>" }` };
   }
+  const normalizedItems: (Data | null)[] = rawItems.map((p: unknown): Data | null => {
+    if (!record(p)) return null;
+    const facts = normalizeFacts(p.facts);
+    if (facts === null) return null;
+    return { ...p, ...(facts !== undefined ? { facts } : {}) };
+  });
   const validNotes = (v: unknown) => v === undefined || typeof v === 'string' || (Array.isArray(v) && v.every(text));
-  if (input.items.some((p: unknown) => !record(p) || !text(p.id) || !text(p.value)
-    || p.facts !== undefined && (!Array.isArray(p.facts) || p.facts.some((f: unknown) => !record(f) || !text(f.k) || typeof f.v !== 'string'))
+  if (normalizedItems.some((p) => !p || !text(p.id) || !text(p.value)
     || p.rec !== undefined && !['explore', 'fixed', 'excluded'].includes(p.rec)
     || p.can !== undefined && !text(p.can) || p.tag !== undefined && !text(p.tag))
-    || new Set(input.items.map((p: Data) => p.id)).size !== input.items.length
-    || input.items.some((p: Data) => !d.prep.some((x) => x.section === section && x.id === p.id) && (!own || !text(p.title) || d.prep.some((x) => x.id === p.id)))
-    || d.prep.some((p) => p.section === section && !p.mine && !own && !input.items.some((x: Data) => x.id === p.id))
+    || new Set(normalizedItems.map((p) => p!.id)).size !== normalizedItems.length
+    || normalizedItems.some((p) => !d.prep.some((x) => x.section === section && x.id === p!.id) && (!own || !text(p!.title) || d.prep.some((x) => x.id === p!.id)))
+    || d.prep.some((p) => p.section === section && !p.mine && !own && !normalizedItems.some((x) => x!.id === p.id))
     || !validNotes(input.unknowns) || !validNotes(input.next)) return { error: 'Submit all step items with non-empty values and valid facts/rec/can/tag; in a real project a new item needs its own id and a title' };
+  const checkedItems = normalizedItems as Data[];
   if (section === 'run' && input.window !== undefined && !parseScheduleText(input.window)) return { error: 'Provide a valid window such as 不限制, 周一至周五 09:00–18:00；周六至周日 全天, 2026-11-21~2026-11-30 09:00–18:00, or 20:00–08:00' };
   if (input.goal !== undefined && !record(input.goal)) return { error: 'Invalid goal' };
   if (input.docs !== undefined && (!Array.isArray(input.docs) || input.docs.some((doc: unknown) => !record(doc) || !text(doc.id) || !text(doc.title) || !text(doc.body) || !['project', 'provided', 'feedback'].includes(doc.kind)))) return { error: 'Docs require id, title, body and kind' };
@@ -191,7 +231,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     return { error: `停止目标「${d.objective.stop.target}」里的指标「${stopMetric}」不在量尺里：把对应量尺的 id 或名称写成「${stopMetric}」，或请用户在页面上改「何时停」。` };
   if ((section === 'design' || section === 'baseline') && input.upcoming !== undefined && !validPlan(input.upcoming)) return { error: 'Invalid upcoming plan' };
   if (section === 'design' && !validPlan(input.upcoming)) return { error: 'Step 5 requires upcoming {groups:[{id,label,vars}],seeds:[integer]}' };
-  const items = input.items.map((p: Data) => ({ ...d.prep.find((x) => x.id === p.id)!, ...p, section })) as PrepItem[];
+  const items = checkedItems.map((p: Data) => ({ ...d.prep.find((x) => x.id === p.id)!, ...p, section })) as PrepItem[];
   const joinNote = (v: unknown) => Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean).join('\n') : v;
   const submission = { section, executionId: d.exec![section]!.id, items, unknowns: joinNote(input.unknowns) as string | undefined, next: joinNote(input.next) as string | undefined, ...(section === 'run' && input.window ? { window: input.window } : {}),
     ...(section === 'goal' && input.goal ? { goal: input.goal } : {}), ...(section === 'rules' ? { metrics: input.metrics } : {}),
