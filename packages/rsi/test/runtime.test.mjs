@@ -345,6 +345,16 @@ test('preflight failure skips cancel and verbose cancel on submit failure never 
   assert.match(subRun.log, /\[cancel\]/);
 });
 
+test('collect stdout larger than 16KB parses cleanly without truncating JSON', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  f.commands.collect = `node -e "console.log(JSON.stringify({ pad: 'x'.repeat(24000), metrics: { score: 42 } }))"`;
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [7] });
+  const run = (await execute(f, o)).runs[0];
+  assert.equal(run.state, 'done', JSON.stringify(run.error));
+  assert.equal(run.error, null);
+  assert.equal(run.metrics.score, 42);
+});
+
 test('execution lifecycle uses v2 replyTo, tolerates send acknowledgement races and rejects late old-step events', async (t) => {
   const f=await fixture(t);
   f.onSend(async (s)=>{

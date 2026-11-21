@@ -34,8 +34,9 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
   async function command(template: string, cwd: string, values: Data, limit = 0) {
     if (busy && dropped.has(busy)) return { code: -1, log: 'Objective deleted', stdout: '', timedOut: false };
     let log = '', stdout = '', expired = false;
+    const MAX_STDOUT = 4 * 1024 * 1024;
     const process = child = spawn(render(template, values), { cwd, shell: true, detached: !windows, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    process.stdout!.on('data', (part) => { stdout = (stdout + part).slice(-16000); log = (log + part).slice(-16000); });
+    process.stdout!.on('data', (part) => { if (stdout.length < MAX_STDOUT) stdout = (stdout + part).slice(0, MAX_STDOUT); log = (log + part).slice(-16000); });
     process.stderr!.on('data', (part) => { log = (log + part).slice(-16000); });
     const timer = limit ? setTimeout(() => {
       expired = true;
