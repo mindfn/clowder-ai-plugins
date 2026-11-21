@@ -29,10 +29,12 @@ test('all new-objective openers bind currentThread and project choices; writes p
   assert.ok(openers>=4);
   const dialog=pdl.views['dlg.rsiNewExp'];
   assert.equal(dialog.fields.find((f)=>f.arg==='project').options[0].v,'');
+  assert.equal(dialog.fields.find((f)=>f.arg==='threadMode').value,'current');
+  assert.deepEqual(dialog.fields.find((f)=>f.arg==='threadMode').options.map((o)=>o.v),['current','new']);
   assert.equal(dialog.okArgs.thread,'$.thread');
   assert.equal(dialog.fields.find((f)=>f.arg==='prepare').value,'codex');
   assert.equal(dialog.fields.find((f)=>f.arg==='evaluate').value,'cat-b5ddoo9l');
-  assert.equal(pdl.requests.new.body.project,'@project');assert.equal(pdl.requests.new.body.thread,'@thread');
+  assert.equal(pdl.requests.new.body.project,'@project');assert.equal(pdl.requests.new.body.thread,'@thread');assert.equal(pdl.requests.new.body.threadMode,'@threadMode');
   assert.equal(pdl.requests.runCycle.body.op,'runCycle');assert.equal(pdl.requests.refresh.body.op,'refresh');
 });
 

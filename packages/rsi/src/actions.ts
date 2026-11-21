@@ -108,6 +108,11 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         if (body.statement == null) return { ok: true, act: 'dialog', args: { kind: 'rsiNewExp' } };
         if (typeof body.statement !== 'string' || !body.statement.trim() || typeof body.prepare !== 'string' || !body.prepare || typeof body.evaluate !== 'string' || !body.evaluate)
           return { error: 'Provide a statement and prepare/evaluate member ids' };
+        if (typeof body.threadMode === 'string' && body.threadMode && !['current', 'new'].includes(body.threadMode))
+          return { error: 'Invalid thread mode' };
+        const reuseThread = body.projectPath && typeof body.reuseThread === 'string' && body.reuseThread ? body.reuseThread : null;
+        if (reuseThread && Object.values(state.experiments).some((x) => x.objective.thread === reuseThread))
+          return { error: '当前对话已绑定其他评估项，请改选「新建独立对话」或切换到其他对话' };
         const limits = stopOf(body);
         if (limits.error) return limits;
         const repair = repairCount(body.repair);

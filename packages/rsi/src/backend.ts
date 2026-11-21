@@ -37,11 +37,17 @@ export function createRsi(host: RsiHost) {
       return result === undefined ? json(400, { error: 'Unknown view' }) : json(200, result);
     }
     const body: Data = { ...input.request.body };
-    if (['new', 'newExp'].includes(body.op) && body.project === '') {
-      if (typeof body.thread !== 'string') return json(400, { error: 'Choose a project or open this dialog from a project conversation' });
-      const thread = await host.threads.get(body.thread);
-      if (!thread?.projectRef) return json(400, { error: 'The current conversation has no project' });
-      body.project = thread.projectRef;
+    if (['new', 'newExp'].includes(body.op)) {
+      const threadMode = body.threadMode === 'new' ? 'new' : 'current';
+      const currentThread = typeof body.thread === 'string' && body.thread && body.thread !== 'default'
+        ? await host.threads.get(body.thread).catch(() => null)
+        : null;
+      if (body.project === '') {
+        if (typeof body.thread !== 'string') return json(400, { error: 'Choose a project or open this dialog from a project conversation' });
+        if (!currentThread?.projectRef) return json(400, { error: 'The current conversation has no project' });
+        body.project = currentThread.projectRef;
+      }
+      body.reuseThread = threadMode === 'current' && currentThread ? currentThread.id : null;
     }
     let created: string | undefined, removed: Experiment[] = [];
     const result = await update(host.storage, key, (next) => {

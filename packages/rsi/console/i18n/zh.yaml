@@ -341,7 +341,11 @@ noObjectivesHint: 这个项目还没有评估项。新建一个：说清楚要�
 repairDialog: 夜里出错自动修
 autoDialog: 夜里可以自己定的方向
 newExp:
-  help: 建好后插件会建一个评估项 thread，按七步初始化，每步 @ 负责的成员；agent 一直往下起草，要你判断的在评估项页逐条列出。机器和时段不用现在填，第 3 步由 agent 查项目后起草。
+  help: 建好后默认在当前对话里启动初始化（也可以选新建独立对话），按七步推进，每步 @ 负责的成员；agent 一直往下起草，要你判断的在评估项页逐条列出。机器和时段不用现在填，第 3 步由 agent 查项目后起草。
+  threadMode: 评估项对话
+  threadModeHelp: 默认复用当前对话直接推进初始化；若当前对话已绑定其他评估项或想隔离讨论，可选新建独立对话
+  threadCurrent: 使用当前对话（默认）
+  threadNew: 新建独立对话
   statement: 要改进什么（一句话）
   statementHint: 比如：让算术题准确率提高，训练不崩
   prepare: 谁来初始化（读项目、起草）

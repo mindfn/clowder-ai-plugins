@@ -4881,6 +4881,16 @@ views:
               v: "@id"
               label: "@name"
         arg: project
+      - id: dlg-thread-mode
+        label: t:rsi.newExp.threadMode
+        help: t:rsi.newExp.threadModeHelp
+        value: current
+        options:
+          - v: current
+            label: t:rsi.newExp.threadCurrent
+          - v: new
+            label: t:rsi.newExp.threadNew
+        arg: threadMode
       - id: dlg-name
         label: t:rsi.newExp.statement
         placeholder: t:rsi.newExp.statementHint
@@ -5507,6 +5517,7 @@ requests:
       op: new
       project: "@project"
       thread: "@thread"
+      threadMode: "@threadMode"
       statement: "@statement"
       prepare: "@prepare"
       evaluate: "@evaluate"

@@ -83,7 +83,7 @@ async function fixture(t) {
   // The suite runs at any hour: the night decides nothing by itself unless a test asks for it.
   const create = async (extra = {}) => {
     const before = new Set(Object.keys((await read())?.experiments || {}));
-    const result = await http('POST', { op: 'new', project: '', thread: 'source', statement: 'Improve a measured score', prepare: 'codex', evaluate: 'cat-b5ddoo9l',
+    const result = await http('POST', { op: 'new', project: '', thread: 'source', threadMode: 'new', statement: 'Improve a measured score', prepare: 'codex', evaluate: 'cat-b5ddoo9l',
       cats: [{ id: 'codex', name: '砚砚', model: 'gpt-5.6-sol', handle: '@codex', on: true }, { id: 'cat-b5ddoo9l', name: '小狸', model: 'k3.1', handle: '@kimi', on: true }], auto: 'none', ...extra });
     assert.equal(result.status, 200, JSON.stringify(result));
     assert.deepEqual(result.acts?.map((a) => a.act), ['thread', 'open'], JSON.stringify(result));
@@ -1489,4 +1489,28 @@ test('a long statement creates a short clipped thread title and card title, and 
   const healed = await until(f.read, (s) => Boolean(s.experiments[legacyId]?.objective.thread), 'legacy overlong thread creation');
   const healedThread = f.threads.find((th) => th.id === healed.experiments[legacyId].objective.thread);
   assert.ok(healedThread && healedThread.title.length <= 80, healedThread?.title);
+});
+
+test('new objective reuses the current thread by default, blocks duplicate binding on the same thread, falls back to a new thread on default/blank chats, and supports explicit new thread mode', async (t) => {
+  const f = await fixture(t);
+  // Default (omitted or threadMode: 'current'): reuses existing 'source' thread without calling threads.create.
+  const reused = await f.create({ threadMode: 'current' });
+  assert.equal(reused.thread, 'source');
+  assert.equal(f.threads.length, 1);
+  assert.equal((await f.read()).experiments[reused.id].objective.thread, 'source');
+  assert.ok(f.subscriptions.some((s) => s.threadId === 'source' && s.method === 'rsi.delivery'));
+  assert.ok(f.sends.some((s) => s.threadId === 'source' && s.wake?.catId === 'codex'));
+  // Trying to bind a second objective to the same 'source' thread fails cleanly and instructs choosing new thread.
+  const dup = await f.http('POST', { op: 'new', project: '', thread: 'source', threadMode: 'current', statement: 'Second objective', prepare: 'codex', evaluate: 'cat-b5ddoo9l', auto: 'none' });
+  assert.equal(dup.status, 400);
+  assert.match(dup.error, /已绑定其他评估项/);
+  // Choosing threadMode: 'new' on the same 'source' thread creates a dedicated new thread cleanly.
+  const dedicated = await f.create({ threadMode: 'new', statement: 'Dedicated thread objective' });
+  assert.notEqual(dedicated.thread, 'source');
+  assert.equal(f.threads.length, 2);
+  // On a blank/default chat (no existing thread) with an explicit project, threadMode: 'current' falls back to creating a new thread.
+  const fromBlank = await f.create({ project: f.project, thread: 'default', threadMode: 'current', statement: 'From blank chat' });
+  assert.notEqual(fromBlank.thread, 'default');
+  assert.notEqual(fromBlank.thread, 'source');
+  assert.equal(f.threads.length, 3);
 });

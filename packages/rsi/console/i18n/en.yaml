@@ -341,7 +341,11 @@ noObjectivesHint: This project has no objectives yet. Create one with what to im
 repairDialog: Fixing failures at night
 autoDialog: Directions decided at night
 newExp:
-  help: The plugin creates an objective thread and initializes it in seven steps, mentioning the member responsible for each step. Agents keep drafting; items needing your judgment appear on the objective page. The machine and time window are drafted in step 3 after the agent reviews the project.
+  help: Starts initialization in the current thread by default (or a new dedicated thread if chosen), moving through seven steps and @mentioning each responsible member. Agents keep drafting; items needing your judgment appear on the objective page. The machine and time window are drafted in step 3 after the agent reviews the project.
+  threadMode: Objective thread
+  threadModeHelp: Reuses the current thread by default; choose a new thread if this conversation already has an objective or you want a separate thread
+  threadCurrent: Use current thread (default)
+  threadNew: Create new thread
   statement: What to improve (one sentence)
   statementHint: e.g. raise arithmetic accuracy without the training collapsing
   prepare: Who initializes (reviews and drafts)

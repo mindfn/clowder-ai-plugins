@@ -220,7 +220,8 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   const d = structuredClone(fixture.templates[templateId]);
   const id = body.projectPath || summaryOf(state, templateId) ? `obj-${randomUUID()}` : templateId;
   const limits = stopOf(body).stop, stop = stopText(limits), name = clipTitle(body.statement, 48);
-  d.objective = { ...d.objective, id, name, projectId: project, ...(body.projectPath ? { projectPath: body.projectPath } : {}), state: 'preparing', thread: null, currentVersion: 'v1', round: 0, budget: { rounds: limits.maxCycles, used: 0 }, stop: limits, goal: { ...d.objective.goal, statement: body.statement, good: '', adoptWhen: '', stopWhen: stop } };
+  const reuseThread = body.projectPath && typeof body.reuseThread === 'string' && body.reuseThread ? body.reuseThread : null;
+  d.objective = { ...d.objective, id, name, projectId: project, ...(body.projectPath ? { projectPath: body.projectPath } : {}), state: 'preparing', thread: reuseThread, currentVersion: 'v1', round: 0, budget: { rounds: limits.maxCycles, used: 0 }, stop: limits, goal: { ...d.objective.goal, statement: body.statement, good: '', adoptWhen: '', stopWhen: stop } };
   d.rounds = []; d.messages = []; d.steps = {}; d.exec = {}; d.seq = 0;
   delete d.night;
   d.versions = [{ ...d.versions[0], current: true }];
@@ -256,7 +257,7 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   d.policy.auto = (autoKinds(body.auto) as { kinds: string[] }).kinds;
   d.prep.push({ id: `${id}-auto`, section: 'goal', title: '夜里可以自己定的方向', value: autoText(d.policy.auto), state: 'confirmed', neededFrom: null, mine: true, by: '你', at: now });
   state.experiments[id] = d;
-  state.objectives[project].push({ id, name, parent: null, state: 'preparing', mode: 'exp', trigger: '', running: null, cycle: null, prediction: null, locked: 0 });
+  state.objectives[project].push({ id, name, parent: null, state: 'preparing', mode: 'exp', trigger: '', running: null, cycle: null, prediction: null, locked: 0, ...(reuseThread ? { thread: reuseThread } : {}) });
   enqueue(state, d, 'createThread', { project, title: threadTitle(body.statement) });
   const who = (role: string) => mention(d.members.find((m) => m.role === role)!);
   message(state, d, now, `新评估项：${body.statement}`, `何时停：${stop}。\n\n${who('prepare')} 负责准备\n${who('evaluate')} 负责评估\n${who('iterate')} 负责治理执行（按你选的方向出新版本）\n\n初始化七步，按依赖往下做。`, 'goal');
