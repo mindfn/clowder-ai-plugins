@@ -723,6 +723,12 @@ exp:
   dagTitle: 初始化流程（点击节点查看详情）
   dagShowAll: 展开全部阶段
   dagShowOne: 仅看选中阶段
+  dagReady: 就绪 · 开始评估
+  dagReadyCanStart: 全部确认，可开始评估
+  dagReadyProgress: 完成进度
+  dagReadyProgressOf: "{0} / {1} 步已确认"
+  dagReadyRemain: 尚未完成
+  dagReadyRemainOf: 第 {0} 步
   dagStage:
     waiting: 等待
     running: 处理中

@@ -59,7 +59,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {
     const c = colOf(s.k, {});
     (cols[c] = cols[c] || []).push(s);
   });
-  const W = 132, H = 52, GX = 28, GY = 12, PAD = 8;
+  const W = 128, H = 52, GX = 24, GY = 12, PAD = 8;
   const maxRows = Math.max.apply(null, cols.map(function (list) { return list ? list.length : 0; }));
   const totalW = PAD * 2 + cols.length * W + Math.max(0, cols.length - 1) * GX;
   const totalH = PAD * 2 + maxRows * H + Math.max(0, maxRows - 1) * GY;
@@ -113,11 +113,11 @@ PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {
   }).join('') + '</div>';
   const nodes = steps.map(function (s) {
     const q = pos[s.k];
-    const title = p.title ? pvText(p.title, s, root) : (s.i + ' ' + s.k);
+    const title = s.terminal && p.terminalTitle ? pvText(p.terminalTitle, s, root) : p.title ? pvText(p.title, s, root) : (s.i + ' ' + s.k);
     const meta = [labelOf(s.stage), s.owner || ''].filter(Boolean).join(' · ');
-    const badge = s.needCount > 0 && s.stage === 'pending' ? '<span class="rsi-dag-badge">' + s.needCount + '</span>' : '';
+    const badge = !s.terminal && s.needCount > 0 && s.stage === 'pending' ? '<span class="rsi-dag-badge">' + s.needCount + '</span>' : '';
     const actAttr = p.act ? ' data-act="' + h(p.act) + '"' + pvArgs(p.args, s, root) : ' data-act="plugSet" data-plugin="official.rsi" data-k="initStep" data-v="' + h(s.k) + '"';
-    return '<button type="button" class="rsi-dag-node" data-step="' + h(s.k) + '" data-stage="' + h(s.stage) + '" aria-pressed="' + (s.selected ? 'true' : 'false') + '"' + actAttr +
+    return '<button type="button" class="rsi-dag-node' + (s.terminal ? ' terminal' : '') + '" data-step="' + h(s.k) + '" data-stage="' + h(s.stage) + '" aria-pressed="' + (s.selected ? 'true' : 'false') + '"' + actAttr +
       ' style="left:' + q.x + 'px;top:' + q.y + 'px;width:' + W + 'px;height:' + H + 'px">' +
       '<span class="rsi-dag-top"><i class="rsi-dag-dot"></i><span class="rsi-dag-name">' + h(title) + '</span>' + badge + '</span>' +
       '<span class="rsi-dag-sub">' + h(meta) + '</span></button>';

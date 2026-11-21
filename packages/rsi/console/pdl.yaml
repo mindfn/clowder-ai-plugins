@@ -568,11 +568,12 @@ views:
           - type: component
             use: plugin:official.rsi/rsiInitDag
             props:
-              from: $.exp.prep.steps
+              from: $.exp.prep.dagNodes
               act: plugSet
               args:
                 k: initStep
                 v: "@k"
+              terminalTitle: t:rsi.exp.dagReady
               title:
                 t: rsi.exp.initStep
                 args:
@@ -586,6 +587,69 @@ views:
                 pending: t:rsi.exp.dagStage.pending
                 done: t:rsi.exp.dagStage.done
                 error: t:rsi.exp.dagStage.error
+          - type: each
+            from:
+              - {}
+            when: $.exp.prep.ready.selected
+            blocks:
+              - type: text
+                parts:
+                  - text: t:rsi.exp.dagReady
+                    strong: true
+                  - status:
+                      of: $.exp.prep.ready.stage
+                      map:
+                        done:
+                          tone: ok
+                          text: t:rsi.exp.dagStage.done
+                        pending:
+                          tone: warn
+                          text: t:rsi.exp.dagReadyCanStart
+                        _:
+                          tone: ""
+                          text: t:rsi.exp.dagStage.waiting
+                actions:
+                  - type: button
+                    primary: true
+                    label: t:rsi.life.start
+                    act: plugin
+                    args:
+                      request: life
+                      op: start
+                    when: $.exp.prep.ready.canStart
+                    disabled: $.pending
+                  - type: button
+                    label: t:rsi.exp.pol.editSchedule
+                    act: dialog
+                    args:
+                      kind: rsiSchedule
+                      objective: $.exp.id
+                      mode: $.exp.policy.schedule.form.mode
+                      dateFrom: $.exp.policy.schedule.form.dateFrom
+                      dateTo: $.exp.policy.schedule.form.dateTo
+                      start: $.exp.policy.schedule.form.start
+                      end: $.exp.policy.schedule.form.end
+                      custom: $.exp.policy.schedule.form.custom
+              - type: kv
+                from:
+                  - k: t:rsi.exp.dagReadyProgress
+                    v:
+                      t: rsi.exp.dagReadyProgressOf
+                      args:
+                        - $.exp.prep.ready.doneCount
+                        - $.exp.prep.ready.totalCount
+                  - k: t:rsi.exp.dagReadyRemain
+                    v:
+                      t: rsi.exp.dagReadyRemainOf
+                      args:
+                        - $.exp.prep.ready.remaining
+                    when: $.exp.prep.ready.remaining
+                  - k: t:rsi.exp.pol.schedule
+                    v: $.exp.prep.ready.schedule
+                    when: $.exp.prep.ready.schedule
+                  - k: t:rsi.exp.pol.schedule
+                    v: t:rsi.exp.pol.scheduleUnset
+                    when: "!$.exp.prep.ready.schedule"
           - type: each
             from: $.exp.prep.visibleSteps
             blocks:
@@ -4802,11 +4866,12 @@ views:
       - type: component
         use: plugin:official.rsi/rsiInitDag
         props:
-          from: $.exp.prep.steps
+          from: $.exp.prep.dagNodes
           act: plugSet
           args:
             k: initStep
             v: "@k"
+          terminalTitle: t:rsi.exp.dagReady
           title:
             t: rsi.exp.initStep
             args:
@@ -4820,6 +4885,44 @@ views:
             pending: t:rsi.exp.dagStage.pending
             done: t:rsi.exp.dagStage.done
             error: t:rsi.exp.dagStage.error
+      - type: each
+        from:
+          - {}
+        when: $.exp.prep.ready.selected
+        blocks:
+          - type: text
+            parts:
+              - text: t:rsi.exp.dagReady
+                strong: true
+              - status:
+                  of: $.exp.prep.ready.stage
+                  map:
+                    done:
+                      tone: ok
+                      text: t:rsi.exp.dagStage.done
+                    pending:
+                      tone: warn
+                      text: t:rsi.exp.dagReadyCanStart
+                    _:
+                      tone: ""
+                      text: t:rsi.exp.dagStage.waiting
+          - type: kv
+            from:
+              - k: t:rsi.exp.dagReadyProgress
+                v:
+                  t: rsi.exp.dagReadyProgressOf
+                  args:
+                    - $.exp.prep.ready.doneCount
+                    - $.exp.prep.ready.totalCount
+              - k: t:rsi.exp.dagReadyRemain
+                v:
+                  t: rsi.exp.dagReadyRemainOf
+                  args:
+                    - $.exp.prep.ready.remaining
+                when: $.exp.prep.ready.remaining
+              - k: t:rsi.exp.pol.schedule
+                v: $.exp.prep.ready.schedule
+                when: $.exp.prep.ready.schedule
       - type: each
         from: $.exp.prep.visibleSteps
         blocks:

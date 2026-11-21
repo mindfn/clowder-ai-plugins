@@ -38,6 +38,8 @@
 .rsi-dag-node[data-stage="pending"]{border-color:color-mix(in srgb,var(--warn) 55%,var(--line-strong))}
 .rsi-dag-node[data-stage="error"]{border-color:color-mix(in srgb,var(--danger) 60%,var(--line-strong));background:color-mix(in srgb,var(--danger) 6%,var(--bg-page))}
 .rsi-dag-node[data-stage="waiting"]{opacity:.82}
+.rsi-dag-node.terminal{border-radius:var(--r-l);border-style:dashed}
+.rsi-dag-node.terminal[data-stage="done"],.rsi-dag-node.terminal[aria-pressed="true"]{border-style:solid}
 .rsi-dag-top{display:flex;align-items:center;gap:var(--sp-xs);min-width:0}
 .rsi-dag-name{flex:1;min-width:0;overflow:clip;white-space:nowrap;text-overflow:ellipsis;font-size:var(--fs-s);font-weight:500;color:var(--fg-strong)}
 .rsi-dag-sub{overflow:clip;white-space:nowrap;text-overflow:ellipsis;font-size:var(--fs-xs);color:var(--fg-muted);padding-inline-start:calc(var(--dot) + var(--sp-xs))}

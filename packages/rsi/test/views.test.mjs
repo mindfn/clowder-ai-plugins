@@ -378,4 +378,13 @@ test('initialization prep steps expose DAG depKeys, 5 normalized stages, auto-fo
   const expAll = viewModel(state, 'exp', { project, pick: `obj:${id}`, initStep: 'all' });
   assert.equal(expAll.prep.showAll, true);
   assert.equal(expAll.prep.steps.every((s) => s.visible), true);
+  // Terminal convergence node merges all leaf steps (design, feedback, baseline)
+  const readyNode = expAll.prep.dagNodes.find((n) => n.k === 'ready');
+  assert.equal(readyNode.terminal, true);
+  assert.deepEqual(readyNode.depKeys, ['design', 'feedback', 'baseline']);
+  assert.equal(readyNode.stage, 'waiting');
+  const expReady = viewModel(state, 'exp', { project, pick: `obj:${id}`, initStep: 'ready' });
+  assert.equal(expReady.prep.activeKey, 'ready');
+  assert.equal(expReady.prep.ready.selected, true);
+  assert.equal(expReady.prep.visibleSteps.length, 0);
 });

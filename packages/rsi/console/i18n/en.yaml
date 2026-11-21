@@ -723,6 +723,12 @@ exp:
   dagTitle: Initialization flow (click a node to inspect)
   dagShowAll: Show all steps
   dagShowOne: Show selected only
+  dagReady: Ready · Start
+  dagReadyCanStart: All confirmed, ready to start
+  dagReadyProgress: Progress
+  dagReadyProgressOf: "{0} / {1} steps confirmed"
+  dagReadyRemain: Remaining
+  dagReadyRemainOf: Step {0}
   dagStage:
     waiting: Waiting
     running: Running
