@@ -50,11 +50,15 @@ evalResult:
   baseline: Baseline
   proposal: Change proposed
   switch: New version needed
+  skipped: Skipped
+  waiting: Pending
 discussResult:
   proposing: In progress
   agree: Agreed
   split: Split
   count: "{0} directions"
+  skipped: Skipped
+  waiting: Pending
 govResult:
   stalled: No result submitted
   evolve: Evolve
@@ -69,6 +73,7 @@ govResult:
   same: Keep the plan
   execution: Fix execution
   repairing: Repairing
+  waiting: Pending
 applyResult:
   done: Deployed
   failed: Environment failures
@@ -788,6 +793,12 @@ exp:
   stageOwnerArchived: Actual member (archived)
   stageOwnerUpcoming: Expected member (upcoming; follows Execution stages)
   evalWaiting: "Waiting for {0} to submit the cycle evaluation; if failed or stalled, swap the member under Execution stages and re-trigger."
+  evalSkipped: "Skipped evaluation because this cycle entered execution repair after run failures."
+  evalPending: "Waiting for collection to finish before evaluation."
+  evalMetrics: "Cycle evaluation metrics ({0})"
+  discSkipped: "Skipped discussion because this cycle entered execution repair after run failures."
+  discPending: "Waiting for evaluation to finish before discussion."
+  govPending: "Waiting for prior stages to finish before governance."
   retryStage: Re-trigger
   sec:
     manage: Analysis & Management

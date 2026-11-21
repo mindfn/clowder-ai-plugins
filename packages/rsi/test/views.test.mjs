@@ -231,8 +231,9 @@ test('the discussion is its own stage, reachable while discussion members still 
   // Still proposing: the page opens on this cycle's discussion, the stepper says how many proposed, and there is no decision yet.
   let vm = x.view();
   assert.deepEqual([vm.step, vm.next.k, vm.next.go.endsWith('/v1>c1.discuss')], ['discuss', 'analyzing', true]);
-  assert.deepEqual(x.steps(vm).map((s) => s.k), ['apply', 'collect', 'eval', 'discuss']);
-  assert.deepEqual((({ result, done, asked, missing }) => ({ result, done, asked, missing }))(x.steps(vm).at(-1)), { result: 'proposing', done: 1, asked: 4, missing: 0 });
+  assert.deepEqual(x.steps(vm).map((s) => s.k), ['apply', 'collect', 'eval', 'discuss', 'gov']);
+  assert.deepEqual((({ result, done, asked, missing }) => ({ result, done, asked, missing }))(x.steps(vm).find((s) => s.k === 'discuss')), { result: 'proposing', done: 1, asked: 4, missing: 0 });
+  assert.equal(x.steps(vm).find((s) => s.k === 'gov').result, 'waiting');
   assert.deepEqual([vm.cycle.discussion.waiting.map((m) => m.name), vm.cycle.gov.ask], [['小狸', '乙', '丙'], '']);
   // Nothing beats the control, so the stepper shows no difference.
   assert.equal(x.steps(vm).find((s) => s.k === 'eval').delta, null);
@@ -555,15 +556,29 @@ test('repaired and repairing cycles expose governance step and repair decision w
   const v1Gov = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v1>c1.gov` });
   const v1Row = v1Gov.versions.find((v) => v.id === 'v1');
   const v2Row = v1Gov.versions.find((v) => v.id === 'v2');
-  assert.equal(v1Row.steps.find((s) => s.k === 'gov')?.result, 'execution');
-  assert.equal(v2Row.steps.find((s) => s.k === 'gov')?.result, 'repairing');
+  assert.deepEqual(v1Row.steps.map((s) => [s.k, s.result]), [['apply', 'failed'], ['collect', undefined], ['eval', 'skipped'], ['gov', 'execution']]);
+  assert.deepEqual(v2Row.steps.map((s) => [s.k, s.result]), [['apply', 'failed'], ['collect', undefined], ['eval', 'skipped'], ['gov', 'repairing']]);
   assert.equal(v1Gov.cycle.decision.pick, 'repair');
   assert.match(v1Gov.cycle.decision.note, /v1 版本运行失败.*修复为 v2：修复 NPU 绑定逻辑/);
   assert.equal(v1Gov.cycle.gov.led.k, 'cycle');
   assert.equal(v1Gov.cycle.gov.led.version, 'v2');
 
+  const v1Eval = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v1>c1.eval` });
+  assert.equal(v1Eval.cycle.evalState, 'skipped');
+  assert.equal(v1Eval.cycle.evalMetrics.version, 'E1');
+  assert.equal(v1Eval.cycle.evalMetrics.items[0].id, 'qps');
+
   const v2Gov = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v2>c1.gov` });
   assert.equal(v2Gov.cycle.decision.pick, 'repairing');
   assert.equal(v2Gov.cycle.gov.led.k, 'version');
   assert.equal(v2Gov.cycle.gov.led.title, '修第 2 周期的运行失败');
+
+  // A running cycle still renders its complete pipeline with waiting future steps, while focusing collect
+  d.rounds[1].state = 'running';
+  d.rounds[1].runs[0].state = 'running';
+  delete d.versionRequest;
+  const runningVm = viewModel(state, 'exp', { project, pick: `obj:${id}` });
+  const runningRow = runningVm.versions.find((v) => v.id === 'v2');
+  assert.equal(runningVm.step, 'collect');
+  assert.deepEqual(runningRow.steps.map((s) => [s.k, s.result]), [['apply', 'failed'], ['collect', undefined], ['eval', 'waiting'], ['gov', 'waiting']]);
 });

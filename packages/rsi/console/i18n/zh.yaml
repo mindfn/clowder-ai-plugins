@@ -50,11 +50,15 @@ evalResult:
   baseline: 基线
   proposal: 提出修改
   switch: 需要换版
+  skipped: 跳过
+  waiting: 待执行
 discussResult:
   proposing: 讨论中
   agree: 一致
   split: 有分歧
   count: "{0} 个方向"
+  skipped: 跳过
+  waiting: 待执行
 govResult:
   stalled: 没回写
   evolve: 演进
@@ -69,6 +73,7 @@ govResult:
   same: 照旧
   execution: 修执行
   repairing: 修复中
+  waiting: 待执行
 applyResult:
   done: 已部署
   failed: 有环境失败
@@ -788,6 +793,12 @@ exp:
   stageOwnerArchived: 实际执行成员（已归档）
   stageOwnerUpcoming: 预计执行成员（未执行，改执行成员即时生效）
   evalWaiting: "正在等待 {0} 提交本周期评估结论；如已失败或卡住，可在「分析与管理 → 执行阶段」换人后点重新触发。"
+  evalSkipped: "本周期因运行失败进入执行修复，已跳过评估。"
+  evalPending: "待采集完成后进入评估。"
+  evalMetrics: "本周期评估指标（{0}）"
+  discSkipped: "本周期因运行失败进入执行修复，已跳过方案讨论。"
+  discPending: "待评估完成后进入方案讨论。"
+  govPending: "待前序阶段完成后进入治理决策。"
   retryStage: 重新触发
   sec:
     manage: 分析与管理

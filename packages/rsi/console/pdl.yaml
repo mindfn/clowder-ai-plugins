@@ -1508,10 +1508,19 @@ views:
                     map:
                       _: false
                       eval: true
-                  - $.exp.cycle.evaluating
+                  - "!$.exp.cycle.report"
                 blocks:
+                  - type: text
+                    variant: meta
+                    when: $.exp.cycle.stageOwners.eval.name
+                    text:
+                      t: rsi.exp.stageOwnerOf
+                      args:
+                        - t: rsi.exp.stageOwnerUpcoming
+                        - $.exp.cycle.stageOwners.eval.name
                   - type: notice
                     tone: info
+                    when: $.exp.cycle.evaluating
                     text:
                       t: rsi.exp.evalWaiting
                       args:
@@ -1523,6 +1532,43 @@ views:
                       args:
                         request: evalAgain
                       disabled: $.pending
+                  - type: notice
+                    tone: info
+                    when: "!$.exp.cycle.evaluating"
+                    text:
+                      of: $.exp.cycle.evalState
+                      map:
+                        skipped: t:rsi.exp.evalSkipped
+                        _: t:rsi.exp.evalPending
+                  - type: list
+                    id: rsi-exp-eval-metrics
+                    label:
+                      t: rsi.exp.evalMetrics
+                      args:
+                        - $.exp.cycle.evalMetrics.version
+                    from: $.exp.cycle.evalMetrics.items
+                    optional: true
+                    row:
+                      layout: two
+                      key: "@id"
+                      title: "@name"
+                      inline:
+                        - chip: t:rsi.metric.locked
+                          when: "@locked"
+                        - chip: t:rsi.metric.guard
+                          when: "@guard"
+                      sub: "@how"
+                      cols:
+                        - v:
+                            text:
+                              t: rsi.exp.dir
+                              args:
+                                - "@dir"
+                          w: label
+                        - v:
+                            text: "@line"
+                          w: label
+                          when: "@line"
               - type: each
                 from:
                   - {}
@@ -1915,6 +1961,31 @@ views:
                     map:
                       _: false
                       discuss: true
+                  - "!$.exp.cycle.discussion"
+                blocks:
+                  - type: text
+                    variant: meta
+                    when: $.exp.cycle.stageOwners.discuss.name
+                    text:
+                      t: rsi.exp.stageOwnerOf
+                      args:
+                        - t: rsi.exp.stageOwnerUpcoming
+                        - $.exp.cycle.stageOwners.discuss.name
+                  - type: notice
+                    tone: info
+                    text:
+                      of: $.exp.cycle.discussState
+                      map:
+                        skipped: t:rsi.exp.discSkipped
+                        _: t:rsi.exp.discPending
+              - type: each
+                from:
+                  - {}
+                when:
+                  - of: $.exp.step
+                    map:
+                      _: false
+                      discuss: true
                   - $.exp.cycle.discussion
                 blocks:
                   - type: notice
@@ -2004,6 +2075,27 @@ views:
                           - "@name"
                           - "@model"
                     row: rsi.direction
+              - type: each
+                from:
+                  - {}
+                when:
+                  - of: $.exp.step
+                    map:
+                      _: false
+                      gov: true
+                  - "!$.exp.cycle.gov"
+                blocks:
+                  - type: text
+                    variant: meta
+                    when: $.exp.cycle.stageOwners.gov.name
+                    text:
+                      t: rsi.exp.stageOwnerOf
+                      args:
+                        - t: rsi.exp.stageOwnerUpcoming
+                        - $.exp.cycle.stageOwners.gov.name
+                  - type: notice
+                    tone: info
+                    text: t:rsi.exp.govPending
               - type: each
                 from:
                   - {}

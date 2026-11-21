@@ -185,7 +185,7 @@ function home(): any {
 function rsiTree(tree: any, rows: any, def: any): any {
   const parts = String(S[tree] || '').split('>'), has = rows.some(function (r: any): any { return r.key === parts[0]; });
   const rowKey = has ? parts[0] : def.row, m = /^c(\d+)\./.exec(parts[1] || '');
-  const stepOf = function (c: any): any { return 'c' + c.n + '.' + (c.eval ? 'eval' : 'collect'); };
+  const stepOf = function (c: any): any { return 'c' + c.n + '.' + (c.eval && c.eval !== 'waiting' && c.eval !== 'skipped' ? 'eval' : 'collect'); };
   const out = rows.map(function (r: any, i: any): any {
     const sel = r.key === rowKey, vis = (sel && m && r.cycles.find(function (c: any): any { return c.n === +m[1]; })) || r.cycles[r.cycles.length - 1], steps: Data[] = [];
     if (vis && vis.apply) steps.push({ k: 'apply', n: vis.n, result: vis.apply, step: 'c' + vis.n + '.apply' });
@@ -196,7 +196,9 @@ function rsiTree(tree: any, rows: any, def: any): any {
     else if (r.gov) steps.push({ k: 'gov', result: r.gov, step: 'gov' });
     return { r: r, sel: sel, steps: steps, pick: r.cycles.length > 1 ? { id: 'rsi-cyc-' + tree + '-' + i, tree: tree, value: r.key + '>' + stepOf(vis), options: r.cycles.map(function (c: any): any { return { v: r.key + '>' + stepOf(c), n: c.n, total: r.cycles.length }; }) } : null };
   });
-  const row = out.find(function (x: any): any { return x.sel; }), stepKey = has && row && (parts[1] === 'node' || row.steps.some(function (x: any): any { return x.step === parts[1]; })) ? parts[1] : row && row.steps.length ? row.steps[row.steps.length - 1].step : 'node';
+  const row = out.find(function (x: any): any { return x.sel; });
+  const activeStep = row && ([...row.steps].reverse().find(function (x: any): any { return x.result !== 'waiting'; }) || row.steps[row.steps.length - 1]);
+  const stepKey = has && row && (parts[1] === 'node' || row.steps.some(function (x: any): any { return x.step === parts[1]; })) ? parts[1] : activeStep ? activeStep.step : 'node';
   return { rowKey: rowKey, stepKey: stepKey, rows: out.map(function (x: any): any {
     return Object.assign({}, x.r.data, { key: x.r.key, parentKey: x.r.parent, selected: x.sel, nodeSelected: x.sel && stepKey === 'node', pick: x.r.key + '>node', cyclePick: x.pick,
       steps: x.steps.map(function (y: any): any { return Object.assign({}, y, { pick: x.r.key + '>' + y.step, selected: x.sel && y.step === stepKey }); }) });
@@ -412,13 +414,26 @@ function exp(): any {
         : o.stopReason && o.stopReason.cycle === r.n ? { k: 'stop', text: o.stopReason.text } : { k: 'later' } };
   };
   const focus = o.projectPath && rounds.find((r: Data) => waiting(r) || r.analysis?.waiting.length || ['running', 'evaluating', 'repairing'].includes(r.state));
+  const hasAnalysts = d.members.some((m: Data) => m.role === 'analyze' && m.catId);
+  const evalStateOf = (r: Data) => r.report ? 'done' : r.state === 'evaluating' ? 'pending' : (r.state === 'repaired' || r.state === 'repairing') ? 'skipped' : 'waiting';
+  const evalMetricsOf = (r: Data) => {
+    const m = r.metrics || d.metrics || { version: '', items: [] };
+    return {
+      version: m.version,
+      items: (m.items || []).map((it: Data) => Object.assign({}, it, {
+        line: it.line || (it.guard && typeof it.threshold === 'number' ? `${it.dir === 'up' ? '≥' : '≤'} ${it.threshold}${it.unit ? ' ' + it.unit : ''}` : ''),
+      })),
+    };
+  };
   const tree = rsiTree('rsiSelO', d.versions.map(function (v: any): any {
     return { key: key(v.id), parent: v.parent && key(v.parent),
       cycles: rounds.filter(function (r: any): any { return r.version === v.id; }).map(function (r: any): any {
-        const live = r.state === 'running', disc = r.report && discussionOf(r);
+        const live = r.state === 'running', disc = r.report && discussionOf(r), bypassed = r.state === 'repaired' || r.state === 'repairing';
         return { n: r.k, apply: r.runs.some(function (u: any): any { return u.error && u.error.kind === 'env'; }) ? 'failed' : 'done', collect: true, live: live,
-          done: live ? r.runs.filter((u: Data) => u.state === 'done' || u.state === 'failed').length : null, total: r.runs.length, eval: r.report ? r.report.verdict : (r.state === 'evaluating' ? 'pending' : null), delta: r.report && compareOf(r).lead,
-          discuss: disc && { result: disc.status, count: disc.count, done: disc.done, asked: disc.asked, missing: disc.missing.length }, gov: govOf(r) };
+          done: live ? r.runs.filter((u: Data) => u.state === 'done' || u.state === 'failed').length : null, total: r.runs.length,
+          eval: r.report ? r.report.verdict : evalStateOf(r), delta: r.report && compareOf(r).lead,
+          discuss: disc ? { result: disc.status, count: disc.count, done: disc.done, asked: disc.asked, missing: disc.missing.length } : (hasAnalysts ? { result: bypassed ? 'skipped' : 'waiting', count: 0 } : null),
+          gov: govOf(r) || 'waiting' };
       }),
       data: Object.assign({}, v, { nodeState: v.current ? 'current' : v.status === 'candidate' ? 'candidate' : '' }) };
   }), { row: key(focus ? focus.version : o.currentVersion) });
@@ -631,7 +646,7 @@ function exp(): any {
     trend: rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, value: Number(best(x).mean.toPrecision(4)) }; }),
     trendMetric: d.metrics.items.find((m: Data) => m.id === main).name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.filter(function (p: any): any { return p.result !== 'unresolved'; }).length },
     versions: tree.rows, ver: ver, step: m ? m[2] : 'node', candidate: d.candidate ? d.candidate.version : null,
-    cycle: r && Object.assign({}, r, { waiting: waiting(r), evaluating: r.state === 'evaluating', groups: groupsOf(r), main: mainOf(r),
+    cycle: r && Object.assign({}, r, { waiting: waiting(r), evaluating: r.state === 'evaluating', evalState: evalStateOf(r), discussState: (r.state === 'repaired' || r.state === 'repairing') ? 'skipped' : 'waiting', evalMetrics: evalMetricsOf(r), groups: groupsOf(r), main: mainOf(r),
       stageOwners: stageOwnersOf(r),
       runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { value: num(u.metrics[mainOf(r).id]), durationSeconds: u.start ? Math.round(((u.end || Date.now()) - u.start) / 1000) : null, metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })), groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),
       notAssessed: r.report && RSI_LAYERS.filter(function (l: any): any { return r.report.attribution.assessedLayers.indexOf(l) < 0; }),
