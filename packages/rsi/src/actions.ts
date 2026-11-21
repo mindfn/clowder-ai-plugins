@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { askEvaluation, controlGroup, finishAnalysis, requestVersion, runCycle } from './cycles.js';
-import { hasValidSchedule, parseMaxRuns, parseScheduleText, scheduleOf, scheduleSummary, timeRange } from './schedule.js';
+import { formatPolicy, hasValidSchedule, parseMaxRuns, parseScheduleText, policiesOf, scheduleOf, scheduleSummary, timeRange, validatePolicy } from './schedule.js';
 import { summaryOf, objectiveData } from './data.js';
 import { clipTitle, enqueue, kick, mention, message, refreshMembers, rsiExpNew, rsiExpReady, rsiExpStaleFrom, setMember, stopOf, stopText, syncObjective, repairCount, repairText, REPAIR_DEFAULT, prepSettled, AUTO, autoKinds, autoKey, autoText } from './init.js';
 import type { Data, Experiment, RsiState, Section } from './types.js';
@@ -127,6 +127,154 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       const summary = scheduleSummary(d.policy.schedule);
       o.trigger = String(timeRange(summary) || '');
       message(state, d, now, '你改了执行时段', summary);
+      syncObjective(state, d);
+      return { ok: true };
+    }
+    case 'policyEditOpen': {
+      if (!d || !o) return { error: 'Experiment not found', status: 404 };
+      const existingList = policiesOf(d.policy.schedule);
+      const editId = typeof body.policyId === 'string' && body.policyId.trim() ? body.policyId.trim() : '';
+      const found = editId ? existingList.find((p) => p.id === editId) : null;
+      const todayDate = new Date(now);
+      const todayYmd = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}`;
+      const anchorTs = found?.dateFrom ? new Date(`${found.dateFrom}T12:00:00`).getTime() : now;
+      d.policyDraft = found
+        ? {
+            id: found.id,
+            isEdit: true,
+            kind: found.kind,
+            days: found.days ? [...found.days] : [1, 2, 3, 4, 5],
+            dateFrom: found.dateFrom || '',
+            dateTo: found.dateTo || '',
+            start: found.start || '',
+            end: found.end || '',
+            excludeDays: found.excludeDays ? [...found.excludeDays] : [],
+            excludeFrom: found.excludeFrom || '',
+            excludeTo: found.excludeTo || '',
+            calAnchor: Number.isFinite(anchorTs) ? anchorTs : now,
+            calStep: 'from',
+          }
+        : {
+            id: '',
+            isEdit: false,
+            kind: 'weekly',
+            days: [1, 2, 3, 4, 5],
+            dateFrom: '',
+            dateTo: '',
+            start: '20:00',
+            end: '08:00',
+            excludeDays: [],
+            excludeFrom: '',
+            excludeTo: '',
+            calAnchor: now,
+            calStep: 'from',
+            todayYmd,
+          };
+      return { ok: true, acts: [{ act: 'dialog', args: { kind: 'rsiExecPolicy', objective: d.objective.id } }] };
+    }
+    case 'policyDraft': {
+      if (!d || !o) return { error: 'Experiment not found', status: 404 };
+      const draft: Data = d.policyDraft || (d.policyDraft = { id: '', isEdit: false, kind: 'weekly', days: [1, 2, 3, 4, 5], dateFrom: '', dateTo: '', start: '20:00', end: '08:00', excludeDays: [], excludeFrom: '', excludeTo: '', calAnchor: now, calStep: 'from' });
+      const field = String(body.field || '');
+      const val = body.v ?? body.value;
+      const toYmd = (ts: number) => {
+        const dt = new Date(ts);
+        return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+      };
+      if (field === 'kind' && typeof val === 'string') {
+        draft.kind = val;
+        if (val === 'fixed' && !draft.dateFrom) { const y = toYmd(now); draft.dateFrom = y; draft.dateTo = y; }
+        if (val === 'weekly' && (!Array.isArray(draft.days) || !draft.days.length)) draft.days = [1, 2, 3, 4, 5];
+        if (val === 'continuous') { draft.start = ''; draft.end = ''; }
+      } else if (field === 'dayToggle') {
+        const day = Number(val);
+        if (Number.isInteger(day) && day >= 0 && day <= 6) {
+          const cur: number[] = Array.isArray(draft.days) ? [...draft.days] : [];
+          draft.days = cur.includes(day) ? cur.filter((x) => x !== day) : [...cur, day].sort((a, b) => a - b);
+        }
+      } else if (field === 'excludeDayToggle') {
+        const day = Number(val);
+        if (Number.isInteger(day) && day >= 0 && day <= 6) {
+          const cur: number[] = Array.isArray(draft.excludeDays) ? [...draft.excludeDays] : [];
+          draft.excludeDays = cur.includes(day) ? cur.filter((x) => x !== day) : [...cur, day].sort((a, b) => a - b);
+        }
+      } else if (field === 'calNav') {
+        const base = new Date(Number(draft.calAnchor) || now);
+        if (val === 'prev') draft.calAnchor = new Date(base.getFullYear(), base.getMonth() - 1, 15, 12).getTime();
+        else if (val === 'next') draft.calAnchor = new Date(base.getFullYear(), base.getMonth() + 1, 15, 12).getTime();
+        else draft.calAnchor = now;
+      } else if (field === 'calPick') {
+        const ts = Number(val);
+        if (Number.isFinite(ts)) {
+          const ymd = toYmd(ts);
+          draft.calAnchor = ts;
+          if (draft.kind === 'fixed') {
+            draft.dateFrom = ymd;
+            draft.dateTo = ymd;
+          } else if (draft.kind === 'range') {
+            if (!draft.dateFrom || draft.dateTo || draft.calStep === 'from') {
+              draft.dateFrom = ymd;
+              draft.dateTo = '';
+              draft.calStep = 'to';
+            } else {
+              if (ymd < draft.dateFrom) { draft.dateTo = draft.dateFrom; draft.dateFrom = ymd; }
+              else draft.dateTo = ymd;
+              draft.calStep = 'from';
+            }
+          }
+        }
+      } else if (field === 'timePreset') {
+        if (val === 'all') { draft.start = ''; draft.end = ''; }
+        else if (val === 'day') { draft.start = '09:00'; draft.end = '18:00'; }
+        else if (val === 'night') { draft.start = '20:00'; draft.end = '08:00'; }
+      } else if (['dateFrom', 'dateTo', 'start', 'end', 'excludeFrom', 'excludeTo'].includes(field)) {
+        draft[field] = typeof val === 'string' ? val.trim() : '';
+        if (field === 'dateFrom' && draft.kind === 'fixed') draft.dateTo = draft.dateFrom;
+      }
+      return { ok: true };
+    }
+    case 'policySave': {
+      if (!d || !o) return { error: 'Experiment not found', status: 404 };
+      const draft: Data = d.policyDraft || body;
+      const existing = policiesOf(d.policy.schedule);
+      const checked = validatePolicy(draft, `pol-${randomUUID().slice(0, 8)}`);
+      if ('error' in checked) return checked;
+      const nextList = draft.isEdit && draft.id
+        ? existing.map((p) => (p.id === draft.id ? checked.policy : p))
+        : [...existing, checked.policy];
+      const maxRuns = d.policy.schedule?.maxRuns ?? null;
+      d.policy.schedule = {
+        mode: 'rules',
+        policies: nextList,
+        ...(maxRuns ? { maxRuns } : {}),
+        window: '',
+      };
+      d.policy.schedule.window = scheduleSummary(d.policy.schedule);
+      delete d.policyDraft;
+      const summary = d.policy.schedule.window;
+      o.trigger = String(timeRange(summary) || '');
+      message(state, d, now, draft.isEdit ? '你更新了执行策略' : '你添加了执行策略', formatPolicy(checked.policy).title);
+      syncObjective(state, d);
+      return { ok: true };
+    }
+    case 'policyDelete': {
+      if (!d || !o) return { error: 'Experiment not found', status: 404 };
+      const targetId = typeof (body.policyId ?? body.id) === 'string' ? String(body.policyId ?? body.id) : '';
+      const existing = policiesOf(d.policy.schedule);
+      const removed = existing.find((p) => p.id === targetId);
+      if (!removed) return { error: 'Policy not found', status: 404 };
+      const nextList = existing.filter((p) => p.id !== targetId);
+      const maxRuns = d.policy.schedule?.maxRuns ?? null;
+      d.policy.schedule = {
+        mode: 'rules',
+        policies: nextList,
+        ...(maxRuns ? { maxRuns } : {}),
+        window: '',
+      };
+      d.policy.schedule.window = scheduleSummary(d.policy.schedule);
+      delete d.policyDraft;
+      o.trigger = String(timeRange(d.policy.schedule.window) || '');
+      message(state, d, now, '你删除了一条执行策略', formatPolicy(removed).title);
       syncObjective(state, d);
       return { ok: true };
     }

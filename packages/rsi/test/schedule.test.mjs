@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createFixtures } from '../dist/fixtures.js';
 import { act } from '../dist/actions.js';
 import { viewModel } from '../dist/views.js';
-import { hasValidSchedule, insideWindow, maxRunsText, parseScheduleText, scheduleForm, scheduleOf, scheduleSummary, withinWindowLimit } from '../dist/schedule.js';
+import { hasValidSchedule, insideWindow, maxRunsText, nextScheduledRuns, parseScheduleText, scheduleForm, scheduleOf, scheduleSummary, validatePolicy, withinWindowLimit } from '../dist/schedule.js';
 
 const local = (y, m, d, hh, mm = 0) => new Date(y, m - 1, d, hh, mm, 0, 0).getTime();
 
@@ -90,4 +90,74 @@ test('op: schedule updates an objective schedule anytime, refreshes views and si
   assert.equal(withinWindowLimit(capped.schedule, [{ scheduled: true, start: now - 2000 }, { scheduled: true, start: now - 1000 }], now), false);
   assert.equal(withinWindowLimit(scheduleOf({ mode: 'anytime', maxRuns: '' }).schedule, [{ scheduled: true, start: now - 2000 }, { scheduled: true, start: now - 1000 }], now), true);
   assert.ok('error' in scheduleOf({ mode: 'anytime', maxRuns: '-1' }));
+});
+
+test('multi-policy execution strategy supports fixed/daily/weekly/range/continuous, excludes, calendar range picking, echo-edit, and next-N preview', () => {
+  const now = local(2026, 11, 20, 10, 0); // Friday 2026-11-20 10:00
+  const state = createFixtures(now).state;
+  const project = '/work/ascend-bge-pol';
+  state.projects.unshift({ id: project, name: 'ascend-bge-pol', projectPath: project, exp: true, hostKinds: ['mcp'] });
+  state.objectives[project] = []; state.groups[project] = []; state.units[project] = []; state.library[project] = [];
+  assert.equal(act(state, { op: 'new', statement: '多策略测试', projectPath: project, prepare: 'codex', evaluate: 'kimi', cats: [] }, { project }, now).ok, true);
+  const id = state.objectives[project][0].id;
+
+  // 1. Open new policy dialog -> weekly Mon-Fri 09:00-18:00, exclude Wednesday (3) and 2026-11-24..2026-11-25
+  const opened = act(state, { op: 'policyEditOpen', objective: id }, { project }, now);
+  assert.equal(opened.ok, true);
+  assert.equal(opened.acts[0].args.kind, 'rsiExecPolicy');
+  act(state, { op: 'policyDraft', objective: id, field: 'kind', v: 'weekly' }, { project }, now);
+  act(state, { op: 'policyDraft', objective: id, field: 'timePreset', v: 'day' }, { project }, now);
+  act(state, { op: 'policyDraft', objective: id, field: 'excludeDayToggle', v: '3' }, { project }, now);
+  act(state, { op: 'policyDraft', objective: id, field: 'excludeFrom', v: '2026-11-24' }, { project }, now);
+  act(state, { op: 'policyDraft', objective: id, field: 'excludeTo', v: '2026-11-25' }, { project }, now);
+  const saved1 = act(state, { op: 'policySave', objective: id }, { project }, now);
+  assert.equal(saved1.ok, true);
+
+  // 2. Add a second policy: calendar date range 2026-11-21 ~ 2026-11-22 all day (weekend sprint)
+  act(state, { op: 'policyEditOpen', objective: id }, { project }, now);
+  act(state, { op: 'policyDraft', objective: id, field: 'kind', v: 'range' }, { project }, now);
+  act(state, { op: 'policyDraft', objective: id, field: 'calPick', v: local(2026, 11, 21, 12, 0) }, { project }, now);
+  act(state, { op: 'policyDraft', objective: id, field: 'calPick', v: local(2026, 11, 22, 12, 0) }, { project }, now);
+  act(state, { op: 'policyDraft', objective: id, field: 'timePreset', v: 'all' }, { project }, now);
+  const editorBeforeSave = viewModel(state, 'exp', { project, pick: `obj:${id}` }).policyEditor;
+  assert.equal(editorBeforeSave.calendar.marks.length, 2);
+  assert.equal(editorBeforeSave.dateFrom, '2026-11-21');
+  assert.equal(editorBeforeSave.dateTo, '2026-11-22');
+  assert.equal(act(state, { op: 'policySave', objective: id }, { project }, now).ok, true);
+
+  const exp = viewModel(state, 'exp', { project, pick: `obj:${id}` });
+  assert.equal(exp.policy.schedule.policies.length, 2);
+  assert.equal(exp.policy.schedule.nextRuns.length, 5);
+  // 2026-11-20 Fri 10:00 -> inside weekly policy
+  assert.equal(insideWindow(state.experiments[id].policy.schedule, local(2026, 11, 20, 10, 0)), true);
+  // 2026-11-21 Sat 03:00 -> inside range policy
+  assert.equal(insideWindow(state.experiments[id].policy.schedule, local(2026, 11, 21, 3, 0)), true);
+  // 2026-11-24 Tue 11:00 -> excluded by excludeFrom..excludeTo
+  assert.equal(insideWindow(state.experiments[id].policy.schedule, local(2026, 11, 24, 11, 0)), false);
+  // 2026-12-02 Wed 11:00 -> excluded by excludeDays=[3]
+  assert.equal(insideWindow(state.experiments[id].policy.schedule, local(2026, 12, 2, 11, 0)), false);
+  // 2026-11-26 Thu 11:00 -> matches weekly policy
+  assert.equal(insideWindow(state.experiments[id].policy.schedule, local(2026, 11, 26, 11, 0)), true);
+
+  // 3. Click existing policy -> echoes data -> edit & save -> still 2 policies
+  const firstId = exp.policy.schedule.policies[0].id;
+  act(state, { op: 'policyEditOpen', objective: id, policyId: firstId }, { project }, now);
+  const echo = viewModel(state, 'exp', { project, pick: `obj:${id}` }).policyEditor;
+  assert.equal(echo.isEdit, true);
+  assert.equal(echo.kind, 'weekly');
+  assert.equal(echo.excludeFrom, '2026-11-24');
+  act(state, { op: 'policyDraft', objective: id, field: 'timePreset', v: 'night' }, { project }, now);
+  assert.equal(act(state, { op: 'policySave', objective: id }, { project }, now).ok, true);
+  const afterEdit = viewModel(state, 'exp', { project, pick: `obj:${id}` });
+  assert.equal(afterEdit.policy.schedule.policies.length, 2);
+  assert.match(afterEdit.policy.schedule.policies[0].title, /20:00–08:00/);
+
+  // 4. Delete one policy -> 1 left
+  assert.equal(act(state, { op: 'policyDelete', objective: id, policyId: firstId }, { project }, now).ok, true);
+  assert.equal(viewModel(state, 'exp', { project, pick: `obj:${id}` }).policy.schedule.policies.length, 1);
+
+  // 5. Fixed single-date policy validation & nextScheduledRuns
+  const fixed = validatePolicy({ kind: 'fixed', dateFrom: '2026-11-25', start: '14:00', end: '16:00' });
+  assert.ok('policy' in fixed);
+  assert.deepEqual(nextScheduledRuns([fixed.policy], now, 5), ['11/25 周三 14:00–16:00']);
 });

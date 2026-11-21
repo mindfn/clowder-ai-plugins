@@ -1,7 +1,7 @@
 import { AUTO, autoKey, clipTitle, prepSettled, REPAIR_DEFAULT, repairText, stepMemberOf, stopText } from './init.js';
 import type { Data, RsiState } from './types.js';
 import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData, memberIds } from './data.js';
-import { maxRunsText, scheduleForm, scheduleSummary, timeRange } from './schedule.js';
+import { formatPolicy, maxRunsText, nextScheduledRuns, policiesOf, scheduleForm, scheduleSummary, timeRange, validatePolicy } from './schedule.js';
 import { analystsOf, short, signed, testedVersion } from './cycles.js';
 
 const tc = (key: string, ...args: unknown[]) => ({ t: key, args });
@@ -23,10 +23,95 @@ export function follow(state: RsiState, query: Data) {
 
 // A real objective's policy is what its cycles actually use: seeds per group from the next plan, the variables its groups have tried,
 // and every direction chosen by you (the demo's approval rules are not enforced here).
-function policyOf(d: Data, o: Data) {
+const WEEKDAYS_UI: readonly { d: number; label: string }[] = [
+  { d: 1, label: '周一' },
+  { d: 2, label: '周二' },
+  { d: 3, label: '周三' },
+  { d: 4, label: '周四' },
+  { d: 5, label: '周五' },
+  { d: 6, label: '周六' },
+  { d: 0, label: '周日' },
+];
+
+function policyEditorOf(d: Data, nowTs: number) {
+  const draft: Data = d.policyDraft || {
+    id: '',
+    isEdit: false,
+    kind: 'weekly',
+    days: [1, 2, 3, 4, 5],
+    dateFrom: '',
+    dateTo: '',
+    start: '20:00',
+    end: '08:00',
+    excludeDays: [],
+    excludeFrom: '',
+    excludeTo: '',
+    calAnchor: nowTs,
+    calStep: 'from',
+  };
+  const kind = String(draft.kind || 'weekly');
+  const activeDays: number[] = Array.isArray(draft.days) ? draft.days : [];
+  const exDays: number[] = Array.isArray(draft.excludeDays) ? draft.excludeDays : [];
+  const anchor = Number(draft.calAnchor) || nowTs;
+  const anchorDate = new Date(anchor);
+  const monthLabel = `${anchorDate.getFullYear()}年${anchorDate.getMonth() + 1}月`;
+  const parseYmdNoon = (ymd: unknown) => (typeof ymd === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? new Date(`${ymd}T12:00:00`).getTime() : NaN);
+  const fromTs = parseYmdNoon(draft.dateFrom);
+  const toTs = parseYmdNoon(draft.dateTo);
+  const valueTs = Number.isFinite(fromTs) ? fromTs : nowTs;
+  const marks: { at: number }[] = [];
+  if (kind === 'range' && Number.isFinite(fromTs) && Number.isFinite(toTs) && toTs >= fromTs) {
+    const maxSpan = 62;
+    for (let i = 0, cur = fromTs; cur <= toTs && i < maxSpan; i++, cur += 86_400_000) {
+      marks.push({ at: cur });
+    }
+  } else if (kind === 'fixed' && Number.isFinite(fromTs)) {
+    marks.push({ at: fromTs });
+  }
+  const checked = validatePolicy(draft, 'preview');
+  const preview = 'policy' in checked ? nextScheduledRuns([checked.policy], nowTs, 3) : [];
+  const previewError = 'error' in checked ? checked.error : '';
+  return {
+    id: draft.id || '',
+    isEdit: !!draft.isEdit,
+    kind,
+    isFixed: kind === 'fixed',
+    isDaily: kind === 'daily',
+    isWeekly: kind === 'weekly',
+    isRange: kind === 'range',
+    isContinuous: kind === 'continuous',
+    showCalendar: kind === 'fixed' || kind === 'range',
+    showWeekdays: kind === 'weekly',
+    showDateBounds: kind === 'daily' || kind === 'weekly' || kind === 'continuous',
+    showTime: kind !== 'continuous',
+    days: WEEKDAYS_UI.map((w) => ({ d: w.d, label: w.label, on: activeDays.includes(w.d) })),
+    excludeDays: WEEKDAYS_UI.map((w) => ({ d: w.d, label: w.label, on: exDays.includes(w.d) })),
+    dateFrom: draft.dateFrom || '',
+    dateTo: draft.dateTo || '',
+    start: draft.start || '',
+    end: draft.end || '',
+    excludeFrom: draft.excludeFrom || '',
+    excludeTo: draft.excludeTo || '',
+    hasExclude: exDays.length > 0 || !!(draft.excludeFrom || draft.excludeTo),
+    calendar: { anchor, value: valueTs, today: nowTs, mode: 'month', marks, monthLabel },
+    rangeHint: kind === 'range'
+      ? (draft.dateFrom && draft.dateTo ? `已选区间：${draft.dateFrom} ~ ${draft.dateTo}` : draft.dateFrom ? `已选开始：${draft.dateFrom}，请再点一天作为结束日期` : '在日历上依次点选开始日期和结束日期')
+      : (draft.dateFrom ? `已选日期：${draft.dateFrom}` : '在日历上点选执行日期'),
+    preview,
+    previewError,
+  };
+}
+
+function policyOf(d: Data, o: Data, nowTs = Date.now()) {
   const windowText = scheduleSummary(d.policy.schedule);
   const maxRuns = d.policy.schedule?.maxRuns ?? null;
-  const schedule = { ...d.policy.schedule, window: windowText, maxRuns, maxRunsValue: maxRuns ? String(maxRuns) : '', maxRunsText: maxRunsText(d.policy.schedule), form: scheduleForm(d.policy.schedule) };
+  const rawPolicies = policiesOf(d.policy.schedule);
+  const policies = rawPolicies.map((p) => {
+    const f = formatPolicy(p);
+    return { id: p.id, kind: p.kind, title: f.title, sub: f.sub };
+  });
+  const nextRuns = nextScheduledRuns(rawPolicies, nowTs, 5);
+  const schedule = { ...d.policy.schedule, window: windowText, maxRuns, maxRunsValue: maxRuns ? String(maxRuns) : '', maxRunsText: maxRunsText(d.policy.schedule), form: scheduleForm(d.policy.schedule), policies, hasPolicies: policies.length > 0, nextRuns };
   const repair = d.policy.repair ?? REPAIR_DEFAULT;
   const stop = o.stop || {};
   const shared = {
@@ -534,7 +619,7 @@ function exp(): any {
       body: r.report && (r.report.summary.startsWith(r.report.headline) ? r.report.summary.slice(r.report.headline.length).trim() : r.report.summary),
       comparisons: r.report ? comparisonsOf(r) : [],
       compare: r.report && compareOf(r), discussion: r.report && discussionOf(r), gov: r.report && govFor(r) }),
-    prep: { needYou: needYou, steps: steps, dagNodes: dagNodes, visibleSteps: steps.filter((s: Data) => s.visible), ready: readyInfo, activeKey: activeKey, showAll: showAll }, executor: d.executor, members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, roleMembers: o.projectPath ? d.members.filter(function (m: any): any { return m.catId && m.role !== 'analyze'; }) : d.members, execStages, discussion: d.members.filter(function (m: any): any { return m.role === 'analyze' && m.catId; }).map(function (m: any): any { return { id: m.catId, name: m.name }; }), memberIds: { prepare: (d.members.find(function (m: any): any { return m.role === 'prepare'; }) || {}).catId, evaluate: (d.members.find(function (m: any): any { return m.role === 'evaluate'; }) || {}).catId, iterate: (d.members.find(function (m: any): any { return m.role === 'iterate'; }) || {}).catId }, policy: policyOf(d, o), metrics: d.metrics,
+    prep: { needYou: needYou, steps: steps, dagNodes: dagNodes, visibleSteps: steps.filter((s: Data) => s.visible), ready: readyInfo, activeKey: activeKey, showAll: showAll }, executor: d.executor, members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, roleMembers: o.projectPath ? d.members.filter(function (m: any): any { return m.catId && m.role !== 'analyze'; }) : d.members, execStages, discussion: d.members.filter(function (m: any): any { return m.role === 'analyze' && m.catId; }).map(function (m: any): any { return { id: m.catId, name: m.name }; }), memberIds: { prepare: (d.members.find(function (m: any): any { return m.role === 'prepare'; }) || {}).catId, evaluate: (d.members.find(function (m: any): any { return m.role === 'evaluate'; }) || {}).catId, iterate: (d.members.find(function (m: any): any { return m.role === 'iterate'; }) || {}).catId }, policy: policyOf(d, o, state.now || Date.now()), policyEditor: policyEditorOf(d, state.now || Date.now()), metrics: d.metrics,
     eTree: [{ id: d.metrics.version }], cTree: [{ id: 'C1' }] };
 };
 function record(): any {

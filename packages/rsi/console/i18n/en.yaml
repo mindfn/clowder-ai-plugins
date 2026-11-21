@@ -343,6 +343,27 @@ repairDialog: Fixing failures at night
 autoDialog: Directions decided at night
 scheduleDialog: Edit run window
 scheduleDialogHelp: Supports anytime (24/7), weekday/weekend schedules (e.g. daytime weekdays + all-day weekends across timezones), calendar date ranges, and multi-rule combinations. Editable anytime.
+execPolicy:
+  dialogTitle: Execution Policy
+  dialogHelp: Combine multiple policies as needed; click an existing policy to edit it. Only required before starting runs.
+  kind:
+    fixed: Fixed date
+    daily: Daily
+    weekly: Weekly
+    range: Date range
+    continuous: Continuous
+  prevMonth: Previous month
+  nextMonth: Next month
+  today: Today
+  datePlaceholder: YYYY-MM-DD (blank = no limit)
+  timeWindow: Daily hours
+  presetAll: All day
+  presetDay: 09:00–18:00
+  presetNight: 20:00–08:00
+  excludeTitle: "Exclude / Skip (optional: weekdays or date range)"
+  excludeFrom: Exclude start date
+  excludeTo: Exclude end date
+  previewTitle: Policy preview (next 3 runs)
 schedule:
   mode: Run window
   newHelp: Pick a preset now or let step 3 draft it; you can edit anytime in Policy (with calendar date range, custom hours, and multiple rules)
@@ -887,6 +908,9 @@ exp:
     schedule: Run window
     scheduleUnset: Not set (click Edit execution policy)
     editSchedule: Edit execution policy
+    addPolicy: Add policy
+    policyEmpty: No execution policies yet (configure before starting runs)
+    nextRunsTitle: Upcoming runs preview (next 5)
     maxRuns: Max runs per window
     unlimited: Unlimited
     runs1: Up to 1 run

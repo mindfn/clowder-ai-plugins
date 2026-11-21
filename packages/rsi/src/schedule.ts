@@ -1,5 +1,28 @@
 import type { Data } from './types.js';
 
+export type PolicyKind = 'fixed' | 'daily' | 'weekly' | 'range' | 'continuous';
+
+export interface SchedulePolicy {
+  id: string;
+  kind: PolicyKind;
+  /** Local weekdays 0=Sun..6=Sat (used when kind === 'weekly'). */
+  days?: number[];
+  /** Inclusive local start date YYYY-MM-DD (fixed single date or start bound; empty = open start). */
+  dateFrom?: string;
+  /** Inclusive local end date YYYY-MM-DD (empty = open end). */
+  dateTo?: string;
+  /** Local HH:MM start time (00:00..23:59); empty = full day. */
+  start?: string;
+  /** Local HH:MM end time (00:00..24:00); empty = full day. */
+  end?: string;
+  /** Optional excluded weekdays 0=Sun..6=Sat. */
+  excludeDays?: number[];
+  /** Optional excluded date range start YYYY-MM-DD. */
+  excludeFrom?: string;
+  /** Optional excluded date range end YYYY-MM-DD. */
+  excludeTo?: string;
+}
+
 export interface ScheduleRule {
   /** Local weekdays 0=Sun..6=Sat; empty/omitted means every day. */
   days?: number[];
@@ -18,6 +41,7 @@ export type SchedulePreset = 'anytime' | 'daytime_weekend' | 'daily' | 'weekdays
 export interface ScheduleConfig {
   mode?: 'anytime' | 'rules';
   rules?: ScheduleRule[];
+  policies?: SchedulePolicy[];
   window?: string;
   preset?: SchedulePreset;
   dateFrom?: string;
@@ -106,6 +130,9 @@ function formatRule(rule: ScheduleRule): string {
 
 export function scheduleSummary(schedule: Data | null | undefined): string {
   if (!schedule) return '';
+  if (Array.isArray(schedule.policies) && schedule.policies.length) {
+    return schedule.policies.map((p: SchedulePolicy) => formatPolicy(p).title).join('；');
+  }
   if (schedule.mode === 'anytime') {
     if (schedule.dateFrom || schedule.dateTo) {
       return formatRule({ dateFrom: schedule.dateFrom, dateTo: schedule.dateTo, start: '00:00', end: '24:00' });
@@ -348,7 +375,197 @@ function normalizedRules(schedule: Data | null | undefined): 'anytime' | Schedul
   return [{ start: `${pad2(Math.floor(legacy[0] / 60))}:${pad2(legacy[0] % 60)}`, end: legacy[1] === 1440 ? '24:00' : `${pad2(Math.floor(legacy[1] / 60))}:${pad2(legacy[1] % 60)}` }];
 }
 
+const POLICY_KINDS: readonly PolicyKind[] = ['fixed', 'daily', 'weekly', 'range', 'continuous'];
+const POLICY_KIND_LABEL: Record<PolicyKind, string> = {
+  fixed: '固定时间',
+  daily: '按天循环',
+  weekly: '按周循环',
+  range: '自定义区间',
+  continuous: '持续执行',
+};
+
+function cleanDays(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))].sort((a, b) => a - b);
+}
+
+export function formatPolicy(p: SchedulePolicy): { title: string; sub: string } {
+  const fullDay = p.kind === 'continuous' || !p.start || !p.end || (p.start === '00:00' && p.end === '24:00');
+  const timeText = p.kind === 'continuous' ? '全天持续' : fullDay ? '全天' : `${p.start}–${p.end}`;
+  const main: string[] = [POLICY_KIND_LABEL[p.kind] || p.kind];
+  if (p.kind === 'fixed' && p.dateFrom) main.push(p.dateFrom);
+  else if (p.kind === 'weekly') main.push(formatDays(p.days) || '每天');
+  else if (p.kind === 'range') {
+    if (p.dateFrom && p.dateTo) main.push(p.dateFrom === p.dateTo ? p.dateFrom : `${p.dateFrom}~${p.dateTo}`);
+    else if (p.dateFrom) main.push(`${p.dateFrom}起`);
+    else if (p.dateTo) main.push(`截至${p.dateTo}`);
+  }
+  main.push(timeText);
+
+  const details: string[] = [];
+  if (p.kind !== 'fixed' && p.kind !== 'range') {
+    if (p.dateFrom && p.dateTo) details.push(`生效 ${p.dateFrom}~${p.dateTo}`);
+    else if (p.dateFrom) details.push(`生效 ${p.dateFrom} 起`);
+    else if (p.dateTo) details.push(`截至 ${p.dateTo}`);
+  }
+  const exParts: string[] = [];
+  const exDays = formatDays(p.excludeDays);
+  if (exDays) exParts.push(exDays);
+  if (p.excludeFrom && p.excludeTo) exParts.push(p.excludeFrom === p.excludeTo ? p.excludeFrom : `${p.excludeFrom}~${p.excludeTo}`);
+  else if (p.excludeFrom) exParts.push(`${p.excludeFrom}起`);
+  else if (p.excludeTo) exParts.push(`截至${p.excludeTo}`);
+  if (exParts.length) details.push(`错开排除：${exParts.join(' / ')}`);
+
+  return { title: main.join(' · '), sub: details.join(' · ') };
+}
+
+export function validatePolicy(raw: Data, fallbackId?: string): { policy: SchedulePolicy } | { error: string } {
+  const kind = (typeof raw.kind === 'string' ? raw.kind.trim() : '') as PolicyKind;
+  if (!POLICY_KINDS.includes(kind)) return { error: '请选择有效的策略类型' };
+
+  const rawFrom = typeof raw.dateFrom === 'string' ? raw.dateFrom.trim() : '';
+  const rawTo = typeof raw.dateTo === 'string' ? raw.dateTo.trim() : '';
+  const dateFrom = rawFrom ? validDate(rawFrom) : undefined;
+  const dateTo = rawTo ? validDate(rawTo) : undefined;
+  if (rawFrom && !dateFrom) return { error: '开始日期格式应为 YYYY-MM-DD' };
+  if (rawTo && !dateTo) return { error: '结束日期格式应为 YYYY-MM-DD' };
+  if (kind === 'fixed' && !dateFrom) return { error: '固定时间策略请选择执行日期' };
+  if (kind === 'range' && !dateFrom && !dateTo) return { error: '自定义区间策略请至少选择开始或结束日期' };
+  if (dateFrom && dateTo && dateFrom > dateTo) return { error: '开始日期不能晚于结束日期' };
+
+  const days = kind === 'weekly' ? cleanDays(raw.days) : [];
+  if (kind === 'weekly' && !days.length) return { error: '按周循环请至少选择一天（周一至周日）' };
+
+  const rawStart = typeof raw.start === 'string' ? raw.start.trim() : '';
+  const rawEnd = typeof raw.end === 'string' ? raw.end.trim() : '';
+  let start: string | undefined;
+  let end: string | undefined;
+  if (kind !== 'continuous' && (rawStart || rawEnd)) {
+    const s = parseClock(rawStart || '00:00', false);
+    const e = parseClock(rawEnd || '24:00', true);
+    if (!s || !e) return { error: '执行时间格式应为 HH:MM（如 20:00、08:00）' };
+    start = s.text;
+    end = e.text;
+  }
+
+  const excludeDays = cleanDays(raw.excludeDays);
+  const rawExFrom = typeof raw.excludeFrom === 'string' ? raw.excludeFrom.trim() : '';
+  const rawExTo = typeof raw.excludeTo === 'string' ? raw.excludeTo.trim() : '';
+  const excludeFrom = rawExFrom ? validDate(rawExFrom) : undefined;
+  const excludeTo = rawExTo ? validDate(rawExTo) : undefined;
+  if (rawExFrom && !excludeFrom) return { error: '排除开始日期格式应为 YYYY-MM-DD' };
+  if (rawExTo && !excludeTo) return { error: '排除结束日期格式应为 YYYY-MM-DD' };
+  if (excludeFrom && excludeTo && excludeFrom > excludeTo) return { error: '排除开始日期不能晚于结束日期' };
+
+  const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : (fallbackId || `pol-${Date.now().toString(36)}`);
+  const policy: SchedulePolicy = {
+    id,
+    kind,
+    ...(kind === 'weekly' ? { days } : {}),
+    ...(dateFrom ? { dateFrom } : {}),
+    ...(kind === 'fixed' && dateFrom ? { dateTo: dateFrom } : dateTo ? { dateTo } : {}),
+    ...(start ? { start } : {}),
+    ...(end ? { end } : {}),
+    ...(excludeDays.length ? { excludeDays } : {}),
+    ...(excludeFrom ? { excludeFrom } : {}),
+    ...(excludeTo ? { excludeTo } : {}),
+  };
+  return { policy };
+}
+
+export function policiesOf(schedule: Data | null | undefined): SchedulePolicy[] {
+  if (!schedule) return [];
+  if (Array.isArray(schedule.policies)) return schedule.policies as SchedulePolicy[];
+  const norm = normalizedRules(schedule);
+  if (norm === 'anytime') {
+    return [{ id: 'legacy-1', kind: 'continuous', ...(schedule.dateFrom ? { dateFrom: schedule.dateFrom } : {}), ...(schedule.dateTo ? { dateTo: schedule.dateTo } : {}) }];
+  }
+  return norm.map((r, i) => {
+    const hasDays = Array.isArray(r.days) && r.days.length > 0 && r.days.length < 7;
+    const isFixed = !!(r.dateFrom && r.dateTo && r.dateFrom === r.dateTo && !hasDays);
+    const isRange = !!((r.dateFrom || r.dateTo) && !hasDays && !isFixed);
+    const fullDay = !r.start || !r.end || (r.start === '00:00' && r.end === '24:00');
+    const kind: PolicyKind = isFixed ? 'fixed' : hasDays ? 'weekly' : isRange ? 'range' : fullDay ? 'continuous' : 'daily';
+    return {
+      id: `legacy-${i + 1}`,
+      kind,
+      ...(hasDays ? { days: r.days } : {}),
+      ...(r.dateFrom ? { dateFrom: r.dateFrom } : {}),
+      ...(r.dateTo ? { dateTo: r.dateTo } : {}),
+      ...(!fullDay && r.start && r.end ? { start: r.start, end: r.end } : {}),
+    };
+  });
+}
+
+function policyDateMatches(date: Date, p: SchedulePolicy): boolean {
+  const ymd = localDateStr(date);
+  const dow = date.getDay();
+  if (p.excludeDays?.length && p.excludeDays.includes(dow)) return false;
+  if (p.excludeFrom || p.excludeTo) {
+    const afterStart = !p.excludeFrom || ymd >= p.excludeFrom;
+    const beforeEnd = !p.excludeTo || ymd <= p.excludeTo;
+    if (afterStart && beforeEnd) return false;
+  }
+  if (p.kind === 'fixed') return !!p.dateFrom && ymd === p.dateFrom;
+  if (p.dateFrom && ymd < p.dateFrom) return false;
+  if (p.dateTo && ymd > p.dateTo) return false;
+  if (p.kind === 'weekly' && p.days?.length && !p.days.includes(dow)) return false;
+  return true;
+}
+
+export function policyMatches(p: SchedulePolicy, now: number): boolean {
+  const date = new Date(now);
+  if (p.kind === 'continuous' || !p.start || !p.end) return policyDateMatches(date, p);
+  const s = parseClock(p.start, false), e = parseClock(p.end, true);
+  if (!s || !e) return false;
+  if (s.minutes === 0 && e.minutes === 1440) return policyDateMatches(date, p);
+  const minute = date.getHours() * 60 + date.getMinutes();
+  if (s.minutes < e.minutes) return minute >= s.minutes && minute < e.minutes && policyDateMatches(date, p);
+  if (minute >= s.minutes) return policyDateMatches(date, p);
+  if (minute < e.minutes) {
+    const yesterday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - 1);
+    return policyDateMatches(yesterday, p);
+  }
+  return false;
+}
+
+export function nextScheduledRuns(scheduleOrPolicies: Data | SchedulePolicy[] | null | undefined, now: number, count = 5): string[] {
+  const policies = Array.isArray(scheduleOrPolicies) ? scheduleOrPolicies : policiesOf(scheduleOrPolicies);
+  if (!policies.length || count <= 0) return [];
+  const base = new Date(now);
+  const candidates: { ts: number; label: string }[] = [];
+  const seen = new Set<string>();
+  const dayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+  for (let offset = 0; offset < 90 && candidates.length < count * 3; offset++) {
+    const day = new Date(base.getFullYear(), base.getMonth(), base.getDate() + offset, 12);
+    const md = `${pad2(day.getMonth() + 1)}/${pad2(day.getDate())} ${dayNames[day.getDay()]}`;
+    for (const p of policies) {
+      if (!policyDateMatches(day, p)) continue;
+      const fullDay = p.kind === 'continuous' || !p.start || !p.end || (p.start === '00:00' && p.end === '24:00');
+      const s = fullDay ? { text: '00:00', minutes: 0 } : parseClock(p.start!, false);
+      const e = fullDay ? { text: '24:00', minutes: 1440 } : parseClock(p.end!, true);
+      if (!s || !e) continue;
+      const startAt = new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(s.minutes / 60), s.minutes % 60).getTime();
+      const endAt = e.minutes > s.minutes
+        ? new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(e.minutes / 60), e.minutes % 60).getTime()
+        : new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1, Math.floor(e.minutes / 60), e.minutes % 60).getTime();
+      if (endAt <= now) continue;
+      const windowLabel = p.kind === 'continuous' ? '持续执行' : fullDay ? '全天' : `${s.text}–${e.text}`;
+      const liveTag = offset === 0 && startAt <= now && now < endAt ? '（当前生效）' : '';
+      const label = `${md} ${windowLabel}${liveTag}`;
+      const dedupeKey = `${localDateStr(day)}|${windowLabel}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      candidates.push({ ts: Math.max(startAt, now), label });
+    }
+  }
+  candidates.sort((a, b) => a.ts - b.ts);
+  return candidates.slice(0, count).map((c) => c.label);
+}
+
 export function hasValidSchedule(schedule: Data | null | undefined): boolean {
+  if (Array.isArray(schedule?.policies)) return schedule.policies.length > 0;
   const norm = normalizedRules(schedule);
   return norm === 'anytime' || norm.length > 0;
 }
@@ -381,6 +598,9 @@ function ruleMatches(rule: ScheduleRule, now: number): boolean {
 }
 
 export function insideWindow(schedule: Data, now: number): boolean {
+  if (Array.isArray(schedule?.policies)) {
+    return schedule.policies.some((p: SchedulePolicy) => policyMatches(p, now));
+  }
   const norm = normalizedRules(schedule);
   if (norm === 'anytime') return true;
   if (!norm.length) return false;

@@ -25,24 +25,6 @@ views:
           - type: head
             title: t:rsi.home.title
             help: t:rsi.home.help
-            actions:
-              - type: button
-                label: t:rsi.new
-                act: dialog
-                args:
-                  kind: rsiNewExp
-                  thread: $.currentThread.id
-                  projects: $.home.projects
-                  cats: $.members.rows
-                disabled: $.pending
-                when: $.home.exp
-              - type: button
-                label: t:rsi.new
-                act: dialog
-                args:
-                  kind: rsiNew
-                disabled: $.pending
-                when: "!$.home.exp"
           - type: toolbar
             items:
               - type: select
@@ -88,119 +70,112 @@ views:
           - type: box
             variant: scroll
             blocks:
-              - type: label
-                text: t:rsi.objectives
-              - type: empty
-                text: t:rsi.noObjectives
-                when: "!$.home.hasObjectives"
-                action:
-                  type: each
-                  from: $.home.projects
-                  control:
-                    type: stack
-                    when:
-                      - of: "@id"
-                        gte: $.home.projectId
-                      - of: $.home.projectId
-                        gte: "@id"
-                    items:
-                      - type: button
-                        label: t:rsi.new
-                        act: dialog
-                        args:
-                          kind: rsiNewExp
-                          thread: $.currentThread.id
-                          projects: $.home.projects
-                          cats: $.members.rows
-                        disabled: $.pending
-                        when: "@exp"
-                      - type: button
-                        label: t:rsi.new
-                        act: dialog
-                        args:
-                          kind: rsiNew
-                        disabled: $.pending
-                        when: "!@exp"
-              - type: tree
-                id: rsi-objectives
-                nodes: $.home.nodes
-                ready: true
-                when: $.home.hasObjectives
-                row:
-                  layout: two
-                  title: "@name"
-                  inline:
-                    - status:
-                        of: "@state"
-                        map:
-                          collecting:
-                            tone: ""
-                            text: t:rsi.state.collecting
-                          pending:
-                            tone: warn
-                            text: t:rsi.state.pending
-                          baseline:
-                            tone: info
-                            text: t:rsi.state.baseline
-                          paused:
-                            tone: ""
-                            text: t:rsi.state.paused
-                          exhausted:
-                            tone: warn
-                            text: t:rsi.state.exhausted
-                          analyzing:
-                            tone: info
-                            text: t:rsi.state.analyzing
-                          preparing:
-                            tone: info
-                            text: t:rsi.state.preparing
-                          retired:
-                            tone: ""
-                            text: t:rsi.state.retired
-                          ready:
-                            tone: warn
-                            text: t:rsi.state.ready
-                          running:
-                            tone: info
-                            text: t:rsi.state.running
-                          stalled:
-                            tone: danger
-                            text: t:rsi.state.stalled
-                          _: ""
-                      when: "@state"
-                  sub:
-                    parts:
-                      - text:
-                          t: rsi.exp.triggerOf
+              - type: section
+                title: t:rsi.objectives
+                actions:
+                  - type: button
+                    icon: plus
+                    label: t:rsi.new
+                    act: dialog
+                    args:
+                      kind: rsiNewExp
+                      thread: $.currentThread.id
+                      projects: $.home.projects
+                      cats: $.members.rows
+                    disabled: $.pending
+                    when: $.home.exp
+                  - type: button
+                    icon: plus
+                    label: t:rsi.new
+                    act: dialog
+                    args:
+                      kind: rsiNew
+                    disabled: $.pending
+                    when: "!$.home.exp"
+                blocks:
+                  - type: empty
+                    text: t:rsi.noObjectives
+                    when: "!$.home.hasObjectives"
+                  - type: tree
+                    id: rsi-objectives
+                    nodes: $.home.nodes
+                    ready: true
+                    when: $.home.hasObjectives
+                    row:
+                      layout: two
+                      title: "@name"
+                      inline:
+                        - status:
+                            of: "@state"
+                            map:
+                              collecting:
+                                tone: ""
+                                text: t:rsi.state.collecting
+                              pending:
+                                tone: warn
+                                text: t:rsi.state.pending
+                              baseline:
+                                tone: info
+                                text: t:rsi.state.baseline
+                              paused:
+                                tone: ""
+                                text: t:rsi.state.paused
+                              exhausted:
+                                tone: warn
+                                text: t:rsi.state.exhausted
+                              analyzing:
+                                tone: info
+                                text: t:rsi.state.analyzing
+                              preparing:
+                                tone: info
+                                text: t:rsi.state.preparing
+                              retired:
+                                tone: ""
+                                text: t:rsi.state.retired
+                              ready:
+                                tone: warn
+                                text: t:rsi.state.ready
+                              running:
+                                tone: info
+                                text: t:rsi.state.running
+                              stalled:
+                                tone: danger
+                                text: t:rsi.state.stalled
+                              _: ""
+                          when: "@state"
+                      sub:
+                        parts:
+                          - text:
+                              t: rsi.exp.triggerOf
+                              args:
+                                - "@trigger"
+                            when: "@trigger"
+                          - text:
+                              t: rsi.now.collecting
+                              args:
+                                - "@cycle.got"
+                                - "@cycle.need"
+                            when: "@cycle"
+                      cols:
+                        - v:
+                            text: "@running.o"
+                            mono: true
+                          w: id
+                          when: "@running"
+                      cur: "@selected"
+                      acts:
+                        - label: t:rsi.delete.action
+                          icon: delete
+                          act: dialog
                           args:
-                            - "@trigger"
-                        when: "@trigger"
-                      - text:
-                          t: rsi.now.collecting
-                          args:
-                            - "@cycle.got"
-                            - "@cycle.need"
-                        when: "@cycle"
-                  cols:
-                    - v:
-                        text: "@running.o"
-                        mono: true
-                      w: id
-                      when: "@running"
-                  cur: "@selected"
-                  acts:
-                    - label: t:rsi.delete.action
-                      icon: delete
-                      act: dialog
+                            kind: rsiDelete
+                            objective: "@id"
+                            name: "@name"
+                    select:
+                      act: plugSet
                       args:
-                        kind: rsiDelete
-                        objective: "@id"
-                        name: "@name"
-                select:
-                  act: plugSet
-                  args:
-                    k: pick
-                    v: "@pickKey"
+                        k: pick
+                        v: "@pickKey"
         right:
           - type: empty
             icon: bolt
@@ -961,33 +936,42 @@ views:
             title: t:rsi.exp.sec.execPolicy
             actions:
               - type: button
-                label: t:rsi.exp.pol.editSchedule
-                act: dialog
+                icon: plus
+                label: t:rsi.exp.pol.addPolicy
+                act: plugin
                 args:
-                  kind: rsiSchedule
+                  request: policyEditOpen
                   objective: $.exp.id
-                  mode: $.exp.policy.schedule.form.mode
-                  dateFrom: $.exp.policy.schedule.form.dateFrom
-                  dateTo: $.exp.policy.schedule.form.dateTo
-                  start: $.exp.policy.schedule.form.start
-                  end: $.exp.policy.schedule.form.end
-                  custom: $.exp.policy.schedule.form.custom
-                  maxRuns: $.exp.policy.schedule.form.maxRuns
             blocks:
+              - type: list
+                id: rsi-policies
+                from: $.exp.policy.schedule.policies
+                empty: t:rsi.exp.pol.policyEmpty
+                row:
+                  layout: two
+                  key: "@id"
+                  title: "@title"
+                  sub: "@sub"
+                  act: plugin
+                  args:
+                    request: policyEditOpen
+                    objective: $.exp.id
+                    policyId: "@id"
+                  acts:
+                    - icon: delete
+                      label: t:rsi.common.delete
+                      act: plugin
+                      args:
+                        request: policyDelete
+                        objective: $.exp.id
+                        policyId: "@id"
+              - type: notice
+                tone: info
+                strong: t:rsi.exp.pol.nextRunsTitle
+                items: $.exp.policy.schedule.nextRuns
+                when: $.exp.policy.schedule.nextRuns
               - type: settings
                 rows:
-                  - label: t:rsi.exp.pol.schedule
-                    control:
-                      type: text
-                      variant: value
-                      text: $.exp.policy.schedule.window
-                    when: $.exp.policy.schedule.window
-                  - label: t:rsi.exp.pol.schedule
-                    control:
-                      type: text
-                      variant: value
-                      text: t:rsi.exp.pol.scheduleUnset
-                    when: "!$.exp.policy.schedule.window"
                   - label: t:rsi.exp.pol.maxRuns
                     control:
                       type: select
@@ -5248,6 +5232,239 @@ views:
     okArgs:
       request: auto
       objective: $.objective
+  dlg.rsiExecPolicy:
+    title: t:rsi.execPolicy.dialogTitle
+    help: t:rsi.execPolicy.dialogHelp
+    wide: true
+    blocks:
+      - type: seg
+        value: $.exp.policyEditor.kind
+        act: plugin
+        args:
+          request: policyDraft
+          objective: $.exp.id
+          field: kind
+        options:
+          - v: fixed
+            label: t:rsi.execPolicy.kind.fixed
+          - v: daily
+            label: t:rsi.execPolicy.kind.daily
+          - v: weekly
+            label: t:rsi.execPolicy.kind.weekly
+          - v: range
+            label: t:rsi.execPolicy.kind.range
+          - v: continuous
+            label: t:rsi.execPolicy.kind.continuous
+      - type: box
+        variant: inline
+        when: $.exp.policyEditor.showWeekdays
+        blocks:
+          - type: each
+            from: $.exp.policyEditor.days
+            control:
+              type: chip
+              label: "@label"
+              pressed: "@on"
+              check: true
+              act: plugin
+              args:
+                request: policyDraft
+                objective: $.exp.id
+                field: dayToggle
+                v: "@d"
+      - type: toolbar
+        when: $.exp.policyEditor.showCalendar
+        left:
+          - type: button
+            icon: back
+            iconOnly: true
+            label: t:rsi.execPolicy.prevMonth
+            act: plugin
+            args:
+              request: policyDraft
+              objective: $.exp.id
+              field: calNav
+              v: prev
+          - type: text
+            text: $.exp.policyEditor.calendar.monthLabel
+          - type: button
+            icon: forward
+            iconOnly: true
+            label: t:rsi.execPolicy.nextMonth
+            act: plugin
+            args:
+              request: policyDraft
+              objective: $.exp.id
+              field: calNav
+              v: next
+        right:
+          - type: button
+            label: t:rsi.execPolicy.today
+            act: plugin
+            args:
+              request: policyDraft
+              objective: $.exp.id
+              field: calNav
+              v: today
+      - type: component
+        use: calendar
+        when: $.exp.policyEditor.showCalendar
+        props:
+          anchor: $.exp.policyEditor.calendar.anchor
+          value: $.exp.policyEditor.calendar.value
+          today: $.exp.policyEditor.calendar.today
+          mode: $.exp.policyEditor.calendar.mode
+          marks: $.exp.policyEditor.calendar.marks
+          act: plugin
+          args:
+            request: policyDraft
+            objective: $.exp.id
+            field: calPick
+      - type: text
+        variant: meta
+        when: $.exp.policyEditor.showCalendar
+        text: $.exp.policyEditor.rangeHint
+      - type: settings
+        when: $.exp.policyEditor.showDateBounds
+        rows:
+          - label: t:rsi.schedule.dateFrom
+            control:
+              type: input
+              id: rsi-pol-date-from
+              value: $.exp.policyEditor.dateFrom
+              placeholder: t:rsi.execPolicy.datePlaceholder
+              change: plugin
+              args:
+                request: policyDraft
+                objective: $.exp.id
+                field: dateFrom
+          - label: t:rsi.schedule.dateTo
+            control:
+              type: input
+              id: rsi-pol-date-to
+              value: $.exp.policyEditor.dateTo
+              placeholder: t:rsi.execPolicy.datePlaceholder
+              change: plugin
+              args:
+                request: policyDraft
+                objective: $.exp.id
+                field: dateTo
+      - type: settings
+        when: $.exp.policyEditor.showTime
+        rows:
+          - label: t:rsi.execPolicy.timeWindow
+            control:
+              type: stack
+              items:
+                - type: chip
+                  label: t:rsi.execPolicy.presetAll
+                  act: plugin
+                  args:
+                    request: policyDraft
+                    objective: $.exp.id
+                    field: timePreset
+                    v: all
+                - type: chip
+                  label: t:rsi.execPolicy.presetDay
+                  act: plugin
+                  args:
+                    request: policyDraft
+                    objective: $.exp.id
+                    field: timePreset
+                    v: day
+                - type: chip
+                  label: t:rsi.execPolicy.presetNight
+                  act: plugin
+                  args:
+                    request: policyDraft
+                    objective: $.exp.id
+                    field: timePreset
+                    v: night
+          - label: t:rsi.schedule.start
+            control:
+              type: input
+              id: rsi-pol-start
+              value: $.exp.policyEditor.start
+              placeholder: "20:00"
+              change: plugin
+              args:
+                request: policyDraft
+                objective: $.exp.id
+                field: start
+          - label: t:rsi.schedule.end
+            control:
+              type: input
+              id: rsi-pol-end
+              value: $.exp.policyEditor.end
+              placeholder: "08:00"
+              change: plugin
+              args:
+                request: policyDraft
+                objective: $.exp.id
+                field: end
+      - type: disclosure
+        key: rsi-pol-exclude
+        title: t:rsi.execPolicy.excludeTitle
+        open: $.exp.policyEditor.hasExclude
+        blocks:
+          - type: box
+            variant: inline
+            blocks:
+              - type: each
+                from: $.exp.policyEditor.excludeDays
+                control:
+                  type: chip
+                  label: "@label"
+                  pressed: "@on"
+                  check: true
+                  act: plugin
+                  args:
+                    request: policyDraft
+                    objective: $.exp.id
+                    field: excludeDayToggle
+                    v: "@d"
+          - type: settings
+            rows:
+              - label: t:rsi.execPolicy.excludeFrom
+                control:
+                  type: input
+                  id: rsi-pol-ex-from
+                  value: $.exp.policyEditor.excludeFrom
+                  placeholder: "YYYY-MM-DD"
+                  change: plugin
+                  args:
+                    request: policyDraft
+                    objective: $.exp.id
+                    field: excludeFrom
+              - label: t:rsi.execPolicy.excludeTo
+                control:
+                  type: input
+                  id: rsi-pol-ex-to
+                  value: $.exp.policyEditor.excludeTo
+                  placeholder: "YYYY-MM-DD"
+                  change: plugin
+                  args:
+                    request: policyDraft
+                    objective: $.exp.id
+                    field: excludeTo
+      - type: notice
+        tone: warn
+        text: $.exp.policyEditor.previewError
+        when: $.exp.policyEditor.previewError
+      - type: notice
+        tone: info
+        strong: t:rsi.execPolicy.previewTitle
+        items: $.exp.policyEditor.preview
+        when: $.exp.policyEditor.preview
+    ok: t:rsi.common.save
+    okAct: plugin
+    okArgs:
+      request: policySave
+      objective: $.objective
+    sources:
+      exp: exp
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
   dlg.rsiSchedule:
     title: t:rsi.scheduleDialog
     help: t:rsi.scheduleDialogHelp
@@ -5760,20 +5977,6 @@ views:
           - v: none
             label: t:rsi.newExp.autoNone
         arg: auto
-      - id: dlg-schedule-mode
-        label: t:rsi.schedule.mode
-        help: t:rsi.schedule.newHelp
-        value: ""
-        options:
-          - v: ""
-            label: t:rsi.schedule.draftLater
-          - v: anytime
-            label: t:rsi.schedule.anytime
-          - v: daytime_weekend
-            label: t:rsi.schedule.daytimeWeekend
-          - v: daily
-            label: t:rsi.schedule.dailyPreset
-        arg: scheduleMode
     blocks:
       - type: toolbar
         left:
