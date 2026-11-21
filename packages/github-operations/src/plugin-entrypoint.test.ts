@@ -2478,3 +2478,44 @@ test('tracking inspection exposes typed recovery facts and retains malformed rec
   assert.deepEqual(((await f.runtimeHost.storage.get(source[0]))!.value as { task: unknown }).task,
     (source[1].value as { task: unknown }).task, 'retry preserves the original business record');
 });
+
+test('tracking registration returns sanitized structured refusal on GitHub HTTP 404/403/401 instead of opaque 502', async (t) => {
+  const f = host();
+  let configuredToken: string | undefined = 'github_pat_secret_value_should_not_leak';
+  (f.runtimeHost.secrets as { get: (key: string) => Promise<string | undefined> }).get = async (key: string) =>
+    key === 'token' ? configuredToken : undefined;
+  const active = await createGitHubPluginModule({
+    createProvider: () => ({
+      selfLogin: () => 'owner',
+      read: async () => {
+        throw Object.assign(new Error('GitHub command failed'), {
+          code: 1,
+          stderr: 'gh: Not Found (HTTP 404)\n',
+        });
+      },
+    }),
+  })
+    .create(manifest)
+    .start(f.runtimeHost);
+  t.after(() => active.stop({ reason: 'test' }));
+
+  const withToken = (await active.actions['github.typed-wait.register-issue']!(
+    { registrationId: 'private-repo-404-token', repoFullName: 'org/private-repo', issueNumber: 6 },
+    caller,
+  )) as { status: number; code: string; phase: string; credentialSource: string; error: string };
+  assert.equal(withToken.status, 404);
+  assert.equal(withToken.code, 'provider_read_failed');
+  assert.equal(withToken.phase, 'read_github');
+  assert.equal(withToken.credentialSource, 'plugin_token');
+  assert.match(withToken.error, /plugin token/i);
+  assert.doesNotMatch(JSON.stringify(withToken), /github_pat_secret_value_should_not_leak/);
+
+  configuredToken = undefined;
+  const withGh = (await active.actions['github.typed-wait.register-pr']!(
+    { registrationId: 'private-repo-404-gh', repoFullName: 'org/private-repo', prNumber: 7 },
+    caller,
+  )) as { status: number; code: string; phase: string; credentialSource: string; error: string };
+  assert.equal(withGh.status, 404);
+  assert.equal(withGh.credentialSource, 'gh_cli');
+  assert.match(withGh.error, /local gh auth/i);
+});

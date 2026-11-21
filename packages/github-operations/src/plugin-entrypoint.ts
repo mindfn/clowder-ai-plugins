@@ -163,6 +163,38 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
     ]);
     return { data: { completed: true } };
   };
+  const hasPluginToken = async () => Boolean((await context.secrets.get('token'))?.trim());
+  const registerTracking = async (run: () => Promise<unknown>) => {
+    try {
+      return await run();
+    } catch (error) {
+      const stderr =
+        error && typeof error === 'object' && 'stderr' in error && typeof error.stderr === 'string' ? error.stderr : '';
+      const match = /\bHTTP (401|403|404)\b/.exec(stderr);
+      if (!match) throw error;
+      const status = Number(match[1]);
+      const usingPluginToken = await hasPluginToken().catch(() => false);
+      const message =
+        status === 404
+          ? usingPluginToken
+            ? 'GitHub returned HTTP 404 Not Found using the configured plugin token. Verify the repository/subject exists and that the plugin token can access it, or clear the optional plugin token to use local gh auth.'
+            : 'GitHub returned HTTP 404 Not Found. Verify the repository/subject exists and that local gh auth can access it.'
+          : status === 401
+            ? usingPluginToken
+              ? 'GitHub returned HTTP 401 Unauthorized using the configured plugin token. Update or clear the optional plugin token.'
+              : 'GitHub returned HTTP 401 Unauthorized. Check local gh auth login.'
+            : usingPluginToken
+              ? 'GitHub returned HTTP 403 Forbidden using the configured plugin token. Verify token permissions or clear the optional plugin token to use local gh auth.'
+              : 'GitHub returned HTTP 403 Forbidden. Check local gh auth permissions.';
+      return {
+        status,
+        code: 'provider_read_failed',
+        phase: 'read_github',
+        credentialSource: usingPluginToken ? 'plugin_token' : 'gh_cli',
+        error: message,
+      };
+    }
+  };
   return {
     actions: migration.guard({
       ...migrationActions(context, migration, recoverOwners),
@@ -195,9 +227,9 @@ async function activate(context: FeatureContext, options: GitHubPluginOptions) {
       'github.review-trigger.observe': (value: unknown) => reviewTriggers.observe(value),
       'github.webhook': (value: unknown) => community.webhook(webhookEnvelope.parse(value).request),
       'github.typed-wait.register-pr': (value: unknown, caller?: PluginActionContext) =>
-        tracking.registerPr(value, caller),
+        registerTracking(() => tracking.registerPr(value, caller)),
       'github.typed-wait.register-issue': (value: unknown, caller?: PluginActionContext) =>
-        tracking.registerIssue(value, caller),
+        registerTracking(() => tracking.registerIssue(value, caller)),
       'github.typed-wait.unregister': (value: unknown, caller?: PluginActionContext) =>
         tracking.unregister(value, caller),
       'github.tracking.retry': (value: unknown, caller?: PluginActionContext) => tracking.retry(value, caller),
