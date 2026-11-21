@@ -269,8 +269,10 @@ test('three real cycles execute groups × seeds serially, render measured runs, 
   assert.equal((await readFile(join(f.project,'starts'),'utf8')).trim().split('\n').length,12);
 });
 
-test('non-zero submit retries once, then persists failures and sends a failure card', async (t) => {
+test('non-zero submit retries once, invokes run-scoped cancel before retry, then persists failures and sends a failure card', async (t) => {
   const f=await fixture(t),o=await f.create({ repair: '0' });
+  const cancelled=join(f.project,'retry-cancel.log');
+  f.commands.cancel=`node -e "require('fs').appendFileSync(process.argv[1], process.argv[2] + '\\n')" "${cancelled}" {run}`;
   await f.initialize(o,{groups:[{id:'once',label:'Retry succeeds',vars:{fail:'once'}},{id:'always',label:'Fails twice',vars:{fail:'always'}}],seeds:[1,2]});
   await f.http('POST',{op:'runCycle',objective:o.id});
   const state=await until(f.read,(s)=>s.experiments[o.id].rounds[0]?.state==='evaluating');
@@ -279,6 +281,7 @@ test('non-zero submit retries once, then persists failures and sends a failure c
   assert.ok(runs.filter((r)=>r.group==='control').every((r)=>r.retries===0));
   assert.ok(runs.filter((r)=>r.group==='once').every((r)=>r.state==='done'));
   assert.ok(runs.filter((r)=>r.group==='always').every((r)=>r.state==='failed'&&r.error.raw.includes('exited 7')));
+  assert.equal((await readFile(cancelled,'utf8')).trim().split('\n').length,6);
   assert.equal(f.sends.filter((s)=>s.payload.elements[0].payload.text.includes('运行失败（已重试一次）')).length,2);
 });
 

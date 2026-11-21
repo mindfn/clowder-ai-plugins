@@ -240,8 +240,8 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         const analysed = await launch(d.executor.commands.analyze, where.cwd, where.values);
         analysis = clip((analysed.stdout.trim() || analysed.log).trim());
       }
-      // A job past its timeout, or failing for good, is cancelled so that nothing is left behind remotely.
-      if ((timedOut || final) && canCancel(cancel, where?.values)) log = (log + (await launch(cancel!, where!.cwd, where!.values)).log).slice(-16000);
+      // A job past its timeout, failing for good, or retrying after a foreground submit failure is cancelled so that nothing is left behind remotely.
+      if ((timedOut || final || (error && kind === 'env' && step === 'submit')) && canCancel(cancel, where?.values)) log = (log + (await launch(cancel!, where!.cwd, where!.values)).log).slice(-16000);
       // A deleted objective's run is neither logged nor recorded: its folder is being removed.
       if (stopped || dropped.has(d.objective.id)) return;
       // The full log stays with the run; the state keeps its tail. The run's result is recorded whether or not the file can be written.
