@@ -157,5 +157,29 @@ test('rsi_submit accepts flat 2–3 level payloads (string step, string[]/record
   assert.equal(r2.error, undefined);
   assert.equal(state2.experiments[id2].steps.goal.rev, 1);
 
+  // Verify 2-level values shorthand also works on Step 2 (own=true, newly created items without explicit title)
+  const prepCatId = exp2.members.find((m) => m.role === 'prepare').catId;
+  const ctxPrep = { catId: prepCatId, threadId: 'th-mcp-2', userId: 'u-1', invocationId: 'inv-prep-2', async assertCurrent() {} };
+  const tStep2 = toolAction(state2, 'rsi.task', {}, ctxPrep, state2.now + 4000);
+  assert.equal(tStep2.steps[0].step, 2);
+  const rStep2 = toolAction(
+    state2,
+    'rsi.submit',
+    {
+      step: '2',
+      values: {
+        'bge-contract': '200 条候选契约与精度硬闸门固定不变',
+        'bf16-110-baseline': '以显式 110 作为保守参照，111 单列候选',
+      },
+      unknowns: ['长文本 >128 路由待补验证集'],
+      next: ['继续推进第 3 步执行器与时段'],
+    },
+    ctxPrep,
+    state2.now + 5000,
+  );
+  assert.equal(rStep2.error, undefined, JSON.stringify(rStep2));
+  assert.equal(state2.experiments[id2].steps.scope.rev, 1);
+  assert.equal(state2.experiments[id2].prep.find((x) => x.id === 'bge-contract')?.title, 'bge-contract');
+
   await server.close();
 });

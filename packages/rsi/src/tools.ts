@@ -203,7 +203,9 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     if (!record(p)) return null;
     const facts = normalizeFacts(p.facts);
     if (facts === null) return null;
-    return { ...p, ...(facts !== undefined ? { facts } : {}) };
+    const existing = d.prep.find((x) => x.section === section && x.id === p.id);
+    const title = text(p.title) ? p.title : existing?.title || (own && text(p.id) ? p.id : undefined);
+    return { ...p, ...(title !== undefined ? { title } : {}), ...(facts !== undefined ? { facts } : {}) };
   });
   const validNotes = (v: unknown) => v === undefined || typeof v === 'string' || (Array.isArray(v) && v.every(text));
   if (normalizedItems.some((p) => !p || !text(p.id) || !text(p.value)
