@@ -75,7 +75,9 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
   const input: Data = Object.fromEntries(Object.entries(raw || {}).map(([k, v]) => [k, structured(v)]));
   const d = Object.values(state.experiments).find((d) => d.objective.thread === ctx.threadId);
   if (!d?.objective.projectPath) return { error: 'No real RSI objective in this thread', status: 404 };
-  if (!d.members.some((m) => m.catId === ctx.catId)) return { error: 'Not an objective member', status: 403 };
+  const isObjectiveMember = d.members.some((m) => m.catId === ctx.catId)
+    || Object.values<Data>(d.stepMembers || {}).some((m) => m?.catId === ctx.catId);
+  if (!isObjectiveMember) return { error: 'Not an objective member', status: 403 };
   if (method === 'rsi.task') {
     for (const plan of d.plan) {
       const execution = d.exec?.[plan.k];
@@ -119,7 +121,12 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       ...(d.versionRequest.prediction ? { prediction: d.versionRequest.prediction } : {}) };
     d.versions.push(versionRecord);
     const last = d.rounds.find((r: Data) => r.n === d.versionRequest.cycle);
-    if (last && changes) last.govChanges = structuredClone(changes);
+    if (last) {
+      if (changes) last.govChanges = structuredClone(changes);
+      const iterMember = d.members.find((m) => m.role === 'iterate');
+      last.stageMembers ||= {};
+      last.stageMembers.gov = { catId: ctx.catId, name: iterMember?.name || ctx.catId };
+    }
     if (d.versionRequest.direct) {
       // An execution fix becomes the default at once and keeps the default's configuration and variables, so only its code
       // changes what runs; the next cycle runs it as the control.

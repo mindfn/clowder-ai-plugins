@@ -67,11 +67,18 @@ export function rsiExpReady(d: Experiment): boolean {
   return true;
 }
 
+export function stepMemberOf(d: Data, section: Section): Data | undefined {
+  const override = d.stepMembers?.[section];
+  if (override?.catId) return override;
+  const plan = d.plan?.find((p: Data) => p.k === section);
+  return plan ? d.members?.find((m: Data) => m.role === plan.role) : undefined;
+}
+
 export function rsiExpKick(experiment: Experiment, now: number): { experiment: Experiment; outbox: OutboxEntry[] } {
   const d = structuredClone(experiment), outbox: OutboxEntry[] = [];
   d.steps ||= {}; d.exec ||= {};
   for (const plan of d.plan) {
-    const old = d.steps[plan.k], member = d.members.find((m) => m.role === plan.role);
+    const old = d.steps[plan.k], member = stepMemberOf(d, plan.k);
     if (!member?.catId || d.exec[plan.k] || (old && !(old.stale && old.redo))) continue;
     if (plan.deps.some((k) => !d.steps![k] || d.steps![k]!.stale || d.exec![k])) continue;
     if (Object.values(d.exec).some((e) => e?.by === member.catId)) continue;
@@ -254,6 +261,12 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   // The discussion members picked in the dialog were kept as a draft until the objective existed.
   if (body.projectPath) for (const a of state.draft?.analysts || []) d.members.push({ role: 'analyze', ...a });
   refreshMembers(d.members, body.cats);
+  // Seed independent per-step analysis members from the initial role assignment; later edits stay isolated from execution members.
+  d.stepMembers = {};
+  for (const p of d.plan) {
+    const base = d.members.find((m) => m.role === p.role);
+    if (base?.catId) d.stepMembers[p.k] = { catId: base.catId, name: base.name, model: base.model, ...(base.handle ? { handle: base.handle } : {}) };
+  }
   delete state.draft;
   const goal = d.prep.find((p) => p.id.endsWith('-goal'))!;
   Object.assign(goal, { value: body.statement, state: 'confirmed', by: '你', mine: true, at: now });

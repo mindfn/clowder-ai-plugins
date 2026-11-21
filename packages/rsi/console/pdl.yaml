@@ -669,9 +669,9 @@ views:
                           when: "@on"
                     change: plugin
                     args:
-                      request: memberRole
+                      request: stepMember
                       objective: $.exp.id
-                      role: "@role"
+                      k: "@k"
                       cats: $.members.rows
                   - type: select
                     id: rsi-step-rev
@@ -1312,6 +1312,17 @@ views:
                       eval: true
                   - $.exp.cycle.report
                 blocks:
+                  - type: text
+                    variant: meta
+                    when: $.exp.cycle.stageOwners.eval.name
+                    text:
+                      t: rsi.exp.stageOwnerOf
+                      args:
+                        - of: $.exp.cycle.stageOwners.eval.archived
+                          map:
+                            "true": t:rsi.exp.stageOwnerArchived
+                            _: t:rsi.exp.stageOwnerUpcoming
+                        - $.exp.cycle.stageOwners.eval.name
                   - type: notice
                     when: $.exp.cycle.compare.result
                     tone:
@@ -1775,6 +1786,17 @@ views:
                       gov: true
                   - $.exp.cycle.report
                 blocks:
+                  - type: text
+                    variant: meta
+                    when: $.exp.cycle.stageOwners.gov.name
+                    text:
+                      t: rsi.exp.stageOwnerOf
+                      args:
+                        - of: $.exp.cycle.stageOwners.gov.archived
+                          map:
+                            "true": t:rsi.exp.stageOwnerArchived
+                            _: t:rsi.exp.stageOwnerUpcoming
+                        - $.exp.cycle.stageOwners.gov.name
                   - type: notice
                     tone: warn
                     when: $.exp.cycle.gov.ask
@@ -6184,6 +6206,19 @@ requests:
       op: auto
       objective: "@objective"
       auto: "@auto"
+  stepMember:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: stepMember
+      objective: "@objective"
+      k: "@k"
+      v: "@v"
+      cats: "@cats"
   memberRole:
     path: rsi/act
     method: POST

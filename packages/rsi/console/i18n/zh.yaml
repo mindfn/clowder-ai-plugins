@@ -751,6 +751,9 @@ exp:
   stepRev: "版本："
   stepRefresh: 重新分析
   stepViewingOld: 当前查看的是历史版本快照（切换回最新版本可编辑或确认）
+  stageOwnerOf: "{0}：{1}"
+  stageOwnerArchived: 实际执行成员（已归档）
+  stageOwnerUpcoming: 预计执行成员（未执行，改执行成员即时生效）
   sec:
     manage: 分析与管理
     execute: 治理与执行

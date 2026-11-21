@@ -464,4 +464,27 @@ test('dual-tab console supports inline role switching, step history snapshots, e
   assert.equal(govOpen.cycle.gov.selectedFile.path, 'src/rerank.py');
   assert.equal(govOpen.cycle.gov.diffMode, 'split');
   assert.equal(govOpen.cycle.gov.selectedFile.hunks.length, 1);
+
+  // Separate analysis vs execution members + archived completed stage vs live upcoming stage
+  assert.equal(act(state, { op: 'stepMember', objective: id, k: 'goal', v: 'codex', cats: [{ id: 'codex', name: '砚砚' }] }, { project }, now).ok, true);
+  const afterStep = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v1>c1.eval` });
+  assert.equal(afterStep.prep.steps.find((s) => s.k === 'goal').ownerCatId, 'codex');
+  assert.equal(afterStep.prep.steps.find((s) => s.k === 'rules').ownerCatId, 'kimi');
+  assert.equal(afterStep.memberIds.evaluate, 'gemini');
+  assert.deepEqual(afterStep.execStages.map((s) => s.role), ['evaluate', 'iterate']);
+  // Cycle 1 eval is already done -> archived executor stays 墨墨 even after execution evaluator changes to 宪宪
+  assert.equal(afterStep.cycle.stageOwners.eval.archived, true);
+  assert.equal(afterStep.cycle.stageOwners.eval.name, '墨墨');
+  // Add an in-flight cycle 2 still running/collecting, then change execution evaluator to opus
+  const d3 = state.experiments[id];
+  d3.rounds.push({ n: 2, version: 'v1', start: now + 3000, end: null, state: 'running', plan, metrics: structuredClone(d3.metrics), runs: [], report: null, decision: null, events: [] });
+  assert.equal(act(state, { op: 'members', objective: id, role: 'evaluate', v: 'opus', cats: [{ id: 'opus', name: '宪宪' }] }, { project }, now).ok, true);
+  const c1After = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v1>c1.eval` });
+  const c2After = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v1>c2.collect` });
+  assert.equal(c1After.cycle.stageOwners.eval.name, '墨墨');
+  assert.equal(c1After.cycle.stageOwners.eval.archived, true);
+  assert.equal(c2After.cycle.stageOwners.eval.name, '宪宪');
+  assert.equal(c2After.cycle.stageOwners.eval.archived, false);
+  // Changing execution member did not overwrite step 1 analysis member
+  assert.equal(c2After.prep.steps.find((s) => s.k === 'goal').ownerCatId, 'codex');
 });

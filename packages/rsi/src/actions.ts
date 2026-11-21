@@ -48,8 +48,22 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       message(state, d, now, resumed ? '你改了何时停，接着迭代' : '你改了何时停', text);
       return { ok: true };
     }
+    case 'stepMember': {
+      // Per-step analysis member: completely independent from execution/governance stage members; applies on next trigger.
+      if (!d) return { error: 'Experiment not found', status: 404 };
+      const section = body.k as Section;
+      if (!d.plan.some((p) => p.k === section)) return { error: 'Initialization step not found', status: 404 };
+      if (typeof body.v !== 'string' || !body.v) return { error: 'Choose a member' };
+      d.stepMembers ||= {};
+      const nextMember = setMember({}, body.v, body.cats);
+      d.stepMembers[section] = nextMember;
+      message(state, d, now, `你把第 ${d.plan.findIndex((p) => p.k === section) + 1} 步的分析成员换成了 ${nextMember.name}`, '仅影响该分析步骤，下次触发或重试时生效，不影响执行成员。', 'members');
+      if (!d.exec?.[section] && (!d.steps?.[section] || (d.steps[section]!.stale && d.steps[section]!.redo))) kick(state, id, now);
+      else syncObjective(state, d);
+      return { ok: true };
+    }
     case 'members': {
-      // The single-member roles can change at any time; work waiting for a role goes to its new member.
+      // Execution/governance stage members for upcoming / not-yet-reached stages; completed cycle stages keep their archived executors.
       if (!d) return { error: 'Experiment not found', status: 404 };
       const singleRole = typeof body.role === 'string' && ['prepare', 'evaluate', 'iterate'].includes(body.role) && typeof body.v === 'string' && body.v
         ? { [body.role]: body.v } : {};
@@ -59,11 +73,11 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       for (const role of roles) {
         const existing = d.members.find((m) => m.role === role);
         const member = existing ? setMember(existing, input[role], body.cats) : (() => { const m = setMember({ role }, input[role], body.cats); d.members.push(m); return m; })();
-        message(state, d, now, `你把${{ prepare: '初始化/准备', evaluate: '评估', iterate: '治理执行' }[role]}成员换成了 ${member.name}`, '之后这个角色的活都派给 TA。', 'members');
+        message(state, d, now, `你把${{ prepare: '准备', evaluate: '评估分析', iterate: '治理实施' }[role]}执行成员换成了 ${member.name}`, '未执行到的阶段与后续周期将自动使用新成员；已完成周期保留原归档记录。', 'members');
         const waiting = role === 'evaluate' ? d.rounds.find((r: Data) => r.state === 'evaluating') : null;
         if (waiting) askEvaluation(state, d, waiting);
-        else if (role === 'iterate' && d.versionRequest || role === 'prepare' && !prepSettled(d))
-          enqueue(state, d, 'agent', { member: member.catId, action: role === 'iterate' ? 'version' : 'prepare', message: { title: '接手', body: `${mention(member)} 这个角色换成了你：先调 rsi.task 看轮到你的事。` } });
+        else if (role === 'iterate' && d.versionRequest)
+          enqueue(state, d, 'agent', { member: member.catId, action: 'version', message: { title: '接手', body: `${mention(member)} 治理实施成员换成了你：先调 rsi.task 看轮到你的事。` } });
       }
       syncObjective(state, d);
       return { ok: true };

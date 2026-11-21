@@ -1,4 +1,4 @@
-import { AUTO, autoKey, clipTitle, prepSettled, REPAIR_DEFAULT, repairText, stopText } from './init.js';
+import { AUTO, autoKey, clipTitle, prepSettled, REPAIR_DEFAULT, repairText, stepMemberOf, stopText } from './init.js';
 import type { Data, RsiState } from './types.js';
 import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData, memberIds } from './data.js';
 import { maxRunsText, scheduleForm, scheduleSummary, timeRange } from './schedule.js';
@@ -188,7 +188,11 @@ const RSI_LAYERS = ['execution', 'harness', 'rubric', 'observation'];
 function exp(): any {
   const d = rsiExpData(); if (!d) return null;
   const o = d.objective, main = d.metrics.items.find((m: Data) => !m.guard).id, key = function (v: any): any { return o.id + '/' + v; };
-  const nameOf = function (id: any): any { const m = d.members.find(function (m: any): any { return m.catId === id; }); return m ? m.name : id; };
+  const nameOf = function (id: any): any {
+    const m = d.members.find(function (m: any): any { return m.catId === id; })
+      || Object.values<Data>(d.stepMembers || {}).find((x) => x?.catId === id);
+    return m ? m.name : id;
+  };
   const memberName = function (role: any): any { return nameOf((d.members.find(function (m: any): any { return m.role === role; }) || {}).catId); };
   const num = (x: unknown) => typeof x === 'number' && Number.isFinite(x) ? short(x) : null;
   // A cycle's metrics are the scale it ran with; the first that is not a guardrail is its main metric.
@@ -325,7 +329,7 @@ function exp(): any {
     const state = ex ? ({ started: 'preparing', cancelled: 'cancelled', failed: 'failed', blocked: 'blocked', missing: 'missing' } as Data)[ex.state] : d.steps && st && st.stale ? 'stale' : d.steps && !st ? (missing.length ? 'waiting' : 'queued')
       : items.every(function (x: any): any { return x.state === 'confirmed'; }) ? 'confirmed' : has('preparing') ? 'preparing' : has('submitted') ? 'submitted' : 'uninvestigated';
     const stage = stageOf(state);
-    const ownerMember = d.members.find((m: Data) => m.role === p.role);
+    const ownerMember = stepMemberOf(d, k);
     const hist: Data[] = Array.isArray(d.stepHistory?.[k]) ? d.stepHistory[k] : [];
     const latestRev = st?.rev || (hist.length ? hist[hist.length - 1].rev : 1);
     const revOptions = hist.length > 1
@@ -336,7 +340,7 @@ function exp(): any {
     const viewItems = pickedHist
       ? (pickedHist.items || []).map((x: Data) => Object.assign({}, x, { needYou: false, by: x.by && nameOf(x.by) }))
       : items;
-    return { k: k, i: i + 1, role: p.role, owner: memberName(p.role), ownerCatId: ownerMember?.catId || '', depKeys: [...p.deps], items: viewItems, needCount: items.filter((x: any) => x.needYou).length, by: ex && ex.state === 'started' && nameOf(ex.by), who: ex && nameOf(ex.by), reason: ex && ex.reason || '', unknowns: pickedHist ? pickedHist.unknowns : st && st.unknowns, next: pickedHist ? pickedHist.next : st && st.next,
+    return { k: k, i: i + 1, role: p.role, owner: ownerMember?.name || memberName(p.role), ownerCatId: ownerMember?.catId || '', depKeys: [...p.deps], items: viewItems, needCount: items.filter((x: any) => x.needYou).length, by: ex && ex.state === 'started' && nameOf(ex.by), who: ex && nameOf(ex.by), reason: ex && ex.reason || '', unknowns: pickedHist ? pickedHist.unknowns : st && st.unknowns, next: pickedHist ? pickedHist.next : st && st.next,
       canRefresh: !!o.projectPath && stage !== 'running' && stage !== 'waiting',
       revOptions, hasHistory: revOptions.length > 1, selectedRev: pickedHist ? `${k}:${pickedHist.rev}` : `${k}:${latestRev}`, viewingOld: !!pickedHist,
       deps: p.deps.map(no).join('、'), waitOn: d.steps && !ex && !st && missing.join('、'), state, stage };
@@ -426,13 +430,31 @@ function exp(): any {
     const m = d.members.find((x: Data) => x.role === role);
     return { role, catId: m?.catId || '', name: m?.name || '', model: m?.model || '' };
   };
-  const execStages = [stageMember('prepare'), stageMember('evaluate'), stageMember('iterate')];
+  // Execution/governance stage members apply to upcoming & not-yet-reached cycle stages (separate from per-step analysis members).
+  const execStages = [stageMember('evaluate'), stageMember('iterate')];
+  const stageOwnersOf = (r: Data) => {
+    const evalDone = !!r.report;
+    const discussDone = !!r.report && !(r.analysis?.waiting?.length);
+    const govDone = !!(r.stageMembers?.gov || (r.decision && !d.versionRequest));
+    const evalArchived = r.stageMembers?.eval?.name || (evalDone ? memberName('evaluate') : '');
+    const discussArchived = Array.isArray(r.stageMembers?.discuss)
+      ? r.stageMembers.discuss.map((m: Data) => m.name).join('、')
+      : '';
+    const discussLive = d.members.filter((m: Data) => m.role === 'analyze' && m.catId).map((m: Data) => m.name).join('、');
+    const govArchived = r.stageMembers?.gov?.name || '';
+    return {
+      eval: { name: evalDone ? evalArchived : memberName('evaluate'), archived: evalDone },
+      discuss: { name: discussDone && discussArchived ? discussArchived : discussLive, archived: discussDone },
+      gov: { name: govDone && govArchived ? govArchived : memberName('iterate'), archived: govDone },
+    };
+  };
   return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, projectPath: o.projectPath, goal: o.goal, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
     trend: rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, value: Number(best(x).mean.toPrecision(4)) }; }),
     trendMetric: d.metrics.items.find((m: Data) => m.id === main).name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.filter(function (p: any): any { return p.result !== 'unresolved'; }).length },
     versions: tree.rows, ver: ver, step: m ? m[2] : 'node', candidate: d.candidate ? d.candidate.version : null,
     cycle: r && Object.assign({}, r, { waiting: waiting(r), groups: groupsOf(r), main: mainOf(r),
+      stageOwners: stageOwnersOf(r),
       runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { value: num(u.metrics[mainOf(r).id]), durationSeconds: u.start ? Math.round(((u.end || Date.now()) - u.start) / 1000) : null, metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })), groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),
       notAssessed: r.report && RSI_LAYERS.filter(function (l: any): any { return r.report.attribution.assessedLayers.indexOf(l) < 0; }),
       // A conclusion stores a placeholder attribution (no layer assessed): only one that assessed a layer is an attribution.

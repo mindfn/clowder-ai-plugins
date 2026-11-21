@@ -751,6 +751,9 @@ exp:
   stepRev: "Version: "
   stepRefresh: Re-analyze
   stepViewingOld: Viewing a historical snapshot (switch back to latest to edit or confirm)
+  stageOwnerOf: "{0}: {1}"
+  stageOwnerArchived: Actual member (archived)
+  stageOwnerUpcoming: Expected member (upcoming; follows Execution members)
   sec:
     manage: Analysis & Management
     execute: Governance & Execution

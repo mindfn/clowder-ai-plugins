@@ -272,6 +272,8 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   } else d.upcoming = { ...round.plan, seeds: freshSeeds(d, round.plan.seeds.length) };
   const member = d.members.find((m) => m.role === 'evaluate')!, { matrix: cells, ...compare } = compared;
   round.confirmation = confirmation;
+  round.stageMembers ||= {};
+  round.stageMembers.eval = { catId: member.catId, name: member.name };
   const comparisons = Array.isArray(input.comparisons)
     ? input.comparisons.filter((c: unknown) => record(c) && text(c.title) && record(c.before) && record(c.after)).map((c: Data, i: number) => ({
       id: text(c.id) ? c.id : `cmp-${round.n}-${i + 1}`,
@@ -383,6 +385,8 @@ export function finishAnalysis(state: RsiState, d: Experiment, round: Data, now:
   round.analysis = { ...round.analysis, waiting: [], missing };
   const firsts = analystsOf(d).filter((m) => !missing.includes(m.catId!)).map((m) => round.report.directions.find((x: Data) => x.by === m.catId)).filter(Boolean);
   round.analysis.compared = firsts.length;
+  round.stageMembers ||= {};
+  round.stageMembers.discuss = analystsOf(d).filter((m) => !missing.includes(m.catId!)).map((m) => ({ catId: m.catId, name: m.name }));
   round.report.agree = firsts.length < 2 || firsts.every((x: Data) => x.kind && x.target && x.kind === firsts[0].kind && x.target === firsts[0].target);
   conclusionCard(state, d, round, now);
   syncObjective(state, d);
