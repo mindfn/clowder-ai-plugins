@@ -337,13 +337,15 @@ test('a retried run starts in an empty run directory and keeps the earlier attem
   assert.match(run.log, /attempt-1/);
 });
 
-test('a submit that runs past its limit is stopped and retried once as an environment failure', async (t) => {
+test('a submit that runs past its limit is stopped, invokes run-scoped cancel, and retried once as an environment failure', async (t) => {
   const f = await fixture(t), o = await f.create({ repair: '0' });
-  Object.assign(f.commands, { submit: 'sleep 30', timeout: 1 });
+  const cancelled = join(f.project, 'cancel.log');
+  Object.assign(f.commands, { submit: 'sleep 30', cancel: `node -e "require('fs').appendFileSync(process.argv[1], process.argv[2] + '\\n')" "${cancelled}" {run}`, timeout: 1 });
   await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [5] });
   const started = Date.now(), run = (await execute(f, o)).runs[0];
   assert.equal(run.state, 'failed'); assert.equal(run.attempts.length, 2);
   assert.match(run.error.raw, /超过 1 秒没结束/);
+  assert.equal((await readFile(cancelled, 'utf8')).trim().split('\n').length, 2);
   assert.ok(Date.now() - started < 20000);
 });
 

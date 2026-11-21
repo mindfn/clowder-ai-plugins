@@ -4,17 +4,12 @@ import test from 'node:test';
 import {parse} from 'yaml';
 const load=(file)=>parse(readFileSync(new URL(`../${file}`,import.meta.url),'utf8'));
 
-test('phase 2 declarations expose six documented tools, a v2 subscription and matching release versions',()=>{
+test('phase 2 declarations expose native MCP single source of truth, a v2 subscription and matching release versions',()=>{
   const manifest=load('plugin.yaml');
-  const tools=manifest.contributions.filter((c)=>c.type==='tool');
-  assert.deepEqual(tools.map((c)=>c.name),['rsi.task','rsi.submit','rsi.executor','rsi.version','rsi.conclude','rsi.propose']);
-  const submitSchema=tools.find((c)=>c.name==='rsi.submit').inputSchema;
-  const submitItemProps=submitSchema.properties.items.items.properties;
-  assert.equal(submitItemProps.title?.type,'string');
-  assert.deepEqual(submitSchema.required,['step']);
-  assert.equal(submitSchema.properties.values?.type,'object');
-  assert.ok(submitSchema.properties.step.oneOf[1].enum.includes('2'));
-  for(const tool of tools){assert.equal(tool.action.method,tool.name);assert.equal(tool.inputSchema.type,'object');assert.ok(tool.description.length>150);}
+  assert.equal(manifest.contributions.filter((c)=>c.type==='tool').length,0);
+  const mcp=manifest.contributions.find((c)=>c.type==='mcp');
+  assert.equal(mcp?.id,'rsi-native');
+  assert.ok(manifest.features[0].contributions.some((c)=>c.type==='mcp'&&c.id==='rsi-native'));
   const schedule=manifest.contributions.find((c)=>c.type==='schedule');
   assert.deepEqual(schedule.schedule,{kind:'interval',everyMs:180000});assert.equal(schedule.action.method,'rsi.tick');assert.equal(schedule.policy.overlap,'skip');
   assert.ok(manifest.features[0].contributions.some((c)=>c.type==='schedule'&&c.id===schedule.id));

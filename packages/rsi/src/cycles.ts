@@ -80,7 +80,11 @@ export function finishCycle(state: RsiState, d: Experiment, round: Data, now: nu
 export const REPAIR_SAME = 3, REPAIR_WAIT = 60 * 60_000;
 // The project directory is the user's working tree and may hold work not yet committed: versions are made beside it.
 const WORKTREE = '在单独的 git worktree 里、自己的分支上改并在那里提交；不要在项目目录本身改文件、提交、切分支、stash 或 reset（用户的工作区里可能有还没提交的改动）。';
-const signatureOf = (run: Data) => String(run.error?.analysis || run.error?.raw || '').split('\n').map((l) => l.trim()).filter(Boolean).pop()?.replace(/\d+/g, '#').slice(0, 200) || '未知错误';
+const usableAnalysis = (value: unknown) => {
+  const s = typeof value === 'string' ? value.trim() : '';
+  return s && !/^[\[{]/.test(s) ? s : '';
+};
+const signatureOf = (run: Data) => String(usableAnalysis(run.error?.analysis) || run.error?.raw || '').split('\n').map((l) => l.trim()).filter(Boolean).pop()?.replace(/\d+/g, '#').slice(0, 200) || '未知错误';
 
 function requestRepair(state: RsiState, d: Experiment, round: Data, now: number) {
   const failed = round.runs.filter((r: Data) => r.state === 'failed' && (round.plan.groups.find((g: Data) => g.id === r.group)?.version || d.objective.currentVersion) === d.objective.currentVersion);

@@ -16,7 +16,7 @@ The installed `official.rsi` plugin registers a native MCP server (`rsi-native`)
 
 ## Core Rules
 
-1. **Always use the native MCP tools directly (match by tool suffix).** Different CLIs prepend their own server prefix to `rsi-native` (for example `mcp__plugin_official_rsi_rsi-native__rsi_task` on Kimi, `mcp__plugin__official_rsi__rsi_native__rsi_task` on Codex, or server `p_rsi-nati_*` on Antigravity). Match whichever tool in your tool list ends with `rsi_task`, `rsi_submit`, `rsi_executor`, `rsi_conclude`, `rsi_propose`, or `rsi_version`. **Do NOT fall back to `plugin_call` when native `*rsi_task` tools are present.** The Host automatically authenticates your `catId` and `threadId` from request headers—never pass identity fields manually, and never read credential files or hand-call Host HTTP routes.
+1. **Always use the native MCP tools directly (match by tool suffix).** Different CLIs prepend their own server prefix to `rsi-native` (for example `mcp__plugin_official_rsi_rsi-native__rsi_task` on Kimi, `mcp__plugin__official_rsi__rsi_native__rsi_task` on Codex, or server `p_rsi-nati_*` on Antigravity). Match whichever tool in your tool list ends with `rsi_task`, `rsi_submit`, `rsi_executor`, `rsi_conclude`, `rsi_propose`, or `rsi_version`. The Host automatically authenticates your `catId` and `threadId` from request headers—never pass identity fields manually, and never read credential files or hand-call Host HTTP routes.
 2. **Always call `rsi_task({})` first** on every woken turn so the plugin binds your turn to the current dependency versions.
 3. **Keep `rsi_submit` JSON flat (2–3 levels):**
    - Pass `step` as `"1"`–`"7"` (or section name).
@@ -28,4 +28,3 @@ The installed `official.rsi` plugin registers a native MCP server (`rsi-native`)
    - **Step 4 (`rules`)**: include `metrics: { version, items }` with one primary metric and finite numeric `threshold` on every guardrail.
    - **Step 5 (`design`) / Step 7 (`baseline`)**: include `upcoming: { groups, seeds }`.
    - **Governance / Repair (`rsi_version`)**: edit and commit in an isolated git worktree/branch (never mutate the user's dirty working tree), then pass `config` (object) or `configPath` (project-relative JSON path).
-5. **Emergency fallback only:** Only if your runtime genuinely exposes no native tool ending in `rsi_task`, fall back to `plugin_call` (`pluginId: "official.rsi"`, `toolName: "rsi.task"` / `"rsi.submit"`).

@@ -19,6 +19,7 @@ function killTree(pid: number) {
   else process.kill(-pid, 'SIGKILL');
 }
 const render = (command: string, values: Data) => command.replace(/\{(config|run|seed|job|start|end)\}/g, (_, k) => quote(values[k]));
+const canCancel = (tpl: string | undefined, values: Data | undefined) => !!tpl && !!values && (!!values.job || !tpl.includes('{job}'));
 const field = (value: Data, path: string) => path.split('.').reduce((v: any, k) => v?.[k], value);
 const exists = (path: string) => stat(path).then(() => true, () => false);
 const parseResult = (raw: string) => JSON.parse(raw.replace(/"(?:\\.|[^"\\])*"|\bNaN\b|-?Infinity\b/g, (token) => token.startsWith('"') ? token : JSON.stringify(token)));
@@ -31,12 +32,13 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
   const dropped = new Set<string>();
   // limit (ms): a command still running then is stopped with its process group.
   async function command(template: string, cwd: string, values: Data, limit = 0) {
-    if (busy && dropped.has(busy)) return { code: -1, log: 'Objective deleted', stdout: '' };
-    let log = '', stdout = '';
+    if (busy && dropped.has(busy)) return { code: -1, log: 'Objective deleted', stdout: '', timedOut: false };
+    let log = '', stdout = '', expired = false;
     const process = child = spawn(render(template, values), { cwd, shell: true, detached: !windows, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     process.stdout!.on('data', (part) => { stdout = (stdout + part).slice(-16000); log = (log + part).slice(-16000); });
     process.stderr!.on('data', (part) => { log = (log + part).slice(-16000); });
     const timer = limit ? setTimeout(() => {
+      expired = true;
       log += `\n超过 ${Math.round(limit / 1000)} 秒没结束，已停止`;
       try { killTree(process.pid!); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') host.log('error', 'RSI could not stop a timed-out command', { error: String(error) }); }
@@ -47,11 +49,11 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
     });
     clearTimeout(timer);
     if (child === process) child = undefined;
-    return { code, log, stdout };
+    return { code, log, stdout, timedOut: expired };
   }
 
   // The work loop starts no command once the plugin stops (stop() would otherwise wait for it to finish; stop() itself may still cancel a job) or its run is held.
-  const launch = (template: string, cwd: string, values: Data, limit = 0) => stopped || held ? Promise.resolve({ code: -1, log: held ? 'Run window closed' : 'Plugin stopped', stdout: '' }) : command(template, cwd, values, limit);
+  const launch = (template: string, cwd: string, values: Data, limit = 0) => stopped || held ? Promise.resolve({ code: -1, log: held ? 'Run window closed' : 'Plugin stopped', stdout: '', timedOut: false }) : command(template, cwd, values, limit);
 
   async function work() {
     while (!stopped) {
@@ -152,10 +154,13 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         const since = jobId ? start : Date.now();
         if (!jobId) {
           step = 'submit';
+          if (canCancel(d.executor.commands.cancel, values)) remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: d.executor.commands.cancel, cwd, values };
           const result = await launch(d.executor.commands.submit, cwd, values, limit);
           log += result.log;
-          if (result.code !== 0) throw new Error(`submit exited ${result.code}: ${result.log}`);
+          if (result.timedOut) timedOut = true;
           if (stopped) return;
+          if (!d.executor.commands.get) remote = undefined;
+          if (result.code !== 0) throw new Error(`submit exited ${result.code}: ${result.log}`);
           if (d.executor.commands.get) {
             const output = result.stdout.trim();
             jobId = output.startsWith('{') ? parseResult(output).jobId : output;
@@ -219,7 +224,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       const final = error && kind === 'env' && run.retries >= 1, cancel = d.executor.commands.cancel;
       // Held at its window's end, the run waits in the queue for the next night as if it had not started; a job that is not cancelled is polled again.
       if (held && error && kind === 'env') {
-        const cancelled = !!cancel && !!where?.values.job && (await command(cancel, where.cwd, where.values)).code === 0;
+        const cancelled = canCancel(cancel, where?.values) && (await command(cancel!, where!.cwd, where!.values)).code === 0;
         await retain(host.storage, key, (state) => {
           const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
           if (entry?.state !== 'running') return;
@@ -236,7 +241,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         analysis = clip((analysed.stdout.trim() || analysed.log).trim());
       }
       // A job past its timeout, or failing for good, is cancelled so that nothing is left behind remotely.
-      if ((timedOut || final) && cancel && where?.values.job) log = (log + (await launch(cancel, where.cwd, where.values)).log).slice(-16000);
+      if ((timedOut || final) && canCancel(cancel, where?.values)) log = (log + (await launch(cancel!, where!.cwd, where!.values)).log).slice(-16000);
       // A deleted objective's run is neither logged nor recorded: its folder is being removed.
       if (stopped || dropped.has(d.objective.id)) return;
       // The full log stays with the run; the state keeps its tail. The run's result is recorded whether or not the file can be written.

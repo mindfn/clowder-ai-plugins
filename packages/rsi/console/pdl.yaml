@@ -2469,11 +2469,6 @@ views:
                 text: "@params"
                 mono: true
                 when: "@params"
-              cols:
-                - v:
-                    text: "@tool"
-                    mono: true
-                  w: id
           - type: list
             label: t:rsi.exp.resultMap
             from: $.exp.executor.resultMap

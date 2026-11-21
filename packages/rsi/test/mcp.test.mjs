@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 import { createRsiMcpServer } from '../dist/mcp-server.js';
 import { toolAction } from '../dist/tools.js';
+import { viewModel } from '../dist/views.js';
+import { finishCycle } from '../dist/cycles.js';
 import { fixture } from './helpers.mjs';
 
 function createMemoryPair() {
@@ -180,6 +182,28 @@ test('rsi_submit accepts flat 2–3 level payloads (string step, string[]/record
   assert.equal(rStep2.error, undefined, JSON.stringify(rStep2));
   assert.equal(state2.experiments[id2].steps.scope.rev, 1);
   assert.equal(state2.experiments[id2].prep.find((x) => x.id === 'bge-contract')?.title, 'bge-contract');
+
+  // Verify views.ts never renders [object Object] for legacy params: {}, and signatureOf skips JSON analyze blobs.
+  const targetExp = state2.experiments[id2];
+  targetExp.executor = {
+    mcp: 'rsi.executor',
+    state: 'passed',
+    commands: { preflight: '/old/abs/preflight.sh', submit: '/old/abs/submit.sh', collect: '/old/abs/collect.sh' },
+    ops: [{ op: 'submit', tool: '/old/abs/submit.sh', params: {} }],
+    resultMap: [{ metric: 'score', field: 'score' }],
+  };
+  const expVm = viewModel(state2, 'exp', { thread: 'th-mcp-2', project: 'cartpole', pick: `obj:${id2}` });
+  assert.equal(expVm.executor.ops[0].params, '/old/abs/submit.sh');
+  assert.ok(!JSON.stringify(expVm.executor.ops).includes('[object Object]'));
+
+  const failedRound = {
+    n: 1, version: 'v1', state: 'running', start: state2.now,
+    plan: { groups: [{ id: 'control', label: 'Control', version: 'v1', vars: {}, control: true }], seeds: [1] },
+    runs: [{ id: 'r1', group: 'control', seed: 1, state: 'failed', retries: 1, error: { kind: 'env', step: 'submit', raw: 'submit exited 1: NPU 4 not claimed', analysis: '{"schema":"v1","metrics":{"duration_s":5.0}}' }, log: '' }],
+  };
+  targetExp.rounds = [failedRound];
+  finishCycle(state2, targetExp, failedRound, state2.now + 6000);
+  assert.equal(targetExp.versionRequest.repair.signature, 'submit exited #: NPU # not claimed');
 
   await server.close();
 });

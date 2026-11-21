@@ -116,21 +116,21 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
     name: 'rsi_executor',
     method: 'rsi.executor',
     description:
-      '第 3 步调用 rsi_task 后登记本机执行方式，必填 preflight / submit / collect，选填 get / cancel / analyze / resultMap / failureField / timeout / poll。提交后立即触发 preflight 预检。',
+      '第 3 步调用 rsi_task 后登记本机执行方式，必填 preflight / submit / collect，选填 get / cancel / analyze / resultMap / failureField / timeout / poll。带 commit 的版本在独立 git worktree（cwd）运行，建议使用相对路径并传 {config}/{run}/{seed}；同步前台 submit 省略 get（get 仅用于异步作业轮询），analyze 仅用于失败诊断。提交后立即触发 preflight 预检。',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
       required: ['preflight', 'submit', 'collect'],
       properties: {
-        preflight: { type: 'string', minLength: 1 },
-        submit: { type: 'string', minLength: 1 },
-        collect: { type: 'string', minLength: 1 },
-        get: { type: 'string', minLength: 1 },
-        cancel: { type: 'string', minLength: 1 },
-        analyze: { type: 'string', minLength: 1 },
-        failureField: { type: 'string', minLength: 1 },
-        timeout: { type: 'integer', minimum: 1 },
-        poll: { type: 'integer', minimum: 1 },
+        preflight: { type: 'string', minLength: 1, description: '预检命令。' },
+        submit: { type: 'string', minLength: 1, description: '执行命令，支持占位符 {config}、{run}、{seed}。' },
+        collect: { type: 'string', minLength: 1, description: '无空格 JSON 路径模板（如 {run}/metrics.json）或输出 JSON 的采集命令。' },
+        get: { type: 'string', minLength: 1, description: '仅异步作业轮询用（使用 {job}）；同步前台 submit 请省略。' },
+        cancel: { type: 'string', minLength: 1, description: '超时/失败/停止时的清理命令（支持 {job} 或 {run}）。' },
+        analyze: { type: 'string', minLength: 1, description: '仅失败后调用的错误诊断命令（输出短文本，勿填 collect）。' },
+        failureField: { type: 'string', minLength: 1, description: '可选 JSON 失败字段路径。' },
+        timeout: { type: 'integer', minimum: 1, description: '单次运行超时秒数。' },
+        poll: { type: 'integer', minimum: 1, description: '异步轮询间隔秒数。' },
         resultMap: {
           type: 'array',
           items: {
