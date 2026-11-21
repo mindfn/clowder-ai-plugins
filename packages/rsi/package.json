@@ -1,13 +1,13 @@
 {
   "name": "@clowder-ai/rsi",
-  "version": "0.1.0-alpha.80",
+  "version": "0.1.0-alpha.81",
   "private": true,
   "description": "Capability evolution (RSI) for Clowder AI projects",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "exports": { ".": "./dist/index.js", "./manifest": "./plugin.yaml" },
-  "files": ["dist", "plugin.yaml", "README.md", "npm-shrinkwrap.json", "assets", "console"],
+  "files": ["dist", "plugin.yaml", "README.md", "npm-shrinkwrap.json", "assets", "console", "skills"],
   "engines": { "node": ">=22.18.0" },
   "scripts": {
     "build": "tsc -p tsconfig.json",

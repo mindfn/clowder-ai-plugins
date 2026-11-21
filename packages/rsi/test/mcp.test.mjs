@@ -34,6 +34,12 @@ test('native RSI MCP server declares 6 flat strong-typed tools with zero oneOf a
   assert.equal(mcpDecl.sharedFactory.module, 'dist/mcp-server.js');
   assert.equal(mcpDecl.sharedFactory.export, 'createRsiMcpServer');
   assert.ok(manifest.features[0].contributions.some((c) => c.type === 'mcp' && c.id === 'rsi-native'));
+  const skillDecl = manifest.contributions.find((c) => c.type === 'skill' && c.id === 'rsi');
+  assert.ok(skillDecl);
+  assert.equal(skillDecl.path, 'skills/rsi');
+  assert.ok(manifest.features[0].contributions.some((c) => c.type === 'skill' && c.id === 'rsi'));
+  const skillMd = readFileSync(new URL('../skills/rsi/SKILL.md', import.meta.url), 'utf8');
+  assert.match(skillMd, /^---\nname: rsi\n/);
 
   const calls = [];
   const server = createRsiMcpServer({

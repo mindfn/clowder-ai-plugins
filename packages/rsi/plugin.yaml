@@ -1,5 +1,5 @@
 pluginId: official.rsi
-version: 0.1.0-alpha.80
+version: 0.1.0-alpha.81
 contractVersion: 0.4.0-candidate.0
 name: RSI 能力进化
 description:
@@ -14,6 +14,9 @@ contributions:
   - { type: webhook, id: rsi.act, path: rsi/act, methods: [POST], action: { method: rsi.act } }
   - { type: identity, id: rsi.identity, displayName: RSI }
   - { type: message-subscription, id: rsi.execution, binding: rsi.identity, action: { method: rsi.delivery }, presentation: v2 }
+  - type: skill
+    id: rsi
+    path: skills/rsi
   - type: mcp
     id: rsi-native
     runtime: { transport: stdio, entrypoint: dist/mcp-entrypoint.js }
@@ -183,6 +186,7 @@ features:
       - { type: identity, id: rsi.identity }
       - { type: message-subscription, id: rsi.execution }
       - { type: schedule, id: rsi.schedule }
+      - { type: skill, id: rsi }
       - { type: mcp, id: rsi-native }
       - { type: tool, id: rsi.task }
       - { type: tool, id: rsi.submit }

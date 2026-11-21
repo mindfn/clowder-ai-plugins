@@ -27,11 +27,9 @@ function executionEvents(state: import('./types.js').RsiState, d: Experiment) {
   }
 }
 
-// How a woken member calls the RSI tools: prefer the native MCP tools directly (strong JSON Schema, 2–3 levels deep);
-// fall back to plugin_call only if the native MCP server is not attached in the current session.
-export const AGENT_HOW = '优先直接调用原生 RSI MCP 工具：rsi_task({}) 读取当前任务和依据版本，再用 rsi_submit / rsi_executor / rsi_conclude / rsi_propose / rsi_version 提交（未出现在首轮工具里时按名字搜 rsi_task）。'
-  + '若当前会话未挂载原生 MCP，再退回 plugin_call({ pluginId: "official.rsi", contributionId: "rsi.task", toolName: "rsi.task", arguments: {} })。'
-  + '不要读凭据文件自己请求宿主接口。';
+// Tool usage lives in the plugin's registered `rsi` skill (skills/rsi/SKILL.md);
+// wake-up messages only keep a brief pointer to claim the current turn.
+export const AGENT_HOW = '按 rsi skill 流程处理：先调用 rsi_task({}) 认领并读取本步上下文。';
 
 export function createRuntime(host: RsiHost) {
   let stopped = false, tail = Promise.resolve();

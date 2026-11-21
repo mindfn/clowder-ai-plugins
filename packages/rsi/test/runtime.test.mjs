@@ -134,14 +134,14 @@ test('host projects, current-thread dialog selection, real threads and exact wak
   assert.equal(home.projects.length, 7);
   const objective = await f.create();
   assert.deepEqual(objective.result.acts, [{ act: 'thread', args: { id: objective.thread } }, { act: 'open', args: { ref: 'plugin:official.rsi/rsi.panel' } }]);
-  // A woken member is told the RSI tools are reached through plugin_call, with the exact arguments.
-  assert.ok(f.sends.some((x) => x.wake && x.payload.elements[0].payload.text.includes('plugin_call({ pluginId: "official.rsi", contributionId: "rsi.task", toolName: "rsi.task", arguments: {} })')));
+  // A woken member gets a brief pointer to the registered `rsi` skill and native `rsi_task({})` tool (not hardcoded plugin_call boilerplate).
+  assert.ok(f.sends.some((x) => x.wake && x.payload.elements[0].payload.text.includes('rsi skill') && x.payload.elements[0].payload.text.includes('rsi_task({})')));
   assert.equal(f.threads.at(-1).projectRef, f.project);
   assert.deepEqual(f.threads.at(-1).participants, ['codex', 'cat-b5ddoo9l']);
   assert.equal((await f.read()).experiments[objective.id].objective.projectPath, f.project);
   assert.equal(f.sends.length, 3);
   assert.deepEqual(f.sends.filter((s) => s.wake).map((s) => s.wake), [{catId:'cat-b5ddoo9l',exact:true},{catId:'codex',exact:true}]);
-  assert.ok(f.sends.filter((s) => s.wake).every((s) => s.payload.elements[0].payload.text.includes('rsi.task')));
+  assert.ok(f.sends.filter((s) => s.wake).every((s) => s.payload.elements[0].payload.text.includes('rsi_task')));
   assert.ok(f.subscriptions.some((s) => s.threadId === objective.thread && s.method === 'rsi.delivery'));
   assert.equal((await f.http('POST', { op: 'new', project: '', thread: 'missing', statement: 'x', prepare: 'a', evaluate: 'b' })).status, 400);
   assert.equal((await f.http('POST', { op: 'new', project: 'cartpole', projectPath: '/ignored-owner-input', statement: 'Demo', prepare: 'a', evaluate: 'b' })).status, 200);
