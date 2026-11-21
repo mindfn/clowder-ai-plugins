@@ -41,6 +41,7 @@ export function viewModel(state: RsiState, view: string, query: Data = {}): any 
     rsiProject: at.project, rsiPick: at.pick || 'obj:cp-converge', rsiPicked: !!at.pick, tag: at.tag,
     rsiTab: query.tab || 'version',
     rsiSelO: query.selO || '', rsiSelE: query.selE || '', rsiSelC: query.selC || '',
+    rsiInitStep: typeof query.initStep === 'string' ? query.initStep : '',
     dialog: query.dialog,
   };
   if (view === 'doc' && (query.id || query.doc)) S.dialog = { kind: 'rsiDoc', args: { id: query.id || query.doc } };
@@ -277,15 +278,25 @@ function exp(): any {
 
   const no = function (k: any): any { return d.plan.findIndex(function (p: any): any { return p.k === k; }) + 1; };
   const below = function (k: any): any { const out: any[] = []; (function walk(x: any): any { d.plan.forEach(function (p: any): any { if (p.deps.indexOf(x) >= 0 && out.indexOf(p.k) < 0) { out.push(p.k); walk(p.k); } }); })(k); return out; };
-  const steps = d.plan.map(function (p: any, i: any): any {
+  const stageOf = (state: string) => state === 'confirmed' ? 'done'
+    : state === 'preparing' ? 'running'
+    : state === 'submitted' || state === 'stale' ? 'pending'
+    : ['cancelled', 'failed', 'blocked', 'missing'].includes(state) ? 'error'
+    : 'waiting';
+  const rawSteps = d.plan.map(function (p: any, i: any): any {
     const k = p.k, items = d.prep.filter(function (x: any): any { return x.section === k; }).map(function (x: any): any { return Object.assign({}, x, { needYou: x.neededFrom === 'human' && x.state !== 'confirmed', by: x.by && nameOf(x.by) }); });
     const has = function (st: any): any { return items.some(function (x: any): any { return x.state === st; }); }, ex = d.exec && d.exec[k], st = d.steps && d.steps[k];
     const missing = d.steps ? p.deps.filter(function (x: any): any { return !d.steps[x] || d.steps[x].stale; }).map(no) : [];
-    return { k: k, i: i + 1, items: items, by: ex && ex.state === 'started' && nameOf(ex.by), who: ex && nameOf(ex.by), unknowns: st && st.unknowns, next: st && st.next,
-      deps: p.deps.map(no).join('、'), waitOn: d.steps && !ex && !st && missing.join('、'),
-      state: ex ? ({ started: 'preparing', cancelled: 'cancelled', failed: 'failed', blocked: 'blocked', missing: 'missing' } as Data)[ex.state] : d.steps && st && st.stale ? 'stale' : d.steps && !st ? (missing.length ? 'waiting' : 'queued')
-      : items.every(function (x: any): any { return x.state === 'confirmed'; }) ? 'confirmed' : has('preparing') ? 'preparing' : has('submitted') ? 'submitted' : 'uninvestigated' };
+    const state = ex ? ({ started: 'preparing', cancelled: 'cancelled', failed: 'failed', blocked: 'blocked', missing: 'missing' } as Data)[ex.state] : d.steps && st && st.stale ? 'stale' : d.steps && !st ? (missing.length ? 'waiting' : 'queued')
+      : items.every(function (x: any): any { return x.state === 'confirmed'; }) ? 'confirmed' : has('preparing') ? 'preparing' : has('submitted') ? 'submitted' : 'uninvestigated';
+    const stage = stageOf(state);
+    return { k: k, i: i + 1, role: p.role, owner: memberName(p.role), depKeys: [...p.deps], items: items, needCount: items.filter((x: any) => x.needYou).length, by: ex && ex.state === 'started' && nameOf(ex.by), who: ex && nameOf(ex.by), reason: ex && ex.reason || '', unknowns: st && st.unknowns, next: st && st.next,
+      deps: p.deps.map(no).join('、'), waitOn: d.steps && !ex && !st && missing.join('、'), state, stage };
   });
+  const showAll = S.rsiInitStep === 'all';
+  const defaultStep = rawSteps.find((s: Data) => s.stage === 'error') || rawSteps.find((s: Data) => s.stage === 'pending') || rawSteps.find((s: Data) => s.stage === 'running') || rawSteps.find((s: Data) => s.stage !== 'done') || rawSteps[0];
+  const activeKey = !showAll && rawSteps.some((s: Data) => s.k === S.rsiInitStep) ? S.rsiInitStep : defaultStep?.k || '';
+  const steps = rawSteps.map((s: Data) => Object.assign({}, s, { selected: !showAll && s.k === activeKey, visible: showAll || s.k === activeKey }));
   const at = function (x: any, step: any): any { return 'version|' + sel(x, step); };
   const wait = rounds.find(waiting), run = rounds.find(function (x: any): any { return x.state === 'running'; }), ev = rounds.find(function (x: any): any { return x.state === 'evaluating'; }), halted = rounds.find(function (x: any): any { return x.state === 'interrupted'; }), an = rounds.find(function (x: any): any { return x.analysis && x.analysis.waiting.length; });
   const doing = steps.filter(function (x: any): any { return x.state === 'preparing'; }), cut = steps.find(function (x: any): any { return x.state === 'cancelled'; }), stale = steps.filter(function (x: any): any { return x.state === 'stale'; }).length;
@@ -326,7 +337,7 @@ function exp(): any {
       // The findings after their first line, which is the headline.
       body: r.report && (r.report.summary.startsWith(r.report.headline) ? r.report.summary.slice(r.report.headline.length).trim() : r.report.summary),
       compare: r.report && compareOf(r), discussion: r.report && discussionOf(r), gov: r.report && govFor(r) }),
-    prep: { needYou: needYou, steps: steps }, executor: d.executor, members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, roleMembers: o.projectPath ? d.members.filter(function (m: any): any { return m.catId && m.role !== 'analyze'; }) : d.members, discussion: d.members.filter(function (m: any): any { return m.role === 'analyze' && m.catId; }).map(function (m: any): any { return { id: m.catId, name: m.name }; }), memberIds: { prepare: (d.members.find(function (m: any): any { return m.role === 'prepare'; }) || {}).catId, evaluate: (d.members.find(function (m: any): any { return m.role === 'evaluate'; }) || {}).catId, iterate: (d.members.find(function (m: any): any { return m.role === 'iterate'; }) || {}).catId }, policy: policyOf(d, o), metrics: d.metrics,
+    prep: { needYou: needYou, steps: steps, activeKey: activeKey, showAll: showAll }, executor: d.executor, members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, roleMembers: o.projectPath ? d.members.filter(function (m: any): any { return m.catId && m.role !== 'analyze'; }) : d.members, discussion: d.members.filter(function (m: any): any { return m.role === 'analyze' && m.catId; }).map(function (m: any): any { return { id: m.catId, name: m.name }; }), memberIds: { prepare: (d.members.find(function (m: any): any { return m.role === 'prepare'; }) || {}).catId, evaluate: (d.members.find(function (m: any): any { return m.role === 'evaluate'; }) || {}).catId, iterate: (d.members.find(function (m: any): any { return m.role === 'iterate'; }) || {}).catId }, policy: policyOf(d, o), metrics: d.metrics,
     eTree: [{ id: d.metrics.version }], cTree: [{ id: 'C1' }] };
 };
 function record(): any {

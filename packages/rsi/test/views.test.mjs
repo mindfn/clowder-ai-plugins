@@ -339,3 +339,43 @@ test('long objective statements render clipped display titles in sidebar and hea
   assert.ok(exp.name.length <= 64 && exp.name.endsWith('…'));
   assert.equal(exp.goal.statement, longStatement);
 });
+
+test('initialization prep steps expose DAG depKeys, 5 normalized stages, auto-focus error/pending steps, and switch cleanly via initStep', () => {
+  const state = createFixtures(now).state;
+  const project = '/work/bge-dag';
+  state.projects.unshift({ id: project, name: 'bge-dag', projectPath: project, exp: true, hostKinds: ['mcp'] });
+  state.objectives[project] = []; state.groups[project] = []; state.units[project] = []; state.library[project] = [];
+  assert.equal(act(state, { op: 'new', statement: 'DAG test', projectPath: project, prepare: 'codex', evaluate: 'kimi', cats: [{ id: 'codex', name: '砚砚' }, { id: 'kimi', name: '小狸' }] }, { project }, now).ok, true);
+  const id = state.objectives[project][0].id;
+  const d = state.experiments[id];
+  // Simulate step 1 (goal) aborted with missing, step 2 (scope) done, step 3 (run) running
+  d.exec.goal = { id: 'ex-1', state: 'missing', by: 'kimi', base: {}, reason: '首轮未暴露 plugin_call' };
+  delete d.exec.scope;
+  d.steps.scope = { rev: 1, base: {}, stale: false, redo: false };
+  d.exec.run = { id: 'ex-3', state: 'started', by: 'codex', base: {} };
+
+  const exp = viewModel(state, 'exp', { project, pick: `obj:${id}` });
+  const byK = Object.fromEntries(exp.prep.steps.map((s) => [s.k, s]));
+  assert.deepEqual(byK.goal.depKeys, []);
+  assert.deepEqual(byK.rules.depKeys, ['goal', 'scope']);
+  assert.deepEqual(byK.design.depKeys, ['scope', 'run', 'rules']);
+  assert.deepEqual([byK.goal.stage, byK.scope.stage, byK.run.stage, byK.rules.stage], ['error', 'done', 'running', 'waiting']);
+  assert.equal(byK.goal.owner, '小狸');
+  assert.equal(byK.goal.reason, '首轮未暴露 plugin_call');
+  // Auto-focus prioritizes error step ('goal')
+  assert.equal(exp.prep.activeKey, 'goal');
+  assert.equal(byK.goal.selected, true);
+  assert.equal(byK.goal.visible, true);
+  assert.equal(byK.scope.visible, false);
+
+  // Clicking another node selects it and shows only its detail
+  const expRules = viewModel(state, 'exp', { project, pick: `obj:${id}`, initStep: 'rules' });
+  assert.equal(expRules.prep.activeKey, 'rules');
+  assert.equal(expRules.prep.steps.find((s) => s.k === 'rules').visible, true);
+  assert.equal(expRules.prep.steps.find((s) => s.k === 'goal').visible, false);
+
+  // initStep=all expands all steps
+  const expAll = viewModel(state, 'exp', { project, pick: `obj:${id}`, initStep: 'all' });
+  assert.equal(expAll.prep.showAll, true);
+  assert.equal(expAll.prep.steps.every((s) => s.visible), true);
+});

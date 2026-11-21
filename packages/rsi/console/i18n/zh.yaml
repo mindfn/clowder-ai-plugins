@@ -710,13 +710,25 @@ exp:
       _: ""
     state:
       uninvestigated: 尚未调查
-      preparing: 正在准备
-      submitted: 已提交
-      confirmed: 已确认
-      cancelled: 回复被中断
-      stale: 过期
-      waiting: 等前面的步骤
-      queued: 排队
+      preparing: 处理中
+      submitted: 待确认
+      confirmed: Done
+      cancelled: 异常中止（回复中断）
+      failed: 异常中止（执行失败）
+      blocked: 异常中止（被阻塞）
+      missing: 异常中止（未提交）
+      stale: 过期（需重做）
+      waiting: 等待前置步骤
+      queued: 排队等待
+  dagTitle: 初始化流程（点击节点查看详情）
+  dagShowAll: 展开全部阶段
+  dagShowOne: 仅看选中阶段
+  dagStage:
+    waiting: 等待
+    running: 处理中
+    pending: 待确认
+    done: Done
+    error: 异常中止
   firstOf: ；可以先确认第 {0} 步，后面 {1} 步依赖它
   doingOf: "{0} 在做第 {1} 步"
   doingAlso: "，{0} 在做第 {1} 步"

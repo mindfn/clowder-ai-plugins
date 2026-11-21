@@ -709,14 +709,26 @@ exp:
       unknown: Modifiability unknown
       _: ""
     state:
-      uninvestigated: Not investigated
-      preparing: Preparing
-      submitted: Submitted
-      confirmed: Confirmed
-      cancelled: Reply interrupted
-      stale: Outdated
-      waiting: Waiting for earlier steps
+      uninvestigated: Not started
+      preparing: In progress
+      submitted: Pending review
+      confirmed: Done
+      cancelled: Aborted (interrupted)
+      failed: Aborted (failed)
+      blocked: Aborted (blocked)
+      missing: Aborted (no submission)
+      stale: Outdated (redo)
+      waiting: Waiting on upstream
       queued: Queued
+  dagTitle: Initialization flow (click a node to inspect)
+  dagShowAll: Show all steps
+  dagShowOne: Show selected only
+  dagStage:
+    waiting: Waiting
+    running: Running
+    pending: Review
+    done: Done
+    error: Aborted
   firstOf: ; confirm step {0} first; {1} later steps depend on it
   doingOf: "{0} is working on step {1}"
   doingAlso: ", {0} is working on step {1}"

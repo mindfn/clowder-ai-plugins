@@ -546,95 +546,165 @@ views:
           - {}
         when: $.exp.setup
         blocks:
+          - type: label
+            text: t:rsi.exp.dagTitle
+            action:
+              type: stack
+              items:
+                - type: button
+                  label: t:rsi.exp.dagShowAll
+                  act: plugSet
+                  args:
+                    k: initStep
+                    v: all
+                  when: "!$.exp.prep.showAll"
+                - type: button
+                  label: t:rsi.exp.dagShowOne
+                  act: plugSet
+                  args:
+                    k: initStep
+                    v: $.exp.prep.activeKey
+                  when: $.exp.prep.showAll
+          - type: component
+            use: plugin:official.rsi/rsiInitDag
+            props:
+              from: $.exp.prep.steps
+              title:
+                t: rsi.exp.initStep
+                args:
+                  - "@i"
+                  - t: rsi.exp.init
+                    args:
+                      - "@k"
+              stages:
+                waiting: t:rsi.exp.dagStage.waiting
+                running: t:rsi.exp.dagStage.running
+                pending: t:rsi.exp.dagStage.pending
+                done: t:rsi.exp.dagStage.done
+                error: t:rsi.exp.dagStage.error
           - type: each
             from: $.exp.prep.steps
             blocks:
-              - type: text
-                parts:
-                  - text:
-                      t: rsi.exp.initStep
-                      args:
-                        - "@i"
-                        - t: rsi.exp.init
+              - type: each
+                from:
+                  - {}
+                when: "@visible"
+                blocks:
+                  - type: text
+                    parts:
+                      - text:
+                          t: rsi.exp.initStep
+                          args:
+                            - "@i"
+                            - t: rsi.exp.init
+                              args:
+                                - "@k"
+                        strong: true
+                      - status:
+                          of: "@state"
+                          map:
+                            confirmed:
+                              tone: ok
+                              text: t:rsi.exp.prep.state.confirmed
+                            preparing:
+                              tone: info
+                              text: t:rsi.exp.prep.state.preparing
+                            submitted:
+                              tone: warn
+                              text: t:rsi.exp.prep.state.submitted
+                            cancelled:
+                              tone: danger
+                              text: t:rsi.exp.prep.state.cancelled
+                            failed:
+                              tone: danger
+                              text: t:rsi.exp.prep.state.failed
+                            blocked:
+                              tone: danger
+                              text: t:rsi.exp.prep.state.blocked
+                            missing:
+                              tone: danger
+                              text: t:rsi.exp.prep.state.missing
+                            stale:
+                              tone: warn
+                              text: t:rsi.exp.prep.state.stale
+                            waiting:
+                              tone: ""
+                              text: t:rsi.exp.prep.state.waiting
+                            queued:
+                              tone: ""
+                              text: t:rsi.exp.prep.state.queued
+                            _:
+                              tone: ""
+                              text: t:rsi.exp.prep.state.uninvestigated
+                      - text:
+                          t: rsi.exp.byOf
+                          args:
+                            - "@by"
+                        when: "@by"
+                      - text:
+                          t: rsi.exp.waitOnOf
+                          args:
+                            - "@waitOn"
+                        when: "@waitOn"
+                      - text:
+                          t: rsi.exp.initOut
                           args:
                             - "@k"
-                    strong: true
-                  - status:
-                      of: "@state"
-                      map:
-                        confirmed:
-                          tone: ok
-                          text: t:rsi.exp.prep.state.confirmed
-                        preparing:
-                          tone: info
-                          text: t:rsi.exp.prep.state.preparing
-                        submitted:
-                          tone: warn
-                          text: t:rsi.exp.prep.state.submitted
-                        cancelled:
-                          tone: warn
-                          text: t:rsi.exp.prep.state.cancelled
-                        stale:
-                          tone: warn
-                          text: t:rsi.exp.prep.state.stale
-                        waiting:
-                          tone: ""
-                          text: t:rsi.exp.prep.state.waiting
-                        queued:
-                          tone: ""
-                          text: t:rsi.exp.prep.state.queued
-                        _:
-                          tone: ""
-                          text: t:rsi.exp.prep.state.uninvestigated
-                  - text:
-                      t: rsi.exp.byOf
+                      - text:
+                          t: rsi.exp.depsOf
+                          args:
+                            - "@deps"
+                        when: "@deps"
+                    actions:
+                      - type: button
+                        label: t:rsi.exp.retry
+                        act: plugin
+                        args:
+                          request: initRetry
+                          k: "@k"
+                        when:
+                          of: "@state"
+                          map:
+                            _: false
+                            cancelled: true
+                            failed: true
+                            blocked: true
+                            missing: true
+                        disabled: $.pending
+                      - type: button
+                        label: t:rsi.exp.wakeAgain
+                        act: plugin
+                        args:
+                          request: initRetry
+                          k: "@k"
+                          force: "true"
+                        when:
+                          of: "@state"
+                          map:
+                            _: false
+                            preparing: true
+                        disabled: $.pending
+                  - type: notice
+                    tone: danger
+                    text: "@reason"
+                    when: "@reason"
+                  - type: list
+                    from: "@items"
+                    row: rsi.prep
+                  - type: text
+                    variant: meta
+                    text:
+                      t: rsi.exp.unknownsOf
                       args:
-                        - "@by"
-                    when: "@by"
-                  - text:
-                      t: rsi.exp.waitOnOf
+                        - "@unknowns"
+                    when: "@unknowns"
+                  - type: text
+                    variant: meta
+                    text:
+                      t: rsi.exp.nextOf
                       args:
-                        - "@waitOn"
-                    when: "@waitOn"
-                  - text:
-                      t: rsi.exp.initOut
-                      args:
-                        - "@k"
-                  - text:
-                      t: rsi.exp.depsOf
-                      args:
-                        - "@deps"
-                    when: "@deps"
-                actions:
-                  - type: button
-                    label: t:rsi.exp.retry
-                    act: plugin
-                    args:
-                      request: initRetry
-                      k: "@k"
-                    when:
-                      of: "@state"
-                      map:
-                        _: false
-                        cancelled: true
-                    disabled: $.pending
-              - type: list
-                from: "@items"
-                row: rsi.prep
-              - type: text
-                variant: meta
-                text:
-                  t: rsi.exp.unknownsOf
-                  args:
-                    - "@unknowns"
-                when: "@unknowns"
-              - type: text
-                variant: meta
-                text:
-                  t: rsi.exp.nextOf
-                  args:
-                    - "@next"
-                when: "@next"
+                        - "@next"
+                    when: "@next"
           - type: label
             text: t:rsi.exp.members
           - type: list
@@ -4730,95 +4800,146 @@ views:
     title: t:rsi.exp.declare
     wide: true
     blocks:
+      - type: component
+        use: plugin:official.rsi/rsiInitDag
+        props:
+          from: $.exp.prep.steps
+          title:
+            t: rsi.exp.initStep
+            args:
+              - "@i"
+              - t: rsi.exp.init
+                args:
+                  - "@k"
+          stages:
+            waiting: t:rsi.exp.dagStage.waiting
+            running: t:rsi.exp.dagStage.running
+            pending: t:rsi.exp.dagStage.pending
+            done: t:rsi.exp.dagStage.done
+            error: t:rsi.exp.dagStage.error
       - type: each
         from: $.exp.prep.steps
         blocks:
-          - type: text
-            parts:
-              - text:
-                  t: rsi.exp.initStep
-                  args:
-                    - "@i"
-                    - t: rsi.exp.init
+          - type: each
+            from:
+              - {}
+            when: "@visible"
+            blocks:
+              - type: text
+                parts:
+                  - text:
+                      t: rsi.exp.initStep
+                      args:
+                        - "@i"
+                        - t: rsi.exp.init
+                          args:
+                            - "@k"
+                    strong: true
+                  - status:
+                      of: "@state"
+                      map:
+                        confirmed:
+                          tone: ok
+                          text: t:rsi.exp.prep.state.confirmed
+                        preparing:
+                          tone: info
+                          text: t:rsi.exp.prep.state.preparing
+                        submitted:
+                          tone: warn
+                          text: t:rsi.exp.prep.state.submitted
+                        cancelled:
+                          tone: danger
+                          text: t:rsi.exp.prep.state.cancelled
+                        failed:
+                          tone: danger
+                          text: t:rsi.exp.prep.state.failed
+                        blocked:
+                          tone: danger
+                          text: t:rsi.exp.prep.state.blocked
+                        missing:
+                          tone: danger
+                          text: t:rsi.exp.prep.state.missing
+                        stale:
+                          tone: warn
+                          text: t:rsi.exp.prep.state.stale
+                        waiting:
+                          tone: ""
+                          text: t:rsi.exp.prep.state.waiting
+                        queued:
+                          tone: ""
+                          text: t:rsi.exp.prep.state.queued
+                        _:
+                          tone: ""
+                          text: t:rsi.exp.prep.state.uninvestigated
+                  - text:
+                      t: rsi.exp.byOf
+                      args:
+                        - "@by"
+                    when: "@by"
+                  - text:
+                      t: rsi.exp.waitOnOf
+                      args:
+                        - "@waitOn"
+                    when: "@waitOn"
+                  - text:
+                      t: rsi.exp.initOut
                       args:
                         - "@k"
-                strong: true
-              - status:
-                  of: "@state"
-                  map:
-                    confirmed:
-                      tone: ok
-                      text: t:rsi.exp.prep.state.confirmed
-                    preparing:
-                      tone: info
-                      text: t:rsi.exp.prep.state.preparing
-                    submitted:
-                      tone: warn
-                      text: t:rsi.exp.prep.state.submitted
-                    cancelled:
-                      tone: warn
-                      text: t:rsi.exp.prep.state.cancelled
-                    stale:
-                      tone: warn
-                      text: t:rsi.exp.prep.state.stale
-                    waiting:
-                      tone: ""
-                      text: t:rsi.exp.prep.state.waiting
-                    queued:
-                      tone: ""
-                      text: t:rsi.exp.prep.state.queued
-                    _:
-                      tone: ""
-                      text: t:rsi.exp.prep.state.uninvestigated
-              - text:
-                  t: rsi.exp.byOf
+                  - text:
+                      t: rsi.exp.depsOf
+                      args:
+                        - "@deps"
+                    when: "@deps"
+                actions:
+                  - type: button
+                    label: t:rsi.exp.retry
+                    act: plugin
+                    args:
+                      request: initRetry
+                      k: "@k"
+                    when:
+                      of: "@state"
+                      map:
+                        _: false
+                        cancelled: true
+                        failed: true
+                        blocked: true
+                        missing: true
+                    disabled: $.pending
+                  - type: button
+                    label: t:rsi.exp.wakeAgain
+                    act: plugin
+                    args:
+                      request: initRetry
+                      k: "@k"
+                      force: "true"
+                    when:
+                      of: "@state"
+                      map:
+                        _: false
+                        preparing: true
+                    disabled: $.pending
+              - type: notice
+                tone: danger
+                text: "@reason"
+                when: "@reason"
+              - type: list
+                from: "@items"
+                row: rsi.prep
+              - type: text
+                variant: meta
+                text:
+                  t: rsi.exp.unknownsOf
                   args:
-                    - "@by"
-                when: "@by"
-              - text:
-                  t: rsi.exp.waitOnOf
+                    - "@unknowns"
+                when: "@unknowns"
+              - type: text
+                variant: meta
+                text:
+                  t: rsi.exp.nextOf
                   args:
-                    - "@waitOn"
-                when: "@waitOn"
-              - text:
-                  t: rsi.exp.initOut
-                  args:
-                    - "@k"
-              - text:
-                  t: rsi.exp.depsOf
-                  args:
-                    - "@deps"
-                when: "@deps"
-            actions:
-              - type: button
-                label: t:rsi.exp.retry
-                act: plugin
-                args:
-                  request: initRetry
-                  k: "@k"
-                when:
-                  of: "@state"
-                  map:
-                    _: false
-                    cancelled: true
-                disabled: $.pending
-          - type: list
-            from: "@items"
-            row: rsi.prep
-          - type: text
-            variant: meta
-            text:
-              t: rsi.exp.unknownsOf
-              args:
-                - "@unknowns"
-            when: "@unknowns"
-          - type: text
-            variant: meta
-            text:
-              t: rsi.exp.nextOf
-              args:
-                - "@next"
-            when: "@next"
+                    - "@next"
+                when: "@next"
       - type: label
         text: t:rsi.exp.members
       - type: list
@@ -5504,6 +5625,7 @@ requests:
       selO: state.selO
       selE: state.selE
       selC: state.selC
+      initStep: state.initStep
       thread: host:currentThread.id
   record:
     path: rsi/view

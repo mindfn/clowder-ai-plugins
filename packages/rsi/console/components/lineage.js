@@ -35,3 +35,95 @@ PDL_COMPONENTS['plugin:official.rsi/rsiTrend'] = function (p, sc, root) {
       return '<circle cx="' + q[0] + '" cy="' + q[1] + '" r="4"' + (moved ? ' class="moved"' : '') + '/><text x="' + q[0] + '" y="' + (q[1] - 9) + '">' + h(String(x.value)) + '</text>' +
         '<text class="axis" x="' + q[0] + '" y="' + (H - 6) + '">' + h(x.version + ' · ' + x.n) + '</text>'; }).join('') + '</svg>';
 };
+
+PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {
+  const steps = pvList(p.from, sc, root);
+  if (!steps.length) return '';
+  const byKey = {};
+  steps.forEach(function (s) { byKey[s.k] = s; });
+  const colMemo = {};
+  function colOf(k, seen) {
+    if (colMemo[k] != null) return colMemo[k];
+    const s = byKey[k];
+    if (!s || !Array.isArray(s.depKeys) || !s.depKeys.length) return colMemo[k] = 0;
+    const nextSeen = Object.assign({}, seen);
+    nextSeen[k] = true;
+    let best = 0;
+    s.depKeys.forEach(function (dk) {
+      if (byKey[dk] && !nextSeen[dk]) best = Math.max(best, colOf(dk, nextSeen) + 1);
+    });
+    return colMemo[k] = best;
+  }
+  const cols = [];
+  steps.forEach(function (s) {
+    const c = colOf(s.k, {});
+    (cols[c] = cols[c] || []).push(s);
+  });
+  const W = 166, H = 56, GX = 46, GY = 14, PAD = 10;
+  const maxRows = Math.max.apply(null, cols.map(function (list) { return list ? list.length : 0; }));
+  const totalW = PAD * 2 + cols.length * W + Math.max(0, cols.length - 1) * GX;
+  const totalH = PAD * 2 + maxRows * H + Math.max(0, maxRows - 1) * GY;
+  const pos = {};
+  cols.forEach(function (list, c) {
+    if (!list) return;
+    const colH = list.length * H + Math.max(0, list.length - 1) * GY;
+    const startY = PAD + Math.round((totalH - PAD * 2 - colH) / 2);
+    list.forEach(function (s, r) {
+      pos[s.k] = { c: c, r: r, x: PAD + c * (W + GX), y: startY + r * (H + GY) };
+    });
+  });
+  const sel = steps.find(function (s) { return s.selected; }), selK = sel ? sel.k : '';
+  const edges = [];
+  steps.forEach(function (s) {
+    (s.depKeys || []).forEach(function (dk) {
+      if (pos[dk] && pos[s.k]) edges.push({ from: dk, to: s.k, done: byKey[dk].stage === 'done', active: selK && (dk === selK || s.k === selK) });
+    });
+  });
+  // Draw inactive edges first so highlighted edges stay cleanly on top.
+  edges.sort(function (a, b) { return (a.active ? 1 : 0) - (b.active ? 1 : 0); });
+  const svgPaths = edges.map(function (e) {
+    const a = pos[e.from], b = pos[e.to];
+    const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2;
+    const span = b.c - a.c;
+    let d;
+    if (span <= 1) {
+      const mx = Math.round((x1 + x2) / 2);
+      d = 'M' + x1 + ',' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2;
+    } else {
+      // Multi-column skip edge: route through a clear lane above or below intermediate column nodes.
+      let blocked = false;
+      for (let mc = a.c + 1; mc < b.c; mc++) {
+        (cols[mc] || []).forEach(function (ms) {
+          const mp = pos[ms.k];
+          const midY = (y1 + y2) / 2;
+          if (midY >= mp.y - 8 && midY <= mp.y + H + 8) blocked = true;
+        });
+      }
+      const laneY = blocked ? (y2 <= y1 ? Math.max(4, Math.min(y1, y2) - 24) : Math.min(totalH - 4, Math.max(y1, y2) + 24)) : (y1 + y2) / 2;
+      const c1x = x1 + Math.round((x2 - x1) * 0.35), c2x = x1 + Math.round((x2 - x1) * 0.65);
+      d = 'M' + x1 + ',' + y1 + ' C' + c1x + ',' + laneY + ' ' + c2x + ',' + laneY + ' ' + x2 + ',' + y2;
+    }
+    const cls = 'rsi-dag-edge' + (e.done ? ' done' : '') + (e.active ? ' active' : '');
+    return '<path class="' + cls + '" d="' + d + '"' + (e.active ? ' marker-end="url(#rsi-dag-arr-on)"' : ' marker-end="url(#rsi-dag-arr)"') + '/>';
+  }).join('');
+  const svg = '<svg class="rsi-dag-svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + ' ' + totalH + '" aria-hidden="true">' +
+    '<defs><marker id="rsi-dag-arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,1 L7,4 L0,7 z" class="rsi-dag-arr"/></marker>' +
+    '<marker id="rsi-dag-arr-on" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,1 L7,4 L0,7 z" class="rsi-dag-arr active"/></marker></defs>' +
+    svgPaths + '</svg>';
+  const stageLabels = p.stages || {};
+  const labelOf = function (st) { return stageLabels[st] ? pvText(stageLabels[st], sc, root) : st; };
+  const legend = '<div class="rsi-dag-legend">' + ['waiting', 'running', 'pending', 'done', 'error'].map(function (st) {
+    return '<span class="rsi-dag-leg" data-stage="' + st + '"><i class="rsi-dag-dot"></i>' + h(labelOf(st)) + '</span>';
+  }).join('') + '</div>';
+  const nodes = steps.map(function (s) {
+    const q = pos[s.k];
+    const title = p.title ? pvText(p.title, s, root) : (s.i + ' ' + s.k);
+    const meta = [labelOf(s.stage), s.owner || ''].filter(Boolean).join(' · ');
+    const badge = s.needCount > 0 && s.stage === 'pending' ? '<span class="rsi-dag-badge">' + s.needCount + '</span>' : '';
+    return '<button type="button" class="rsi-dag-node" data-stage="' + h(s.stage) + '" aria-pressed="' + (s.selected ? 'true' : 'false') + '" data-act="plugSet" data-k="initStep" data-v="' + h(s.k) + '"' +
+      ' style="left:' + q.x + 'px;top:' + q.y + 'px;width:' + W + 'px;height:' + H + 'px">' +
+      '<span class="rsi-dag-top"><i class="rsi-dag-dot"></i><span class="rsi-dag-name">' + h(title) + '</span>' + badge + '</span>' +
+      '<span class="rsi-dag-sub">' + h(meta) + '</span></button>';
+  }).join('');
+  return '<div class="rsi-dag-wrap">' + legend + '<div class="scroll-x rsi-dag-scroll"><div class="rsi-dag-canvas" style="width:' + totalW + 'px;height:' + totalH + 'px">' + svg + nodes + '</div></div></div>';
+};
