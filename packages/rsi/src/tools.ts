@@ -75,7 +75,7 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
       ...(d.objective.projectPath && p.k !== 'goal' ? { itemsAreYours: '这一步的条目由你按这个项目来定：每条自己起 id（小写、短横线）和 title，按项目实际增删；重做时没再提交的条目会被去掉。下面 examples 是另一个项目（CartPole 强化学习）的写法，只看结构，不要照抄名字。',
         examples: template.prep.filter((x) => x.section === p.k).map((x) => ({ id: x.id, title: x.title, value: x.value })) } : {}),
       deps: p.deps.map((k) => ({ step: d.plan.findIndex((p) => p.k === k) + 1, section: k, version: d.steps![k]!.rev, items: d.prep.filter((item) => item.section === k) })),
-      ...(p.k === 'run' ? { window: '支持「不限制」「周一至周五 09:00–18:00；周六至周日 全天」「2026-11-21~2026-11-30 09:00–18:00」或「20:00–08:00」', executor: '先用 rsi.executor 登记 preflight/submit/collect 命令；preflight 通过且本步 items 已提交后才完成。' } : {}),
+      ...(p.k === 'run' ? { window: '支持「不限制」「周一至周五 09:00–18:00；周六至周日 全天」「2026-11-21~2026-11-30 09:00–18:00」或「20:00–08:00」', executor: '先用原生 MCP 工具 rsi_executor 登记 preflight/submit/collect 命令；preflight 通过且本步 items 已通过 rsi_submit 提交后才完成。' } : {}),
       ...(p.k === 'rules' ? { metrics: { version: 'E1', items: [{ id: 'score', name: '得分', how: 'metrics.json 的 score', dir: 'up', unit: '分', locked: true, guard: false }] } } : {}),
       ...(p.k === 'design' || p.k === 'baseline' ? { upcoming: { groups: [{ id: 'control', label: '对照', vars: {}, control: true }, { id: 'change', label: '一个改动', vars: { '<配置里的键>': '<新取值>' } }], seeds: [11, 23] } } : {}) };
   });
@@ -88,11 +88,11 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
   if (version) version.invocationId = ctx.invocationId;
   return { objective: d.objective, projectPath: d.objective.projectPath, steps, versions: d.versions,
     // The shell that runs the registered commands, so members write commands that run on this host.
-    shell: platform() === 'win32' ? 'cmd' : 'sh', stepVersions: d.steps, ...(evaluate ? { evaluate: { cycle: evaluate.n, plan: evaluate.plan, runs: evaluate.runs, metrics: evaluate.metrics || d.metrics, comparison: comparison(d, evaluate), library: cycleLibrary(state, d), next: '调用 rsi.conclude 提交 verdict/findings/options；方向 cites 引用之前周期的资料库条目。' } } : {}),
+    shell: platform() === 'win32' ? 'cmd' : 'sh', stepVersions: d.steps, ...(evaluate ? { evaluate: { cycle: evaluate.n, plan: evaluate.plan, runs: evaluate.runs, metrics: evaluate.metrics || d.metrics, comparison: comparison(d, evaluate), library: cycleLibrary(state, d), next: '调用原生 MCP 工具 rsi_conclude 提交 verdict/findings/options；方向 cites 引用之前周期的资料库条目。' } } : {}),
     ...(analyze ? { analyze: { cycle: analyze.n, report: { verdict: analyze.report.verdict, findings: analyze.report.summary, confirmation: analyze.confirmation }, plan: analyze.plan, runs: analyze.runs,
       metrics: analyze.metrics || d.metrics, comparison: comparison(d, analyze), library: cycleLibrary(state, d),
-      next: '调用 rsi.propose({cycle,options:[{k,title,why,kind?,target?,cites?}]}) 交你的方向。target 写这个方向要改的对象（例如 lr、group_size、train.py 的奖励），几个分析成员的第一方向种类和对象都相同就算意见一致。' } } : {}),
-    ...(version ? { version: { ...version, next: version.repair ? '修好让它跑不起来的问题并提交 git，调用 rsi.version({change,commit,config})，插件用修好的版本重跑这一周期的计划；修不了就调 rsi.version({cannot:"原因"})。' : '按方向修改项目并提交 git；调用 rsi.version({change,commit,config})。config 是 JSON 对象或项目内 JSON 文件路径。' } } : {}) };
+      next: '调用原生 MCP 工具 rsi_propose({cycle,options:[{k,title,why,kind?,target?,cites?}]}) 交你的方向。target 写这个方向要改的对象（例如 lr、group_size、train.py 的奖励），几个分析成员的第一方向种类和对象都相同就算意见一致。' } } : {}),
+    ...(version ? { version: { ...version, next: version.repair ? '修好让它跑不起来的问题并提交 git，调用原生 MCP 工具 rsi_version({change,commit,config})，插件用修好的版本重跑这一周期的计划；修不了就调 rsi_version({cannot:"原因"})。' : '按方向修改项目并提交 git；调用原生 MCP 工具 rsi_version({change,commit,config})。config 是 JSON 对象或项目内 JSON 文件路径（也可用 configPath）。' } } : {}) };
 }
 
 // Some member runtimes hand nested arguments over as JSON text ("items": "[{…}]"); read them as the structures they describe.
@@ -247,7 +247,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     }
     if (d.executor.state !== 'passed') {
       d.executor.pending = submission;
-      return { ok: true, state: 'awaiting-preflight', next: 'Call rsi.executor if it has not been registered.' };
+      return { ok: true, state: 'awaiting-preflight', next: 'Call rsi_executor if it has not been registered.' };
     }
   }
   return submitInitStep(state, d.objective.id, { ...submission, ...(section === 'run' ? { executor: d.executor } : {}) }, now);

@@ -84,7 +84,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         const waiting = role === 'evaluate' ? d.rounds.find((r: Data) => r.state === 'evaluating') : null;
         if (waiting) askEvaluation(state, d, waiting);
         else if (role === 'iterate' && d.versionRequest)
-          enqueue(state, d, 'agent', { member: member.catId, action: 'version', message: { title: '接手', body: `${mention(member)} 治理实施成员换成了你：先调 rsi.task 看轮到你的事。` } });
+          enqueue(state, d, 'agent', { member: member.catId, action: 'version', message: { title: '接手', body: `${mention(member)} 治理实施成员换成了你：先调原生 MCP 工具 rsi_task 看轮到你的事。` } });
       }
       syncObjective(state, d);
       return { ok: true };
@@ -469,7 +469,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         for (const r of d.rounds) if (r.analysis?.waiting?.length && !r.analysis.waiting.includes(added.catId)) {
           r.analysis.waiting.push(added.catId);
           enqueue(state, d, 'agent', { member: added.catId, cycle: r.n, action: 'direction', message: { title: `第 ${r.n} 周期：请给方向`,
-            body: `${mention(added)} 你已加入本评估项方案讨论：调 rsi.task 看第 ${r.n} 周期结论与同周期对照，再调 rsi.propose 交你的方向。` } });
+            body: `${mention(added)} 你已加入本评估项方案讨论：调原生 MCP 工具 rsi_task 看第 ${r.n} 周期结论与同周期对照，再调 rsi_propose 交你的方向。` } });
         }
       }
       // A removed analyst no longer holds up a conclusion.
@@ -492,7 +492,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       for (const catId of round.analysis.waiting as string[]) {
         const m = d.members.find((x) => x.catId === catId) || { catId, name: catId };
         enqueue(state, d, 'agent', { member: catId, cycle: round.n, action: 'direction', message: { title: `第 ${round.n} 周期：请给方向（重发）`,
-          body: `${mention(m)} 第 ${round.n} 周期仍在等你给方向：调 rsi.task 读取结论与对照，再调 rsi.propose 提交。` } });
+          body: `${mention(m)} 第 ${round.n} 周期仍在等你给方向：调原生 MCP 工具 rsi_task 读取结论与对照，再调 rsi_propose 提交。` } });
       }
       return { ok: true };
     }
@@ -501,7 +501,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       const member = d.members.find((m) => m.role === 'iterate');
       if (!member?.catId) return { error: 'Assign a governance execution member first' };
       enqueue(state, d, 'agent', { member: member.catId, action: 'version', message: { title: d.versionRequest.repair ? `重发：修第 ${d.versionRequest.cycle} 周期的运行失败` : '重发：准备下一个版本',
-        body: `${mention(member)} 重新触发治理任务「${d.versionRequest.title}」：先调 rsi.task 看要求，完成后调 rsi.version 提交。` } });
+        body: `${mention(member)} 重新触发治理任务「${d.versionRequest.title}」：先调原生 MCP 工具 rsi_task 看要求，完成后调 rsi_version 提交。` } });
       return { ok: true };
     }
     case 'runCycle':

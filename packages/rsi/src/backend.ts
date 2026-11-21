@@ -91,7 +91,7 @@ export function createRsi(host: RsiHost) {
         for (const e of mine) e.inTurn = ctx.invocationId;
         const steps = mine.filter((e) => e.section).map((e) => state.experiments[e.objective].plan.findIndex((p) => p.k === e.section) + 1);
         const turns = [...(steps.length ? [`第 ${steps.join('、')} 步`] : []), ...mine.filter((e) => !e.section).map((e) => `「${e.message?.title}」`)].join('、');
-        return mine.length ? { ...result, next: `${turns}也轮到你了：接着调用 rsi.task 做，不用等新的消息。` } : result;
+        return mine.length ? { ...result, next: `${turns}也轮到你了：接着调用原生 MCP 工具 rsi_task 做，不用等新的消息。` } : result;
       }, () => ctx.assertCurrent());
       if (!result.error) await runtime.flush(key);
       return result;

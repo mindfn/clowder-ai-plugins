@@ -29,7 +29,7 @@ function executionEvents(state: import('./types.js').RsiState, d: Experiment) {
 
 // Tool usage lives in the plugin's registered `rsi` skill (skills/rsi/SKILL.md);
 // wake-up messages only keep a brief pointer to claim the current turn.
-export const AGENT_HOW = '按 rsi skill 流程处理：先调用 rsi_task({}) 认领并读取本步上下文。';
+export const AGENT_HOW = '按 rsi skill 流程处理：直接调用本会话原生 MCP 工具（工具名以 rsi_task 结尾，不同 CLI 带各自前缀如 *__rsi_task({})）认领并读取本步上下文；原生工具已挂载时不要走 plugin_call。';
 
 export function createRuntime(host: RsiHost) {
   let stopped = false, tail = Promise.resolve();

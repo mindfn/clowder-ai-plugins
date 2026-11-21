@@ -93,7 +93,7 @@ function requestRepair(state: RsiState, d: Experiment, round: Data, now: number)
   d.versionRequest = { cycle: round.n, title: `修第 ${round.n} 周期的运行失败`, direct: true, since: now, decision: null,
     repair: { signature, failures: failed.slice(0, 5).map((r: Data) => ({ run: r.id, group: r.group, seed: r.seed, step: r.error?.step, error: r.error?.raw, analysis: r.error?.analysis || null, log: String(r.log || '').slice(-1500) })) } };
   enqueue(state, d, 'agent', { member: member.catId, action: 'version', message: { title: `第 ${round.n} 周期运行失败，请修`,
-    body: `${mention(member)} ${failed.length} 次运行失败：${signature}。这是执行修复：只修让它跑不起来的问题，不改训练和评测。先调 rsi.task 看失败详情；修好提交 git 后调 rsi.version，插件用修好的版本重跑这一周期的计划。${WORKTREE}修不了就调 rsi.version({cannot:"原因"})，交给评估成员下结论。本晚还能自动修 ${left} 次。` } });
+    body: `${mention(member)} ${failed.length} 次运行失败：${signature}。这是执行修复：只修让它跑不起来的问题，不改训练和评测。先调原生 MCP 工具 rsi_task 看失败详情；修好提交 git 后调 rsi_version，插件用修好的版本重跑这一周期的计划。${WORKTREE}修不了就调 rsi_version({cannot:"原因"})，交给评估成员下结论。本晚还能自动修 ${left} 次。` } });
   message(state, d, now, `第 ${round.n} 周期运行失败，交给 ${member.name} 修`, `错误：${signature}\n\n修好后用修好的版本重跑这一周期的计划；本晚还能自动修 ${left} 次。`, 'plan');
   return true;
 }
@@ -113,7 +113,7 @@ export function abandonRepair(state: RsiState, d: Experiment, reason: string, no
 export function askEvaluation(state: RsiState, d: Experiment, round: Data) {
   const member = d.members.find((m) => m.role === 'evaluate')!;
   enqueue(state, d, 'agent', { member: member.catId, cycle: round.n,
-    message: { title: `第 ${round.n} 周期跑完`, body: `${mention(member)} 第 ${round.n} 周期跑完，调 rsi.task 看同周期对照、各组均值和逐种子结果，再调 rsi.conclude。${EXPECT_HINT}` } });
+    message: { title: `第 ${round.n} 周期跑完`, body: `${mention(member)} 第 ${round.n} 周期跑完，调原生 MCP 工具 rsi_task 看同周期对照、各组均值和逐种子结果，再调 rsi_conclude。${EXPECT_HINT}` } });
 }
 
 export function matrix(d: Experiment, round: Data) {
@@ -302,7 +302,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     // The analysts receive the same report and propose side by side; the conclusion card waits for them.
     round.analysis = { waiting: analysts.map((m) => m.catId), since: now };
     for (const m of analysts) enqueue(state, d, 'agent', { member: m.catId, cycle: round.n, action: 'direction', message: { title: `第 ${round.n} 周期：请给方向`,
-      body: `${mention(m)} 评估成员的结论是 ${input.verdict}：${round.report.headline}。调 rsi.task 看同周期对照、各组结果和之前的周期，再调 rsi.propose 交你的方向；几个分析成员的方向会署名并列，交给用户选。${EXPECT_HINT}` } });
+      body: `${mention(m)} 评估成员的结论是 ${input.verdict}：${round.report.headline}。调原生 MCP 工具 rsi_task 看同周期对照、各组结果和之前的周期，再调 rsi_propose 交你的方向；几个分析成员的方向会署名并列，交给用户选。${EXPECT_HINT}` } });
   } else conclusionCard(state, d, round, now, stopped);
   state.library[d.objective.projectId].push({ id: `${d.objective.id}-cycle-${round.n}`, kind: 'feedback', title: `第 ${round.n} 周期：${round.report.headline}`, body: `${round.plan.groups.filter((g: Data) => !g.control).map((g: Data) => `${g.label} (${g.version}) ${JSON.stringify(g.vars)}`).join('\n') || '当前版本基线'}\n\n${findings}${outcome}`,
     objectives: [d.objective.id], cycle: round.n, tried: round.plan.groups.filter((g: Data) => !g.control), result: cycleResult(input.verdict, compared, confirmation), sources: [{ objective: d.objective.id, cycle: round.n }], state: 'confirmed', by: member.catId, at: now });
@@ -355,7 +355,7 @@ export function requestVersion(state: RsiState, d: Experiment, round: Data) {
   d.objective.state = 'running';
   const member = d.members.find((m) => m.role === 'iterate')!;
   enqueue(state, d, 'agent', { member: member.catId, action: 'version',
-    message: { title: '准备下一个版本', body: `${mention(member)} 按「${d.versionRequest.title}」出下一个版本。${direct ? '这是执行修复：不和当前版本对比，登记后直接作为默认版本，所以只修执行，不改训练和评测。' : ''}先调 rsi.task，改项目并提交 git 后调 rsi.version。${WORKTREE}` } });
+    message: { title: '准备下一个版本', body: `${mention(member)} 按「${d.versionRequest.title}」出下一个版本。${direct ? '这是执行修复：不和当前版本对比，登记后直接作为默认版本，所以只修执行，不改训练和评测。' : ''}先调原生 MCP 工具 rsi_task，改项目并提交 git 后调 rsi_version。${WORKTREE}` } });
   syncObjective(state, d);
 }
 
