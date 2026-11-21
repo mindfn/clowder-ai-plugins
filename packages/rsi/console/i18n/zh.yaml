@@ -747,8 +747,8 @@ exp:
   dagReadySchedule: 计划执行时段
   triggerNow: 立即触发执行
   startScheduled: 按策略开启调度
-  stepMember: 成员
-  stepRev: 版本
+  stepMember: "成员："
+  stepRev: "版本："
   stepRefresh: 重新分析
   stepViewingOld: 当前查看的是历史版本快照（切换回最新版本可编辑或确认）
   sec:

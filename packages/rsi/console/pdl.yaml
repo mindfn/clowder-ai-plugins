@@ -750,18 +750,6 @@ views:
                 when: "@next"
           - type: label
             text: t:rsi.exp.sec.members
-            action:
-              type: button
-              label: t:rsi.exp.membersEdit
-              when: $.exp.projectPath
-              act: dialog
-              args:
-                kind: rsiMembers
-                objective: $.exp.id
-                prepare: $.exp.memberIds.prepare
-                evaluate: $.exp.memberIds.evaluate
-                iterate: $.exp.memberIds.iterate
-                cats: $.members.rows
           - type: list
             from: $.exp.execStages
             row:

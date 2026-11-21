@@ -747,8 +747,8 @@ exp:
   dagReadySchedule: Planned window
   triggerNow: Run now
   startScheduled: Start on schedule
-  stepMember: Member
-  stepRev: Version
+  stepMember: "Member: "
+  stepRev: "Version: "
   stepRefresh: Re-analyze
   stepViewingOld: Viewing a historical snapshot (switch back to latest to edit or confirm)
   sec:
