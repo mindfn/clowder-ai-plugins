@@ -36,7 +36,13 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
     }
     case 'stop': {
       if (!d) return { error: 'Experiment not found', status: 404 };
-      const limits = stopOf(body);
+      const curStop = d.objective.stop || {};
+      const nextInput = body.field === 'target'
+        ? { target: body.v ?? body.target ?? '', rounds: curStop.maxCycles ? String(curStop.maxCycles) : '' }
+        : body.field === 'rounds'
+          ? { target: curStop.target || '', rounds: body.v ?? body.rounds ?? '' }
+          : body;
+      const limits = stopOf(nextInput);
       if (limits.error) return limits;
       d.objective.stop = limits.stop;
       Object.assign(d.objective.budget ||= { used: 0 }, { rounds: limits.stop.maxCycles });

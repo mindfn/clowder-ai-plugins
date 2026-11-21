@@ -911,6 +911,12 @@ exp:
     addPolicy: 添加策略
     policyEmpty: 暂未配置执行策略（开始执行前添加即可）
     nextRunsTitle: 接下来执行预览（下 5 次）
+    stopTargetPlaceholder: 如 P99 <= 80（留空不限制）
+    rounds3: 最多 3 个周期
+    rounds5: 最多 5 个周期
+    rounds10: 最多 10 个周期
+    rounds20: 最多 20 个周期
+    rounds50: 最多 50 个周期
     maxRuns: 时间窗内最大执行次数
     unlimited: 不限制
     runs1: 最多 1 次

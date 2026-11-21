@@ -911,6 +911,12 @@ exp:
     addPolicy: Add policy
     policyEmpty: No execution policies yet (configure before starting runs)
     nextRunsTitle: Upcoming runs preview (next 5)
+    stopTargetPlaceholder: e.g. accuracy >= 0.90 (blank = unlimited)
+    rounds3: Up to 3 cycles
+    rounds5: Up to 5 cycles
+    rounds10: Up to 10 cycles
+    rounds20: Up to 20 cycles
+    rounds50: Up to 50 cycles
     maxRuns: Max runs per window
     unlimited: Unlimited
     runs1: Up to 1 run

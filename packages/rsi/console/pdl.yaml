@@ -1039,30 +1039,56 @@ views:
                       args:
                         request: repairInline
                         objective: $.exp.id
-              - type: kv
+              - type: settings
                 when: "!$.exp.projectPath"
-                from:
-                  - k: t:rsi.exp.pol.auto
-                    v: $.exp.policy.autoText
+                rows:
+                  - label: t:rsi.exp.pol.auto
+                    control:
+                      type: text
+                      variant: value
+                      text: $.exp.policy.autoText
           - type: section
             title: t:rsi.exp.sec.stopPolicy
             when: $.exp.projectPath
-            actions:
-              - type: button
-                label: t:rsi.exp.prep.edit
-                act: dialog
-                args:
-                  kind: rsiStop
-                  objective: $.exp.id
-                  target: $.exp.policy.stopTarget
-                  rounds: $.exp.policy.stopRounds
             blocks:
-              - type: kv
-                from:
-                  - k: t:rsi.newExp.stopTarget
-                    v: $.exp.policy.stopTargetText
-                  - k: t:rsi.newExp.stopRounds
-                    v: $.exp.policy.stopRoundsText
+              - type: settings
+                rows:
+                  - label: t:rsi.newExp.stopTarget
+                    control:
+                      type: input
+                      id: rsi-pol-stop-target
+                      label: t:rsi.newExp.stopTarget
+                      value: $.exp.policy.stopTarget
+                      placeholder: t:rsi.exp.pol.stopTargetPlaceholder
+                      change: plugin
+                      args:
+                        request: stopInline
+                        objective: $.exp.id
+                        field: target
+                  - label: t:rsi.newExp.stopRounds
+                    control:
+                      type: select
+                      id: rsi-pol-stop-rounds
+                      label: t:rsi.newExp.stopRounds
+                      value: $.exp.policy.stopRoundsValue
+                      options:
+                        - v: ""
+                          label: t:rsi.exp.pol.unlimited
+                        - v: "3"
+                          label: t:rsi.exp.pol.rounds3
+                        - v: "5"
+                          label: t:rsi.exp.pol.rounds5
+                        - v: "10"
+                          label: t:rsi.exp.pol.rounds10
+                        - v: "20"
+                          label: t:rsi.exp.pol.rounds20
+                        - v: "50"
+                          label: t:rsi.exp.pol.rounds50
+                      change: plugin
+                      args:
+                        request: stopInline
+                        objective: $.exp.id
+                        field: rounds
       - type: each
         from:
           - {}
@@ -5354,32 +5380,20 @@ views:
         rows:
           - label: t:rsi.execPolicy.timeWindow
             control:
-              type: stack
-              items:
-                - type: chip
+              type: seg
+              value: $.exp.policyEditor.timePresetValue
+              act: plugin
+              args:
+                request: policyDraft
+                objective: $.exp.id
+                field: timePreset
+              options:
+                - v: all
                   label: t:rsi.execPolicy.presetAll
-                  act: plugin
-                  args:
-                    request: policyDraft
-                    objective: $.exp.id
-                    field: timePreset
-                    v: all
-                - type: chip
+                - v: day
                   label: t:rsi.execPolicy.presetDay
-                  act: plugin
-                  args:
-                    request: policyDraft
-                    objective: $.exp.id
-                    field: timePreset
-                    v: day
-                - type: chip
+                - v: night
                   label: t:rsi.execPolicy.presetNight
-                  act: plugin
-                  args:
-                    request: policyDraft
-                    objective: $.exp.id
-                    field: timePreset
-                    v: night
           - label: t:rsi.schedule.start
             control:
               type: input
@@ -6666,6 +6680,18 @@ requests:
     body:
       op: repair
       objective: "@objective"
+      v: "@v"
+  stopInline:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: stop
+      objective: "@objective"
+      field: "@field"
       v: "@v"
   analystToggle:
     path: rsi/act

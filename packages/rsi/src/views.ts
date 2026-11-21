@@ -90,6 +90,7 @@ function policyEditorOf(d: Data, nowTs: number) {
     dateTo: draft.dateTo || '',
     start: draft.start || '',
     end: draft.end || '',
+    timePresetValue: !draft.start && !draft.end ? 'all' : draft.start === '09:00' && draft.end === '18:00' ? 'day' : draft.start === '20:00' && draft.end === '08:00' ? 'night' : '',
     excludeFrom: draft.excludeFrom || '',
     excludeTo: draft.excludeTo || '',
     hasExclude: exDays.length > 0 || !!(draft.excludeFrom || draft.excludeTo),
@@ -117,7 +118,7 @@ function policyOf(d: Data, o: Data, nowTs = Date.now()) {
   const shared = {
     schedule, repair, repairValue: String(repair), repairText: repairText(repair),
     stopTarget: stop.target || '', stopTargetText: stop.target || '不限制',
-    stopRounds: stop.maxCycles || '', stopRoundsText: stop.maxCycles ? `${stop.maxCycles} 个周期` : '不限制',
+    stopRounds: stop.maxCycles || '', stopRoundsValue: stop.maxCycles ? String(stop.maxCycles) : '', stopRoundsText: stop.maxCycles ? `${stop.maxCycles} 个周期` : '不限制',
     stopText: stopText(stop), autoKey: autoKey(d.policy.auto || AUTO.default) || 'default',
   };
   if (!o.projectPath) return Object.assign({}, d.policy, shared, { autoText: tc('rsi.exp.pol.autoText') });
