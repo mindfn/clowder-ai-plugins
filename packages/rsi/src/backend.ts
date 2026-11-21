@@ -2,10 +2,10 @@ import { follow, viewModel } from './views.js';
 import { act } from './actions.js';
 import { createRuntime } from './runtime.js';
 import { mergeProjects, projects } from './projects.js';
-import { isState, load, ownerKey, record, update } from './store.js';
+import { isState, load, ownerKey, readState, record, update } from './store.js';
 import { toolAction } from './tools.js';
 import type { Data, Experiment, OwnerContext, RsiHost, ToolContext } from './types.js';
-export { ownerKey } from './store.js';
+export { ownerKey, readState } from './store.js';
 
 export function json(status: number, payload: unknown) {
   return { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }, body: JSON.stringify(payload ?? null) };
@@ -66,8 +66,8 @@ export function createRsi(host: RsiHost) {
     if (removed.length) await runtime.drop(removed);
     await runtime.flush(key);
     if (created) {
-      const saved = await host.storage.get(key);
-      const id = isState(saved?.value) && saved.value.experiments[created].objective.thread;
+      const saved = await readState(host.storage, key);
+      const id = isState(saved?.value) && saved.value.experiments[created]?.objective.thread;
       // Open the new objective's conversation, then the RSI panel; the panel follows that conversation to the objective.
       if (id) return json(200, { ok: true, acts: [{ act: 'thread', args: { id } }, { act: 'open', args: { ref: 'plugin:official.rsi/rsi.panel' } }] });
     }

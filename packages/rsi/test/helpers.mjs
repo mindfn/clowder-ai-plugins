@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import plugin from '../dist/index.js';
-import { ownerKey } from '../dist/backend.js';
+import { ownerKey, readState } from '../dist/backend.js';
+import { update as updateStore } from '../dist/store.js';
 import { createFixtures, RSI_CP_INIT } from '../dist/fixtures.js';
 import { submitInitStep } from '../dist/init.js';
 
@@ -18,6 +19,9 @@ export function fixture() {
       entries.set(key, { revision: ++revision, value: clone(value) });
       return { applied: true };
     },
+    async delete(key) {
+      return { deleted: entries.delete(key) };
+    },
   };
   const start = () => plugin.create().start({ pluginInstanceId: 'rsi-test', storage, dataPath: '/tmp/rsi-fixture', log() {},
     threads: { async list(options) { if (!(options.limit >= 1 && options.limit <= 50)) throw new TypeError('limit must be an integer in 1..50'); return []; }, async get() { return null; }, async create() { throw new Error('demo must not create threads'); } },
@@ -29,12 +33,12 @@ export function fixture() {
   };
   const view = (query = {}, options) => invoke('view', { method: 'GET', query: { view: 'home', ...query } }, options);
   const act = (body, query = {}, options) => invoke('act', { method: 'POST', body, query }, options);
-  const read = async (userId = 'owner-a') => (await storage.get(ownerKey(userId)))?.value;
+  const read = async (userId = 'owner-a') => (await readState(storage, ownerKey(userId)))?.value;
   const update = async (fn, userId = 'owner-a') => {
-    const key = ownerKey(userId), current = await storage.get(key);
-    const result = fn(current.value);
-    assert.equal((await storage.compareAndSet(key, current.revision, current.value)).applied, true);
-    return result;
+    let out;
+    const res = await updateStore(storage, ownerKey(userId), (state) => { out = fn(state); return { ok: true }; });
+    assert.equal(res.error, undefined, JSON.stringify(res));
+    return out;
   };
   const seed = async () => {
     assert.equal((await storage.compareAndSet(ownerKey('owner-a'), null, createFixtures(now).state)).applied, true);

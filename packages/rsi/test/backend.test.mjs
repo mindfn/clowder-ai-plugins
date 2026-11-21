@@ -37,8 +37,8 @@ test('concurrent first reads share one seed and invalid retained data is rejecte
   const f = fixture();
   const results = await Promise.all([f.view(), f.view()]);
   assert.ok(results.every((r) => r.status === 200));
-  assert.equal((await f.storage.get(ownerKey('owner-a'))).revision, 1);
   const current = await f.storage.get(ownerKey('owner-a'));
+  assert.equal(current.value.seq, 1);
   await f.storage.compareAndSet(ownerKey('owner-a'), current.revision, { wrong: true });
   assert.equal((await f.view()).status, 500);
 });

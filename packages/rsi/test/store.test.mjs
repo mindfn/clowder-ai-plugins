@@ -1,16 +1,38 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createFixtures } from '../dist/fixtures.js';
-import { update } from '../dist/store.js';
+import { isOwnerKey, LIMIT, listOwners, load, ownerKey, readState, retain, update } from '../dist/store.js';
 
-const clone = (value) => JSON.parse(JSON.stringify(value));
-// Stores the state as one value, as the Host does, through one write that changes nothing.
+const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+
+function memStorage() {
+  const entries = new Map();
+  let revision = 0;
+  const writes = [];
+  return {
+    entries,
+    writes,
+    async list() { return Object.fromEntries([...entries].map(([k, v]) => [k, clone(v)])); },
+    async get(key) { return clone(entries.get(key)); },
+    async compareAndSet(key, expected, value) {
+      if (Buffer.byteLength(JSON.stringify(value)) > LIMIT) throw new TypeError(`exceeds ${LIMIT} bytes`);
+      if (key.length > 256) throw new TypeError(`key too long: ${key.length}`);
+      if ((entries.get(key)?.revision ?? null) !== expected) return { applied: false };
+      entries.set(key, { revision: ++revision, value: clone(value) });
+      writes.push(key);
+      return { applied: true };
+    },
+    async delete(key) { return { deleted: entries.delete(key) }; },
+  };
+}
+
+// Stores a legacy state and passes it through one write that compacts and shards it.
 async function write(state) {
-  let entry = { revision: 1, value: clone(state) };
-  const storage = { async get() { return clone(entry); }, async list() { return { owner: clone(entry) }; },
-    async compareAndSet(_key, revision, value) { if (revision !== entry.revision) return { applied: false }; entry = { revision: revision + 1, value: clone(value) }; return { applied: true }; } };
-  assert.deepEqual(await update(storage, 'owner', () => ({ ok: true })), { ok: true });
-  return entry.value;
+  const storage = memStorage();
+  const key = ownerKey('owner');
+  await storage.compareAndSet(key, null, clone(state));
+  assert.deepEqual(await update(storage, key, () => ({ ok: true })), { ok: true });
+  return (await readState(storage, key)).value;
 }
 
 test('every write takes delivered entries out of the outbox; an agent request stays until the turn it started is accounted for, a day at most', async () => {
@@ -44,4 +66,106 @@ test('every write slims what earlier versions stored: a report keeps its compari
   // An open cycle keeps everything: its evaluator reads it, and a retry would replace the run's environment.
   assert.equal(open.runs[0].log.length, 2000); assert.deepEqual(open.runs[0].attempts[0].env, env);
   assert.deepEqual(after.library.cartpole.at(-1).result, { verdict: 'keep', metric: 'score', means: { control: 1, change: 2 }, confirmation: { status: 'candidate', version: 'v2' } });
+});
+
+test('sharded storage holds > 1.5 MiB across multiple experiments and closed rounds without hitting 1 MiB per key', async () => {
+  const storage = memStorage();
+  const key = ownerKey('heavy-owner');
+  await load(storage, key, async () => {});
+
+  const pad = 'x'.repeat(90_000);
+  await retain(storage, key, (state) => {
+    const base = state.experiments['cp-converge'];
+    for (let e = 1; e <= 3; e++) {
+      const id = `obj-heavy-${e}`;
+      const exp = clone(base);
+      exp.objective.id = id;
+      exp.objective.name = `Heavy ${e}`;
+      exp.rounds = Array.from({ length: 5 }, (_, i) => ({
+        n: i + 1, state: 'done', version: 'v1', start: 1000 + i, end: 2000 + i,
+        runs: [{ id: `r-${e}-${i}`, state: 'done', metrics: { note: pad } }],
+        report: { verdict: 'keep', summary: `round ${i + 1}` },
+      }));
+      state.experiments[id] = exp;
+    }
+  });
+
+  const assembled = await readState(storage, key);
+  const totalBytes = Buffer.byteLength(JSON.stringify(assembled.value));
+  assert.ok(totalBytes > 1_400_000, `expected > 1.4 MiB assembled, got ${totalBytes}`);
+
+  const rootRaw = await storage.get(key);
+  assert.equal(rootRaw.value.sharded, 1);
+  assert.ok(Buffer.byteLength(JSON.stringify(rootRaw.value)) < 64 * 1024);
+  for (const [k, entry] of storage.entries) {
+    assert.ok(Buffer.byteLength(JSON.stringify(entry.value)) < LIMIT, `key ${k} exceeded 1 MiB`);
+  }
+
+  const owners = await listOwners(storage);
+  assert.equal(owners.length, 1);
+  assert.equal(owners[0][0], key);
+  assert.equal(isOwnerKey(owners[0][0]), true);
+  assert.equal(owners[0][1].value.experiments['obj-heavy-3'].rounds.length, 5);
+  assert.equal(owners[0][1].value.experiments['obj-heavy-3'].rounds[4].runs[0].metrics.note.length, 90_000);
+});
+
+test('unchanged shards are reused without rewriting, obsolete shards are deleted, and CAS 409 cleans up staged shards', async () => {
+  const storage = memStorage();
+  const key = ownerKey('gc-owner');
+  await load(storage, key, async () => {});
+
+  const beforeKeys = new Set(storage.entries.keys());
+  const beforeRoot = (await storage.get(key)).value;
+  storage.writes.length = 0;
+
+  await retain(storage, key, (state) => {
+    state.experiments['cp-converge'].objective.name = 'Updated title';
+  });
+  const afterRoot = (await storage.get(key)).value;
+  assert.equal(afterRoot.shards.details, beforeRoot.shards.details);
+  assert.equal(afterRoot.shards.experiments['pd-ttft'].key, beforeRoot.shards.experiments['pd-ttft'].key);
+  assert.notEqual(afterRoot.shards.experiments['cp-converge'].key, beforeRoot.shards.experiments['cp-converge'].key);
+  assert.deepEqual(storage.writes.length, 2);
+  assert.equal(storage.entries.has(beforeRoot.shards.experiments['cp-converge'].key), false);
+  assert.equal(storage.entries.size, beforeKeys.size);
+
+  const snapSize = storage.entries.size;
+  const origCas = storage.compareAndSet.bind(storage);
+  storage.compareAndSet = async (k, exp, val) => k === key ? { applied: false } : origCas(k, exp, val);
+  const res = await update(storage, key, (state) => {
+    state.experiments['pd-ttft'].objective.name = 'Should rollback';
+    return { ok: true };
+  });
+  storage.compareAndSet = origCas;
+  assert.equal(res.status, 409);
+  assert.equal(storage.entries.size, snapSize);
+  assert.notEqual((await readState(storage, key)).value.experiments['pd-ttft'].objective.name, 'Should rollback');
+
+  const deletedExpKey = afterRoot.shards.experiments['pd-ttft'].key;
+  await retain(storage, key, (state) => { delete state.experiments['pd-ttft']; });
+  assert.equal(storage.entries.has(deletedExpKey), false);
+});
+
+test('legacy monolithic single-key state reads seamlessly and migrates losslessly to sharded keys on update', async () => {
+  const storage = memStorage();
+  const key = ownerKey('legacy-owner');
+  const legacy = createFixtures(1800000000000).state;
+  legacy.experiments['cp-converge'].rounds = [{ n: 1, state: 'done', version: 'v1', runs: [{ id: 'r1', state: 'done', metrics: { score: 0.9 } }] }];
+  await storage.compareAndSet(key, null, legacy);
+
+  const before = await readState(storage, key);
+  assert.equal(before.legacy, true);
+  assert.equal(before.value.experiments['cp-converge'].rounds[0].runs[0].metrics.score, 0.9);
+
+  await retain(storage, key, () => {});
+  const afterRoot = await storage.get(key);
+  assert.equal(afterRoot.value.sharded, 1);
+  assert.ok(afterRoot.value.shards.details);
+  assert.ok(afterRoot.value.shards.experiments['cp-converge'].rounds['1']);
+
+  const after = await readState(storage, key);
+  assert.equal(after.legacy, false);
+  assert.deepEqual(after.value.experiments['cp-converge'].rounds[0].runs[0].metrics, { score: 0.9 });
+  assert.deepEqual(Object.keys(after.value.details).sort(), Object.keys(legacy.details).sort());
+  assert.deepEqual(after.value.library, legacy.library);
 });

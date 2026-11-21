@@ -4,7 +4,7 @@ import { abandonRepair, ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAn
 import { insideWindow, withinWindowLimit } from './schedule.js';
 import { bindObjectiveThread, clipTitle, recordInitExecution, threadTitle } from './init.js';
 import { createRuns } from './runs.js';
-import { isState, record, retain } from './store.js';
+import { isState, listOwners, readState, record, retain } from './store.js';
 import { removeVersionWorktrees } from './versions.js';
 import type { Data, Experiment, RsiHost, Section } from './types.js';
 
@@ -45,7 +45,7 @@ export function createRuntime(host: RsiHost) {
 
   async function deliverOutbox(key: string) {
     while (!stopped) {
-      const stored = await host.storage.get(key);
+      const stored = await readState(host.storage, key);
       if (!stored || !isState(stored.value)) return;
       const state = stored.value;
       const entry = state.outbox.find((e) => !e.sent && state.experiments[e.objective]?.objective.projectPath);
@@ -85,8 +85,7 @@ export function createRuntime(host: RsiHost) {
   }
 
   async function start() {
-    for (const [key, stored] of Object.entries(await host.storage.list())) {
-      if (!key.startsWith('rsi:') || !isState(stored.value)) continue;
+    for (const [key, stored] of await listOwners(host.storage)) {
       const real = Object.values(stored.value.experiments).filter((d) => d.objective.projectPath);
       if (!real.length) continue;
       await retain(host.storage, key, (state) => {
@@ -112,6 +111,7 @@ export function createRuntime(host: RsiHost) {
           }
         }
       });
+      if (!real.length) continue;
       for (const d of real) if (d.objective.thread) await subscribe(d.objective.thread);
       await flush(key);
     }
@@ -121,8 +121,7 @@ export function createRuntime(host: RsiHost) {
     if (!record(input) || typeof input.deliveryId !== 'string') throw new Error('Invalid RSI delivery');
     const receipt = { deliveryId: input.deliveryId };
     if (stopped || input.kind !== 'execution_status' || !['started', 'settled'].includes(input.state)) return receipt;
-    for (const [key, stored] of Object.entries(await host.storage.list())) {
-      if (!key.startsWith('rsi:') || !isState(stored.value)) continue;
+    for (const [key, stored] of await listOwners(host.storage)) {
       const d = Object.values(stored.value.experiments).find((d) => d.objective.projectPath && d.objective.thread === input.threadId);
       if (!d) continue;
       await retain(host.storage, key, (state) => {
@@ -140,7 +139,7 @@ export function createRuntime(host: RsiHost) {
   }
   async function tick() {
     if (stopped) return;
-    let owners = Object.entries(await host.storage.list()).filter(([key, entry]) => key.startsWith('rsi:') && isState(entry.value));
+    let owners = await listOwners(host.storage);
     // Analysts that have not proposed in time are left out and the conclusion goes out with the directions there are;
     // a conclusion nobody decided in time inside the run window goes on with its plan. Whatever else is running:
     // the busy check below only guards starting a new cycle.
@@ -149,7 +148,7 @@ export function createRuntime(host: RsiHost) {
     const decisionLate = (x: Experiment, r: Data) => x.objective.state === 'pending' && r.asked && !r.decision && now - r.asked > DECISION_WAIT && insideWindow(x.policy.schedule, now);
     const repairLate = (x: Experiment) => x.versionRequest?.repair && now - x.versionRequest.since > REPAIR_WAIT;
     const late = (state: import('./types.js').RsiState) => Object.values(state.experiments).some((x) => repairLate(x) || nightDue(x, now) || x.rounds.some((r: Data) => analysisLate(r) || decisionLate(x, r)));
-    for (const [key, entry] of owners) if (late(entry.value as import('./types.js').RsiState)) {
+    for (const [key, entry] of owners) if (late(entry.value)) {
       await retain(host.storage, key, (state) => {
         for (const x of Object.values(state.experiments)) if (repairLate(x)) abandonRepair(state, x, `${REPAIR_WAIT / 60_000} 分钟内没修好`, now);
         for (const x of Object.values(state.experiments)) for (const r of x.rounds) {
@@ -162,7 +161,7 @@ export function createRuntime(host: RsiHost) {
       await flush(key);
     }
     if (stopped) return;
-    owners = Object.entries(await host.storage.list()).filter(([key, entry]) => key.startsWith('rsi:') && isState(entry.value));
+    owners = await listOwners(host.storage);
     // A cycle the schedule started stops its running run once its window has closed; waking the runs on every tick continues it when the window opens.
     runs.hold(owners.flatMap(([, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments)
       .flatMap((d) => d.rounds.filter((r: Data) => r.scheduled && r.state === 'running' && !insideWindow(d.policy.schedule, now)).flatMap((r: Data) => r.runs.map((x: Data) => x.id)))));

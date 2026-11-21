@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import plugin from '../dist/index.js';
-import { ownerKey } from '../dist/backend.js';
+import { ownerKey, readState } from '../dist/backend.js';
+import { retain } from '../dist/store.js';
 import { quote } from '../dist/runs.js';
 
 const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -51,6 +52,7 @@ async function fixture(t) {
       if ((entries.get(key)?.revision ?? null) !== expected) return { applied: false };
       entries.set(key, { revision: ++revision, value: clone(value) }); return { applied: true };
     },
+    async delete(key) { return { deleted: entries.delete(key) }; },
   };
   const host = { pluginInstanceId: 'rsi-live-test', storage, dataPath: join(project, 'plugin-data'),
     log(_level, message, fields) { assert.fail(`${message}: ${JSON.stringify(fields)}`); },
@@ -79,7 +81,7 @@ async function fixture(t) {
       { ...owner, operation: method === 'GET' ? 'read' : 'write' });
     return { status: response.status, ...JSON.parse(response.body) };
   };
-  const read = async () => (await storage.get(ownerKey('owner')))?.value;
+  const read = async () => (await readState(storage, ownerKey('owner')))?.value;
   // The suite runs at any hour: the night decides nothing by itself unless a test asks for it.
   const create = async (extra = {}) => {
     const before = new Set(Object.keys((await read())?.experiments || {}));
@@ -318,9 +320,7 @@ test('stop kills the owned process and restart restores subscriptions with faile
   let d=(await f.read()).experiments[o.id];
   assert.equal(d.rounds[0].state,'interrupted'); assert.equal(d.rounds[0].runs[0].state,'failed'); assert.equal(d.rounds[0].runs[0].retryable,true);
   assert.equal(f.subscriptions.length,subscriptions+1);
-  const stored=await f.storage.get(ownerKey('owner'));
-  stored.value.experiments[o.id].rounds[0].plan.groups[0].vars.slow=false;
-  await f.storage.compareAndSet(ownerKey('owner'),stored.revision,stored.value);
+  await retain(f.storage, ownerKey('owner'), (state) => { state.experiments[o.id].rounds[0].plan.groups[0].vars.slow = false; });
   assert.equal((await f.http('POST',{op:'runCycle',objective:o.id})).status,200);
   d=(await until(f.read,(s)=>s.experiments[o.id].rounds[0].state==='evaluating')).experiments[o.id];
   assert.equal(d.rounds.length,1);assert.equal(d.rounds[0].runs[0].state,'done');
@@ -411,9 +411,9 @@ test('deleting an objective kills its run and removes its runs folder, data, pen
   await f.http('POST', { op: 'runCycle', objective: o.id });
   const running = await until(f.read, (s) => s.experiments[o.id].rounds[0]?.runs[0]?.state === 'running');
   const pid = await until(() => readFile(join(running.experiments[o.id].rounds[0].runs[0].directory, 'pid'), 'utf8').then(Number, () => null), (p) => p !== null, 'child process start');
-  const stored = await f.storage.get(ownerKey('owner'));
-  stored.value.library[f.project].push({ id: `${o.id}-cycle-1`, kind: 'feedback', title: 'c1', objectives: [o.id], cycle: 1 }, { id: 'shared', kind: 'provided', title: 's', objectives: [o.id, 'other'] });
-  assert.ok((await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value)).applied);
+  await retain(f.storage, ownerKey('owner'), (state) => {
+    state.library[f.project].push({ id: `${o.id}-cycle-1`, kind: 'feedback', title: 'c1', objectives: [o.id], cycle: 1 }, { id: 'shared', kind: 'provided', title: 's', objectives: [o.id, 'other'] });
+  });
   assert.equal((await f.http('POST', { op: 'delete', objective: o.id }, { project: f.project })).status, 200);
   await until(async () => { try { process.kill(pid, 0); return false; } catch { return true; } }, Boolean, 'run killed');
   const s = await f.read();
@@ -515,9 +515,9 @@ test('the page wakes the evaluator again for a cycle that waits for its conclusi
 test('analysts propose after the evaluator concludes; the conclusion card waits for them and says whether they agree', async (t) => {
   const f = await fixture(t), o = await f.create(); await f.initialize(o, losing);
   // An objective created before alpha.24 still holds demo placeholders (analysts without a member id); they never act.
-  const stored = await f.storage.get(ownerKey('owner'));
-  stored.value.experiments[o.id].members.push({ role: 'analyze', name: '分析甲', model: 'claude-opus-5-5' });
-  await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value);
+  await retain(f.storage, ownerKey('owner'), (state) => {
+    state.experiments[o.id].members.push({ role: 'analyze', name: '分析甲', model: 'claude-opus-5-5' });
+  });
   const cats = [{ id: 'ana-1', name: '甲', model: 'm1' }, { id: 'ana-2', name: '乙', model: 'm2' }];
   for (const c of cats) assert.equal((await f.http('POST', { op: 'analystAdd', objective: o.id, catId: c.id, cats })).status, 200);
   assert.deepEqual((await f.read()).experiments[o.id].members.filter((m) => m.role === 'analyze' && m.catId).map((m) => [m.catId, m.name, m.model]), [['ana-1', '甲', 'm1'], ['ana-2', '乙', 'm2']]);
@@ -647,9 +647,7 @@ test('an execution fix replaces the default without competing with it', async (t
   const f = await fixture(t), o = await f.create();
   await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [11, 23] });
   // The default's configuration sets delta 2 (score = seed + delta).
-  const stored = await f.storage.get(ownerKey('owner'));
-  stored.value.experiments[o.id].versions[0].config = { delta: 2 };
-  await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value);
+  await retain(f.storage, ownerKey('owner'), (state) => { state.experiments[o.id].versions[0].config = { delta: 2 }; });
   const first = await execute(f, o);
   await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
   await f.tool('conclude', { cycle: first.n, verdict: 'insufficient', findings: 'A retry failed',
@@ -700,9 +698,7 @@ test('a prediction whose metric left the scale is recorded as unresolved and sta
   await f.tool('task', {}, 'codex', o.thread);
   await f.tool('version', { change: 'Delta 10', config: { delta: 10 } }, 'codex', o.thread);
   // The scale changes before the version runs: the predicted metric is no longer on it.
-  const stored = await f.storage.get(ownerKey('owner'));
-  stored.value.experiments[o.id].versions[1].prediction.metric = 'retired';
-  await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value);
+  await retain(f.storage, ownerKey('owner'), (state) => { state.experiments[o.id].versions[1].prediction.metric = 'retired'; });
   const second = await execute(f, o);
   await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
   await f.tool('conclude', { cycle: second.n, verdict: 'keep', findings: 'Delta helps', options: [{ k: 'confirm', title: 'Confirm', why: 'Won', cites: [`${o.id}-cycle-1`] }] }, 'cat-b5ddoo9l', o.thread);
@@ -728,11 +724,11 @@ test('a state grown past the storage limit by earlier versions is compacted when
   const f = await fixture(t), o = await f.create();
   await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [5] });
   await execute(f, o);
-  const stored = await f.storage.get(ownerKey('owner'));
-  const run = stored.value.experiments[o.id].rounds[0].runs[0];
+  const root = await f.storage.get(ownerKey('owner')), legacy = await f.read();
+  const run = legacy.experiments[o.id].rounds[0].runs[0];
   Object.assign(run, { log: 'x'.repeat(50000), error: { kind: 'env', step: 'submit', raw: 'y'.repeat(50000) } });
-  stored.value.outbox.push({ id: 'old-message', kind: 'message', objective: o.id, sent: 1, message: { title: 't', body: 'z'.repeat(50000) } });
-  await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value);
+  legacy.outbox.push({ id: 'old-message', kind: 'message', objective: o.id, sent: 1, message: { title: 't', body: 'z'.repeat(50000) } });
+  await f.storage.compareAndSet(ownerKey('owner'), root.revision, legacy);
   await f.activation().stop();
   f.start();
   await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
@@ -776,13 +772,10 @@ test('a write still past the Host’s 1 MiB value after compaction is refused wi
   const added = await f.http('POST', { op: 'docAdd', title: 'Too large', body: 'x'.repeat(1024 * 1024) }, { project: f.project });
   assert.equal(added.status, 507); assert.match(added.error, /^RSI 状态超过宿主 1 MiB 上限（\d+ 字节，上限 1048576 字节）/);
   assert.deepEqual(await stored(), before);
-  // Less room left than a conclusion takes: the evaluator is told why rsi.conclude failed, and the cycle still waits for it.
+  // A single shard that still exceeds 1 MiB (e.g. a 1 MiB conclusion payload) is refused with 507, and the cycle stays evaluating.
   await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
-  const full = await f.storage.get(ownerKey('owner'));
-  full.value.details.padding = { text: 'x'.repeat(1024 * 1024 - Buffer.byteLength(JSON.stringify(full.value)) - 100) };
-  assert.ok((await f.storage.compareAndSet(ownerKey('owner'), full.revision, full.value)).applied);
   before = await stored();
-  const concluded = await f.tool('conclude', { cycle: round.n, verdict: 'baseline', findings: 'Measured', options: [{ k: 'next', title: 'Next', why: 'w' }] }, 'cat-b5ddoo9l', o.thread);
+  const concluded = await f.tool('conclude', { cycle: round.n, verdict: 'baseline', findings: 'x'.repeat(1024 * 1024), options: [{ k: 'next', title: 'Next', why: 'w' }] }, 'cat-b5ddoo9l', o.thread);
   assert.equal(concluded.status, 507); assert.match(concluded.error, /^RSI 状态超过宿主 1 MiB 上限（\d+ 字节/);
   assert.deepEqual(await stored(), before); assert.equal((await f.read()).experiments[o.id].rounds[0].state, 'evaluating');
 });
@@ -872,10 +865,11 @@ test('commit versions use reusable project worktrees and retire them after the l
 test('a selection that loses on fresh seeds stays rejected and never replaces the default', async (t) => {
   const f = await fixture(t), o = await f.create(); Object.assign(f.commands, pythonExecutor);
   await f.initialize(o, plan({ delta: 10, only_selection: true }));
-  const saved = await f.storage.get(ownerKey('owner')), proposed = saved.value.experiments[o.id];
-  proposed.versions.push({id:'v2',parent:'v1',change:'Proposed config',config:{},commit:null,current:false,status:'proposed',at:Date.now()});
-  proposed.upcoming.groups[0].version = 'v2';
-  assert.equal((await f.storage.compareAndSet(ownerKey('owner'),saved.revision,saved.value)).applied,true);
+  await retain(f.storage, ownerKey('owner'), (state) => {
+    const proposed = state.experiments[o.id];
+    proposed.versions.push({id:'v2',parent:'v1',change:'Proposed config',config:{},commit:null,current:false,status:'proposed',at:Date.now()});
+    proposed.upcoming.groups[0].version = 'v2';
+  });
   await f.http('POST', { op: 'analystAdd', objective: o.id, catId: 'ana-1', cats: [{ id: 'ana-1', name: '甲', model: 'm1' }] });
   await execute(f, o); assert.equal((await report(f, o)).confirmation.status, 'candidate'); await decide(f, o);
   const round = await execute(f, o); assert.ok(round.plan.seeds.every((s) => s > 23));
@@ -920,11 +914,11 @@ test('governance execution is its own member: the version a decision asks for go
 test('an objective from before governance execution had its own member keeps the preparer doing it', async (t) => {
   const f = await fixture(t), o = await f.create();
   // Like the objectives created before alpha.24, it still holds the template's placeholder members, an iterator without a cat among them.
-  const stored = await f.storage.get(ownerKey('owner'));
-  stored.value.experiments[o.id].members = stored.value.experiments[o.id].members.filter((m) => m.role !== 'iterate').concat({ role: 'iterate', name: '迭代成员', model: 'claude-opus-5-5' }, { role: 'metrics', name: '指标成员', model: 'gpt-5.6' });
-  // A dialog draft from alpha.45–46 held bare ids.
-  stored.value.draft = { analysts: ['cat-old'] };
-  assert.equal((await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value)).applied, true);
+  await retain(f.storage, ownerKey('owner'), (state) => {
+    state.experiments[o.id].members = state.experiments[o.id].members.filter((m) => m.role !== 'iterate').concat({ role: 'iterate', name: '迭代成员', model: 'claude-opus-5-5' }, { role: 'metrics', name: '指标成员', model: 'gpt-5.6' });
+    // A dialog draft from alpha.45–46 held bare ids.
+    state.draft = { analysts: ['cat-old'] };
+  });
   await f.activation().stop(); f.start();
   await until(f.read, (s) => s.experiments[o.id].members.every((m) => m.catId), 'placeholders removed');
   assert.deepEqual((await f.read()).experiments[o.id].members.map((m) => [m.role, m.catId]), [['prepare', 'codex'], ['evaluate', 'cat-b5ddoo9l'], ['iterate', 'codex']]);
@@ -946,10 +940,11 @@ test('discussion members picked in the new-objective dialog are a draft until th
 test('a winner waiting for confirmation asks the analysts for nothing: the next cycle is the confirmation', async (t) => {
   const f = await fixture(t), o = await f.create(); Object.assign(f.commands, pythonExecutor);
   await f.initialize(o, plan({ delta: 10, only_selection: true }));
-  const saved = await f.storage.get(ownerKey('owner')), proposed = saved.value.experiments[o.id];
-  proposed.versions.push({id:'v2',parent:'v1',change:'Proposed config',config:{},commit:null,current:false,status:'proposed',at:Date.now()});
-  proposed.upcoming.groups[0].version = 'v2';
-  assert.equal((await f.storage.compareAndSet(ownerKey('owner'),saved.revision,saved.value)).applied,true);
+  await retain(f.storage, ownerKey('owner'), (state) => {
+    const proposed = state.experiments[o.id];
+    proposed.versions.push({id:'v2',parent:'v1',change:'Proposed config',config:{},commit:null,current:false,status:'proposed',at:Date.now()});
+    proposed.upcoming.groups[0].version = 'v2';
+  });
   assert.equal((await f.http('POST', { op: 'analystAdd', objective: o.id, catId: 'ana-1', cats: [{ id: 'ana-1', name: '甲', model: 'm1' }] })).status, 200);
   const round = await execute(f, o), result = await report(f, o);
   assert.equal(result.confirmation.status, 'candidate'); assert.equal(result.analysts, undefined);
@@ -1145,9 +1140,7 @@ test('inside the run window the first direction of a kind the objective allows i
 test('at night the analysts’ first direction is adopted only when they agree, the first analyst’s for them', async (t) => {
   const f = await fixture(t), o = await f.create(); await f.initialize(o, losing);
   // An objective created before the setting has none: the default applies.
-  const stored = await f.storage.get(ownerKey('owner'));
-  delete stored.value.experiments[o.id].policy.auto;
-  assert.ok((await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value)).applied);
+  await retain(f.storage, ownerKey('owner'), (state) => { delete state.experiments[o.id].policy.auto; });
   const cats = [{ id: 'ana-1', name: '甲', model: 'm1' }, { id: 'ana-2', name: '乙', model: 'm2' }];
   for (const c of cats) await f.http('POST', { op: 'analystAdd', objective: o.id, catId: c.id, cats });
   t.mock.timers.enable({ apis: ['Date'], now: night });
@@ -1475,15 +1468,15 @@ test('a long statement creates a short clipped thread title and card title, and 
   assert.ok(goalCard && goalCard.payload.title.length <= 120, goalCard?.payload?.title);
 
   // Legacy alpha.62 outbox entry with an overlong title must self-heal on restart instead of failing flush().
-  const stored = await f.storage.get(ownerKey('owner'));
   const legacyId = 'obj-legacy-overlong';
-  stored.value.experiments[legacyId] = clone(stored.value.experiments[o.id]);
-  stored.value.experiments[legacyId].objective.id = legacyId;
-  stored.value.experiments[legacyId].objective.thread = null;
-  const origSummary = stored.value.objectives[f.project].find((x) => x.id === o.id);
-  stored.value.objectives[f.project].push({ ...clone(origSummary), id: legacyId });
-  stored.value.outbox.unshift({ id: 'legacy-create', kind: 'createThread', objective: legacyId, project: f.project, title: `RSI · ${statement}` });
-  await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value);
+  await retain(f.storage, ownerKey('owner'), (state) => {
+    state.experiments[legacyId] = clone(state.experiments[o.id]);
+    state.experiments[legacyId].objective.id = legacyId;
+    state.experiments[legacyId].objective.thread = null;
+    const origSummary = state.objectives[f.project].find((x) => x.id === o.id);
+    state.objectives[f.project].push({ ...clone(origSummary), id: legacyId });
+    state.outbox.unshift({ id: 'legacy-create', kind: 'createThread', objective: legacyId, project: f.project, title: `RSI · ${statement}` });
+  });
   await f.activation().stop();
   f.start();
   const healed = await until(f.read, (s) => Boolean(s.experiments[legacyId]?.objective.thread), 'legacy overlong thread creation');

@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { finishCycle } from './cycles.js';
 import { message, recordInitExecution, submitInitStep } from './init.js';
 import { insideWindow } from './schedule.js';
-import { clip, isState, LOG_KEEP, record, retain } from './store.js';
+import { clip, listOwners, LOG_KEEP, record, retain } from './store.js';
 import { projectCommit, removeVersionWorktrees, versionDirectory } from './versions.js';
 import type { Data, RsiHost } from './types.js';
 
@@ -56,9 +56,8 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
   async function work() {
     while (!stopped) {
       busy = runId = undefined; held = false;
-      const entries = await host.storage.list();
-      const owners = Object.entries(entries).filter(([key, entry]) => key.startsWith('rsi:') && isState(entry.value));
-      const retired = owners.flatMap(([key, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments)
+      const owners = await listOwners(host.storage);
+      const retired = owners.flatMap(([key, entry]) => Object.values(entry.value.experiments)
         .filter((d) => d.objective.projectPath && ['done', 'retired'].includes(d.objective.state) && d.versions.some((v: Data) => v.worktree)).map((d) => ({ key, d })))[0];
       if (retired) {
         await removeVersionWorktrees(retired.d);
