@@ -780,13 +780,17 @@ exp:
   execStatusRoundsOf: "{0} cycles"
   goExecute: Open Governance & Execution
   execStageTitle:
-    collect: Run & Collect
+    node: Version
+    apply: Apply
+    collect: Collect
     evaluate: Evaluate
     discuss: Discuss
-    iterate: Govern & Apply
+    iterate: Govern
     _: "{0}"
   execStageDesc:
-    collect: Runs control and experiment groups automatically via the registered executor and collects metrics/logs.
+    node: Active baseline version node; each adopted direction derives the next version from here.
+    apply: Deploys the version and group parameters to the target runner automatically via the registered executor.
+    collect: Runs control and experiment groups inside the schedule window and collects per-seed metrics and logs automatically.
     evaluate: Compares group means, standard deviations, guardrails, and visual diffs to produce the cycle verdict.
     discuss: Multiple members review the evaluation in parallel, propose next directions, and check consensus.
     iterate: Applies the chosen direction to code/config as a new version, or repairs failed runs.

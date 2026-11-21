@@ -511,7 +511,11 @@ test('dual-tab console supports inline role switching, step history snapshots, e
   assert.equal(finalVm.policy.schedule.maxRunsValue, '3');
   assert.equal(finalVm.policy.autoKey, 'execution');
   assert.equal(finalVm.policy.repairValue, '3');
-  assert.deepEqual(finalVm.execFlow.nodes.map((n) => n.k), ['collect', 'evaluate', 'discuss', 'iterate']);
+  assert.deepEqual(finalVm.execFlow.nodes.map((n) => n.k), ['apply', 'collect', 'evaluate', 'discuss', 'iterate']);
+  assert.equal(finalVm.execFlow.rows.length, 1);
+  assert.equal(finalVm.execFlow.rows[0].steps.length, 5);
   assert.equal(finalVm.execFlow.selected.isDiscuss, true);
   assert.equal(finalVm.execFlow.selected.discussionIds.includes('codex'), true);
+  const scopeFinal = finalVm.prep.steps.find((s) => s.k === 'scope');
+  assert.deepEqual(scopeFinal.unknownList, ['v2 unknown']);
 });

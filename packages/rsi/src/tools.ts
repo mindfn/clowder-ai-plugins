@@ -165,6 +165,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     const preview = typeof input.items === 'string' ? JSON.stringify(input.items.slice(0, 60)) : typeof input.items;
     return { error: `items must be a non-empty JSON array of objects (received ${Array.isArray(input.items) ? 'empty array []' : preview}); pass an actual array [{id, value, ...}], not a JSON string` };
   }
+  const validNotes = (v: unknown) => v === undefined || typeof v === 'string' || (Array.isArray(v) && v.every(text));
   if (input.items.some((p: unknown) => !record(p) || !text(p.id) || !text(p.value)
     || p.facts !== undefined && (!Array.isArray(p.facts) || p.facts.some((f: unknown) => !record(f) || !text(f.k) || typeof f.v !== 'string'))
     || p.rec !== undefined && !['explore', 'fixed', 'excluded'].includes(p.rec)
@@ -172,7 +173,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     || new Set(input.items.map((p: Data) => p.id)).size !== input.items.length
     || input.items.some((p: Data) => !d.prep.some((x) => x.section === section && x.id === p.id) && (!own || !text(p.title) || d.prep.some((x) => x.id === p.id)))
     || d.prep.some((p) => p.section === section && !p.mine && !own && !input.items.some((x: Data) => x.id === p.id))
-    || input.unknowns !== undefined && typeof input.unknowns !== 'string' || input.next !== undefined && typeof input.next !== 'string') return { error: 'Submit all step items with non-empty values and valid facts/rec/can/tag; in a real project a new item needs its own id and a title' };
+    || !validNotes(input.unknowns) || !validNotes(input.next)) return { error: 'Submit all step items with non-empty values and valid facts/rec/can/tag; in a real project a new item needs its own id and a title' };
   if (section === 'run' && input.window !== undefined && !parseScheduleText(input.window)) return { error: 'Provide a valid window such as 不限制, 周一至周五 09:00–18:00；周六至周日 全天, 2026-11-21~2026-11-30 09:00–18:00, or 20:00–08:00' };
   if (input.goal !== undefined && !record(input.goal)) return { error: 'Invalid goal' };
   if (input.docs !== undefined && (!Array.isArray(input.docs) || input.docs.some((doc: unknown) => !record(doc) || !text(doc.id) || !text(doc.title) || !text(doc.body) || !['project', 'provided', 'feedback'].includes(doc.kind)))) return { error: 'Docs require id, title, body and kind' };
@@ -191,7 +192,8 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
   if ((section === 'design' || section === 'baseline') && input.upcoming !== undefined && !validPlan(input.upcoming)) return { error: 'Invalid upcoming plan' };
   if (section === 'design' && !validPlan(input.upcoming)) return { error: 'Step 5 requires upcoming {groups:[{id,label,vars}],seeds:[integer]}' };
   const items = input.items.map((p: Data) => ({ ...d.prep.find((x) => x.id === p.id)!, ...p, section })) as PrepItem[];
-  const submission = { section, executionId: d.exec![section]!.id, items, unknowns: input.unknowns, next: input.next, ...(section === 'run' && input.window ? { window: input.window } : {}),
+  const joinNote = (v: unknown) => Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean).join('\n') : v;
+  const submission = { section, executionId: d.exec![section]!.id, items, unknowns: joinNote(input.unknowns) as string | undefined, next: joinNote(input.next) as string | undefined, ...(section === 'run' && input.window ? { window: input.window } : {}),
     ...(section === 'goal' && input.goal ? { goal: input.goal } : {}), ...(section === 'rules' ? { metrics: input.metrics } : {}),
     ...(['design', 'baseline'].includes(section) && input.upcoming ? { upcoming: input.upcoming } : {}),
     ...(input.docs ? { docs: input.docs.map((doc: Data) => ({ ...doc, objectives: [d.objective.id], sources: doc.sources || [], by: ctx.catId })) } : {}) };

@@ -805,44 +805,53 @@ views:
                       - type: list
                         from: "@items"
                         row: rsi.prep
-                      - type: disclosure
-                        key: rsi-step-notes
-                        label: t:rsi.exp.stepNotesFold
-                        when: "@unknowns"
-                        blocks:
-                          - type: kv
-                            from:
-                              - k: t:rsi.exp.stepUnknownsLabel
-                                v: "@unknowns"
-                              - k: t:rsi.exp.stepNextLabel
-                                v: "@next"
-                                when: "@next"
-                      - type: disclosure
-                        key: rsi-step-next-only
+                      - type: list
+                        label: t:rsi.exp.stepUnknownsLabel
+                        optional: true
+                        from: "@unknownList"
+                        row:
+                          layout: record
+                          title: "@"
+                      - type: list
                         label: t:rsi.exp.stepNextLabel
-                        when:
-                          - "!@unknowns"
-                          - "@next"
-                        blocks:
-                          - type: text
-                            text: "@next"
+                        optional: true
+                        from: "@nextList"
+                        row:
+                          layout: record
+                          title: "@"
           - type: section
             title: t:rsi.exp.sec.execStages
             blocks:
               - type: component
-                use: plugin:official.rsi/rsiInitDag
+                use: plugin:official.rsi/rsiLineage
                 props:
-                  from: $.exp.execFlow.nodes
-                  hideLegend: true
-                  compact: true
-                  act: plugSet
-                  args:
-                    k: execStage
-                    v: "@k"
-                  title:
-                    t: rsi.exp.execStageTitle
+                  from: $.exp.execFlow.rows
+                  key: "@key"
+                  parent: "@parentKey"
+                  node:
+                    label:
+                      - text: "@id"
+                    state: "@nodeState"
+                    pressed: "@nodeSelected"
+                    act: plugSet
                     args:
-                      - "@k"
+                      k: execStage
+                      v: "@pick"
+                  cells:
+                    - type: each
+                      from: "@steps"
+                      control:
+                        type: chip
+                        label:
+                          t: rsi.exp.execStageTitle
+                          args:
+                            - "@k"
+                        faint: "@faint"
+                        pressed: "@selected"
+                        act: plugSet
+                        args:
+                          k: execStage
+                          v: "@pick"
               - type: box
                 variant: expand
                 blocks:
@@ -854,7 +863,7 @@ views:
                           args:
                             - $.exp.execFlow.selected.k
                   - type: settings
-                    when: $.exp.execFlow.selected.isCollect
+                    when: $.exp.execFlow.selected.isAutoStage
                     rows:
                       - label: t:rsi.exp.execStageRunnerLabel
                         control:

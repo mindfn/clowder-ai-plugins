@@ -330,6 +330,14 @@ function exp(): any {
     : state === 'submitted' || state === 'stale' ? 'pending'
     : ['cancelled', 'failed', 'blocked', 'missing'].includes(state) ? 'error'
     : 'waiting';
+  const splitPoints = (raw: unknown): string[] => {
+    if (Array.isArray(raw)) return raw.map((x) => String(x || '').trim()).filter(Boolean);
+    if (typeof raw !== 'string' || !raw.trim()) return [];
+    const lines = raw.split(/\n+/).map((s) => s.replace(/^[\s\-•*\d.)、]+/, '').trim()).filter(Boolean);
+    if (lines.length > 1) return lines;
+    const bySemi = lines[0].split(/[；;。]+/).map((s) => s.trim()).filter(Boolean);
+    return bySemi.length > 1 ? bySemi : lines;
+  };
   const rawSteps = d.plan.map(function (p: any, i: any): any {
     const k = p.k, items = d.prep.filter(function (x: any): any { return x.section === k; }).map(function (x: any): any { return Object.assign({}, x, { needYou: x.neededFrom === 'human' && x.state !== 'confirmed', by: x.by && nameOf(x.by) }); });
     const has = function (st: any): any { return items.some(function (x: any): any { return x.state === st; }); }, ex = d.exec && d.exec[k], st = d.steps && d.steps[k];
@@ -348,7 +356,10 @@ function exp(): any {
     const viewItems = pickedHist
       ? (pickedHist.items || []).map((x: Data) => Object.assign({}, x, { needYou: false, by: x.by && nameOf(x.by) }))
       : items;
-    return { k: k, i: i + 1, role: p.role, owner: ownerMember?.name || memberName(p.role), ownerCatId: ownerMember?.catId || '', depKeys: [...p.deps], items: viewItems, needCount: items.filter((x: any) => x.needYou).length, by: ex && ex.state === 'started' && nameOf(ex.by), who: ex && nameOf(ex.by), reason: ex && ex.reason || '', unknowns: pickedHist ? pickedHist.unknowns : st && st.unknowns, next: pickedHist ? pickedHist.next : st && st.next,
+    const unknownsVal = pickedHist ? pickedHist.unknowns : st && st.unknowns;
+    const nextVal = pickedHist ? pickedHist.next : st && st.next;
+    return { k: k, i: i + 1, role: p.role, owner: ownerMember?.name || memberName(p.role), ownerCatId: ownerMember?.catId || '', depKeys: [...p.deps], items: viewItems, needCount: items.filter((x: any) => x.needYou).length, by: ex && ex.state === 'started' && nameOf(ex.by), who: ex && nameOf(ex.by), reason: ex && ex.reason || '', unknowns: unknownsVal, next: nextVal,
+      unknownList: splitPoints(unknownsVal), nextList: splitPoints(nextVal),
       canRefresh: !!o.projectPath && stage !== 'running' && stage !== 'waiting',
       revOptions, hasHistory: revOptions.length > 1, selectedRev: pickedHist ? `${k}:${pickedHist.rev}` : `${k}:${latestRev}`, viewingOld: !!pickedHist,
       deps: p.deps.map(no).join('、'), waitOn: d.steps && !ex && !st && missing.join('、'), state, stage };
@@ -441,18 +452,33 @@ function exp(): any {
   // Execution/governance stage members apply to upcoming & not-yet-reached cycle stages (separate from per-step analysis members).
   const execStages = [stageMember('evaluate'), stageMember('iterate')];
   const discussionList = d.members.filter((m: Data) => m.role === 'analyze' && m.catId).map((m: Data) => ({ id: m.catId, name: m.name }));
-  const activeExecStage = ['collect', 'evaluate', 'discuss', 'iterate'].includes(S.rsiExecStage) ? S.rsiExecStage : 'evaluate';
+  const activeExecStage = ['node', 'apply', 'collect', 'evaluate', 'discuss', 'iterate'].includes(S.rsiExecStage) ? S.rsiExecStage : 'evaluate';
   const execFlowNodes = [
-    { k: 'collect', depKeys: [], owner: d.executor.state === 'passed' ? '执行器自动' : '待接通', selected: activeExecStage === 'collect' },
+    { k: 'apply', depKeys: [], owner: d.executor.state === 'passed' ? '自动' : '待接通', selected: activeExecStage === 'apply' },
+    { k: 'collect', depKeys: ['apply'], owner: d.executor.state === 'passed' ? '执行器' : '待接通', selected: activeExecStage === 'collect' },
     { k: 'evaluate', depKeys: ['collect'], owner: memberName('evaluate') || '未指定', selected: activeExecStage === 'evaluate' },
-    { k: 'discuss', depKeys: ['evaluate'], owner: discussionList.length ? `${discussionList.length} 位成员` : '未指定', selected: activeExecStage === 'discuss' },
+    { k: 'discuss', depKeys: ['evaluate'], owner: discussionList.length ? `${discussionList.length} 人` : '未指定', selected: activeExecStage === 'discuss' },
     { k: 'iterate', depKeys: ['discuss'], owner: memberName('iterate') || '未指定', selected: activeExecStage === 'iterate' },
   ];
+  // Reuse the exact rsiLineage row shape used in Governance & Execution so users see one consistent cycle visual language.
+  const execFlowRows = [{
+    key: `exec-preview/${cur.id}`,
+    parentKey: null,
+    id: cur.id,
+    nodeState: 'current',
+    nodeSelected: activeExecStage === 'node',
+    pick: 'node',
+    steps: execFlowNodes.map((n) => ({ k: n.k, faint: n.owner, selected: n.selected, pick: n.k })),
+  }];
   const execFlow = {
     nodes: execFlowNodes,
+    rows: execFlowRows,
     selected: {
       k: activeExecStage,
+      isNode: activeExecStage === 'node',
+      isApply: activeExecStage === 'apply',
       isCollect: activeExecStage === 'collect',
+      isAutoStage: activeExecStage === 'apply' || activeExecStage === 'collect',
       isEvaluate: activeExecStage === 'evaluate',
       isDiscuss: activeExecStage === 'discuss',
       isIterate: activeExecStage === 'iterate',

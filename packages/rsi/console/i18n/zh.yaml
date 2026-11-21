@@ -780,13 +780,17 @@ exp:
   execStatusRoundsOf: "{0} 个周期"
   goExecute: 查看治理与执行
   execStageTitle:
-    collect: 运行与采集
-    evaluate: 评估分析
-    discuss: 方案讨论
-    iterate: 治理实施
+    node: 当前版本
+    apply: 应用
+    collect: 采集
+    evaluate: 评估
+    discuss: 讨论
+    iterate: 治理
     _: "{0}"
   execStageDesc:
-    collect: 按实验计划启动对照组与改动组，采集每组与每个种子的指标与日志（由已登记的执行器自动运行）。
+    node: 当前正在演进的基准版本节点，每次采纳新方向后由此派生下一版本。
+    apply: 按本周期实验计划将版本与参数部署到目标执行环境（由执行器自动完成）。
+    collect: 在执行时段内运行对照组与改动组，采集每组与每个种子的指标和日志（由执行器自动完成）。
     evaluate: 对比本周期各组均值、标准差与护栏，给出胜出/复验/回退结论与对照图。
     discuss: 多位成员并行审阅评估报告，各自提出下一轮优化方向并判断是否达成一致。
     iterate: 按采纳的优化方向修改代码或配置、提交新版本，或在执行失败时负责修复重跑。

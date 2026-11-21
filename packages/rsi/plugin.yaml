@@ -1,5 +1,5 @@
 pluginId: official.rsi
-version: 0.1.0-alpha.77
+version: 0.1.0-alpha.78
 contractVersion: 0.4.0-candidate.0
 name: RSI 能力进化
 description:
@@ -61,8 +61,8 @@ contributions:
               can: { type: string }
               rec: { type: string, enum: [explore, fixed, excluded] }
               tag: { type: string }
-        unknowns: { type: string }
-        next: { type: string }
+        unknowns: { oneOf: [{ type: string }, { type: array, items: { type: string, minLength: 1 } }] }
+        next: { oneOf: [{ type: string }, { type: array, items: { type: string, minLength: 1 } }] }
         goal: { type: object }
         executor: { type: object }
         metrics: { type: object }
