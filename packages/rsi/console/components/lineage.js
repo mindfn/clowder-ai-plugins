@@ -120,7 +120,8 @@ PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {
     const title = p.title ? pvText(p.title, s, root) : (s.i + ' ' + s.k);
     const meta = [labelOf(s.stage), s.owner || ''].filter(Boolean).join(' · ');
     const badge = s.needCount > 0 && s.stage === 'pending' ? '<span class="rsi-dag-badge">' + s.needCount + '</span>' : '';
-    return '<button type="button" class="rsi-dag-node" data-stage="' + h(s.stage) + '" aria-pressed="' + (s.selected ? 'true' : 'false') + '" data-act="plugSet" data-k="initStep" data-v="' + h(s.k) + '"' +
+    const actAttr = p.act ? ' data-act="' + h(p.act) + '"' + pvArgs(p.args, s, root) : ' data-act="plugSet" data-plugin="official.rsi" data-k="initStep" data-v="' + h(s.k) + '"';
+    return '<button type="button" class="rsi-dag-node" data-step="' + h(s.k) + '" data-stage="' + h(s.stage) + '" aria-pressed="' + (s.selected ? 'true' : 'false') + '"' + actAttr +
       ' style="left:' + q.x + 'px;top:' + q.y + 'px;width:' + W + 'px;height:' + H + 'px">' +
       '<span class="rsi-dag-top"><i class="rsi-dag-dot"></i><span class="rsi-dag-name">' + h(title) + '</span>' + badge + '</span>' +
       '<span class="rsi-dag-sub">' + h(meta) + '</span></button>';
