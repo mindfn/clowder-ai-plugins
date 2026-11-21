@@ -11,7 +11,7 @@ export const isState = (value: unknown): value is RsiState => record(value) && A
 // (`rsi:<b64>`): root keeps lightweight metadata/outbox/index (~40 KB), while each experiment (`:e:`), each closed cycle
 // (`:r:`), built-in demo details (`:d:`), and each non-empty project library (`:l:`) live in their own keys. Unchanged
 // shards are reused across writes without rewriting; root CAS is the sole commit fence.
-export const LIMIT = 1024 * 1024, LOG_KEEP = 2000, CLOSED_LOG_KEEP = 400, ARCHIVED_LOG_KEEP = 120, AGENT_KEEP = 24 * 3600_000, MAX_MESSAGES = 60, MAX_HISTORY_REVS = 5;
+export const LIMIT = 1024 * 1024, LOG_KEEP = 2000, CLOSED_LOG_KEEP = 400, ARCHIVED_LOG_KEEP = 120, AGENT_KEEP = 24 * 3600_000, MAX_MESSAGES = 60, MAX_HISTORY_REVS = 5, GC_GRACE_MS = 60_000;
 export const clip = (value: string) => value.length <= LOG_KEEP ? value : `${value.slice(0, LOG_KEEP / 4)}\n…\n${value.slice(-(LOG_KEEP * 3) / 4)}`;
 // What a cycle's library note keeps of its conclusion: the verdict, the confirmation and each group's mean of the main metric.
 export const cycleResult = (verdict: string, compared: Data, confirmation: Data | null) => ({ verdict, metric: compared.metric,
@@ -66,6 +66,7 @@ interface ShardedRoot extends Data {
   sharded: 1;
   seq: number;
   shards: ShardManifest;
+  gc?: { key: string; at: number }[];
 }
 
 interface LoadedState {
@@ -130,15 +131,24 @@ async function assemble(
     }
     experiments[expId] = exp;
   }
-  const { sharded: _s, seq: _q, shards: _m, ...meta } = root;
+  const { sharded: _s, seq: _q, shards: _m, gc: _g, ...meta } = root;
   const state = { ...meta, details, library, experiments } as RsiState;
   return { revision: raw.revision, value: state, legacy: false, root, shardJson };
 }
 
 export async function readState(storage: RsiStorage, key: string): Promise<LoadedState | undefined> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const raw = await storage.get(key);
+    if (!raw) return undefined;
+    const loaded = await assemble(raw, async (k) => (await storage.get(k))?.value);
+    if (!record(loaded.value) || !loaded.value.corrupted) return loaded;
+    // A concurrent commit may have rotated and deleted an old shard between root get and shard gets.
+    // Re-read if the root revision moved forward.
+    const latest = await storage.get(key);
+    if (!latest || latest.revision === raw.revision) return loaded;
+  }
   const raw = await storage.get(key);
-  if (!raw) return undefined;
-  return assemble(raw, async (k) => (await storage.get(k))?.value);
+  return raw ? assemble(raw, async (k) => (await storage.get(k))?.value) : undefined;
 }
 
 export async function listOwners(storage: RsiStorage): Promise<[string, { revision: number; value: RsiState; legacy: boolean }][]> {
@@ -203,8 +213,17 @@ async function commitSharded(
     nextShards.experiments[expId] = { key: expKey, rounds: roundMap };
   }
 
+  const now = Date.now();
+  const kept = referencedShardKeys(nextShards);
+  const newlyObsolete = prevShards
+    ? [...referencedShardKeys(prevShards)].filter((k) => !kept.has(k)).map((k) => ({ key: k, at: now }))
+    : [];
+  const priorGc = Array.isArray(prevRoot?.gc) ? prevRoot.gc.filter((g) => g && typeof g.key === 'string' && !kept.has(g.key)) : [];
+  const expiredGc = priorGc.filter((g) => now - g.at >= GC_GRACE_MS).map((g) => g.key);
+  const pendingGc = [...priorGc.filter((g) => now - g.at < GC_GRACE_MS), ...newlyObsolete];
+
   const { details: _d, library: _l, experiments: _e, ...topMeta } = next;
-  const nextRoot: ShardedRoot = { ...topMeta, sharded: 1, seq: nextSeq, shards: nextShards };
+  const nextRoot: ShardedRoot = { ...topMeta, sharded: 1, seq: nextSeq, shards: nextShards, ...(pendingGc.length ? { gc: pendingGc } : {}) };
   const rootBytes = Buffer.byteLength(JSON.stringify(nextRoot));
   if (rootBytes > LIMIT) {
     return { error: `RSI 状态超过宿主 1 MiB 上限（${rootBytes} 字节，上限 ${LIMIT} 字节），这次的改动没有保存。`, status: 507 };
@@ -232,11 +251,7 @@ async function commitSharded(
     return { error: 'RSI state changed, please retry', status: 409 };
   }
 
-  if (prevShards) {
-    const kept = referencedShardKeys(nextShards);
-    const obsolete = [...referencedShardKeys(prevShards)].filter((k) => !kept.has(k));
-    if (obsolete.length) await deleteBestEffort(storage, obsolete);
-  }
+  if (expiredGc.length) await deleteBestEffort(storage, expiredGc);
   return { ok: true };
 }
 

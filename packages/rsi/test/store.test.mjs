@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createFixtures } from '../dist/fixtures.js';
-import { isOwnerKey, LIMIT, listOwners, load, ownerKey, readState, retain, update } from '../dist/store.js';
+import { GC_GRACE_MS, isOwnerKey, LIMIT, listOwners, load, ownerKey, readState, retain, update } from '../dist/store.js';
 
 const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 
@@ -109,13 +109,13 @@ test('sharded storage holds > 1.5 MiB across multiple experiments and closed rou
   assert.equal(owners[0][1].value.experiments['obj-heavy-3'].rounds[4].runs[0].metrics.note.length, 90_000);
 });
 
-test('unchanged shards are reused without rewriting, obsolete shards are deleted, and CAS 409 cleans up staged shards', async () => {
+test('unchanged shards are reused without rewriting, obsolete shards survive the grace window then GC, and CAS 409 cleans up staged shards', async (t) => {
   const storage = memStorage();
   const key = ownerKey('gc-owner');
   await load(storage, key, async () => {});
 
-  const beforeKeys = new Set(storage.entries.keys());
   const beforeRoot = (await storage.get(key)).value;
+  const oldCpKey = beforeRoot.shards.experiments['cp-converge'].key;
   storage.writes.length = 0;
 
   await retain(storage, key, (state) => {
@@ -124,10 +124,11 @@ test('unchanged shards are reused without rewriting, obsolete shards are deleted
   const afterRoot = (await storage.get(key)).value;
   assert.equal(afterRoot.shards.details, beforeRoot.shards.details);
   assert.equal(afterRoot.shards.experiments['pd-ttft'].key, beforeRoot.shards.experiments['pd-ttft'].key);
-  assert.notEqual(afterRoot.shards.experiments['cp-converge'].key, beforeRoot.shards.experiments['cp-converge'].key);
+  assert.notEqual(afterRoot.shards.experiments['cp-converge'].key, oldCpKey);
   assert.deepEqual(storage.writes.length, 2);
-  assert.equal(storage.entries.has(beforeRoot.shards.experiments['cp-converge'].key), false);
-  assert.equal(storage.entries.size, beforeKeys.size);
+  // Old shard stays readable during the grace window so concurrent readers never hit 500.
+  assert.equal(storage.entries.has(oldCpKey), true);
+  assert.ok(afterRoot.gc?.some((g) => g.key === oldCpKey));
 
   const snapSize = storage.entries.size;
   const origCas = storage.compareAndSet.bind(storage);
@@ -141,9 +142,43 @@ test('unchanged shards are reused without rewriting, obsolete shards are deleted
   assert.equal(storage.entries.size, snapSize);
   assert.notEqual((await readState(storage, key)).value.experiments['pd-ttft'].objective.name, 'Should rollback');
 
+  // After the grace window elapses, the next write deletes expired obsolete shards.
   const deletedExpKey = afterRoot.shards.experiments['pd-ttft'].key;
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() + GC_GRACE_MS + 1000 });
   await retain(storage, key, (state) => { delete state.experiments['pd-ttft']; });
+  assert.equal(storage.entries.has(oldCpKey), false);
+  // Newly deleted experiment shard enters grace window and is collected after the next grace window.
+  assert.equal(storage.entries.has(deletedExpKey), true);
+  t.mock.timers.tick(GC_GRACE_MS + 1000);
+  await retain(storage, key, () => {});
   assert.equal(storage.entries.has(deletedExpKey), false);
+});
+
+test('readState retries cleanly when a concurrent write rotates and deletes a shard mid-read', async () => {
+  const storage = memStorage();
+  const key = ownerKey('race-owner');
+  await load(storage, key, async () => {});
+
+  const beforeRoot = (await storage.get(key)).value;
+  const oldCpKey = beforeRoot.shards.experiments['cp-converge'].key;
+
+  // Intercept the first shard fetch for oldCpKey: simulate a concurrent writer committing and deleting oldCpKey before the shard get completes.
+  const origGet = storage.get.bind(storage);
+  let raced = false;
+  storage.get = async (k) => {
+    if (!raced && k === oldCpKey) {
+      raced = true;
+      await retain(storage, key, (state) => { state.experiments['cp-converge'].objective.name = 'Concurrent update'; });
+      await storage.delete(oldCpKey);
+    }
+    return origGet(k);
+  };
+
+  const loaded = await readState(storage, key);
+  storage.get = origGet;
+  assert.equal(raced, true);
+  assert.equal(loaded.value.corrupted, undefined);
+  assert.equal(loaded.value.experiments['cp-converge'].objective.name, 'Concurrent update');
 });
 
 test('legacy monolithic single-key state reads seamlessly and migrates losslessly to sharded keys on update', async () => {
