@@ -519,3 +519,51 @@ test('dual-tab console supports inline role switching, step history snapshots, e
   const scopeFinal = finalVm.prep.steps.find((s) => s.k === 'scope');
   assert.deepEqual(scopeFinal.unknownList, ['v2 unknown']);
 });
+
+test('repaired and repairing cycles expose governance step and repair decision without requiring an evaluation report', () => {
+  const state = createFixtures(now).state;
+  const project = '/tmp/repair-proj';
+  state.projects.unshift({ id: project, name: 'RepairProj', projectPath: project, exp: true, hostKinds: ['mcp'] });
+  state.objectives[project] = []; state.groups[project] = []; state.units[project] = []; state.library[project] = [];
+  const created = act(state, { op: 'new', statement: '昇腾 BGE 吞吐优化', projectPath: project, prepare: 'codex', evaluate: 'kimi', iterate: 'codex', cats: [{ id: 'codex', name: '砚砚' }, { id: 'kimi', name: '小狸' }] }, { project }, now);
+  assert.equal(created.ok, true);
+  const id = state.objectives[project][0].id;
+  const d = state.experiments[id];
+  d.metrics = { version: 'E1', items: [{ id: 'qps', name: '有效 QPS', how: 'metrics.qps', dir: 'up', guard: false }] };
+  d.versions.push({ id: 'v2', parent: 'v1', change: '修复 NPU 绑定逻辑', commit: 'e7408c5c', config: {}, at: now + 2000, current: true, status: 'confirmed', direct: true });
+  d.versions[0].current = false;
+  d.objective.currentVersion = 'v2';
+  d.repairs = [{ at: now + 2000, cycle: 1, version: 'v2', signature: 'submit exited #: NPU # has not been claimed' }];
+  d.rounds = [
+    {
+      n: 1, version: 'v1', start: now, end: now + 1000, state: 'repaired', repairedBy: 'v2',
+      plan: { baseline: false, groups: [{ id: 'control', label: '对照', version: 'v1', vars: {}, control: true }], seeds: [1] },
+      metrics: structuredClone(d.metrics),
+      runs: [{ id: 'r1', group: 'control', seed: 1, state: 'failed', metrics: {}, env: {}, error: { kind: 'env', step: 'submit', raw: 'submit exited 1: NPU 4 has not been claimed' } }],
+      report: null, decision: null, events: [],
+    },
+    {
+      n: 2, version: 'v2', start: now + 3000, end: now + 4000, state: 'repairing',
+      plan: { baseline: false, groups: [{ id: 'control', label: '对照', version: 'v2', vars: {}, control: true }], seeds: [2] },
+      metrics: structuredClone(d.metrics),
+      runs: [{ id: 'r2', group: 'control', seed: 2, state: 'failed', metrics: {}, env: {}, error: { kind: 'env', step: 'submit', raw: 'submit exited 1: NPU 4 has not been claimed' } }],
+      report: null, decision: null, events: [],
+    },
+  ];
+  d.versionRequest = { cycle: 2, title: '修第 2 周期的运行失败', direct: true, since: now + 4000, decision: null, repair: { signature: 'submit exited #: NPU # has not been claimed' } };
+
+  const v1Gov = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v1>c1.gov` });
+  const v1Row = v1Gov.versions.find((v) => v.id === 'v1');
+  const v2Row = v1Gov.versions.find((v) => v.id === 'v2');
+  assert.equal(v1Row.steps.find((s) => s.k === 'gov')?.result, 'execution');
+  assert.equal(v2Row.steps.find((s) => s.k === 'gov')?.result, 'repairing');
+  assert.equal(v1Gov.cycle.decision.pick, 'repair');
+  assert.match(v1Gov.cycle.decision.note, /v1 版本运行失败.*修复为 v2：修复 NPU 绑定逻辑/);
+  assert.equal(v1Gov.cycle.gov.led.k, 'cycle');
+  assert.equal(v1Gov.cycle.gov.led.version, 'v2');
+
+  const v2Gov = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v2>c1.gov` });
+  assert.equal(v2Gov.cycle.decision.pick, 'repairing');
+  assert.equal(v2Gov.cycle.gov.led.k, 'version');
+  assert.equal(v2Gov.cycle.gov.led.title, '修第 2 周期的运行失败');
+});

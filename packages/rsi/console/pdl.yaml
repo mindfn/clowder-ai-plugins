@@ -1286,6 +1286,7 @@ views:
                       of: "@result"
                       map:
                         pending: warn
+                        repairing: warn
                         rollback: warn
                         failed: warn
                         split: warn
@@ -2011,7 +2012,7 @@ views:
                     map:
                       _: false
                       gov: true
-                  - $.exp.cycle.report
+                  - $.exp.cycle.gov
                 blocks:
                   - type: text
                     variant: meta

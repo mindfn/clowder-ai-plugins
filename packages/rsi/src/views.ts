@@ -295,8 +295,26 @@ function exp(): any {
   const waiting = function (r: any): any { return !!r.report && !r.decision && r.state === 'done' && !(r.analysis && r.analysis.waiting.length); };
   const tested = d.rounds.map(function (r: any): any { return Object.assign({}, r, { version: testedVersion(r.plan) }); });
   const rounds = tested.filter(function (r: any): any { return r.state !== 'planned'; }).map(function (r: any): any { return Object.assign({}, r, { k: tested.filter(function (x: any): any { return x.version === r.version && x.n <= r.n; }).length }); });
-  const dirOf = function (r: any): any { return r.decision && r.decision.directionId && r.report.directions.find(function (x: any): any { return x.id === r.decision.directionId; }); };
-  const govOf = function (r: any): any { const x = dirOf(r); return waiting(r) ? 'pending' : !r.decision ? null : x ? (x.kind === 'code' ? (r.report.verdict === 'rollback' ? 'rollback' : 'evolve') : x.kind) : r.decision.pick; };
+  const dirOf = function (r: any): any { return r.decision && r.decision.directionId && r.report && r.report.directions.find(function (x: any): any { return x.id === r.decision.directionId; }); };
+  const govOf = function (r: any): any {
+    if (r.state === 'repairing') return 'repairing';
+    if (r.state === 'repaired') return 'execution';
+    const x = dirOf(r);
+    return waiting(r) ? 'pending' : !r.decision ? null : x ? (x.kind === 'code' ? (r.report.verdict === 'rollback' ? 'rollback' : 'evolve') : x.kind) : r.decision.pick;
+  };
+  const repairDecisionOf = function (r: Data) {
+    if (r.decision || (r.state !== 'repaired' && r.state !== 'repairing')) return r.decision || null;
+    const ask = d.versionRequest && d.versionRequest.cycle === r.n ? d.versionRequest : null;
+    const rec = (d.repairs || []).find((x: Data) => x.cycle === r.n);
+    const nextVer = r.repairedBy ? d.versions.find((v: Data) => v.id === r.repairedBy) : null;
+    const firstErr = r.runs.find((u: Data) => u.error)?.error?.raw;
+    const sig = rec?.signature || ask?.repair?.signature || (firstErr ? String(firstErr).trim().split('\n')[0] : '');
+    const note = [
+      sig ? `${r.version} 版本运行失败：${sig}` : `${r.version} 版本运行失败`,
+      nextVer?.change ? `修复为 ${nextVer.id}：${nextVer.change}` : '',
+    ].filter(Boolean).join('；');
+    return { pick: r.state === 'repaired' ? 'repair' : 'repairing', by: 'RSI', at: rec?.at || nextVer?.at || ask?.since || r.end || null, note };
+  };
   const sel = (x: Data, step: string) => key(x.version) + '>c' + x.k + '.' + step;
   // A concluded cycle's numbers, from the comparison stored with its report (cycles.ts comparison): a block per metric — the main one, then
   // the guardrails, then the rest — and in it a row per group, the control first: mean and sample SD over the seeds, the difference from the
@@ -357,8 +375,9 @@ function exp(): any {
   // What deciding a cycle does (actions.ts expDecide, cycles.ts requestVersion): while it waits, what the choice is; once decided, what was
   // chosen, by whom, and what came of it — the version being made for it, the next cycle, or the objective's end.
   const govFor = function (r: Data) {
-    const disc = discussionOf(r), later = rounds.find((x: Data) => x.n > r.n), ask = d.versionRequest && d.versionRequest.cycle === r.n ? d.versionRequest : null;
-    const nextVer = later ? d.versions.find((v: Data) => v.id === later.version) : null;
+    const disc = r.report ? discussionOf(r) : null, later = rounds.find((x: Data) => x.n > r.n), ask = d.versionRequest && d.versionRequest.cycle === r.n ? d.versionRequest : null;
+    const decision = repairDecisionOf(r);
+    const nextVer = r.repairedBy ? d.versions.find((v: Data) => v.id === r.repairedBy) : (later ? d.versions.find((v: Data) => v.id === later.version) : null);
     const rawChanges = r.govChanges || nextVer?.changes || (r.decision?.pick === 'direction' && d.versions.find((v: Data) => v.parent === r.version && v.at >= (r.decision.at || 0))?.changes) || null;
     const pr = rawChanges?.pr || (nextVer?.pr ? { id: nextVer.pr } : null);
     const changeItems = (rawChanges?.items || []).map((it: Data, idx: number) => ({
@@ -389,10 +408,10 @@ function exp(): any {
       choices: !waiting(r) ? [] : d.candidate ? [{ k: 'same' }] : [{ k: 'same' }, { k: 'note' }], candidate: d.candidate && { group: d.candidate.id, version: d.candidate.version }, current: o.currentVersion, iterate: memberName('iterate'),
       discuss: disc && sel(r, 'discuss'), adopted: dirOf(r) || null,
       pr, changeItems, diffFiles, selectedFile, diffMode: S.rsiGovDiffMode, hasDetails,
-      led: !r.decision ? null : ask ? { k: 'version', title: ask.title } : later ? { k: 'cycle', n: later.k, version: later.version, go: sel(later, later.report ? 'eval' : 'collect') }
+      led: !decision ? null : ask ? { k: 'version', title: ask.title } : later ? { k: 'cycle', n: later.k, version: later.version, go: sel(later, later.report ? 'eval' : 'collect') }
         : o.stopReason && o.stopReason.cycle === r.n ? { k: 'stop', text: o.stopReason.text } : { k: 'later' } };
   };
-  const focus = o.projectPath && rounds.find((r: Data) => waiting(r) || r.analysis?.waiting.length || ['running', 'evaluating'].includes(r.state));
+  const focus = o.projectPath && rounds.find((r: Data) => waiting(r) || r.analysis?.waiting.length || ['running', 'evaluating', 'repairing'].includes(r.state));
   const tree = rsiTree('rsiSelO', d.versions.map(function (v: any): any {
     return { key: key(v.id), parent: v.parent && key(v.parent),
       cycles: rounds.filter(function (r: any): any { return r.version === v.id; }).map(function (r: any): any {
@@ -592,7 +611,7 @@ function exp(): any {
   const stageOwnersOf = (r: Data) => {
     const evalDone = !!r.report;
     const discussDone = !!r.report && !(r.analysis?.waiting?.length);
-    const govDone = !!(r.stageMembers?.gov || (r.decision && !d.versionRequest));
+    const govDone = !!(r.stageMembers?.gov || ((r.decision || r.state === 'repaired') && !d.versionRequest));
     const evalArchived = r.stageMembers?.eval?.name || (evalDone ? memberName('evaluate') : '');
     const discussArchived = Array.isArray(r.stageMembers?.discuss)
       ? r.stageMembers.discuss.map((m: Data) => m.name).join('、')
@@ -621,7 +640,7 @@ function exp(): any {
       // The findings after their first line, which is the headline.
       body: r.report && (r.report.summary.startsWith(r.report.headline) ? r.report.summary.slice(r.report.headline.length).trim() : r.report.summary),
       comparisons: r.report ? comparisonsOf(r) : [],
-      compare: r.report && compareOf(r), discussion: r.report && discussionOf(r), gov: r.report && govFor(r) }),
+      compare: r.report && compareOf(r), discussion: r.report && discussionOf(r), decision: repairDecisionOf(r), gov: (r.report || r.state === 'repaired' || r.state === 'repairing') && govFor(r) }),
     prep: { needYou: needYou, steps: steps, dagNodes: dagNodes, visibleSteps: steps.filter((s: Data) => s.visible), ready: readyInfo, activeKey: activeKey, showAll: showAll }, executor: d.executor && Object.assign({}, d.executor, { ops: (d.executor.ops || []).map(function (op: any) { const p = op.params; const params = typeof p === 'string' ? p : p && typeof p === 'object' && Object.keys(p).length ? JSON.stringify(p) : ''; return Object.assign({}, op, { params: params || op.tool || '' }); }) }), members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, roleMembers: o.projectPath ? d.members.filter(function (m: any): any { return m.catId && m.role !== 'analyze'; }) : d.members, execStages, discussion: d.members.filter(function (m: any): any { return m.role === 'analyze' && m.catId; }).map(function (m: any): any { return { id: m.catId, name: m.name }; }), memberIds: { prepare: (d.members.find(function (m: any): any { return m.role === 'prepare'; }) || {}).catId, evaluate: (d.members.find(function (m: any): any { return m.role === 'evaluate'; }) || {}).catId, iterate: (d.members.find(function (m: any): any { return m.role === 'iterate'; }) || {}).catId }, policy: policyOf(d, o, schedNow), policyEditor: policyEditorOf(d, schedNow), metrics: d.metrics,
     eTree: [{ id: d.metrics.version }], cTree: [{ id: 'C1' }] };
 };

@@ -67,6 +67,8 @@ govResult:
   info: 补信息
   addVar: 加变量
   same: 照旧
+  execution: 修执行
+  repairing: 修复中
 applyResult:
   done: 已部署
   failed: 有环境失败
@@ -637,6 +639,8 @@ exp:
     metric: 改指标
     goal: 改目标
     same: 今晚照旧
+    repair: 执行修复（原版本运行异常）
+    repairing: 待执行修复（原版本运行异常）
     _: "{0}"
   note: 说明
   disc:

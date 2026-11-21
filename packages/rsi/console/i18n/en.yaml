@@ -67,6 +67,8 @@ govResult:
   info: Add information
   addVar: Add variables
   same: Keep the plan
+  execution: Fix execution
+  repairing: Repairing
 applyResult:
   done: Deployed
   failed: Environment failures
@@ -637,6 +639,8 @@ exp:
     metric: Change metrics
     goal: Change goal
     same: Keep tonight as planned
+    repair: Execution repair (version failed to run)
+    repairing: Repairing execution (version failed to run)
     _: "{0}"
   note: Note
   disc:
