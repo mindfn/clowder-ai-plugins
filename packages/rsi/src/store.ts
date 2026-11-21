@@ -10,7 +10,7 @@ export const isState = (value: unknown): value is RsiState => record(value) && A
 // also drops the environment and metrics it shares with its run; failure texts keep their head and tail. A report keeps its comparison
 // once (its cells are the report's matrix) and a cycle's library note only the outcome. A delivered entry leaves the outbox, except an
 // agent request: the turn it started is matched to it until that turn's outcome is applied, for a day at most.
-export const LIMIT = 1024 * 1024, LOG_KEEP = 2000, CLOSED_LOG_KEEP = 400, AGENT_KEEP = 24 * 3600_000;
+export const LIMIT = 1024 * 1024, LOG_KEEP = 2000, CLOSED_LOG_KEEP = 400, ARCHIVED_LOG_KEEP = 120, AGENT_KEEP = 24 * 3600_000, MAX_MESSAGES = 60, MAX_HISTORY_REVS = 5;
 export const clip = (value: string) => value.length <= LOG_KEEP ? value : `${value.slice(0, LOG_KEEP / 4)}\n…\n${value.slice(-(LOG_KEEP * 3) / 4)}`;
 // What a cycle's library note keeps of its conclusion: the verdict, the confirmation and each group's mean of the main metric.
 export const cycleResult = (verdict: string, compared: Data, confirmation: Data | null) => ({ verdict, metric: compared.metric,
@@ -20,11 +20,27 @@ export function compact(state: RsiState, now = Date.now()) {
   for (const d of Object.values(state.experiments)) {
     if (typeof d.executor?.probe?.log === 'string') d.executor.probe.log = d.executor.probe.log.slice(-LOG_KEEP);
     if (typeof d.executor?.probe?.error === 'string') d.executor.probe.error = clip(d.executor.probe.error);
-    for (const r of d.rounds || []) {
+    if (Array.isArray(d.messages) && d.messages.length > MAX_MESSAGES) d.messages = d.messages.slice(-MAX_MESSAGES);
+    if (d.stepHistory) {
+      for (const [k, hist] of Object.entries<Data[]>(d.stepHistory)) {
+        if (!Array.isArray(hist)) continue;
+        if (hist.length > MAX_HISTORY_REVS) hist.splice(0, hist.length - MAX_HISTORY_REVS);
+        const latestRev = d.steps?.[k as keyof typeof d.steps]?.rev;
+        for (const h of hist) if (latestRev != null && h.rev === latestRev && h.items) delete h.items;
+      }
+    }
+    const rounds = d.rounds || [];
+    for (let idx = 0; idx < rounds.length; idx++) {
+      const r = rounds[idx];
       const closed = ['done', 'repaired'].includes(r.state);
+      const archived = closed && idx < rounds.length - 3;
+      if (r.metrics && d.metrics && same(r.metrics, d.metrics)) delete r.metrics;
       if (r.report?.compare) delete r.report.compare.matrix;
-      for (const run of r.runs || []) {
-        if (typeof run.log === 'string') run.log = run.log.slice(-(closed ? CLOSED_LOG_KEEP : LOG_KEEP));
+      const baseEnv = archived ? r.runs?.[0]?.env : undefined;
+      for (let ri = 0; ri < (r.runs || []).length; ri++) {
+        const run = r.runs[ri];
+        if (typeof run.log === 'string') run.log = run.log.slice(-(archived ? ARCHIVED_LOG_KEEP : closed ? CLOSED_LOG_KEEP : LOG_KEEP));
+        if (archived && ri > 0 && run.env && baseEnv && same(run.env, baseEnv)) delete run.env;
         for (const failure of [run.error, ...(run.attempts || []).map((a: Data) => a.error)]) if (typeof failure?.raw === 'string') failure.raw = clip(failure.raw);
         if (closed) for (const a of run.attempts || []) for (const k of ['env', 'metrics']) if (same(a[k], run[k])) delete a[k];
       }
