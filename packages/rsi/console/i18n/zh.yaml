@@ -340,6 +340,28 @@ noObjectives: 还没有评估项
 noObjectivesHint: 这个项目还没有评估项。新建一个：说清楚要改进什么、什么时候停；怎么跑、看哪些指标由 agent 读项目后在评估项 thread 里起草，再列给你确认。
 repairDialog: 夜里出错自动修
 autoDialog: 夜里可以自己定的方向
+scheduleDialog: 修改执行时段
+scheduleDialogHelp: 支持不限制全天跑、工作日/周末分时段（如跨时区错峰白天+周末）、指定日历起止日期，以及多段规则组合。随时可改，立即生效。
+schedule:
+  mode: 执行时段
+  newHelp: 可现在先选预设，也可留给第 3 步起草；建好后在评估项「策略」区随时可改（支持日历起止日期、自定义起止时间与多段规则）
+  draftLater: 初始化第 3 步起草（或稍后配置）
+  anytime: 不限制（全天随时可执行）
+  daytimeWeekend: 工作日白天 + 周末全天（错峰）
+  daily: 每天固定时段
+  dailyPreset: 每天固定时段（默认 20:00–08:00）
+  weekdays: 仅工作日固定时段（周一至周五）
+  weekends: 仅周末固定时段（周六至周日）
+  custom: 自定义多段规则
+  dateFrom: 开始日期（可选）
+  dateTo: 结束日期（可选）
+  dateHelp: 留空 = 长期有效；填写起止日期则仅在该日历日期范围内按所选时段自动执行
+  start: 开始时间
+  end: 结束时间
+  timeHelp: 按本机时区生效；支持跨午夜（如 20:00 至 08:00）；「不限制」模式可留空
+  customLabel: 自定义 / 追加规则（可选）
+  customHelp: 每行或用分号隔开一条，命中任一条即可执行。支持日期范围、星期、时段组合
+  customPlaceholder: "例：\n周一至周五 09:00–18:00\n周六至周日 全天\n2026-11-21~2026-11-30 08:00–20:00"
 newExp:
   help: 建好后默认在当前对话里启动初始化（也可以选新建独立对话），按七步推进，每步 @ 负责的成员；agent 一直往下起草，要你判断的在评估项页逐条列出。机器和时段不用现在填，第 3 步由 agent 查项目后起草。
   threadMode: 评估项对话
@@ -435,7 +457,7 @@ exp:
   goalGood: 怎么判断有效
   adoptWhen: 何时采用
   stopWhen: 何时停
-  triggerOf: 定时 · 每晚 {0}
+  triggerOf: 定时 · {0}
   initStep: "{0}. {1}"
   init:
     goal: 基础信息
@@ -727,10 +749,10 @@ exp:
     howOf: "{0} · 每组 {1} 个种子 · 执行能力 {2}"
     whenOf:
       preparing: 初始化完成后开始
-      ready: 点「开始评估」后，每晚 {0}
+      ready: 点「开始评估」后，按 {0} 执行
       running: 正在跑：{1} 周期 {2}
       soon: 马上开跑
-      pending: 等你决定后，今晚 {0}
+      pending: 等你决定后，下一时段 {0}
       paused: 已暂停
       done: 已结束
       _: ""
@@ -758,6 +780,8 @@ exp:
   policyTitle: 策略
   pol:
     schedule: 运行时段
+    scheduleUnset: 未设置（点右上角修改）
+    editSchedule: 修改时段
     seeds: 每组种子
     vars: 允许 agent 调的变量
     auto: 审批

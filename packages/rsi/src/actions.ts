@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { askEvaluation, controlGroup, finishAnalysis, requestVersion, runCycle } from './cycles.js';
-import { windowMinutes } from './schedule.js';
+import { hasValidSchedule, parseScheduleText, scheduleOf, scheduleSummary, timeRange } from './schedule.js';
 import { summaryOf, objectiveData } from './data.js';
 import { enqueue, kick, mention, message, refreshMembers, rsiExpNew, rsiExpReady, rsiExpStaleFrom, setMember, stopOf, stopText, syncObjective, repairCount, repairText, REPAIR_DEFAULT, prepSettled, AUTO, autoKinds, autoKey, autoText } from './init.js';
 import type { Data, Experiment, RsiState, Section } from './types.js';
@@ -73,6 +73,17 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       if (item) Object.assign(item, { value: text, state: 'confirmed', by: '你', mine: true, at: now });
       else d.prep.push({ id: `${d.objective.id}-repair`, section: 'goal', title: '夜里出错自动修', value: text, state: 'confirmed', neededFrom: null, mine: true, by: '你', at: now });
       message(state, d, now, '你改了夜里出错自动修', text);
+      return { ok: true };
+    }
+    case 'schedule': {
+      if (!d || !o) return { error: 'Experiment not found', status: 404 };
+      const parsed = scheduleOf(body);
+      if ('error' in parsed) return parsed;
+      d.policy.schedule = parsed.schedule;
+      const summary = scheduleSummary(d.policy.schedule);
+      o.trigger = String(timeRange(summary) || '');
+      message(state, d, now, '你改了执行时段', summary);
+      syncObjective(state, d);
       return { ok: true };
     }
     case 'auto': {
@@ -193,7 +204,13 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       if (body.action === 'edit') item.value = body.value;
       if (body.action === 'decide') item.decision = body.decision;
       Object.assign(item, { state: 'confirmed', isDefault: false, by: '你', at: now });
-      if (edited && item.id === 'cp-trigger' && windowMinutes(item.value)) d.policy.schedule.window = item.value;
+      if (edited && (item.id === 'cp-trigger' || item.section === 'run')) {
+        const parsed = parseScheduleText(item.value);
+        if (parsed) {
+          d.policy.schedule = parsed;
+          o.trigger = String(timeRange(scheduleSummary(parsed)) || '');
+        }
+      }
       if (edited) touched(state, d, item, now, '改了');
       else if (body.action === 'decide' && body.decision !== item.rec) touched(state, d, item, now, `把「${({ explore: '探索', fixed: '固定', excluded: '排除' } as Data)[body.decision]}」选给了`);
       if (rsiExpReady(d)) message(state, d, now, '初始化完成', d.objective.projectPath ? '在页面点跑一轮，按已提交的组和种子执行。' : `每晚 ${d.policy.schedule.window} 跑，第一晚只跑基线 v1。`, 'declare');
@@ -256,7 +273,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       if (d?.objective.projectPath && ['done', 'retired'].includes(d.objective.state)) return { error: 'Objective has stopped' };
       const objective = d ? d.objective : o;
       if (body.action === 'start') {
-        if (d?.objective.projectPath && !windowMinutes(d.policy.schedule.window)) return { error: 'Submit and confirm the step-3 time window first, or use runCycle manually' };
+        if (d?.objective.projectPath && !hasValidSchedule(d.policy.schedule)) return { error: '请先在策略区配置「运行时段」或完成第 3 步，也可先手动点「跑一轮」' };
         if (objective.state !== 'ready') return { error: 'Objective is not ready' };
         objective.state = d ? 'running' : 'baseline';
       } else if (body.action === 'pause') {

@@ -1,7 +1,7 @@
 import { AUTO, autoKey, clipTitle } from './init.js';
 import type { Data, RsiState } from './types.js';
 import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData, memberIds } from './data.js';
-import { timeRange } from './schedule.js';
+import { scheduleForm, scheduleSummary, timeRange } from './schedule.js';
 import { analystsOf, short, signed, testedVersion } from './cycles.js';
 
 const tc = (key: string, ...args: unknown[]) => ({ t: key, args });
@@ -24,13 +24,15 @@ export function follow(state: RsiState, query: Data) {
 // A real objective's policy is what its cycles actually use: seeds per group from the next plan, the variables its groups have tried,
 // and every direction chosen by you (the demo's approval rules are not enforced here).
 function policyOf(d: Data, o: Data) {
-  if (!o.projectPath) return Object.assign({}, d.policy, { autoText: tc('rsi.exp.pol.autoText') });
+  const windowText = scheduleSummary(d.policy.schedule);
+  const schedule = { ...d.policy.schedule, window: windowText, form: scheduleForm(d.policy.schedule) };
+  if (!o.projectPath) return Object.assign({}, d.policy, { schedule, autoText: tc('rsi.exp.pol.autoText') });
   const plan = d.upcoming || (d.rounds.length ? d.rounds[d.rounds.length - 1].plan : null), tried: Data = {};
   for (const r of d.rounds) for (const g of r.plan.groups) if (!g.control) for (const [k, v] of Object.entries(g.vars || {})) {
     const value = typeof v === 'string' ? v : JSON.stringify(v);
     if (!(tried[k] ||= []).includes(value)) tried[k].push(value);
   }
-  return Object.assign({}, d.policy, { seeds: plan ? plan.seeds.length : d.policy.seeds, vars: Object.entries(tried).map(([name, values]) => ({ name, values })), autoText: tc('rsi.exp.pol.' + (({ default: 'nightBoth', execution: 'nightExecution' } as Data)[autoKey(d.policy.auto || AUTO.default) || 'none'] || 'manual')) });
+  return Object.assign({}, d.policy, { schedule, seeds: plan ? plan.seeds.length : d.policy.seeds, vars: Object.entries(tried).map(([name, values]) => ({ name, values })), autoText: tc('rsi.exp.pol.' + (({ default: 'nightBoth', execution: 'nightExecution' } as Data)[autoKey(d.policy.auto || AUTO.default) || 'none'] || 'manual')) });
 }
 
 export function viewModel(state: RsiState, view: string, query: Data = {}): any {
@@ -297,10 +299,10 @@ function exp(): any {
     : cut ? { k: 'cancelled', n: cut.i, by: cut.who } : doing.length ? { k: 'init', by: doing.map(function (x: any): any { return { who: x.who, i: x.i, k: x.k }; }), hint: hint }
     : o.state === 'ready' ? { k: 'ready' } : stale ? { k: 'stale', count: stale } : needYou ? { k: 'prep', count: needYou, hint: hint }
     : d.versionRequest ? (d.versionRequest.repair ? { k: 'repair', v: d.versionRequest.cycle, by: memberName('iterate') } : { k: 'version', v: d.versionRequest.title, by: memberName('iterate') })
-    : d.executor.state !== 'passed' ? { k: 'executor' } : { k: 'planned', window: d.policy.schedule.window };
+    : d.executor.state !== 'passed' ? { k: 'executor' } : { k: 'planned', window: scheduleSummary(d.policy.schedule) };
 
   const cur = d.versions.find(function (v: any): any { return v.current; }), rules = steps.find(function (x: any): any { return x.k === 'rules'; }), ruled = ['submitted', 'confirmed', 'stale'].indexOf(rules.state) >= 0;
-  const now = { version: cur.id, change: cur.change, when: run ? 'running' : o.state === 'running' ? 'soon' : o.state, window: d.policy.schedule.window, v: run && run.version, n: run && run.k,
+  const now = { version: cur.id, change: cur.change, when: run ? 'running' : o.state === 'running' ? 'soon' : o.state, window: scheduleSummary(d.policy.schedule), v: run && run.version, n: run && run.k,
     plan: d.upcoming && { groups: d.upcoming.groups.map(function (g: any): any { return g.label; }).join('、'), seeds: d.upcoming.seeds.length },
     exec: d.executor.state === 'passed' ? d.executor.mcp : null, metrics: ruled ? d.metrics.items.map(function (x: any): any { return x.name + (x.line ? ' ' + x.line : ''); }).join('；') : null, e: d.metrics.version };
   const groupsOf = function (x: any): any {

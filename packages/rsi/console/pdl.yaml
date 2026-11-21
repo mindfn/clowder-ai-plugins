@@ -710,10 +710,27 @@ views:
                     when: "@on"
           - type: label
             text: t:rsi.exp.policyTitle
+            action:
+              type: button
+              label: t:rsi.exp.pol.editSchedule
+              act: dialog
+              args:
+                kind: rsiSchedule
+                objective: $.exp.id
+                mode: $.exp.policy.schedule.form.mode
+                dateFrom: $.exp.policy.schedule.form.dateFrom
+                dateTo: $.exp.policy.schedule.form.dateTo
+                start: $.exp.policy.schedule.form.start
+                end: $.exp.policy.schedule.form.end
+                custom: $.exp.policy.schedule.form.custom
           - type: kv
             from:
               - k: t:rsi.exp.pol.schedule
                 v: $.exp.policy.schedule.window
+                when: $.exp.policy.schedule.window
+              - k: t:rsi.exp.pol.schedule
+                v: t:rsi.exp.pol.scheduleUnset
+                when: "!$.exp.policy.schedule.window"
               - k: t:rsi.exp.pol.seeds
                 v:
                   t: rsi.exp.seedsOf
@@ -4618,6 +4635,63 @@ views:
     okArgs:
       request: auto
       objective: $.objective
+  dlg.rsiSchedule:
+    title: t:rsi.scheduleDialog
+    help: t:rsi.scheduleDialogHelp
+    wide: true
+    fields:
+      - id: dlg-schedule-mode
+        label: t:rsi.schedule.mode
+        value: $.mode
+        options:
+          - v: anytime
+            label: t:rsi.schedule.anytime
+          - v: daytime_weekend
+            label: t:rsi.schedule.daytimeWeekend
+          - v: daily
+            label: t:rsi.schedule.daily
+          - v: weekdays
+            label: t:rsi.schedule.weekdays
+          - v: weekends
+            label: t:rsi.schedule.weekends
+          - v: custom
+            label: t:rsi.schedule.custom
+        arg: mode
+      - id: dlg-schedule-date-from
+        label: t:rsi.schedule.dateFrom
+        help: t:rsi.schedule.dateHelp
+        type: date
+        value: $.dateFrom
+        arg: dateFrom
+      - id: dlg-schedule-date-to
+        label: t:rsi.schedule.dateTo
+        type: date
+        value: $.dateTo
+        arg: dateTo
+      - id: dlg-schedule-start
+        label: t:rsi.schedule.start
+        help: t:rsi.schedule.timeHelp
+        type: time
+        value: $.start
+        arg: start
+      - id: dlg-schedule-end
+        label: t:rsi.schedule.end
+        type: time
+        value: $.end
+        arg: end
+      - id: dlg-schedule-custom
+        label: t:rsi.schedule.customLabel
+        help: t:rsi.schedule.customHelp
+        placeholder: t:rsi.schedule.customPlaceholder
+        area: true
+        rows: 3
+        value: $.custom
+        arg: custom
+    ok: t:rsi.common.save
+    okAct: plugin
+    okArgs:
+      request: schedule
+      objective: $.objective
   dlg.rsiGroupRename:
     title: t:rsi.common.rename
     fields:
@@ -4820,10 +4894,27 @@ views:
                 when: "@on"
       - type: label
         text: t:rsi.exp.policyTitle
+        action:
+          type: button
+          label: t:rsi.exp.pol.editSchedule
+          act: dialog
+          args:
+            kind: rsiSchedule
+            objective: $.exp.id
+            mode: $.exp.policy.schedule.form.mode
+            dateFrom: $.exp.policy.schedule.form.dateFrom
+            dateTo: $.exp.policy.schedule.form.dateTo
+            start: $.exp.policy.schedule.form.start
+            end: $.exp.policy.schedule.form.end
+            custom: $.exp.policy.schedule.form.custom
       - type: kv
         from:
           - k: t:rsi.exp.pol.schedule
             v: $.exp.policy.schedule.window
+            when: $.exp.policy.schedule.window
+          - k: t:rsi.exp.pol.schedule
+            v: t:rsi.exp.pol.scheduleUnset
+            when: "!$.exp.policy.schedule.window"
           - k: t:rsi.exp.pol.seeds
             v:
               t: rsi.exp.seedsOf
@@ -4961,6 +5052,20 @@ views:
           - v: none
             label: t:rsi.newExp.autoNone
         arg: auto
+      - id: dlg-schedule-mode
+        label: t:rsi.schedule.mode
+        help: t:rsi.schedule.newHelp
+        value: ""
+        options:
+          - v: ""
+            label: t:rsi.schedule.draftLater
+          - v: anytime
+            label: t:rsi.schedule.anytime
+          - v: daytime_weekend
+            label: t:rsi.schedule.daytimeWeekend
+          - v: daily
+            label: t:rsi.schedule.dailyPreset
+        arg: scheduleMode
     blocks:
       - type: toolbar
         left:
@@ -5525,6 +5630,7 @@ requests:
       target: "@target"
       repair: "@repair"
       auto: "@auto"
+      scheduleMode: "@scheduleMode"
       name: "@name"
       cats: "@cats"
   life:
@@ -5618,6 +5724,22 @@ requests:
       op: auto
       objective: "@objective"
       auto: "@auto"
+  schedule:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: schedule
+      objective: "@objective"
+      mode: "@mode"
+      dateFrom: "@dateFrom"
+      dateTo: "@dateTo"
+      start: "@start"
+      end: "@end"
+      custom: "@custom"
   initRedo:
     path: rsi/act
     method: POST

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createFixtures, RSI_CP_INIT } from './fixtures.js';
-import { timeRange, windowMinutes } from './schedule.js';
+import { hasValidSchedule, parseScheduleText, scheduleOf, scheduleSummary, timeRange } from './schedule.js';
 import { summaryOf } from './data.js';
 import type { Data, Experiment, InitExecution, OutboxEntry, PrepItem, RsiState, Section } from './types.js';
 
@@ -147,8 +147,9 @@ export function submitInitStep(state: RsiState, id: string, submission: InitSubm
     for (const metric of d.metrics.items) if (metric.guard) metric.locked = true;
   }
   if (section === 'run') {
-    const window = submission.window || submission.items.find((p) => p.id === 'cp-trigger')?.value;
-    if (windowMinutes(window)) d.policy.schedule.window = window;
+    const rawWindow = submission.window || (!hasValidSchedule(d.policy.schedule) ? submission.items.find((p) => p.id === 'cp-trigger')?.value : undefined);
+    const parsed = parseScheduleText(rawWindow);
+    if (parsed) d.policy.schedule = parsed;
   }
   if (submission.upcoming) d.upcoming = structuredClone(submission.upcoming);
   const project = Object.keys(state.objectives).find((k) => state.objectives[k].some((o) => o.id === id))!;
@@ -158,7 +159,7 @@ export function submitInitStep(state: RsiState, id: string, submission: InitSubm
     if (at < 0) state.library[project].push(value); else state.library[project][at] = value;
   }
   if (submission.executor?.state === 'passed') {
-    summaryOf(state, id)!.trigger = timeRange(d.policy.schedule.window);
+    summaryOf(state, id)!.trigger = timeRange(scheduleSummary(d.policy.schedule));
     const capability = state.groups[project].find((g) => g.forObjective === id);
     const value = { id: `exec-${id}`, side: 'collect', kind: 'mcp', name: `执行 MCP ${d.executor.mcp}`, where: d.executor.ops.map((o: Data) => o.op).join(' / ') + ' · 试跑通过', for: d.objective.name, users: d.objective.name, forObjective: id };
     if (capability) Object.assign(capability, value); else state.groups[project].push(value);
@@ -228,7 +229,8 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   if (body.projectPath) {
     d.versions = [{ id: 'v1', parent: null, change: '初始版本', config: {}, commit: null, snapshot: true, at: now, current: true }];
     d.executor = { state: 'none', mcp: 'rsi.executor', ops: [], resultMap: [] };
-    d.policy.schedule = { window: '' };
+    const initialSchedule = typeof body.scheduleMode === 'string' && body.scheduleMode ? scheduleOf({ mode: body.scheduleMode }) : null;
+    d.policy.schedule = initialSchedule && 'schedule' in initialSchedule ? initialSchedule.schedule : { window: '' };
     delete d.upcoming;
   }
   d.plan = RSI_CP_INIT.map((s) => ({ k: s.section, role: s.role, deps: [...s.deps] }));
@@ -257,7 +259,8 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   d.policy.auto = (autoKinds(body.auto) as { kinds: string[] }).kinds;
   d.prep.push({ id: `${id}-auto`, section: 'goal', title: '夜里可以自己定的方向', value: autoText(d.policy.auto), state: 'confirmed', neededFrom: null, mine: true, by: '你', at: now });
   state.experiments[id] = d;
-  state.objectives[project].push({ id, name, parent: null, state: 'preparing', mode: 'exp', trigger: '', running: null, cycle: null, prediction: null, locked: 0, ...(reuseThread ? { thread: reuseThread } : {}) });
+  const initTrigger = d.policy.schedule ? String(timeRange(scheduleSummary(d.policy.schedule)) || '') : '';
+  state.objectives[project].push({ id, name, parent: null, state: 'preparing', mode: 'exp', trigger: body.projectPath ? initTrigger : '', running: null, cycle: null, prediction: null, locked: 0, ...(reuseThread ? { thread: reuseThread } : {}) });
   enqueue(state, d, 'createThread', { project, title: threadTitle(body.statement) });
   const who = (role: string) => mention(d.members.find((m) => m.role === role)!);
   message(state, d, now, `新评估项：${body.statement}`, `何时停：${stop}。\n\n${who('prepare')} 负责准备\n${who('evaluate')} 负责评估\n${who('iterate')} 负责治理执行（按你选的方向出新版本）\n\n初始化七步，按依赖往下做。`, 'goal');

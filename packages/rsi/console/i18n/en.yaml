@@ -340,6 +340,28 @@ noObjectives: No objectives yet
 noObjectivesHint: This project has no objectives yet. Create one with what to improve and when to stop; an agent will read the project, draft execution and metrics in the objective thread, and list them for your confirmation.
 repairDialog: Fixing failures at night
 autoDialog: Directions decided at night
+scheduleDialog: Edit run window
+scheduleDialogHelp: Supports anytime (24/7), weekday/weekend schedules (e.g. daytime weekdays + all-day weekends across timezones), calendar date ranges, and multi-rule combinations. Editable anytime.
+schedule:
+  mode: Run window
+  newHelp: Pick a preset now or let step 3 draft it; you can edit anytime in Policy (with calendar date range, custom hours, and multiple rules)
+  draftLater: Draft in step 3 (or configure later)
+  anytime: Unrestricted (24/7 anytime)
+  daytimeWeekend: Weekday daytime + all-day weekends
+  daily: Daily fixed hours
+  dailyPreset: Daily fixed hours (default 20:00–08:00)
+  weekdays: Weekdays only (Mon–Fri)
+  weekends: Weekends only (Sat–Sun)
+  custom: Custom multi-rule schedule
+  dateFrom: Start date (optional)
+  dateTo: End date (optional)
+  dateHelp: Leave blank for ongoing; set start/end dates to run only within that calendar range
+  start: Start time
+  end: End time
+  timeHelp: Local timezone; supports overnight windows (e.g. 20:00 to 08:00); leave blank for unrestricted
+  customLabel: Custom / extra rules (optional)
+  customHelp: One rule per line or separated by semicolons; matches if any rule applies
+  customPlaceholder: "e.g.\nMon-Fri 09:00-18:00\nSat-Sun all day\n2026-11-21~2026-11-30 08:00-20:00"
 newExp:
   help: Starts initialization in the current thread by default (or a new dedicated thread if chosen), moving through seven steps and @mentioning each responsible member. Agents keep drafting; items needing your judgment appear on the objective page. The machine and time window are drafted in step 3 after the agent reviews the project.
   threadMode: Objective thread
@@ -435,7 +457,7 @@ exp:
   goalGood: How to judge improvement
   adoptWhen: When to adopt
   stopWhen: When to stop
-  triggerOf: Scheduled · Every night {0}
+  triggerOf: Scheduled · {0}
   initStep: "{0}. {1}"
   init:
     goal: Basic information
@@ -727,10 +749,10 @@ exp:
     howOf: "{0} · {1} seeds per group · Execution capability {2}"
     whenOf:
       preparing: Starts after initialization
-      ready: Every night {0} after you start evaluation
+      ready: Runs on schedule ({0}) after you start evaluation
       running: "Running: {1} cycle {2}"
       soon: Starting soon
-      pending: Waiting for your decision, tonight {0}
+      pending: Waiting for your decision, next window {0}
       paused: Paused
       done: Finished
       _: ""
@@ -758,6 +780,8 @@ exp:
   policyTitle: Policy
   pol:
     schedule: Run window
+    scheduleUnset: Not set (click Edit window)
+    editSchedule: Edit window
     seeds: Seeds per group
     vars: Variables the agent may tune
     auto: Approval
