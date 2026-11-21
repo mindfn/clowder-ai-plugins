@@ -8,6 +8,8 @@ test('phase 2 declarations expose six documented tools, a v2 subscription and ma
   const manifest=load('plugin.yaml');
   const tools=manifest.contributions.filter((c)=>c.type==='tool');
   assert.deepEqual(tools.map((c)=>c.name),['rsi.task','rsi.submit','rsi.executor','rsi.version','rsi.conclude','rsi.propose']);
+  const submitItemProps=tools.find((c)=>c.name==='rsi.submit').inputSchema.properties.items.items.properties;
+  assert.equal(submitItemProps.title?.type,'string');
   for(const tool of tools){assert.equal(tool.action.method,tool.name);assert.equal(tool.inputSchema.type,'object');assert.ok(tool.description.length>150);}
   const schedule=manifest.contributions.find((c)=>c.type==='schedule');
   assert.deepEqual(schedule.schedule,{kind:'interval',everyMs:180000});assert.equal(schedule.action.method,'rsi.tick');assert.equal(schedule.policy.overlap,'skip');

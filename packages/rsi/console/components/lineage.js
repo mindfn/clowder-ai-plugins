@@ -59,7 +59,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {
     const c = colOf(s.k, {});
     (cols[c] = cols[c] || []).push(s);
   });
-  const W = 128, H = 52, GX = 24, GY = 12, PAD = 8;
+  const W = 128, H = 52, GX = 32, GY = 12, PAD = 8, R = 6;
   const maxRows = Math.max.apply(null, cols.map(function (list) { return list ? list.length : 0; }));
   const totalW = PAD * 2 + cols.length * W + Math.max(0, cols.length - 1) * GX;
   const totalH = PAD * 2 + maxRows * H + Math.max(0, maxRows - 1) * GY;
@@ -72,33 +72,47 @@ PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {
       pos[s.k] = { c: c, r: r, x: PAD + c * (W + GX), y: startY + r * (H + GY) };
     });
   });
+  // Transitive reduction for visual clarity: drop edge u->v if v is already reachable from u via another dependency.
+  function reaches(src, target, skipDirect) {
+    const stack = (byKey[src] && byKey[src].depKeys ? byKey[src].depKeys : []).filter(function (dk) { return !skipDirect || dk !== target; });
+    const seen = {};
+    while (stack.length) {
+      const cur = stack.pop();
+      if (cur === target) return true;
+      if (seen[cur] || !byKey[cur]) continue;
+      seen[cur] = true;
+      (byKey[cur].depKeys || []).forEach(function (dk) { stack.push(dk); });
+    }
+    return false;
+  }
   const sel = steps.find(function (s) { return s.selected; }), selK = sel ? sel.k : '';
   const edges = [];
   steps.forEach(function (s) {
     (s.depKeys || []).forEach(function (dk) {
-      if (pos[dk] && pos[s.k]) edges.push({ from: dk, to: s.k, done: byKey[dk].stage === 'done', active: selK && (dk === selK || s.k === selK) });
+      if (!pos[dk] || !pos[s.k]) return;
+      if (reaches(s.k, dk, true)) return;
+      edges.push({ from: dk, to: s.k, done: byKey[dk].stage === 'done', active: selK && (dk === selK || s.k === selK) });
     });
   });
+  // Orthogonal rounded bus path: horizontal out -> shared vertical bus before target column -> horizontal in.
+  function orthoPath(x1, y1, busX, x2, y2) {
+    if (Math.abs(y1 - y2) < 1) return 'M' + x1 + ',' + y1 + ' L' + x2 + ',' + y2;
+    const dir = y2 > y1 ? 1 : -1;
+    const r = Math.min(R, Math.abs(y2 - y1) / 2, Math.max(1, (busX - x1) / 2), Math.max(1, (x2 - busX) / 2));
+    return 'M' + x1 + ',' + y1 +
+      ' L' + (busX - r) + ',' + y1 +
+      ' Q' + busX + ',' + y1 + ' ' + busX + ',' + (y1 + dir * r) +
+      ' L' + busX + ',' + (y2 - dir * r) +
+      ' Q' + busX + ',' + y2 + ' ' + (busX + r) + ',' + y2 +
+      ' L' + x2 + ',' + y2;
+  }
   // Draw inactive edges first so highlighted edges stay cleanly on top.
   edges.sort(function (a, b) { return (a.active ? 1 : 0) - (b.active ? 1 : 0); });
   const svgPaths = edges.map(function (e) {
     const a = pos[e.from], b = pos[e.to];
     const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2;
-    const span = b.c - a.c;
-    let d;
-    if (span <= 1) {
-      const mx = Math.round((x1 + x2) / 2);
-      d = 'M' + x1 + ',' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2;
-    } else {
-      // Multi-column skip edge: travel horizontally past intermediate column in a clear top/bottom lane, then turn smoothly into target.
-      const clearX = pos[e.to].x - Math.round(GX * 0.55);
-      const goTop = y1 <= totalH / 2 && y2 <= totalH / 2;
-      const laneY = goTop ? Math.max(4, PAD - 2) : Math.min(totalH - 4, totalH - PAD + 2);
-      const stayInRow = Math.abs(y1 - totalH / 2) > H * 0.55;
-      const midY = stayInRow ? y1 : laneY;
-      d = 'M' + x1 + ',' + y1 + ' C' + (x1 + Math.round(GX * 0.6)) + ',' + midY + ' ' + clearX + ',' + midY + ' ' + clearX + ',' + Math.round((midY + y2) / 2) +
-        ' S' + (x2 - Math.round(GX * 0.45)) + ',' + y2 + ' ' + x2 + ',' + y2;
-    }
+    const busX = b.x - Math.round(GX / 2);
+    const d = orthoPath(x1, y1, busX, x2, y2);
     const cls = 'rsi-dag-edge' + (e.done ? ' done' : '') + (e.active ? ' active' : '');
     return '<path class="' + cls + '" d="' + d + '"' + (e.active ? ' marker-end="url(#rsi-dag-arr-on)"' : ' marker-end="url(#rsi-dag-arr)"') + '/>';
   }).join('');

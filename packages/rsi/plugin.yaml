@@ -1,5 +1,5 @@
 pluginId: official.rsi
-version: 0.1.0-alpha.70
+version: 0.1.0-alpha.71
 contractVersion: 0.4.0-candidate.0
 name: RSI 能力进化
 description:
@@ -55,6 +55,7 @@ contributions:
             required: [id, value]
             properties:
               id: { type: string, minLength: 1 }
+              title: { type: string, minLength: 1 }
               value: { type: string, minLength: 1 }
               facts: { type: array, items: {type: object, required: [k, v], properties: {k: {type: string}, v: {type: string}}, additionalProperties: false} }
               can: { type: string }

@@ -25,9 +25,9 @@
 .rsi-dag-scroll{width:100%}
 .rsi-dag-canvas{position:relative;flex:none}
 .rsi-dag-svg{position:absolute;inset:0;pointer-events:none;overflow:visible}
-.rsi-dag-edge{fill:none;stroke:var(--line-strong);stroke-width:1.25;stroke-dasharray:3 3;opacity:.75}
-.rsi-dag-edge.done{stroke:var(--ok);stroke-dasharray:none;opacity:.65}
-.rsi-dag-edge.active{stroke:var(--accent);stroke-width:1.85;stroke-dasharray:none;opacity:1}
+.rsi-dag-edge{fill:none;stroke:var(--line-strong);stroke-width:1.25;opacity:.48;stroke-linecap:round;stroke-linejoin:round}
+.rsi-dag-edge.done{stroke:var(--ok);opacity:.65}
+.rsi-dag-edge.active{stroke:var(--accent);stroke-width:1.75;opacity:1}
 .rsi-dag-arr{fill:var(--line-strong)}
 .rsi-dag-arr.active{fill:var(--accent)}
 .rsi-dag-node{position:absolute;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:var(--sp-xs) var(--sp-s);border:1px solid var(--line-strong);border-radius:var(--r-m);background:var(--bg-page);color:var(--fg);text-align:left;cursor:pointer;transition:border-color var(--dur-fast),background var(--dur-fast),box-shadow var(--dur-fast)}
