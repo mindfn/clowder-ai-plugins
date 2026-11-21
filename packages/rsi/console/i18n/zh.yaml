@@ -750,20 +750,52 @@ exp:
   startScheduled: 按策略开启调度
   stepMember: "成员："
   stepRev: "版本："
+  stepMemberLabel: 负责成员
+  stepRevLabel: 历史版本
+  stepDepsLabel: 前置依赖
+  stepWaitLabel: 等待前置
+  stepUnknownsLabel: 未决项
+  stepNextLabel: 下一步建议
   stepRefresh: 重新分析
   stepViewingOld: 当前查看的是历史版本快照（切换回最新版本可编辑或确认）
   stageOwnerOf: "{0}：{1}"
   stageOwnerArchived: 实际执行成员（已归档）
   stageOwnerUpcoming: 预计执行成员（未执行，改执行成员即时生效）
-  evalWaiting: "正在等待 {0} 提交本周期评估结论；如已失败或卡住，可在「分析与管理 → 2. 执行成员」换人后点重新触发。"
+  evalWaiting: "正在等待 {0} 提交本周期评估结论；如已失败或卡住，可在「分析与管理 → 执行阶段」换人后点重新触发。"
   retryStage: 重新触发
   sec:
     manage: 分析与管理
     execute: 治理与执行
-    analysis: 1. 分析处理
-    members: 2. 执行成员
-    execPolicy: 3. 执行策略
-    approvalPolicy: 4. 审批策略
+    goal: 目标
+    execStatus: 执行状态
+    analysis: 分析
+    execStages: 执行阶段
+    execPolicy: 执行策略
+    approvalPolicy: 审批策略
+    stopPolicy: 停止策略
+  execStatusNotStarted: 未开始
+  execStatusMetric: 指标版本
+  execStatusRounds: 已运行周期
+  execStatusRoundsOf: "{0} 个周期"
+  goExecute: 查看治理与执行
+  execStageTitle:
+    collect: 运行与采集
+    evaluate: 评估分析
+    discuss: 方案讨论
+    iterate: 治理实施
+    _: "{0}"
+  execStageDesc:
+    collect: 按实验计划启动对照组与改动组，采集每组与每个种子的指标与日志（由已登记的执行器自动运行）。
+    evaluate: 对比本周期各组均值、标准差与护栏，给出胜出/复验/回退结论与对照图。
+    discuss: 多位成员并行审阅评估报告，各自提出下一轮优化方向并判断是否达成一致。
+    iterate: 按采纳的优化方向修改代码或配置、提交新版本，或在执行失败时负责修复重跑。
+    _: ""
+  execStageMeaningLabel: 阶段含义
+  execStageRunnerLabel: 执行方式
+  execStageCollectVal: "{0} · {1}（自动执行）"
+  execStageMemberHelp: 修改后立即作用于尚未执行到的阶段与后续周期；已完成周期保留原归档记录
+  execStageDiscussMembers: 参与成员
+  execStageDiscussNone: 未指定（点击选择）
   goalLabel: "目标："
   snapshotTitle: "0. 执行快照："
   snapshotLine: "{0}（{1}） · 指标 {2} · 停止条件：{3}"
@@ -851,6 +883,17 @@ exp:
     scheduleUnset: 未设置（点右上角修改）
     editSchedule: 修改执行策略
     maxRuns: 时间窗内最大执行次数
+    unlimited: 不限制
+    runs1: 最多 1 次
+    runs2: 最多 2 次
+    runs3: 最多 3 次
+    runs5: 最多 5 次
+    runs10: 最多 10 次
+    repair0: 不自动修（0 次）
+    repair1: 每窗最多 1 次
+    repair3: 每窗最多 3 次
+    repair5: 每窗最多 5 次
+    repair10: 每窗最多 10 次
     editAuto: 改审批边界
     editRepair: 改出错自动修
     editStop: 改何时停
@@ -879,6 +922,7 @@ common:
   name: 名字
   rename: 改名
   save: 保存
+  cancel: 取消
   delete: 删除
 
 phase2:

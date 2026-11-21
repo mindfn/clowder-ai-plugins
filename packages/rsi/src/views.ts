@@ -25,10 +25,16 @@ export function follow(state: RsiState, query: Data) {
 // and every direction chosen by you (the demo's approval rules are not enforced here).
 function policyOf(d: Data, o: Data) {
   const windowText = scheduleSummary(d.policy.schedule);
-  const schedule = { ...d.policy.schedule, window: windowText, maxRuns: d.policy.schedule?.maxRuns ?? null, maxRunsText: maxRunsText(d.policy.schedule), form: scheduleForm(d.policy.schedule) };
+  const maxRuns = d.policy.schedule?.maxRuns ?? null;
+  const schedule = { ...d.policy.schedule, window: windowText, maxRuns, maxRunsValue: maxRuns ? String(maxRuns) : '', maxRunsText: maxRunsText(d.policy.schedule), form: scheduleForm(d.policy.schedule) };
   const repair = d.policy.repair ?? REPAIR_DEFAULT;
   const stop = o.stop || {};
-  const shared = { schedule, repair, repairText: repairText(repair), stopTarget: stop.target || '', stopRounds: stop.maxCycles || '', stopText: stopText(stop), autoKey: autoKey(d.policy.auto || AUTO.default) || 'default' };
+  const shared = {
+    schedule, repair, repairValue: String(repair), repairText: repairText(repair),
+    stopTarget: stop.target || '', stopTargetText: stop.target || '不限制',
+    stopRounds: stop.maxCycles || '', stopRoundsText: stop.maxCycles ? `${stop.maxCycles} 个周期` : '不限制',
+    stopText: stopText(stop), autoKey: autoKey(d.policy.auto || AUTO.default) || 'default',
+  };
   if (!o.projectPath) return Object.assign({}, d.policy, shared, { autoText: tc('rsi.exp.pol.autoText') });
   const plan = d.upcoming || (d.rounds.length ? d.rounds[d.rounds.length - 1].plan : null), tried: Data = {};
   for (const r of d.rounds) for (const g of r.plan.groups) if (!g.control) for (const [k, v] of Object.entries(g.vars || {})) {
@@ -44,6 +50,8 @@ export function viewModel(state: RsiState, view: string, query: Data = {}): any 
     rsiProject: at.project, rsiPick: at.pick || 'obj:cp-converge', rsiPicked: !!at.pick, tag: at.tag,
     rsiTab: query.tab || 'version',
     rsiExpSec: typeof query.expSec === 'string' ? query.expSec : '',
+    rsiEditGoal: query.editGoal === '1',
+    rsiExecStage: typeof query.execStage === 'string' ? query.execStage : '',
     rsiSelO: query.selO || '', rsiSelE: query.selE || '', rsiSelC: query.selC || '',
     rsiInitStep: typeof query.initStep === 'string' ? query.initStep : '',
     rsiInitRev: typeof query.initRev === 'string' ? query.initRev : '',
@@ -432,6 +440,43 @@ function exp(): any {
   };
   // Execution/governance stage members apply to upcoming & not-yet-reached cycle stages (separate from per-step analysis members).
   const execStages = [stageMember('evaluate'), stageMember('iterate')];
+  const discussionList = d.members.filter((m: Data) => m.role === 'analyze' && m.catId).map((m: Data) => ({ id: m.catId, name: m.name }));
+  const activeExecStage = ['collect', 'evaluate', 'discuss', 'iterate'].includes(S.rsiExecStage) ? S.rsiExecStage : 'evaluate';
+  const execFlowNodes = [
+    { k: 'collect', depKeys: [], owner: d.executor.state === 'passed' ? '执行器自动' : '待接通', selected: activeExecStage === 'collect' },
+    { k: 'evaluate', depKeys: ['collect'], owner: memberName('evaluate') || '未指定', selected: activeExecStage === 'evaluate' },
+    { k: 'discuss', depKeys: ['evaluate'], owner: discussionList.length ? `${discussionList.length} 位成员` : '未指定', selected: activeExecStage === 'discuss' },
+    { k: 'iterate', depKeys: ['discuss'], owner: memberName('iterate') || '未指定', selected: activeExecStage === 'iterate' },
+  ];
+  const execFlow = {
+    nodes: execFlowNodes,
+    selected: {
+      k: activeExecStage,
+      isCollect: activeExecStage === 'collect',
+      isEvaluate: activeExecStage === 'evaluate',
+      isDiscuss: activeExecStage === 'discuss',
+      isIterate: activeExecStage === 'iterate',
+      executorMcp: d.executor.mcp || 'rsi.executor',
+      executorState: d.executor.state || 'none',
+      evaluateCatId: (d.members.find((m: Data) => m.role === 'evaluate') || {}).catId || '',
+      iterateCatId: (d.members.find((m: Data) => m.role === 'iterate') || {}).catId || '',
+      discussionIds: discussionList.map((m: Data) => m.id),
+      discussionText: discussionList.map((m: Data) => m.name).join('、'),
+    },
+  };
+  const goalStatement = o.goal?.statement || o.name || '';
+  const goalQuote = goalStatement ? goalStatement.split('\n').map((l: string) => '> ' + l).join('\n') : '';
+  const execStatus = {
+    started: rounds.length > 0,
+    ready: o.state === 'ready',
+    doneCount,
+    totalCount: rawSteps.length,
+    version: cur.id,
+    change: cur.change,
+    metricVersion: d.metrics.version,
+    roundsCount: rounds.length,
+    schedule: scheduleSummary(d.policy.schedule),
+  };
   const stageOwnersOf = (r: Data) => {
     const evalDone = !!r.report;
     const discussDone = !!r.report && !(r.analysis?.waiting?.length);
@@ -448,7 +493,7 @@ function exp(): any {
       gov: { name: govDone && govArchived ? govArchived : memberName('iterate'), archived: govDone },
     };
   };
-  return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, projectPath: o.projectPath, goal: o.goal, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
+  return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, projectPath: o.projectPath, goal: o.goal, goalQuote, editingGoal: S.rsiEditGoal, execStatus, execFlow, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
     trend: rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, value: Number(best(x).mean.toPrecision(4)) }; }),
     trendMetric: d.metrics.items.find((m: Data) => m.id === main).name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.filter(function (p: any): any { return p.result !== 'unresolved'; }).length },

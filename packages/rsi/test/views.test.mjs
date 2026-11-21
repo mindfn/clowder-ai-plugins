@@ -499,4 +499,19 @@ test('dual-tab console supports inline role switching, step history snapshots, e
   assert.equal(act(state, { op: 'discussAgain' }, { project, pick: `obj:${id}` }, now).ok, true);
   d3.versionRequest = { cycle: 1, title: '增大 batch', since: now };
   assert.equal(act(state, { op: 'versionAgain' }, { project, pick: `obj:${id}` }, now).ok, true);
+
+  // Inline goal edit, single-cycle execution pipeline schematic, and direct policy dropdown ops
+  assert.equal(act(state, { op: 'goalEdit', objective: id, v: '新目标：压缩单卡 P99 至 60ms' }, { project }, now).ok, true);
+  assert.equal(act(state, { op: 'maxRuns', objective: id, v: '3' }, { project }, now).ok, true);
+  assert.equal(act(state, { op: 'auto', objective: id, v: 'execution' }, { project }, now).ok, true);
+  assert.equal(act(state, { op: 'repair', objective: id, v: '3' }, { project }, now).ok, true);
+  assert.equal(act(state, { op: 'analystToggle', objective: id, v: 'codex', cats: [{ id: 'codex', name: '砚砚' }] }, { project }, now).ok, true);
+  const finalVm = viewModel(state, 'exp', { project, pick: `obj:${id}`, execStage: 'discuss' });
+  assert.equal(finalVm.goalQuote, '> 新目标：压缩单卡 P99 至 60ms');
+  assert.equal(finalVm.policy.schedule.maxRunsValue, '3');
+  assert.equal(finalVm.policy.autoKey, 'execution');
+  assert.equal(finalVm.policy.repairValue, '3');
+  assert.deepEqual(finalVm.execFlow.nodes.map((n) => n.k), ['collect', 'evaluate', 'discuss', 'iterate']);
+  assert.equal(finalVm.execFlow.selected.isDiscuss, true);
+  assert.equal(finalVm.execFlow.selected.discussionIds.includes('codex'), true);
 });

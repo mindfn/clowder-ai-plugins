@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { askEvaluation, controlGroup, finishAnalysis, requestVersion, runCycle } from './cycles.js';
-import { hasValidSchedule, parseScheduleText, scheduleOf, scheduleSummary, timeRange } from './schedule.js';
+import { hasValidSchedule, parseMaxRuns, parseScheduleText, scheduleOf, scheduleSummary, timeRange } from './schedule.js';
 import { summaryOf, objectiveData } from './data.js';
-import { enqueue, kick, mention, message, refreshMembers, rsiExpNew, rsiExpReady, rsiExpStaleFrom, setMember, stopOf, stopText, syncObjective, repairCount, repairText, REPAIR_DEFAULT, prepSettled, AUTO, autoKinds, autoKey, autoText } from './init.js';
+import { clipTitle, enqueue, kick, mention, message, refreshMembers, rsiExpNew, rsiExpReady, rsiExpStaleFrom, setMember, stopOf, stopText, syncObjective, repairCount, repairText, REPAIR_DEFAULT, prepSettled, AUTO, autoKinds, autoKey, autoText } from './init.js';
 import type { Data, Experiment, RsiState, Section } from './types.js';
 
 function selected(state: RsiState, body: Data, query: Data) {
@@ -82,9 +82,34 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       syncObjective(state, d);
       return { ok: true };
     }
+    case 'goalEdit': {
+      if (!d || !o) return { error: 'Experiment not found', status: 404 };
+      const nextText = typeof (body.v ?? body.statement) === 'string' ? String(body.v ?? body.statement).trim() : '';
+      if (!nextText) return { error: '请输入评估目标' };
+      d.objective.goal = { ...(d.objective.goal || {}), statement: nextText };
+      const clipped = clipTitle(nextText, 48, d.objective.id);
+      d.objective.name = clipped;
+      o.name = clipped;
+      const goalItem = d.prep.find((p) => p.section === 'goal' && p.id.endsWith('-goal'));
+      if (goalItem) Object.assign(goalItem, { value: nextText, state: 'confirmed', by: '你', mine: true, at: now });
+      message(state, d, now, '你更新了评估目标', nextText);
+      syncObjective(state, d);
+      return { ok: true, act: 'plugSet', args: { k: 'editGoal', v: '' } };
+    }
+    case 'maxRuns': {
+      if (!d || !o) return { error: 'Experiment not found', status: 404 };
+      const parsed = parseMaxRuns(body.v ?? body.maxRuns);
+      if ('error' in parsed) return parsed;
+      d.policy.schedule ||= { window: '' };
+      if (parsed.maxRuns) d.policy.schedule.maxRuns = parsed.maxRuns;
+      else delete d.policy.schedule.maxRuns;
+      message(state, d, now, '你改了时间窗内最大执行次数', parsed.maxRuns ? `最多 ${parsed.maxRuns} 次` : '不限制');
+      syncObjective(state, d);
+      return { ok: true };
+    }
     case 'repair': {
       if (!d) return { error: 'Experiment not found', status: 404 };
-      const repair = repairCount(body.repair);
+      const repair = repairCount(body.repair ?? body.v);
       if ('error' in repair) return repair;
       d.policy.repair = repair.count;
       const text = repairText(repair.count), item = d.prep.find((p) => p.section === 'goal' && p.id.endsWith('-repair'));
@@ -106,7 +131,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
     }
     case 'auto': {
       if (!d) return { error: 'Experiment not found', status: 404 };
-      const auto = autoKinds(body.auto);
+      const auto = autoKinds(body.auto ?? body.v);
       if ('error' in auto) return auto;
       d.policy.auto = auto.kinds;
       const text = autoText(auto.kinds), item = d.prep.find((p) => p.section === 'goal' && p.id.endsWith('-auto'));
@@ -272,14 +297,17 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       return { ok: true };
     }
     case 'analystAdd':
-    case 'analystRemove': {
+    case 'analystRemove':
+    case 'analystToggle': {
       if (!d) return { error: 'Experiment not found', status: 404 };
-      if (typeof body.catId !== 'string' || !body.catId) return { error: 'Choose a member' };
-      const add = body.op === 'analystAdd';
-      d.members = d.members.filter((m) => !(m.role === 'analyze' && m.catId === body.catId));
+      const catId = typeof body.catId === 'string' && body.catId ? body.catId : (typeof body.v === 'string' ? body.v : '');
+      if (!catId) return { error: 'Choose a member' };
+      const exists = d.members.some((m) => m.role === 'analyze' && m.catId === catId);
+      const add = body.op === 'analystAdd' || (body.op === 'analystToggle' && !exists);
+      d.members = d.members.filter((m) => !(m.role === 'analyze' && m.catId === catId));
       refreshMembers(d.members, body.cats);
       if (add) {
-        const added = setMember({ role: 'analyze' }, body.catId, body.cats);
+        const added = setMember({ role: 'analyze' }, catId, body.cats);
         d.members.push(added);
         // If a cycle is currently awaiting discussion proposals, enroll and wake the newly added analyst immediately.
         for (const r of d.rounds) if (r.analysis?.waiting?.length && !r.analysis.waiting.includes(added.catId)) {
@@ -289,8 +317,8 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         }
       }
       // A removed analyst no longer holds up a conclusion.
-      else for (const r of d.rounds) if (r.analysis?.waiting.includes(body.catId)) {
-        r.analysis.waiting = r.analysis.waiting.filter((id: string) => id !== body.catId);
+      else for (const r of d.rounds) if (r.analysis?.waiting.includes(catId)) {
+        r.analysis.waiting = r.analysis.waiting.filter((id: string) => id !== catId);
         if (!r.analysis.waiting.length) finishAnalysis(state, d, r, now);
       }
       syncObjective(state, d);

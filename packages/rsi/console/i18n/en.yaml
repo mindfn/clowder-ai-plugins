@@ -750,20 +750,52 @@ exp:
   startScheduled: Start on schedule
   stepMember: "Member: "
   stepRev: "Version: "
+  stepMemberLabel: Member
+  stepRevLabel: History
+  stepDepsLabel: Dependencies
+  stepWaitLabel: Waiting on
+  stepUnknownsLabel: Open questions
+  stepNextLabel: Suggested next step
   stepRefresh: Re-analyze
   stepViewingOld: Viewing a historical snapshot (switch back to latest to edit or confirm)
   stageOwnerOf: "{0}: {1}"
   stageOwnerArchived: Actual member (archived)
-  stageOwnerUpcoming: Expected member (upcoming; follows Execution members)
-  evalWaiting: "Waiting for {0} to submit the cycle evaluation; if failed or stalled, swap the member under Execution members and re-trigger."
+  stageOwnerUpcoming: Expected member (upcoming; follows Execution stages)
+  evalWaiting: "Waiting for {0} to submit the cycle evaluation; if failed or stalled, swap the member under Execution stages and re-trigger."
   retryStage: Re-trigger
   sec:
     manage: Analysis & Management
     execute: Governance & Execution
-    analysis: 1. Analysis workflow
-    members: 2. Execution members
-    execPolicy: 3. Execution policy
-    approvalPolicy: 4. Approval policy
+    goal: Goal
+    execStatus: Execution status
+    analysis: Analysis
+    execStages: Execution stages
+    execPolicy: Execution policy
+    approvalPolicy: Approval policy
+    stopPolicy: Stop policy
+  execStatusNotStarted: Not started
+  execStatusMetric: Metrics version
+  execStatusRounds: Completed cycles
+  execStatusRoundsOf: "{0} cycles"
+  goExecute: Open Governance & Execution
+  execStageTitle:
+    collect: Run & Collect
+    evaluate: Evaluate
+    discuss: Discuss
+    iterate: Govern & Apply
+    _: "{0}"
+  execStageDesc:
+    collect: Runs control and experiment groups automatically via the registered executor and collects metrics/logs.
+    evaluate: Compares group means, standard deviations, guardrails, and visual diffs to produce the cycle verdict.
+    discuss: Multiple members review the evaluation in parallel, propose next directions, and check consensus.
+    iterate: Applies the chosen direction to code/config as a new version, or repairs failed runs.
+    _: ""
+  execStageMeaningLabel: Stage role
+  execStageRunnerLabel: Runner
+  execStageCollectVal: "{0} · {1} (automated)"
+  execStageMemberHelp: Changes apply immediately to unreached stages and future cycles; completed stages keep archived executors
+  execStageDiscussMembers: Participants
+  execStageDiscussNone: None (click to pick)
   goalLabel: "Goal: "
   snapshotTitle: "0. Snapshot: "
   snapshotLine: "{0} ({1}) · Metrics {2} · Stop: {3}"
@@ -851,6 +883,17 @@ exp:
     scheduleUnset: Not set (click Edit execution policy)
     editSchedule: Edit execution policy
     maxRuns: Max runs per window
+    unlimited: Unlimited
+    runs1: Up to 1 run
+    runs2: Up to 2 runs
+    runs3: Up to 3 runs
+    runs5: Up to 5 runs
+    runs10: Up to 10 runs
+    repair0: Off (0)
+    repair1: Up to 1 per window
+    repair3: Up to 3 per window
+    repair5: Up to 5 per window
+    repair10: Up to 10 per window
     editAuto: Edit approval
     editRepair: Edit auto-repair
     editStop: Edit stop condition
@@ -879,6 +922,7 @@ common:
   name: Name
   rename: Rename
   save: Save
+  cancel: Cancel
   delete: Delete
 
 phase2:

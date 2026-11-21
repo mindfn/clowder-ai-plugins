@@ -121,20 +121,21 @@ PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {
     '<marker id="rsi-dag-arr-on" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,1 L7,4 L0,7 z" class="rsi-dag-arr active"/></marker></defs>' +
     svgPaths + '</svg>';
   const stageLabels = p.stages || {};
-  const labelOf = function (st) { return stageLabels[st] ? pvText(stageLabels[st], sc, root) : st; };
-  const legend = '<div class="rsi-dag-legend">' + ['waiting', 'running', 'pending', 'done', 'error'].map(function (st) {
+  const labelOf = function (st) { return !st ? '' : (stageLabels[st] ? pvText(stageLabels[st], sc, root) : st); };
+  const legend = p.hideLegend ? '' : '<div class="rsi-dag-legend">' + ['waiting', 'running', 'pending', 'done', 'error'].map(function (st) {
     return '<span class="rsi-dag-leg" data-stage="' + st + '"><i class="rsi-dag-dot"></i>' + h(labelOf(st)) + '</span>';
   }).join('') + '</div>';
   const nodes = steps.map(function (s) {
     const q = pos[s.k];
     const title = s.terminal && p.terminalTitle ? pvText(p.terminalTitle, s, root) : p.title ? pvText(p.title, s, root) : (s.i + ' ' + s.k);
+    const hasStage = !!s.stage;
     const meta = [labelOf(s.stage), s.owner || ''].filter(Boolean).join(' · ');
     const badge = !s.terminal && s.needCount > 0 && s.stage === 'pending' ? '<span class="rsi-dag-badge">' + s.needCount + '</span>' : '';
     const actAttr = p.act ? ' data-act="' + h(p.act) + '"' + pvArgs(p.args, s, root) : ' data-act="plugSet" data-plugin="official.rsi" data-k="initStep" data-v="' + h(s.k) + '"';
-    return '<button type="button" class="rsi-dag-node' + (s.terminal ? ' terminal' : '') + '" data-step="' + h(s.k) + '" data-stage="' + h(s.stage) + '" aria-pressed="' + (s.selected ? 'true' : 'false') + '"' + actAttr +
+    return '<button type="button" class="rsi-dag-node' + (s.terminal ? ' terminal' : '') + '" data-step="' + h(s.k) + '"' + (hasStage ? ' data-stage="' + h(s.stage) + '"' : '') + ' aria-pressed="' + (s.selected ? 'true' : 'false') + '"' + actAttr +
       ' style="left:' + q.x + 'px;top:' + q.y + 'px;width:' + W + 'px;height:' + H + 'px">' +
-      '<span class="rsi-dag-top"><i class="rsi-dag-dot"></i><span class="rsi-dag-name">' + h(title) + '</span>' + badge + '</span>' +
-      '<span class="rsi-dag-sub">' + h(meta) + '</span></button>';
+      '<span class="rsi-dag-top">' + (hasStage ? '<i class="rsi-dag-dot"></i>' : '') + '<span class="rsi-dag-name">' + h(title) + '</span>' + badge + '</span>' +
+      (meta ? '<span class="rsi-dag-sub">' + h(meta) + '</span>' : '') + '</button>';
   }).join('');
   return '<div class="rsi-dag-wrap">' + legend + '<div class="scroll-x rsi-dag-scroll"><div class="rsi-dag-canvas" style="width:' + totalW + 'px;height:' + totalH + 'px">' + svg + nodes + '</div></div></div>';
 };
