@@ -11,6 +11,8 @@
 .rsi-lin-v[data-state="current"]{background:color-mix(in srgb,var(--ok) var(--d-wash),var(--bg-field));color:var(--ok)}
 .rsi-lin-v[data-state="candidate"]{background:transparent;outline:var(--sp-hairline) dashed var(--line-strong);color:var(--fg-faint)}
 .rsi-lin-v[data-state="external"]{background:color-mix(in srgb,var(--info) var(--d-wash),var(--bg-field));color:var(--info)}
+.rsi-lin-grp{background:transparent;outline:var(--sp-hairline) dashed var(--line-strong);color:var(--fg-muted)}
+.rsi-lin-grp:hover{color:var(--fg-strong);outline-color:var(--accent)}
 .rsi-lin-tail{display:inline-flex;align-items:center;gap:var(--sp-s);color:var(--fg-muted);font-size:var(--fs-s)}
 
 .rsi-trend{width:100%;max-width:calc(140*var(--unit));height:auto;flex:none}

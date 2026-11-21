@@ -321,6 +321,30 @@ test('re-running Step 3 executor probe executes preflight in currentVersion work
   assert.equal(after.experiments[o.id].executor.state, 'passed', JSON.stringify(after.experiments[o.id].executor.probe));
 });
 
+test('preflight failure skips cancel and verbose cancel on submit failure never evicts submit log', async (t) => {
+  const f = await fixture(t), o1 = await f.create({ repair: '0' });
+  const cancelled = join(f.project, 'pre-cancel.log');
+  f.commands.cancel = `node -e "require('fs').appendFileSync(process.argv[1],'called\\n'); console.error('CANCEL_NOISE_'.repeat(300));" "${cancelled}"`;
+  await f.initialize(o1, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [1] });
+  await retain(f.storage, ownerKey('owner'), (state) => {
+    state.experiments[o1.id].executor.commands.preflight = 'echo PREFLIGHT_BOOM_MARKER && exit 2';
+  });
+  const preRun = (await execute(f, o1)).runs[0];
+  assert.equal(preRun.state, 'failed');
+  assert.match(preRun.log, /PREFLIGHT_BOOM_MARKER/);
+  await assert.rejects(access(cancelled));
+
+  const o2 = await f.create({ repair: '0' });
+  await f.initialize(o2, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [2] });
+  await retain(f.storage, ownerKey('owner'), (state) => {
+    state.experiments[o2.id].executor.commands.submit = 'echo SUBMIT_ROOT_CAUSE_MARKER && exit 9';
+  });
+  const subRun = (await execute(f, o2)).runs[0];
+  assert.equal(subRun.state, 'failed');
+  assert.match(subRun.log, /SUBMIT_ROOT_CAUSE_MARKER/);
+  assert.match(subRun.log, /\[cancel\]/);
+});
+
 test('execution lifecycle uses v2 replyTo, tolerates send acknowledgement races and rejects late old-step events', async (t) => {
   const f=await fixture(t);
   f.onSend(async (s)=>{

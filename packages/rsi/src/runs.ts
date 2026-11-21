@@ -115,7 +115,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       if (!acquired || stopped) continue;
       busy = d.objective.id; runId = run.id;
       let metrics: Data = {}, env: Data = { seed: run.seed, hardware: { os: `${platform()} ${release()}`, arch: arch(), chip: cpus()[0]?.model || 'unknown' } };
-      let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId, timedOut = false;
+      let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId, timedOut = false, submitted = !!jobId;
       // The foreground submit's limit: the registered timeout, else three times this objective's longest successful attempt (at least 10 minutes); none before one has succeeded.
       const succeeded = d.rounds.flatMap((r: Data) => r.runs.flatMap((x: Data) => (x.attempts || []).filter((a: Data) => !a.error).map((a: Data) => a.end - a.start)));
       const limit = d.executor.timeout ? d.executor.timeout * 1000 : succeeded.length ? Math.max(600_000, 3 * Math.max(...succeeded)) : 0;
@@ -162,6 +162,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         const since = jobId ? start : Date.now();
         if (!jobId) {
           step = 'submit';
+          submitted = true;
           if (canCancel(d.executor.commands.cancel, values)) remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: d.executor.commands.cancel, cwd, values };
           const result = await launch(d.executor.commands.submit, cwd, values, limit);
           log += result.log;
@@ -249,18 +250,27 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         analysis = clip((analysed.stdout.trim() || analysed.log).trim());
       }
       // A job past its timeout, failing for good, or retrying after a foreground submit failure is cancelled so that nothing is left behind remotely.
-      if ((timedOut || final || (error && kind === 'env' && step === 'submit')) && canCancel(cancel, where?.values)) log = (log + (await launch(cancel!, where!.cwd, where!.values)).log).slice(-16000);
+      // Never cancel when failure occurred before submit (prepare/preflight), and never let cancel output evict the failing step's log.
+      const failureLog = log;
+      let cancelLog = '';
+      if (submitted && (timedOut || final || (error && kind === 'env' && step === 'submit')) && canCancel(cancel, where?.values)) {
+        cancelLog = (await launch(cancel!, where!.cwd, where!.values)).log;
+        if (cancelLog) log = `${log}\n[cancel]\n${cancelLog}`.slice(-16000);
+      }
       // A deleted objective's run is neither logged nor recorded: its folder is being removed.
       if (stopped || dropped.has(d.objective.id)) return;
       // The full log stays with the run; the state keeps its tail. The run's result is recorded whether or not the file can be written.
       if (await exists(directory)) await writeFile(join(directory, 'rsi.log'), log).catch((failure) => host.log('error', 'RSI could not write the full run log', { run: run.id, error: String(failure) }));
+      const keptLog = cancelLog
+        ? `${failureLog.slice(-(LOG_KEEP - 400))}\n[cancel]\n${cancelLog.slice(-360)}`.slice(-LOG_KEEP)
+        : failureLog.slice(-LOG_KEEP);
       await retain(host.storage, key, (state) => {
         const current = state.experiments[d.objective.id];
         if (!current) return;
         const cycle = current.rounds.find((r: Data) => r.n === round.n), entry = cycle.runs.find((r: Data) => r.id === run.id);
         if (entry.state !== 'running') return;
         const end = Date.now(), failure = error ? { kind, step, raw: clip(error), ...(analysis ? { analysis } : {}) } : null;
-        Object.assign(entry, { end, metrics, env, log: log.slice(-LOG_KEEP), error: failure, evidence: !error || kind === 'real' });
+        Object.assign(entry, { end, metrics, env, log: keptLog, error: failure, evidence: !error || kind === 'real' });
         entry.attempts ||= [];
         entry.attempts.push({ start, end, env, metrics, error: failure, jobId: jobId || null });
         delete entry.jobId;

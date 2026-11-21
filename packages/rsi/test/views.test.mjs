@@ -603,3 +603,49 @@ test('repaired and repairing cycles expose governance step and repair decision w
   assert.equal(runningVm.cycle.stage, null);
   assert.deepEqual(runningRow.steps.map((s) => [s.k, s.result]), [['apply', 'failed'], ['collect', undefined], ['eval', 'waiting'], ['discuss', 'skipped'], ['gov', 'waiting']]);
 });
+
+test('rsiLineage auto-folds older linear chains into expandable [v1~vN] bundles while keeping latest 5 and branches open', async () => {
+  const vm = await import('node:vm');
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../console/components/lineage.js', import.meta.url), 'utf8');
+  const sandbox = {
+    PDL_COMPONENTS: {},
+    S: { folds: {} },
+    h: (s) => String(s ?? ''),
+    pv: (expr, sc) => typeof expr === 'string' && expr.startsWith('@') ? sc?.[expr.slice(1)] : expr,
+    pvList: (v) => Array.isArray(v) ? v : [],
+    pvParts: (v, sc) => Array.isArray(v) ? v.map((x) => typeof x.text === 'string' && x.text.startsWith('@') ? sc?.[x.text.slice(1)] : x.text).join('') : String(v ?? ''),
+    pvArgs: () => '',
+    pvControl: () => '',
+    pvText: (v) => String(v ?? ''),
+    chipHtml: (o) => `<button class="${o.cls}">${o.label}</button>`,
+  };
+  vm.runInNewContext(src, sandbox);
+  const render = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiLineage'];
+
+  // 17 nodes: v1->v2->v3->v4->v5->v6->(v7, v8->v9->v10->v11->v12->v13->v14->v15->v16->v17)
+  const rows = [];
+  for (let i = 1; i <= 6; i++) rows.push({ key: `v${i}`, parentKey: i === 1 ? null : `v${i - 1}`, id: `v${i}` });
+  rows.push({ key: 'v7', parentKey: 'v6', id: 'v7' });
+  rows.push({ key: 'v8', parentKey: 'v6', id: 'v8' });
+  for (let i = 9; i <= 17; i++) rows.push({ key: `v${i}`, parentKey: `v${i - 1}`, id: `v${i}`, nodeState: i === 17 ? 'current' : undefined });
+
+  const props = { from: rows, key: '@key', parent: '@parentKey', node: { label: [{ text: '@id' }], state: '@nodeState' } };
+  const collapsed = render(props, {}, {});
+  // Linear head v1..v5 folds into [v1~v5] at depth 0, so v6 sits at depth 1 instead of depth 5
+  assert.match(collapsed, /\[v1~v5\]/);
+  assert.doesNotMatch(collapsed, />v2</);
+  assert.match(collapsed, /style="--d:1"[^>]*>.*>v6</);
+  // Mid linear run v9..v12 folds into [v9~v12], while branch v6/v7/v8 and latest 5 (v13..v17) stay open
+  assert.match(collapsed, /\[v9~v12\]/);
+  assert.match(collapsed, />v7</);
+  assert.match(collapsed, />v13</);
+  assert.match(collapsed, />v17</);
+
+  // Expanding [v1~v5] reveals v1..v5 with a collapse handle
+  sandbox.S.folds['rsi-lin-grp:v1..v5'] = true;
+  const expanded = render(props, {}, {});
+  assert.match(expanded, /− v1~v5/);
+  assert.match(expanded, />v1</);
+  assert.match(expanded, />v5</);
+});

@@ -4,20 +4,69 @@ PDL_COMPONENTS['plugin:official.rsi/rsiLineage'] = function (p, sc, root) {
   const rows = pvList(p.from, sc, root), keyOf = function (r) { return pv(p.key, r, root); }, parentOf = function (r) { return pv(p.parent, r, root); };
   const keys = rows.map(keyOf), kids = {}, roots = [];
   rows.forEach(function (r) { const pk = parentOf(r); if (pk != null && keys.indexOf(pk) >= 0) (kids[pk] = kids[pk] || []).push(r); else roots.push(r); });
+  const n = p.node || {}, keepRecent = Number(p.keepRecent) > 0 ? Number(p.keepRecent) : 5;
+  const flat = [];
+  (function collect(list) {
+    list.forEach(function (r) { flat.push(r); collect(kids[keyOf(r)] || []); });
+  })(roots);
+  const pinned = {}, expandedKeys = {};
+  if (flat.length > keepRecent) {
+    flat.slice(-keepRecent).forEach(function (r) { pinned[keyOf(r)] = true; });
+    flat.forEach(function (r) {
+      const k = keyOf(r), pk = parentOf(r), st = pv(n.state, r, root);
+      if (r.selected || r.nodeSelected || (n.pressed && pv(n.pressed, r, root)) || st === 'current') pinned[k] = true;
+      if ((kids[k] || []).length > 1) pinned[k] = true;
+      if (pk != null && (kids[pk] || []).length > 1) pinned[k] = true;
+    });
+  }
   const out = [];
   (function walk(list, depth, rails) {
     list.forEach(function (r, i) {
-      const last = i === list.length - 1, own = kids[keyOf(r)] || [];
+      const last = i === list.length - 1, key = keyOf(r);
+      if (flat.length > keepRecent && !pinned[key] && !expandedKeys[key]) {
+        const chain = [r];
+        let cur = r;
+        while (true) {
+          const ch = kids[keyOf(cur)] || [];
+          if (ch.length !== 1 || pinned[keyOf(ch[0])]) break;
+          cur = ch[0];
+          chain.push(cur);
+        }
+        if (chain.length >= 2) {
+          const foldKey = 'rsi-lin-grp:' + keyOf(chain[0]) + '..' + keyOf(chain[chain.length - 1]);
+          const isOpen = typeof S !== 'undefined' && S.folds && !!S.folds[foldKey];
+          const tailKids = kids[keyOf(cur)] || [];
+          if (!isOpen) {
+            out.push({ group: chain, foldKey: foldKey, open: false, depth: depth, last: last, rails: rails, down: tailKids.length > 0 });
+            walk(tailKids, depth + 1, depth === 0 ? [] : rails.concat([!last]));
+            return;
+          }
+          chain.forEach(function (x) { expandedKeys[keyOf(x)] = true; });
+          out.push({ group: chain, foldKey: foldKey, open: true, depth: depth, last: false, rails: rails, down: true });
+        }
+      }
+      const own = kids[key] || [];
       out.push({ r: r, depth: depth, last: last, rails: rails, down: own.length > 0 });
       walk(own, depth + 1, depth === 0 ? [] : rails.concat([!last]));
     });
   })(roots, 0, []);
-  const n = p.node || {};
+  const labelTextOf = function (r) {
+    if (r && r.id != null) return String(r.id);
+    const raw = pvParts(n.label, r, root);
+    return String(raw || keyOf(r) || '').replace(/<[^>]*>/g, '').trim();
+  };
   return '<div class="scroll stick-end rsi-lin-box"><div class="scroll-x"><div class="rsi-lin">' + out.map(function (x) {
-    const r = x.r, state = pv(n.state, r, root);
     const lines = x.rails.map(function (on, l) { return on ? '<span class="rsi-lin-rail" style="--l:' + (l + 1) + '"></span>' : ''; }).join('') +
       (x.depth ? '<span class="rsi-lin-elbow' + (x.last ? ' last' : '') + '" style="--l:' + x.depth + '"></span>' : '') +
       (x.down ? '<span class="rsi-lin-down" style="--l:' + (x.depth + 1) + '"></span>' : '');
+    if (x.group) {
+      const first = labelTextOf(x.group[0]), end = labelTextOf(x.group[x.group.length - 1]);
+      const span = first === end ? first : first + '~' + end;
+      const chip = '<button type="button" class="chip rsi-lin-v rsi-lin-grp" data-act="fold" data-f="result" data-k="' + h(x.foldKey) + '" aria-expanded="' + (x.open ? 'true' : 'false') + '">' + h(x.open ? '− ' + span : '[' + span + ']') + '</button>';
+      const meta = '<span class="rsi-lin-tail">' + h(x.open ? '收起 ' + x.group.length + ' 项' : x.group.length + ' 项 · 展开') + '</span>';
+      return '<div class="rsi-lin-row rsi-lin-row-grp" style="--d:' + x.depth + '">' + lines + chip + meta + '</div>';
+    }
+    const r = x.r, state = pv(n.state, r, root);
     const node = chipHtml({ cls: 'rsi-lin-v', label: pvParts(n.label, r, root), tone: pv(n.tone, r, root), pressed: n.pressed ? !!pv(n.pressed, r, root) : null,
       act: n.act, data: n.act ? pvArgs(n.args, r, root) : '', attrs: state ? ' data-state="' + h(state) + '"' : '' });
     const tail = p.tail ? pvParts(p.tail, r, root) : '';

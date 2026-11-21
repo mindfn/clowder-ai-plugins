@@ -105,7 +105,15 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
   if (!d?.objective.projectPath) return { error: 'No real RSI objective in this thread', status: 404 };
   const isObjectiveMember = d.members.some((m) => m.catId === ctx.catId)
     || Object.values<Data>(d.stepMembers || {}).some((m) => m?.catId === ctx.catId);
-  if (!isObjectiveMember) return { error: 'Not an objective member', status: 403 };
+  if (!isObjectiveMember) {
+    if (method === 'rsi.propose') {
+      const cycle = Number(input.cycle), round = d.rounds.find((r: Data) => r.n === cycle);
+      if (round?.analysis?.turns?.[ctx.catId] === ctx.invocationId) {
+        return { error: `Proposal window for cycle ${cycle} closed because this member was removed from discussion; proposal not recorded`, status: 409 };
+      }
+    }
+    return { error: 'Not an objective member', status: 403 };
+  }
   if (method === 'rsi.task') {
     for (const plan of d.plan) {
       const execution = d.exec?.[plan.k];
