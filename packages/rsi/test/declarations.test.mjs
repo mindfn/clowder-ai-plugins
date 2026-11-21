@@ -18,19 +18,20 @@ test('phase 2 declarations expose six documented tools, a v2 subscription and ma
   for(const file of ['package.json','npm-shrinkwrap.json'])assert.equal(JSON.parse(readFileSync(new URL(`../${file}`,import.meta.url),'utf8')).version,manifest.version);
 });
 
-test('all new-objective openers bind currentThread and project choices; writes post both dialog fields',()=>{
+test('all new-objective openers bind currentThread and selected panel project; writes post them cleanly',()=>{
   const pdl=load('console/pdl.yaml');
   assert.deepEqual(Object.keys(pdl.components).sort(),['css','js']);
   const walk=(value,visit)=>{if(!value||typeof value!=='object')return;visit(value);for(const child of Object.values(value))walk(child,visit);};
   let openers=0;
   for(const view of Object.values(pdl.views))walk(view,(node)=>{
     if(node.kind!=='rsiNewExp')return;
-    openers++;assert.equal(node.thread,'$.currentThread.id');assert.equal(node.projects,'$.home.projects');
+    openers++;assert.equal(node.thread,'$.currentThread.id');assert.equal(node.project,'$.home.projectId');
     assert.equal(view.sources.currentThread,'host:currentThread');
   });
   assert.ok(openers>=4);
   const dialog=pdl.views['dlg.rsiNewExp'];
-  assert.equal(dialog.fields.find((f)=>f.arg==='project').options[0].v,'');
+  assert.equal(dialog.fields.find((f)=>f.arg==='project'),undefined);
+  assert.equal(dialog.okArgs.project,'$.project');
   assert.equal(dialog.fields.find((f)=>f.arg==='threadMode').value,'current');
   assert.deepEqual(dialog.fields.find((f)=>f.arg==='threadMode').options.map((o)=>o.v),['current','new']);
   assert.equal(dialog.okArgs.thread,'$.thread');

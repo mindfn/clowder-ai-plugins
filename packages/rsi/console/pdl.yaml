@@ -80,7 +80,7 @@ views:
                     args:
                       kind: rsiNewExp
                       thread: $.currentThread.id
-                      projects: $.home.projects
+                      project: $.home.projectId
                       cats: $.members.rows
                     disabled: $.pending
                     when: $.home.exp
@@ -203,7 +203,7 @@ views:
                     args:
                       kind: rsiNewExp
                       thread: $.currentThread.id
-                      projects: $.home.projects
+                      project: $.home.projectId
                       cats: $.members.rows
                     disabled: $.pending
                     when: "@exp"
@@ -4114,7 +4114,7 @@ views:
                 args:
                   kind: rsiNewExp
                   thread: $.currentThread.id
-                  projects: $.home.projects
+                  project: $.home.projectId
                   cats: $.members.rows
                 disabled: $.pending
                 when: "@exp"
@@ -4197,7 +4197,7 @@ views:
                 args:
                   kind: rsiNewExp
                   thread: $.currentThread.id
-                  projects: $.home.projects
+                  project: $.home.projectId
                   cats: $.members.rows
                 disabled: $.pending
                 when: "@exp"
@@ -5903,17 +5903,6 @@ views:
     wide: true
     help: t:rsi.newExp.help
     fields:
-      - id: dlg-project
-        label: t:rsi.phase2.project
-        value: ""
-        options:
-          - v: ""
-            label: t:rsi.phase2.currentProject
-          - from: $.projects
-            item:
-              v: "@id"
-              label: "@name"
-        arg: project
       - id: dlg-thread-mode
         label: t:rsi.newExp.threadMode
         help: t:rsi.newExp.threadModeHelp
@@ -6036,6 +6025,7 @@ views:
     okAct: plugin
     okArgs:
       request: new
+      project: $.project
       thread: $.thread
       cats: $.cats
   dlg.rsiNew:
