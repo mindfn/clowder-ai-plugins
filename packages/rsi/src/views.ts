@@ -304,7 +304,7 @@ function exp(): any {
       cycles: rounds.filter(function (r: any): any { return r.version === v.id; }).map(function (r: any): any {
         const live = r.state === 'running', disc = r.report && discussionOf(r);
         return { n: r.k, apply: r.runs.some(function (u: any): any { return u.error && u.error.kind === 'env'; }) ? 'failed' : 'done', collect: true, live: live,
-          done: live ? r.runs.filter((u: Data) => u.state === 'done' || u.state === 'failed').length : null, total: r.runs.length, eval: r.report && r.report.verdict, delta: r.report && compareOf(r).lead,
+          done: live ? r.runs.filter((u: Data) => u.state === 'done' || u.state === 'failed').length : null, total: r.runs.length, eval: r.report ? r.report.verdict : (r.state === 'evaluating' ? 'pending' : null), delta: r.report && compareOf(r).lead,
           discuss: disc && { result: disc.status, count: disc.count, done: disc.done, asked: disc.asked, missing: disc.missing.length }, gov: govOf(r) };
       }),
       data: Object.assign({}, v, { nodeState: v.current ? 'current' : v.status === 'candidate' ? 'candidate' : '' }) };
@@ -453,7 +453,7 @@ function exp(): any {
     trend: rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, value: Number(best(x).mean.toPrecision(4)) }; }),
     trendMetric: d.metrics.items.find((m: Data) => m.id === main).name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.filter(function (p: any): any { return p.result !== 'unresolved'; }).length },
     versions: tree.rows, ver: ver, step: m ? m[2] : 'node', candidate: d.candidate ? d.candidate.version : null,
-    cycle: r && Object.assign({}, r, { waiting: waiting(r), groups: groupsOf(r), main: mainOf(r),
+    cycle: r && Object.assign({}, r, { waiting: waiting(r), evaluating: r.state === 'evaluating', groups: groupsOf(r), main: mainOf(r),
       stageOwners: stageOwnersOf(r),
       runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { value: num(u.metrics[mainOf(r).id]), durationSeconds: u.start ? Math.round(((u.end || Date.now()) - u.start) / 1000) : null, metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })), groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),
       notAssessed: r.report && RSI_LAYERS.filter(function (l: any): any { return r.report.attribution.assessedLayers.indexOf(l) < 0; }),

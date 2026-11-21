@@ -278,18 +278,46 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       const add = body.op === 'analystAdd';
       d.members = d.members.filter((m) => !(m.role === 'analyze' && m.catId === body.catId));
       refreshMembers(d.members, body.cats);
-      if (add) d.members.push(setMember({ role: 'analyze' }, body.catId, body.cats));
+      if (add) {
+        const added = setMember({ role: 'analyze' }, body.catId, body.cats);
+        d.members.push(added);
+        // If a cycle is currently awaiting discussion proposals, enroll and wake the newly added analyst immediately.
+        for (const r of d.rounds) if (r.analysis?.waiting?.length && !r.analysis.waiting.includes(added.catId)) {
+          r.analysis.waiting.push(added.catId);
+          enqueue(state, d, 'agent', { member: added.catId, cycle: r.n, action: 'direction', message: { title: `第 ${r.n} 周期：请给方向`,
+            body: `${mention(added)} 你已加入本评估项方案讨论：调 rsi.task 看第 ${r.n} 周期结论与同周期对照，再调 rsi.propose 交你的方向。` } });
+        }
+      }
       // A removed analyst no longer holds up a conclusion.
       else for (const r of d.rounds) if (r.analysis?.waiting.includes(body.catId)) {
         r.analysis.waiting = r.analysis.waiting.filter((id: string) => id !== body.catId);
         if (!r.analysis.waiting.length) finishAnalysis(state, d, r, now);
       }
+      syncObjective(state, d);
       return { ok: true };
     }
     case 'evalAgain': {
       const round = d?.rounds.find((r: Data) => r.state === 'evaluating');
       if (!d || !round) return { error: 'No cycle is waiting for its conclusion', status: 404 };
       askEvaluation(state, d, round);
+      return { ok: true };
+    }
+    case 'discussAgain': {
+      const round = d?.rounds.find((r: Data) => r.analysis?.waiting?.length);
+      if (!d || !round) return { error: 'No cycle is waiting for discussion proposals', status: 404 };
+      for (const catId of round.analysis.waiting as string[]) {
+        const m = d.members.find((x) => x.catId === catId) || { catId, name: catId };
+        enqueue(state, d, 'agent', { member: catId, cycle: round.n, action: 'direction', message: { title: `第 ${round.n} 周期：请给方向（重发）`,
+          body: `${mention(m)} 第 ${round.n} 周期仍在等你给方向：调 rsi.task 读取结论与对照，再调 rsi.propose 提交。` } });
+      }
+      return { ok: true };
+    }
+    case 'versionAgain': {
+      if (!d || !d.versionRequest) return { error: 'No version request is pending', status: 404 };
+      const member = d.members.find((m) => m.role === 'iterate');
+      if (!member?.catId) return { error: 'Assign a governance execution member first' };
+      enqueue(state, d, 'agent', { member: member.catId, action: 'version', message: { title: d.versionRequest.repair ? `重发：修第 ${d.versionRequest.cycle} 周期的运行失败` : '重发：准备下一个版本',
+        body: `${mention(member)} 重新触发治理任务「${d.versionRequest.title}」：先调 rsi.task 看要求，完成后调 rsi.version 提交。` } });
       return { ok: true };
     }
     case 'runCycle':

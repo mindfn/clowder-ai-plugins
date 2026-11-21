@@ -1310,6 +1310,29 @@ views:
                     map:
                       _: false
                       eval: true
+                  - $.exp.cycle.evaluating
+                blocks:
+                  - type: notice
+                    tone: info
+                    text:
+                      t: rsi.exp.evalWaiting
+                      args:
+                        - $.exp.cycle.stageOwners.eval.name
+                    action:
+                      type: button
+                      label: t:rsi.exp.retryStage
+                      act: plugin
+                      args:
+                        request: evalAgain
+                      disabled: $.pending
+              - type: each
+                from:
+                  - {}
+                when:
+                  - of: $.exp.step
+                    map:
+                      _: false
+                      eval: true
                   - $.exp.cycle.report
                 blocks:
                   - type: text
@@ -1713,6 +1736,13 @@ views:
                             sep: 、
                           - $.exp.cycle.discussion.done
                           - $.exp.cycle.discussion.asked
+                    action:
+                      type: button
+                      label: t:rsi.exp.retryStage
+                      act: plugin
+                      args:
+                        request: discussAgain
+                      disabled: $.pending
                   - type: notice
                     when:
                       of: $.exp.cycle.discussion.status
@@ -1797,6 +1827,25 @@ views:
                             "true": t:rsi.exp.stageOwnerArchived
                             _: t:rsi.exp.stageOwnerUpcoming
                         - $.exp.cycle.stageOwners.gov.name
+                  - type: notice
+                    tone: info
+                    when:
+                      of: $.exp.cycle.gov.led.k
+                      map:
+                        version: true
+                        _: false
+                    text:
+                      t: rsi.exp.gov.ledVersion
+                      args:
+                        - $.exp.cycle.gov.iterate
+                        - $.exp.cycle.gov.led.title
+                    action:
+                      type: button
+                      label: t:rsi.exp.retryStage
+                      act: plugin
+                      args:
+                        request: versionAgain
+                      disabled: $.pending
                   - type: notice
                     tone: warn
                     when: $.exp.cycle.gov.ask
@@ -6281,6 +6330,24 @@ requests:
       thread: host:currentThread.id
     body:
       op: evalAgain
+  discussAgain:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: discussAgain
+  versionAgain:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: versionAgain
   analystRemove:
     path: rsi/act
     method: POST

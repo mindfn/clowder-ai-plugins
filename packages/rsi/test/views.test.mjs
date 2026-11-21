@@ -487,4 +487,16 @@ test('dual-tab console supports inline role switching, step history snapshots, e
   assert.equal(c2After.cycle.stageOwners.eval.archived, false);
   // Changing execution member did not overwrite step 1 analysis member
   assert.equal(c2After.prep.steps.find((s) => s.k === 'goal').ownerCatId, 'codex');
+
+  // Every execution stage (evaluating / discussing / versionRequest) supports swap + re-trigger
+  d3.rounds[1].state = 'evaluating';
+  const c2Eval = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v1>c2.eval` });
+  assert.equal(c2Eval.cycle.evaluating, true);
+  assert.equal(act(state, { op: 'evalAgain' }, { project, pick: `obj:${id}` }, now).ok, true);
+  d3.rounds[0].analysis = { waiting: ['kimi'], since: now };
+  assert.equal(act(state, { op: 'analystAdd', catId: 'gemini', cats: [{ id: 'gemini', name: '墨墨' }] }, { project, pick: `obj:${id}` }, now).ok, true);
+  assert.equal(d3.rounds[0].analysis.waiting.includes('gemini'), true);
+  assert.equal(act(state, { op: 'discussAgain' }, { project, pick: `obj:${id}` }, now).ok, true);
+  d3.versionRequest = { cycle: 1, title: '增大 batch', since: now };
+  assert.equal(act(state, { op: 'versionAgain' }, { project, pick: `obj:${id}` }, now).ok, true);
 });

@@ -41,6 +41,7 @@ step:
   doneOf: "{0}/{1}"
   missingOf: 缺 {0} 人
 evalResult:
+  pending: 评估中
   stalled: 没回写
   tune: 继续调
   rollback: 建议回退
@@ -754,6 +755,8 @@ exp:
   stageOwnerOf: "{0}：{1}"
   stageOwnerArchived: 实际执行成员（已归档）
   stageOwnerUpcoming: 预计执行成员（未执行，改执行成员即时生效）
+  evalWaiting: "正在等待 {0} 提交本周期评估结论；如已失败或卡住，可在「分析与管理 → 2. 执行成员」换人后点重新触发。"
+  retryStage: 重新触发
   sec:
     manage: 分析与管理
     execute: 治理与执行
