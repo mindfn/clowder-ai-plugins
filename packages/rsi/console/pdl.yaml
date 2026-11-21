@@ -6732,6 +6732,50 @@ requests:
       end: "@end"
       custom: "@custom"
       maxRuns: "@maxRuns"
+  policyEditOpen:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: policyEditOpen
+      objective: "@objective"
+      policyId: "@policyId"
+  policyDraft:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: policyDraft
+      objective: "@objective"
+      field: "@field"
+      v: "@v"
+  policySave:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: policySave
+      objective: "@objective"
+  policyDelete:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: policyDelete
+      objective: "@objective"
+      policyId: "@policyId"
   initRedo:
     path: rsi/act
     method: POST
