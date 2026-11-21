@@ -154,31 +154,41 @@ test('unchanged shards are reused without rewriting, obsolete shards survive the
   assert.equal(storage.entries.has(deletedExpKey), false);
 });
 
-test('readState retries cleanly when a concurrent write rotates and deletes a shard mid-read', async () => {
+test('concurrent readState calls use 1 storage RPC each and never burst past Host worker RPC capacity', async () => {
   const storage = memStorage();
-  const key = ownerKey('race-owner');
+  const key = ownerKey('burst-owner');
   await load(storage, key, async () => {});
 
-  const beforeRoot = (await storage.get(key)).value;
-  const oldCpKey = beforeRoot.shards.experiments['cp-converge'].key;
+  // Create 20 closed rounds so the owner spans > 25 shard keys.
+  await retain(storage, key, (state) => {
+    const d = state.experiments['cp-converge'];
+    d.rounds = Array.from({ length: 20 }, (_, i) => ({
+      n: i + 1, state: 'done', version: 'v1', runs: [{ id: `r${i + 1}`, state: 'done', metrics: { score: i } }],
+    }));
+  });
+  assert.ok(storage.entries.size > 24);
 
-  // Intercept the first shard fetch for oldCpKey: simulate a concurrent writer committing and deleting oldCpKey before the shard get completes.
-  const origGet = storage.get.bind(storage);
-  let raced = false;
-  storage.get = async (k) => {
-    if (!raced && k === oldCpKey) {
-      raced = true;
-      await retain(storage, key, (state) => { state.experiments['cp-converge'].objective.name = 'Concurrent update'; });
-      await storage.delete(oldCpKey);
-    }
-    return origGet(k);
+  let inFlight = 0, peakInFlight = 0, totalCalls = 0;
+  const wrap = (fn) => async (...args) => {
+    totalCalls++;
+    inFlight++;
+    if (inFlight > peakInFlight) peakInFlight = inFlight;
+    await new Promise((r) => setTimeout(r, 5));
+    try { return await fn(...args); } finally { inFlight--; }
+  };
+  const counted = {
+    list: wrap(storage.list.bind(storage)),
+    get: wrap(storage.get.bind(storage)),
+    compareAndSet: wrap(storage.compareAndSet.bind(storage)),
+    delete: wrap(storage.delete.bind(storage)),
   };
 
-  const loaded = await readState(storage, key);
-  storage.get = origGet;
-  assert.equal(raced, true);
-  assert.equal(loaded.value.corrupted, undefined);
-  assert.equal(loaded.value.experiments['cp-converge'].objective.name, 'Concurrent update');
+  // 4 concurrent UI requests (e.g. home + exp + refresh) must only issue 4 total RPCs, not 4 * 25 = 100.
+  const results = await Promise.all(Array.from({ length: 4 }, () => readState(counted, key)));
+  assert.equal(results.length, 4);
+  for (const r of results) assert.equal(r.value.experiments['cp-converge'].rounds.length, 20);
+  assert.equal(totalCalls, 4);
+  assert.ok(peakInFlight <= 4, `peakInFlight=${peakInFlight} exceeded 4`);
 });
 
 test('legacy monolithic single-key state reads seamlessly and migrates losslessly to sharded keys on update', async () => {

@@ -137,18 +137,12 @@ async function assemble(
 }
 
 export async function readState(storage: RsiStorage, key: string): Promise<LoadedState | undefined> {
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const raw = await storage.get(key);
-    if (!raw) return undefined;
-    const loaded = await assemble(raw, async (k) => (await storage.get(k))?.value);
-    if (!record(loaded.value) || !loaded.value.corrupted) return loaded;
-    // A concurrent commit may have rotated and deleted an old shard between root get and shard gets.
-    // Re-read if the root revision moved forward.
-    const latest = await storage.get(key);
-    if (!latest || latest.revision === raw.revision) return loaded;
-  }
-  const raw = await storage.get(key);
-  return raw ? assemble(raw, async (k) => (await storage.get(k))?.value) : undefined;
+  // Single storage.list() = 1 Host RPC (avoiding ExecutionRpcPeer's 64 in-flight RPC cap under
+  // concurrent view=home + view=exp requests) and 1 atomic Redis HGETALL snapshot.
+  const all = await storage.list();
+  const raw = all[key];
+  if (!raw) return undefined;
+  return assemble(raw, async (k) => all[k]?.value);
 }
 
 export async function listOwners(storage: RsiStorage): Promise<[string, { revision: number; value: RsiState; legacy: boolean }][]> {
@@ -164,7 +158,9 @@ export async function listOwners(storage: RsiStorage): Promise<[string, { revisi
 
 async function deleteBestEffort(storage: RsiStorage, keys: Iterable<string>) {
   if (!storage.delete) return;
-  await Promise.allSettled([...keys].map((k) => storage.delete!(k)));
+  for (const k of keys) {
+    try { await storage.delete(k); } catch {}
+  }
 }
 
 async function commitSharded(
