@@ -59,7 +59,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {
     const c = colOf(s.k, {});
     (cols[c] = cols[c] || []).push(s);
   });
-  const W = 166, H = 56, GX = 46, GY = 14, PAD = 10;
+  const W = 132, H = 52, GX = 28, GY = 12, PAD = 8;
   const maxRows = Math.max.apply(null, cols.map(function (list) { return list ? list.length : 0; }));
   const totalW = PAD * 2 + cols.length * W + Math.max(0, cols.length - 1) * GX;
   const totalH = PAD * 2 + maxRows * H + Math.max(0, maxRows - 1) * GY;
@@ -90,18 +90,14 @@ PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {
       const mx = Math.round((x1 + x2) / 2);
       d = 'M' + x1 + ',' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2;
     } else {
-      // Multi-column skip edge: route through a clear lane above or below intermediate column nodes.
-      let blocked = false;
-      for (let mc = a.c + 1; mc < b.c; mc++) {
-        (cols[mc] || []).forEach(function (ms) {
-          const mp = pos[ms.k];
-          const midY = (y1 + y2) / 2;
-          if (midY >= mp.y - 8 && midY <= mp.y + H + 8) blocked = true;
-        });
-      }
-      const laneY = blocked ? (y2 <= y1 ? Math.max(4, Math.min(y1, y2) - 24) : Math.min(totalH - 4, Math.max(y1, y2) + 24)) : (y1 + y2) / 2;
-      const c1x = x1 + Math.round((x2 - x1) * 0.35), c2x = x1 + Math.round((x2 - x1) * 0.65);
-      d = 'M' + x1 + ',' + y1 + ' C' + c1x + ',' + laneY + ' ' + c2x + ',' + laneY + ' ' + x2 + ',' + y2;
+      // Multi-column skip edge: travel horizontally past intermediate column in a clear top/bottom lane, then turn smoothly into target.
+      const clearX = pos[e.to].x - Math.round(GX * 0.55);
+      const goTop = y1 <= totalH / 2 && y2 <= totalH / 2;
+      const laneY = goTop ? Math.max(4, PAD - 2) : Math.min(totalH - 4, totalH - PAD + 2);
+      const stayInRow = Math.abs(y1 - totalH / 2) > H * 0.55;
+      const midY = stayInRow ? y1 : laneY;
+      d = 'M' + x1 + ',' + y1 + ' C' + (x1 + Math.round(GX * 0.6)) + ',' + midY + ' ' + clearX + ',' + midY + ' ' + clearX + ',' + Math.round((midY + y2) / 2) +
+        ' S' + (x2 - Math.round(GX * 0.45)) + ',' + y2 + ' ' + x2 + ',' + y2;
     }
     const cls = 'rsi-dag-edge' + (e.done ? ' done' : '') + (e.active ? ' active' : '');
     return '<path class="' + cls + '" d="' + d + '"' + (e.active ? ' marker-end="url(#rsi-dag-arr-on)"' : ' marker-end="url(#rsi-dag-arr)"') + '/>';
