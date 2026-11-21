@@ -21,7 +21,21 @@ PDL_COMPONENTS['plugin:official.rsi/rsiLineage'] = function (p, sc, root) {
     const node = chipHtml({ cls: 'rsi-lin-v', label: pvParts(n.label, r, root), tone: pv(n.tone, r, root), pressed: n.pressed ? !!pv(n.pressed, r, root) : null,
       act: n.act, data: n.act ? pvArgs(n.args, r, root) : '', attrs: state ? ' data-state="' + h(state) + '"' : '' });
     const tail = p.tail ? pvParts(p.tail, r, root) : '';
-    return '<div class="rsi-lin-row" style="--d:' + x.depth + '">' + lines + node + pvControls(p.cells, r, root) + (tail ? '<span class="rsi-lin-tail">' + tail + '</span>' : '') + '</div>';
+    const cellList = [];
+    (Array.isArray(p.cells) ? p.cells : p.cells ? [p.cells] : []).forEach(function (c) {
+      if (c && c.type === 'each') {
+        pvList(c.from, r, root).forEach(function (item) {
+          const outHtml = pvControl(c.control, item, root);
+          if (outHtml) cellList.push(outHtml);
+        });
+      } else if (c) {
+        const outHtml = pvControl(c, r, root);
+        if (outHtml) cellList.push(outHtml);
+      }
+    });
+    const arr = '<svg class="rsi-lin-arr" viewBox="0 0 14 10" aria-hidden="true"><path d="M1 5h10.5M8 1.8L11.8 5 8 8.2"/></svg>';
+    const chain = [node].concat(cellList).join(arr);
+    return '<div class="rsi-lin-row" style="--d:' + x.depth + '">' + lines + chain + (tail ? '<span class="rsi-lin-tail">' + tail + '</span>' : '') + '</div>';
   }).join('') + '</div></div></div>';
 };
 

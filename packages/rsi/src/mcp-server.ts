@@ -22,7 +22,7 @@ export interface RsiMcpToolDef {
   readonly inputSchema: Record<string, unknown>;
 }
 
-const RSI_MCP_VERSION = '0.1.0-alpha.84';
+const RSI_MCP_VERSION = '0.1.0-alpha.85';
 
 const OPTION_SCHEMA = {
   type: 'object',

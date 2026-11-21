@@ -376,12 +376,15 @@ views:
                   k: editGoal
                   v: ""
             blocks:
-              - type: markdown
-                text: $.exp.goalQuote
-                clamp: 3
+              - type: fold
+                key: rsi-goal-fold
+                height: s
                 when:
                   - "!$.exp.editingGoal"
                   - $.exp.goalQuote
+                blocks:
+                  - type: markdown
+                    text: $.exp.goalQuote
               - type: input
                 id: rsi-goal-edit
                 rows: 3

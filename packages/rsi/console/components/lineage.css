@@ -1,6 +1,7 @@
 .rsi-lin-box{flex:none;max-height:calc(8*var(--row-h-1))}
 .rsi-lin{--rsi-step:calc(14*var(--unit));--rsi-mid:calc(6*var(--unit));display:grid;width:max-content;min-width:100%;padding-block:var(--sp-xs)}
-.rsi-lin-row{position:relative;display:flex;align-items:center;gap:var(--sp-s);min-height:var(--row-h-1);padding-inline-start:calc(var(--d)*var(--rsi-step));white-space:nowrap}
+.rsi-lin-row{position:relative;display:flex;align-items:center;gap:var(--sp-xs);min-height:var(--row-h-1);padding-inline-start:calc(var(--d)*var(--rsi-step));white-space:nowrap}
+.rsi-lin-arr{width:14px;height:10px;flex:none;fill:none;stroke:var(--fg-faint);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;opacity:.75}
 .rsi-lin-rail,.rsi-lin-elbow,.rsi-lin-down{position:absolute;pointer-events:none;border:0 solid var(--line-strong)}
 .rsi-lin-rail{top:0;bottom:0;left:calc((var(--l) - 1)*var(--rsi-step) + var(--rsi-mid));border-left-width:var(--sp-hairline)}
 .rsi-lin-elbow{top:0;height:50%;left:calc((var(--l) - 1)*var(--rsi-step) + var(--rsi-mid));width:calc(var(--rsi-step) - var(--rsi-mid));border-left-width:var(--sp-hairline);border-bottom-width:var(--sp-hairline)}
