@@ -59,7 +59,8 @@ PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {
     const c = colOf(s.k, {});
     (cols[c] = cols[c] || []).push(s);
   });
-  const W = 128, H = 52, GX = 32, GY = 12, PAD = 8, R = 6;
+  const compact = !!p.compact;
+  const W = compact ? 104 : 128, H = compact ? 48 : 52, GX = compact ? 18 : 32, GY = 12, PAD = 8, R = 6;
   const maxRows = Math.max.apply(null, cols.map(function (list) { return list ? list.length : 0; }));
   const totalW = PAD * 2 + cols.length * W + Math.max(0, cols.length - 1) * GX;
   const totalH = PAD * 2 + maxRows * H + Math.max(0, maxRows - 1) * GY;

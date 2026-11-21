@@ -756,6 +756,7 @@ exp:
   stepWaitLabel: 等待前置
   stepUnknownsLabel: 未决项
   stepNextLabel: 下一步建议
+  stepNotesFold: 未决项与下一步建议
   stepRefresh: 重新分析
   stepViewingOld: 当前查看的是历史版本快照（切换回最新版本可编辑或确认）
   stageOwnerOf: "{0}：{1}"

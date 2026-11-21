@@ -115,7 +115,17 @@ export function scheduleSummary(schedule: Data | null | undefined): string {
   if (Array.isArray(schedule.rules) && schedule.rules.length) {
     return schedule.rules.map(formatRule).join('；');
   }
-  return typeof schedule.window === 'string' ? schedule.window.trim() : '';
+  const raw = typeof schedule.window === 'string' ? schedule.window.trim() : '';
+  if (!raw) return '';
+  if (raw.length > 48) {
+    const mins = windowMinutes(raw);
+    if (mins) {
+      const s = `${pad2(Math.floor(mins[0] / 60))}:${pad2(mins[0] % 60)}`;
+      const e = mins[1] === 1440 ? '24:00' : `${pad2(Math.floor(mins[1] / 60))}:${pad2(mins[1] % 60)}`;
+      return `${s}–${e}`;
+    }
+  }
+  return raw;
 }
 
 function parseDaysSegment(text: string): number[] | undefined {

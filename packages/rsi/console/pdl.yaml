@@ -403,6 +403,7 @@ views:
             blocks:
               - type: markdown
                 text: $.exp.goalQuote
+                clamp: 3
                 when:
                   - "!$.exp.editingGoal"
                   - $.exp.goalQuote
@@ -804,16 +805,27 @@ views:
                       - type: list
                         from: "@items"
                         row: rsi.prep
-                      - type: kv
+                      - type: disclosure
+                        key: rsi-step-notes
+                        label: t:rsi.exp.stepNotesFold
                         when: "@unknowns"
-                        from:
-                          - k: t:rsi.exp.stepUnknownsLabel
-                            v: "@unknowns"
-                      - type: kv
-                        when: "@next"
-                        from:
-                          - k: t:rsi.exp.stepNextLabel
-                            v: "@next"
+                        blocks:
+                          - type: kv
+                            from:
+                              - k: t:rsi.exp.stepUnknownsLabel
+                                v: "@unknowns"
+                              - k: t:rsi.exp.stepNextLabel
+                                v: "@next"
+                                when: "@next"
+                      - type: disclosure
+                        key: rsi-step-next-only
+                        label: t:rsi.exp.stepNextLabel
+                        when:
+                          - "!@unknowns"
+                          - "@next"
+                        blocks:
+                          - type: text
+                            text: "@next"
           - type: section
             title: t:rsi.exp.sec.execStages
             blocks:
@@ -822,6 +834,7 @@ views:
                 props:
                   from: $.exp.execFlow.nodes
                   hideLegend: true
+                  compact: true
                   act: plugSet
                   args:
                     k: execStage
@@ -5951,36 +5964,13 @@ rows:
       - type: markdown
         text: "@why"
   rsi.prep:
-    layout: two
+    layout: item
     key: "@id"
     title: "@title"
+    subLines: 2
     inline:
       - chip: t:rsi.exp.prep.default
         when: "@isDefault"
-      - status:
-          tone: warn
-          text: t:rsi.exp.prep.needYou
-        when: "@needYou"
-      - status:
-          of: "@can"
-          map:
-            modifiable:
-              tone: ok
-              text: t:rsi.exp.prep.can.modifiable
-            partial:
-              tone: warn
-              text: t:rsi.exp.prep.can.partial
-            no:
-              tone: ""
-              text: t:rsi.exp.prep.can.no
-            unknown:
-              tone: warn
-              text: t:rsi.exp.prep.can.unknown
-            _: ""
-        when: "@can"
-      - text: "@tag"
-        variant: badge
-        when: "@tag"
       - text:
           t: rsi.exp.prep.decide
           args:
@@ -5990,8 +5980,6 @@ rows:
     sub:
       sep: " · "
       parts:
-        - text: "@by"
-          when: "@by"
         - text: "@value"
           when: "@value"
         - text:
@@ -6016,14 +6004,16 @@ rows:
               preparing:
                 tone: info
                 text: t:rsi.exp.prep.state.preparing
-              submitted:
-                tone: ""
-                text: t:rsi.exp.prep.state.submitted
               confirmed:
                 tone: ok
                 text: t:rsi.exp.prep.state.confirmed
               _: ""
         w: state
+        when:
+          of: "@state"
+          map:
+            submitted: false
+            _: true
       - control:
           - type: button
             label: t:rsi.exp.prep.confirm
@@ -6090,8 +6080,12 @@ rows:
           id: "@id"
           op: agent
     expand:
+      - type: text
+        text: "@value"
+        when: "@value"
       - type: kv
         from: "@facts"
+        when: "@facts"
   rsi.doc:
     layout: two
     key: "@id"

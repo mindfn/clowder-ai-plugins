@@ -756,6 +756,7 @@ exp:
   stepWaitLabel: Waiting on
   stepUnknownsLabel: Open questions
   stepNextLabel: Suggested next step
+  stepNotesFold: Open questions & next step
   stepRefresh: Re-analyze
   stepViewingOld: Viewing a historical snapshot (switch back to latest to edit or confirm)
   stageOwnerOf: "{0}: {1}"
