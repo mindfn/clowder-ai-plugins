@@ -318,3 +318,24 @@ test('an attribution is shown only when the evaluator assessed a layer; the demo
   assert.equal(x.d.rounds[0].report.attribution.verdict, 'unresolved');
   assert.equal(x.view('eval').cycle.attribution, null);
 });
+
+test('long objective statements render clipped display titles in sidebar and header while keeping the full statement in goal and prep', () => {
+  const longStatement = '优化昇腾910B3上的bge-large-zh-v1.5服务，目标是在高并发下显著压低TTFT与P99延迟并维持召回和精度基线不退化，同时验证不同batch与并行策略在真实请求分布下的稳定性表现，记录每一轮对比结果与回滚边界，确保线上服务可用性不受影响。';
+  const state = createFixtures(now).state;
+  const project = '/work/bge-opt';
+  state.projects.unshift({ id: project, name: 'bge-opt', projectPath: project, exp: true, hostKinds: ['mcp'] });
+  state.objectives[project] = []; state.groups[project] = []; state.units[project] = []; state.library[project] = [];
+  assert.equal(act(state, { op: 'new', statement: longStatement, projectPath: project, prepare: 'codex', evaluate: 'ev', cats: [{ id: 'codex', name: '砚砚' }, { id: 'ev', name: '小狸' }] }, { project }, now).ok, true);
+  const obj = state.objectives[project][0];
+  const d = state.experiments[obj.id];
+  assert.ok(obj.name.length <= 48 && obj.name.endsWith('…'));
+  assert.equal(d.objective.goal.statement, longStatement);
+  assert.equal(d.prep.find((p) => p.id.endsWith('-goal')).value, longStatement);
+  // Also clip legacy already-persisted objectives whose stored name was never shortened.
+  obj.name = longStatement; d.objective.name = longStatement;
+  const home = viewModel(state, 'home', { project, pick: `obj:${obj.id}` });
+  const exp = viewModel(state, 'exp', { project, pick: `obj:${obj.id}` });
+  assert.ok(home.nodes[''][0].name.length <= 48 && home.nodes[''][0].name.endsWith('…'));
+  assert.ok(exp.name.length <= 64 && exp.name.endsWith('…'));
+  assert.equal(exp.goal.statement, longStatement);
+});

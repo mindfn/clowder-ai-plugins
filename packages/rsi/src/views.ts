@@ -1,4 +1,4 @@
-import { AUTO, autoKey } from './init.js';
+import { AUTO, autoKey, clipTitle } from './init.js';
 import type { Data, RsiState } from './types.js';
 import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData, memberIds } from './data.js';
 import { timeRange } from './schedule.js';
@@ -63,7 +63,7 @@ function rsiPick(objectives: any): any {
 function home(): any {
 
   const pr = rsiProject(), todo = todoOf(state, { projectId: S.rsiProject }).items, pick = rsiPick(pr.objectives);
-  const node = function (o: any): any { const kids = pr.objectives.filter(function (x: any): any { return x.parent === o.id; }); return Object.assign({}, o, { trigger: timeRange(o.trigger), path: o.id, pickKey: 'obj:' + o.id + S.tag, dir: kids.length > 0, selected: pick.k === 'obj' && pick.id === o.id }); };
+  const node = function (o: any): any { const kids = pr.objectives.filter(function (x: any): any { return x.parent === o.id; }); return Object.assign({}, o, { name: clipTitle(o.name, 48, o.id), trigger: timeRange(o.trigger), path: o.id, pickKey: 'obj:' + o.id + S.tag, dir: kids.length > 0, selected: pick.k === 'obj' && pick.id === o.id }); };
 
   const rank = function (o: any): any { return ({ pending: 0, retired: 2 } as Data)[o.state] != null ? ({ pending: 0, retired: 2 } as Data)[o.state] : 1; };
   const sorted = pr.objectives.map(function (o: any, i: any): any { return { o: o, i: i }; }).sort(function (a: any, b: any): any { return rank(a.o) - rank(b.o) || a.i - b.i; }).map(function (x: any): any { return x.o; });
@@ -311,7 +311,7 @@ function exp(): any {
         doneN: runs.filter(function (u: any): any { return u.state === 'done' || u.state === 'failed'; }).length, total: runs.length });
     });
   };
-  return { id: o.id, name: o.name, state: o.state, projectPath: o.projectPath, goal: o.goal, thread: o.thread, next: next, now: now, tab: S.rsiTab, setup: rounds.length === 0,
+  return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, projectPath: o.projectPath, goal: o.goal, thread: o.thread, next: next, now: now, tab: S.rsiTab, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
     trend: rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, value: Number(best(x).mean.toPrecision(4)) }; }),
     trendMetric: d.metrics.items.find((m: Data) => m.id === main).name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.filter(function (p: any): any { return p.result !== 'unresolved'; }).length },

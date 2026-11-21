@@ -381,11 +381,11 @@ views:
             args:
               kind: rsiExpPrep
           - type: button
+            when: $.exp.thread
             label: t:rsi.exp.thread
-            act: open
+            act: thread
             args:
-              kind: msg
-              t: $.exp.thread
+              id: $.exp.thread
           - type: button
             iconOnly: true
             icon: delete
@@ -2559,10 +2559,9 @@ views:
                     items:
                       - type: button
                         label: t:rsi.thread.eval
-                        act: open
+                        act: thread
                         args:
-                          kind: msg
-                          t: $.objective.threads.eval
+                          id: $.objective.threads.eval
                   - type: text
                     parts:
                       - status:
@@ -2753,10 +2752,9 @@ views:
                     items:
                       - type: button
                         label: t:rsi.thread.iterate
-                        act: open
+                        act: thread
                         args:
-                          kind: msg
-                          t: $.objective.threads.iterate
+                          id: $.objective.threads.iterate
                   - type: text
                     parts:
                       - status:
@@ -3176,10 +3174,9 @@ views:
                     items:
                       - type: button
                         label: t:rsi.thread.metrics
-                        act: open
+                        act: thread
                         args:
-                          kind: msg
-                          t: $.objective.threads.metrics
+                          id: $.objective.threads.metrics
                   - type: text
                     parts:
                       - text:
@@ -3209,10 +3206,9 @@ views:
                     items:
                       - type: button
                         label: t:rsi.thread.metrics
-                        act: open
+                        act: thread
                         args:
-                          kind: msg
-                          t: $.objective.threads.metrics
+                          id: $.objective.threads.metrics
                   - type: text
                     parts:
                       - text:
@@ -3954,10 +3950,9 @@ views:
                     map:
                       gov: t:rsi.thread.iterate
                       _: t:rsi.thread.eval
-                  act: open
+                  act: thread
                   args:
-                    kind: msg
-                    t: "@thread"
+                    id: "@thread"
             - type: toolbar
               when:
                 of: "@kind"
@@ -4077,10 +4072,9 @@ views:
         items:
           - type: button
             label: t:rsi.trace.thread
-            act: open
+            act: thread
             args:
-              kind: msg
-              t: $.record.thread
+              id: $.record.thread
       - type: list
         id: rsi-record-results
         label:
@@ -4229,10 +4223,9 @@ views:
           acts:
             - label: t:rsi.trace.thread
               icon: hook
-              act: open
+              act: thread
               args:
-                kind: msg
-                t: "@thread"
+                id: "@thread"
               when: "@thread"
       - type: markdown
         text: $.doc.body

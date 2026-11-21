@@ -35,3 +35,19 @@ test('all new-objective openers bind currentThread and project choices; writes p
   assert.equal(pdl.requests.new.body.project,'@project');assert.equal(pdl.requests.new.body.thread,'@thread');
   assert.equal(pdl.requests.runCycle.body.op,'runCycle');assert.equal(pdl.requests.refresh.body.op,'refresh');
 });
+
+test('all thread navigation buttons use host act: thread with id, never legacy act: open kind: msg',()=>{
+  const pdl=load('console/pdl.yaml');
+  const walk=(value,visit)=>{if(!value||typeof value!=='object')return;visit(value);for(const child of Object.values(value))walk(child,visit);};
+  let threadButtons=0,expThreadFound=false;
+  for(const view of Object.values(pdl.views))walk(view,(node)=>{
+    assert.notEqual(node.act==='open'&&node.args?.kind==='msg',true,`legacy open/msg action found: ${JSON.stringify(node)}`);
+    if(node.act==='thread'){
+      threadButtons++;
+      assert.ok(node.args&&typeof node.args.id==='string'&&node.args.id.length>0,`thread action missing id: ${JSON.stringify(node)}`);
+      if(node.label==='t:rsi.exp.thread'){expThreadFound=true;assert.equal(node.args.id,'$.exp.thread');assert.equal(node.when,'$.exp.thread');}
+    }
+  });
+  assert.equal(expThreadFound,true);
+  assert.equal(threadButtons,8);
+});
