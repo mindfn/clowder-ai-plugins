@@ -57,7 +57,10 @@ async function fixture(t) {
     threads: {
       async list({ before, limit } = {}) { const offset = before ? threads.findIndex((t) => t.id === before.id) + 1 : 0; return clone(threads.slice(offset, offset + (limit || 100))); },
       async get(id) { return clone(threads.find((t) => t.id === id) || null); },
-      async create(input) { const thread = { ...input, id: `objective-thread-${threads.length}`, lastActiveAt: 99 }; threads.push(thread); return clone(thread); },
+      async create(input) {
+        if (typeof input.title !== 'string' || !input.title.trim() || input.title.length > 200) throw new Error('invalid_member_thread_title');
+        const thread = { ...input, id: `objective-thread-${threads.length}`, lastActiveAt: 99 }; threads.push(thread); return clone(thread);
+      },
     },
     messaging: {
       async subscribe(input) { subscriptions.push(input); },
@@ -1458,4 +1461,32 @@ test('a step that becomes the caller’s during its turn is handed over in the r
   await f.activation().deliver({ kind: 'execution_status', deliveryId: 'turn-settled-again', threadId: o.thread, executionId: 'kimi-turn', state: 'settled', outcome: 'completed', chainDone: true });
   assert.equal(f.sends.filter((s) => s.wake?.catId === 'cat-b5ddoo9l').length, woken + 1);
   assert.equal((await f.read()).experiments[o.id].exec.rules.state, 'started');
+});
+
+test('a long statement creates a short clipped thread title and card title, and persisted overlong outbox titles self-heal on start', async (t) => {
+  const f = await fixture(t);
+  const statement = `在独立包内优化完整 200 条重排推理：\n${'守住精度与阈值硬闸门并压低开环尾延迟与提升有效吞吐量，'.repeat(12)}`;
+  assert.ok(statement.length > 260);
+  const o = await f.create({ statement });
+  const created = f.threads.find((th) => th.id === o.thread);
+  assert.ok(created && created.title.startsWith('RSI · ') && created.title.length <= 80 && !/[\r\n]/.test(created.title), created?.title);
+  assert.equal((await f.read()).experiments[o.id].objective.goal.statement, statement);
+  const goalCard = f.sends.flatMap((s) => s.payload.elements).find((el) => el.kind === 'rich_block' && el.payload.kind === 'card');
+  assert.ok(goalCard && goalCard.payload.title.length <= 120, goalCard?.payload?.title);
+
+  // Legacy alpha.62 outbox entry with an overlong title must self-heal on restart instead of failing flush().
+  const stored = await f.storage.get(ownerKey('owner'));
+  const legacyId = 'obj-legacy-overlong';
+  stored.value.experiments[legacyId] = clone(stored.value.experiments[o.id]);
+  stored.value.experiments[legacyId].objective.id = legacyId;
+  stored.value.experiments[legacyId].objective.thread = null;
+  const origSummary = stored.value.objectives[f.project].find((x) => x.id === o.id);
+  stored.value.objectives[f.project].push({ ...clone(origSummary), id: legacyId });
+  stored.value.outbox.unshift({ id: 'legacy-create', kind: 'createThread', objective: legacyId, project: f.project, title: `RSI · ${statement}` });
+  await f.storage.compareAndSet(ownerKey('owner'), stored.revision, stored.value);
+  await f.activation().stop();
+  f.start();
+  const healed = await until(f.read, (s) => Boolean(s.experiments[legacyId]?.objective.thread), 'legacy overlong thread creation');
+  const healedThread = f.threads.find((th) => th.id === healed.experiments[legacyId].objective.thread);
+  assert.ok(healedThread && healedThread.title.length <= 80, healedThread?.title);
 });

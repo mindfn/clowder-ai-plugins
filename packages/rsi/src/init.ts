@@ -204,6 +204,16 @@ export function autoKinds(value: unknown): { kinds: string[] } | { error: string
 export const autoKey = (kinds: string[]) => Object.keys(AUTO).find((k) => AUTO[k].join() === kinds.join());
 export const autoText = (kinds: string[]) => kinds.length ? `${kinds.includes('variable') ? '执行修复和调变量：时段内结论的第一方向是这两类' : '只有执行修复：时段内结论的第一方向是执行修复'}就直接采纳（几位分析成员要意见一致），有候选时直接复验；其余等你定` : '都等你定：夜里不自己采纳方向，也不直接复验候选';
 export const stopText = (stop: Data) => [stop.target && `达到「${stop.target}」并复验稳定`, stop.maxCycles && `用满 ${stop.maxCycles} 个周期`].filter(Boolean).join('，或') || '由你决定';
+export function clipTitle(text: unknown, max: number, fallback = 'RSI'): string {
+  const clean = typeof text === 'string' ? text.replace(/\s+/g, ' ').trim() : '';
+  if (!clean) return fallback;
+  return clean.length <= max ? clean : `${clean.slice(0, max - 1).trimEnd()}…`;
+}
+export function threadTitle(text: unknown, max = 64): string {
+  const clean = typeof text === 'string' ? text.replace(/\s+/g, ' ').trim() : '';
+  const body = clean.replace(/^RSI\s*·\s*/, '');
+  return clipTitle(body ? `RSI · ${body}` : 'RSI', max, 'RSI');
+}
 
 export function rsiExpNew(state: RsiState, project: string, body: Data, now: number) {
   const fixture = createFixtures(now), templateId = project === 'pd-infer' ? 'pd-ttft' : 'cp-converge';
@@ -247,7 +257,7 @@ export function rsiExpNew(state: RsiState, project: string, body: Data, now: num
   d.prep.push({ id: `${id}-auto`, section: 'goal', title: '夜里可以自己定的方向', value: autoText(d.policy.auto), state: 'confirmed', neededFrom: null, mine: true, by: '你', at: now });
   state.experiments[id] = d;
   state.objectives[project].push({ id, name: body.statement, parent: null, state: 'preparing', mode: 'exp', trigger: '', running: null, cycle: null, prediction: null, locked: 0 });
-  enqueue(state, d, 'createThread', { project, title: `RSI · ${body.statement}` });
+  enqueue(state, d, 'createThread', { project, title: threadTitle(body.statement) });
   const who = (role: string) => mention(d.members.find((m) => m.role === role)!);
   message(state, d, now, `新评估项：${body.statement}`, `何时停：${stop}。\n\n${who('prepare')} 负责准备\n${who('evaluate')} 负责评估\n${who('iterate')} 负责治理执行（按你选的方向出新版本）\n\n初始化七步，按依赖往下做。`, 'goal');
   kick(state, id, now);

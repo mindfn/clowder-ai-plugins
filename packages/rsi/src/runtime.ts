@@ -2,7 +2,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { abandonRepair, ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAnalysis, nightDigest, nightDue, REPAIR_WAIT, runCycle } from './cycles.js';
 import { insideWindow } from './schedule.js';
-import { bindObjectiveThread, recordInitExecution } from './init.js';
+import { bindObjectiveThread, clipTitle, recordInitExecution, threadTitle } from './init.js';
 import { createRuns } from './runs.js';
 import { isState, record, retain } from './store.js';
 import { removeVersionWorktrees } from './versions.js';
@@ -54,7 +54,7 @@ export function createRuntime(host: RsiHost) {
       if (!entry) return;
       const d = state.experiments[entry.objective];
       if (entry.kind === 'createThread') {
-        const thread = d.objective.thread || (await host.threads.create({ title: entry.title, projectRef: d.objective.projectPath,
+        const thread = d.objective.thread || (await host.threads.create({ title: threadTitle(entry.title), projectRef: d.objective.projectPath,
           participants: [...new Set(d.members.filter((m) => ['prepare', 'iterate', 'evaluate'].includes(m.role)).map((m) => m.catId))] })).id;
         if (stopped) return;
         await retain(host.storage, key, (next) => { if (mark(next, entry.id)) bindObjectiveThread(next, entry.objective, thread); });
@@ -71,7 +71,7 @@ export function createRuntime(host: RsiHost) {
           payload: { provenance: { epistemicStatus: entry.kind === 'agent' ? 'user_intent' : 'observation' },
             elements: [{ elementId: entry.id, kind: 'text', payload: { text: content } },
               ...(entry.kind === 'message' && ['goal', 'conclusion', 'failed', 'plan', 'digest'].includes(entry.message.kind) ? [{ elementId: `${entry.id}-card`, kind: 'rich_block' as const,
-                payload: { id: entry.id, kind: 'card' as const, v: 1 as const, title: entry.message.title, bodyMarkdown: [entry.message.body, entry.message.ask].filter(Boolean).join('\n\n') } }] : [])] } });
+                payload: { id: entry.id, kind: 'card' as const, v: 1 as const, title: clipTitle(entry.message.title, 120, 'RSI'), bodyMarkdown: [entry.message.body, entry.message.ask].filter(Boolean).join('\n\n') } }] : [])] } });
         if (stopped) return;
         await retain(host.storage, key, (next) => { if (mark(next, entry.id, { messageId: sent.messageId })) executionEvents(next, next.experiments[entry.objective]); });
       } else {
