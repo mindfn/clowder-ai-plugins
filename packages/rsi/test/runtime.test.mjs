@@ -285,6 +285,15 @@ test('non-zero submit retries once, invokes run-scoped cancel before retry, then
   assert.equal(f.sends.filter((s)=>s.payload.elements[0].payload.text.includes('运行失败（已重试一次）')).length,2);
 });
 
+test('exit-0 preflight with multi-line NDJSON diagnostic stdout proceeds to submit instead of throwing JSON parse error', async (t) => {
+  const f=await fixture(t),o=await f.create();
+  f.commands.preflight=`node -e "console.log(JSON.stringify({npu:4,aicore:0})); console.log(JSON.stringify({npu:5,aicore:0}));"`;
+  await f.initialize(o,{groups:[{id:'control',label:'Control',vars:{},control:true}],seeds:[5]});
+  const run=(await execute(f,o)).runs[0];
+  assert.equal(run.state,'done',JSON.stringify(run.error));
+  assert.equal(run.error,null);
+});
+
 test('execution lifecycle uses v2 replyTo, tolerates send acknowledgement races and rejects late old-step events', async (t) => {
   const f=await fixture(t);
   f.onSend(async (s)=>{

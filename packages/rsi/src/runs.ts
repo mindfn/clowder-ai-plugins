@@ -148,8 +148,14 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         log += preflight.log;
         if (preflight.code !== 0) throw new Error(`preflight exited ${preflight.code}: ${preflight.log}`);
         if (preflight.stdout.trim().startsWith('{')) {
-          const reported = parseResult(preflight.stdout);
-          for (const name of ['python', 'driver', 'dataVersion']) if (reported[name] !== undefined) env[name === 'dataVersion' ? 'data' : name] = reported[name];
+          try {
+            const reported = parseResult(preflight.stdout);
+            if (record(reported)) {
+              for (const name of ['python', 'driver', 'dataVersion']) if (reported[name] !== undefined) env[name === 'dataVersion' ? 'data' : name] = reported[name];
+            }
+          } catch {
+            // Optional env metadata: multi-line / NDJSON diagnostic stdout must not fail an exit-0 preflight.
+          }
         }
         const since = jobId ? start : Date.now();
         if (!jobId) {

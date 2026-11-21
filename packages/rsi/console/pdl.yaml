@@ -789,12 +789,33 @@ views:
                         tone: warn
                         strong: t:rsi.exp.stepUnknownsLabel
                         items: "@unknownList"
-                        when: "@unknownList"
+                        when:
+                          - "@unknownList"
+                          - of: "@stage"
+                            map:
+                              done: false
+                              _: true
+                        action:
+                          type: stack
+                          items:
+                            - type: button
+                              label: t:rsi.exp.stepRefresh
+                              act: plugin
+                              args:
+                                request: initStepRefresh
+                                k: "@k"
+                              when: "@canRefresh"
+                              disabled: $.pending
                       - type: notice
                         tone: info
                         strong: t:rsi.exp.stepNextLabel
                         items: "@nextList"
-                        when: "@nextList"
+                        when:
+                          - "@nextList"
+                          - of: "@stage"
+                            map:
+                              done: false
+                              _: true
           - type: section
             title: t:rsi.exp.sec.execStages
             blocks:
