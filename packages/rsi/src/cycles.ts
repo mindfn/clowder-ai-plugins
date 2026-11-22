@@ -11,7 +11,8 @@ export function validPlan(plan: unknown): plan is Data {
 }
 
 export function freshSeeds(d: Experiment, count: number): number[] {
-  const used = d.rounds.flatMap((r: Data) => r.plan.seeds), start = Math.max(0, ...used) + 1;
+  const used = d.rounds.flatMap((r: Data) => [...(r.plan.seeds || []), ...(Array.isArray(r.plan.reservedSeeds) ? r.plan.reservedSeeds : [])]);
+  const start = Math.max(0, ...used) + 1;
   return Array.from({ length: count }, (_, i) => start + i);
 }
 

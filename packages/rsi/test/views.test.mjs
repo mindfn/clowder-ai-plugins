@@ -756,12 +756,13 @@ test('universal explore/confirm tier supports single-group explore without outer
   const bad = toolAction(x.s, 'rsi.version', { change: 'bad', config: { a: 1 }, skipControl: true }, ctx, now);
   assert.match(bad.error, /skipControl is only allowed when tier is "explore"/);
 
-  // Valid explore tier: 1 seed, skip outer control
-  const okExplore = toolAction(x.s, 'rsi.version', { change: 'fast explore', config: { a: 2 }, tier: 'explore', seeds: 1, skipControl: true }, ctx, now);
+  // Valid explore tier: 1 seed + reservedSeeds, skip outer control
+  const okExplore = toolAction(x.s, 'rsi.version', { change: 'fast explore', config: { a: 2 }, tier: 'explore', seeds: 1, reservedSeeds: [38, 39], skipControl: true }, ctx, now);
   assert.equal(okExplore.ok, true);
   assert.equal(x.d.upcoming.tier, 'explore');
   assert.equal(x.d.upcoming.skipControl, true);
   assert.equal(x.d.upcoming.seeds.length, 1);
+  assert.deepEqual(x.d.upcoming.reservedSeeds, [38, 39]);
   assert.deepEqual(x.d.upcoming.groups.map((g) => g.id), ['change']);
 
   // runCycle respects skipControl on explore tier (does not prepend control)
@@ -798,6 +799,7 @@ test('universal explore/confirm tier supports single-group explore without outer
   assert.equal(x.d.upcoming.tier, undefined);
   assert.equal(x.d.upcoming.skipControl, false);
   assert.equal(x.d.upcoming.seeds.length, 3);
+  assert.deepEqual(x.d.upcoming.seeds, [40, 41, 42]);
   assert.deepEqual(x.d.upcoming.groups.map((g) => g.id), ['control', 'change']);
 
   // Even an explore cycle WITH outer control (skipControl: false) cannot set candidate or trigger target stop
@@ -825,5 +827,6 @@ test('universal explore/confirm tier supports single-group explore without outer
   assert.equal(x.d.upcoming.tier, 'confirm');
   assert.equal(x.d.upcoming.skipControl, false);
   assert.equal(x.d.upcoming.seeds.length, 3);
+  assert.deepEqual(x.d.upcoming.seeds, [41, 42, 43]);
   assert.deepEqual(x.d.upcoming.groups.map((g) => g.id), ['control', 'change']);
 });

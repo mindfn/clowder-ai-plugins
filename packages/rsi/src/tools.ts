@@ -150,6 +150,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     if (input.seeds !== undefined && !(Number.isInteger(input.seeds) && input.seeds >= 1 && input.seeds <= 20)) return { error: 'seeds must be an integer between 1 and 20' };
     if (input.skipControl !== undefined && typeof input.skipControl !== 'boolean') return { error: 'skipControl must be a boolean' };
     if (input.skipControl === true && input.tier !== 'explore') return { error: 'skipControl is only allowed when tier is "explore"' };
+    if (input.reservedSeeds !== undefined && (!Array.isArray(input.reservedSeeds) || input.reservedSeeds.length > 20 || input.reservedSeeds.some((s: unknown) => !Number.isSafeInteger(s) || (s as number) < 0))) return { error: 'reservedSeeds must be an array of up to 20 non-negative integers' };
     const previous = d.objective.currentVersion, id = `v${d.versions.length + 1}`;
     const changes = record(input.changes) ? {
       ...(record(input.changes.pr) && text(input.changes.pr.id) ? { pr: { id: input.changes.pr.id, ...(text(input.changes.pr.url) ? { url: input.changes.pr.url } : {}), ...(text(input.changes.pr.title) ? { title: input.changes.pr.title } : {}), ...(text(input.changes.pr.state) ? { state: input.changes.pr.state } : {}) } } : {}),
@@ -191,10 +192,12 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       const defaultSeeds = tier === 'explore' ? last.plan.seeds.length : (d.policy.confirmSeeds || last.plan.seeds.length);
       const seedCount = typeof input.seeds === 'number' ? input.seeds : defaultSeeds;
       const changeGroup = { id: 'change', label: input.change, version: id, vars: {}, control: false, confirm: false };
+      const reservedSeeds = Array.isArray(input.reservedSeeds) && input.reservedSeeds.length ? [...new Set(input.reservedSeeds as number[])] : undefined;
       d.upcoming = {
         baseline: false,
         skipControl,
         ...(tier ? { tier } : {}),
+        ...(reservedSeeds ? { reservedSeeds } : {}),
         seeds: freshSeeds(d, seedCount),
         groups: skipControl ? [changeGroup] : [controlGroup(d), changeGroup],
       };
