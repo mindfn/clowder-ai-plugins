@@ -114,8 +114,9 @@ PDL_COMPONENTS['plugin:official.rsi/rsiTrend'] = function (p, sc, root) {
   const vs = xs.map(function (x) { return x.value; }).concat(threshold != null ? [threshold] : []);
   const lo = Math.min.apply(null, vs), hi = Math.max.apply(null, vs);
   const span = hi === lo ? 1 : (hi - lo);
-  const padX = 36, padTop = 26, padBot = 26, H = 132;
-  const W = Math.max(460, padX * 2 + Math.max(1, xs.length - 1) * 76);
+  const padX = 42, padTop = 26, padBot = 26, H = 132;
+  const W = Math.max(360, padX * 2 + Math.max(1, xs.length - 1) * 76);
+  const svgStyle = xs.length <= 5 ? 'width:100%' : 'width:' + W + 'px;min-width:100%';
   const yOf = function (v) { return H - padBot - (hi === lo ? 0.5 : (v - lo) / span) * (H - padTop - padBot); };
   const pts = xs.map(function (x, i) {
     const cx = xs.length === 1 ? W / 2 : padX + i * (W - 2 * padX) / (xs.length - 1);
@@ -141,7 +142,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiTrend'] = function (p, sc, root) {
       '<text class="axis' + (isCur ? ' current' : '') + '" x="' + q[0].toFixed(1) + '" y="' + (H - 7) + '">' + h(axisLabel) + '</text>';
   }).join('');
   const aria = series && series.name ? series.name : pvText(p.label, sc, root);
-  return '<div class="rsi-trend-wrap"><div class="scroll-x rsi-trend-scroll"><svg class="rsi-trend" style="width:' + W + 'px;min-width:100%" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + h(aria) + '">' +
+  return '<div class="rsi-trend-wrap"><div class="scroll-x rsi-trend-scroll"><svg class="rsi-trend" style="' + svgStyle + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + h(aria) + '">' +
     grid + thLine + line + dots + '</svg></div></div>';
 };
 

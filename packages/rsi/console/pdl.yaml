@@ -1158,13 +1158,14 @@ views:
             blocks:
               - type: toolbar
                 left:
-                  - type: label
-                    text:
-                      t: rsi.exp.trend
-                      args:
-                        - $.exp.activeTrend.name
-                        - $.exp.hitRate.hit
-                        - $.exp.hitRate.all
+                  - type: text
+                    parts:
+                      - text:
+                          t: rsi.exp.trend
+                          args:
+                            - $.exp.activeTrend.name
+                            - $.exp.hitRate.hit
+                            - $.exp.hitRate.all
                 right:
                   - type: select
                     id: rsi-trend-pick

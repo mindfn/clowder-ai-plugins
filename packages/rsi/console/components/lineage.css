@@ -49,9 +49,9 @@
 .rsi-mx-seg-btn.on{background:color-mix(in srgb,var(--accent) 14%,var(--bg-page));color:var(--accent);font-weight:600}
 .rsi-mx-scroll{width:100%;max-width:100%;overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-m);background:var(--bg-page)}
 .rsi-mx{width:100%;border-collapse:collapse;font-size:var(--fs-s);font-variant-numeric:tabular-nums}
-.rsi-mx th,.rsi-mx td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;white-space:nowrap}
+.rsi-mx th,.rsi-mx td{padding:6px 7px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;white-space:nowrap}
 .rsi-mx thead th{position:sticky;top:0;background:var(--bg-group);color:var(--fg-muted);font-size:var(--fs-xs);font-weight:600;z-index:1}
-.rsi-mx .rsi-mx-col-m{position:sticky;left:0;background:var(--bg-page);z-index:2;min-width:170px;max-width:260px}
+.rsi-mx .rsi-mx-col-m{position:sticky;left:0;background:var(--bg-page);z-index:2;min-width:142px;max-width:190px}
 .rsi-mx thead .rsi-mx-col-m{background:var(--bg-group);z-index:3}
 .rsi-mx .rsi-mx-col-v,.rsi-mx .rsi-mx-col-d{text-align:right;font-family:var(--font-mono)}
 .rsi-mx .rsi-mx-col-s{text-align:center}
