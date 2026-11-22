@@ -101,7 +101,7 @@ export function finishCycle(state: RsiState, d: Experiment, round: Data, now: nu
   if (!requestRepair(state, d, round, now)) {
     round.state = 'evaluating';
     d.objective.budget.used++;
-    askEvaluation(state, d, round);
+    askEvaluation(state, d, round, false, now);
   }
   syncObjective(state, d);
 }
@@ -139,13 +139,16 @@ export function abandonRepair(state: RsiState, d: Experiment, reason: string, no
   round.state = 'evaluating';
   d.objective.budget.used++;
   message(state, d, now, `第 ${round.n} 周期的运行失败没有修好`, `${reason}\n\n交给评估成员下结论。`, 'plan');
-  askEvaluation(state, d, round);
+  askEvaluation(state, d, round, false, now);
   syncObjective(state, d);
 }
 
 // Wakes the evaluate member for a cycle that waits for its conclusion (after the runs, and again from the page when that turn ended without one).
-export function askEvaluation(state: RsiState, d: Experiment, round: Data, reeval = false) {
+export function askEvaluation(state: RsiState, d: Experiment, round: Data, reeval = false, now = Date.now()) {
   const member = d.members.find((m) => m.role === 'evaluate')!;
+  round.evalAskedAt = now;
+  delete round.evalStalledNotified;
+  delete round.invocationId;
   enqueue(state, d, 'agent', { member: member.catId, cycle: round.n, action: 'evaluate',
     message: { title: reeval ? `第 ${round.n} 周期：重新分析指标` : `第 ${round.n} 周期跑完`, body: `${mention(member)} ${reeval ? `用户请求重新分析第 ${round.n} 周期指标与结论` : `第 ${round.n} 周期跑完`}，调原生 MCP 工具 rsi_task 看同周期对照、各组均值和逐种子结果，再调 rsi_conclude。${EXPECT_HINT}` } });
 }
@@ -234,6 +237,8 @@ const EXPECT_HINT = '方向可以带 expect {lo,hi}：你预期选了它之后�
 
 // Analysts that have not proposed within this long are left out and the conclusion goes out without them.
 export const ANALYSIS_LIMIT = 20 * 60_000;
+// A wake that has not even been claimed via rsi_task after this long surfaces a visible reminder card (independent of Host turn events).
+export const UNCLAIMED_WAIT = 10 * 60_000;
 // A conclusion nobody decides within this inside the run window goes on with its plan (FLOW §1.5: 没回应，到点用默认 / 照旧).
 export const DECISION_WAIT = 30 * 60_000;
 
@@ -410,15 +415,15 @@ function decideAtNight(state: RsiState, d: Experiment, round: Data, now: number)
   if (!first || firsts.length > 1 && !round.report.agree || !auto.includes(first.kind)) return;
   round.decision = { pick: 'direction', directionId: first.id, note: '夜里按规则采纳', by: 'RSI', at: now };
   message(state, d, now, `第 ${round.n} 周期：夜里按规则采纳「${first.title}」`, `${first.why}\n\n这类方向声明时定了夜里可以自己定：交给 ${d.members.find((m) => m.role === 'iterate')!.name} 出版本，出好后接着跑。`, 'plan');
-  requestVersion(state, d, round);
+  requestVersion(state, d, round, now);
 }
 
 // A pick that changes something asks the governance member for its version, whether made on the page or by the night's rules.
-export function requestVersion(state: RsiState, d: Experiment, round: Data) {
+export function requestVersion(state: RsiState, d: Experiment, round: Data, now = Date.now()) {
   const direction = round.report.directions.find((x: Data) => x.id === round.decision.directionId);
   // An execution fix must not change what is measured: its version replaces the default directly instead of competing with it.
   const direct = direction?.kind === 'execution';
-  d.versionRequest = { cycle: round.n, decision: round.decision, title: direction?.title || round.decision.note || round.decision.pick, ...(direct ? { direct } : {}),
+  d.versionRequest = { cycle: round.n, since: now, decision: round.decision, title: direction?.title || round.decision.note || round.decision.pick, ...(direct ? { direct } : {}),
     ...(direction?.predict ? { prediction: { ...direction.predict, by: direction.by, text: direction.title, expect: direction.expect, direction: direction.id, cycle: round.n } } : {}) };
   d.objective.state = 'running';
   const member = d.members.find((m) => m.role === 'iterate')!;
@@ -487,4 +492,39 @@ export function nightDigest(state: RsiState, d: Experiment, now: number) {
   const opened = new Date(night.start);
   message(state, d, now, `夜间总结 · ${opened.getMonth() + 1}月${opened.getDate()}日`, [night.cycles.map((r: Data) => `第 ${r.n} 周期（${r.version}）：${outcome(r)}`).join('\n'),
     own && `夜里自己定的：${own}`, night.repairs.map((x: Data) => `${x.version} 修了「${x.signature}」`).join('\n'), status && `现在：${status}`].filter(Boolean).join('\n\n'), 'digest');
+}
+
+const evalUnclaimed = (r: Data, now: number) => r.state === 'evaluating' && !r.invocationId && !r.evalStalledNotified && !!(r.evalAskedAt || r.end) && now - (r.evalAskedAt || r.end) > UNCLAIMED_WAIT;
+const versionUnclaimed = (d: Experiment, now: number) => !!d.versionRequest && !d.versionRequest.invocationId && !d.versionRequest.stalledNotified && !!d.versionRequest.since && now - d.versionRequest.since > UNCLAIMED_WAIT;
+const unclaimedAnalysts = (r: Data, now: number) => r.analysis?.waiting?.length && !r.analysis.unclaimedNotified && !!(r.analysis.askedAt || r.analysis.since) && now - (r.analysis.askedAt || r.analysis.since) > UNCLAIMED_WAIT
+  ? (r.analysis.waiting as string[]).filter((id) => !r.analysis.turns?.[id])
+  : [];
+
+export function hasUnclaimed(d: Experiment, now: number): boolean {
+  if (!d.objective.projectPath || ['done', 'retired'].includes(d.objective.state)) return false;
+  return versionUnclaimed(d, now) || d.rounds.some((r: Data) => evalUnclaimed(r, now) || unclaimedAnalysts(r, now).length > 0);
+}
+
+// Self-contained stalled-wake detection: surfaces a visible reminder card once per dispatch when a member has not called rsi_task after UNCLAIMED_WAIT.
+export function warnUnclaimed(state: RsiState, d: Experiment, now: number) {
+  if (!d.objective.projectPath || ['done', 'retired'].includes(d.objective.state)) return;
+  const nameOf = (id: string) => d.members.find((m) => m.catId === id)?.name || id;
+  const hint = '可能遭遇唤醒失败或连接中断；可在 RSI 页面点「重新触发」，或让该成员直接调用原生 MCP 工具 rsi_task 继续。';
+  for (const r of d.rounds) {
+    if (evalUnclaimed(r, now)) {
+      r.evalStalledNotified = true;
+      const who = d.members.find((m) => m.role === 'evaluate')?.name || '评估成员';
+      message(state, d, now, `第 ${r.n} 周期评估：${who} 派发 ${UNCLAIMED_WAIT / 60_000} 分钟仍未认领`, hint, 'failed');
+    }
+    const missed = unclaimedAnalysts(r, now);
+    if (missed.length) {
+      r.analysis.unclaimedNotified = true;
+      message(state, d, now, `第 ${r.n} 周期方向讨论：${missed.map(nameOf).join('、')} 派发 ${UNCLAIMED_WAIT / 60_000} 分钟仍未认领`, hint, 'failed');
+    }
+  }
+  if (versionUnclaimed(d, now)) {
+    d.versionRequest.stalledNotified = true;
+    const who = d.members.find((m) => m.role === 'iterate')?.name || '治理执行成员';
+    message(state, d, now, `第 ${d.versionRequest.cycle} 周期出版本：${who} 派发 ${UNCLAIMED_WAIT / 60_000} 分钟仍未认领`, hint, 'failed');
+  }
 }

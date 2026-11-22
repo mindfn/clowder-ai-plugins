@@ -1978,3 +1978,49 @@ test('refreshing step 3 (run) after cycles have started updates executor without
   assert.equal(exp.steps.baseline.stale, false);
   assert.equal(exp.executor.poll, 5);
 });
+
+test('tick surfaces one-shot unclaimed wake reminders after 10 min for evaluate, analysts, and versionRequest without relying on Host lifecycle events', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [71] });
+  const cats = [{ id: 'ana-1', name: '甲', model: 'm1' }, { id: 'ana-2', name: '乙', model: 'm2' }];
+  for (const c of cats) assert.equal((await f.http('POST', { op: 'analystAdd', objective: o.id, catId: c.id, cats })).status, 200);
+  await execute(f, o);
+  const startMs = Date.now();
+
+  // 1) Evaluate stays unclaimed past 10 min → emits exactly one reminder card across repeated ticks.
+  t.mock.timers.enable({ apis: ['Date'], now: startMs + 11 * 60_000 });
+  await f.activation().actions['rsi.tick']();
+  await f.activation().actions['rsi.tick']();
+  let msgs = (await f.read()).experiments[o.id].messages;
+  assert.equal(msgs.filter((m) => /第 1 周期评估.*10 分钟仍未认领/.test(m.title)).length, 1);
+
+  // 2) Evaluator concludes; ana-1 claims via rsi_task, ana-2 stays unclaimed past 10 min → names ONLY ana-2, once.
+  t.mock.timers.setTime(startMs + 12 * 60_000);
+  await report(f, o, 'keep');
+  await f.tool('task', {}, 'ana-1', o.thread);
+  t.mock.timers.setTime(startMs + 23 * 60_000);
+  await f.activation().actions['rsi.tick']();
+  await f.activation().actions['rsi.tick']();
+  msgs = (await f.read()).experiments[o.id].messages;
+  const dirAlerts = msgs.filter((m) => /第 1 周期方向讨论.*10 分钟仍未认领/.test(m.title));
+  assert.equal(dirAlerts.length, 1);
+  assert.match(dirAlerts[0].title, /乙/);
+  assert.doesNotMatch(dirAlerts[0].title, /甲/);
+
+  // 3) Finish discussion, pick direction → versionRequest stays unclaimed past 10 min → emits one reminder, resets on versionAgain.
+  await f.tool('propose', { cycle: 1, options: [{ k: 'a', title: 'opt a', why: 'why', kind: 'code', target: 'lr' }] }, 'ana-1', o.thread);
+  await f.tool('task', {}, 'ana-2', o.thread);
+  await f.tool('propose', { cycle: 1, options: [{ k: 'b', title: 'opt b', why: 'why', kind: 'code', target: 'lr' }] }, 'ana-2', o.thread);
+  t.mock.timers.setTime(startMs + 24 * 60_000);
+  await decide(f, o, 'direction', 'a');
+  t.mock.timers.setTime(startMs + 35 * 60_000);
+  await f.activation().actions['rsi.tick']();
+  msgs = (await f.read()).experiments[o.id].messages;
+  assert.equal(msgs.filter((m) => /第 1 周期出版本.*10 分钟仍未认领/.test(m.title)).length, 1);
+  assert.equal((await f.http('POST', { op: 'versionAgain', objective: o.id })).status, 200);
+  t.mock.timers.setTime(startMs + 46 * 60_000);
+  await f.activation().actions['rsi.tick']();
+  t.mock.timers.reset();
+  msgs = (await f.read()).experiments[o.id].messages;
+  assert.equal(msgs.filter((m) => /第 1 周期出版本.*10 分钟仍未认领/.test(m.title)).length, 2);
+});

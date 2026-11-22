@@ -24,7 +24,7 @@ The installed `official.rsi` plugin registers a native MCP server (`rsi-native`)
    - You may also use the 2-level `values` shorthand on any step (including steps with newly created items): `{ step: "2", values: { "<id or title>": "<value>" }, unknowns: ["..."], next: ["..."] }`.
    - Pass `unknowns` and `next` as arrays of concise, self-contained bullet points so the console renders them as structured cards.
 4. **Stage-specific payloads:**
-   - **Step 3 (`run`)**: register commands with `rsi_executor` (preflight runs automatically) and submit `window` + Step 3 items with `rsi_submit`.
+   - **Step 3 (`run`)**: register commands with `rsi_executor` (preflight runs automatically) and submit `window` + Step 3 items with `rsi_submit`. For async remote jobs (`get` + `cancel` with `{job}`), make `get` emit a terminal JSON state (e.g. `{"state":"cancelled"}`) for unknown/already-cleaned jobs and make `cancel` exit 0 idempotently when already stopped so orphan-job guards clear cleanly.
    - **Step 4 (`rules`)**: include `metrics: { version, items }` with one primary metric and finite numeric `threshold` on every guardrail.
    - **Step 5 (`design`) / Step 7 (`baseline`)**: include `upcoming: { groups, seeds }`.
    - **Governance / Repair (`rsi_version`)**: edit and commit in an isolated git worktree/branch (never mutate the user's dirty working tree), then pass `config` (object) or `configPath` (project-relative JSON path).

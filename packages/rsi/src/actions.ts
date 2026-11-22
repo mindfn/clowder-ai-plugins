@@ -82,9 +82,13 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         const member = existing ? setMember(existing, input[role], body.cats) : (() => { const m = setMember({ role }, input[role], body.cats); d.members.push(m); return m; })();
         message(state, d, now, `你把${{ prepare: '准备', evaluate: '评估分析', iterate: '治理实施' }[role]}执行成员换成了 ${member.name}`, '未执行到的阶段与后续周期将自动使用新成员；已完成周期保留原归档记录。', 'members');
         const waiting = role === 'evaluate' ? d.rounds.find((r: Data) => r.state === 'evaluating') : null;
-        if (waiting) askEvaluation(state, d, waiting);
-        else if (role === 'iterate' && d.versionRequest)
+        if (waiting) askEvaluation(state, d, waiting, false, now);
+        else if (role === 'iterate' && d.versionRequest) {
+          d.versionRequest.since = now;
+          delete d.versionRequest.invocationId;
+          delete d.versionRequest.stalledNotified;
           enqueue(state, d, 'agent', { member: member.catId, cycle: d.versionRequest.cycle, action: 'version', message: { title: '接手', body: `${mention(member)} 治理实施成员换成了你：先调原生 MCP 工具 rsi_task 看轮到你的事。` } });
+        }
       }
       syncObjective(state, d);
       return { ok: true };
@@ -488,23 +492,25 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         const round = d.rounds.find((r: Data) => r.n === targetN);
         if (!round) return { error: 'Cycle not found', status: 404 };
         if (round.state === 'evaluating') {
-          askEvaluation(state, d, round);
+          askEvaluation(state, d, round, false, now);
           return { ok: true };
         }
         if (round.state !== 'done') return { error: 'Cycle is not ready for evaluation', status: 400 };
         if (evaluating && evaluating.n !== round.n) return { error: 'Another cycle is currently evaluating', status: 409 };
         round.reevaluating = true;
         round.state = 'evaluating';
-        askEvaluation(state, d, round, true);
+        askEvaluation(state, d, round, true, now);
         return { ok: true };
       }
       if (!evaluating) return { error: 'No cycle is waiting for its conclusion', status: 404 };
-      askEvaluation(state, d, evaluating);
+      askEvaluation(state, d, evaluating, false, now);
       return { ok: true };
     }
     case 'discussAgain': {
       const round = d?.rounds.find((r: Data) => r.analysis?.waiting?.length);
       if (!d || !round) return { error: 'No cycle is waiting for discussion proposals', status: 404 };
+      round.analysis.askedAt = now;
+      delete round.analysis.unclaimedNotified;
       for (const catId of round.analysis.waiting as string[]) {
         const m = d.members.find((x) => x.catId === catId) || { catId, name: catId };
         enqueue(state, d, 'agent', { member: catId, cycle: round.n, action: 'direction', message: { title: `第 ${round.n} 周期：请给方向（重发）`,
@@ -516,6 +522,9 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       if (!d || !d.versionRequest) return { error: 'No version request is pending', status: 404 };
       const member = d.members.find((m) => m.role === 'iterate');
       if (!member?.catId) return { error: 'Assign a governance execution member first' };
+      d.versionRequest.since = now;
+      delete d.versionRequest.invocationId;
+      delete d.versionRequest.stalledNotified;
       enqueue(state, d, 'agent', { member: member.catId, cycle: d.versionRequest.cycle, action: 'version', message: { title: d.versionRequest.repair ? `重发：修第 ${d.versionRequest.cycle} 周期的运行失败` : '重发：准备下一个版本',
         body: `${mention(member)} 重新触发治理任务「${d.versionRequest.title}」：先调原生 MCP 工具 rsi_task 看要求，完成后调 rsi_version 提交。` } });
       return { ok: true };
@@ -615,7 +624,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
           syncObjective(state, d);
           return { ok: true };
         }
-        requestVersion(state, d, round);
+        requestVersion(state, d, round, now);
         return { ok: true };
       }
       d.objective.state = 'running'; d.objective.round = n;

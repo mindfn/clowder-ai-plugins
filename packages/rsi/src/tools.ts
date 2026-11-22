@@ -75,7 +75,7 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
       ...(d.objective.projectPath && p.k !== 'goal' ? { itemsAreYours: '这一步的条目由你按这个项目来定：每条自己起 id（小写、短横线）和 title，按项目实际增删；重做时没再提交的条目会被去掉。下面 examples 是另一个项目（CartPole 强化学习）的写法，只看结构，不要照抄名字。',
         examples: template.prep.filter((x) => x.section === p.k).map((x) => ({ id: x.id, title: x.title, value: x.value })) } : {}),
       deps: p.deps.map((k) => ({ step: d.plan.findIndex((p) => p.k === k) + 1, section: k, version: d.steps![k]!.rev, items: d.prep.filter((item) => item.section === k) })),
-      ...(p.k === 'run' ? { window: '支持「不限制」「周一至周五 09:00–18:00；周六至周日 全天」「2026-11-21~2026-11-30 09:00–18:00」或「20:00–08:00」', executor: '先用原生 MCP 工具 rsi_executor 登记 preflight/submit/collect 命令（可用占位符 {config}/{run}/{seed}，同步前台 submit 省略 get，analyze 仅用于失败诊断）；preflight 通过且本步 items 已通过 rsi_submit 提交后才完成。' } : {}),
+      ...(p.k === 'run' ? { window: '支持「不限制」「周一至周五 09:00–18:00；周六至周日 全天」「2026-11-21~2026-11-30 09:00–18:00」或「20:00–08:00」', executor: '先用原生 MCP 工具 rsi_executor 登记 preflight/submit/collect 命令（可用占位符 {config}/{run}/{seed}/{job}，同步前台 submit 省略 get，异步长任务请配 get 与 cancel，analyze 仅用于失败诊断）；异步 get 对已结束或未知/已清理作业应输出终态 JSON（如 {"state":"done","exitCode":0} 或 {"state":"cancelled"}），cancel 对已停止作业应幂等退出 0；preflight 通过且本步 items 已通过 rsi_submit 提交后才完成。' } : {}),
       ...(p.k === 'rules' ? { metrics: { version: 'E1', items: [{ id: 'score', name: '得分', how: 'metrics.json 的 score', dir: 'up', unit: '分', locked: true, guard: false }] } } : {}),
       ...(p.k === 'design' || p.k === 'baseline' ? { upcoming: { groups: [{ id: 'control', label: '对照', vars: {}, control: true }, { id: 'change', label: '一个改动', vars: { '<配置里的键>': '<新取值>' } }], seeds: [11, 23] } } : {}) };
   });

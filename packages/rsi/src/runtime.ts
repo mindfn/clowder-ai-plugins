@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { abandonRepair, ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAnalysis, nightDigest, nightDue, REPAIR_WAIT, runCycle } from './cycles.js';
+import { abandonRepair, ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAnalysis, hasUnclaimed, nightDigest, nightDue, REPAIR_WAIT, runCycle, warnUnclaimed } from './cycles.js';
 import { insideWindow, withinWindowLimit } from './schedule.js';
 import { bindObjectiveThread, clipTitle, message, recordInitExecution, threadTitle } from './init.js';
 import { createRuns } from './runs.js';
@@ -43,6 +43,8 @@ function executionEvents(state: import('./types.js').RsiState, d: Experiment) {
               ? `第 ${cycleNum} 周期出版本`
               : `第 ${cycleNum} 周期方向讨论`;
           const title = event.outcome === 'completed' ? `${label}：${who} 结束了但尚未提交` : `${label}：${who} 唤醒失败（${event.outcome}）`;
+          if (dispatch.action === 'evaluate' && round) round.evalStalledNotified = true;
+          else if (dispatch.action === 'version' && d.versionRequest) d.versionRequest.stalledNotified = true;
           message(state, d, Date.now(), title, '在 RSI 页面点「重新触发」，或让该成员直接调用原生 MCP 工具 rsi_task 继续。', 'failed');
         }
       }
@@ -171,7 +173,7 @@ export function createRuntime(host: RsiHost) {
     const analysisLate = (r: Data) => r.analysis?.waiting.length && now - r.analysis.since > ANALYSIS_LIMIT;
     const decisionLate = (x: Experiment, r: Data) => x.objective.state === 'pending' && r.asked && !r.decision && !(r.plan?.reservedSeeds?.length && !x.candidate) && !x.upcoming?.requiresExplicitPlan && now - r.asked > DECISION_WAIT && insideWindow(x.policy.schedule, now);
     const repairLate = (x: Experiment) => x.versionRequest?.repair && now - x.versionRequest.since > REPAIR_WAIT;
-    const late = (state: import('./types.js').RsiState) => Object.values(state.experiments).some((x) => repairLate(x) || nightDue(x, now) || x.rounds.some((r: Data) => analysisLate(r) || decisionLate(x, r)));
+    const late = (state: import('./types.js').RsiState) => Object.values(state.experiments).some((x) => repairLate(x) || nightDue(x, now) || hasUnclaimed(x, now) || x.rounds.some((r: Data) => analysisLate(r) || decisionLate(x, r)));
     for (const [key, entry] of owners) if (late(entry.value)) {
       await retain(host.storage, key, (state) => {
         for (const x of Object.values(state.experiments)) if (repairLate(x)) abandonRepair(state, x, `${REPAIR_WAIT / 60_000} 分钟内没修好`, now);
@@ -179,6 +181,7 @@ export function createRuntime(host: RsiHost) {
           if (analysisLate(r)) finishAnalysis(state, x, r, now);
           else if (decisionLate(x, r)) decideByDefault(state, x, r, now);
         }
+        for (const x of Object.values(state.experiments)) warnUnclaimed(state, x, now);
         // A closed window's summary goes last, so it tells where things stand after the checks above.
         for (const x of Object.values(state.experiments)) nightDigest(state, x, now);
       });
