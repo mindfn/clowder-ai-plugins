@@ -116,7 +116,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       if (!acquired || stopped) continue;
       busy = d.objective.id; runId = run.id;
       let metrics: Data = {}, env: Data = { seed: run.seed, hardware: { os: `${platform()} ${release()}`, arch: arch(), chip: cpus()[0]?.model || 'unknown' } };
-      let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId, timedOut = false, submitted = !!jobId;
+      let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId, timedOut = false, pollLost = false, submitted = !!jobId;
       // The foreground submit's limit: the registered timeout, else three times this objective's longest successful attempt (at least 10 minutes); none before one has succeeded.
       const succeeded = d.rounds.flatMap((r: Data) => r.runs.flatMap((x: Data) => (x.attempts || []).filter((a: Data) => !a.error).map((a: Data) => a.end - a.start)));
       const limit = d.executor.timeout ? d.executor.timeout * 1000 : succeeded.length ? Math.max(600_000, 3 * Math.max(...succeeded)) : 0;
@@ -187,13 +187,26 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         if (d.executor.commands.get) {
           remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: d.executor.commands.cancel, cwd, values };
           step = 'get';
+          let pollFails = 0;
+          const MAX_POLL_FAILS = 3;
           for (;;) {
             if (stopped) return;
+            if (held) throw new Error('Run window closed');
             if (remote?.dropped) throw new Error('Objective deleted');
             const polled = await launch(d.executor.commands.get, cwd, values);
             log = (log + polled.log).slice(-16000);
             if (stopped) return;
-            if (polled.code !== 0) throw new Error(`get exited ${polled.code}: ${polled.log}`);
+            if (held) throw new Error('Run window closed');
+            if (remote?.dropped) throw new Error('Objective deleted');
+            if (polled.code !== 0) {
+              pollFails++;
+              if (pollFails > MAX_POLL_FAILS) { pollLost = true; throw new Error(`get exited ${polled.code} (${pollFails} consecutive poll failures): ${polled.log}`); }
+              if (d.executor.timeout && Date.now() - since > d.executor.timeout * 1000) { timedOut = true; throw new Error(`异步任务超过 ${d.executor.timeout} 秒没结束`); }
+              await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, (d.executor.poll || 1) * 1000); });
+              releasePoll = undefined; pollTimer = undefined;
+              continue;
+            }
+            pollFails = 0;
             const status = parseResult(polled.stdout);
             if (status.state === 'done' && (status.exitCode === undefined || status.exitCode === 0)) break;
             if (!['queued', 'running'].includes(status.state)) throw new Error(`Remote job ${status.state}, exit ${status.exitCode ?? 'unknown'}: ${status.reason || ''}`);
@@ -259,7 +272,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       // Never cancel when failure occurred before submit (prepare/preflight), and never let cancel output evict the failing step's log.
       const failureLog = log;
       let cancelLog = '';
-      if (submitted && (timedOut || final || (error && kind === 'env' && step === 'submit')) && canCancel(cancel, where?.values)) {
+      if (submitted && (timedOut || final || pollLost || (error && kind === 'env' && step === 'submit')) && canCancel(cancel, where?.values)) {
         cancelLog = (await launch(cancel!, where!.cwd, where!.values)).log;
         if (cancelLog) log = `${log}\n[cancel]\n${cancelLog}`.slice(-16000);
       }
@@ -270,6 +283,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       const keptLog = cancelLog
         ? `${failureLog.slice(-(LOG_KEEP - 400))}\n[cancel]\n${cancelLog.slice(-360)}`.slice(-LOG_KEEP)
         : failureLog.slice(-LOG_KEEP);
+      let retrying = false;
       await retain(host.storage, key, (state) => {
         const current = state.experiments[d.objective.id];
         if (!current) return;
@@ -281,6 +295,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         entry.attempts.push({ start, end, env, metrics, error: failure, jobId: jobId || null });
         delete entry.jobId;
         if (error && kind === 'env' && entry.retries < 1) {
+          retrying = true;
           entry.retries++; entry.state = 'queued';
           cycle.events.push({ at: end, kind: 'retry', text: `${entry.id} 环境失败，自动重试一次；不计入结果` });
         } else {
@@ -291,6 +306,11 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         finishCycle(state, current, cycle, end);
       });
       await changed(key);
+      // Give transient network/SSH hiccups a bounded recovery window before retrying long-running remote jobs.
+      if (retrying && !stopped && !held && !dropped.has(d.objective.id) && d.executor.timeout && d.executor.timeout >= 60) {
+        await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, 15_000); });
+        releasePoll = undefined; pollTimer = undefined;
+      }
     }
   }
   return {
@@ -303,9 +323,12 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         if (cancelled.code !== 0) host.log('error', 'RSI remote cancellation failed for a deleted objective', { jobId: job.values.job, error: cancelled.log });
       }
       for (const id of ids) dropped.add(id);
-      if (busy && ids.includes(busy) && child?.pid) {
-        try { killTree(child.pid); }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+      if (busy && ids.includes(busy)) {
+        clearTimeout(pollTimer); releasePoll?.();
+        if (child?.pid) {
+          try { killTree(child.pid); }
+          catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+        }
       }
     },
     // The window of the cycle the schedule started closed: its running run is stopped and waits, like its queued ones, for the window to open again.

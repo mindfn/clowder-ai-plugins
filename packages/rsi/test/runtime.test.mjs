@@ -1626,3 +1626,40 @@ test('runs.ts authoritatively injects tier and reservedSeeds into config.json on
   assert.equal(cfgConfirm.seed, 13);
   assert.equal('reservedSeeds' in cfgConfirm, false);
 });
+
+test('async get polling tolerates up to 3 consecutive transient non-zero exits without cancelling the remote job, and fails closed after 4 consecutive poll errors', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  // 3 consecutive transient exits (exact MAX_POLL_FAILS boundary), then exit 0 resets counter, then 1 more transient exit still succeeds without cancelling or retrying submit.
+  const transientGet = `node -e "const fs=require('fs'),p=process.argv[1]+'/get-count';const n=(fs.existsSync(p)?Number(fs.readFileSync(p,'utf8')):0)+1;fs.writeFileSync(p,String(n));if(n<=3||n===5){console.error('ssh_blip');process.exit(255);}if(n===4){console.log(JSON.stringify({state:'running'}));process.exit(0);}fs.writeFileSync(process.argv[1]+'/metrics.json',JSON.stringify({metrics:{score:42}}));console.log(JSON.stringify({state:'done',exitCode:0}));" {run}`;
+  Object.assign(f.commands, {
+    submit: `node -e "const fs=require('fs');fs.appendFileSync('submits',process.argv[1]+'\\n');console.log('job-transient');" {run}`,
+    get: transientGet,
+    cancel: 'echo {job} >> cancels',
+    collect: '{run}/metrics.json',
+    poll: 1,
+  });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [20] });
+  const r1 = await execute(f, o);
+  assert.equal(r1.runs[0].state, 'done');
+  assert.equal(r1.runs[0].retries, 0);
+  assert.equal(r1.runs[0].metrics.score, 42);
+  assert.equal((await readFile(join(f.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
+  assert.equal(await access(join(f.project, 'cancels')).then(() => true, () => false), false);
+
+  // 4 consecutive non-zero get exits fail closed, cancel the abandoned remote job before retry and after final failure.
+  const f2 = await fixture(t), o2 = await f2.create();
+  Object.assign(f2.commands, {
+    submit: `node -e "console.log('job-broken');"`,
+    get: `node -e "console.error('permanent_ssh_down');process.exit(255);"`,
+    cancel: 'echo {job} >> cancels',
+    collect: '{run}/metrics.json',
+    poll: 1,
+  });
+  await f2.initialize(o2, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [30] });
+  await f2.http('POST', { op: 'runCycle', objective: o2.id });
+  const r2 = (await until(f2.read, (s) => s.experiments[o2.id].rounds.at(-1)?.runs?.[0]?.state === 'failed', 'failed async poll run', 15000)).experiments[o2.id].rounds.at(-1);
+  assert.equal(r2.runs[0].state, 'failed');
+  assert.equal(r2.runs[0].retries, 1);
+  assert.match(r2.runs[0].error.raw, /4 consecutive poll failures/);
+  assert.equal((await readFile(join(f2.project, 'cancels'), 'utf8')).trim().split('\n').length, 2);
+});
