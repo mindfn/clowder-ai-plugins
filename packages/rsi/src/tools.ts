@@ -82,7 +82,13 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
   const evaluate = d.members.find((m) => m.role === 'evaluate')?.catId === ctx.catId && d.rounds.find((r: Data) => r.state === 'evaluating');
   const version = d.members.find((m) => m.role === 'iterate')?.catId === ctx.catId && d.versionRequest;
   const analyze = d.rounds.find((r: Data) => r.analysis?.waiting.includes(ctx.catId));
-  if (!steps.length && !evaluate && !version && !analyze) return { error: 'It is not this member’s turn', status: 403 };
+  if (!steps.length && !evaluate && !version && !analyze) {
+    const latest = d.rounds.at(-1);
+    if (latest?.analysis?.missing?.includes(ctx.catId)) {
+      return { error: `第 ${latest.n} 周期的方向讨论已超时收口（结论卡片已发出），本轮无需再提交方向。`, status: 409 };
+    }
+    return { error: 'It is not this member’s turn', status: 403 };
+  }
   if (evaluate) evaluate.invocationId = ctx.invocationId;
   if (analyze) (analyze.analysis.turns ||= {})[ctx.catId] = ctx.invocationId;
   if (version) version.invocationId = ctx.invocationId;
@@ -137,6 +143,9 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
   if (method === 'rsi.propose') {
     const cycle = Number(input.cycle), round = d.rounds.find((r: Data) => r.n === cycle);
     if (!round) return { error: `Cycle ${JSON.stringify(input.cycle)} not found: pass the number in rsi.task analyze.cycle`, status: 404 };
+    if (round.analysis?.missing?.includes(ctx.catId)) {
+      return { error: `第 ${round.n} 周期的方向讨论已超时收口（结论卡片已发出），本轮无法补交方向。`, status: 409 };
+    }
     if (round.analysis?.turns?.[ctx.catId] !== ctx.invocationId) return { error: 'Call rsi.task on the direction turn first', status: 403 };
     return propose(state, d, { ...input, cycle }, ctx.catId, now);
   }

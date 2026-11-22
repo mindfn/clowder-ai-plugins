@@ -1802,3 +1802,26 @@ test('explore cycles with reservedSeeds fail closed on default timeout continuat
   assert.deepEqual(r4.plan.reservedSeeds, [15]);
   assert.equal(r4.runs[0].state, 'done');
 });
+
+test('timed-out discussion analysts receive explicit 409 window-closed errors on rsi_task and rsi_propose instead of generic 403', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [10] });
+  const cats = [{ id: 'ana-1', name: '甲', model: 'm1' }, { id: 'ana-2', name: '乙', model: 'm2' }];
+  for (const c of cats) assert.equal((await f.http('POST', { op: 'analystAdd', objective: o.id, catId: c.id, cats })).status, 200);
+  await execute(f, o);
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 10, 15, 20, 0).getTime() });
+  await report(f, o, 'keep');
+  // ana-1 proposes in time; ana-2 misses the 20-minute ANALYSIS_LIMIT window.
+  await f.tool('task', {}, 'ana-1', o.thread);
+  const p = await f.tool('propose', { cycle: 1, options: [{ k: 'a', title: 'opt a', why: 'reason', kind: 'code', target: 'lr' }] }, 'ana-1', o.thread);
+  assert.equal(p.ok, true);
+  t.mock.timers.setTime(new Date(2026, 10, 15, 20, 21).getTime());
+  await f.activation().actions['rsi.tick']();
+  t.mock.timers.reset();
+  const lateTask = await f.tool('task', {}, 'ana-2', o.thread);
+  assert.equal(lateTask.status, 409);
+  assert.match(lateTask.error, /第 1 周期的方向讨论已超时收口/);
+  const latePropose = await f.tool('propose', { cycle: 1, options: [{ k: 'b', title: 'opt b', why: 'reason' }] }, 'ana-2', o.thread);
+  assert.equal(latePropose.status, 409);
+  assert.match(latePropose.error, /第 1 周期的方向讨论已超时收口/);
+});

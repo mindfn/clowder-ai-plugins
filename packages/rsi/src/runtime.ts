@@ -145,7 +145,7 @@ export function createRuntime(host: RsiHost) {
     // the busy check below only guards starting a new cycle.
     const now = Date.now();
     const analysisLate = (r: Data) => r.analysis?.waiting.length && now - r.analysis.since > ANALYSIS_LIMIT;
-    const decisionLate = (x: Experiment, r: Data) => x.objective.state === 'pending' && r.asked && !r.decision && !r.plan?.reservedSeeds?.length && !x.upcoming?.requiresExplicitPlan && now - r.asked > DECISION_WAIT && insideWindow(x.policy.schedule, now);
+    const decisionLate = (x: Experiment, r: Data) => x.objective.state === 'pending' && r.asked && !r.decision && !(r.plan?.reservedSeeds?.length && !x.candidate) && !x.upcoming?.requiresExplicitPlan && now - r.asked > DECISION_WAIT && insideWindow(x.policy.schedule, now);
     const repairLate = (x: Experiment) => x.versionRequest?.repair && now - x.versionRequest.since > REPAIR_WAIT;
     const late = (state: import('./types.js').RsiState) => Object.values(state.experiments).some((x) => repairLate(x) || nightDue(x, now) || x.rounds.some((r: Data) => analysisLate(r) || decisionLate(x, r)));
     for (const [key, entry] of owners) if (late(entry.value)) {
