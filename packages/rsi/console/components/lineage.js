@@ -229,8 +229,10 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
         });
         if (hasPair) {
           const lead = m.candidates && m.candidates[0];
+          const dirHint = m.dir === 'down' ? '越小越好' : '越大越好';
+          const deltaTip = lead && lead.better === 'better' ? '变好（' + dirHint + '）' : lead && lead.better === 'worse' ? '变差（' + dirHint + '）' : '持平（' + dirHint + '）';
           const deltaHtml = lead && lead.delta != null
-            ? '<span class="rsi-mx-delta" data-better="' + h(lead.better || '') + '">' + h(lead.delta) + '</span>'
+            ? '<span class="rsi-mx-delta" data-better="' + h(lead.better || '') + '" title="' + h(deltaTip) + '">' + h(lead.delta) + '</span>'
             : '<span class="rsi-mx-empty">—</span>';
           cellsHtml += '<td class="rsi-mx-col-d">' + deltaHtml + '</td>';
         }
