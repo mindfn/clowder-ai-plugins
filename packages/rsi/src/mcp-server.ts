@@ -209,6 +209,49 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
       },
     },
   },
+  {
+    name: 'rsi_status',
+    method: 'rsi.status',
+    description:
+      '纯只读查询评估项的真实状态与数据（零副作用、不受回合轮次限制）。在评估项线程内传 {} 查当前评估项；跨线程可传 { objectiveId, cycle? }，不传 objectiveId 则列出当前 owner 下全部真实评估项。',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        objectiveId: { type: 'string', minLength: 1, description: '可选评估项 ID（跨线程查询时传入）。' },
+        cycle: { type: 'integer', minimum: 1, description: '可选查看指定周期号的运行/结论详情；省略则返回最新周期。' },
+      },
+    },
+  },
+  {
+    name: 'rsi_operate',
+    method: 'rsi.operate',
+    description:
+      '受托管理操作工具：仅当评估项的委托负责人（policy.manager）被主人指定为当前成员时可用。支持代为采纳方向（expDecide）、确认准备项（prepConfirm）、重做步骤（initStepRefresh/initRetry）、切换步骤成员（stepMember）、暂停/恢复/开始/重试（life）、手动跑一轮（runCycle）以及重新触发阶段（evalAgain/discussAgain/versionAgain）；不可修改委托负责人或停机/删除策略。',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['op'],
+      properties: {
+        op: {
+          type: 'string',
+          enum: ['expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain'],
+          description: '要执行的受托管理操作。',
+        },
+        objectiveId: { type: 'string', minLength: 1, description: '可选评估项 ID（跨线程代操作时传入）。' },
+        n: { type: 'integer', minimum: 1, description: '周期号（expDecide 必填，evalAgain 可选）。' },
+        pick: { type: 'string', enum: ['direction', 'same', 'info', 'addVar', 'metric', 'goal'], description: 'expDecide 的决策类型。' },
+        directionId: { type: 'string', minLength: 1, description: 'expDecide pick="direction" 时的方向 ID。' },
+        note: { type: 'string', description: 'expDecide 的说明（info/addVar/metric/goal 必填）。' },
+        itemId: { type: 'string', minLength: 1, description: 'prepConfirm 确认单个待确认条目 ID。' },
+        section: { type: 'string', minLength: 1, description: 'prepConfirm 批量确认某步全部待确认项，或作为步骤编号/名称。' },
+        k: { type: 'string', minLength: 1, description: 'initStepRefresh / initRetry / stepMember 的步骤名或编号（1–7 / goal/scope/run/rules/design/feedback/baseline）。' },
+        catId: { type: 'string', minLength: 1, description: 'stepMember 要切换的目标成员 catId。' },
+        action: { type: 'string', enum: ['start', 'pause', 'resume', 'retry'], description: 'life 生命周期动作。' },
+        force: { type: 'boolean', description: 'initRetry 强制重新叫醒。' },
+      },
+    },
+  },
 ];
 
 const TOOL_BY_NAME = new Map<string, RsiMcpToolDef>();

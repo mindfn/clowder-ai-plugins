@@ -964,6 +964,8 @@ exp:
     editRepair: 改出错自动修
     editStop: 改何时停
     repair: 出错自动修
+    manager: 委托负责人
+    managerNone: 仅我本人（默认）
     stop: 何时停
     seeds: 每组种子
     vars: 允许 agent 调的变量

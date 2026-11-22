@@ -1,5 +1,6 @@
 import { RSI_CP_INIT, createFixtures } from './fixtures.js';
-import { submitInitStep, enqueue, kick, message, STOP_TARGET, syncObjective } from './init.js';
+import { act } from './actions.js';
+import { submitInitStep, enqueue, kick, message, prepSettled, stepMemberOf, STOP_TARGET, syncObjective } from './init.js';
 import { abandonRepair, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, validateReservedSeeds, validPlan } from './cycles.js';
 import { parseScheduleText } from './schedule.js';
 import { record, text } from './store.js';
@@ -292,4 +293,239 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     }
   }
   return submitInitStep(state, d.objective.id, { ...submission, ...(section === 'run' ? { executor: d.executor } : {}) }, now);
+}
+
+function findRealObjective(state: RsiState, input: Data, ctx: ToolContext): Experiment | undefined {
+  if (text(input.objectiveId)) {
+    const target = state.experiments[input.objectiveId.trim()];
+    return target?.objective.projectPath ? target : undefined;
+  }
+  return Object.values(state.experiments).find((x) => x.objective.projectPath && x.objective.thread === ctx.threadId);
+}
+
+function summarizeRound(round: Data) {
+  return {
+    n: round.n,
+    state: round.state,
+    version: round.version,
+    start: round.start ?? null,
+    end: round.end ?? null,
+    plan: round.plan,
+    runs: (round.runs || []).map((r: Data) => ({
+      id: r.id,
+      group: r.group,
+      seed: r.seed,
+      state: r.state,
+      jobId: r.jobId || null,
+      retries: r.retries || 0,
+      error: r.error || null,
+      metrics: r.metrics || {},
+    })),
+    report: round.report ? {
+      verdict: round.report.verdict,
+      headline: round.report.headline,
+      agree: round.report.agree,
+      confirmation: round.report.confirmation || null,
+      directions: (round.report.directions || []).map((x: Data) => ({
+        id: x.id,
+        title: x.title,
+        kind: x.kind || null,
+        target: x.target || null,
+        by: x.by || null,
+      })),
+    } : null,
+    decision: round.decision || null,
+    analysis: round.analysis ? {
+      waiting: round.analysis.waiting || [],
+      missing: round.analysis.missing || [],
+      since: round.analysis.since ?? null,
+      claimed: Object.keys(round.analysis.turns || {}),
+    } : null,
+  };
+}
+
+// Pure read-only status snapshot for any member under the authenticated owner; zero state mutations.
+export function statusAction(state: RsiState, raw: Data, ctx: ToolContext): Data {
+  const input: Data = Object.fromEntries(Object.entries(raw || {}).map(([k, v]) => [k, structured(v)]));
+  if (text(input.objectiveId)) {
+    const d = findRealObjective(state, input, ctx);
+    if (!d) return { error: `RSI objective ${JSON.stringify(input.objectiveId)} not found`, status: 404 };
+    return projectStatus(d, input);
+  }
+  const inThread = findRealObjective(state, {}, ctx);
+  if (!inThread) {
+    const objectives = Object.values(state.experiments).filter((x) => x.objective.projectPath).map((x) => ({
+      id: x.objective.id,
+      name: x.objective.name,
+      state: x.objective.state,
+      round: x.objective.round,
+      currentVersion: x.objective.currentVersion,
+      thread: x.objective.thread || null,
+      projectPath: x.objective.projectPath,
+      manager: x.policy?.manager?.catId || null,
+    }));
+    return { objectives };
+  }
+  return projectStatus(inThread, input);
+}
+
+function projectStatus(d: Experiment, input: Data): Data {
+  let round: Data | null = null;
+  if (input.cycle !== undefined) {
+    const n = Number(input.cycle);
+    if (!Number.isInteger(n) || n < 1) return { error: 'cycle must be a positive integer', status: 400 };
+    const found = d.rounds.find((r: Data) => r.n === n);
+    if (!found) return { error: `Cycle ${n} not found`, status: 404 };
+    round = summarizeRound(found);
+  } else if (d.rounds.length) {
+    round = summarizeRound(d.rounds.at(-1)!);
+  }
+  const evaluating = d.rounds.find((r: Data) => r.state === 'evaluating');
+  const running = d.rounds.find((r: Data) => r.state === 'running');
+  const interrupted = d.rounds.find((r: Data) => r.state === 'interrupted');
+  const discussing = d.rounds.find((r: Data) => r.analysis?.waiting?.length);
+  const undecided = d.rounds.find((r: Data) => r.report && !r.decision && !r.analysis?.waiting?.length);
+  return {
+    objective: {
+      id: d.objective.id,
+      name: d.objective.name,
+      state: d.objective.state,
+      resumeTo: d.objective.resumeTo || null,
+      round: d.objective.round,
+      currentVersion: d.objective.currentVersion,
+      projectPath: d.objective.projectPath,
+      thread: d.objective.thread || null,
+      stop: d.objective.stop || null,
+      budget: d.objective.budget || null,
+    },
+    policy: {
+      manager: d.policy?.manager || null,
+      auto: d.policy?.auto ?? null,
+      repair: d.policy?.repair ?? null,
+      schedule: d.policy?.schedule || null,
+    },
+    members: d.members.map((m) => ({ role: m.role, catId: m.catId, name: m.name, ...(m.handle ? { handle: m.handle } : {}) })),
+    stepMembers: d.stepMembers || {},
+    executor: {
+      state: d.executor.state,
+      off: !!d.executor.off,
+      commands: d.executor.commands || null,
+      timeout: d.executor.timeout ?? null,
+      poll: d.executor.poll ?? null,
+      failureField: d.executor.failureField ?? null,
+      resultMap: d.executor.resultMap || [],
+      probe: d.executor.probe ? { at: d.executor.probe.at, error: d.executor.probe.error } : null,
+    },
+    prepSettled: prepSettled(d),
+    steps: d.plan.map((p, i) => ({
+      step: i + 1,
+      k: p.k,
+      rev: d.steps?.[p.k]?.rev ?? 0,
+      stale: !!d.steps?.[p.k]?.stale,
+      redo: !!d.steps?.[p.k]?.redo,
+      member: stepMemberOf(d, p.k)?.catId || null,
+      exec: d.exec?.[p.k] ? { state: d.exec[p.k]!.state, by: d.exec[p.k]!.by } : null,
+      pendingHumanItems: d.prep
+        .filter((x) => x.section === p.k && x.neededFrom === 'human' && x.state !== 'confirmed')
+        .map((x) => ({ id: x.id, title: x.title, state: x.state })),
+    })),
+    active: {
+      runningCycle: running?.n ?? null,
+      evaluatingCycle: evaluating?.n ?? null,
+      discussingCycle: discussing?.n ?? null,
+      analysisWaiting: discussing?.analysis?.waiting || [],
+      pendingDecisionCycle: undecided?.n ?? null,
+      interruptedCycle: interrupted?.n ?? null,
+      versionRequest: d.versionRequest ? {
+        cycle: d.versionRequest.cycle,
+        title: d.versionRequest.title,
+        direct: !!d.versionRequest.direct,
+        repair: !!d.versionRequest.repair,
+        claimed: !!d.versionRequest.invocationId,
+      } : null,
+    },
+    upcoming: d.upcoming || null,
+    versions: d.versions.map((v: Data) => ({
+      id: v.id,
+      parent: v.parent ?? null,
+      commit: v.commit || null,
+      status: v.status || null,
+      current: !!v.current,
+      change: v.change || '',
+    })),
+    round,
+  };
+}
+
+const DELEGATED_OPS = new Set([
+  'expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain',
+]);
+
+// Delegated operator control: strictly gated to the owner-designated policy.manager catId.
+export function operateAction(state: RsiState, raw: Data, ctx: ToolContext, now: number): Data {
+  const input: Data = Object.fromEntries(Object.entries(raw || {}).map(([k, v]) => [k, structured(v)]));
+  const d = findRealObjective(state, input, ctx);
+  if (!d) return { error: 'No matching real RSI objective found', status: 404 };
+  const manager = d.policy?.manager;
+  if (!manager?.catId || manager.catId !== ctx.catId) {
+    return {
+      error: manager?.catId
+        ? `Only the owner-designated manager (${manager.name || manager.catId}) may call rsi_operate`
+        : 'No delegated manager is set for this objective; the owner must select policy.manager in the RSI console first',
+      status: 403,
+    };
+  }
+  const op = typeof input.op === 'string' ? input.op.trim() : '';
+  if (!DELEGATED_OPS.has(op)) {
+    return { error: `Unsupported rsi_operate op ${JSON.stringify(op)}; allowed: ${[...DELEGATED_OPS].join(', ')}`, status: 400 };
+  }
+  const project = Object.keys(state.objectives).find((k) => state.objectives[k].some((o) => o.id === d.objective.id)) || d.objective.projectId;
+  const query = { project, pick: `obj:${d.objective.id}` };
+  const actor = `${manager.name || ctx.catId}（受托）`;
+
+  if (op === 'prepConfirm') {
+    if (text(input.itemId)) {
+      const res = act(state, { op: 'prep', objective: d.objective.id, id: input.itemId.trim(), action: 'confirm' }, query, now, actor);
+      return res.error ? res : { ok: true, confirmed: [input.itemId.trim()], prepSettled: prepSettled(d) };
+    }
+    const section = input.section !== undefined ? currentStep(d, { step: input.section }) : undefined;
+    if (!section) return { error: 'Provide itemId or valid section (1–7 or goal/scope/run/rules/design/feedback/baseline)' };
+    const pending = d.prep.filter((x) => x.section === section && x.neededFrom === 'human' && x.state !== 'confirmed');
+    const confirmed: string[] = [];
+    for (const item of pending) {
+      const res = act(state, { op: 'prep', objective: d.objective.id, id: item.id, action: 'confirm' }, query, now, actor);
+      if (res.error) return res;
+      confirmed.push(item.id);
+    }
+    return { ok: true, section, confirmed, prepSettled: prepSettled(d) };
+  }
+  if (op === 'expDecide') {
+    const n = Number(input.n);
+    if (!Number.isInteger(n) || n < 1) return { error: 'Provide cycle number n' };
+    const pick = typeof input.pick === 'string' ? input.pick : '';
+    if (!['direction', 'same', 'info', 'addVar', 'metric', 'goal'].includes(pick)) return { error: 'Invalid pick' };
+    if (pick !== 'direction' && pick !== 'same' && !text(input.note)) return { error: 'Provide note for info/addVar/metric/goal decisions' };
+    return act(state, { op: 'expDecide', objective: d.objective.id, n, pick, directionId: input.directionId, note: input.note }, query, now, actor);
+  }
+  if (op === 'life') {
+    const action = typeof input.action === 'string' ? input.action : '';
+    if (!['start', 'pause', 'resume', 'retry'].includes(action)) return { error: 'life action must be start, pause, resume, or retry' };
+    return act(state, { op: 'life', objective: d.objective.id, action }, query, now, actor);
+  }
+  if (op === 'stepMember') {
+    const k = currentStep(d, { step: input.k ?? input.section });
+    if (!k || !text(input.catId)) return { error: 'Provide valid step k/section and catId' };
+    const known = [
+      ...d.members,
+      ...Object.values<Data>(d.stepMembers || {}),
+      ...(d.policy?.manager ? [d.policy.manager] : []),
+    ].filter((m) => m?.catId).map((m) => ({ id: m.catId, name: m.name, model: m.model, handle: m.handle }));
+    return act(state, { op: 'stepMember', objective: d.objective.id, k, v: input.catId.trim(), cats: known }, query, now, actor);
+  }
+  if (op === 'initStepRefresh' || op === 'initRetry') {
+    const k = currentStep(d, { step: input.k ?? input.section });
+    if (!k) return { error: 'Provide valid step k/section (1–7 or section name)' };
+    return act(state, { op, objective: d.objective.id, k, ...(input.force !== undefined ? { force: input.force } : {}) }, query, now, actor);
+  }
+  return act(state, { op, objective: d.objective.id, ...(input.n !== undefined ? { n: input.n } : {}) }, query, now, actor);
 }

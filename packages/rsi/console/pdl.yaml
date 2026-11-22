@@ -1085,6 +1085,29 @@ views:
                       args:
                         request: repairInline
                         objective: $.exp.id
+                  - label: t:rsi.exp.pol.manager
+                    control:
+                      type: select
+                      id: rsi-pol-manager
+                      label: t:rsi.exp.pol.manager
+                      value: $.exp.policy.managerId
+                      options:
+                        - v: ""
+                          label: t:rsi.exp.pol.managerNone
+                        - from: $.members.rows
+                          item:
+                            v: "@id"
+                            label:
+                              t: rsi.memberOption
+                              args:
+                                - "@name"
+                                - "@handle"
+                            when: "@on"
+                      change: plugin
+                      args:
+                        request: managerInline
+                        objective: $.exp.id
+                        cats: $.members.rows
               - type: settings
                 when: "!$.exp.projectPath"
                 rows:
@@ -6833,6 +6856,18 @@ requests:
       op: repair
       objective: "@objective"
       v: "@v"
+  managerInline:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: manager
+      objective: "@objective"
+      v: "@v"
+      cats: "@cats"
   stopInline:
     path: rsi/act
     method: POST

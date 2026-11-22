@@ -3,7 +3,7 @@ import { act } from './actions.js';
 import { createRuntime } from './runtime.js';
 import { mergeProjects, projects } from './projects.js';
 import { isState, load, ownerKey, readState, record, update } from './store.js';
-import { toolAction } from './tools.js';
+import { operateAction, statusAction, toolAction } from './tools.js';
 import type { Data, Experiment, OwnerContext, RsiHost, ToolContext } from './types.js';
 export { ownerKey, readState } from './store.js';
 
@@ -82,12 +82,20 @@ export function createRsi(host: RsiHost) {
       await ctx.assertCurrent();
       await ready;
       const key = ownerKey(ctx.userId);
+      if (method === 'rsi.status') {
+        const stored = await readState(host.storage, key);
+        if (!stored || !isState(stored.value)) return { error: 'No RSI objective for this owner', status: 404 };
+        return statusAction(stored.value, input, ctx);
+      }
       if (!(await host.storage.get(key))) return { error: 'No RSI objective for this owner', status: 404 };
       const result = await update(host.storage, key, (state) => {
-        const before = state.outbox.length, result = toolAction(state, method, input, ctx, Date.now());
+        const before = state.outbox.length;
+        const result = method === 'rsi.operate'
+          ? operateAction(state, input, ctx, Date.now())
+          : toolAction(state, method, input, ctx, Date.now());
         if (result.error) return result;
-        // Steps that became this member's while it is still in this turn: tell it here instead of waking it again.
-        const mine = state.outbox.slice(before).filter((e) => e.kind === 'agent' && e.member === ctx.catId && !e.sent);
+        // Steps that became this member's while it is still in this turn (same thread): tell it here instead of waking it again.
+        const mine = state.outbox.slice(before).filter((e) => e.kind === 'agent' && e.member === ctx.catId && e.thread === ctx.threadId && !e.sent);
         for (const e of mine) e.inTurn = ctx.invocationId;
         const steps = mine.filter((e) => e.section).map((e) => state.experiments[e.objective].plan.findIndex((p) => p.k === e.section) + 1);
         const turns = [...(steps.length ? [`第 ${steps.join('、')} 步`] : []), ...mine.filter((e) => !e.section).map((e) => `「${e.message?.title}」`)].join('、');

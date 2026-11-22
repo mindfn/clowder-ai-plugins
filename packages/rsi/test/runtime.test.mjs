@@ -2024,3 +2024,90 @@ test('tick surfaces one-shot unclaimed wake reminders after 10 min for evaluate,
   msgs = (await f.read()).experiments[o.id].messages;
   assert.equal(msgs.filter((m) => /第 1 周期出版本.*10 分钟仍未认领/.test(m.title)).length, 2);
 });
+
+test('rsi_status reads full objective state anytime without 403 or mutations, including cross-thread listing and cycle lookup', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [81] });
+  await execute(f, o);
+  await report(f, o, 'keep', [{ k: 'opt1', title: 'next opt', why: 'reason', kind: 'code', target: 'lr' }]);
+
+  // 1) Inside objective thread when it is NOT caller's turn (rsi_task returns 403), rsi_status returns full live snapshot.
+  const task403 = await f.tool('task', {}, 'codex', o.thread);
+  assert.equal(task403.status, 403);
+  const st = await f.tool('status', {}, 'codex', o.thread);
+  assert.equal(st.objective.id, o.id);
+  assert.equal(st.objective.state, 'pending');
+  assert.equal(st.executor.state, 'passed');
+  assert.equal(st.prepSettled, true);
+  assert.equal(st.active.pendingDecisionCycle, 1);
+  assert.equal(st.round.n, 1);
+  assert.equal(st.round.report.verdict, 'keep');
+  assert.equal(st.round.report.directions[0].id, 'next');
+
+  // 2) Outside objective thread without objectiveId lists real objectives; with objectiveId + cycle inspects exact cycle.
+  const listed = await f.tool('status', {}, 'manager-cat', 'other-thread');
+  assert.equal(listed.objectives.length, 1);
+  assert.equal(listed.objectives[0].id, o.id);
+  const cross = await f.tool('status', { objectiveId: o.id, cycle: 1 }, 'manager-cat', 'other-thread');
+  assert.equal(cross.objective.id, o.id);
+  assert.equal(cross.round.n, 1);
+  const missingCycle = await f.tool('status', { objectiveId: o.id, cycle: 99 }, 'manager-cat', 'other-thread');
+  assert.equal(missingCycle.status, 404);
+});
+
+test('rsi_operate enforces owner-designated policy.manager gate, records delegated attribution, blocks privilege escalation, and wakes cross-thread parallel-self cleanly', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [91] });
+  await execute(f, o);
+  await report(f, o, 'keep', [{ k: 'opt1', title: 'next opt', why: 'reason', kind: 'code', target: 'lr' }]);
+
+  // 1) Without policy.manager set, rsi_operate fails closed with 403.
+  const noMgr = await f.tool('operate', { op: 'life', action: 'pause' }, 'mgr-cat', o.thread);
+  assert.equal(noMgr.status, 403);
+
+  // 2) Owner designates mgr-cat as policy.manager via HTTP op: 'manager'; non-manager still gets 403.
+  const cats = [{ id: 'mgr-cat', name: '墨墨', model: 'm', handle: '@gemini' }, { id: 'codex', name: '砚砚', model: 'm', handle: '@codex' }];
+  assert.equal((await f.http('POST', { op: 'manager', objective: o.id, v: 'mgr-cat', cats })).status, 200);
+  const viewAfter = (await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` }));
+  assert.equal(viewAfter.policy.managerId, 'mgr-cat');
+  assert.equal((await f.tool('operate', { op: 'life', action: 'pause' }, 'codex', o.thread)).status, 403);
+
+  // 3) Unauthorized ops (e.g. changing manager / deleting objective) are rejected with 400.
+  assert.equal((await f.tool('operate', { op: 'manager', objectiveId: o.id }, 'mgr-cat', 'infra-thread')).status, 400);
+  assert.equal((await f.tool('operate', { op: 'delete', objectiveId: o.id }, 'mgr-cat', 'infra-thread')).status, 400);
+
+  // 4) Designated manager operates cross-thread: pause -> resume -> initStepRefresh(run) -> expDecide -> prepConfirm(section).
+  assert.equal((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'pause' }, 'mgr-cat', 'infra-thread')).ok, true);
+  assert.equal((await f.read()).experiments[o.id].objective.state, 'paused');
+  assert.equal((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'resume' }, 'mgr-cat', 'infra-thread')).ok, true);
+  assert.equal((await f.read()).experiments[o.id].objective.state, 'pending');
+
+  // Switch step 3 owner to mgr-cat itself and refresh from another thread -> must still send a real wake in objective thread (not suppressed by inTurn!).
+  assert.equal((await f.tool('operate', { op: 'stepMember', objectiveId: o.id, k: 'run', catId: 'mgr-cat' }, 'mgr-cat', 'infra-thread')).ok, true);
+  const sendsBefore = f.sends.length;
+  assert.equal((await f.tool('operate', { op: 'initStepRefresh', objectiveId: o.id, k: 'run' }, 'mgr-cat', 'infra-thread')).ok, true);
+  const stepWake = f.sends.slice(sendsBefore).find((s) => s.wake?.catId === 'mgr-cat' && s.threadId === o.thread);
+  assert.ok(stepWake, 'cross-thread rsi_operate must still wake parallel-self in objective thread');
+
+  // Re-submit step 3 then batch-confirm pending human items via rsi_operate prepConfirm.
+  await f.tool('task', {}, 'mgr-cat', o.thread);
+  assert.equal((await f.tool('executor', { ...f.commands, poll: 7 }, 'mgr-cat', o.thread)).state, 'probing');
+  await until(f.read, (s) => s.experiments[o.id].executor.state === 'passed');
+  const runItems = (await f.read()).experiments[o.id].prep.filter((p) => p.section === 'run').map((p) => ({ id: p.id, title: p.title, value: p.value }));
+  assert.equal((await f.tool('submit', { step: 'run', items: runItems }, 'mgr-cat', o.thread)).ok, true);
+  const confirmed = await f.tool('operate', { op: 'prepConfirm', objectiveId: o.id, section: 'run' }, 'mgr-cat', 'infra-thread');
+  assert.equal(confirmed.ok, true);
+  assert.equal(confirmed.prepSettled, true);
+  assert.ok((await f.read()).experiments[o.id].prep.filter((p) => p.section === 'run' && p.neededFrom === 'human').every((p) => p.by === '墨墨（受托）'));
+
+  // Delegated expDecide records delegated attribution and wakes iterate member.
+  const decided = await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 1, pick: 'direction', directionId: 'next' }, 'mgr-cat', 'infra-thread');
+  assert.equal(decided.ok, true);
+  const exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.rounds[0].decision.by, '墨墨（受托）');
+  assert.equal(exp.versionRequest.cycle, 1);
+
+  // 5) Owner revokes policy.manager -> mgr-cat immediately gets 403 again.
+  assert.equal((await f.http('POST', { op: 'manager', objective: o.id, v: '' })).status, 200);
+  assert.equal((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'pause' }, 'mgr-cat', 'infra-thread')).status, 403);
+});

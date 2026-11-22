@@ -29,7 +29,7 @@ function createMemoryPair() {
   };
 }
 
-test('native RSI MCP server declares 6 flat strong-typed tools with zero oneOf and completes MCP handshake', async () => {
+test('native RSI MCP server declares 8 flat strong-typed tools with zero oneOf and completes MCP handshake', async () => {
   const manifest = parse(readFileSync(new URL('../plugin.yaml', import.meta.url), 'utf8'));
   const mcpDecl = manifest.contributions.find((c) => c.type === 'mcp' && c.id === 'rsi-native');
   assert.ok(mcpDecl);
@@ -74,7 +74,7 @@ test('native RSI MCP server declares 6 flat strong-typed tools with zero oneOf a
 
   const listRes = await pair.rpc({ jsonrpc: '2.0', id: 3, method: 'tools/list' });
   assert.deepEqual(listRes.result.tools.map((t) => t.name), [
-    'rsi_task', 'rsi_submit', 'rsi_executor', 'rsi_version', 'rsi_conclude', 'rsi_propose',
+    'rsi_task', 'rsi_submit', 'rsi_executor', 'rsi_version', 'rsi_conclude', 'rsi_propose', 'rsi_status', 'rsi_operate',
   ]);
   // No fragile oneOf constructs anywhere in native MCP schemas
   assert.equal(JSON.stringify(listRes.result.tools).includes('"oneOf"'), false);

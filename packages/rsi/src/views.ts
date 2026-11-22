@@ -120,6 +120,7 @@ function policyOf(d: Data, o: Data, nowTs = Date.now()) {
     stopTarget: stop.target || '', stopTargetText: stop.target || '不限制',
     stopRounds: stop.maxCycles || '', stopRoundsValue: stop.maxCycles ? String(stop.maxCycles) : '', stopRoundsText: stop.maxCycles ? `${stop.maxCycles} 个周期` : '不限制',
     stopText: stopText(stop), autoKey: autoKey(d.policy.auto || AUTO.default) || 'default',
+    managerId: d.policy.manager?.catId || '', managerName: d.policy.manager?.name || '',
   };
   if (!o.projectPath) return Object.assign({}, d.policy, shared, { autoText: tc('rsi.exp.pol.autoText') });
   const plan = d.upcoming || (d.rounds.length ? d.rounds[d.rounds.length - 1].plan : null), tried: Data = {};

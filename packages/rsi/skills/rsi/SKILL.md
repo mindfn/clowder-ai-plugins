@@ -5,7 +5,7 @@ description: Participate in a Clowder AI RSI (capability evolution) objective th
 
 # RSI (Capability Evolution)
 
-The installed `official.rsi` plugin registers a native MCP server (`rsi-native`) with six strongly typed tools:
+The installed `official.rsi` plugin registers a native MCP server (`rsi-native`) with eight strongly typed tools:
 
 - `rsi_task` — Claim your current turn and read the objective, project path, active step(s), dependency versions, or evaluation/discussion/version context.
 - `rsi_submit` — Submit an initialization step (`"1"`–`"7"` or `goal`/`scope`/`run`/`rules`/`design`/`feedback`/`baseline`).
@@ -13,6 +13,8 @@ The installed `official.rsi` plugin registers a native MCP server (`rsi-native`)
 - `rsi_conclude` — Submit a cycle evaluation (`cycle`, `verdict`, `findings`, optional `options` / `comparisons`).
 - `rsi_propose` — Submit direction proposals during cycle discussion (`cycle`, `options`).
 - `rsi_version` — Deliver a new version or execution repair (`change`, optional `commit`, `config` or `configPath`, optional `changes`; or `cannot` when a repair is impossible).
+- `rsi_status` — Pure read-only inspection (`{}` inside an objective thread, `{ objectiveId, cycle? }` cross-thread, or `{}` outside an objective thread to list real objectives). Works anytime with zero side effects—never open a browser just to inspect RSI state.
+- `rsi_operate` — Delegated operator control (`expDecide`, `prepConfirm`, `initStepRefresh`, `initRetry`, `stepMember`, `life`, `runCycle`, `evalAgain`, `discussAgain`, `versionAgain`), strictly gated to the owner-designated `policy.manager`. Cannot modify `policy.manager`, stop conditions, or delete objectives.
 
 ## Core Rules
 

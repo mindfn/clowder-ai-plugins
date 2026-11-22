@@ -18,6 +18,8 @@ export default {
             'rsi.version': (input: unknown, ctx?: ToolContext) => handle.tool('rsi.version', input, ctx),
             'rsi.conclude': (input: unknown, ctx?: ToolContext) => handle.tool('rsi.conclude', input, ctx),
             'rsi.propose': (input: unknown, ctx?: ToolContext) => handle.tool('rsi.propose', input, ctx),
+            'rsi.status': (input: unknown, ctx?: ToolContext) => handle.tool('rsi.status', input, ctx),
+            'rsi.operate': (input: unknown, ctx?: ToolContext) => handle.tool('rsi.operate', input, ctx),
             'rsi.tick': () => handle.tick(),
             'rsi.delivery': (input: unknown) => handle.deliver(input),
           },

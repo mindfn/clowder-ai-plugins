@@ -964,6 +964,8 @@ exp:
     editRepair: Edit auto-repair
     editStop: Edit stop condition
     repair: Auto-repair
+    manager: Delegated manager
+    managerNone: Owner only (default)
     stop: Stop condition
     seeds: Seeds per group
     vars: Variables the agent may tune

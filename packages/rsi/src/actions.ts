@@ -21,7 +21,7 @@ function touched(state: RsiState, d: Experiment, item: Data, now: number, what: 
   message(state, d, now, `你${what}第 ${d.plan.findIndex((p) => p.k === item.section) + 1} 步「${item.title}」`, item.value + (stale.length ? `\n\n依赖它的第 ${stale.join('、')} 步已标过期；按新版本重做会按依赖顺序重新 @ 对应的成员。` : ''));
 }
 
-export function act(state: RsiState, body: Data, query: Data, now: number): Data {
+export function act(state: RsiState, body: Data, query: Data, now: number, actor = '你'): Data {
   const project = body.project || query.project || 'cartpole';
   if (!state.objectives[project]) return { error: 'Project not found', status: 404 };
   const id = selected(state, body, query), o = summaryOf(state, id), d = state.experiments[id];
@@ -63,7 +63,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       d.stepMembers ||= {};
       const nextMember = setMember({}, body.v, body.cats);
       d.stepMembers[section] = nextMember;
-      message(state, d, now, `你把第 ${d.plan.findIndex((p) => p.k === section) + 1} 步的分析成员换成了 ${nextMember.name}`, '仅影响该分析步骤，下次触发或重试时生效，不影响执行成员。', 'members');
+      message(state, d, now, `${actor}把第 ${d.plan.findIndex((p) => p.k === section) + 1} 步的分析成员换成了 ${nextMember.name}`, '仅影响该分析步骤，下次触发或重试时生效，不影响执行成员。', 'members');
       if (!d.exec?.[section] && (!d.steps?.[section] || (d.steps[section]!.stale && d.steps[section]!.redo))) kick(state, id, now);
       else syncObjective(state, d);
       return { ok: true };
@@ -77,6 +77,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       const roles = (['prepare', 'evaluate', 'iterate'] as const).filter((role) => typeof input[role] === 'string' && input[role] && input[role] !== d.members.find((m) => m.role === role)?.catId);
       refreshMembers(d.members, body.cats);
       if (d.stepMembers) refreshMembers(Object.values(d.stepMembers), body.cats);
+      if (d.policy?.manager?.catId) refreshMembers([d.policy.manager], body.cats);
       for (const role of roles) {
         const existing = d.members.find((m) => m.role === role);
         const member = existing ? setMember(existing, input[role], body.cats) : (() => { const m = setMember({ role }, input[role], body.cats); d.members.push(m); return m; })();
@@ -299,6 +300,28 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       message(state, d, now, '你改了夜里可以自己定的方向', text);
       return { ok: true };
     }
+    case 'manager': {
+      if (!d) return { error: 'Experiment not found', status: 404 };
+      const raw = body.v ?? body.catId;
+      if (raw !== undefined && raw !== null && typeof raw !== 'string') return { error: 'Invalid manager selection' };
+      const catId = typeof raw === 'string' ? raw.trim() : '';
+      d.policy ||= {};
+      if (!catId) {
+        delete d.policy.manager;
+        message(state, d, now, '你取消了委托负责人', '管理操作（确认准备项、采纳方向、重做步骤、暂停/恢复等）恢复为仅你本人通过页面操作。', 'members');
+      } else {
+        const known = d.members.find((m) => m.catId === catId) || Object.values<Data>(d.stepMembers || {}).find((m) => m?.catId === catId);
+        const manager = Array.isArray(body.cats) && body.cats.some((c: Data) => c.id === catId)
+          ? setMember({}, catId, body.cats)
+          : known
+            ? { catId: known.catId, name: known.name, model: known.model || '', ...(known.handle ? { handle: known.handle } : {}) }
+            : setMember({}, catId, body.cats);
+        d.policy.manager = manager;
+        message(state, d, now, `你把委托负责人设为了 ${manager.name}`, '该成员可通过原生 MCP 工具 rsi_operate 代为确认准备项、采纳方向、重做步骤、暂停/恢复与触发执行；可随时在策略区取消。', 'members');
+      }
+      syncObjective(state, d);
+      return { ok: true };
+    }
     case 'delete': {
       // The objective and its sub-objectives, with their data, pending messages and cycle notes. Files are removed by the runtime; the thread stays.
       const owner = Object.keys(state.objectives).find((k) => state.objectives[k].some((x) => x.id === body.objective));
@@ -405,7 +428,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       const edited = body.action === 'edit' && body.value !== item.value;
       if (body.action === 'edit') item.value = body.value;
       if (body.action === 'decide') item.decision = body.decision;
-      Object.assign(item, { state: 'confirmed', isDefault: false, by: '你', at: now });
+      Object.assign(item, { state: 'confirmed', isDefault: false, by: actor, at: now });
       if (edited && (item.id === 'cp-trigger' || item.section === 'run')) {
         const parsed = parseScheduleText(item.value);
         if (parsed) {
@@ -434,7 +457,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         if (prev) { prev.stale = true; prev.redo = true; }
         if (!(section === 'run' && d.rounds.length > 0)) rsiExpStaleFrom(d, section, false);
         if (d.objective.state === 'ready') d.objective.state = 'preparing';
-        message(state, d, now, `你触发了第 ${d.plan.findIndex((p) => p.k === section) + 1} 步重新分析`, '将按当前成员重新调研并保留历史版本快照。');
+        message(state, d, now, `${actor}触发了第 ${d.plan.findIndex((p) => p.k === section) + 1} 步重新分析`, '将按当前成员重新调研并保留历史版本快照。');
       } else {
         const section = body.k as Section;
         if (!d.plan.some((p) => p.k === section)) return { error: 'Initialization step not found', status: 404 };
@@ -466,6 +489,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       d.members = d.members.filter((m) => !(m.role === 'analyze' && m.catId === catId));
       refreshMembers(d.members, body.cats);
       if (d.stepMembers) refreshMembers(Object.values(d.stepMembers), body.cats);
+      if (d.policy?.manager?.catId) refreshMembers([d.policy.manager], body.cats);
       if (add) {
         const added = setMember({ role: 'analyze' }, catId, body.cats);
         d.members.push(added);
@@ -609,7 +633,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       if (body.pick !== 'direction' && body.pick !== 'same' && body.note == null) return { ok: true, act: 'dialog', args: { kind: 'rsiExpNote', n: body.n, pick: body.pick, directionId: body.directionId } };
       if (body.pick === 'direction' && !round.report.directions.some((x: Data) => x.id === body.directionId)) return { error: 'Direction not found', status: 404 };
       if (round.decision) return { error: 'Round already decided', status: 409 };
-      round.decision = { pick: body.pick, directionId: body.directionId ?? null, note: body.note ?? '', by: '你', at: now };
+      round.decision = { pick: body.pick, directionId: body.directionId ?? null, note: body.note ?? '', by: actor, at: now };
       const n = round.n + 1, current = round.plan.groups[0];
       if (d.objective.projectPath) {
         if (['done', 'paused', 'retired'].includes(d.objective.state)) return { ok: true };
