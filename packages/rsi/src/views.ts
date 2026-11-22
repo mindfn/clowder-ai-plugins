@@ -408,7 +408,7 @@ function exp(): any {
     const metrics = [lead, ...items.filter((m: Data) => m.guard), ...items.filter((m: Data) => m !== lead && !m.guard)].map((m: Data) => ({ id: m.id, name: m.name, role: m === lead ? 'main' : m.guard ? 'guard' : 'other', dir: m.dir,
       rule: m !== lead ? '' : m.margin !== undefined ? 'margin' : m.minDelta ? 'minDelta' : '', ruleValue: m.margin ?? m.minDelta, limit: m.guard && typeof m.threshold === 'number' ? m.dir : '', threshold: m.threshold,
       items: groups.map((g: Data) => row(g, m)) }));
-    const concludedRounds = rounds.filter((x: Data) => x.report);
+    const concludedRounds = rounds.filter((x: Data) => x.report && (x.n === r.n || (x.report.matrix || []).some((c: Data) => typeof c.mean === 'number' && Number.isFinite(c.mean))));
     const crossCols = concludedRounds.map((x: Data) => ({ cycle: x.n, label: `${x.version}-${x.k}`, version: x.version, current: x.n === r.n }));
     const seriesIds = new Set(trendSeries.map((s: Data) => s.id));
     const nonControlGroups = groups.filter((g: Data) => !g.control);

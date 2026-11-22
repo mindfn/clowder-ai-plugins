@@ -25,9 +25,9 @@
 .rsi-lin-grp:hover{color:var(--fg-strong)}
 .rsi-lin-tail{display:inline-flex;align-items:center;gap:var(--sp-s);color:var(--fg-muted);font-size:var(--fs-s)}
 
-.rsi-trend-wrap{width:100%;max-width:100%;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-m);background:var(--bg-group);padding:var(--sp-xs)}
+.rsi-trend-wrap{flex:none;width:100%;max-width:100%;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-m);background:var(--bg-group);padding:var(--sp-xs)}
 .rsi-trend-scroll{width:100%;overflow-x:auto}
-.rsi-trend{display:block;height:132px;flex:none}
+.rsi-trend{display:block;height:132px;min-height:132px;flex:none}
 .rsi-trend-grid{stroke:var(--line);stroke-width:1;opacity:.65}
 .rsi-trend-th{stroke:var(--warn);stroke-width:1.25;stroke-dasharray:4 3;opacity:.85}
 .rsi-trend-th-lbl{font-size:10px;fill:var(--warn);font-family:var(--font-mono)}
