@@ -1680,6 +1680,7 @@ test('async get polling tolerates up to 3 consecutive transient non-zero exits w
   assert.equal(r3.runs[0].state, 'failed');
   assert.equal(r3.runs[0].retries, 1);
   assert.equal(r3.runs[0].jobId, 'job-no-cancel');
+  assert.match(r3.runs[0].error.raw, /远端作业 job-no-cancel 未确认结束或取消/);
   assert.equal((await readFile(join(f3.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
 
   // Negative case 2: 4 consecutive poll errors where cancel exits non-zero (e.g. SSH still down) must retain jobId and never submit a second remote job.
@@ -1697,6 +1698,32 @@ test('async get polling tolerates up to 3 consecutive transient non-zero exits w
   assert.equal(r4.runs[0].state, 'failed');
   assert.equal(r4.runs[0].retries, 1);
   assert.equal(r4.runs[0].jobId, 'job-cancel-fail');
+  assert.match(r4.runs[0].error.raw, /远端作业 job-cancel-fail 未确认结束或取消/);
   assert.equal((await readFile(join(f4.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
   assert.equal((await readFile(join(f4.project, 'cancels'), 'utf8')).trim().split('\n').length, 2);
+});
+
+test('resuming a persisted async jobId after pollLost skips resource-gate preflight, preserves submit env, and collects results without cancelling', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  // Resource-gate preflight fails while the remote job holds the accelerator ({run}/busy exists).
+  Object.assign(f.commands, {
+    preflight: `node -e "const fs=require('fs');fs.appendFileSync('preflights','1\\n');if(fs.existsSync('busy')){console.error('npu_busy');process.exit(1);}console.log(JSON.stringify({python:'3.12.13',driver:'cann-8.0'}));"`,
+    submit: `node -e "const fs=require('fs');fs.appendFileSync('submits','1\\n');fs.writeFileSync('busy','1');console.log('job-busy-resume');"`,
+    get: `node -e "const fs=require('fs'),p=process.argv[1]+'/get-count';const n=(fs.existsSync(p)?Number(fs.readFileSync(p,'utf8')):0)+1;fs.writeFileSync(p,String(n));if(n<=4){console.error('ssh_blip');process.exit(255);}fs.rmSync('busy',{force:true});fs.writeFileSync(process.argv[1]+'/metrics.json',JSON.stringify({metrics:{score:99}}));console.log(JSON.stringify({state:'done',exitCode:0}));" {run}`,
+    collect: '{run}/metrics.json',
+    poll: 1,
+  });
+  delete f.commands.cancel;
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [33] });
+  await writeFile(join(f.project, 'preflights'), '');
+  const r = await execute(f, o);
+  assert.equal(r.runs[0].state, 'done');
+  assert.equal(r.runs[0].retries, 1);
+  assert.equal(r.runs[0].metrics.score, 99);
+  assert.equal(r.runs[0].env.python, '3.12.13');
+  assert.equal(r.runs[0].env.driver, 'cann-8.0');
+  assert.equal(r.runs[0].jobId, undefined);
+  assert.equal((await readFile(join(f.project, 'preflights'), 'utf8')).trim().split('\n').filter(Boolean).length, 1);
+  assert.equal((await readFile(join(f.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
+  assert.equal(await access(join(f.project, 'cancels')).then(() => true, () => false), false);
 });

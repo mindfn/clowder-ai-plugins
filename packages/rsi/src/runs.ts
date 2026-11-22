@@ -115,7 +115,8 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       });
       if (!acquired || stopped) continue;
       busy = d.objective.id; runId = run.id;
-      let metrics: Data = {}, env: Data = { seed: run.seed, hardware: { os: `${platform()} ${release()}`, arch: arch(), chip: cpus()[0]?.model || 'unknown' } };
+      const priorEnv = run.jobId ? (run.attempts?.slice().reverse().find((a: Data) => a.jobId === run.jobId && record(a.env))?.env || (record(run.env) ? run.env : null)) : null;
+      let metrics: Data = {}, env: Data = { ...(priorEnv || {}), seed: run.seed, hardware: { os: `${platform()} ${release()}`, arch: arch(), chip: cpus()[0]?.model || 'unknown' } };
       let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId, timedOut = false, pollLost = false, remoteEnded = false, submitted = !!jobId;
       // The foreground submit's limit: the registered timeout, else three times this objective's longest successful attempt (at least 10 minutes); none before one has succeeded.
       const succeeded = d.rounds.flatMap((r: Data) => r.runs.flatMap((x: Data) => (x.attempts || []).filter((a: Data) => !a.error).map((a: Data) => a.end - a.start)));
@@ -151,22 +152,22 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         await writeFile(configFile, config);
         const values: Data = { config: configFile, run: directory, seed: run.seed, job: jobId || '', start: Math.floor(start / 1000) };
         where = { cwd, values };
-        step = 'preflight';
-        const preflight = await launch(d.executor.commands.preflight, cwd, values);
-        log += preflight.log;
-        if (preflight.code !== 0) throw new Error(`preflight exited ${preflight.code}: ${preflight.log}`);
-        if (preflight.stdout.trim().startsWith('{')) {
-          try {
-            const reported = parseResult(preflight.stdout);
-            if (record(reported)) {
-              for (const name of ['python', 'driver', 'dataVersion']) if (reported[name] !== undefined) env[name === 'dataVersion' ? 'data' : name] = reported[name];
-            }
-          } catch {
-            // Optional env metadata: multi-line / NDJSON diagnostic stdout must not fail an exit-0 preflight.
-          }
-        }
         const since = jobId ? start : Date.now();
         if (!jobId) {
+          step = 'preflight';
+          const preflight = await launch(d.executor.commands.preflight, cwd, values);
+          log += preflight.log;
+          if (preflight.code !== 0) throw new Error(`preflight exited ${preflight.code}: ${preflight.log}`);
+          if (preflight.stdout.trim().startsWith('{')) {
+            try {
+              const reported = parseResult(preflight.stdout);
+              if (record(reported)) {
+                for (const name of ['python', 'driver', 'dataVersion']) if (reported[name] !== undefined) env[name === 'dataVersion' ? 'data' : name] = reported[name];
+              }
+            } catch {
+              // Optional env metadata: multi-line / NDJSON diagnostic stdout must not fail an exit-0 preflight.
+            }
+          }
           step = 'submit';
           submitted = true;
           if (canCancel(d.executor.commands.cancel, values)) remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: d.executor.commands.cancel, cwd, values };
@@ -181,7 +182,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             jobId = output.startsWith('{') ? parseResult(output).jobId : output;
             if (typeof jobId !== 'string' || !jobId.trim()) throw new Error('Async submit must return a jobId');
             values.job = jobId;
-            await retain(host.storage, key, (state) => { const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n).runs.find((r: Data) => r.id === run.id); if (entry) entry.jobId = jobId; });
+            await retain(host.storage, key, (state) => { const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n).runs.find((r: Data) => r.id === run.id); if (entry) { entry.jobId = jobId; entry.env = env; } });
           }
         }
         if (d.executor.commands.get) {
@@ -293,7 +294,8 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         if (!current) return;
         const cycle = current.rounds.find((r: Data) => r.n === round.n), entry = cycle.runs.find((r: Data) => r.id === run.id);
         if (entry.state !== 'running') return;
-        const end = Date.now(), failure = error ? { kind, step, raw: clip(error), ...(analysis ? { analysis } : {}) } : null;
+        const unconfirmed = keepJob ? `远端作业 ${jobId} 未确认结束或取消，可能仍在运行` : '';
+        const end = Date.now(), failure = error ? { kind, step, raw: clip(unconfirmed ? `${unconfirmed}；${error}` : error), ...(analysis ? { analysis } : {}) } : null;
         Object.assign(entry, { end, metrics, env, log: keptLog, error: failure, evidence: !error || kind === 'real' });
         entry.attempts ||= [];
         entry.attempts.push({ start, end, env, metrics, error: failure, jobId: jobId || null });
@@ -305,7 +307,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         } else {
           entry.state = error && kind === 'env' ? 'failed' : 'done';
           entry.retryable = false;
-          if (error && kind === 'env') message(state, current, end, '运行失败（已重试一次）', `${entry.id}\n${clip(error)}`, 'failed');
+          if (error && kind === 'env') message(state, current, end, '运行失败（已重试一次）', `${entry.id}${unconfirmed ? `\n${unconfirmed}` : ''}\n${clip(error)}`, 'failed');
         }
         finishCycle(state, current, cycle, end);
       });
