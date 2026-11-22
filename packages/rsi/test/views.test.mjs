@@ -713,6 +713,12 @@ test('console UX upgrades: no false red dot on finite metric, version.config mer
   assert.match(mxHtml, /主指标/);
   assert.match(mxHtml, /未通过护栏/);
   assert.match(mxHtml, /holdout accuracy/);
+  // Expanding a metric row in cycle mode renders inline aligned rsi-mx-seed-row rows sharing main columns
+  const mainMetric = vm.cycle.compare.table.sections[0].rows[0];
+  sandbox.S.folds['rsi-cmp-row:' + vm.cycle.compare.table.cycleLabel + ':' + mainMetric.id] = true;
+  const mxExpandedHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix']({ from: '$.table' }, {}, {});
+  assert.match(mxExpandedHtml, /class="rsi-mx-seed-row"/);
+  assert.doesNotMatch(mxExpandedHtml, /class="rsi-mx-sub"/);
   const trHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiTrend']({ series: '$.trend', label: '趋势' }, {}, {});
   assert.match(trHtml, /rsi-trend-wrap/);
   assert.match(trHtml, /v2-1/);

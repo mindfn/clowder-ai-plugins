@@ -246,31 +246,77 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
       let detailHtml = '';
       if (rowOpen) {
         const seeds = Array.isArray(table.seeds) ? table.seeds : [];
-        const subCols = ['<th>轮次</th>'];
-        if (ctrl) subCols.push('<th>对照 ' + h(ctrl.version) + '</th>');
-        cands.forEach(function (g) { subCols.push('<th>' + h(g.confirm ? '复验 ' : '候选 ') + h(g.version) + '</th>'); });
-        const subRows = seeds.map(function (seed, si) {
-          const cs = m.control && m.control.seeds ? m.control.seeds[si] : null;
-          const tds = ['<td class="rsi-mx-sub-rd">第 ' + (si + 1) + ' 轮 <span class="rsi-mx-seed">seed ' + h(seed) + '</span></td>'];
-          if (ctrl) {
-            tds.push('<td>' + (cs && cs.value != null ? '<span class="rsi-mx-num">' + h(cs.value) + '</span> ' : '<span class="rsi-mx-empty">—</span> ') + (cs && cs.state ? seedStateHtml(cs.state) : '') + '</td>');
-          }
-          cands.forEach(function (g, gi) {
-            const cand = m.candidates && m.candidates[gi];
-            const s = cand && cand.seeds ? cand.seeds[si] : null;
-            tds.push('<td>' + (s && s.value != null ? '<span class="rsi-mx-num">' + h(s.value) + '</span> ' : '<span class="rsi-mx-empty">—</span> ') + (s && s.state ? seedStateHtml(s.state) : '') + '</td>');
-          });
-          return '<tr>' + tds.join('') + '</tr>';
-        }).join('');
-        detailHtml = '<tr class="rsi-mx-detail-row"><td colspan="' + colCount + '"><div class="rsi-mx-sub-wrap">' +
-          '<table class="rsi-mx-sub"><thead><tr>' + subCols.join('') + '</tr></thead><tbody>' + subRows + '</tbody></table>' +
-          '</div></td></tr>';
+        const fmtSeedDelta = function (cv, sv) {
+          const a = cv != null ? Number(cv) : NaN, b = sv != null ? Number(sv) : NaN;
+          if (!Number.isFinite(a) || !Number.isFinite(b)) return '<span class="rsi-mx-empty">—</span>';
+          const diff = b - a;
+          const better = diff === 0 ? 'same' : (m.dir === 'down' ? diff < 0 : diff > 0) ? 'better' : 'worse';
+          const txt = diff === 0 ? '0' : (diff > 0 ? '+' : '') + String(Number(diff.toPrecision(4)));
+          return '<span class="rsi-mx-delta" data-better="' + better + '">' + h(txt) + '</span>';
+        };
+        const worstState = function (list) {
+          if (list.indexOf('cross') >= 0) return 'cross';
+          if (list.indexOf('env') >= 0) return 'env';
+          if (list.indexOf('failed') >= 0) return 'failed';
+          return list.length ? list[0] : '';
+        };
+        if (mode === 'cycle') {
+          detailHtml = seeds.map(function (seed, si) {
+            const cs = m.control && m.control.seeds ? m.control.seeds[si] : null;
+            const states = [];
+            let rowTds = '<td class="rsi-mx-col-m rsi-mx-seed-cell"><span class="rsi-mx-sub-rd">第 ' + (si + 1) + ' 轮 <span class="rsi-mx-seed">seed ' + h(seed) + '</span></span></td>';
+            if (ctrl) {
+              if (cs && cs.state) states.push(cs.state);
+              rowTds += '<td class="rsi-mx-col-v' + (cs && (cs.state === 'cross' || cs.state === 'failed') ? ' is-fail' : '') + '">' +
+                (cs && cs.value != null ? '<span class="rsi-mx-num">' + h(cs.value) + '</span>' : '<span class="rsi-mx-empty">—</span>') + '</td>';
+            }
+            let leadSeed = null;
+            cands.forEach(function (g, gi) {
+              const cand = m.candidates && m.candidates[gi];
+              const s = cand && cand.seeds ? cand.seeds[si] : null;
+              if (gi === 0) leadSeed = s;
+              if (s && s.state) states.push(s.state);
+              rowTds += '<td class="rsi-mx-col-v' + (s && (s.state === 'cross' || s.state === 'failed') ? ' is-fail' : '') + '">' +
+                (s && s.value != null ? '<span class="rsi-mx-num">' + h(s.value) + '</span>' : '<span class="rsi-mx-empty">—</span>') + '</td>';
+            });
+            if (hasPair) rowTds += '<td class="rsi-mx-col-d">' + fmtSeedDelta(cs && cs.value, leadSeed && leadSeed.value) + '</td>';
+            const st = worstState(states);
+            rowTds += '<td class="rsi-mx-col-s">' + (st ? seedStateHtml(st) : '<span class="rsi-mx-empty">—</span>') + '</td>';
+            return '<tr class="rsi-mx-seed-row">' + rowTds + '</tr>';
+          }).join('');
+        } else {
+          const subCols = ['<th>当轮明细</th>'];
+          if (ctrl) subCols.push('<th>对照 ' + h(ctrl.version) + '</th>');
+          cands.forEach(function (g) { subCols.push('<th>' + h(g.confirm ? '复验 ' : ctrl ? '候选 ' : '探索 ') + h(g.version) + '</th>'); });
+          subCols.push('<th>判定</th>');
+          const subRows = seeds.map(function (seed, si) {
+            const cs = m.control && m.control.seeds ? m.control.seeds[si] : null;
+            const states = [];
+            const tds = ['<td class="rsi-mx-sub-rd">第 ' + (si + 1) + ' 轮 <span class="rsi-mx-seed">seed ' + h(seed) + '</span></td>'];
+            if (ctrl) {
+              if (cs && cs.state) states.push(cs.state);
+              tds.push('<td class="rsi-mx-col-v">' + (cs && cs.value != null ? '<span class="rsi-mx-num">' + h(cs.value) + '</span>' : '<span class="rsi-mx-empty">—</span>') + '</td>');
+            }
+            cands.forEach(function (g, gi) {
+              const cand = m.candidates && m.candidates[gi];
+              const s = cand && cand.seeds ? cand.seeds[si] : null;
+              if (s && s.state) states.push(s.state);
+              tds.push('<td class="rsi-mx-col-v">' + (s && s.value != null ? '<span class="rsi-mx-num">' + h(s.value) + '</span>' : '<span class="rsi-mx-empty">—</span>') + '</td>');
+            });
+            const st = worstState(states);
+            tds.push('<td>' + (st ? seedStateHtml(st) : '<span class="rsi-mx-empty">—</span>') + '</td>');
+            return '<tr>' + tds.join('') + '</tr>';
+          }).join('');
+          detailHtml = '<tr class="rsi-mx-detail-row"><td colspan="' + colCount + '"><div class="rsi-mx-sub-wrap">' +
+            '<table class="rsi-mx-sub"><thead><tr>' + subCols.join('') + '</tr></thead><tbody>' + subRows + '</tbody></table>' +
+            '</div></td></tr>';
+        }
       }
       return '<tr class="rsi-mx-row' + (m.active ? ' is-active' : '') + '">' + cellsHtml + '</tr>' + detailHtml;
     }).join('');
     return secHead + rowsHtml;
   }).join('');
-  return '<div class="rsi-mx-wrap">' + topBar + '<div class="scroll-x rsi-mx-scroll"><table class="rsi-mx">' + thead + '<tbody>' + bodyHtml + '</tbody></table></div></div>';
+  return '<div class="rsi-mx-wrap">' + topBar + '<div class="scroll-x rsi-mx-scroll"><table class="rsi-mx' + (mode === 'cross' ? ' is-cross' : '') + '">' + thead + '<tbody>' + bodyHtml + '</tbody></table></div></div>';
 };
 
 PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {
