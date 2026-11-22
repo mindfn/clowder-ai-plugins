@@ -338,7 +338,7 @@ views:
               objective: $.exp.id
               name: $.exp.name
       - type: toolbar
-        items:
+        left:
           - type: seg
             value: $.exp.section
             options:
@@ -349,6 +349,13 @@ views:
             act: plugSet
             args:
               k: expSec
+        right:
+          - type: button
+            label: t:rsi.refresh
+            act: plugSet
+            args:
+              k: _r
+              v: ""
       - type: each
         from:
           - {}
@@ -1809,17 +1816,6 @@ views:
                         - $.exp.cycle.compare.result
                         - $.exp.cycle.compare.group
                         - $.exp.cycle.compare.version
-                  - type: component
-                    use: plugin:official.rsi/rsiCompareMatrix
-                    props:
-                      from: $.exp.cycle.compare.table
-                  - type: text
-                    variant: meta
-                    tone: warn
-                    when:
-                      - "!$.exp.cycle.report.compare.comparable"
-                      - "!$.exp.cycle.compare.result"
-                    text: t:rsi.exp.noCompare
                   - type: each
                     from: $.exp.cycle.comparisons
                     blocks:
@@ -1867,6 +1863,17 @@ views:
                             when:
                               - "!@after.isMedia"
                               - "@after.text"
+                  - type: component
+                    use: plugin:official.rsi/rsiCompareMatrix
+                    props:
+                      from: $.exp.cycle.compare.table
+                  - type: text
+                    variant: meta
+                    tone: warn
+                    when:
+                      - "!$.exp.cycle.report.compare.comparable"
+                      - "!$.exp.cycle.compare.result"
+                    text: t:rsi.exp.noCompare
                   - type: label
                     text: t:rsi.exp.conclusion
                   - type: text
@@ -2692,6 +2699,13 @@ views:
               request: life
               op: pause
             disabled: $.pending
+          - type: button
+            when: "!$.objective.setup"
+            label: t:rsi.refresh
+            act: plugSet
+            args:
+              k: _r
+              v: ""
           - type: button
             when: "!$.objective.setup"
             iconOnly: true

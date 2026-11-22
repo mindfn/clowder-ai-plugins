@@ -2,6 +2,7 @@ home:
   title: RSI capability evolution
   help: Keep collecting traces, evaluating, and iterating versions for each objective; changes go through approval cards
 panel: RSI capability evolution
+refresh: Refresh
 project: Project
 projectPrefix: "Project: "
 nav:

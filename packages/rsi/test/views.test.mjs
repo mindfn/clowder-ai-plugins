@@ -157,6 +157,7 @@ const VALUES = { control: [[0.08, 0.9, 0.35, 0.06, 100], [0.075, 0.8, 0.25, 0.07
 // No winner: format-zero also crosses the signal guardrail.
 const SPLIT = { ...VALUES, control: [[0.08, 0.9, 0.35, 0.06, 100], [0.075, 0.8, 0.33, 0.07, 110]], 'format-zero': [[0.21, 0.5, 0.2, 0.08, 90], [0.19, 0.4, 0.31, 0.09, 100]] };
 function arith({ analysts = [], seeds = [11, 23], groups = GROUPS, values = VALUES } = {}) {
+  groups = structuredClone(groups);
   const s = createFixtures(now).state;
   s.projects.unshift({ id: P, name: 'arith', projectPath: P, exp: true });
   s.objectives[P] = []; s.groups[P] = []; s.units[P] = []; s.library[P] = [];
@@ -725,4 +726,71 @@ test('console UX upgrades: no false red dot on finite metric, version.config mer
   assert.equal(x.d.rounds[0].report.headline, '重评结论');
   assert.equal(x.d.rounds[0].decision.directionId, 'dir2');
   assert.equal(x.d.rounds[1].state, 'running');
+});
+
+test('universal explore/confirm tier supports single-group explore without outer control while preserving confirmSeeds and full control on confirm', async () => {
+  const { runCycle } = await import('../dist/cycles.js');
+  const { toolAction } = await import('../dist/tools.js');
+  const x = arith();
+  // Set up 3-seed baseline and mark objective ready to run next version
+  x.d.objective.thread = 't-tier';
+  x.d.executor = { mcp: 'rsi.executor', state: 'passed', commands: { preflight: 'true', submit: 'true', collect: 'true' } };
+  x.d.prep.forEach((p) => { p.state = 'confirmed'; });
+  x.d.steps = Object.fromEntries(x.d.plan.map((p) => [p.k, { rev: 1 }]));
+  x.d.exec = {};
+  x.d.rounds[0].plan.seeds = [11, 23, 37];
+  x.d.policy.confirmSeeds = 3;
+  x.d.rounds[0].state = 'done';
+  x.d.rounds[0].report = { verdict: 'tune', headline: 'h', summary: 'h', matrix: [], directions: [], compare: { comparable: true, groups: [] }, predictions: [], attribution: { assessedLayers: [] } };
+  x.d.rounds[0].decision = { pick: 'direction', directionId: 'd1', by: '你', at: now };
+  x.d.versionRequest = { cycle: 1, title: 'try explore', since: now, invocationId: 'inv-1' };
+  const ctx = { catId: 'it', threadId: 't-tier', userId: 'u', invocationId: 'inv-1' };
+
+  // skipControl rejected when tier !== 'explore'
+  const bad = toolAction(x.s, 'rsi.version', { change: 'bad', config: { a: 1 }, skipControl: true }, ctx, now);
+  assert.match(bad.error, /skipControl is only allowed when tier is "explore"/);
+
+  // Valid explore tier: 1 seed, skip outer control
+  const okExplore = toolAction(x.s, 'rsi.version', { change: 'fast explore', config: { a: 2 }, tier: 'explore', seeds: 1, skipControl: true }, ctx, now);
+  assert.equal(okExplore.ok, true);
+  assert.equal(x.d.upcoming.tier, 'explore');
+  assert.equal(x.d.upcoming.skipControl, true);
+  assert.equal(x.d.upcoming.seeds.length, 1);
+  assert.deepEqual(x.d.upcoming.groups.map((g) => g.id), ['change']);
+
+  // runCycle respects skipControl on explore tier (does not prepend control)
+  const started = runCycle(x.s, x.d, now + 100);
+  assert.equal(started.ok, true);
+  const r2 = x.d.rounds[1];
+  assert.equal(r2.plan.tier, 'explore');
+  assert.deepEqual(r2.plan.groups.map((g) => g.id), ['change']);
+  assert.equal(r2.runs.length, 1);
+
+  // Conclude single-group explore round: comparable=false -> cannot auto-promote candidate, and rsiCompareMatrix renders '探索' cleanly
+  Object.assign(r2.runs[0], { state: 'done', metrics: Object.fromEntries(METRICS.map((m, k) => [m.id, VALUES['format-zero'][0][k]])) });
+  r2.state = 'evaluating';
+  const c2 = conclude(x.s, x.d, { cycle: 2, verdict: 'tune', findings: 'explore ok', options: [option('c', 'variable', 'a')] }, now + 200);
+  assert.equal(c2.ok, true);
+  assert.equal(c2.confirmation, null);
+  assert.equal(x.d.candidate, undefined);
+  const vm2 = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: `${x.id}/v2>c1.eval` });
+  assert.equal(vm2.cycle.compare.table.tier, 'explore');
+  assert.equal(vm2.cycle.compare.table.controlGroup, null);
+  const vmMod = await import('node:vm');
+  const src = readFileSync(new URL('../console/components/lineage.js', import.meta.url), 'utf8');
+  const sb = { PDL_COMPONENTS: {}, S: { folds: {} }, h: (s) => String(s ?? ''), pv: (e) => e === '$.t' ? vm2.cycle.compare.table : e, pvList: () => [], pvText: (v) => String(v ?? '') };
+  vmMod.runInNewContext(src, sb);
+  const html = sb.PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix']({ from: '$.t' }, {}, {});
+  assert.match(html, /探索快筛/);
+  assert.match(html, /探索 <span class="rsi-mx-ver">v2<\/span>/);
+  assert.doesNotMatch(html, /Δ 变化/);
+
+  // Confirm tier restores outer control + full confirmSeeds (3)
+  x.d.versionRequest = { cycle: 2, title: 'confirm v2', since: now + 300, invocationId: 'inv-2' };
+  const okConfirm = toolAction(x.s, 'rsi.version', { change: 'confirm candidate', config: { a: 2 }, tier: 'confirm' }, { ...ctx, invocationId: 'inv-2' }, now + 300);
+  assert.equal(okConfirm.ok, true);
+  assert.equal(x.d.upcoming.tier, 'confirm');
+  assert.equal(x.d.upcoming.skipControl, false);
+  assert.equal(x.d.upcoming.seeds.length, 3);
+  assert.deepEqual(x.d.upcoming.groups.map((g) => g.id), ['control', 'change']);
 });

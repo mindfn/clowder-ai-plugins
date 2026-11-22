@@ -146,6 +146,10 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     if (d.versionRequest.repair && text(input.cannot)) { abandonRepair(state, d, `${d.members.find((m) => m.role === 'iterate')!.name} 说修不了：${input.cannot}`, now); return { ok: true, evaluating: true }; }
     const configVal = input.config !== undefined ? input.config : text(input.configPath) ? input.configPath : undefined;
     if (!text(input.change) || input.commit !== undefined && (!text(input.commit) || !/^[a-f0-9]{7,40}$/i.test(input.commit)) || !(record(configVal) || text(configVal))) return { error: 'Provide change, optional git commit (7–40 hex characters), and config (JSON object or JSON file path / configPath)' };
+    if (input.tier !== undefined && !['explore', 'confirm'].includes(input.tier)) return { error: 'tier must be "explore" or "confirm"' };
+    if (input.seeds !== undefined && !(Number.isInteger(input.seeds) && input.seeds >= 1 && input.seeds <= 20)) return { error: 'seeds must be an integer between 1 and 20' };
+    if (input.skipControl !== undefined && typeof input.skipControl !== 'boolean') return { error: 'skipControl must be a boolean' };
+    if (input.skipControl === true && input.tier !== 'explore') return { error: 'skipControl is only allowed when tier is "explore"' };
     const previous = d.objective.currentVersion, id = `v${d.versions.length + 1}`;
     const changes = record(input.changes) ? {
       ...(record(input.changes.pr) && text(input.changes.pr.id) ? { pr: { id: input.changes.pr.id, ...(text(input.changes.pr.url) ? { url: input.changes.pr.url } : {}), ...(text(input.changes.pr.title) ? { title: input.changes.pr.title } : {}), ...(text(input.changes.pr.state) ? { state: input.changes.pr.state } : {}) } } : {}),
@@ -181,8 +185,21 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
         d.upcoming = { ...last.plan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d)] };
         message(state, d, now, `执行修复 ${id} 直接作为默认版本`, `${input.change}\n\n执行修复不和旧版本对比；下一周期用它跑当前版本对照，确认没有跑坏。`, 'plan');
       }
-    } else d.upcoming = { ...last.plan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d),
-      { id: 'change', label: input.change, version: id, vars: {}, control: false, confirm: false }] };
+    } else {
+      const tier = input.tier as ('explore' | 'confirm' | undefined);
+      const skipControl = tier === 'explore' && input.skipControl === true;
+      const defaultSeeds = tier === 'confirm' ? (d.policy.confirmSeeds || last.plan.seeds.length) : last.plan.seeds.length;
+      const seedCount = typeof input.seeds === 'number' ? input.seeds : defaultSeeds;
+      const changeGroup = { id: 'change', label: input.change, version: id, vars: {}, control: false, confirm: false };
+      d.upcoming = {
+        ...last.plan,
+        baseline: false,
+        ...(tier ? { tier } : {}),
+        ...(skipControl ? { skipControl: true } : { skipControl: false }),
+        seeds: freshSeeds(d, seedCount),
+        groups: skipControl ? [changeGroup] : [controlGroup(d), changeGroup],
+      };
+    }
     delete d.versionRequest;
     syncObjective(state, d);
     return { ok: true, version: id };

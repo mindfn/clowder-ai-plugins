@@ -489,6 +489,8 @@ function exp(): any {
     ].filter((sec) => sec.rows.length > 0);
     const table = {
       mode: S.rsiCmpMode,
+      tier: r.plan.tier || '',
+      skipControl: !!r.plan.skipControl,
       selectedMetric: activeTrendId,
       cycleLabel: `${r.version}-${r.k}`,
       seeds: r.plan.seeds,

@@ -141,7 +141,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         await mkdir(directory, { recursive: true });
         const base = typeof version.config === 'string' ? JSON.parse(await readFile(resolve(cwd, version.config), 'utf8')) : version.config;
         if (!record(base)) throw new Error('Version config must be a JSON object');
-        const config = JSON.stringify({ ...base, ...version.vars, ...group.vars, seed: run.seed }, null, 2) + '\n';
+        const config = JSON.stringify({ ...(round.plan.tier ? { tier: round.plan.tier } : {}), ...base, ...version.vars, ...group.vars, seed: run.seed }, null, 2) + '\n';
         env.config = env.configHash = createHash('sha256').update(config).digest('hex');
         await writeFile(configFile, config);
         const values: Data = { config: configFile, run: directory, seed: run.seed, job: jobId || '', start: Math.floor(start / 1000) };

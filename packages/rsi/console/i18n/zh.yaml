@@ -2,6 +2,7 @@ home:
   title: RSI 能力进化
   help: 围绕评估项持续采集轨迹、评估、迭代版本；改动都要过审批卡
 panel: RSI 能力进化
+refresh: 刷新
 project: 项目
 projectPrefix: 项目：
 nav:

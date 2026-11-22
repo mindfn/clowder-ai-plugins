@@ -170,22 +170,23 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
     if (st === 'failed') return badgeHtml('danger', '无结果');
     return badgeHtml('ok', '正常');
   };
+  const tierPill = table.tier === 'explore' ? badgeHtml('warn', '探索快筛') : table.tier === 'confirm' ? badgeHtml('ok', '正式确认') : '';
   const topBar = '<div class="rsi-mx-bar">' +
-    '<span class="rsi-mx-hint">' + h('共 ' + (table.totalMetrics || 0) + ' 项指标 · 点击指标行展开逐轮结果') + '</span>' +
+    '<span class="rsi-mx-hint">' + (tierPill ? tierPill + ' ' : '') + h('共 ' + (table.totalMetrics || 0) + ' 项指标 · 点击指标行展开逐轮结果') + '</span>' +
     (showCrossToggle ? '<div class="rsi-mx-seg" role="group" aria-label="对比视角">' +
-      '<button type="button" class="rsi-mx-seg-btn' + (mode === 'cycle' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="cmpMode" data-v="cycle">当轮对照</button>' +
+      '<button type="button" class="rsi-mx-seg-btn' + (mode === 'cycle' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="cmpMode" data-v="cycle">' + h(ctrl && cands.length ? '当轮对照' : '本轮实测') + '</button>' +
       '<button type="button" class="rsi-mx-seg-btn' + (mode === 'cross' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="cmpMode" data-v="cross">跨版本</button>' +
       '</div>' : '') +
     '</div>';
   let thead = '', colCount = 0;
+  const hasPair = !!ctrl && cands.length > 0;
   if (mode === 'cycle') {
-    const hasCand = cands.length > 0;
     const cols = ['<th class="rsi-mx-col-m">指标</th>'];
-    if (ctrl) cols.push('<th class="rsi-mx-col-v">对照 <span class="rsi-mx-ver">' + h(ctrl.version) + '</span></th>');
+    if (ctrl) cols.push('<th class="rsi-mx-col-v">' + h(cands.length ? '对照' : '本轮') + ' <span class="rsi-mx-ver">' + h(ctrl.version) + '</span></th>');
     cands.forEach(function (g) {
-      cols.push('<th class="rsi-mx-col-v">' + h(g.confirm ? '复验' : '候选') + ' <span class="rsi-mx-ver">' + h(g.version) + '</span></th>');
+      cols.push('<th class="rsi-mx-col-v">' + h(g.confirm ? '复验' : ctrl ? '候选' : '探索') + ' <span class="rsi-mx-ver">' + h(g.version) + '</span></th>');
     });
-    if (hasCand) cols.push('<th class="rsi-mx-col-d">Δ 变化</th>');
+    if (hasPair) cols.push('<th class="rsi-mx-col-d">Δ 变化</th>');
     cols.push('<th class="rsi-mx-col-s">判定</th>');
     colCount = cols.length;
     thead = '<thead><tr>' + cols.join('') + '</tr></thead>';
@@ -226,7 +227,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
           const c = m.candidates && m.candidates[gi];
           cellsHtml += '<td class="rsi-mx-col-v' + (c && c.guard === 'fail' ? ' is-fail' : '') + '">' + fmtMeanSd(c) + '</td>';
         });
-        if (cands.length > 0) {
+        if (hasPair) {
           const lead = m.candidates && m.candidates[0];
           const deltaHtml = lead && lead.delta != null
             ? '<span class="rsi-mx-delta" data-better="' + h(lead.better || '') + '">' + h(lead.delta) + '</span>'

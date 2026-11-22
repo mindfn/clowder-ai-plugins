@@ -46,9 +46,13 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
     const current = d.versions.find((v: Data) => v.id === d.objective.currentVersion);
     const declared = plan.groups.find((g: Data) => g.control || g.id === 'control');
     if (!current.vars) current.vars = !declared?.version || declared.version === current.id ? declared?.vars ?? declared?.overrides ?? {} : {};
-    plan.groups = [controlGroup(d), ...plan.groups.filter((g: Data) => !g.control && g.id !== 'control')
-      .map((g: Data) => ({ ...g, control: false, vars: g.vars ?? g.overrides, version: g.version || current.id }))];
+    const nonControl = plan.groups.filter((g: Data) => !g.control && g.id !== 'control')
+      .map((g: Data) => ({ ...g, control: false, vars: g.vars ?? g.overrides, version: g.version || current.id }));
+    const isConfirmPlan = plan.tier === 'confirm' || nonControl.some((g: Data) => g.confirm);
+    const skipOuterControl = !isConfirmPlan && plan.tier === 'explore' && plan.skipControl === true && nonControl.length > 0;
+    plan.groups = skipOuterControl ? nonControl : [controlGroup(d), ...nonControl];
     if (plan.groups.some((g: Data) => !d.versions.some((v: Data) => v.id === g.version))) return { error: 'Unknown group version' };
+    if (!d.policy.confirmSeeds && plan.tier !== 'explore' && plan.seeds.length > 0) d.policy.confirmSeeds = plan.seeds.length;
     if (d.rounds.length) plan.seeds = freshSeeds(d, plan.seeds.length);
     const n = planned?.n || Math.max(0, ...d.rounds.map((r: Data) => r.n)) + 1;
     round = planned || { n };
@@ -302,14 +306,16 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
       if (!holds && candidate.version !== d.objective.currentVersion) d.versions.find((v: Data) => v.id === candidate.version).status = 'rejected';
       delete d.candidate;
     }
-    d.upcoming = { ...round.plan, groups: [controlGroup(d), ...(missing ? [{ ...group, control: false, confirm: true }] : [])], seeds: freshSeeds(d, round.plan.seeds.length) };
+    const confirmSeedCount = d.policy.confirmSeeds || round.plan.seeds.length;
+    d.upcoming = { ...round.plan, tier: 'confirm', skipControl: false, groups: [controlGroup(d), ...(missing ? [{ ...group, control: false, confirm: true }] : [])], seeds: freshSeeds(d, confirmSeedCount) };
   } else if (winner) {
     const group = round.plan.groups.find((g: Data) => g.id === winner.group);
+    const confirmSeedCount = d.policy.confirmSeeds || round.plan.seeds.length;
     d.candidate = { ...group, cycle: round.n, seeds: [...round.plan.seeds], against: d.objective.currentVersion };
     const version = d.versions.find((v: Data) => v.id === group.version);
     if (!version.current) version.status = 'candidate';
     confirmation = { status: 'candidate', group: group.id, version: group.version, cycle: round.n };
-    d.upcoming = { ...round.plan, groups: [controlGroup(d), { ...group, control: false, confirm: true }], seeds: freshSeeds(d, round.plan.seeds.length) };
+    d.upcoming = { ...round.plan, tier: 'confirm', skipControl: false, groups: [controlGroup(d), { ...group, control: false, confirm: true }], seeds: freshSeeds(d, confirmSeedCount) };
   } else d.upcoming = { ...round.plan, seeds: freshSeeds(d, round.plan.seeds.length) };
   round.confirmation = confirmation;
   round.stageMembers ||= {};
