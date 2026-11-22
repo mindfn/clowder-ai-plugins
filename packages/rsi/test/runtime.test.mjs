@@ -1646,10 +1646,10 @@ test('async get polling tolerates up to 3 consecutive transient non-zero exits w
   assert.equal((await readFile(join(f.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
   assert.equal(await access(join(f.project, 'cancels')).then(() => true, () => false), false);
 
-  // 4 consecutive non-zero get exits fail closed, cancel the abandoned remote job before retry and after final failure.
+  // 4 consecutive non-zero get exits with successful cancel fail closed, cancel the abandoned remote job before retry and after final failure.
   const f2 = await fixture(t), o2 = await f2.create();
   Object.assign(f2.commands, {
-    submit: `node -e "console.log('job-broken');"`,
+    submit: `node -e "const fs=require('fs');fs.appendFileSync('submits','1\\n');console.log('job-broken');"`,
     get: `node -e "console.error('permanent_ssh_down');process.exit(255);"`,
     cancel: 'echo {job} >> cancels',
     collect: '{run}/metrics.json',
@@ -1660,6 +1660,43 @@ test('async get polling tolerates up to 3 consecutive transient non-zero exits w
   const r2 = (await until(f2.read, (s) => s.experiments[o2.id].rounds.at(-1)?.runs?.[0]?.state === 'failed', 'failed async poll run', 15000)).experiments[o2.id].rounds.at(-1);
   assert.equal(r2.runs[0].state, 'failed');
   assert.equal(r2.runs[0].retries, 1);
+  assert.equal(r2.runs[0].jobId, undefined);
   assert.match(r2.runs[0].error.raw, /4 consecutive poll failures/);
+  assert.equal((await readFile(join(f2.project, 'submits'), 'utf8')).trim().split('\n').length, 2);
   assert.equal((await readFile(join(f2.project, 'cancels'), 'utf8')).trim().split('\n').length, 2);
+
+  // Negative case 1: 4 consecutive poll errors with NO cancel configured must retain jobId and never submit a second remote job.
+  const f3 = await fixture(t), o3 = await f3.create();
+  Object.assign(f3.commands, {
+    submit: `node -e "const fs=require('fs');fs.appendFileSync('submits','1\\n');console.log('job-no-cancel');"`,
+    get: `node -e "console.error('ssh_down_no_cancel');process.exit(255);"`,
+    collect: '{run}/metrics.json',
+    poll: 1,
+  });
+  delete f3.commands.cancel;
+  await f3.initialize(o3, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [31] });
+  await f3.http('POST', { op: 'runCycle', objective: o3.id });
+  const r3 = (await until(f3.read, (s) => s.experiments[o3.id].rounds.at(-1)?.runs?.[0]?.state === 'failed', 'failed async poll run without cancel', 15000)).experiments[o3.id].rounds.at(-1);
+  assert.equal(r3.runs[0].state, 'failed');
+  assert.equal(r3.runs[0].retries, 1);
+  assert.equal(r3.runs[0].jobId, 'job-no-cancel');
+  assert.equal((await readFile(join(f3.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
+
+  // Negative case 2: 4 consecutive poll errors where cancel exits non-zero (e.g. SSH still down) must retain jobId and never submit a second remote job.
+  const f4 = await fixture(t), o4 = await f4.create();
+  Object.assign(f4.commands, {
+    submit: `node -e "const fs=require('fs');fs.appendFileSync('submits','1\\n');console.log('job-cancel-fail');"`,
+    get: `node -e "console.error('ssh_down_cancel_fail');process.exit(255);"`,
+    cancel: `node -e "const fs=require('fs');fs.appendFileSync('cancels',process.argv[1]+'\\n');console.error('cancel_ssh_255');process.exit(255);" {job}`,
+    collect: '{run}/metrics.json',
+    poll: 1,
+  });
+  await f4.initialize(o4, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [32] });
+  await f4.http('POST', { op: 'runCycle', objective: o4.id });
+  const r4 = (await until(f4.read, (s) => s.experiments[o4.id].rounds.at(-1)?.runs?.[0]?.state === 'failed', 'failed async poll run with failing cancel', 15000)).experiments[o4.id].rounds.at(-1);
+  assert.equal(r4.runs[0].state, 'failed');
+  assert.equal(r4.runs[0].retries, 1);
+  assert.equal(r4.runs[0].jobId, 'job-cancel-fail');
+  assert.equal((await readFile(join(f4.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
+  assert.equal((await readFile(join(f4.project, 'cancels'), 'utf8')).trim().split('\n').length, 2);
 });

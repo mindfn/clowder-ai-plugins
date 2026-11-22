@@ -116,7 +116,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       if (!acquired || stopped) continue;
       busy = d.objective.id; runId = run.id;
       let metrics: Data = {}, env: Data = { seed: run.seed, hardware: { os: `${platform()} ${release()}`, arch: arch(), chip: cpus()[0]?.model || 'unknown' } };
-      let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId, timedOut = false, pollLost = false, submitted = !!jobId;
+      let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId, timedOut = false, pollLost = false, remoteEnded = false, submitted = !!jobId;
       // The foreground submit's limit: the registered timeout, else three times this objective's longest successful attempt (at least 10 minutes); none before one has succeeded.
       const succeeded = d.rounds.flatMap((r: Data) => r.runs.flatMap((x: Data) => (x.attempts || []).filter((a: Data) => !a.error).map((a: Data) => a.end - a.start)));
       const limit = d.executor.timeout ? d.executor.timeout * 1000 : succeeded.length ? Math.max(600_000, 3 * Math.max(...succeeded)) : 0;
@@ -208,8 +208,8 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             }
             pollFails = 0;
             const status = parseResult(polled.stdout);
-            if (status.state === 'done' && (status.exitCode === undefined || status.exitCode === 0)) break;
-            if (!['queued', 'running'].includes(status.state)) throw new Error(`Remote job ${status.state}, exit ${status.exitCode ?? 'unknown'}: ${status.reason || ''}`);
+            if (status.state === 'done' && (status.exitCode === undefined || status.exitCode === 0)) { remoteEnded = true; break; }
+            if (!['queued', 'running'].includes(status.state)) { remoteEnded = true; throw new Error(`Remote job ${status.state}, exit ${status.exitCode ?? 'unknown'}: ${status.reason || ''}`); }
             if (d.executor.timeout && Date.now() - since > d.executor.timeout * 1000) { timedOut = true; throw new Error(`异步任务超过 ${d.executor.timeout} 秒没结束`); }
             await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, (d.executor.poll || 1) * 1000); });
             releasePoll = undefined; pollTimer = undefined;
@@ -271,11 +271,15 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       // A job past its timeout, failing for good, or retrying after a foreground submit failure is cancelled so that nothing is left behind remotely.
       // Never cancel when failure occurred before submit (prepare/preflight), and never let cancel output evict the failing step's log.
       const failureLog = log;
-      let cancelLog = '';
+      let cancelLog = '', cancelOk = false;
       if (submitted && (timedOut || final || pollLost || (error && kind === 'env' && step === 'submit')) && canCancel(cancel, where?.values)) {
-        cancelLog = (await launch(cancel!, where!.cwd, where!.values)).log;
+        const cancelled = await launch(cancel!, where!.cwd, where!.values);
+        cancelOk = cancelled.code === 0;
+        cancelLog = cancelled.log;
         if (cancelLog) log = `${log}\n[cancel]\n${cancelLog}`.slice(-16000);
       }
+      // Retain jobId whenever an async remote job was neither confirmed terminated nor confirmed cancelled, preventing duplicate submits.
+      const keepJob = !!(jobId && !remoteEnded && !cancelOk);
       // A deleted objective's run is neither logged nor recorded: its folder is being removed.
       if (stopped || dropped.has(d.objective.id)) return;
       // The full log stays with the run; the state keeps its tail. The run's result is recorded whether or not the file can be written.
@@ -293,11 +297,11 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         Object.assign(entry, { end, metrics, env, log: keptLog, error: failure, evidence: !error || kind === 'real' });
         entry.attempts ||= [];
         entry.attempts.push({ start, end, env, metrics, error: failure, jobId: jobId || null });
-        delete entry.jobId;
+        if (!keepJob) delete entry.jobId;
         if (error && kind === 'env' && entry.retries < 1) {
           retrying = true;
           entry.retries++; entry.state = 'queued';
-          cycle.events.push({ at: end, kind: 'retry', text: `${entry.id} 环境失败，自动重试一次；不计入结果` });
+          cycle.events.push({ at: end, kind: 'retry', text: keepJob ? `${entry.id} 远端作业 ${jobId} 未确认结束或取消，保留原作业继续轮询` : `${entry.id} 环境失败，自动重试一次；不计入结果` });
         } else {
           entry.state = error && kind === 'env' ? 'failed' : 'done';
           entry.retryable = false;
