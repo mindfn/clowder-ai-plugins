@@ -191,16 +191,13 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       const defaultSeeds = tier === 'explore' ? last.plan.seeds.length : (d.policy.confirmSeeds || last.plan.seeds.length);
       const seedCount = typeof input.seeds === 'number' ? input.seeds : defaultSeeds;
       const changeGroup = { id: 'change', label: input.change, version: id, vars: {}, control: false, confirm: false };
-      const nextPlan: Data = {
-        ...last.plan,
+      d.upcoming = {
         baseline: false,
         skipControl,
+        ...(tier ? { tier } : {}),
         seeds: freshSeeds(d, seedCount),
         groups: skipControl ? [changeGroup] : [controlGroup(d), changeGroup],
       };
-      if (tier) nextPlan.tier = tier;
-      else delete nextPlan.tier;
-      d.upcoming = nextPlan;
     }
     delete d.versionRequest;
     syncObjective(state, d);
