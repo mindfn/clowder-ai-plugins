@@ -1,6 +1,6 @@
 import { RSI_CP_INIT, createFixtures } from './fixtures.js';
 import { submitInitStep, enqueue, kick, message, STOP_TARGET, syncObjective } from './init.js';
-import { abandonRepair, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, validPlan } from './cycles.js';
+import { abandonRepair, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, validateReservedSeeds, validPlan } from './cycles.js';
 import { parseScheduleText } from './schedule.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, PrepItem, RsiState, Section, ToolContext } from './types.js';
@@ -150,7 +150,15 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     if (input.seeds !== undefined && !(Number.isInteger(input.seeds) && input.seeds >= 1 && input.seeds <= 20)) return { error: 'seeds must be an integer between 1 and 20' };
     if (input.skipControl !== undefined && typeof input.skipControl !== 'boolean') return { error: 'skipControl must be a boolean' };
     if (input.skipControl === true && input.tier !== 'explore') return { error: 'skipControl is only allowed when tier is "explore"' };
-    if (input.reservedSeeds !== undefined && (!Array.isArray(input.reservedSeeds) || input.reservedSeeds.length > 20 || input.reservedSeeds.some((s: unknown) => !Number.isSafeInteger(s) || (s as number) < 0))) return { error: 'reservedSeeds must be an array of up to 20 non-negative integers' };
+    const last = d.rounds.find((r: Data) => r.n === d.versionRequest.cycle);
+    const tier = input.tier as ('explore' | 'confirm' | undefined);
+    const skipControl = tier === 'explore' && input.skipControl === true;
+    const defaultSeeds = tier === 'explore' ? last.plan.seeds.length : (d.policy.confirmSeeds || last.plan.seeds.length);
+    const seedCount = typeof input.seeds === 'number' ? input.seeds : defaultSeeds;
+    const scheduledSeeds = freshSeeds(d, seedCount);
+    if (d.versionRequest.direct && input.reservedSeeds !== undefined) return { error: 'reservedSeeds is not allowed on direct execution fixes' };
+    const reservedErr = validateReservedSeeds(d, input.reservedSeeds, scheduledSeeds);
+    if (reservedErr) return { error: reservedErr };
     const previous = d.objective.currentVersion, id = `v${d.versions.length + 1}`;
     const changes = record(input.changes) ? {
       ...(record(input.changes.pr) && text(input.changes.pr.id) ? { pr: { id: input.changes.pr.id, ...(text(input.changes.pr.url) ? { url: input.changes.pr.url } : {}), ...(text(input.changes.pr.title) ? { title: input.changes.pr.title } : {}), ...(text(input.changes.pr.state) ? { state: input.changes.pr.state } : {}) } } : {}),
@@ -162,7 +170,6 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       ...(changes?.pr?.id ? { pr: changes.pr.id } : {}),
       ...(d.versionRequest.prediction ? { prediction: d.versionRequest.prediction } : {}) };
     d.versions.push(versionRecord);
-    const last = d.rounds.find((r: Data) => r.n === d.versionRequest.cycle);
     if (last) {
       if (changes) last.govChanges = structuredClone(changes);
       const iterMember = d.members.find((m) => m.role === 'iterate');
@@ -176,29 +183,26 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       Object.assign(version, { status: 'confirmed', direct: true, config: before.config, vars: before.vars || {} });
       for (const v of d.versions) v.current = v.id === id;
       d.objective.currentVersion = id;
+      const { reservedSeeds: _dropReserved, ...cleanLastPlan } = last.plan;
       if (d.versionRequest.repair) {
         // A repair reruns the failed cycle's plan on the fixed version; the failed cycle stays as it ran, marked repaired, and is not evaluated.
         Object.assign(last, { state: 'repaired', repairedBy: id });
         (d.repairs ||= []).push({ at: now, cycle: last.n, version: id, signature: d.versionRequest.repair.signature });
-        d.upcoming = { ...last.plan, baseline: false, groups: last.plan.groups.map((g: Data) => (g.version || previous) === previous ? { ...g, version: id } : g) };
+        d.upcoming = { ...cleanLastPlan, baseline: false, groups: last.plan.groups.map((g: Data) => (g.version || previous) === previous ? { ...g, version: id } : g) };
         message(state, d, now, `执行修复 ${id}：重跑第 ${last.n} 周期的计划`, `${input.change}\n\n修的是：${d.versionRequest.repair.signature}`, 'plan');
       } else {
-        d.upcoming = { ...last.plan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d)] };
+        d.upcoming = { ...cleanLastPlan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d)] };
         message(state, d, now, `执行修复 ${id} 直接作为默认版本`, `${input.change}\n\n执行修复不和旧版本对比；下一周期用它跑当前版本对照，确认没有跑坏。`, 'plan');
       }
     } else {
-      const tier = input.tier as ('explore' | 'confirm' | undefined);
-      const skipControl = tier === 'explore' && input.skipControl === true;
-      const defaultSeeds = tier === 'explore' ? last.plan.seeds.length : (d.policy.confirmSeeds || last.plan.seeds.length);
-      const seedCount = typeof input.seeds === 'number' ? input.seeds : defaultSeeds;
       const changeGroup = { id: 'change', label: input.change, version: id, vars: {}, control: false, confirm: false };
-      const reservedSeeds = Array.isArray(input.reservedSeeds) && input.reservedSeeds.length ? [...new Set(input.reservedSeeds as number[])] : undefined;
+      const reservedSeeds = Array.isArray(input.reservedSeeds) && input.reservedSeeds.length ? [...(input.reservedSeeds as number[])] : undefined;
       d.upcoming = {
         baseline: false,
         skipControl,
         ...(tier ? { tier } : {}),
         ...(reservedSeeds ? { reservedSeeds } : {}),
-        seeds: freshSeeds(d, seedCount),
+        seeds: scheduledSeeds,
         groups: skipControl ? [changeGroup] : [controlGroup(d), changeGroup],
       };
     }

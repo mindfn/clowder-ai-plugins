@@ -10,9 +10,30 @@ export function validPlan(plan: unknown): plan is Data {
     && new Set(plan.groups.map((g: Data) => g.id)).size === plan.groups.length;
 }
 
+export function usedSeeds(d: Experiment): Set<number> {
+  return new Set(d.rounds.flatMap((r: Data) => [
+    ...(Array.isArray(r.plan?.seeds) ? r.plan.seeds : []),
+    ...(Array.isArray(r.plan?.reservedSeeds) ? r.plan.reservedSeeds : []),
+  ]));
+}
+
+export function validateReservedSeeds(d: Experiment, reserved: unknown, scheduledSeeds: number[]): string | null {
+  if (reserved === undefined) return null;
+  if (!Array.isArray(reserved) || reserved.length > 20 || reserved.some((s: unknown) => !Number.isSafeInteger(s) || (s as number) < 0))
+    return 'reservedSeeds must be an array of up to 20 non-negative integers';
+  const nums = reserved as number[];
+  if (new Set(nums).size !== nums.length) return 'reservedSeeds must not contain duplicate seeds';
+  const history = usedSeeds(d);
+  const histDup = nums.filter((s) => history.has(s));
+  if (histDup.length) return `reservedSeeds overlaps previously used seeds: ${histDup.join(', ')}`;
+  const schedSet = new Set(scheduledSeeds);
+  const schedDup = nums.filter((s) => schedSet.has(s));
+  if (schedDup.length) return `reservedSeeds must list only extra internal seeds and must not overlap scheduled seeds: ${schedDup.join(', ')}`;
+  return null;
+}
+
 export function freshSeeds(d: Experiment, count: number): number[] {
-  const used = d.rounds.flatMap((r: Data) => [...(r.plan.seeds || []), ...(Array.isArray(r.plan.reservedSeeds) ? r.plan.reservedSeeds : [])]);
-  const start = Math.max(0, ...used) + 1;
+  const start = Math.max(0, ...usedSeeds(d)) + 1;
   return Array.from({ length: count }, (_, i) => start + i);
 }
 
@@ -55,6 +76,8 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
     if (plan.groups.some((g: Data) => !d.versions.some((v: Data) => v.id === g.version))) return { error: 'Unknown group version' };
     if (!d.policy.confirmSeeds && plan.tier !== 'explore' && plan.seeds.length > 0) d.policy.confirmSeeds = plan.seeds.length;
     if (d.rounds.length) plan.seeds = freshSeeds(d, plan.seeds.length);
+    const reservedErr = validateReservedSeeds(d, plan.reservedSeeds, plan.seeds);
+    if (reservedErr) return { error: reservedErr };
     const n = planned?.n || Math.max(0, ...d.rounds.map((r: Data) => r.n)) + 1;
     round = planned || { n };
     Object.assign(round, { version: testedVersion(plan), start: now, end: null, state: 'running', plan, metrics: structuredClone(d.metrics), report: null, decision: null, events: [],
@@ -285,6 +308,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   const isExplore = round.plan.tier === 'explore';
   const winner = isExplore ? undefined : wins[0], candidate = d.candidate;
   let confirmation: Data | null = null;
+  const { reservedSeeds: _dropReserved, ...basePlan } = round.plan;
   if (!isExplore && candidate) {
     const group = round.plan.groups.find((g: Data) => g.confirm && g.version === candidate.version && JSON.stringify(g.vars) === JSON.stringify(candidate.vars));
     const missing = !compared.comparable || round.runs.some((r: Data) => (r.group === 'control' || r.group === group?.id) && r.error?.kind === 'env');
@@ -309,7 +333,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
       delete d.candidate;
     }
     const confirmSeedCount = d.policy.confirmSeeds || round.plan.seeds.length;
-    d.upcoming = { ...round.plan, tier: 'confirm', skipControl: false, groups: [controlGroup(d), ...(missing ? [{ ...group, control: false, confirm: true }] : [])], seeds: freshSeeds(d, confirmSeedCount) };
+    d.upcoming = { ...basePlan, tier: 'confirm', skipControl: false, groups: [controlGroup(d), ...(missing ? [{ ...group, control: false, confirm: true }] : [])], seeds: freshSeeds(d, confirmSeedCount) };
   } else if (winner) {
     const group = round.plan.groups.find((g: Data) => g.id === winner.group);
     const confirmSeedCount = d.policy.confirmSeeds || round.plan.seeds.length;
@@ -317,8 +341,8 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     const version = d.versions.find((v: Data) => v.id === group.version);
     if (!version.current) version.status = 'candidate';
     confirmation = { status: 'candidate', group: group.id, version: group.version, cycle: round.n };
-    d.upcoming = { ...round.plan, tier: 'confirm', skipControl: false, groups: [controlGroup(d), { ...group, control: false, confirm: true }], seeds: freshSeeds(d, confirmSeedCount) };
-  } else d.upcoming = { ...round.plan, seeds: freshSeeds(d, round.plan.seeds.length) };
+    d.upcoming = { ...basePlan, tier: 'confirm', skipControl: false, groups: [controlGroup(d), { ...group, control: false, confirm: true }], seeds: freshSeeds(d, confirmSeedCount) };
+  } else d.upcoming = { ...basePlan, seeds: freshSeeds(d, round.plan.seeds.length) };
   round.confirmation = confirmation;
   round.stageMembers ||= {};
   round.stageMembers.eval = { catId: member.catId, name: member.name };

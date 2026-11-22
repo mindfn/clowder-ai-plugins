@@ -756,13 +756,25 @@ test('universal explore/confirm tier supports single-group explore without outer
   const bad = toolAction(x.s, 'rsi.version', { change: 'bad', config: { a: 1 }, skipControl: true }, ctx, now);
   assert.match(bad.error, /skipControl is only allowed when tier is "explore"/);
 
-  // Valid explore tier: 1 seed + reservedSeeds, skip outer control
-  const okExplore = toolAction(x.s, 'rsi.version', { change: 'fast explore', config: { a: 2 }, tier: 'explore', seeds: 1, reservedSeeds: [38, 39], skipControl: true }, ctx, now);
+  // reservedSeeds fail-closed negative cases with zero dirty mutation to d.versions
+  const vCountBefore = x.d.versions.length;
+  const dupHist = toolAction(x.s, 'rsi.version', { change: 'dup hist', config: { a: 2 }, tier: 'explore', seeds: 1, reservedSeeds: [11], skipControl: true }, ctx, now);
+  assert.match(dupHist.error, /overlaps previously used seeds: 11/);
+  assert.equal(x.d.versions.length, vCountBefore);
+  const dupSched = toolAction(x.s, 'rsi.version', { change: 'dup sched', config: { a: 2 }, tier: 'explore', seeds: 1, reservedSeeds: [38], skipControl: true }, ctx, now);
+  assert.match(dupSched.error, /must not overlap scheduled seeds: 38/);
+  assert.equal(x.d.versions.length, vCountBefore);
+  const dupSelf = toolAction(x.s, 'rsi.version', { change: 'dup self', config: { a: 2 }, tier: 'explore', seeds: 1, reservedSeeds: [39, 39], skipControl: true }, ctx, now);
+  assert.match(dupSelf.error, /must not contain duplicate seeds/);
+  assert.equal(x.d.versions.length, vCountBefore);
+
+  // Valid explore tier (Option A semantics): scheduled seeds=[38] + extra reservedSeeds=[39], skip outer control
+  const okExplore = toolAction(x.s, 'rsi.version', { change: 'fast explore', config: { a: 2 }, tier: 'explore', seeds: 1, reservedSeeds: [39], skipControl: true }, ctx, now);
   assert.equal(okExplore.ok, true);
   assert.equal(x.d.upcoming.tier, 'explore');
   assert.equal(x.d.upcoming.skipControl, true);
-  assert.equal(x.d.upcoming.seeds.length, 1);
-  assert.deepEqual(x.d.upcoming.reservedSeeds, [38, 39]);
+  assert.deepEqual(x.d.upcoming.seeds, [38]);
+  assert.deepEqual(x.d.upcoming.reservedSeeds, [39]);
   assert.deepEqual(x.d.upcoming.groups.map((g) => g.id), ['change']);
 
   // runCycle respects skipControl on explore tier (does not prepend control)
@@ -773,13 +785,14 @@ test('universal explore/confirm tier supports single-group explore without outer
   assert.deepEqual(r2.plan.groups.map((g) => g.id), ['change']);
   assert.equal(r2.runs.length, 1);
 
-  // Conclude single-group explore round: comparable=false -> cannot auto-promote candidate, and rsiCompareMatrix renders '探索' cleanly
+  // Conclude single-group explore round: comparable=false -> cannot auto-promote candidate, strips reservedSeeds from upcoming, and rsiCompareMatrix renders '探索' cleanly
   Object.assign(r2.runs[0], { state: 'done', metrics: Object.fromEntries(METRICS.map((m, k) => [m.id, VALUES['format-zero'][0][k]])) });
   r2.state = 'evaluating';
   const c2 = conclude(x.s, x.d, { cycle: 2, verdict: 'tune', findings: 'explore ok', options: [option('c', 'variable', 'a')] }, now + 200);
   assert.equal(c2.ok, true);
   assert.equal(c2.confirmation, null);
   assert.equal(x.d.candidate, undefined);
+  assert.equal(x.d.upcoming.reservedSeeds, undefined);
   const vm2 = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: `${x.id}/v2>c1.eval` });
   assert.equal(vm2.cycle.compare.table.tier, 'explore');
   assert.equal(vm2.cycle.compare.table.controlGroup, null);
@@ -792,19 +805,31 @@ test('universal explore/confirm tier supports single-group explore without outer
   assert.match(html, /探索 <span class="rsi-mx-ver">v2<\/span>/);
   assert.doesNotMatch(html, /Δ 变化/);
 
-  // Default rsi_version (omitting tier/seeds) after an explore cycle resets tier & restores confirmSeeds (3)
+  // Reusing a historical reservedSeed (39) in a later round is rejected fail-closed
+  x.d.versionRequest = { cycle: 2, title: 'reuse reserved', since: now + 240, invocationId: 'inv-1a' };
+  const dupHistReserved = toolAction(x.s, 'rsi.version', { change: 'reuse 39', config: { a: 2 }, tier: 'explore', seeds: 1, reservedSeeds: [39], skipControl: true }, { ...ctx, invocationId: 'inv-1a' }, now + 240);
+  assert.match(dupHistReserved.error, /overlaps previously used seeds: 39/);
+
+  // Default rsi_version (omitting tier/seeds/reservedSeeds) after an explore cycle resets tier, drops reservedSeeds & restores confirmSeeds (3) skipping both 38 and 39
   x.d.versionRequest = { cycle: 2, title: 'default after explore', since: now + 250, invocationId: 'inv-1b' };
   const okDefault = toolAction(x.s, 'rsi.version', { change: 'standard version', config: { a: 2 } }, { ...ctx, invocationId: 'inv-1b' }, now + 250);
   assert.equal(okDefault.ok, true);
   assert.equal(x.d.upcoming.tier, undefined);
+  assert.equal(x.d.upcoming.reservedSeeds, undefined);
   assert.equal(x.d.upcoming.skipControl, false);
   assert.equal(x.d.upcoming.seeds.length, 3);
   assert.deepEqual(x.d.upcoming.seeds, [40, 41, 42]);
   assert.deepEqual(x.d.upcoming.groups.map((g) => g.id), ['control', 'change']);
 
+  // runCycle defense-in-depth rejects stale/overlapping reservedSeeds in upcoming
+  x.d.rounds[1].decision = { pick: 'direction', directionId: 'c', by: '你', at: now + 260 };
+  x.d.upcoming.reservedSeeds = [40];
+  const badRun = runCycle(x.s, x.d, now + 262);
+  assert.match(badRun.error, /must not overlap scheduled seeds: 40/);
+  delete x.d.upcoming.reservedSeeds;
+
   // Even an explore cycle WITH outer control (skipControl: false) cannot set candidate or trigger target stop
   x.d.objective.stop = { target: 'accuracy >= 0.8' };
-  x.d.rounds[1].decision = { pick: 'direction', directionId: 'c', by: '你', at: now + 260 };
   x.d.versionRequest = { cycle: 2, title: 'explore with control', since: now + 265, invocationId: 'inv-1c' };
   assert.equal(toolAction(x.s, 'rsi.version', { change: 'explore with control', config: { a: 3 }, tier: 'explore', seeds: 1, skipControl: false }, { ...ctx, invocationId: 'inv-1c' }, now + 265).ok, true);
   assert.equal(runCycle(x.s, x.d, now + 270).ok, true);
@@ -820,11 +845,12 @@ test('universal explore/confirm tier supports single-group explore without outer
   assert.equal(c3.stop, null);
   assert.notEqual(x.d.objective.state, 'done');
 
-  // Confirm tier restores outer control + full confirmSeeds (3)
+  // Confirm tier restores outer control + full confirmSeeds (3) and never inherits reservedSeeds
   x.d.versionRequest = { cycle: 3, title: 'confirm v4', since: now + 300, invocationId: 'inv-2' };
   const okConfirm = toolAction(x.s, 'rsi.version', { change: 'confirm candidate', config: { a: 3 }, tier: 'confirm' }, { ...ctx, invocationId: 'inv-2' }, now + 300);
   assert.equal(okConfirm.ok, true);
   assert.equal(x.d.upcoming.tier, 'confirm');
+  assert.equal(x.d.upcoming.reservedSeeds, undefined);
   assert.equal(x.d.upcoming.skipControl, false);
   assert.equal(x.d.upcoming.seeds.length, 3);
   assert.deepEqual(x.d.upcoming.seeds, [41, 42, 43]);
