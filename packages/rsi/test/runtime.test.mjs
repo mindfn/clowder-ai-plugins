@@ -829,7 +829,7 @@ test('a conclusion stores its comparison once and its library note only the outc
   const page = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
   assert.deepEqual([page.cycle.report.compare.comparable, page.cycle.report.compare.against], [true, 'control']);
   assert.deepEqual(page.cycle.compare.metrics[0].items.map((g) => [g.id, g.mean, g.delta]), [['control', '17', null], ['change', '18', '+1']]);
-  assert.deepEqual(page.trend, [{ n: 1, version: 'v1', value: 18 }]);
+  assert.deepEqual(page.trend, [{ n: 1, version: 'v1', label: 'v1-1', value: 18 }]);
   // The next cycle's evaluator reads the note's outcome and cites it.
   await decide(f, o);
   await execute(f, o);
