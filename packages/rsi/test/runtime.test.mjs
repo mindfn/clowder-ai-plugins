@@ -1582,3 +1582,47 @@ test('new objective reuses the current thread by default, blocks duplicate bindi
   assert.notEqual(fromBlank.thread, 'source');
   assert.equal(f.threads.length, 3);
 });
+
+test('runs.ts authoritatively injects tier and reservedSeeds into config.json on explore runs and strips stale values on confirm runs', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [10] });
+  await execute(f, o);
+  await report(f, o, 'tune');
+  // Choose a direction so iterate member registers an explore version with spoofed base tier/reservedSeeds
+  await decide(f, o, 'direction');
+  await f.tool('task', {}, 'codex', o.thread);
+  const vExplore = await f.tool('version', {
+    change: 'explore with reservedSeeds',
+    config: { tier: 'confirm', reservedSeeds: [999], lr: 0.1 },
+    tier: 'explore',
+    seeds: 1,
+    reservedSeeds: [12],
+    skipControl: true,
+  }, 'codex', o.thread);
+  assert.equal(vExplore.ok, true);
+  const r2 = await execute(f, o);
+  assert.equal(r2.runs.length, 1);
+  const cfgExplore = JSON.parse(await readFile(join(r2.runs[0].directory, 'config.json'), 'utf8'));
+  assert.equal(cfgExplore.tier, 'explore');
+  assert.equal(cfgExplore.seed, 11);
+  assert.deepEqual(cfgExplore.reservedSeeds, [12]);
+  assert.equal(cfgExplore.lr, 0.1);
+
+  // Next confirm round with stale base reservedSeeds/tier must have reservedSeeds stripped and tier forced to confirm
+  await report(f, o, 'tune');
+  await decide(f, o, 'direction');
+  await f.tool('task', {}, 'codex', o.thread);
+  const vConfirm = await f.tool('version', {
+    change: 'confirm strips stale reservedSeeds',
+    config: { tier: 'explore', reservedSeeds: [12], lr: 0.1 },
+    tier: 'confirm',
+  }, 'codex', o.thread);
+  assert.equal(vConfirm.ok, true);
+  const r3 = await execute(f, o);
+  assert.deepEqual(r3.plan.seeds, [13]);
+  const changeRun = r3.runs.find((u) => u.group === 'change');
+  const cfgConfirm = JSON.parse(await readFile(join(changeRun.directory, 'config.json'), 'utf8'));
+  assert.equal(cfgConfirm.tier, 'confirm');
+  assert.equal(cfgConfirm.seed, 13);
+  assert.equal('reservedSeeds' in cfgConfirm, false);
+});
