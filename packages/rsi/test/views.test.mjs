@@ -758,6 +758,12 @@ test('universal explore/confirm tier supports single-group explore without outer
 
   // reservedSeeds fail-closed negative cases with zero dirty mutation to d.versions
   const vCountBefore = x.d.versions.length;
+  const badConfirmReserved = toolAction(x.s, 'rsi.version', { change: 'confirm reserved', config: { a: 2 }, tier: 'confirm', reservedSeeds: [45] }, ctx, now);
+  assert.match(badConfirmReserved.error, /reservedSeeds is only allowed when tier is "explore"/);
+  assert.equal(x.d.versions.length, vCountBefore);
+  const badDefaultReserved = toolAction(x.s, 'rsi.version', { change: 'default reserved', config: { a: 2 }, reservedSeeds: [45] }, ctx, now);
+  assert.match(badDefaultReserved.error, /reservedSeeds is only allowed when tier is "explore"/);
+  assert.equal(x.d.versions.length, vCountBefore);
   const dupHist = toolAction(x.s, 'rsi.version', { change: 'dup hist', config: { a: 2 }, tier: 'explore', seeds: 1, reservedSeeds: [11], skipControl: true }, ctx, now);
   assert.match(dupHist.error, /overlaps previously used seeds: 11/);
   assert.equal(x.d.versions.length, vCountBefore);
@@ -821,11 +827,16 @@ test('universal explore/confirm tier supports single-group explore without outer
   assert.deepEqual(x.d.upcoming.seeds, [40, 41, 42]);
   assert.deepEqual(x.d.upcoming.groups.map((g) => g.id), ['control', 'change']);
 
-  // runCycle defense-in-depth rejects stale/overlapping reservedSeeds in upcoming
+  // runCycle defense-in-depth rejects non-explore reservedSeeds and stale/overlapping reservedSeeds in upcoming
   x.d.rounds[1].decision = { pick: 'direction', directionId: 'c', by: '你', at: now + 260 };
+  x.d.upcoming.reservedSeeds = [45];
+  const badRunTier = runCycle(x.s, x.d, now + 261);
+  assert.match(badRunTier.error, /reservedSeeds is only allowed when tier is "explore"/);
+  x.d.upcoming.tier = 'explore';
   x.d.upcoming.reservedSeeds = [40];
   const badRun = runCycle(x.s, x.d, now + 262);
   assert.match(badRun.error, /must not overlap scheduled seeds: 40/);
+  delete x.d.upcoming.tier;
   delete x.d.upcoming.reservedSeeds;
 
   // Even an explore cycle WITH outer control (skipControl: false) cannot set candidate or trigger target stop

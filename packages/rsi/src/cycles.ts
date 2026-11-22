@@ -76,6 +76,7 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
     if (plan.groups.some((g: Data) => !d.versions.some((v: Data) => v.id === g.version))) return { error: 'Unknown group version' };
     if (!d.policy.confirmSeeds && plan.tier !== 'explore' && plan.seeds.length > 0) d.policy.confirmSeeds = plan.seeds.length;
     if (d.rounds.length) plan.seeds = freshSeeds(d, plan.seeds.length);
+    if (plan.reservedSeeds !== undefined && plan.tier !== 'explore') return { error: 'reservedSeeds is only allowed when tier is "explore"' };
     const reservedErr = validateReservedSeeds(d, plan.reservedSeeds, plan.seeds);
     if (reservedErr) return { error: reservedErr };
     const n = planned?.n || Math.max(0, ...d.rounds.map((r: Data) => r.n)) + 1;

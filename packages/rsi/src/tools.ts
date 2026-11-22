@@ -150,13 +150,14 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     if (input.seeds !== undefined && !(Number.isInteger(input.seeds) && input.seeds >= 1 && input.seeds <= 20)) return { error: 'seeds must be an integer between 1 and 20' };
     if (input.skipControl !== undefined && typeof input.skipControl !== 'boolean') return { error: 'skipControl must be a boolean' };
     if (input.skipControl === true && input.tier !== 'explore') return { error: 'skipControl is only allowed when tier is "explore"' };
+    if (d.versionRequest.direct && input.reservedSeeds !== undefined) return { error: 'reservedSeeds is not allowed on direct execution fixes' };
+    if (input.reservedSeeds !== undefined && input.tier !== 'explore') return { error: 'reservedSeeds is only allowed when tier is "explore"' };
     const last = d.rounds.find((r: Data) => r.n === d.versionRequest.cycle);
     const tier = input.tier as ('explore' | 'confirm' | undefined);
     const skipControl = tier === 'explore' && input.skipControl === true;
     const defaultSeeds = tier === 'explore' ? last.plan.seeds.length : (d.policy.confirmSeeds || last.plan.seeds.length);
     const seedCount = typeof input.seeds === 'number' ? input.seeds : defaultSeeds;
     const scheduledSeeds = freshSeeds(d, seedCount);
-    if (d.versionRequest.direct && input.reservedSeeds !== undefined) return { error: 'reservedSeeds is not allowed on direct execution fixes' };
     const reservedErr = validateReservedSeeds(d, input.reservedSeeds, scheduledSeeds);
     if (reservedErr) return { error: reservedErr };
     const previous = d.objective.currentVersion, id = `v${d.versions.length + 1}`;

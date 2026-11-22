@@ -163,7 +163,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
         changes: { type: 'object', additionalProperties: true, description: '可选结构化变更摘要 { pr?, files?, items? }。' },
         tier: { type: 'string', enum: ['explore', 'confirm'], description: '可选本轮验证档位：explore（快筛，不直接晋级）或 confirm（正式确认，强保留对照与满血确认种子数）；会透传进 config.json。' },
         seeds: { type: 'integer', minimum: 1, maximum: 20, description: '可选覆盖本轮种子/样本批次数（1–20）；进入确认轮自动恢复完整确认种子数。' },
-        reservedSeeds: { type: 'array', items: { type: 'integer', minimum: 0 }, maxItems: 20, description: '可选登记单次运行内部额外消耗的种子号（仅填附加种子，不得内部重复、不得与历史种子或本轮自动分配种子重叠）；下一周期自动分配新种子时一并避开。' },
+        reservedSeeds: { type: 'array', items: { type: 'integer', minimum: 0 }, maxItems: 20, description: '仅当 tier="explore" 时可用：可选登记单次运行内部额外消耗的种子号（仅填附加种子，不得内部重复、不得与历史种子或本轮自动分配种子重叠）；下一周期自动分配新种子时一并避开。' },
         skipControl: { type: 'boolean', description: '仅当 tier="explore" 时可用：跳过外层重复 control 组（如 run 内置配对或复用冻结基线），不直接晋级默认版本。' },
       },
     },
