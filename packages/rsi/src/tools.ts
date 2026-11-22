@@ -99,7 +99,7 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
     ...(analyze ? { analyze: { cycle: analyze.n, report: { verdict: analyze.report.verdict, findings: analyze.report.summary, confirmation: analyze.confirmation }, plan: analyze.plan, runs: analyze.runs,
       metrics: analyze.metrics || d.metrics, comparison: comparison(d, analyze), library: cycleLibrary(state, d),
       next: '调用原生 MCP 工具 rsi_propose({cycle,options:[{k,title,why,kind?,target?,cites?}]}) 交你的方向。target 写这个方向要改的对象（例如 lr、group_size、train.py 的奖励），几个分析成员的第一方向种类和对象都相同就算意见一致。' } } : {}),
-    ...(version ? { version: { ...version, next: version.repair ? '修好让它跑不起来的问题并提交 git，调用原生 MCP 工具 rsi_version({change,commit,config})，插件用修好的版本重跑这一周期的计划；修不了就调 rsi_version({cannot:"原因"})。' : '按方向修改项目并提交 git；调用原生 MCP 工具 rsi_version({change,commit,config})。config 是 JSON 对象或项目内 JSON 文件路径（也可用 configPath）。' } } : {}) };
+    ...(version ? { version: { ...version, next: version.repair ? '修好让它跑不起来的问题并提交 git，调用原生 MCP 工具 rsi_version({change,commit,config})，插件用修好的版本重跑这一周期的计划；修不了就调 rsi_version({cannot:"原因"})。' : '按方向修改项目并提交 git；调用原生 MCP 工具 rsi_version({change,commit,config})。config 是 JSON 对象或项目内 JSON 文件路径（也可用 configPath）。若所选方向契约冲突或无法满足，可调 rsi_version({cannot:"原因"}) 退回重新选方向。' } } : {}) };
 }
 
 // Some member runtimes hand nested arguments over as JSON text ("items": "[{…}]"); read them as the structures they describe.
@@ -152,8 +152,24 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
   }
   if (method === 'rsi.version') {
     if (d.members.find((m) => m.role === 'iterate')?.catId !== ctx.catId || d.versionRequest?.invocationId !== ctx.invocationId) return { error: 'Call rsi.task on the version turn first', status: 403 };
-    // A repair the member cannot make goes to the evaluator instead.
-    if (d.versionRequest.repair && text(input.cannot)) { abandonRepair(state, d, `${d.members.find((m) => m.role === 'iterate')!.name} 说修不了：${input.cannot}`, now); return { ok: true, evaluating: true }; }
+    if (text(input.cannot)) {
+      const who = d.members.find((m) => m.role === 'iterate')?.name || ctx.catId;
+      // A repair the member cannot make goes to the evaluator instead.
+      if (d.versionRequest.repair) { abandonRepair(state, d, `${who} 说修不了：${input.cannot}`, now); return { ok: true, evaluating: true }; }
+      // A non-repair direction request that cannot be satisfied returns cleanly to pending decision without mutating versions or unpausing.
+      const req = d.versionRequest;
+      const round = d.rounds.find((r: Data) => r.n === req.cycle);
+      delete d.versionRequest;
+      if (round && !d.rounds.some((r: Data) => r.n > round.n)) {
+        round.decision = null;
+        round.asked = now;
+        if (d.objective.state === 'running') d.objective.state = 'pending';
+        else if (d.objective.state === 'paused') d.objective.resumeTo = 'pending';
+      }
+      message(state, d, now, `第 ${req.cycle} 周期方向退回：${who} 无法按「${req.title}」出版本`, `${input.cannot}\n\n请重新在 RSI 页面或通过委托负责人选择方向。`, 'conclusion');
+      syncObjective(state, d);
+      return { ok: true, returned: true, cycle: req.cycle };
+    }
     const configVal = input.config !== undefined ? input.config : text(input.configPath) ? input.configPath : undefined;
     if (!text(input.change) || input.commit !== undefined && (!text(input.commit) || !/^[a-f0-9]{7,40}$/i.test(input.commit)) || !(record(configVal) || text(configVal))) return { error: 'Provide change, optional git commit (7–40 hex characters), and config (JSON object or JSON file path / configPath)' };
     if (input.tier !== undefined && !['explore', 'confirm'].includes(input.tier)) return { error: 'tier must be "explore" or "confirm"' };

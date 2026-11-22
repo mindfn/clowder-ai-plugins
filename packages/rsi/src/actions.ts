@@ -632,7 +632,14 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       if (!['direction', 'same', 'info', 'addVar', 'metric', 'goal'].includes(body.pick)) return { error: 'Invalid experiment decision' };
       if (body.pick !== 'direction' && body.pick !== 'same' && body.note == null) return { ok: true, act: 'dialog', args: { kind: 'rsiExpNote', n: body.n, pick: body.pick, directionId: body.directionId } };
       if (body.pick === 'direction' && !round.report.directions.some((x: Data) => x.id === body.directionId)) return { error: 'Direction not found', status: 404 };
-      if (round.decision) return { error: 'Round already decided', status: 409 };
+      const canRedecide = !!round.decision
+        && !!d.objective.projectPath
+        && !d.rounds.some((r: Data) => r.n > round.n)
+        && d.versionRequest?.cycle === round.n
+        && !d.versionRequest.repair;
+      if (round.decision && !canRedecide) return { error: 'Round already decided', status: 409 };
+      if (canRedecide && ['done', 'paused', 'retired'].includes(d.objective.state)) return { error: 'Objective is not active', status: 409 };
+      if (canRedecide) delete d.versionRequest;
       round.decision = { pick: body.pick, directionId: body.directionId ?? null, note: body.note ?? '', by: actor, at: now };
       const n = round.n + 1, current = round.plan.groups[0];
       if (d.objective.projectPath) {

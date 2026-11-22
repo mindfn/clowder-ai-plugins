@@ -12,7 +12,7 @@ The installed `official.rsi` plugin registers a native MCP server (`rsi-native`)
 - `rsi_executor` — Register local execution commands (`preflight`, `submit`, `collect`, plus optional `get`/`cancel`/`analyze`/`resultMap`/`failureField`/`timeout`/`poll`) during Step 3.
 - `rsi_conclude` — Submit a cycle evaluation (`cycle`, `verdict`, `findings`, optional `options` / `comparisons`).
 - `rsi_propose` — Submit direction proposals during cycle discussion (`cycle`, `options`).
-- `rsi_version` — Deliver a new version or execution repair (`change`, optional `commit`, `config` or `configPath`, optional `changes`; or `cannot` when a repair is impossible).
+- `rsi_version` — Deliver a new version or execution repair (`change`, optional `commit`, `config` or `configPath`, optional `changes`; or `cannot` when a repair or direction request cannot be satisfied).
 - `rsi_status` — Pure read-only inspection (`{}` inside an objective thread, `{ objectiveId, cycle? }` cross-thread, or `{}` outside an objective thread to list real objectives). Works anytime with zero side effects—never open a browser just to inspect RSI state.
 - `rsi_operate` — Delegated operator control (`expDecide`, `prepConfirm`, `initStepRefresh`, `initRetry`, `stepMember`, `life`, `runCycle`, `evalAgain`, `discussAgain`, `versionAgain`), strictly gated to the owner-designated `policy.manager`. Cannot modify `policy.manager`, stop conditions, or delete objectives.
 

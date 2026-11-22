@@ -150,7 +150,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
     name: 'rsi_version',
     method: 'rsi.version',
     description:
-      '治理执行成员在选定方向或收到修复请求后提交新版本。改代码提交 git 后传 { change, commit?, config 或 configPath, changes? }；修复不了传 { cannot }。',
+      '治理执行成员在选定方向或收到修复请求后提交新版本。改代码提交 git 后传 { change, commit?, config 或 configPath, changes? }；修复不了或方向契约冲突无法满足时传 { cannot } 退回。',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -159,7 +159,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
         commit: { type: 'string', pattern: '^[a-fA-F0-9]{7,40}$', description: '可选 7–40 位 git 提交号。' },
         config: { type: 'object', additionalProperties: true, description: '版本配置对象。' },
         configPath: { type: 'string', minLength: 1, description: '或者传项目内 JSON 配置文件路径。' },
-        cannot: { type: 'string', minLength: 1, description: '修复失败时说明原因，转交评估成员。' },
+        cannot: { type: 'string', minLength: 1, description: '修复失败时转交评估成员；非修复版本请求若方向无法满足或契约冲突时退回重新选方向。' },
         changes: { type: 'object', additionalProperties: true, description: '可选结构化变更摘要 { pr?, files?, items? }。' },
         tier: { type: 'string', enum: ['explore', 'confirm'], description: '可选本轮验证档位：explore（快筛，不直接晋级）或 confirm（正式确认，强保留对照与满血确认种子数）；会透传进 config.json。' },
         seeds: { type: 'integer', minimum: 1, maximum: 20, description: '可选覆盖本轮种子/样本批次数（1–20）；进入确认轮自动恢复完整确认种子数。' },

@@ -2111,3 +2111,114 @@ test('rsi_operate enforces owner-designated policy.manager gate, records delegat
   assert.equal((await f.http('POST', { op: 'manager', objective: o.id, v: '' })).status, 200);
   assert.equal((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'pause' }, 'mgr-cat', 'infra-thread')).status, 403);
 });
+
+test('rsi_version({cannot}) on a non-repair versionRequest returns the cycle to pending without mutating versions or unpausing', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [201] });
+  await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', {
+    cycle: 1,
+    verdict: 'insufficient',
+    findings: 'Cycle 1 failed before remote launch',
+    options: [
+      { k: 'exec-fix', title: 'Direct execution fix', why: 'fix payload', kind: 'execution', target: 'payload' },
+      { k: 'explore-retry', title: 'Complete explore retry', why: 're-register explore', kind: 'discriminate', target: 'payload' },
+    ],
+  }, 'cat-b5ddoo9l', o.thread)).ok, true);
+
+  // Pick execution direction -> sets versionRequest.direct = true.
+  assert.equal((await f.http('POST', { op: 'expDecide', objective: o.id, n: 1, pick: 'direction', directionId: 'exec-fix' }, { project: f.project })).status, 200);
+  const beforeReturn = (await f.read()).experiments[o.id];
+  assert.equal(beforeReturn.versionRequest.direct, true);
+  assert.equal(beforeReturn.objective.state, 'running');
+
+  // Iterate member claims version turn, hits direct+reservedSeeds conflict, and returns via cannot.
+  await f.tool('task', {}, 'codex', o.thread);
+  const blocked = await f.tool('version', { change: 're-register', config: {}, tier: 'explore', seeds: 1, skipControl: true, reservedSeeds: [202] }, 'codex', o.thread);
+  assert.match(blocked.error, /reservedSeeds is not allowed on direct execution fixes/);
+
+  const returned = await f.tool('version', { cannot: 'direct execution fix conflicts with explore reservedSeeds' }, 'codex', o.thread);
+  assert.equal(returned.ok, true);
+  assert.equal(returned.returned, true);
+  assert.equal(returned.cycle, 1);
+
+  const afterReturn = (await f.read()).experiments[o.id];
+  assert.equal(afterReturn.versionRequest, undefined);
+  assert.equal(afterReturn.rounds[0].decision, null);
+  assert.equal(afterReturn.objective.state, 'pending');
+  assert.equal(afterReturn.objective.currentVersion, 'v1');
+  assert.equal(afterReturn.versions.length, 1);
+  assert.equal((await f.tool('status', { objectiveId: o.id }, 'codex', o.thread)).active.pendingDecisionCycle, 1);
+
+  // Also verify cannot while paused preserves paused state and updates resumeTo to pending.
+  assert.equal((await f.http('POST', { op: 'expDecide', objective: o.id, n: 1, pick: 'direction', directionId: 'exec-fix' }, { project: f.project })).status, 200);
+  await f.tool('task', {}, 'codex', o.thread);
+  assert.equal((await f.http('POST', { op: 'life', objective: o.id, action: 'pause' })).status, 200);
+  assert.equal((await f.tool('version', { cannot: 'still conflicts while paused' }, 'codex', o.thread)).returned, true);
+  const pausedExp = (await f.read()).experiments[o.id];
+  assert.equal(pausedExp.objective.state, 'paused');
+  assert.equal(pausedExp.objective.resumeTo, 'pending');
+  assert.equal(pausedExp.rounds[0].decision, null);
+  assert.equal((await f.http('POST', { op: 'life', objective: o.id, action: 'resume' })).status, 200);
+  assert.equal((await f.read()).experiments[o.id].objective.state, 'pending');
+
+  // Re-pick non-direct discriminate direction and verify explore reservedSeeds registration succeeds without overwriting currentVersion.
+  assert.equal((await f.http('POST', { op: 'expDecide', objective: o.id, n: 1, pick: 'direction', directionId: 'explore-retry' }, { project: f.project })).status, 200);
+  await f.tool('task', {}, 'codex', o.thread);
+  const reg = await f.tool('version', { change: 're-register explore', config: { delta: 1 }, tier: 'explore', seeds: 1, skipControl: true, reservedSeeds: [205] }, 'codex', o.thread);
+  assert.equal(reg.ok, true);
+  assert.equal(reg.version, 'v2');
+  const finalExp = (await f.read()).experiments[o.id];
+  assert.equal(finalExp.objective.currentVersion, 'v1');
+  assert.deepEqual(finalExp.upcoming.reservedSeeds, [205]);
+});
+
+test('expDecide allows re-deciding an undecided-version cycle before version registration, invalidates stale claims, and rejects 409 after version registration', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [301] });
+  const cats = [{ id: 'mgr-cat', name: '墨墨', model: 'm', handle: '@gemini' }, { id: 'codex', name: '砚砚', model: 'm', handle: '@codex' }];
+  assert.equal((await f.http('POST', { op: 'manager', objective: o.id, v: 'mgr-cat', cats })).status, 200);
+
+  await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', {
+    cycle: 1,
+    verdict: 'insufficient',
+    findings: 'Cycle 1 failed before launch',
+    options: [
+      { k: 'exec-fix', title: 'Direct execution fix', why: 'fix', kind: 'execution', target: 'payload' },
+      { k: 'explore-retry', title: 'Complete explore retry', why: 'retry', kind: 'discriminate', target: 'payload' },
+    ],
+  }, 'cat-b5ddoo9l', o.thread)).ok, true);
+
+  // Manager picks execution direction -> direct=true; codex claims the turn.
+  assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 1, pick: 'direction', directionId: 'exec-fix' }, 'mgr-cat', 'infra-thread')).ok, true);
+  assert.equal((await f.read()).experiments[o.id].versionRequest.direct, true);
+  await f.tool('task', {}, 'codex', o.thread, 'turn-old');
+
+  // Manager re-decides Cycle 1 to non-direct explore-retry before any version is registered.
+  const redecided = await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 1, pick: 'direction', directionId: 'explore-retry', note: 'switch off direct' }, 'mgr-cat', 'infra-thread');
+  assert.equal(redecided.ok, true);
+  const exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.rounds[0].decision.directionId, 'explore-retry');
+  assert.equal(exp.rounds[0].decision.by, '墨墨（受托）');
+  assert.equal(exp.versionRequest.direct, undefined);
+  assert.equal(exp.versionRequest.invocationId, undefined);
+  assert.equal(exp.versions.length, 1);
+  assert.equal(exp.objective.currentVersion, 'v1');
+
+  // Stale invocationId cannot submit against the replaced versionRequest (403).
+  const stale = await f.tool('version', { change: 'stale', config: {} }, 'codex', o.thread, 'turn-old');
+  assert.equal(stale.status, 403);
+
+  // Fresh turn claims and registers v2 with reservedSeeds cleanly.
+  await f.tool('task', {}, 'codex', o.thread, 'turn-new');
+  const reg = await f.tool('version', { change: 'v2 explore', config: { delta: 1 }, tier: 'explore', seeds: 1, skipControl: true, reservedSeeds: [305] }, 'codex', o.thread, 'turn-new');
+  assert.equal(reg.ok, true);
+  assert.equal(reg.version, 'v2');
+
+  // Once v2 is registered (versionRequest consumed), re-deciding Cycle 1 MUST still return 409.
+  const late = await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 1, pick: 'direction', directionId: 'exec-fix' }, 'mgr-cat', 'infra-thread');
+  assert.equal(late.status, 409);
+});
