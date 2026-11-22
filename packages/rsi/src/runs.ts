@@ -154,6 +154,41 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         where = { cwd, values };
         const since = jobId ? start : Date.now();
         if (!jobId) {
+          // Before submitting a new job, ensure no earlier failed run still holds an unconfirmed remote jobId.
+          const orphans = d.rounds.flatMap((r: Data) => (r.runs || []).filter((u: Data) => u.id !== run.id && u.state === 'failed' && !u.retryable && u.jobId).map((u: Data) => ({ cycle: r.n, run: u })));
+          for (const orphan of orphans) {
+            step = 'orphan-check';
+            const oldJob = String(orphan.run.jobId);
+            const oldDir = typeof orphan.run.directory === 'string' && orphan.run.directory ? orphan.run.directory : directory;
+            const oldCwd = typeof orphan.run.cwd === 'string' && orphan.run.cwd && await exists(orphan.run.cwd) ? orphan.run.cwd : cwd;
+            const oldValues: Data = { config: join(oldDir, 'config.json'), run: oldDir, seed: orphan.run.seed, job: oldJob, start: Math.floor((orphan.run.start || start) / 1000) };
+            let cleared = false;
+            if (d.executor.commands.get) {
+              const probe = await launch(d.executor.commands.get, oldCwd, oldValues);
+              log = (log + probe.log).slice(-16000);
+              if (stopped) return;
+              if (probe.code === 0) {
+                try {
+                  const st = parseResult(probe.stdout);
+                  if (record(st) && typeof st.state === 'string' && !['queued', 'running'].includes(st.state)) cleared = true;
+                } catch {}
+              }
+            }
+            if (!cleared && canCancel(d.executor.commands.cancel, oldValues)) {
+              const res = await launch(d.executor.commands.cancel, oldCwd, oldValues);
+              log = (log + res.log).slice(-16000);
+              if (stopped) return;
+              if (res.code === 0) cleared = true;
+            }
+            if (cleared) {
+              await retain(host.storage, key, (state) => {
+                const target = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === orphan.cycle)?.runs.find((u: Data) => u.id === orphan.run.id);
+                if (target) delete target.jobId;
+              });
+            } else {
+              throw new Error(`前序失败运行 ${orphan.run.id} 的远端作业 ${oldJob} 仍未确认结束或取消，暂停提交新作业`);
+            }
+          }
           step = 'preflight';
           const preflight = await launch(d.executor.commands.preflight, cwd, values);
           log += preflight.log;
@@ -200,19 +235,29 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             if (stopped) return;
             if (held) throw new Error('Run window closed');
             if (remote?.dropped) throw new Error('Objective deleted');
-            if (polled.code !== 0) {
+            let status: Data | null = null;
+            let pollErr = polled.code !== 0 ? `get exited ${polled.code}` : '';
+            if (!pollErr) {
+              try {
+                const parsed = parseResult(polled.stdout);
+                if (record(parsed) && typeof parsed.state === 'string') status = parsed;
+                else pollErr = 'get returned non-object status without state';
+              } catch (e) {
+                pollErr = `get returned invalid JSON (${e instanceof Error ? e.message : String(e)})`;
+              }
+            }
+            if (pollErr) {
               pollFails++;
               if (!pollFailSince) pollFailSince = Date.now();
-              if (pollFails > MAX_POLL_FAILS && (!pollGraceMs || Date.now() - pollFailSince >= pollGraceMs)) { pollLost = true; throw new Error(`get exited ${polled.code} (${pollFails} consecutive poll failures): ${polled.log}`); }
+              if (pollFails > MAX_POLL_FAILS && (!pollGraceMs || Date.now() - pollFailSince >= pollGraceMs)) { pollLost = true; throw new Error(`${pollErr} (${pollFails} consecutive poll failures): ${polled.log}`); }
               if (d.executor.timeout && Date.now() - since > d.executor.timeout * 1000) { timedOut = true; throw new Error(`异步任务超过 ${d.executor.timeout} 秒没结束`); }
               await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, (d.executor.poll || 1) * 1000); });
               releasePoll = undefined; pollTimer = undefined;
               continue;
             }
             pollFails = 0; pollFailSince = 0;
-            const status = parseResult(polled.stdout);
-            if (status.state === 'done' && (status.exitCode === undefined || status.exitCode === 0)) { remoteEnded = true; break; }
-            if (!['queued', 'running'].includes(status.state)) { remoteEnded = true; throw new Error(`Remote job ${status.state}, exit ${status.exitCode ?? 'unknown'}: ${status.reason || ''}`); }
+            if (status!.state === 'done' && (status!.exitCode === undefined || status!.exitCode === 0)) { remoteEnded = true; break; }
+            if (!['queued', 'running'].includes(status!.state)) { remoteEnded = true; throw new Error(`Remote job ${status!.state}, exit ${status!.exitCode ?? 'unknown'}: ${status!.reason || ''}`); }
             if (d.executor.timeout && Date.now() - since > d.executor.timeout * 1000) { timedOut = true; throw new Error(`异步任务超过 ${d.executor.timeout} 秒没结束`); }
             await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, (d.executor.poll || 1) * 1000); });
             releasePoll = undefined; pollTimer = undefined;

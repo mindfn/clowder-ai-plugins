@@ -155,7 +155,7 @@ export function submitInitStep(state: RsiState, id: string, submission: InitSubm
   hist.push({ rev: nextRev, at: now, by: execution.by, unknowns: submission.unknowns || '', next: submission.next || '' });
   if (hist.length > 5) hist.splice(0, hist.length - 5);
   delete d.exec![section];
-  if (old) rsiExpStaleFrom(d, section, true);
+  if (old && !(section === 'run' && d.rounds.length > 0)) rsiExpStaleFrom(d, section, true);
   if (submission.goal) Object.assign(d.objective.goal, submission.goal, { statement: d.objective.goal?.statement || d.objective.name });
   if (submission.executor) d.executor = structuredClone(submission.executor);
   if (submission.metrics) {

@@ -83,7 +83,7 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
   const version = d.members.find((m) => m.role === 'iterate')?.catId === ctx.catId && d.versionRequest;
   const analyze = d.rounds.find((r: Data) => r.analysis?.waiting.includes(ctx.catId));
   if (!steps.length && !evaluate && !version && !analyze) {
-    const latest = d.rounds.at(-1);
+    const latest = [...d.rounds].reverse().find((r: Data) => r.state !== 'planned');
     if (latest?.analysis?.missing?.includes(ctx.catId)) {
       return { error: `第 ${latest.n} 周期的方向讨论已超时收口（结论卡片已发出），本轮无需再提交方向。`, status: 409 };
     }

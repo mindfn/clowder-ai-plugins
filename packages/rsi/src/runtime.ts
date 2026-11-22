@@ -2,7 +2,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { abandonRepair, ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAnalysis, nightDigest, nightDue, REPAIR_WAIT, runCycle } from './cycles.js';
 import { insideWindow, withinWindowLimit } from './schedule.js';
-import { bindObjectiveThread, clipTitle, recordInitExecution, threadTitle } from './init.js';
+import { bindObjectiveThread, clipTitle, message, recordInitExecution, threadTitle } from './init.js';
 import { createRuns } from './runs.js';
 import { isState, listOwners, readState, record, retain } from './store.js';
 import { removeVersionWorktrees } from './versions.js';
@@ -12,18 +12,42 @@ function executionEvents(state: import('./types.js').RsiState, d: Experiment) {
   for (const [id, event] of Object.entries(d.lifecycle || {}) as [string, Data][]) {
     if (!event.outcome || event.applied) continue;
     const dispatch = state.outbox.find((entry) => entry.kind === 'agent' && entry.objective === d.objective.id && entry.messageId === event.replyTo);
-    if (!dispatch?.section) continue;
-    const step = d.exec?.[dispatch.section as Section];
-    if (step?.state === 'started' && step.id === dispatch.executionId && step.by === dispatch.member)
-      recordInitExecution(state, d.objective.id, dispatch.section, step.id, event.outcome, Date.now());
-    // The member's turn ended normally while a step handed to it in that turn is still open: wake it once for that step.
-    if (event.outcome === 'completed') for (const handed of state.outbox.filter((e) => e.kind === 'agent' && e.objective === d.objective.id && e.member === dispatch.member && e.inTurn && !e.rewoken)) {
-      const open = d.exec?.[handed.section as Section];
-      if (open?.state !== 'started' || open.id !== handed.executionId) continue;
-      handed.rewoken = true;
-      state.outbox.push({ ...handed, id: `${handed.id}-wake`, inTurn: undefined, sent: undefined, messageId: undefined });
+    if (!dispatch) continue;
+    if (dispatch.section) {
+      const step = d.exec?.[dispatch.section as Section];
+      if (step?.state === 'started' && step.id === dispatch.executionId && step.by === dispatch.member)
+        recordInitExecution(state, d.objective.id, dispatch.section, step.id, event.outcome, Date.now());
+      // The member's turn ended normally while a step handed to it in that turn is still open: wake it once for that step.
+      if (event.outcome === 'completed') for (const handed of state.outbox.filter((e) => e.kind === 'agent' && e.objective === d.objective.id && e.member === dispatch.member && e.inTurn && !e.rewoken)) {
+        const open = d.exec?.[handed.section as Section];
+        if (open?.state !== 'started' || open.id !== handed.executionId) continue;
+        handed.rewoken = true;
+        state.outbox.push({ ...handed, id: `${handed.id}-wake`, inTurn: undefined, sent: undefined, messageId: undefined });
+      }
+      state.experiments[d.objective.id].lifecycle[id].applied = true;
+    } else if (dispatch.action && ['evaluate', 'version', 'direction'].includes(dispatch.action)) {
+      const same = state.outbox.filter((e) => e.kind === 'agent' && e.objective === d.objective.id && e.action === dispatch.action && e.cycle === dispatch.cycle && e.member === dispatch.member);
+      if (same.at(-1)?.id === dispatch.id) {
+        const round = dispatch.cycle != null ? d.rounds.find((r: Data) => r.n === dispatch.cycle) : undefined;
+        const stillPending = dispatch.action === 'evaluate'
+          ? round?.state === 'evaluating' && d.members.find((m) => m.role === 'evaluate')?.catId === dispatch.member
+          : dispatch.action === 'version'
+            ? !!d.versionRequest && (dispatch.cycle == null || d.versionRequest.cycle === dispatch.cycle) && d.members.find((m) => m.role === 'iterate')?.catId === dispatch.member
+            : !!round?.analysis?.waiting?.includes(dispatch.member);
+        if (stillPending) {
+          const who = d.members.find((m) => m.catId === dispatch.member)?.name || dispatch.member;
+          const cycleNum = dispatch.cycle ?? d.versionRequest?.cycle;
+          const label = dispatch.action === 'evaluate'
+            ? `第 ${cycleNum} 周期评估`
+            : dispatch.action === 'version'
+              ? `第 ${cycleNum} 周期出版本`
+              : `第 ${cycleNum} 周期方向讨论`;
+          const title = event.outcome === 'completed' ? `${label}：${who} 结束了但尚未提交` : `${label}：${who} 唤醒失败（${event.outcome}）`;
+          message(state, d, Date.now(), title, '在 RSI 页面点「重新触发」，或让该成员直接调用原生 MCP 工具 rsi_task 继续。', 'failed');
+        }
+      }
+      state.experiments[d.objective.id].lifecycle[id].applied = true;
     }
-    state.experiments[d.objective.id].lifecycle[id].applied = true;
   }
 }
 

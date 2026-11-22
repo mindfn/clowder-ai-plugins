@@ -17,7 +17,7 @@ function selected(state: RsiState, body: Data, query: Data) {
 function touched(state: RsiState, d: Experiment, item: Data, now: number, what: string) {
   const step = d.steps?.[item.section as Section];
   if (step) step.rev++;
-  const stale = step ? rsiExpStaleFrom(d, item.section, false) : [];
+  const stale = step && !(item.section === 'run' && d.rounds.length > 0) ? rsiExpStaleFrom(d, item.section, false) : [];
   message(state, d, now, `你${what}第 ${d.plan.findIndex((p) => p.k === item.section) + 1} 步「${item.title}」`, item.value + (stale.length ? `\n\n依赖它的第 ${stale.join('、')} 步已标过期；按新版本重做会按依赖顺序重新 @ 对应的成员。` : ''));
 }
 
@@ -84,7 +84,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         const waiting = role === 'evaluate' ? d.rounds.find((r: Data) => r.state === 'evaluating') : null;
         if (waiting) askEvaluation(state, d, waiting);
         else if (role === 'iterate' && d.versionRequest)
-          enqueue(state, d, 'agent', { member: member.catId, action: 'version', message: { title: '接手', body: `${mention(member)} 治理实施成员换成了你：先调原生 MCP 工具 rsi_task 看轮到你的事。` } });
+          enqueue(state, d, 'agent', { member: member.catId, cycle: d.versionRequest.cycle, action: 'version', message: { title: '接手', body: `${mention(member)} 治理实施成员换成了你：先调原生 MCP 工具 rsi_task 看轮到你的事。` } });
       }
       syncObjective(state, d);
       return { ok: true };
@@ -428,7 +428,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         delete d.exec[section];
         const prev = d.steps[section];
         if (prev) { prev.stale = true; prev.redo = true; }
-        rsiExpStaleFrom(d, section, false);
+        if (!(section === 'run' && d.rounds.length > 0)) rsiExpStaleFrom(d, section, false);
         if (d.objective.state === 'ready') d.objective.state = 'preparing';
         message(state, d, now, `你触发了第 ${d.plan.findIndex((p) => p.k === section) + 1} 步重新分析`, '将按当前成员重新调研并保留历史版本快照。');
       } else {
@@ -516,7 +516,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       if (!d || !d.versionRequest) return { error: 'No version request is pending', status: 404 };
       const member = d.members.find((m) => m.role === 'iterate');
       if (!member?.catId) return { error: 'Assign a governance execution member first' };
-      enqueue(state, d, 'agent', { member: member.catId, action: 'version', message: { title: d.versionRequest.repair ? `重发：修第 ${d.versionRequest.cycle} 周期的运行失败` : '重发：准备下一个版本',
+      enqueue(state, d, 'agent', { member: member.catId, cycle: d.versionRequest.cycle, action: 'version', message: { title: d.versionRequest.repair ? `重发：修第 ${d.versionRequest.cycle} 周期的运行失败` : '重发：准备下一个版本',
         body: `${mention(member)} 重新触发治理任务「${d.versionRequest.title}」：先调原生 MCP 工具 rsi_task 看要求，完成后调 rsi_version 提交。` } });
       return { ok: true };
     }
@@ -537,7 +537,8 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         objective.state = 'paused';
       } else if (body.action === 'resume') {
         if (objective.state !== 'paused') return { error: 'Objective is not paused' };
-        objective.state = objective.resumeTo; delete objective.resumeTo;
+        objective.state = objective.resumeTo || (d?.rounds.some((r: Data) => r.report && !r.decision) ? 'pending' : 'running');
+        delete objective.resumeTo;
       } else if (body.action === 'more') {
         if (d) d.objective.budget.rounds = (d.objective.budget.rounds || 0) + 10;
         else if (state.details[id]?.trigger) state.details[id].trigger.evals.max += 10;

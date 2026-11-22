@@ -1825,3 +1825,156 @@ test('timed-out discussion analysts receive explicit 409 window-closed errors on
   assert.equal(latePropose.status, 409);
   assert.match(latePropose.error, /第 1 周期的方向讨论已超时收口/);
 });
+
+test('conclude preserves paused objective state (updating resumeTo) and never lets auto-decision or tick unpause it', async (t) => {
+  const f = await fixture(t), o = await f.create({ auto: 'default', scheduleMode: 'unlimited' });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [21] });
+  await execute(f, o);
+  assert.equal((await f.http('POST', { op: 'life', action: 'pause', objective: o.id })).status, 200);
+  assert.equal((await f.read()).experiments[o.id].objective.state, 'paused');
+
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 10, 15, 20, 0).getTime() });
+  await report(f, o, 'keep', [{ k: 'exec-fix', title: 'fix', why: 'reason', kind: 'execution' }]);
+  let exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.objective.state, 'paused');
+  assert.equal(exp.objective.resumeTo, 'pending');
+  assert.equal(exp.rounds[0].decision, null);
+
+  // Even after DECISION_WAIT passes, tick() must not auto-decide or start cycle 2 while paused.
+  t.mock.timers.setTime(new Date(2026, 10, 15, 20, 45).getTime());
+  await f.activation().actions['rsi.tick']();
+  t.mock.timers.reset();
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.objective.state, 'paused');
+  assert.equal(exp.rounds.length, 1);
+  assert.equal(exp.rounds[0].decision, null);
+
+  // Resuming restores 'pending' cleanly.
+  assert.equal((await f.http('POST', { op: 'life', action: 'resume', objective: o.id })).status, 200);
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.objective.state, 'pending');
+  assert.equal(exp.objective.resumeTo, undefined);
+});
+
+test('non-init agent wake failures and silent completions surface visible failed notices without false alarms on superseded or submitted turns', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [31] });
+  const cats = [{ id: 'ana-1', name: '甲', model: 'm1' }, { id: 'ana-2', name: '乙', model: 'm2' }];
+  for (const c of cats) assert.equal((await f.http('POST', { op: 'analystAdd', objective: o.id, catId: c.id, cats })).status, 200);
+  await execute(f, o);
+
+  // 1) First evaluate wake superseded by evalAgain must NOT emit a stale failure card.
+  const evalCat = (await f.read()).experiments[o.id].members.find((m) => m.role === 'evaluate').catId;
+  const firstEval = f.sends.filter((s) => s.wake?.catId === evalCat).at(-1);
+  assert.equal((await f.http('POST', { op: 'evalAgain', objective: o.id })).status, 200);
+  const secondEval = f.sends.filter((s) => s.wake?.catId === evalCat).at(-1);
+  await f.activation().deliver({ kind: 'execution_status', deliveryId: 'ev1-s', threadId: o.thread, executionId: 'ev-1', state: 'started', replyTo: firstEval.messageId });
+  await f.activation().deliver({ kind: 'execution_status', deliveryId: 'ev1-e', threadId: o.thread, executionId: 'ev-1', state: 'settled', outcome: 'failed', chainDone: true });
+  let msgs = (await f.read()).experiments[o.id].messages;
+  assert.equal(msgs.some((m) => /第 1 周期评估.*唤醒失败/.test(m.title)), false);
+
+  // 2) Latest evaluate wake fails while still evaluating → surfaces visible failed notice.
+  await f.activation().deliver({ kind: 'execution_status', deliveryId: 'ev2-s', threadId: o.thread, executionId: 'ev-2', state: 'started', replyTo: secondEval.messageId });
+  await f.activation().deliver({ kind: 'execution_status', deliveryId: 'ev2-e', threadId: o.thread, executionId: 'ev-2', state: 'settled', outcome: 'provider_execution_failed', chainDone: true });
+  await until(f.read, (s) => s.outbox.every((e) => e.sent));
+  msgs = (await f.read()).experiments[o.id].messages;
+  assert.equal(msgs.some((m) => /第 1 周期评估.*唤醒失败（provider_execution_failed）/.test(m.title)), true);
+
+  // 3) Evaluator concludes → analysts woken: ana-1 submits and settles (no alarm); ana-2 completes without submitting (surfaces alarm).
+  await report(f, o, 'keep');
+  const ana1Wake = f.sends.filter((s) => s.wake?.catId === 'ana-1').at(-1);
+  const ana2Wake = f.sends.filter((s) => s.wake?.catId === 'ana-2').at(-1);
+  await f.tool('task', {}, 'ana-1', o.thread);
+  assert.equal((await f.tool('propose', { cycle: 1, options: [{ k: 'a', title: 'opt a', why: 'why', kind: 'code', target: 'lr' }] }, 'ana-1', o.thread)).ok, true);
+  await f.activation().deliver({ kind: 'execution_status', deliveryId: 'a1-s', threadId: o.thread, executionId: 'a-1', state: 'started', replyTo: ana1Wake.messageId });
+  await f.activation().deliver({ kind: 'execution_status', deliveryId: 'a1-e', threadId: o.thread, executionId: 'a-1', state: 'settled', outcome: 'completed', chainDone: true });
+  await f.activation().deliver({ kind: 'execution_status', deliveryId: 'a2-s', threadId: o.thread, executionId: 'a-2', state: 'started', replyTo: ana2Wake.messageId });
+  await f.activation().deliver({ kind: 'execution_status', deliveryId: 'a2-e', threadId: o.thread, executionId: 'a-2', state: 'settled', outcome: 'completed', chainDone: true });
+  msgs = (await f.read()).experiments[o.id].messages;
+  assert.equal(msgs.some((m) => /第 1 周期方向讨论：甲/.test(m.title)), false);
+  assert.equal(msgs.some((m) => /第 1 周期方向讨论：乙 结束了但尚未提交/.test(m.title)), true);
+});
+
+test('async get tolerates transient empty or truncated JSON stdout without dropping jobId or spawning duplicate submit', async (t) => {
+  const f = await fixture(t), o = await f.create({ repair: '0' });
+  const counterFile = join(f.project, 'malformed-poll-count');
+  const submitCountFile = join(f.project, 'malformed-submit-count');
+  f.commands.submit = `node -e "const fs=require('fs'),c=+((fs.existsSync(process.argv[1])&&fs.readFileSync(process.argv[1],'utf8'))||0)+1;fs.writeFileSync(process.argv[1],String(c));console.log(JSON.stringify({jobId:'job-malformed-'+c}))" "${submitCountFile}"`;
+  f.commands.get = `node -e "const fs=require('fs'),c=+((fs.existsSync(process.argv[1])&&fs.readFileSync(process.argv[1],'utf8'))||0)+1;fs.writeFileSync(process.argv[1],String(c));if(c===1)process.stdout.write('');else if(c===2)process.stdout.write('{broken');else console.log(JSON.stringify({state:'done',exitCode:0}))" "${counterFile}"`;
+  f.commands.collect = `node -e "console.log(JSON.stringify({metrics:{score:88}}))"`;
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [41] });
+  const round = await execute(f, o);
+  assert.equal(round.runs[0].state, 'done', JSON.stringify(round.runs[0].error));
+  assert.equal(round.runs[0].metrics.score, 88);
+  assert.equal(round.runs[0].retries, 0);
+  assert.equal(await readFile(submitCountFile, 'utf8'), '1');
+});
+
+test('orphan retained jobId blocks new submission until confirmed ended or cancelled, then clears and proceeds', async (t) => {
+  const f = await fixture(t), o = await f.create({ repair: '0' });
+  const submitCountFile = join(f.project, 'orphan-submit-count');
+  const cancelModeFile = join(f.project, 'orphan-cancel-mode');
+  await writeFile(cancelModeFile, 'fail');
+  f.commands.submit = `node -e "const fs=require('fs'),c=+((fs.existsSync(process.argv[1])&&fs.readFileSync(process.argv[1],'utf8'))||0)+1;fs.writeFileSync(process.argv[1],String(c));console.log(JSON.stringify({jobId:'job-new-'+c}))" "${submitCountFile}"`;
+  f.commands.get = `node -e "if(process.argv[1]==='orphan-job-1')console.log(JSON.stringify({state:'running'}));else console.log(JSON.stringify({state:'done',exitCode:0}))" {job}`;
+  f.commands.cancel = `node -e "const fs=require('fs');if(fs.readFileSync(process.argv[1],'utf8').trim()==='fail')process.exit(1);process.exit(0)" "${cancelModeFile}"`;
+  f.commands.collect = `node -e "console.log(JSON.stringify({metrics:{score:77}}))"`;
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [51] });
+  // Seed a prior closed cycle whose failed run still holds an unconfirmed jobId.
+  await retain(f.storage, ownerKey('owner'), (state) => {
+    const d = state.experiments[o.id];
+    d.rounds.push({
+      n: 1, version: 'v1', start: Date.now() - 60_000, end: Date.now() - 30_000, state: 'done',
+      plan: { groups: [{ id: 'control', label: 'Control', version: 'v1', vars: {}, control: true }], seeds: [50] },
+      runs: [{ id: `${o.id}-1-control-s50`, group: 'control', seed: 50, state: 'failed', retryable: false, jobId: 'orphan-job-1', directory: f.project, cwd: f.project, start: Date.now() - 60_000, end: Date.now() - 30_000, retries: 1, attempts: [], metrics: {}, artifacts: [], env: {}, log: '', error: { kind: 'env', step: 'get', raw: 'lost' } }],
+      report: { verdict: 'insufficient', headline: 'h', summary: 's', directions: [], predictions: [], asks: [], agree: true },
+      decision: { pick: 'same', note: 'retry', by: '你', at: Date.now() - 20_000 },
+      events: [],
+    });
+  });
+
+  // 1) While orphan cancel fails, cycle 2 must fail at orphan-check without submitting a duplicate job.
+  const r2 = await execute(f, o);
+  assert.equal(r2.n, 2);
+  assert.equal(r2.runs[0].state, 'failed');
+  assert.equal(r2.runs[0].error.step, 'orphan-check');
+  assert.match(r2.runs[0].error.raw, /orphan-job-1/);
+  await assert.rejects(access(submitCountFile));
+  assert.equal((await f.read()).experiments[o.id].rounds[0].runs[0].jobId, 'orphan-job-1');
+
+  // 2) Once cancel succeeds, cycle 3 clears the orphan jobId and submits normally.
+  await report(f, o, 'insufficient');
+  await decide(f, o, 'same');
+  await writeFile(cancelModeFile, 'ok');
+  const r3 = await execute(f, o);
+  assert.equal(r3.n, 3);
+  assert.equal(r3.runs[0].state, 'done', JSON.stringify(r3.runs[0].error));
+  assert.equal(r3.runs[0].metrics.score, 77);
+  assert.equal((await f.read()).experiments[o.id].rounds[0].runs[0].jobId, undefined);
+  assert.equal(await readFile(submitCountFile, 'utf8'), '1');
+});
+
+test('refreshing step 3 (run) after cycles have started updates executor without cascading stale to steps 5-7', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [61] });
+  await execute(f, o);
+  assert.equal((await f.http('POST', { op: 'initStepRefresh', objective: o.id, k: 'run' }, { project: f.project })).status, 200);
+  let exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.steps.run.stale, true);
+  assert.equal(exp.steps.design.stale, false);
+  assert.equal(exp.steps.feedback.stale, false);
+  assert.equal(exp.steps.baseline.stale, false);
+
+  const by = exp.exec.run.by;
+  await f.tool('task', {}, by, o.thread);
+  assert.equal((await f.tool('executor', { ...f.commands, poll: 5 }, by, o.thread)).state, 'probing');
+  await until(f.read, (s) => s.experiments[o.id].executor.state === 'passed');
+  const runItems = exp.prep.filter((p) => p.section === 'run').map((p) => ({ id: p.id, title: p.title, value: p.value }));
+  assert.equal((await f.tool('submit', { step: 'run', items: runItems }, by, o.thread)).ok, true);
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.steps.run.stale, false);
+  assert.equal(exp.steps.design.stale, false);
+  assert.equal(exp.steps.feedback.stale, false);
+  assert.equal(exp.steps.baseline.stale, false);
+  assert.equal(exp.executor.poll, 5);
+});

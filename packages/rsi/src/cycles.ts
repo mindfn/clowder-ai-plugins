@@ -126,7 +126,7 @@ function requestRepair(state: RsiState, d: Experiment, round: Data, now: number)
   round.state = 'repairing';
   d.versionRequest = { cycle: round.n, title: `修第 ${round.n} 周期的运行失败`, direct: true, since: now, decision: null,
     repair: { signature, failures: failed.slice(0, 5).map((r: Data) => ({ run: r.id, group: r.group, seed: r.seed, step: r.error?.step, error: r.error?.raw, analysis: r.error?.analysis || null, log: String(r.log || '').slice(-1500) })) } };
-  enqueue(state, d, 'agent', { member: member.catId, action: 'version', message: { title: `第 ${round.n} 周期运行失败，请修`,
+  enqueue(state, d, 'agent', { member: member.catId, cycle: round.n, action: 'version', message: { title: `第 ${round.n} 周期运行失败，请修`,
     body: `${mention(member)} ${failed.length} 次运行失败：${signature}。这是执行修复：只修让它跑不起来的问题，不改训练和评测。先调原生 MCP 工具 rsi_task 看失败详情；修好提交 git 后调 rsi_version，插件用修好的版本重跑这一周期的计划。${WORKTREE}修不了就调 rsi_version({cannot:"原因"})，交给评估成员下结论。本晚还能自动修 ${left} 次。` } });
   message(state, d, now, `第 ${round.n} 周期运行失败，交给 ${member.name} 修`, `错误：${signature}\n\n修好后用修好的版本重跑这一周期的计划；本晚还能自动修 ${left} 次。`, 'plan');
   return true;
@@ -146,7 +146,7 @@ export function abandonRepair(state: RsiState, d: Experiment, reason: string, no
 // Wakes the evaluate member for a cycle that waits for its conclusion (after the runs, and again from the page when that turn ended without one).
 export function askEvaluation(state: RsiState, d: Experiment, round: Data, reeval = false) {
   const member = d.members.find((m) => m.role === 'evaluate')!;
-  enqueue(state, d, 'agent', { member: member.catId, cycle: round.n,
+  enqueue(state, d, 'agent', { member: member.catId, cycle: round.n, action: 'evaluate',
     message: { title: reeval ? `第 ${round.n} 周期：重新分析指标` : `第 ${round.n} 周期跑完`, body: `${mention(member)} ${reeval ? `用户请求重新分析第 ${round.n} 周期指标与结论` : `第 ${round.n} 周期跑完`}，调原生 MCP 工具 rsi_task 看同周期对照、各组均值和逐种子结果，再调 rsi_conclude。${EXPECT_HINT}` } });
 }
 
@@ -201,6 +201,7 @@ function stopAfterConclusion(state: RsiState, d: Experiment, round: Data, compar
   if (!reason) return null;
   d.objective.stopReason = { ...reason, cycle: round.n, at: now };
   d.objective.state = 'done';
+  delete d.objective.resumeTo;
   round.decision = { pick: 'same', note: reason.text, by: 'RSI', at: now };
   return reason;
 }
@@ -356,7 +357,8 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     compare: { ...compare, note: '仅比较本周期 control；区间为种子均值 ± 样本标准差。' }, confirmation,
     attribution: { verdict: 'unresolved', primaryLayer: null, assessedLayers: [], competingLayers: [], uncertainty: 'interval', comparability: 'unchanged', reasons: [], evidence: [] } };
   round.state = 'done';
-  d.objective.state = 'pending';
+  if (d.objective.state === 'paused') d.objective.resumeTo = 'pending';
+  else d.objective.state = 'pending';
   const interval = confirmation?.interval;
   const outcome = confirmation ? `\n\n${confirmation.status === 'candidate' ? '候选：下一周期换新种子确认赢家，默认版本保持当前对照。' : confirmation.status === 'confirmed' ? `确认赢家，采用 ${confirmation.version}：${short(interval.mean)} ± ${interval.spread == null ? '无法估计' : short(interval.spread)}。` : confirmation.status === 'insufficient' ? '复验环境失败，证据不足；保留候选，下周期换新种子继续确认。' : '复验未保持改善，保留当前默认版本。'}` : '';
   // A conclusion that stops the objective asks for no direction; its stop card follows it.
@@ -420,7 +422,7 @@ export function requestVersion(state: RsiState, d: Experiment, round: Data) {
     ...(direction?.predict ? { prediction: { ...direction.predict, by: direction.by, text: direction.title, expect: direction.expect, direction: direction.id, cycle: round.n } } : {}) };
   d.objective.state = 'running';
   const member = d.members.find((m) => m.role === 'iterate')!;
-  enqueue(state, d, 'agent', { member: member.catId, action: 'version',
+  enqueue(state, d, 'agent', { member: member.catId, cycle: round.n, action: 'version',
     message: { title: '准备下一个版本', body: `${mention(member)} 按「${d.versionRequest.title}」出下一个版本。${direct ? '这是执行修复：不和当前版本对比，登记后直接作为默认版本，所以只修执行，不改训练和评测。' : ''}先调原生 MCP 工具 rsi_task，改项目并提交 git 后调 rsi_version。${WORKTREE}` } });
   syncObjective(state, d);
 }
