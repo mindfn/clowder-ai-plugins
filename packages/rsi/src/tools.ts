@@ -188,17 +188,19 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     } else {
       const tier = input.tier as ('explore' | 'confirm' | undefined);
       const skipControl = tier === 'explore' && input.skipControl === true;
-      const defaultSeeds = tier === 'confirm' ? (d.policy.confirmSeeds || last.plan.seeds.length) : last.plan.seeds.length;
+      const defaultSeeds = tier === 'explore' ? last.plan.seeds.length : (d.policy.confirmSeeds || last.plan.seeds.length);
       const seedCount = typeof input.seeds === 'number' ? input.seeds : defaultSeeds;
       const changeGroup = { id: 'change', label: input.change, version: id, vars: {}, control: false, confirm: false };
-      d.upcoming = {
+      const nextPlan: Data = {
         ...last.plan,
         baseline: false,
-        ...(tier ? { tier } : {}),
-        ...(skipControl ? { skipControl: true } : { skipControl: false }),
+        skipControl,
         seeds: freshSeeds(d, seedCount),
         groups: skipControl ? [changeGroup] : [controlGroup(d), changeGroup],
       };
+      if (tier) nextPlan.tier = tier;
+      else delete nextPlan.tier;
+      d.upcoming = nextPlan;
     }
     delete d.versionRequest;
     syncObjective(state, d);

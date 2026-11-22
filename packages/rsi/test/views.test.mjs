@@ -785,9 +785,36 @@ test('universal explore/confirm tier supports single-group explore without outer
   assert.match(html, /探索 <span class="rsi-mx-ver">v2<\/span>/);
   assert.doesNotMatch(html, /Δ 变化/);
 
+  // Default rsi_version (omitting tier/seeds) after an explore cycle resets tier & restores confirmSeeds (3)
+  x.d.versionRequest = { cycle: 2, title: 'default after explore', since: now + 250, invocationId: 'inv-1b' };
+  const okDefault = toolAction(x.s, 'rsi.version', { change: 'standard version', config: { a: 2 } }, { ...ctx, invocationId: 'inv-1b' }, now + 250);
+  assert.equal(okDefault.ok, true);
+  assert.equal(x.d.upcoming.tier, undefined);
+  assert.equal(x.d.upcoming.skipControl, false);
+  assert.equal(x.d.upcoming.seeds.length, 3);
+  assert.deepEqual(x.d.upcoming.groups.map((g) => g.id), ['control', 'change']);
+
+  // Even an explore cycle WITH outer control (skipControl: false) cannot set candidate or trigger target stop
+  x.d.objective.stop = { target: 'accuracy >= 0.8' };
+  x.d.rounds[1].decision = { pick: 'direction', directionId: 'c', by: '你', at: now + 260 };
+  x.d.versionRequest = { cycle: 2, title: 'explore with control', since: now + 265, invocationId: 'inv-1c' };
+  assert.equal(toolAction(x.s, 'rsi.version', { change: 'explore with control', config: { a: 3 }, tier: 'explore', seeds: 1, skipControl: false }, { ...ctx, invocationId: 'inv-1c' }, now + 265).ok, true);
+  assert.equal(runCycle(x.s, x.d, now + 270).ok, true);
+  const r3 = x.d.rounds[2];
+  assert.deepEqual(r3.plan.groups.map((g) => g.id), ['control', 'change']);
+  Object.assign(r3.runs[0], { state: 'done', metrics: { accuracy: 0.70, format: 1, latency: 0.2 } });
+  Object.assign(r3.runs[1], { state: 'done', metrics: { accuracy: 0.95, format: 1, latency: 0.2 } });
+  r3.state = 'evaluating';
+  const c3 = conclude(x.s, x.d, { cycle: 3, verdict: 'keep', findings: 'explore beat control', options: [{ ...option('d', 'variable', 'a'), cites: [`${x.id}-cycle-2`] }] }, now + 280);
+  assert.equal(c3.ok, true);
+  assert.equal(c3.confirmation, null);
+  assert.equal(x.d.candidate, undefined);
+  assert.equal(c3.stop, null);
+  assert.notEqual(x.d.objective.state, 'done');
+
   // Confirm tier restores outer control + full confirmSeeds (3)
-  x.d.versionRequest = { cycle: 2, title: 'confirm v2', since: now + 300, invocationId: 'inv-2' };
-  const okConfirm = toolAction(x.s, 'rsi.version', { change: 'confirm candidate', config: { a: 2 }, tier: 'confirm' }, { ...ctx, invocationId: 'inv-2' }, now + 300);
+  x.d.versionRequest = { cycle: 3, title: 'confirm v4', since: now + 300, invocationId: 'inv-2' };
+  const okConfirm = toolAction(x.s, 'rsi.version', { change: 'confirm candidate', config: { a: 3 }, tier: 'confirm' }, { ...ctx, invocationId: 'inv-2' }, now + 300);
   assert.equal(okConfirm.ok, true);
   assert.equal(x.d.upcoming.tier, 'confirm');
   assert.equal(x.d.upcoming.skipControl, false);

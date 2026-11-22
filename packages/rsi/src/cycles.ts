@@ -168,7 +168,7 @@ function stopAfterConclusion(state: RsiState, d: Experiment, round: Data, compar
   const adopted = round.confirmation?.status === 'confirmed' ? round.confirmation.group : 'control';
   const cell = metric && compared.matrix.find((m: Data) => m.group === adopted && m.metric === metric.id);
   const eligible = compared.groups.find((g: Data) => g.group === adopted)?.eligible;
-  const reached = eligible && cell && typeof cell.mean === 'number' && match && (['>=', '≥'].includes(match[2]) ? cell.mean >= +match[3] : ['<=', '≤'].includes(match[2]) ? cell.mean <= +match[3] : match[2] === '>' ? cell.mean > +match[3] : cell.mean < +match[3]);
+  const reached = round.plan.tier !== 'explore' && eligible && cell && typeof cell.mean === 'number' && match && (['>=', '≥'].includes(match[2]) ? cell.mean >= +match[3] : ['<=', '≤'].includes(match[2]) ? cell.mean <= +match[3] : match[2] === '>' ? cell.mean > +match[3] : cell.mean < +match[3]);
   const reason = reached ? { kind: 'target', text: `达到目标：${target}` }
     : stop?.maxCycles && d.objective.budget.used >= stop.maxCycles ? { kind: 'maxCycles', text: `已完成最多 ${stop.maxCycles} 个周期` }
     : round.report.verdict === 'sunset' ? { kind: 'sunset', text: '本周期结论：停止评估' } : null;
@@ -281,9 +281,10 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   }
   delete round.reevaluating;
   const wins = compared.groups.filter((g: Data) => g.beatsControl).sort((a: Data, b: Data) => compared.dir === 'up' ? b.mean - a.mean : a.mean - b.mean);
-  const winner = wins[0], candidate = d.candidate;
+  const isExplore = round.plan.tier === 'explore';
+  const winner = isExplore ? undefined : wins[0], candidate = d.candidate;
   let confirmation: Data | null = null;
-  if (candidate) {
+  if (!isExplore && candidate) {
     const group = round.plan.groups.find((g: Data) => g.confirm && g.version === candidate.version && JSON.stringify(g.vars) === JSON.stringify(candidate.vars));
     const missing = !compared.comparable || round.runs.some((r: Data) => (r.group === 'control' || r.group === group?.id) && r.error?.kind === 'env');
     const holds = !missing && group && winner?.group === group.id && round.plan.seeds.every((s: number) => !candidate.seeds.includes(s));
