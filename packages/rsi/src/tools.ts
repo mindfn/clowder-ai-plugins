@@ -184,7 +184,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       Object.assign(version, { status: 'confirmed', direct: true, config: before.config, vars: before.vars || {} });
       for (const v of d.versions) v.current = v.id === id;
       d.objective.currentVersion = id;
-      const { reservedSeeds: _dropReserved, ...cleanLastPlan } = last.plan;
+      const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, ...cleanLastPlan } = last.plan;
       if (d.versionRequest.repair) {
         // A repair reruns the failed cycle's plan on the fixed version; the failed cycle stays as it ran, marked repaired, and is not evaluated.
         Object.assign(last, { state: 'repaired', repairedBy: id });

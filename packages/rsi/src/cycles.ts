@@ -65,6 +65,7 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
     const planned = d.rounds.find((r: Data) => r.state === 'planned');
     const plan = structuredClone(planned?.plan || d.upcoming);
     if (!validPlan(plan)) return { error: 'Submit a cycle plan with groups and seeds' };
+    if (plan.requiresExplicitPlan) return { error: '上一个探索周期包含自定义 reservedSeeds 绑定，不能直接沿用旧计划重跑；请通过方向决策提交新 rsi_version 重新登记完整兼容的种子计划。' };
     const current = d.versions.find((v: Data) => v.id === d.objective.currentVersion);
     const declared = plan.groups.find((g: Data) => g.control || g.id === 'control');
     if (!current.vars) current.vars = !declared?.version || declared.version === current.id ? declared?.vars ?? declared?.overrides ?? {} : {};
@@ -309,7 +310,8 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   const isExplore = round.plan.tier === 'explore';
   const winner = isExplore ? undefined : wins[0], candidate = d.candidate;
   let confirmation: Data | null = null;
-  const { reservedSeeds: _dropReserved, ...basePlan } = round.plan;
+  const hadReservedSeeds = Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length > 0;
+  const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, ...basePlan } = round.plan;
   if (!isExplore && candidate) {
     const group = round.plan.groups.find((g: Data) => g.confirm && g.version === candidate.version && JSON.stringify(g.vars) === JSON.stringify(candidate.vars));
     const missing = !compared.comparable || round.runs.some((r: Data) => (r.group === 'control' || r.group === group?.id) && r.error?.kind === 'env');
@@ -343,7 +345,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     if (!version.current) version.status = 'candidate';
     confirmation = { status: 'candidate', group: group.id, version: group.version, cycle: round.n };
     d.upcoming = { ...basePlan, tier: 'confirm', skipControl: false, groups: [controlGroup(d), { ...group, control: false, confirm: true }], seeds: freshSeeds(d, confirmSeedCount) };
-  } else d.upcoming = { ...basePlan, seeds: freshSeeds(d, round.plan.seeds.length) };
+  } else d.upcoming = { ...basePlan, seeds: freshSeeds(d, round.plan.seeds.length), ...(hadReservedSeeds ? { requiresExplicitPlan: true } : {}) };
   round.confirmation = confirmation;
   round.stageMembers ||= {};
   round.stageMembers.eval = { catId: member.catId, name: member.name };
@@ -383,7 +385,8 @@ function conclusionCard(state: RsiState, d: Experiment, round: Data, now: number
   const verdict = (round.analysis?.compared || 0) > 1 && !stopped ? `\n\n${report.agree ? '分析成员意见一致，可以直接采纳。' : '几个分析成员意见不一致，需要你判断。'}` : '';
   const absent = missing.length ? `\n\n${missing.map(nameOf).join('、')} 没在时限内给方向。` : '';
   const checked = report.predictions.length ? `\n\n${report.predictions.map((p: Data) => `预测核对 · ${p.text}：预期 ${p.expect}，实际 ${p.actual}，${p.result === 'hit' ? '命中' : p.result === 'unresolved' ? '无法核对' : '未命中'}`).join('\n')}` : '';
-  message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${report.outcome}${checked}\n\n${lines.join('\n')}${verdict}${absent}${stopped ? '' : d.candidate ? '\n\n在 RSI 页面点「今晚照旧」，下一周期跑确认。' : '\n\n在 RSI 页面选择方向。'}`, 'conclusion');
+  const customSeedNote = !stopped && !d.candidate && Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length ? '（本周期含自定义 reservedSeeds 绑定，超时不会自动照旧续跑。）' : '';
+  message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${report.outcome}${checked}\n\n${lines.join('\n')}${verdict}${absent}${stopped ? '' : d.candidate ? '\n\n在 RSI 页面点「今晚照旧」，下一周期跑确认。' : `\n\n在 RSI 页面选择方向。${customSeedNote}`}`, 'conclusion');
   if (stopped) message(state, d, now, stopped.text, `第 ${round.n} 周期结论后停止启动新周期。`, 'conclusion');
   if (!round.decision) decideAtNight(state, d, round, now);
 }
@@ -437,6 +440,7 @@ export function propose(state: RsiState, d: Experiment, input: Data, catId: stri
 // The analysts agree when their first directions change the same thing in the same way (same kind and target); without a target there is nothing to compare.
 // Nobody decided in time: the plan the conclusion set goes on — a candidate is confirmed, otherwise the same groups run again on fresh seeds. Nothing is changed.
 export function decideByDefault(state: RsiState, d: Experiment, round: Data, now: number) {
+  if ((Array.isArray(round.plan?.reservedSeeds) && round.plan.reservedSeeds.length) || d.upcoming?.requiresExplicitPlan) return;
   round.decision = { pick: 'same', note: `${DECISION_WAIT / 60_000} 分钟没人回应，按当前计划继续`, by: 'RSI', at: now };
   d.objective.state = 'running';
   message(state, d, now, `第 ${round.n} 周期：没人回应，按当前计划继续`, d.candidate ? '下一周期换新种子复验候选。' : '下一周期按同样的组换新种子再跑一轮，不改任何东西。下一个结论出来时可以再选方向。', 'plan');

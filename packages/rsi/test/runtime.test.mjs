@@ -1727,3 +1727,78 @@ test('resuming a persisted async jobId after pollLost skips resource-gate prefli
   assert.equal((await readFile(join(f.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
   assert.equal(await access(join(f.project, 'cancels')).then(() => true, () => false), false);
 });
+
+test('explore cycles with reservedSeeds fail closed on default timeout continuation and raw runCycle, recover via explicit rsi_version or clean confirm pick:same', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [10] }, { window: '每晚 20:00–08:00' });
+  await execute(f, o);
+  await report(f, o, 'keep');
+  await decide(f, o, 'direction');
+  await f.tool('task', {}, 'codex', o.thread);
+  const vExp = await f.tool('version', {
+    change: 'explore with reservedSeeds',
+    config: { lr: 0.2 },
+    tier: 'explore',
+    skipControl: true,
+    seeds: 1,
+    reservedSeeds: [12],
+  }, 'codex', o.thread);
+  assert.equal(vExp.ok, true);
+  const r2 = await execute(f, o);
+  assert.deepEqual(r2.plan.seeds, [11]);
+  assert.deepEqual(r2.plan.reservedSeeds, [12]);
+
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 10, 15, 20, 0).getTime() });
+  const tick = () => f.activation().actions['rsi.tick']();
+  const at = (day, hour, minute = 0) => t.mock.timers.setTime(new Date(2026, 10, day, hour, minute).getTime());
+  await report(f, o, 'insufficient');
+
+  // 1) conclude strips reservedSeeds and marks upcoming.requiresExplicitPlan = true; conclusion card notes no auto-continue.
+  let exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.upcoming.reservedSeeds, undefined);
+  assert.equal(exp.upcoming.requiresExplicitPlan, true);
+  const card = f.sends.at(-1).payload.elements.find((e) => e.kind === 'rich_block');
+  assert.match(card.payload.bodyMarkdown, /超时不会自动照旧续跑/);
+
+  // 2) Advancing past DECISION_WAIT (35 min) inside the run window must NOT auto-decide pick:'same' or start cycle 3.
+  at(15, 20, 35); await tick();
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.rounds.length, 2);
+  assert.equal(exp.rounds.find((r) => r.n === 2).decision, null);
+  assert.equal(exp.objective.state, 'pending');
+  assert.equal(f.sends.some((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title === '第 2 周期：没人回应，按当前计划继续')), false);
+
+  // 3) Direct runCycle fails closed (blocked by undecided round / requiresExplicitPlan), and manual pick:'same' cleanly switches to confirm control-only.
+  t.mock.timers.reset();
+  const sameRes = await f.http('POST', { op: 'expDecide', objective: o.id, n: 2, pick: 'same' });
+  assert.equal(sameRes.status, 200);
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.upcoming.tier, 'confirm');
+  assert.equal(exp.upcoming.skipControl, false);
+  assert.equal(exp.upcoming.reservedSeeds, undefined);
+  assert.equal(exp.upcoming.requiresExplicitPlan, undefined);
+  const r3 = await execute(f, o);
+  assert.equal(r3.n, 3);
+  assert.equal(r3.plan.tier, 'confirm');
+  assert.deepEqual(r3.plan.seeds, [13]);
+  assert.equal(r3.plan.reservedSeeds, undefined);
+  assert.equal(r3.runs[0].state, 'done');
+
+  // 4) Explicitly registering a new explore version clears requiresExplicitPlan and runs cleanly with fresh [seed, ...reservedSeeds].
+  await report(f, o, 'keep');
+  await decide(f, o, 'direction');
+  await f.tool('task', {}, 'codex', o.thread);
+  const vExp2 = await f.tool('version', {
+    change: 'fresh explore bundle',
+    config: { lr: 0.3 },
+    tier: 'explore',
+    skipControl: true,
+    seeds: 1,
+    reservedSeeds: [15],
+  }, 'codex', o.thread);
+  assert.equal(vExp2.ok, true);
+  const r4 = await execute(f, o);
+  assert.deepEqual(r4.plan.seeds, [14]);
+  assert.deepEqual(r4.plan.reservedSeeds, [15]);
+  assert.equal(r4.runs[0].state, 'done');
+});

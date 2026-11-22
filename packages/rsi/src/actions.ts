@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { askEvaluation, controlGroup, finishAnalysis, requestVersion, runCycle } from './cycles.js';
+import { askEvaluation, controlGroup, finishAnalysis, freshSeeds, requestVersion, runCycle } from './cycles.js';
 import { formatPolicy, hasValidSchedule, parseMaxRuns, parseScheduleText, policiesOf, scheduleOf, scheduleSummary, timeRange, validatePolicy } from './schedule.js';
 import { summaryOf, objectiveData } from './data.js';
 import { clipTitle, enqueue, kick, mention, message, refreshMembers, rsiExpNew, rsiExpReady, rsiExpStaleFrom, setMember, stopOf, stopText, syncObjective, repairCount, repairText, REPAIR_DEFAULT, prepSettled, AUTO, autoKinds, autoKey, autoText } from './init.js';
@@ -605,7 +605,11 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
         if (['done', 'paused', 'retired'].includes(d.objective.state)) return { ok: true };
         d.objective.state = 'running';
         if (d.candidate || body.pick === 'same') {
-          if (!d.candidate) d.upcoming = { ...round.plan, groups: [controlGroup(d)] };
+          if (!d.candidate) {
+            const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, ...basePlan } = round.plan;
+            const confirmSeedCount = d.policy.confirmSeeds || round.plan.seeds.length;
+            d.upcoming = { ...basePlan, tier: 'confirm', skipControl: false, seeds: freshSeeds(d, confirmSeedCount), groups: [controlGroup(d)] };
+          }
           message(state, d, now, d.candidate ? '下一周期：确认赢家' : '下一周期：当前版本对照', '在已确认的时段运行，也可点「跑一轮」。', 'plan');
           syncObjective(state, d);
           return { ok: true };

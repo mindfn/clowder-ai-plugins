@@ -188,8 +188,9 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         if (d.executor.commands.get) {
           remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: d.executor.commands.cancel, cwd, values };
           step = 'get';
-          let pollFails = 0;
+          let pollFails = 0, pollFailSince = 0;
           const MAX_POLL_FAILS = 3;
+          const pollGraceMs = d.executor.timeout && d.executor.timeout >= 60 ? 60_000 : 0;
           for (;;) {
             if (stopped) return;
             if (held) throw new Error('Run window closed');
@@ -201,13 +202,14 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             if (remote?.dropped) throw new Error('Objective deleted');
             if (polled.code !== 0) {
               pollFails++;
-              if (pollFails > MAX_POLL_FAILS) { pollLost = true; throw new Error(`get exited ${polled.code} (${pollFails} consecutive poll failures): ${polled.log}`); }
+              if (!pollFailSince) pollFailSince = Date.now();
+              if (pollFails > MAX_POLL_FAILS && (!pollGraceMs || Date.now() - pollFailSince >= pollGraceMs)) { pollLost = true; throw new Error(`get exited ${polled.code} (${pollFails} consecutive poll failures): ${polled.log}`); }
               if (d.executor.timeout && Date.now() - since > d.executor.timeout * 1000) { timedOut = true; throw new Error(`异步任务超过 ${d.executor.timeout} 秒没结束`); }
               await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, (d.executor.poll || 1) * 1000); });
               releasePoll = undefined; pollTimer = undefined;
               continue;
             }
-            pollFails = 0;
+            pollFails = 0; pollFailSince = 0;
             const status = parseResult(polled.stdout);
             if (status.state === 'done' && (status.exitCode === undefined || status.exitCode === 0)) { remoteEnded = true; break; }
             if (!['queued', 'running'].includes(status.state)) { remoteEnded = true; throw new Error(`Remote job ${status.state}, exit ${status.exitCode ?? 'unknown'}: ${status.reason || ''}`); }
