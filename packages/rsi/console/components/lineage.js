@@ -9,64 +9,23 @@ PDL_COMPONENTS['plugin:official.rsi/rsiLineage'] = function (p, sc, root) {
   (function collect(list) {
     list.forEach(function (r) { flat.push(r); collect(kids[keyOf(r)] || []); });
   })(roots);
-  const pinned = {}, expandedKeys = {};
+  const pinned = {};
   if (flat.length > keepRecent) {
     flat.slice(-keepRecent).forEach(function (r) { pinned[keyOf(r)] = true; });
     flat.forEach(function (r) {
       const k = keyOf(r), pk = parentOf(r), st = pv(n.state, r, root);
-      if (r.selected || r.nodeSelected || (n.pressed && pv(n.pressed, r, root)) || st === 'current') pinned[k] = true;
+      if (r.selected || r.nodeSelected || (n.pressed && pv(n.pressed, r, root)) || st === 'current' || st === 'running') pinned[k] = true;
       if ((kids[k] || []).length > 1) pinned[k] = true;
       if (pk != null && (kids[pk] || []).length > 1) pinned[k] = true;
     });
   }
-  const out = [];
-  (function walk(list, depth, rails) {
-    list.forEach(function (r, i) {
-      const last = i === list.length - 1, key = keyOf(r);
-      if (flat.length > keepRecent && !pinned[key] && !expandedKeys[key]) {
-        const chain = [r];
-        let cur = r;
-        while (true) {
-          const ch = kids[keyOf(cur)] || [];
-          if (ch.length !== 1 || pinned[keyOf(ch[0])]) break;
-          cur = ch[0];
-          chain.push(cur);
-        }
-        if (chain.length >= 2) {
-          const foldKey = 'rsi-lin-grp:' + keyOf(chain[0]) + '..' + keyOf(chain[chain.length - 1]);
-          const isOpen = typeof S !== 'undefined' && S.folds && !!S.folds[foldKey];
-          const tailKids = kids[keyOf(cur)] || [];
-          if (!isOpen) {
-            out.push({ group: chain, foldKey: foldKey, open: false, depth: depth, last: last, rails: rails, down: tailKids.length > 0 });
-            walk(tailKids, depth + 1, depth === 0 ? [] : rails.concat([!last]));
-            return;
-          }
-          chain.forEach(function (x) { expandedKeys[keyOf(x)] = true; });
-          out.push({ group: chain, foldKey: foldKey, open: true, depth: depth, last: false, rails: rails, down: true });
-        }
-      }
-      const own = kids[key] || [];
-      out.push({ r: r, depth: depth, last: last, rails: rails, down: own.length > 0 });
-      walk(own, depth + 1, depth === 0 ? [] : rails.concat([!last]));
-    });
-  })(roots, 0, []);
   const labelTextOf = function (r) {
     if (r && r.id != null) return String(r.id);
     const raw = pvParts(n.label, r, root);
     return String(raw || keyOf(r) || '').replace(/<[^>]*>/g, '').trim();
   };
-  return '<div class="scroll stick-end rsi-lin-box"><div class="scroll-x"><div class="rsi-lin">' + out.map(function (x) {
-    const lines = x.rails.map(function (on, l) { return on ? '<span class="rsi-lin-rail" style="--l:' + (l + 1) + '"></span>' : ''; }).join('') +
-      (x.depth ? '<span class="rsi-lin-elbow' + (x.last ? ' last' : '') + '" style="--l:' + x.depth + '"></span>' : '') +
-      (x.down ? '<span class="rsi-lin-down" style="--l:' + (x.depth + 1) + '"></span>' : '');
-    if (x.group) {
-      const first = labelTextOf(x.group[0]), end = labelTextOf(x.group[x.group.length - 1]);
-      const span = first === end ? first : first + '~' + end;
-      const chip = '<button type="button" class="chip rsi-lin-v rsi-lin-grp" data-act="fold" data-f="result" data-k="' + h(x.foldKey) + '" aria-expanded="' + (x.open ? 'true' : 'false') + '">' + h(x.open ? '− ' + span : '[' + span + ']') + '</button>';
-      const meta = '<span class="rsi-lin-tail">' + h(x.open ? '收起 ' + x.group.length + ' 项' : x.group.length + ' 项 · 展开') + '</span>';
-      return '<div class="rsi-lin-row rsi-lin-row-grp" style="--d:' + x.depth + '">' + lines + chip + meta + '</div>';
-    }
-    const r = x.r, state = pv(n.state, r, root);
+  const renderNodeRow = function (r, depth, lines, insideBox) {
+    const state = pv(n.state, r, root);
     const node = chipHtml({ cls: 'rsi-lin-v', label: pvParts(n.label, r, root), tone: pv(n.tone, r, root), pressed: n.pressed ? !!pv(n.pressed, r, root) : null,
       act: n.act, data: n.act ? pvArgs(n.args, r, root) : '', attrs: state ? ' data-state="' + h(state) + '"' : '' });
     const tail = p.tail ? pvParts(p.tail, r, root) : '';
@@ -84,19 +43,232 @@ PDL_COMPONENTS['plugin:official.rsi/rsiLineage'] = function (p, sc, root) {
     });
     const arr = '<svg class="rsi-lin-arr" viewBox="0 0 14 10" aria-hidden="true"><path d="M1 5h10.5M8 1.8L11.8 5 8 8.2"/></svg>';
     const chain = [node].concat(cellList).join(arr);
-    return '<div class="rsi-lin-row" style="--d:' + x.depth + '">' + lines + chain + (tail ? '<span class="rsi-lin-tail">' + tail + '</span>' : '') + '</div>';
+    return '<div class="rsi-lin-row' + (insideBox ? ' rsi-lin-row-in' : '') + '" style="--d:' + depth + '">' + lines + chain + (tail ? '<span class="rsi-lin-tail">' + tail + '</span>' : '') + '</div>';
+  };
+  const out = [];
+  // Invariant:
+  // - isBranch=true:  rails.length === depth - 1 (ancestor rails at 1..depth-1; own elbow at depth)
+  // - isBranch=false: rails.length === depth     (ancestor rails at 1..depth; linear up/down at depth+1)
+  (function walk(list, depth, rails, isBranch, hasParent) {
+    list.forEach(function (r, i) {
+      const last = i === list.length - 1, key = keyOf(r);
+      const nextRails = isBranch ? rails.concat([!last]) : rails;
+      if (flat.length > keepRecent && !pinned[key]) {
+        const chain = [r];
+        let cur = r;
+        while (true) {
+          const ch = kids[keyOf(cur)] || [];
+          if (ch.length !== 1 || pinned[keyOf(ch[0])]) break;
+          cur = ch[0];
+          chain.push(cur);
+        }
+        if (chain.length >= 2) {
+          const foldKey = 'rsi-lin-grp:' + keyOf(chain[0]) + '..' + keyOf(chain[chain.length - 1]);
+          const isOpen = typeof S !== 'undefined' && S.folds && !!S.folds[foldKey];
+          const tailKids = kids[keyOf(cur)] || [];
+          out.push({ group: chain, foldKey: foldKey, open: isOpen, depth: depth, last: last, rails: rails, isBranch: isBranch, hasParent: hasParent, down: tailKids.length > 0 });
+          if (tailKids.length === 1) walk(tailKids, depth, nextRails, false, true);
+          else if (tailKids.length > 1) walk(tailKids, depth + 1, nextRails, true, true);
+          return;
+        }
+      }
+      const own = kids[key] || [];
+      out.push({ r: r, depth: depth, last: last, rails: rails, isBranch: isBranch, hasParent: hasParent, down: own.length > 0 });
+      if (own.length === 1) walk(own, depth, nextRails, false, true);
+      else if (own.length > 1) walk(own, depth + 1, nextRails, true, true);
+    });
+  })(roots, 0, [], false, false);
+  const railHtml = function (rails) {
+    return rails.map(function (on, l) { return on ? '<span class="rsi-lin-rail" style="--l:' + (l + 1) + '"></span>' : ''; }).join('');
+  };
+  return '<div class="scroll stick-end rsi-lin-box"><div class="scroll-x"><div class="rsi-lin">' + out.map(function (x) {
+    if (x.group) {
+      const first = labelTextOf(x.group[0]), end = labelTextOf(x.group[x.group.length - 1]);
+      const span = first === end ? first : first + '~' + end;
+      const chip = '<button type="button" class="chip rsi-lin-v rsi-lin-grp" data-act="fold" data-f="result" data-k="' + h(x.foldKey) + '" aria-expanded="' + (x.open ? 'true' : 'false') + '">' + h(x.open ? '− ' + span : '[' + span + ']') + '</button>';
+      const meta = '<span class="rsi-lin-tail">' + h(x.open ? '收起 ' + x.group.length + ' 项' : x.group.length + ' 项 · 展开') + '</span>';
+      const inner = x.open ? '<div class="rsi-lin-grp-body">' + x.group.map(function (gr, gi) {
+        const innerLines = (gi > 0 ? '<span class="rsi-lin-up" style="--l:1"></span>' : '') + (gi < x.group.length - 1 ? '<span class="rsi-lin-down" style="--l:1"></span>' : '');
+        return renderNodeRow(gr, 0, innerLines, true);
+      }).join('') + '</div>' : '';
+      const outerLines = railHtml(x.rails) +
+        (x.isBranch ? '<span class="rsi-lin-elbow' + (x.last ? ' last' : '') + '" style="--l:' + x.depth + '"></span>' : (x.hasParent ? '<span class="rsi-lin-box-in" style="--l:' + (x.depth + 1) + '"></span>' : '')) +
+        (x.down ? '<span class="rsi-lin-box-out" style="--l:' + (x.depth + 1) + '"></span>' : '');
+      return '<div class="rsi-lin-grp-wrap' + (x.open ? ' is-open' : '') + '" style="--d:' + x.depth + '">' + outerLines +
+        '<div class="rsi-lin-grp-box"><div class="rsi-lin-grp-head">' + chip + meta + '</div>' + inner + '</div></div>';
+    }
+    const lines = railHtml(x.rails) +
+      (x.isBranch ? '<span class="rsi-lin-elbow' + (x.last ? ' last' : '') + '" style="--l:' + x.depth + '"></span>' : (x.hasParent ? '<span class="rsi-lin-up" style="--l:' + (x.depth + 1) + '"></span>' : '')) +
+      (x.down ? '<span class="rsi-lin-down" style="--l:' + (x.depth + 1) + '"></span>' : '');
+    return renderNodeRow(x.r, x.depth, lines, false);
   }).join('') + '</div></div></div>';
 };
 
 PDL_COMPONENTS['plugin:official.rsi/rsiTrend'] = function (p, sc, root) {
-  const xs = pvList(p.from, sc, root), vs = xs.map(function (x) { return x.value; }), lo = Math.min.apply(null, vs), hi = Math.max.apply(null, vs), W = 560, H = 120, pad = 28;
-  const pt = function (x, i) { return [pad + i * (W - 2 * pad) / Math.max(1, xs.length - 1), H - pad - (hi === lo ? 0.5 : (x.value - lo) / (hi - lo)) * (H - 2 * pad)]; };
-  const pts = xs.map(pt);
-  return '<svg class="rsi-trend" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + h(pvText(p.label, sc, root)) + '">' +
-    '<polyline points="' + pts.map(function (q) { return q.join(','); }).join(' ') + '"/>' +
-    xs.map(function (x, i) { const q = pts[i], moved = i > 0 && xs[i - 1].version !== x.version;
-      return '<circle cx="' + q[0] + '" cy="' + q[1] + '" r="4"' + (moved ? ' class="moved"' : '') + '/><text x="' + q[0] + '" y="' + (q[1] - 9) + '">' + h(String(x.value)) + '</text>' +
-        '<text class="axis" x="' + q[0] + '" y="' + (H - 6) + '">' + h(x.version + ' · ' + x.n) + '</text>'; }).join('') + '</svg>';
+  const series = p.series ? pv(p.series, sc, root) : null;
+  const xs = series && Array.isArray(series.points) ? series.points : pvList(p.from, sc, root);
+  if (!xs.length) return '';
+  const threshold = series && typeof series.threshold === 'number' && Number.isFinite(series.threshold) ? series.threshold : null;
+  const dir = series && series.dir ? series.dir : 'up';
+  const unit = series && series.unit ? String(series.unit) : '';
+  const vs = xs.map(function (x) { return x.value; }).concat(threshold != null ? [threshold] : []);
+  const lo = Math.min.apply(null, vs), hi = Math.max.apply(null, vs);
+  const span = hi === lo ? 1 : (hi - lo);
+  const padX = 36, padTop = 26, padBot = 26, H = 132;
+  const W = Math.max(460, padX * 2 + Math.max(1, xs.length - 1) * 76);
+  const yOf = function (v) { return H - padBot - (hi === lo ? 0.5 : (v - lo) / span) * (H - padTop - padBot); };
+  const pts = xs.map(function (x, i) {
+    const cx = xs.length === 1 ? W / 2 : padX + i * (W - 2 * padX) / (xs.length - 1);
+    return [cx, yOf(x.value)];
+  });
+  const grid = [0, 0.5, 1].map(function (t) {
+    const gy = padTop + t * (H - padTop - padBot);
+    return '<line class="rsi-trend-grid" x1="' + (padX - 10) + '" y1="' + gy + '" x2="' + (W - padX + 10) + '" y2="' + gy + '"/>';
+  }).join('');
+  const thLine = threshold != null ? (function () {
+    const ty = yOf(threshold);
+    const label = '护栏 ' + (dir === 'up' ? '≥' : '≤') + ' ' + threshold + (unit ? ' ' + unit : '');
+    return '<line class="rsi-trend-th" x1="' + (padX - 10) + '" y1="' + ty + '" x2="' + (W - padX + 10) + '" y2="' + ty + '"/>' +
+      '<text class="rsi-trend-th-lbl" x="' + (W - padX + 8) + '" y="' + (ty - 4) + '" text-anchor="end">' + h(label) + '</text>';
+  })() : '';
+  const line = pts.length > 1 ? '<polyline points="' + pts.map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join(' ') + '"/>' : '';
+  const dots = xs.map(function (x, i) {
+    const q = pts[i], moved = i > 0 && xs[i - 1].version !== x.version, isCur = !!x.current;
+    const axisLabel = x.label || (x.version + '-' + x.n);
+    const cls = [moved ? 'moved' : '', isCur ? 'current' : ''].filter(Boolean).join(' ');
+    return '<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + (isCur ? '5' : '4') + '"' + (cls ? ' class="' + cls + '"' : '') + '/>' +
+      '<text class="val' + (isCur ? ' current' : '') + '" x="' + q[0].toFixed(1) + '" y="' + (q[1] - 10).toFixed(1) + '">' + h(String(x.value)) + '</text>' +
+      '<text class="axis' + (isCur ? ' current' : '') + '" x="' + q[0].toFixed(1) + '" y="' + (H - 7) + '">' + h(axisLabel) + '</text>';
+  }).join('');
+  const aria = series && series.name ? series.name : pvText(p.label, sc, root);
+  return '<div class="rsi-trend-wrap"><div class="scroll-x rsi-trend-scroll"><svg class="rsi-trend" style="width:' + W + 'px;min-width:100%" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + h(aria) + '">' +
+    grid + thLine + line + dots + '</svg></div></div>';
+};
+
+PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) {
+  const table = pv(p.from, sc, root);
+  if (!table || !Array.isArray(table.sections) || !table.sections.length) return '';
+  const folds = (typeof S !== 'undefined' && S.folds) ? S.folds : {};
+  const mode = table.mode === 'cross' && Array.isArray(table.crossCols) && table.crossCols.length > 1 ? 'cross' : 'cycle';
+  const showCrossToggle = Array.isArray(table.crossCols) && table.crossCols.length > 1;
+  const ctrl = table.controlGroup;
+  const cands = Array.isArray(table.candidateGroups) ? table.candidateGroups : [];
+  const fmtMeanSd = function (cell) {
+    if (!cell || cell.mean == null) return '<span class="rsi-mx-empty">—</span>';
+    return '<span class="rsi-mx-num">' + h(cell.mean) + '</span>' +
+      (cell.sd != null ? '<span class="rsi-mx-sd">±' + h(cell.sd) + '</span>' : '') +
+      (cell.partial ? '<span class="rsi-mx-part">' + h(cell.n + '/' + (table.seeds ? table.seeds.length : '?')) + '</span>' : '');
+  };
+  const badgeHtml = function (tone, text) {
+    if (!text) return '';
+    return '<span class="rsi-mx-pill" data-tone="' + h(tone || 'muted') + '">' + h(text) + '</span>';
+  };
+  const seedStateHtml = function (st) {
+    if (st === 'cross') return badgeHtml('danger', '越线');
+    if (st === 'env') return badgeHtml('warn', '环境失败');
+    if (st === 'failed') return badgeHtml('danger', '无结果');
+    return badgeHtml('ok', '正常');
+  };
+  const topBar = '<div class="rsi-mx-bar">' +
+    '<span class="rsi-mx-hint">' + h('共 ' + (table.totalMetrics || 0) + ' 项指标 · 点击指标行展开逐轮结果') + '</span>' +
+    (showCrossToggle ? '<div class="rsi-mx-seg" role="group" aria-label="对比视角">' +
+      '<button type="button" class="rsi-mx-seg-btn' + (mode === 'cycle' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="cmpMode" data-v="cycle">当轮对照</button>' +
+      '<button type="button" class="rsi-mx-seg-btn' + (mode === 'cross' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="cmpMode" data-v="cross">跨版本</button>' +
+      '</div>' : '') +
+    '</div>';
+  let thead = '', colCount = 0;
+  if (mode === 'cycle') {
+    const hasCand = cands.length > 0;
+    const cols = ['<th class="rsi-mx-col-m">指标</th>'];
+    if (ctrl) cols.push('<th class="rsi-mx-col-v">对照 <span class="rsi-mx-ver">' + h(ctrl.version) + '</span></th>');
+    cands.forEach(function (g) {
+      cols.push('<th class="rsi-mx-col-v">' + h(g.confirm ? '复验' : '候选') + ' <span class="rsi-mx-ver">' + h(g.version) + '</span></th>');
+    });
+    if (hasCand) cols.push('<th class="rsi-mx-col-d">Δ 变化</th>');
+    cols.push('<th class="rsi-mx-col-s">判定</th>');
+    colCount = cols.length;
+    thead = '<thead><tr>' + cols.join('') + '</tr></thead>';
+  } else {
+    const cols = ['<th class="rsi-mx-col-m">指标</th>'];
+    table.crossCols.forEach(function (c) {
+      cols.push('<th class="rsi-mx-col-v' + (c.current ? ' is-cur' : '') + '">' + h(c.label) + '</th>');
+    });
+    colCount = cols.length;
+    thead = '<thead><tr>' + cols.join('') + '</tr></thead>';
+  }
+  const bodyHtml = table.sections.map(function (sec) {
+    const secFoldKey = 'rsi-cmp-sec:' + (table.cycleLabel || '') + ':' + sec.k;
+    const isOpen = sec.defaultOpen ? !folds[secFoldKey] : !!folds[secFoldKey];
+    const secHead = '<tr class="rsi-mx-sec" data-tone="' + h(sec.tone || '') + '"><td colspan="' + colCount + '">' +
+      '<button type="button" class="rsi-mx-sec-btn" data-act="fold" data-f="result" data-k="' + h(secFoldKey) + '" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' +
+      '<span class="rsi-mx-chev">' + (isOpen ? '▾' : '▸') + '</span>' +
+      '<span class="rsi-mx-sec-title">' + h(sec.title) + '</span>' +
+      '<span class="rsi-mx-sec-cnt">' + sec.rows.length + '</span>' +
+      '</button></td></tr>';
+    if (!isOpen) return secHead;
+    const rowsHtml = sec.rows.map(function (m) {
+      const rowFoldKey = 'rsi-cmp-row:' + (table.cycleLabel || '') + ':' + m.id;
+      const rowOpen = !!folds[rowFoldKey];
+      const trendBtn = m.hasTrend
+        ? '<button type="button" class="rsi-mx-trend-btn' + (m.active ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="trendMetric" data-v="' + h(m.id) + '" title="在顶部趋势图查看此指标">' + (m.active ? '趋势中' : '趋势') + '</button>'
+        : '';
+      const metricCell = '<td class="rsi-mx-col-m"><div class="rsi-mx-m-wrap">' +
+        '<button type="button" class="rsi-mx-m-btn" data-act="fold" data-f="result" data-k="' + h(rowFoldKey) + '" aria-expanded="' + (rowOpen ? 'true' : 'false') + '">' +
+        '<span class="rsi-mx-chev">' + (rowOpen ? '▾' : '▸') + '</span>' +
+        '<span class="rsi-mx-m-info"><span class="rsi-mx-m-name">' + h(m.name) + '</span>' +
+        (m.ruleText ? '<span class="rsi-mx-m-rule">' + h(m.ruleText) + '</span>' : '') +
+        '</span></button>' + trendBtn + '</div></td>';
+      let cellsHtml = metricCell;
+      if (mode === 'cycle') {
+        if (ctrl) cellsHtml += '<td class="rsi-mx-col-v">' + fmtMeanSd(m.control) + '</td>';
+        cands.forEach(function (g, gi) {
+          const c = m.candidates && m.candidates[gi];
+          cellsHtml += '<td class="rsi-mx-col-v' + (c && c.guard === 'fail' ? ' is-fail' : '') + '">' + fmtMeanSd(c) + '</td>';
+        });
+        if (cands.length > 0) {
+          const lead = m.candidates && m.candidates[0];
+          const deltaHtml = lead && lead.delta != null
+            ? '<span class="rsi-mx-delta" data-better="' + h(lead.better || '') + '">' + h(lead.delta) + '</span>'
+            : '<span class="rsi-mx-empty">—</span>';
+          cellsHtml += '<td class="rsi-mx-col-d">' + deltaHtml + '</td>';
+        }
+        const statusTone = m.status === 'win' || m.status === 'pass' ? 'ok' : m.status === 'fail' ? 'danger' : m.status === 'warn' ? 'warn' : 'muted';
+        cellsHtml += '<td class="rsi-mx-col-s">' + badgeHtml(statusTone, m.statusText) + '</td>';
+      } else {
+        (m.crossValues || []).forEach(function (cv) {
+          cellsHtml += '<td class="rsi-mx-col-v' + (cv.current ? ' is-cur' : '') + (cv.guard === 'fail' ? ' is-fail' : '') + '">' +
+            (cv.value != null ? '<span class="rsi-mx-num">' + h(cv.value) + '</span>' : '<span class="rsi-mx-empty">—</span>') +
+            '</td>';
+        });
+      }
+      let detailHtml = '';
+      if (rowOpen) {
+        const seeds = Array.isArray(table.seeds) ? table.seeds : [];
+        const subCols = ['<th>轮次</th>'];
+        if (ctrl) subCols.push('<th>对照 ' + h(ctrl.version) + '</th>');
+        cands.forEach(function (g) { subCols.push('<th>' + h(g.confirm ? '复验 ' : '候选 ') + h(g.version) + '</th>'); });
+        const subRows = seeds.map(function (seed, si) {
+          const cs = m.control && m.control.seeds ? m.control.seeds[si] : null;
+          const tds = ['<td class="rsi-mx-sub-rd">第 ' + (si + 1) + ' 轮 <span class="rsi-mx-seed">seed ' + h(seed) + '</span></td>'];
+          if (ctrl) {
+            tds.push('<td>' + (cs && cs.value != null ? '<span class="rsi-mx-num">' + h(cs.value) + '</span> ' : '<span class="rsi-mx-empty">—</span> ') + (cs && cs.state ? seedStateHtml(cs.state) : '') + '</td>');
+          }
+          cands.forEach(function (g, gi) {
+            const cand = m.candidates && m.candidates[gi];
+            const s = cand && cand.seeds ? cand.seeds[si] : null;
+            tds.push('<td>' + (s && s.value != null ? '<span class="rsi-mx-num">' + h(s.value) + '</span> ' : '<span class="rsi-mx-empty">—</span> ') + (s && s.state ? seedStateHtml(s.state) : '') + '</td>');
+          });
+          return '<tr>' + tds.join('') + '</tr>';
+        }).join('');
+        detailHtml = '<tr class="rsi-mx-detail-row"><td colspan="' + colCount + '"><div class="rsi-mx-sub-wrap">' +
+          '<table class="rsi-mx-sub"><thead><tr>' + subCols.join('') + '</tr></thead><tbody>' + subRows + '</tbody></table>' +
+          '</div></td></tr>';
+      }
+      return '<tr class="rsi-mx-row' + (m.active ? ' is-active' : '') + '">' + cellsHtml + '</tr>' + detailHtml;
+    }).join('');
+    return secHead + rowsHtml;
+  }).join('');
+  return '<div class="rsi-mx-wrap">' + topBar + '<div class="scroll-x rsi-mx-scroll"><table class="rsi-mx">' + thead + '<tbody>' + bodyHtml + '</tbody></table></div></div>';
 };
 
 PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {

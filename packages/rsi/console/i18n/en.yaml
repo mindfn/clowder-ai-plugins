@@ -56,6 +56,7 @@ discussResult:
   proposing: In progress
   agree: Agreed
   split: Split
+  resolved: Decided
   count: "{0} directions"
   skipped: Skipped
   waiting: Pending
@@ -72,6 +73,9 @@ govResult:
   addVar: Add variables
   same: Keep the plan
   execution: Fix execution
+  discriminate: Discriminate
+  code: Change code
+  direction: Adopted
   repairing: Repairing
   waiting: Pending
 applyResult:
@@ -87,7 +91,7 @@ stepName:
 detail:
   node: "{0}"
   gov: "{0} · Governance"
-  step: "{0} · Cycle {1} · {2}"
+  step: "{0}-{1} · {2}"
   mstep: "{0} · {1}"
   change: What changed
   parent: Based on
@@ -170,8 +174,8 @@ decision:
   collecting: Collecting
 cycle:
   pick: Cycle
-  nOf: Cycle {0}/{1}
-  n: Cycle {0}
+  nOf: "#{0}"
+  n: "#{0}"
   merged: "{0} windows merged"
   samples: "{0} traces"
   card:
@@ -735,7 +739,18 @@ exp:
     planned: The next cycle runs at {3}
     _: ""
   trend: "{0} · Best group for this version in each cycle · Predictions met {1} / {2}"
-  trendLabel: Primary metric trend
+  trendLabel: Metric trend
+  trendPick: Trend metric
+  reEval: Re-analyze metrics
+  jumpThread: Open thread
+  groupChange: Change details
+  groupConfig: Effective config
+  groupCmd: Command
+  startTime: Started
+  duration: Duration
+  groupHead: "{0} ({1}) · {2}/{3}"
+  readyOverviewTitle: Experiment design overview
+  readyOverviewHint: Click steps 1–7 above to inspect or edit full details
   prep:
     default: Default
     needYou: Waiting for you

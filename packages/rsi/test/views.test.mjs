@@ -632,20 +632,97 @@ test('rsiLineage auto-folds older linear chains into expandable [v1~vN] bundles 
 
   const props = { from: rows, key: '@key', parent: '@parentKey', node: { label: [{ text: '@id' }], state: '@nodeState' } };
   const collapsed = render(props, {}, {});
-  // Linear head v1..v5 folds into [v1~v5] at depth 0, so v6 sits at depth 1 instead of depth 5
+  // Linear head v1..v5 folds into container-wrapped [v1~v5] at depth 0, so v6 sits directly below at depth 0 with zero extra horizontal indent
+  assert.match(collapsed, /rsi-lin-grp-box/);
   assert.match(collapsed, /\[v1~v5\]/);
   assert.doesNotMatch(collapsed, />v2</);
-  assert.match(collapsed, /style="--d:1"[^>]*>.*>v6</);
-  // Mid linear run v9..v12 folds into [v9~v12], while branch v6/v7/v8 and latest 5 (v13..v17) stay open
+  assert.match(collapsed, /style="--d:0"[^>]*>.*>v6</);
+  // Branches v7 and v8 indent once to depth 1, while linear chain under v8 stays at depth 1 (no staircase drift)
   assert.match(collapsed, /\[v9~v12\]/);
-  assert.match(collapsed, />v7</);
-  assert.match(collapsed, />v13</);
-  assert.match(collapsed, />v17</);
+  assert.match(collapsed, /style="--d:1"[^>]*>.*>v7</);
+  assert.match(collapsed, /style="--d:1"[^>]*>.*>v13</);
+  assert.match(collapsed, /style="--d:1"[^>]*>.*>v17</);
 
-  // Expanding [v1~v5] reveals v1..v5 with a collapse handle
+  // Expanding [v1~v5] reveals v1..v5 inside the container with a collapse handle, keeping v6 unshifted at depth 0
   sandbox.S.folds['rsi-lin-grp:v1..v5'] = true;
   const expanded = render(props, {}, {});
   assert.match(expanded, /− v1~v5/);
   assert.match(expanded, />v1</);
   assert.match(expanded, />v5</);
+  assert.match(expanded, /style="--d:0"[^>]*>.*>v6</);
+});
+
+test('console UX upgrades: no false red dot on finite metric, version.config merged in groups, running nodeState, resolved discuss, multi-metric trend, compareMatrix & historical re-eval', async () => {
+  const x = arith({ analysts: [['a1', '甲'], ['a2', '乙']], values: SPLIT });
+  x.d.versions[0].config = { route: 'replicas', document_token_cache: false };
+  x.d.versions.push({ id: 'v2', parent: 'v1', change: 'preserved groups route', commit: 'fdf684b1234', config: { route: 'preserved_groups', document_token_cache: false }, at: now, current: false, status: 'proposed' });
+  x.d.versions.push({ id: 'v3', parent: 'v2', change: 'online planning fix', commit: 'e8a73271234', config: { route: 'preserved_groups', online_plan: true }, at: now + 500, current: false, status: 'proposed' });
+  x.d.executor = { mcp: 'rsi.executor', state: 'passed', commands: { submit: 'python3 run.py --config {config} --run {run} --seed {seed}' } };
+  // Give control run[0] a non-fatal run-level warning (missing unrelated metric) while accuracy/signal have finite values
+  x.d.rounds[0].runs[0].error = { kind: 'real', step: 'collect', raw: 'missing unrelated metric' };
+  x.d.rounds[0].plan.groups[1].version = 'v2';
+  x.d.rounds[0].plan.groups[1].vars = {};
+  x.conclude();
+  x.propose('a1', [option('dir1', 'variable', 'lr')]);
+  x.propose('a2', [option('dir2', 'code', 'router.py')]);
+  assert.equal(act(x.s, { op: 'expDecide', objective: x.id, n: 1, pick: 'direction', directionId: 'dir2' }, { project: P }, now).ok, true);
+
+  // Add a live running round on v3 to verify running nodeState
+  x.d.rounds.push({ n: 2, version: 'v3', start: now + 1000, end: null, state: 'running', plan: { groups: [GROUPS[0], { ...GROUPS[1], version: 'v3', vars: {} }], seeds: [31] },
+    runs: [{ id: 'r-live-1', group: 'control', seed: 31, state: 'running', start: now + 1000, end: null, metrics: {}, env: {} }], report: null, decision: null, events: [] });
+
+  const vm = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: `${x.id}/v2>c1.eval` });
+  // 1. Finite metric on done seed must NOT be flagged red 'failed' despite run-level collect warning
+  const ctrlAcc = vm.cycle.compare.metrics.find((m) => m.id === 'accuracy').items.find((g) => g.control);
+  assert.equal(ctrlAcc.seeds[0].value, '0.08');
+  assert.equal(ctrlAcc.seeds[0].state, '');
+  // 2. Lineage v3 shows nodeState='running' while v1 stays 'current'; decided split discussion carries resolved=true
+  assert.equal(vm.versions.find((v) => v.id === 'v1').nodeState, 'current');
+  assert.equal(vm.versions.find((v) => v.id === 'v3').nodeState, 'running');
+  const v2DiscStep = vm.versions.find((v) => v.id === 'v2').steps.find((s) => s.k === 'discuss');
+  assert.equal(v2DiscStep.result, 'split');
+  assert.equal(v2DiscStep.resolved, true);
+  assert.equal(vm.cycle.discussion.resolved, true);
+  // 3. groupsOf merges version.config and computes diff vs control + command preview
+  const candGroup = vm.cycle.groups.find((g) => g.version === 'v2');
+  assert.match(candGroup.configSummary, /route=replicas → preserved_groups/);
+  assert.match(candGroup.sampleCommand, /python3 run\.py --config .* --seed 11/);
+  assert.equal(candGroup.runs[0].roundNo, 1);
+  // 4. Multi-metric trendSeries & query.trendMetric switching
+  assert.ok(vm.trendSeries.length >= 4);
+  const vmWall = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: `${x.id}/v2>c1.eval`, trendMetric: 'wall' });
+  assert.equal(vmWall.activeTrendId, 'wall');
+  assert.equal(vmWall.activeTrend.name, 'wall_time_s');
+  // 5. Ready overview cards aggregated from d.prep
+  assert.ok(Array.isArray(vm.prep.ready.overview) && vm.prep.ready.overview.length >= 2);
+  // 6. rsiCompareMatrix & rsiTrend render cleanly
+  const vmMod = await import('node:vm');
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../console/components/lineage.js', import.meta.url), 'utf8');
+  const sandbox = {
+    PDL_COMPONENTS: {},
+    S: { folds: {} },
+    h: (s) => String(s ?? ''),
+    pv: (expr, sc) => expr === '$.table' ? vm.cycle.compare.table : expr === '$.trend' ? vm.activeTrend : expr,
+    pvList: (v) => Array.isArray(v) ? v : [],
+    pvText: (v) => String(v ?? ''),
+  };
+  vmMod.runInNewContext(src, sandbox);
+  const mxHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix']({ from: '$.table' }, {}, {});
+  assert.match(mxHtml, /主指标/);
+  assert.match(mxHtml, /未通过护栏/);
+  assert.match(mxHtml, /holdout accuracy/);
+  const trHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiTrend']({ series: '$.trend', label: '趋势' }, {}, {});
+  assert.match(trHtml, /rsi-trend-wrap/);
+  assert.match(trHtml, /v2-1/);
+  // 7. Historical re-eval updates report without clobbering decision or live round
+  assert.equal(act(x.s, { op: 'evalAgain', objective: x.id, n: 1 }, { project: P }, now).ok, true);
+  assert.equal(x.d.rounds[0].state, 'evaluating');
+  assert.equal(x.d.rounds[0].reevaluating, true);
+  const reRes = conclude(x.s, x.d, { cycle: 1, verdict: 'keep', findings: '重评结论\n细节' }, now + 5000);
+  assert.equal(reRes.ok, true);
+  assert.equal(reRes.reevaluated, true);
+  assert.equal(x.d.rounds[0].report.headline, '重评结论');
+  assert.equal(x.d.rounds[0].decision.directionId, 'dir2');
+  assert.equal(x.d.rounds[1].state, 'running');
 });

@@ -143,6 +143,8 @@ export function viewModel(state: RsiState, view: string, query: Data = {}): any 
     rsiInitRev: typeof query.initRev === 'string' ? query.initRev : '',
     rsiGovFile: typeof query.govFile === 'string' ? query.govFile : '',
     rsiGovDiffMode: query.govDiffMode === 'split' ? 'split' : 'unified',
+    rsiTrendMetric: typeof query.trendMetric === 'string' ? query.trendMetric : '',
+    rsiCmpMode: query.cmpMode === 'cross' ? 'cross' : 'cycle',
     dialog: query.dialog,
   };
   if (view === 'doc' && (query.id || query.doc)) S.dialog = { kind: 'rsiDoc', args: { id: query.id || query.doc } };
@@ -318,6 +320,64 @@ function exp(): any {
     return { pick: r.state === 'repaired' ? 'repair' : 'repairing', by: 'RSI', at: rec?.at || nextVer?.at || ask?.since || r.end || null, note };
   };
   const sel = (x: Data, step: string) => key(x.version) + '>c' + x.k + '.' + step;
+  const fmtDuration = (ms: number | null) => {
+    if (ms == null || !Number.isFinite(ms) || ms < 0) return '';
+    const sec = Math.round(ms / 1000);
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60), s = sec % 60;
+    if (m < 60) return s ? `${m}m ${s}s` : `${m}m`;
+    const hr = Math.floor(m / 60), rm = m % 60;
+    return rm ? `${hr}h ${rm}m` : `${hr}h`;
+  };
+  const renderRunCommand = (r: Data, g: Data, u: Data) => {
+    const tpl = d.executor?.commands?.submit;
+    if (typeof tpl !== 'string' || !tpl.trim()) return '';
+    const dir = u.directory || (o.projectPath ? `${o.projectPath}/runs/${o.id}/${r.n}/${g.id}-s${u.seed}` : `runs/${o.id}/${r.n}/${g.id}-s${u.seed}`);
+    const cfg = `${dir}/config.json`;
+    const vals: Record<string, string> = { config: cfg, run: dir, seed: String(u.seed ?? ''), job: String(u.jobId || ''), start: String(u.start || ''), end: String(u.end || '') };
+    return tpl.replace(/\{(config|run|seed|job|start|end)\}/g, (_, k: string) => {
+      const v = vals[k] ?? '';
+      return /\s/.test(v) ? `'${v}'` : v;
+    });
+  };
+  const metricValueInRound = (x: Data, metricId: string, dir: string) => {
+    if (!x.report?.matrix) return null;
+    const testedGroups = x.plan.groups.filter((g: Data) => g.version === x.version);
+    const preferred = testedGroups.filter((g: Data) => !g.control);
+    const pool = preferred.length ? preferred : testedGroups;
+    const eligibleIds = new Set((x.report.compare?.groups || []).filter((g: Data) => g.eligible).map((g: Data) => g.group));
+    const cells = x.report.matrix.filter((c: Data) => c.metric === metricId && typeof c.mean === 'number' && Number.isFinite(c.mean) && pool.some((g: Data) => g.id === c.group));
+    if (!cells.length) return null;
+    const eligibleCells = cells.filter((c: Data) => eligibleIds.has(c.group));
+    const pickFrom = eligibleCells.length ? eligibleCells : cells;
+    pickFrom.sort((a: Data, b: Data) => dir === 'down' ? a.mean - b.mean : b.mean - a.mean);
+    return pickFrom[0];
+  };
+  const allMetricDefs: Data[] = Array.isArray(d.metrics?.items) ? d.metrics.items : [];
+  const orderedMetricDefs = [
+    ...allMetricDefs.filter((m: Data) => m.id === main),
+    ...allMetricDefs.filter((m: Data) => m.guard && m.id !== main),
+    ...allMetricDefs.filter((m: Data) => !m.guard && m.id !== main),
+  ];
+  const trendSeries = orderedMetricDefs.map((m: Data) => {
+    const points = rounds.map((x: Data) => {
+      const cell = metricValueInRound(x, m.id, m.dir);
+      if (!cell) return null;
+      return { n: x.k, cycle: x.n, version: x.version, label: `${x.version}-${x.k}`, value: Number(cell.mean.toPrecision(4)) };
+    }).filter(Boolean);
+    return {
+      id: m.id,
+      name: m.name,
+      role: m.id === main ? 'main' : m.guard ? 'guard' : 'other',
+      dir: m.dir || 'up',
+      unit: m.unit || '',
+      threshold: m.guard && typeof m.threshold === 'number' ? m.threshold : null,
+      points,
+    };
+  }).filter((s: Data) => s.points.length > 0);
+  const activeTrendSeries = trendSeries.find((s: Data) => s.id === S.rsiTrendMetric) || trendSeries.find((s: Data) => s.id === main) || trendSeries[0] || null;
+  const activeTrendId = activeTrendSeries?.id || main;
+  const trendOptions = trendSeries.map((s: Data) => ({ v: s.id, label: `${s.name}${s.role === 'main' ? '（主指标）' : s.role === 'guard' ? '（护栏）' : ''}` }));
   // A concluded cycle's numbers, from the comparison stored with its report (cycles.ts comparison): a block per metric — the main one, then
   // the guardrails, then the rest — and in it a row per group, the control first: mean and sample SD over the seeds, the difference from the
   // same cycle's control, better or worse by the metric's direction, and on a guardrail whether every seed kept to it.
@@ -334,14 +394,111 @@ function exp(): any {
         guard: checks.length ? (crossed.length ? 'fail' : 'pass') : '', crossed,
         // The main metric decides: a group beats the control, does not, or does not count (its runs or the control's did not all finish, or it crossed a guardrail).
         standing: m === lead && j && !g.control ? (j.beatsControl ? 'beats' : j.eligible ? 'below' : !report.compare.comparable ? 'control' : j.guardrails.some((x: Data) => !x.pass) ? 'guard' : 'runs') : '',
-        seeds: c?.seeds?.map((s: Data) => ({ seed: s.seed, value: num(s.value), state: crossed.includes(s.seed) ? 'cross' : s.error ? (s.error.kind === 'env' ? 'env' : 'failed') : s.state === 'done' ? '' : 'failed' })) };
+        seeds: c?.seeds?.map((s: Data) => {
+          const hasVal = typeof s.value === 'number' && Number.isFinite(s.value);
+          const seedState = crossed.includes(s.seed) ? 'cross'
+            : hasVal && s.state === 'done' ? ''
+            : s.error ? (s.error.kind === 'env' ? 'env' : 'failed')
+            : s.state === 'done' ? '' : 'failed';
+          return { seed: s.seed, value: num(s.value), state: seedState };
+        }) };
     };
     const conf = report.confirmation, mean = (g: Data) => cell(g.id, lead.id)?.mean;
     const winners = groups.filter((g: Data) => judged(g.id)?.beatsControl).sort((a: Data, b: Data) => lead.dir === 'down' ? mean(a) - mean(b) : mean(b) - mean(a));
     const metrics = [lead, ...items.filter((m: Data) => m.guard), ...items.filter((m: Data) => m !== lead && !m.guard)].map((m: Data) => ({ id: m.id, name: m.name, role: m === lead ? 'main' : m.guard ? 'guard' : 'other', dir: m.dir,
       rule: m !== lead ? '' : m.margin !== undefined ? 'margin' : m.minDelta ? 'minDelta' : '', ruleValue: m.margin ?? m.minDelta, limit: m.guard && typeof m.threshold === 'number' ? m.dir : '', threshold: m.threshold,
       items: groups.map((g: Data) => row(g, m)) }));
-    return { seeds: r.plan.seeds.length, single: r.plan.seeds.length === 1, metrics, group: conf?.group, version: conf?.version,
+    const concludedRounds = rounds.filter((x: Data) => x.report);
+    const crossCols = concludedRounds.map((x: Data) => ({ cycle: x.n, label: `${x.version}-${x.k}`, version: x.version, current: x.n === r.n }));
+    const seriesIds = new Set(trendSeries.map((s: Data) => s.id));
+    const nonControlGroups = groups.filter((g: Data) => !g.control);
+    const buildTableRow = (m: Data) => {
+      const def = items.find((x: Data) => x.id === m.id) || {};
+      const ctrlItem = m.items.find((x: Data) => x.control) || null;
+      const candItems = m.items.filter((x: Data) => !x.control);
+      const anyValue = m.items.some((x: Data) => x.mean != null);
+      const anyFail = m.role === 'guard' && m.items.some((x: Data) => x.guard === 'fail');
+      const allPass = m.role === 'guard' && anyValue && !anyFail && m.items.some((x: Data) => x.guard === 'pass');
+      const leadCand = candItems[0] || null;
+      let status = 'info', statusText = '';
+      if (!anyValue) { status = 'missing'; statusText = '本轮未测'; }
+      else if (m.role === 'main') {
+        if (candItems.some((x: Data) => x.standing === 'beats')) { status = 'win'; statusText = '胜过对照'; }
+        else if (candItems.some((x: Data) => x.standing === 'guard')) { status = 'fail'; statusText = '护栏越线'; }
+        else if (candItems.some((x: Data) => x.standing === 'control' || x.standing === 'runs')) { status = 'warn'; statusText = '不可比'; }
+        else if (leadCand?.better === 'better') { status = 'win'; statusText = '更好'; }
+        else if (leadCand?.better === 'worse') { status = 'fail'; statusText = '更差'; }
+        else if (leadCand?.better === 'same') { status = 'info'; statusText = '持平'; }
+        else { status = 'info'; statusText = '基线'; }
+      } else if (m.role === 'guard') {
+        if (anyFail) { status = 'fail'; statusText = '越线'; }
+        else if (allPass) { status = 'pass'; statusText = '通过'; }
+        else { status = 'missing'; statusText = '未测'; }
+      } else if (leadCand) {
+        if (leadCand.better === 'better') { status = 'pass'; statusText = '更好'; }
+        else if (leadCand.better === 'worse') { status = 'warn'; statusText = '更差'; }
+        else if (leadCand.better === 'same') { status = 'info'; statusText = '持平'; }
+      }
+      const ruleText = m.role === 'guard' && typeof m.threshold === 'number'
+        ? `${m.dir === 'up' ? '≥' : '≤'} ${m.threshold}${def.unit ? ' ' + def.unit : ''}`
+        : `${m.dir === 'up' ? '↑ 越大越好' : '↓ 越小越好'}${def.unit ? ' · ' + def.unit : ''}`;
+      const crossValues = concludedRounds.map((x: Data) => {
+        const c = metricValueInRound(x, m.id, m.dir);
+        const val = num(c?.mean);
+        const pass = m.role === 'guard' && typeof m.threshold === 'number' && typeof c?.mean === 'number'
+          ? (m.dir === 'up' ? c.mean >= m.threshold : c.mean <= m.threshold)
+          : null;
+        return { label: `${x.version}-${x.k}`, value: val, current: x.n === r.n, guard: pass === null ? '' : pass ? 'pass' : 'fail' };
+      });
+      return {
+        id: m.id,
+        name: m.name,
+        role: m.role,
+        dir: m.dir,
+        unit: def.unit || '',
+        ruleText,
+        hasTrend: seriesIds.has(m.id),
+        active: m.id === activeTrendId,
+        status,
+        statusText,
+        anyValue,
+        control: ctrlItem ? {
+          id: ctrlItem.id, version: ctrlItem.version, mean: ctrlItem.mean, sd: ctrlItem.sd, n: ctrlItem.n, partial: ctrlItem.partial, guard: ctrlItem.guard,
+          seeds: (ctrlItem.seeds || []).map((s: Data, idx: number) => ({ round: idx + 1, seed: s.seed, value: s.value, state: s.state })),
+        } : null,
+        candidates: candItems.map((c: Data) => ({
+          id: c.id, label: c.label, version: c.version, confirm: c.confirm, mean: c.mean, sd: c.sd, n: c.n, partial: c.partial,
+          delta: c.delta, better: c.better, guard: c.guard, crossed: c.crossed, standing: c.standing,
+          seeds: (c.seeds || []).map((s: Data, idx: number) => ({ round: idx + 1, seed: s.seed, value: s.value, state: s.state })),
+        })),
+        crossValues,
+      };
+    };
+    const tableRows = metrics.map(buildTableRow);
+    const secMain = tableRows.filter((x: Data) => x.role === 'main');
+    const secGuardFail = tableRows.filter((x: Data) => x.role === 'guard' && x.anyValue && x.status === 'fail');
+    const secGuardPass = tableRows.filter((x: Data) => x.role === 'guard' && x.anyValue && x.status === 'pass');
+    const secOther = tableRows.filter((x: Data) => x.role === 'other' && x.anyValue);
+    const secMissing = tableRows.filter((x: Data) => !x.anyValue && x.role !== 'main');
+    const sections = [
+      { k: 'main', title: '主指标', defaultOpen: true, tone: 'info', rows: secMain },
+      { k: 'guard_fail', title: '未通过护栏', defaultOpen: true, tone: 'danger', rows: secGuardFail },
+      { k: 'guard_pass', title: '已通过护栏', defaultOpen: secGuardPass.length <= 4 && secGuardFail.length === 0, tone: 'ok', rows: secGuardPass },
+      { k: 'other', title: '诊断与辅助指标', defaultOpen: secOther.length <= 5, tone: '', rows: secOther },
+      { k: 'missing', title: '本轮未测 / 暂无数据', defaultOpen: false, tone: 'muted', rows: secMissing },
+    ].filter((sec) => sec.rows.length > 0);
+    const table = {
+      mode: S.rsiCmpMode,
+      selectedMetric: activeTrendId,
+      cycleLabel: `${r.version}-${r.k}`,
+      seeds: r.plan.seeds,
+      controlGroup: control ? { id: control.id, version: control.version, label: control.label } : null,
+      candidateGroups: nonControlGroups.map((g: Data) => ({ id: g.id, version: g.version, label: g.label, confirm: !!g.confirm })),
+      crossCols,
+      sections,
+      totalMetrics: tableRows.length,
+    };
+    return { seeds: r.plan.seeds.length, single: r.plan.seeds.length === 1, metrics, table, group: conf?.group, version: conf?.version,
       result: conf ? conf.status : !report.compare.groups ? '' : groups.length < 2 ? 'baseline' : !report.compare.comparable ? 'incomparable' : 'none',
       // The difference the stepper shows: that of the best group that beats the control; none when no group does.
       lead: winners.length ? metrics[0].items.find((x: Data) => x.id === winners[0].id)!.delta : null };
@@ -368,6 +525,7 @@ function exp(): any {
     const firsts = asked ? analysts.filter((a) => !still.includes(a.catId) && !late.includes(a.catId)).map((a) => dirs.find((x: Data) => x.by === a.catId)).filter(Boolean) : [];
     const kinds = new Set(firsts.map((x: Data) => x.kind || '')), targets = new Set(firsts.map((x: Data) => x.target || ''));
     return { status: still.length ? 'proposing' : firsts.length > 1 ? (r.report.agree ? 'agree' : 'split') : 'count',
+      resolved: !!r.decision,
       differ: firsts.length < 2 ? '' : kinds.size > 1 && !kinds.has('') ? 'kind' : kinds.has('') || targets.has('') ? 'untargeted' : targets.size > 1 ? 'target'
         : new Set(firsts.map((x: Data) => JSON.stringify(x.predict || null))).size > 1 ? 'effect' : 'same',
       kind: firsts[0]?.kind, target: firsts[0]?.target, done: firsts.length, asked: firsts.length + still.length + late.length, waiting: still.map(memberOf), missing: late.map(memberOf),
@@ -431,16 +589,18 @@ function exp(): any {
     };
   };
   const tree = rsiTree('rsiSelO', d.versions.map(function (v: any): any {
+    const verRounds = rounds.filter(function (r: any): any { return r.version === v.id; });
+    const isRunningVer = !!o.projectPath && verRounds.some((r: Data) => ['running', 'evaluating', 'repairing'].includes(r.state));
     return { key: key(v.id), parent: v.parent && key(v.parent),
-      cycles: rounds.filter(function (r: any): any { return r.version === v.id; }).map(function (r: any): any {
+      cycles: verRounds.map(function (r: any): any {
         const live = r.state === 'running', disc = r.report && discussionOf(r), bypassed = r.state === 'repaired' || r.state === 'repairing';
         return { n: r.k, apply: r.runs.some(function (u: any): any { return u.error && u.error.kind === 'env'; }) ? 'failed' : 'done', collect: true, live: live,
           done: live ? r.runs.filter((u: Data) => u.state === 'done' || u.state === 'failed').length : null, total: r.runs.length,
           eval: r.report ? r.report.verdict : evalStateOf(r), delta: r.report && compareOf(r).lead,
-          discuss: disc ? { result: disc.status, count: disc.count, done: disc.done, asked: disc.asked, missing: disc.missing.length } : (o.projectPath ? { result: (!hasAnalysts || bypassed) ? 'skipped' : 'waiting', count: 0 } : null),
+          discuss: disc ? { result: disc.status, resolved: !!r.decision, count: disc.count, done: disc.done, asked: disc.asked, missing: disc.missing.length } : (o.projectPath ? { result: (!hasAnalysts || bypassed) ? 'skipped' : 'waiting', resolved: false, count: 0 } : null),
           gov: govOf(r) || 'waiting' };
       }),
-      data: Object.assign({}, v, { nodeState: v.current ? 'current' : v.status === 'candidate' ? 'candidate' : '' }) };
+      data: Object.assign({}, v, { nodeState: v.current ? 'current' : isRunningVer ? 'running' : v.status === 'candidate' ? 'candidate' : '' }) };
   }), { row: key(focus ? focus.version : o.currentVersion) });
   const ver = d.versions.find(function (v: any): any { return key(v.id) === tree.rowKey; }), m = /^c(\d+)\.(\w+)$/.exec(tree.stepKey);
   const r = m && rounds.find(function (x: any): any { return x.version === ver.id && x.k === +m[1]; });
@@ -512,6 +672,52 @@ function exp(): any {
     visible: activeKey === 'ready',
   };
   const dagNodes = [...steps, readyNode];
+  const prepBySec = (sec: string) => d.prep.filter((p: Data) => p.section === sec && p.value);
+  const clipLine = (text: unknown, max = 120) => {
+    const s = String(text ?? '').replace(/\s+/g, ' ').trim();
+    return s.length > max ? s.slice(0, max - 1) + '…' : s;
+  };
+  const scopeDecision = (p: Data) => p.decision || p.rec || 'explore';
+  const scopeItems = d.prep.filter((p: Data) => p.section === 'scope');
+  const mainDef = d.metrics.items.find((m: Data) => !m.guard);
+  const guardDefs = d.metrics.items.filter((m: Data) => m.guard);
+  const readyOverview = [
+    {
+      k: 'baseline',
+      title: '现状与基线',
+      items: [
+        ...prepBySec('baseline').slice(0, 4).map((p: Data) => ({ k: p.title, v: clipLine(p.value, 140) })),
+      ],
+    },
+    {
+      k: 'goal',
+      title: '目标与约束',
+      items: [
+        ...(o.goal?.statement ? [{ k: '改进目标', v: clipLine(o.goal.statement, 160) }] : []),
+        ...(mainDef ? [{ k: '主指标', v: `${mainDef.name}（${mainDef.dir === 'down' ? '越小越好' : '越大越好'}${mainDef.unit ? '，' + mainDef.unit : ''}）` }] : []),
+        ...(guardDefs.length ? [{ k: `护栏（${guardDefs.length} 项）`, v: guardDefs.slice(0, 4).map((m: Data) => `${m.name} ${m.dir === 'up' ? '≥' : '≤'} ${m.threshold}${m.unit ? ' ' + m.unit : ''}`).join('；') + (guardDefs.length > 4 ? ` 等 ${guardDefs.length} 项` : '') }] : []),
+        { k: '停止条件', v: stopText(o.stop || {}) || '不限制' },
+      ],
+    },
+    {
+      k: 'scope',
+      title: '改动范围',
+      items: [
+        { k: '可探索', v: scopeItems.filter((p: Data) => scopeDecision(p) === 'explore').map((p: Data) => p.title).join('、') || '—' },
+        { k: '固定不动', v: scopeItems.filter((p: Data) => scopeDecision(p) === 'fixed').map((p: Data) => p.title).join('、') || '—' },
+        ...(scopeItems.some((p: Data) => scopeDecision(p) === 'excluded') ? [{ k: '明确排除', v: scopeItems.filter((p: Data) => scopeDecision(p) === 'excluded').map((p: Data) => p.title).join('、') }] : []),
+      ],
+    },
+    {
+      k: 'design',
+      title: '实验与执行设计',
+      items: [
+        ...prepBySec('design').slice(0, 3).map((p: Data) => ({ k: p.title, v: clipLine(p.value, 140) })),
+        ...(d.executor?.mcp ? [{ k: '执行器', v: `${d.executor.mcp}（${d.executor.state === 'passed' ? '试跑通过' : d.executor.state}）` }] : []),
+        ...prepBySec('feedback').slice(0, 2).map((p: Data) => ({ k: p.title, v: clipLine(p.value, 140) })),
+      ],
+    },
+  ].filter((card) => card.items.length > 0);
   const readyInfo = {
     selected: readyNode.visible,
     stage: readyStage,
@@ -525,6 +731,7 @@ function exp(): any {
     canStart: o.state === 'ready',
     waitingFirstRun: o.state === 'ready' && rounds.length === 0,
     canTriggerNow: !!o.projectPath && d.executor.state === 'passed' && ['ready', 'running', 'pending'].includes(o.state) && prepSettled(d) && !d.versionRequest && !d.rounds.some((x: Data) => ['running', 'evaluating'].includes(x.state)),
+    overview: readyOverview,
   };
   const at = function (x: any, step: any): any { return 'version|' + sel(x, step); };
   const wait = rounds.find(waiting), run = rounds.find(function (x: any): any { return x.state === 'running'; }), ev = rounds.find(function (x: any): any { return x.state === 'evaluating'; }), halted = rounds.find(function (x: any): any { return x.state === 'interrupted'; }), an = rounds.find(function (x: any): any { return x.analysis && x.analysis.waiting.length; });
@@ -545,12 +752,70 @@ function exp(): any {
   const now = { version: cur.id, change: cur.change, when: run ? 'running' : o.state === 'running' ? 'soon' : o.state, window: scheduleSummary(d.policy.schedule), v: run && run.version, n: run && run.k,
     plan: d.upcoming && { groups: d.upcoming.groups.map(function (g: any): any { return g.label; }).join('、'), seeds: d.upcoming.seeds.length },
     exec: d.executor.state === 'passed' ? d.executor.mcp : null, metrics: ruled ? d.metrics.items.map(function (x: any): any { return x.name + (x.line ? ' ' + x.line : ''); }).join('；') : null, e: d.metrics.version };
+  const configObjOf = (g: Data) => {
+    const v = d.versions.find((x: Data) => x.id === g.version);
+    const vCfg = v && v.config && typeof v.config === 'object' && !Array.isArray(v.config) ? v.config : {};
+    const vVars = v && v.vars && typeof v.vars === 'object' && !Array.isArray(v.vars) ? v.vars : {};
+    const gVars = g && g.vars && typeof g.vars === 'object' && !Array.isArray(g.vars) ? g.vars : {};
+    return Object.assign({}, vCfg, vVars, gVars);
+  };
+  const formatVal = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v));
+  const enrichRun = (x: Data, g: Data, u: Data, idx: number) => {
+    const v = d.versions.find((y: Data) => y.id === g.version);
+    const durMs = u.start ? (u.end || Date.now()) - u.start : null;
+    const durSec = durMs != null ? Math.round(durMs / 1000) : null;
+    const commitRaw = u.env?.commit || v?.commit || '';
+    const commitShort = commitRaw ? String(commitRaw).slice(0, 7) : '';
+    return Object.assign({}, u, {
+      roundNo: idx + 1,
+      roundTitle: `第 ${idx + 1} 轮`,
+      seedText: `seed ${u.seed}`,
+      value: num(u.metrics?.[mainOf(x).id]),
+      durationSeconds: durSec,
+      durationText: u.state === 'running' && durMs != null ? `已跑 ${fmtDuration(durMs)}` : fmtDuration(durMs),
+      command: renderRunCommand(x, g, u),
+      commitShort,
+      metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })),
+      groupLabel: g.label,
+    });
+  };
   const groupsOf = function (x: any): any {
-    return x.plan.groups.map(function (g: any): any {
+    const ctrlGroup = x.plan.groups.find((g: Data) => g.control);
+    const ctrlCfg = ctrlGroup ? configObjOf(ctrlGroup) : {};
+    const ordered = [...x.plan.groups.filter((g: Data) => g.control), ...x.plan.groups.filter((g: Data) => !g.control)];
+    return ordered.map(function (g: any): any {
+      const v = d.versions.find((y: Data) => y.id === g.version);
       const runs = x.runs.filter(function (u: any): any { return u.group === g.id; });
+      const enrichedRuns = runs.map((u: Data, idx: number) => enrichRun(x, g, u, idx));
+      const cfg = configObjOf(g);
+      const configEntries = Object.entries(cfg).map(([k, val]) => {
+        const textVal = formatVal(val);
+        const baseVal = k in ctrlCfg ? formatVal(ctrlCfg[k]) : undefined;
+        const changed = !g.control && ctrlGroup ? baseVal !== textVal : false;
+        return { k, v: changed && baseVal !== undefined ? `${baseVal} → ${textVal}` : textVal, raw: textVal, changed };
+      });
+      const diffEntries = configEntries.filter((e) => e.changed);
+      const showEntries = diffEntries.length ? diffEntries : configEntries.slice(0, 4);
+      const configSummary = showEntries.map((e) => `${e.k}=${e.v}`).join(' · ');
+      const rawLabel = String(g.label || g.id);
+      const shortTitle = rawLabel.length > 42 ? rawLabel.slice(0, 41) + '…' : rawLabel;
+      const sampleCommand = enrichedRuns[0]?.command || renderRunCommand(x, g, { seed: x.plan.seeds?.[0] ?? 0 });
       // A variable may hold an object (reward weights): it reads as JSON.
-      return Object.assign({}, g, { varsText: Object.entries(g.vars).map(([k, v]) => k + '=' + (typeof v === 'string' ? v : JSON.stringify(v))).join(' '), failed: runs.filter(function (u: any): any { return u.state === 'failed'; }).length,
-        doneN: runs.filter(function (u: any): any { return u.state === 'done' || u.state === 'failed'; }).length, total: runs.length });
+      return Object.assign({}, g, {
+        shortTitle,
+        fullDesc: rawLabel,
+        versionChange: v?.change || '',
+        versionCommit: v?.commit ? String(v.commit).slice(0, 7) : '',
+        varsText: Object.entries(g.vars || {}).map(([k, val]) => k + '=' + formatVal(val)).join(' '),
+        configEntries,
+        configSummary,
+        sampleCommand,
+        runs: enrichedRuns,
+        failed: runs.filter(function (u: any): any { return u.state === 'failed'; }).length,
+        runningN: runs.filter(function (u: any): any { return u.state === 'running'; }).length,
+        doneN: runs.filter(function (u: any): any { return u.state === 'done' || u.state === 'failed'; }).length,
+        total: runs.length,
+      });
     });
   };
   const expSection = ['manage', 'execute'].includes(S.rsiExpSec) ? S.rsiExpSec : (rounds.length === 0 ? 'manage' : 'execute');
@@ -698,15 +963,26 @@ function exp(): any {
   const currentStep = m ? m[2] : 'node';
   const liveNow = Date.now();
   const schedNow = state.now && Math.abs(liveNow - state.now) < 36 * 3_600_000 ? state.now : liveNow;
+  const legacyTrend = rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, label: `${x.version}-${x.k}`, value: Number(best(x).mean.toPrecision(4)) }; });
+  const activeTrend = activeTrendSeries
+    ? Object.assign({}, activeTrendSeries, { points: activeTrendSeries.points.map((pt: Data) => Object.assign({}, pt, { current: !!r && pt.cycle === r.n })) })
+    : (legacyTrend.length ? { id: main, name: d.metrics.items.find((m: Data) => m.id === main)?.name || main, role: 'main', dir: d.metrics.items.find((m: Data) => m.id === main)?.dir || 'up', unit: '', threshold: null, points: legacyTrend } : null);
+  const cycleGroups = r ? groupsOf(r) : [];
+  const cycleRuns = r ? cycleGroups.flatMap((g: Data) => g.runs) : [];
   return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, projectPath: o.projectPath, goal: o.goal, goalQuote, editingGoal: S.rsiEditGoal, execStatus, execFlow, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
-    trend: rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, value: Number(best(x).mean.toPrecision(4)) }; }),
-    trendMetric: d.metrics.items.find((m: Data) => m.id === main).name, hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.filter(function (p: any): any { return p.result !== 'unresolved'; }).length },
+    trend: legacyTrend,
+    trendMetric: d.metrics.items.find((m: Data) => m.id === main).name,
+    trendSeries,
+    trendOptions,
+    activeTrendId,
+    activeTrend,
+    hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.filter(function (p: any): any { return p.result !== 'unresolved'; }).length },
     versions: tree.rows, ver: ver, step: currentStep, candidate: d.candidate ? d.candidate.version : null,
-    cycle: r && Object.assign({}, r, { waiting: waiting(r), evaluating: r.state === 'evaluating', evalState: evalStateOf(r), discussState: discussStateOf(r), evalMetrics: evalMetricsOf(r), groups: groupsOf(r), main: mainOf(r),
+    cycle: r && Object.assign({}, r, { versionRound: `${r.version}-${r.k}`, canReeval: !!o.projectPath && ['done', 'evaluating'].includes(r.state), waiting: waiting(r), evaluating: r.state === 'evaluating', evalState: evalStateOf(r), discussState: discussStateOf(r), evalMetrics: evalMetricsOf(r), groups: cycleGroups, main: mainOf(r),
       stage: stageOfCycle(r, currentStep),
       stageOwners: stageOwnersOf(r),
-      runs: r.runs.map(function (u: any): any { return Object.assign({}, u, { value: num(u.metrics[mainOf(r).id]), durationSeconds: u.start ? Math.round(((u.end || Date.now()) - u.start) / 1000) : null, metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })), groupLabel: r.plan.groups.find(function (g: any): any { return g.id === u.group; }).label }); }),
+      runs: cycleRuns,
       notAssessed: r.report && RSI_LAYERS.filter(function (l: any): any { return r.report.attribution.assessedLayers.indexOf(l) < 0; }),
       // A conclusion stores a placeholder attribution (no layer assessed): only one that assessed a layer is an attribution.
       attribution: r.report && r.report.attribution.assessedLayers.length ? r.report.attribution : null,

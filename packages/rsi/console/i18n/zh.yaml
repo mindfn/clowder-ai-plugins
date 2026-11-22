@@ -56,6 +56,7 @@ discussResult:
   proposing: 讨论中
   agree: 一致
   split: 有分歧
+  resolved: 已定方向
   count: "{0} 个方向"
   skipped: 跳过
   waiting: 待执行
@@ -72,6 +73,9 @@ govResult:
   addVar: 加变量
   same: 照旧
   execution: 修执行
+  discriminate: 区分实验
+  code: 改代码
+  direction: 采纳方向
   repairing: 修复中
   waiting: 待执行
 applyResult:
@@ -87,7 +91,7 @@ stepName:
 detail:
   node: "{0}"
   gov: "{0} · 治理"
-  step: "{0} · 周期 {1} · {2}"
+  step: "{0}-{1} · {2}"
   mstep: "{0} · {1}"
   change: 改了什么
   parent: 源自
@@ -170,8 +174,8 @@ decision:
   collecting: 采集中
 cycle:
   pick: 周期
-  nOf: 周期 {0}/{1}
-  n: 周期 {0}
+  nOf: "#{0}"
+  n: "#{0}"
   merged: 合并 {0} 个窗口
   samples: "{0} 条"
   card:
@@ -735,7 +739,18 @@ exp:
     planned: 下一个周期在 {3} 跑
     _: ""
   trend: "{0} · 每个周期取这个版本最好的一组 · 预测兑现 {1} / {2}"
-  trendLabel: 主指标趋势
+  trendLabel: 指标趋势
+  trendPick: 趋势指标
+  reEval: 重新分析指标
+  jumpThread: 跳转原对话
+  groupChange: 改动说明
+  groupConfig: 生效配置
+  groupCmd: 执行命令
+  startTime: 开始时间
+  duration: 耗时
+  groupHead: "{0}（{1}）· {2}/{3}"
+  readyOverviewTitle: 实验设计总览
+  readyOverviewHint: 如需修改或查看原始依据，点击上方 1–7 对应节点即可
   prep:
     default: 默认值
     needYou: 等你

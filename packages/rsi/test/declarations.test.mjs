@@ -53,7 +53,7 @@ test('all thread navigation buttons use host act: thread with id, never legacy a
     }
   });
   assert.equal(expThreadFound,true);
-  assert.equal(threadButtons,8);
+  assert.equal(threadButtons,10);
 });
 
 test('i18n yaml packs parse cleanly and rsi.exp dual-tab removes trailing lineage tail clutter',()=>{

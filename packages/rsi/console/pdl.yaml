@@ -630,6 +630,19 @@ views:
                         when: "!$.exp.prep.ready.schedule"
                       - k: t:rsi.exp.pol.maxRuns
                         v: $.exp.prep.ready.maxRunsText
+                  - type: label
+                    text: t:rsi.exp.readyOverviewTitle
+                    help: t:rsi.exp.readyOverviewHint
+                    when: $.exp.prep.ready.overview
+                  - type: each
+                    from: $.exp.prep.ready.overview
+                    blocks:
+                      - type: box
+                        blocks:
+                          - type: label
+                            text: "@title"
+                          - type: kv
+                            from: "@items"
               - type: each
                 from: $.exp.prep.visibleSteps
                 blocks:
@@ -1141,18 +1154,35 @@ views:
           - type: each
             from:
               - {}
-            when: $.exp.trend
+            when: $.exp.activeTrend
             blocks:
-              - type: label
-                text:
-                  t: rsi.exp.trend
-                  args:
-                    - $.exp.trendMetric
-                    - $.exp.hitRate.hit
-                    - $.exp.hitRate.all
+              - type: toolbar
+                left:
+                  - type: label
+                    text:
+                      t: rsi.exp.trend
+                      args:
+                        - $.exp.activeTrend.name
+                        - $.exp.hitRate.hit
+                        - $.exp.hitRate.all
+                right:
+                  - type: select
+                    id: rsi-trend-pick
+                    label: t:rsi.exp.trendPick
+                    when: $.exp.trendOptions.length
+                    value: $.exp.activeTrendId
+                    change: plugSet
+                    args:
+                      k: trendMetric
+                    options:
+                      - from: $.exp.trendOptions
+                        item:
+                          v: "@v"
+                          label: "@label"
               - type: component
                 use: plugin:official.rsi/rsiTrend
                 props:
+                  series: $.exp.activeTrend
                   from: $.exp.trend
                   label: t:rsi.exp.trendLabel
           - type: toolbar
@@ -1257,10 +1287,22 @@ views:
                           t: rsi.step.discuss
                           args:
                             - "@n"
-                            - t: rsi.discussResult
-                              args:
-                                - "@result"
-                                - "@count"
+                            - of: "@resolved"
+                              map:
+                                "true":
+                                  of: "@result"
+                                  map:
+                                    split: t:rsi.discussResult.resolved
+                                    _:
+                                      t: rsi.discussResult
+                                      args:
+                                        - "@result"
+                                        - "@count"
+                                _:
+                                  t: rsi.discussResult
+                                  args:
+                                    - "@result"
+                                    - "@count"
                         gov:
                           t: rsi.step.gov
                           args:
@@ -1304,14 +1346,18 @@ views:
                         _: ""
                     pressed: "@selected"
                     tone:
-                      of: "@result"
+                      of: "@resolved"
                       map:
-                        pending: warn
-                        repairing: warn
-                        rollback: warn
-                        failed: warn
-                        split: warn
-                        _: ""
+                        "true": ""
+                        _:
+                          of: "@result"
+                          map:
+                            pending: warn
+                            repairing: warn
+                            rollback: warn
+                            failed: warn
+                            split: warn
+                            _: ""
                     act: plugSet
                     args:
                       k: selO
@@ -1450,23 +1496,32 @@ views:
                     id: rsi-exp-plan
                     label: t:rsi.exp.groups
                     from: $.exp.cycle.groups
+                    expand: many
                     row:
                       layout: two
                       key: "@id"
-                      title: "@label"
+                      title: "@shortTitle"
                       inline:
                         - chip: t:rsi.exp.control
                           when: "@control"
                         - chip: t:rsi.exp.confirm
                           when: "@confirm"
+                        - text: "@version"
+                          variant: badge
+                        - text: "@versionCommit"
+                          mono: true
+                          when: "@versionCommit"
                       sub:
                         sep: " · "
                         parts:
-                          - text: "@version"
+                          - text: "@configSummary"
                             mono: true
+                            when: "@configSummary"
                           - text: "@varsText"
                             mono: true
-                            when: "@varsText"
+                            when:
+                              - "!@configSummary"
+                              - "@varsText"
                       cols:
                         - v:
                             text:
@@ -1484,6 +1539,27 @@ views:
                             tone: danger
                           w: label
                           when: "@failed"
+                      expand:
+                        - type: kv
+                          from:
+                            - k: t:rsi.exp.groupChange
+                              v: "@fullDesc"
+                              when: "@fullDesc"
+                            - k: t:rsi.detail.change
+                              v: "@versionChange"
+                              when: "@versionChange"
+                        - type: label
+                          text: t:rsi.exp.groupConfig
+                          when: "@configEntries.length"
+                        - type: kv
+                          from: "@configEntries"
+                          when: "@configEntries.length"
+                        - type: label
+                          text: t:rsi.exp.groupCmd
+                          when: "@sampleCommand"
+                        - type: pre
+                          text: "@sampleCommand"
+                          when: "@sampleCommand"
               - type: each
                 from:
                   - {}
@@ -1512,90 +1588,122 @@ views:
                               of: "@at"
                               fmt: stamp
                           w: time
-                  - type: list
-                    id: rsi-exp-runs
-                    label:
-                      t: rsi.exp.runs
-                      args:
-                        - $.exp.cycle.runs.length
-                        - $.exp.cycle.main.name
-                    from: $.exp.cycle.runs
-                    row:
-                      layout: two
-                      key: "@id"
-                      title:
-                        text:
-                          t: rsi.exp.runOf
+                  - type: each
+                    from: $.exp.cycle.groups
+                    blocks:
+                      - type: list
+                        label:
+                          t: rsi.exp.groupHead
                           args:
-                            - "@groupLabel"
-                            - "@seed"
-                      sub:
-                        sep: " · "
-                        parts:
-                          - text: "@env.commit"
-                            mono: true
-                          - text: "@env.hw"
-                          - text:
-                              t: rsi.exp.retries
-                              args:
-                                - "@retries"
-                            when: "@retries"
-                      cols:
-                        - v:
-                            text: "@value"
-                            num: true
-                            when: "@value"
-                          w: auto
-                        - v:
-                            status:
-                              of: "@state"
-                              map:
-                                failed:
-                                  of: "@error.kind"
+                            - "@shortTitle"
+                            - "@version"
+                            - "@doneN"
+                            - "@total"
+                        from: "@runs"
+                        expand: many
+                        row:
+                          layout: two
+                          key: "@id"
+                          title: "@roundTitle"
+                          inline:
+                            - text: "@seedText"
+                              variant: badge
+                          sub:
+                            sep: " · "
+                            parts:
+                              - text: "@commitShort"
+                                mono: true
+                                when: "@commitShort"
+                              - text: "@env.hw"
+                                when: "@env.hw"
+                              - text: "@durationText"
+                                mono: true
+                                when: "@durationText"
+                              - text:
+                                  t: rsi.exp.retries
+                                  args:
+                                    - "@retries"
+                                when: "@retries"
+                          cols:
+                            - v:
+                                text: "@value"
+                                num: true
+                                when: "@value"
+                              w: auto
+                            - v:
+                                text:
+                                  of: "@start"
+                                  fmt: stamp
+                                when: "@start"
+                              w: time
+                            - v:
+                                status:
+                                  of: "@state"
                                   map:
-                                    env:
-                                      tone: warn
-                                      text: t:rsi.exp.err.env
-                                    _:
-                                      tone: danger
-                                      text: t:rsi.exp.err.real
-                                running:
-                                  tone: info
-                                  text: t:rsi.exp.state.running
-                                queued:
-                                  tone: ""
-                                  text: t:rsi.exp.state.queued
-                                done:
-                                  tone: ok
-                                  text: t:rsi.phase2.done
-                                _: ""
-                          w: state
-                      expand:
-                        - type: kv
-                          from:
-                            - k: t:rsi.phase2.duration
-                              v: "@durationSeconds"
-                            - k: t:rsi.exp.env.commit
-                              v: "@env.commit"
-                            - k: t:rsi.exp.env.config
-                              v: "@env.config"
-                            - k: t:rsi.exp.env.hw
-                              v: "@env.hw"
-                            - k: t:rsi.exp.env.driver
-                              v: "@env.driver"
-                            - k: t:rsi.exp.env.data
-                              v: "@env.data"
-                            - k: t:rsi.exp.err.step
-                              v: "@error.step"
+                                    failed:
+                                      of: "@error.kind"
+                                      map:
+                                        env:
+                                          tone: warn
+                                          text: t:rsi.exp.err.env
+                                        _:
+                                          tone: danger
+                                          text: t:rsi.exp.err.real
+                                    running:
+                                      tone: info
+                                      text: t:rsi.exp.state.running
+                                    queued:
+                                      tone: ""
+                                      text: t:rsi.exp.state.queued
+                                    done:
+                                      tone: ok
+                                      text: t:rsi.phase2.done
+                                    _: ""
+                              w: state
+                          expand:
+                            - type: kv
+                              from:
+                                - k: t:rsi.exp.startTime
+                                  v:
+                                    of: "@start"
+                                    fmt: stamp
+                                  when: "@start"
+                                - k: t:rsi.exp.duration
+                                  v: "@durationText"
+                                  when: "@durationText"
+                                - k: t:rsi.exp.env.commit
+                                  v: "@env.commit"
+                                  when: "@env.commit"
+                                - k: t:rsi.exp.env.config
+                                  v: "@env.config"
+                                  when: "@env.config"
+                                - k: t:rsi.exp.env.hw
+                                  v: "@env.hw"
+                                  when: "@env.hw"
+                                - k: t:rsi.exp.env.driver
+                                  v: "@env.driver"
+                                  when: "@env.driver"
+                                - k: t:rsi.exp.env.data
+                                  v: "@env.data"
+                                  when: "@env.data"
+                                - k: t:rsi.exp.err.step
+                                  v: "@error.step"
+                                  when: "@error"
+                            - type: label
+                              text: t:rsi.exp.groupCmd
+                              when: "@command"
+                            - type: pre
+                              text: "@command"
+                              when: "@command"
+                            - type: kv
+                              from: "@metricRows"
+                              when: "@metricRows.length"
+                            - type: pre
+                              text: "@error.raw"
                               when: "@error"
-                        - type: kv
-                          from: "@metricRows"
-                        - type: pre
-                          text: "@error.raw"
-                          when: "@error"
-                        - type: pre
-                          text: "@log"
-                          when: "@log"
+                            - type: pre
+                              text: "@log"
+                              when: "@log"
               - type: each
                 from:
                   - {}
@@ -1667,6 +1775,22 @@ views:
                       eval: true
                   - $.exp.cycle.report
                 blocks:
+                  - type: toolbar
+                    right:
+                      - type: button
+                        label: t:rsi.exp.reEval
+                        act: plugin
+                        args:
+                          request: evalAgain
+                          n: $.exp.cycle.n
+                        when: $.exp.cycle.canReeval
+                        disabled: $.pending
+                      - type: button
+                        label: t:rsi.exp.jumpThread
+                        act: thread
+                        args:
+                          id: $.exp.thread
+                        when: $.exp.thread
                   - type: notice
                     when: $.exp.cycle.compare.result
                     tone:
@@ -1684,157 +1808,10 @@ views:
                         - $.exp.cycle.compare.result
                         - $.exp.cycle.compare.group
                         - $.exp.cycle.compare.version
-                  - type: list
-                    id: rsi-exp-compare
-                    label:
-                      of: $.exp.cycle.compare.single
-                      map:
-                        "true": t:rsi.exp.cmp.single
-                        _:
-                          t: rsi.exp.cmp.label
-                          args:
-                            - $.exp.cycle.compare.seeds
-                    groups: $.exp.cycle.compare.metrics
-                    group:
-                      count: ""
-                      title:
-                        t: rsi.exp.cmp.head
-                        args:
-                          - "@role"
-                          - "@name"
-                          - t: rsi.exp.dir
-                            args:
-                              - "@dir"
-                          - t: rsi.exp.cmp.rule
-                            args:
-                              - "@rule"
-                              - "@ruleValue"
-                          - t: rsi.exp.cmp.limit
-                            args:
-                              - "@limit"
-                              - "@threshold"
-                    expand: many
-                    row:
-                      layout: line
-                      key: "@key"
-                      title:
-                        text: "@id"
-                        mono: true
-                        tip: "@label"
-                      inline:
-                        - text: "@version"
-                          variant: badge
-                      more:
-                        - type: text
-                          parts:
-                            - status:
-                                of: "@standing"
-                                map:
-                                  beats:
-                                    tone: ok
-                                    text: t:rsi.exp.cmp.standing.beats
-                                  below:
-                                    tone: ""
-                                    text: t:rsi.exp.cmp.standing.below
-                                  control:
-                                    tone: warn
-                                    text: t:rsi.exp.cmp.standing.control
-                                  guard:
-                                    tone: danger
-                                    text: t:rsi.exp.cmp.standing.guard
-                                  runs:
-                                    tone: warn
-                                    text: t:rsi.exp.cmp.standing.runs
-                                  _: ""
-                            - text: t:rsi.exp.confirm
-                              variant: badge
-                              when: "@confirm"
-                      moreWhen: "@standing"
-                      cols:
-                        - v:
-                            - text: "@mean"
-                              num: true
-                              when: "@mean"
-                            - text:
-                                t: rsi.exp.cmp.sd
-                                args:
-                                  - "@sd"
-                              num: true
-                              when: "@sd"
-                            - text:
-                                t: rsi.exp.cmp.partial
-                                args:
-                                  - "@n"
-                                  - $.exp.cycle.compare.seeds
-                              when: "@partial"
-                            - text: t:rsi.exp.cmp.none
-                              when: "!@mean"
-                          w: auto
-                        - v:
-                            text:
-                              t: rsi.exp.cmp.delta
-                              args:
-                                - "@better"
-                                - "@delta"
-                            tone:
-                              of: "@better"
-                              map:
-                                better: ok
-                                worse: danger
-                                _: ""
-                            num: true
-                          w: auto
-                          when: "@better"
-                        - v:
-                            - status:
-                                of: "@guard"
-                                map:
-                                  pass:
-                                    tone: ok
-                                    text: t:rsi.exp.cmp.pass
-                                  fail:
-                                    tone: danger
-                                    text: t:rsi.exp.cmp.cross
-                                  _: ""
-                            - text:
-                                t: rsi.exp.cmp.seedsOf
-                                args:
-                                  - of: "@crossed"
-                                    sep: 、
-                              when: "@crossed"
-                          w: auto
-                          when: "@guard"
-                      expand:
-                        - type: list
-                          inline: true
-                          from: "@seeds"
-                          row:
-                            layout: record
-                            title:
-                              t: rsi.exp.cmp.seed
-                              args:
-                                - "@seed"
-                            cols:
-                              - v:
-                                  text: "@value"
-                                  num: true
-                                w: auto
-                              - v:
-                                  status:
-                                    of: "@state"
-                                    map:
-                                      cross:
-                                        tone: danger
-                                        text: t:rsi.exp.cmp.cross
-                                      env:
-                                        tone: warn
-                                        text: t:rsi.exp.err.env
-                                      failed:
-                                        tone: danger
-                                        text: t:rsi.exp.err.real
-                                      _: ""
-                                w: auto
-                                when: "@state"
+                  - type: component
+                    use: plugin:official.rsi/rsiCompareMatrix
+                    props:
+                      from: $.exp.cycle.compare.table
                   - type: text
                     variant: meta
                     tone: warn
@@ -2057,6 +2034,14 @@ views:
                       discuss: true
                   - $.exp.cycle.discussion
                 blocks:
+                  - type: toolbar
+                    right:
+                      - type: button
+                        label: t:rsi.exp.jumpThread
+                        act: thread
+                        args:
+                          id: $.exp.thread
+                        when: $.exp.thread
                   - type: notice
                     tone: info
                     when:
@@ -2089,10 +2074,14 @@ views:
                         split: true
                         _: false
                     tone:
-                      of: $.exp.cycle.discussion.status
+                      of: $.exp.cycle.discussion.resolved
                       map:
-                        split: warn
-                        _: ok
+                        "true": info
+                        _:
+                          of: $.exp.cycle.discussion.status
+                          map:
+                            split: warn
+                            _: ok
                     text:
                       of: $.exp.cycle.discussion.status
                       map:
@@ -5783,6 +5772,19 @@ views:
               - k: t:rsi.exp.pol.schedule
                 v: $.exp.prep.ready.schedule
                 when: $.exp.prep.ready.schedule
+          - type: label
+            text: t:rsi.exp.readyOverviewTitle
+            help: t:rsi.exp.readyOverviewHint
+            when: $.exp.prep.ready.overview
+          - type: each
+            from: $.exp.prep.ready.overview
+            blocks:
+              - type: box
+                blocks:
+                  - type: label
+                    text: "@title"
+                  - type: kv
+                    from: "@items"
       - type: each
         from: $.exp.prep.visibleSteps
         blocks:
@@ -6550,6 +6552,8 @@ requests:
       initRev: state.initRev
       govFile: state.govFile
       govDiffMode: state.govDiffMode
+      trendMetric: state.trendMetric
+      cmpMode: state.cmpMode
       thread: host:currentThread.id
   record:
     path: rsi/view
@@ -6957,6 +6961,7 @@ requests:
       thread: host:currentThread.id
     body:
       op: evalAgain
+      n: "@n"
   discussAgain:
     path: rsi/act
     method: POST

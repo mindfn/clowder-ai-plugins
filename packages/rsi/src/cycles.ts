@@ -114,10 +114,10 @@ export function abandonRepair(state: RsiState, d: Experiment, reason: string, no
 }
 
 // Wakes the evaluate member for a cycle that waits for its conclusion (after the runs, and again from the page when that turn ended without one).
-export function askEvaluation(state: RsiState, d: Experiment, round: Data) {
+export function askEvaluation(state: RsiState, d: Experiment, round: Data, reeval = false) {
   const member = d.members.find((m) => m.role === 'evaluate')!;
   enqueue(state, d, 'agent', { member: member.catId, cycle: round.n,
-    message: { title: `第 ${round.n} 周期跑完`, body: `${mention(member)} 第 ${round.n} 周期跑完，调原生 MCP 工具 rsi_task 看同周期对照、各组均值和逐种子结果，再调 rsi_conclude。${EXPECT_HINT}` } });
+    message: { title: reeval ? `第 ${round.n} 周期：重新分析指标` : `第 ${round.n} 周期跑完`, body: `${mention(member)} ${reeval ? `用户请求重新分析第 ${round.n} 周期指标与结论` : `第 ${round.n} 周期跑完`}，调原生 MCP 工具 rsi_task 看同周期对照、各组均值和逐种子结果，再调 rsi_conclude。${EXPECT_HINT}` } });
 }
 
 export function matrix(d: Experiment, round: Data) {
@@ -239,6 +239,43 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     || !(text(input.findings) || Array.isArray(input.findings) && input.findings.length && input.findings.every(text))
     || (!analysts.length || options.length) && badOptions(state, d, options, round.n)) return { error: 'Provide verdict, findings and distinct options {k,title,why,kind?,target?,cites?}; cite previous cycle library entries when available' };
   const findings = Array.isArray(input.findings) ? input.findings.join('\n') : input.findings, compared = comparison(d, round);
+  const member = d.members.find((m) => m.role === 'evaluate')!, { matrix: cells, ...compare } = compared;
+  const comparisons = Array.isArray(input.comparisons)
+    ? input.comparisons.filter((c: unknown) => record(c) && text(c.title) && record(c.before) && record(c.after)).map((c: Data, i: number) => ({
+      id: text(c.id) ? c.id : `cmp-${round.n}-${i + 1}`,
+      title: c.title,
+      kind: ['chart', 'visual', 'artifact'].includes(c.kind) ? c.kind : 'visual',
+      note: typeof c.note === 'string' ? c.note : '',
+      before: { label: text(c.before.label) ? c.before.label : '前一轮', kind: ['image', 'video', 'audio', 'text'].includes(c.before.kind) ? c.before.kind : (text(c.before.src) ? 'image' : 'text'), ...(text(c.before.src) ? { src: c.before.src } : {}), ...(typeof c.before.text === 'string' ? { text: c.before.text } : {}), ...(typeof c.before.width === 'number' ? { width: c.before.width } : {}), ...(typeof c.before.height === 'number' ? { height: c.before.height } : {}) },
+      after: { label: text(c.after.label) ? c.after.label : '本轮', kind: ['image', 'video', 'audio', 'text'].includes(c.after.kind) ? c.after.kind : (text(c.after.src) ? 'image' : 'text'), ...(text(c.after.src) ? { src: c.after.src } : {}), ...(typeof c.after.text === 'string' ? { text: c.after.text } : {}), ...(typeof c.after.width === 'number' ? { width: c.after.width } : {}), ...(typeof c.after.height === 'number' ? { height: c.after.height } : {}) },
+    }))
+    : [];
+  const isHistoricalReeval = !!round.reevaluating && (!!round.decision || d.rounds.some((x: Data) => x.n > round.n));
+  if (isHistoricalReeval) {
+    const prev = round.report || {};
+    round.report = {
+      ...prev,
+      verdict: input.verdict,
+      headline: findings.split('\n')[0],
+      summary: findings,
+      matrix: cells,
+      ...(comparisons.length ? { comparisons } : {}),
+      compare: { ...compare, note: '仅比较本周期 control；区间为种子均值 ± 样本标准差。' },
+    };
+    round.stageMembers ||= {};
+    round.stageMembers.eval = { catId: member.catId, name: member.name };
+    round.state = 'done';
+    delete round.reevaluating;
+    const lib = state.library[d.objective.projectId], docId = `${d.objective.id}-cycle-${round.n}`;
+    const doc = { id: docId, kind: 'feedback', title: `第 ${round.n} 周期：${round.report.headline}`, body: `${round.plan.groups.filter((g: Data) => !g.control).map((g: Data) => `${g.label} (${g.version}) ${JSON.stringify(g.vars)}`).join('\n') || '当前版本基线'}\n\n${findings}${prev.outcome || ''}`,
+      objectives: [d.objective.id], cycle: round.n, tried: round.plan.groups.filter((g: Data) => !g.control), result: cycleResult(input.verdict, compared, round.confirmation || null), sources: [{ objective: d.objective.id, cycle: round.n }], state: 'confirmed', by: member.catId, at: now };
+    const at = lib.findIndex((x: Data) => x.id === docId);
+    if (at >= 0) lib[at] = doc; else lib.push(doc);
+    message(state, d, now, `第 ${round.n} 周期重新分析完成 · ${input.verdict}`, round.report.summary, 'conclusion');
+    syncObjective(state, d);
+    return { ok: true, comparison: compared, confirmation: round.confirmation || null, reevaluated: true };
+  }
+  delete round.reevaluating;
   const wins = compared.groups.filter((g: Data) => g.beatsControl).sort((a: Data, b: Data) => compared.dir === 'up' ? b.mean - a.mean : a.mean - b.mean);
   const winner = wins[0], candidate = d.candidate;
   let confirmation: Data | null = null;
@@ -274,20 +311,9 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     confirmation = { status: 'candidate', group: group.id, version: group.version, cycle: round.n };
     d.upcoming = { ...round.plan, groups: [controlGroup(d), { ...group, control: false, confirm: true }], seeds: freshSeeds(d, round.plan.seeds.length) };
   } else d.upcoming = { ...round.plan, seeds: freshSeeds(d, round.plan.seeds.length) };
-  const member = d.members.find((m) => m.role === 'evaluate')!, { matrix: cells, ...compare } = compared;
   round.confirmation = confirmation;
   round.stageMembers ||= {};
   round.stageMembers.eval = { catId: member.catId, name: member.name };
-  const comparisons = Array.isArray(input.comparisons)
-    ? input.comparisons.filter((c: unknown) => record(c) && text(c.title) && record(c.before) && record(c.after)).map((c: Data, i: number) => ({
-      id: text(c.id) ? c.id : `cmp-${round.n}-${i + 1}`,
-      title: c.title,
-      kind: ['chart', 'visual', 'artifact'].includes(c.kind) ? c.kind : 'visual',
-      note: typeof c.note === 'string' ? c.note : '',
-      before: { label: text(c.before.label) ? c.before.label : '前一轮', kind: ['image', 'video', 'audio', 'text'].includes(c.before.kind) ? c.before.kind : (text(c.before.src) ? 'image' : 'text'), ...(text(c.before.src) ? { src: c.before.src } : {}), ...(typeof c.before.text === 'string' ? { text: c.before.text } : {}), ...(typeof c.before.width === 'number' ? { width: c.before.width } : {}), ...(typeof c.before.height === 'number' ? { height: c.before.height } : {}) },
-      after: { label: text(c.after.label) ? c.after.label : '本轮', kind: ['image', 'video', 'audio', 'text'].includes(c.after.kind) ? c.after.kind : (text(c.after.src) ? 'image' : 'text'), ...(text(c.after.src) ? { src: c.after.src } : {}), ...(typeof c.after.text === 'string' ? { text: c.after.text } : {}), ...(typeof c.after.width === 'number' ? { width: c.after.width } : {}), ...(typeof c.after.height === 'number' ? { height: c.after.height } : {}) },
-    }))
-    : [];
   // The comparison's cells are stored once, as the report's matrix.
   round.report = { verdict: input.verdict, headline: findings.split('\n')[0], summary: findings, matrix: cells,
     ...(comparisons.length ? { comparisons } : {}),

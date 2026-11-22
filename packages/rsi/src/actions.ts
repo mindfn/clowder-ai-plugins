@@ -481,9 +481,25 @@ export function act(state: RsiState, body: Data, query: Data, now: number): Data
       return { ok: true };
     }
     case 'evalAgain': {
-      const round = d?.rounds.find((r: Data) => r.state === 'evaluating');
-      if (!d || !round) return { error: 'No cycle is waiting for its conclusion', status: 404 };
-      askEvaluation(state, d, round);
+      if (!d) return { error: 'Experiment not found', status: 404 };
+      const evaluating = d.rounds.find((r: Data) => r.state === 'evaluating');
+      const targetN = body.n != null && body.n !== '' ? Number(body.n) : null;
+      if (targetN != null && Number.isFinite(targetN)) {
+        const round = d.rounds.find((r: Data) => r.n === targetN);
+        if (!round) return { error: 'Cycle not found', status: 404 };
+        if (round.state === 'evaluating') {
+          askEvaluation(state, d, round);
+          return { ok: true };
+        }
+        if (round.state !== 'done') return { error: 'Cycle is not ready for evaluation', status: 400 };
+        if (evaluating && evaluating.n !== round.n) return { error: 'Another cycle is currently evaluating', status: 409 };
+        round.reevaluating = true;
+        round.state = 'evaluating';
+        askEvaluation(state, d, round, true);
+        return { ok: true };
+      }
+      if (!evaluating) return { error: 'No cycle is waiting for its conclusion', status: 404 };
+      askEvaluation(state, d, evaluating);
       return { ok: true };
     }
     case 'discussAgain': {
