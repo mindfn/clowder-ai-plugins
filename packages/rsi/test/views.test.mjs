@@ -1543,7 +1543,7 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
   assert.match(vmExplore.cycle.compare.table.columns[0].chipLabel, /v3 · C2 · 跨周期参考/);
   assert.equal(vmExplore.cycle.compare.table.pairReferenceOnly, true);
   assert.equal(vmExplore.cycle.compare.table.sliceTable.rows[1].diff.delta, '-20', 'P1-1: delta must reflect -20 regression vs parent v3');
-  assert.equal(vmExplore.cycle.compare.table.guardSummary.text, '质量护栏 7/8 通过 · 1 项越线', 'P1-2: reference v3 g3 failure must not taint v4 guardrail summary');
+  assert.equal(vmExplore.cycle.compare.table.guardSummary.text, '质量护栏 通过 7/8 · 1 项越线', 'P1-2: reference v3 g3 failure must not taint v4 guardrail summary');
   const vmExploreScalar = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v4>c1.eval`, cmpView: 'scalar' });
   const failSec3 = vmExploreScalar.cycle.compare.table.sections.find((s) => s.k === 'guard_fail');
   assert.deepEqual(failSec3.rows.map((r) => r.id), ['g2'], 'P1-2: only candidate v4 failed guardrail g2 appears in guard_fail, not ref-only g3');
@@ -1551,6 +1551,56 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
   const g3Row = passSec3.rows.find((r) => r.id === 'g3');
   assert.equal(g3Row.status, 'pass', 'P1-2: g3 passes on evaluated v4');
   assert.equal(g3Row.cells[0].guard, 'fail', 'P1-2: reference cell still marks its own failure');
+
+  // Unmeasured candidate guardrails (null values) must be reported as 未测 (missing), NEVER as 越线 (fail);
+  // and a probe-only cycle with all-null formal metrics must report 本轮未产出正式指标 instead of N crossed rows.
+  d.versions.push(
+    { id: 'v4b', parent: 'v3', change: 'Partial unmeasured guards', config: {}, at: now + 3700, current: false, status: 'proposed' },
+    { id: 'v4c', parent: 'v4b', change: 'Device probe only', config: {}, at: now + 3800, current: false, status: 'proposed' },
+  );
+  d.rounds.push({
+    n: 4, version: 'v4b', start: now + 3700, end: now + 3750, state: 'evaluating',
+    plan: { baseline: false, tier: 'explore', skipControl: true, groups: [{ id: 'change', label: 'Partial', version: 'v4b', vars: {}, control: false }], seeds: [32] },
+    metrics: structuredClone(d.metrics),
+    runs: [{
+      id: 'r4-g-32', group: 'change', seed: 32, state: 'done',
+      metrics: { 'max-qps': 95, ...zeroGuards, g2: 0.08, g6: null, g7: null, 'aux-mem': 10 },
+      env: {},
+    }],
+    report: null, decision: null, events: [],
+  });
+  assert.equal(conclude(state, d, { cycle: 4, verdict: 'tune', findings: 'Partial guards unmeasured', options: [{ k: 'd4', title: 'next', why: 'ok', cites: [`${id}-cycle-3`] }] }, now + 3760).ok, true);
+  const vmPartial = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v4b>c1.eval`, cmpView: 'scalar' });
+  assert.equal(vmPartial.cycle.compare.table.guardSummary.text, '质量护栏 通过 5/6 · 1 项越线 · 2 项未测');
+  assert.deepEqual(vmPartial.cycle.compare.table.sections.find((s) => s.k === 'guard_fail').rows.map((r) => r.id), ['g2']);
+  const missRows4 = vmPartial.cycle.compare.table.sections.find((s) => s.k === 'missing').rows;
+  assert.deepEqual(missRows4.map((r) => r.id), ['g6', 'g7']);
+  assert.equal(missRows4.every((r) => r.status === 'missing' && r.statusText === '未测'), true);
+  const partialMd = formatComparisonMarkdown(d, d.rounds[3]);
+  assert.match(partialMd, /质量护栏 通过 5\/6 · 1 项越线 · 2 项未测/);
+  assert.doesNotMatch(partialMd, /质量护栏6.*越线/);
+
+  const allNullMetrics = Object.fromEntries(d.metrics.items.map((m) => [m.id, null]));
+  d.rounds.push({
+    n: 5, version: 'v4c', start: now + 3800, end: now + 3850, state: 'evaluating',
+    plan: { baseline: false, tier: 'explore', skipControl: true, groups: [{ id: 'change', label: 'ProbeOnly', version: 'v4c', vars: {}, control: false }], seeds: [33] },
+    metrics: structuredClone(d.metrics),
+    runs: [{
+      id: 'r5-g-33', group: 'change', seed: 33, state: 'done',
+      error: { kind: 'real', step: 'collect', raw: 'Non-finite or missing metrics' },
+      metrics: allNullMetrics,
+      env: {},
+    }],
+    report: null, decision: null, events: [],
+  });
+  assert.equal(conclude(state, d, { cycle: 5, verdict: 'tune', findings: 'Device probe negative result', options: [{ k: 'd5', title: 'next', why: 'ok', cites: [`${id}-cycle-4`] }] }, now + 3860).ok, true);
+  const vmNoOutput = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v4c>c1.eval`, cmpView: 'scalar' });
+  assert.equal(vmNoOutput.cycle.compare.table.guardSummary.kind, 'noOutput');
+  assert.equal(vmNoOutput.cycle.compare.table.guardSummary.failed, 0);
+  assert.equal(vmNoOutput.cycle.compare.table.guardSummary.text, '本轮未产出正式指标');
+  assert.equal(vmNoOutput.cycle.compare.table.sections.find((s) => s.k === 'guard_fail'), undefined);
+  const noOutputMd = formatComparisonMarkdown(d, d.rounds[4]);
+  assert.equal(noOutputMd, '> 本轮未产出正式指标');
 
   // P2-1: multi-group same-version cycle disambiguates candidate column headers with group name
   const arithObj = arith();
@@ -1593,7 +1643,7 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
 
   // 4) Chat conclusion card Markdown table (both sliced & flat scalar)
   const sliceMd = formatComparisonMarkdown(d, d.rounds[1]);
-  assert.match(sliceMd, /> 质量护栏 7\/8 通过 · 1 项越线/);
+  assert.match(sliceMd, /> 质量护栏 通过 7\/8 · 1 项越线/);
   assert.match(sliceMd, /\| 并发 \|/);
   assert.match(sliceMd, /2× \/ \+65/);
   assert.match(sliceMd, /PASS/);
@@ -1610,7 +1660,7 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
 
   // 5) Slim exp payload check on a 25-round objective
   const bigD = state.experiments[id];
-  for (let n = 4; n <= 25; n++) {
+  for (let n = 6; n <= 25; n++) {
     bigD.versions.push({ id: `v${n + 1}`, parent: `v${n}`, change: `iter ${n}`, config: {}, at: now + n * 1000, current: false, status: 'proposed' });
     bigD.rounds.push({
       n, version: `v${n + 1}`, start: now + n * 1000, end: now + n * 1000 + 500, state: 'done',

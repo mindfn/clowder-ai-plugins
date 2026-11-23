@@ -1156,8 +1156,11 @@ cmp:
   secOther: Diagnostics & auxiliary
   secMissing: Unmeasured / no data
   guardAllPass: Guardrails {0}/{1} passed
-  guardFail: Guardrails {0}/{1} passed · {2} failed
+  guardPassPartial: Guardrails {0}/{1} passed · {2} unmeasured
+  guardFail: Guardrails {0}/{1} passed · {2} crossed
+  guardFailPartial: Guardrails {0}/{1} passed · {2} crossed · {3} unmeasured
   guardUnmeasured: Guardrails {0} unmeasured
+  guardNoOutput: No formal metrics produced this cycle
   guardPassFold: Passed guardrails ({0}/{1} passed, click to expand)
   stWin: Beats control
   stGuardFail: Guardrail failed
@@ -1168,6 +1171,7 @@ cmp:
   stBaseline: Baseline
   stPass: Pass
   stCrossed: Crossed
+  stPartial: Partial
   stUnmeasured: Unmeasured
   stMissing: Unmeasured
   stDiffScale: Diff scale

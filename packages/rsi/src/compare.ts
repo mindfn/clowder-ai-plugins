@@ -544,13 +544,15 @@ function buildScalarComparison(
       const sdVal = typeof cell?.sd === 'number' && Number.isFinite(cell.sd) ? cell.sd : null;
       const seedCount = Array.isArray(c.round.plan?.seeds) ? c.round.plan.seeds.length : 0;
       const checks = m.guard && j ? (j.guardrails || []).filter((x: Data) => x.metric === m.id) : [];
-      const crossed = checks.filter((x: Data) => !x.pass).map((x: Data) => x.seed);
+      const measuredChecks = checks.filter((x: Data) => typeof x.value === 'number' && Number.isFinite(x.value));
+      const crossedMeasured = measuredChecks.filter((x: Data) => !x.pass).map((x: Data) => x.seed);
+      const unmeasuredChecks = checks.filter((x: Data) => !(typeof x.value === 'number' && Number.isFinite(x.value)));
       let guardState = '';
       if (m.guard) {
         if (checks.length) {
-          // Only mark a cell pass/fail if at least one seed had a measured value or explicitly crossed
-          const anySeedMeasured = checks.some((x: Data) => typeof x.value === 'number' && Number.isFinite(x.value));
-          guardState = crossed.length ? (anySeedMeasured || c.sameCycle ? 'fail' : '') : 'pass';
+          if (crossedMeasured.length > 0) guardState = 'fail';
+          else if (measuredChecks.length > 0 && unmeasuredChecks.length === 0) guardState = 'pass';
+          else if (measuredChecks.length > 0) guardState = 'partial';
         } else if (meanVal !== null && typeof m.threshold === 'number') {
           guardState = (m.dir === 'up' ? meanVal >= m.threshold : meanVal <= m.threshold) ? 'pass' : 'fail';
         }
@@ -570,12 +572,12 @@ function buildScalarComparison(
         n: cell ? cell.n : 0,
         partial: !!cell && cell.n > 0 && seedCount > 0 && cell.n < seedCount,
         guard: guardState,
-        crossed,
+        crossed: crossedMeasured,
         standing,
         seeds: c.sameCycle && Array.isArray(cell?.seeds)
           ? cell.seeds.map((s: Data, idx: number) => {
               const hasVal = typeof s.value === 'number' && Number.isFinite(s.value);
-              const seedState = crossed.includes(s.seed) ? 'cross'
+              const seedState = hasVal && crossedMeasured.includes(s.seed) ? 'cross'
                 : hasVal && s.state === 'done' ? ''
                 : s.error ? (s.error.kind === 'env' ? 'env' : 'failed')
                 : s.state === 'done' ? '' : 'failed';
@@ -600,19 +602,21 @@ function buildScalarComparison(
       }
     }
 
-    // Evaluate guardrail/row status strictly on the evaluated column(s) so reference failures never taint the candidate.
+    // Evaluate guardrail/row status strictly on the evaluated column(s) so reference failures and unmeasured nulls never taint the candidate.
     const evalCells = cells.filter((x) => cols.evalColIds.has(x.colId));
     const anyValue = cells.some((x) => x.mean !== null);
     const evalHasValue = evalCells.some((x) => x.mean !== null);
     const anyFail = role === 'guard' && evalCells.some((x) => x.guard === 'fail');
-    const allPass = role === 'guard' && evalHasValue && !anyFail && evalCells.some((x) => x.guard === 'pass');
+    const anyPartial = role === 'guard' && !anyFail && evalCells.some((x) => x.guard === 'partial');
+    const allPass = role === 'guard' && evalHasValue && !anyFail && !anyPartial && evalCells.some((x) => x.guard === 'pass');
 
     let status = 'info', statusKey = '', statusText = '';
     if (role === 'guard') {
       if (anyFail) { status = 'fail'; statusKey = 'crossed'; statusText = '越线'; }
       else if (allPass) { status = 'pass'; statusKey = 'pass'; statusText = '通过'; }
+      else if (anyPartial) { status = 'warn'; statusKey = 'partial'; statusText = '部分未测'; }
       else { status = 'missing'; statusKey = 'unmeasured'; statusText = '未测'; }
-    } else if (!anyValue) {
+    } else if (!evalHasValue) {
       status = 'missing'; statusKey = 'missing'; statusText = '本轮未测';
     } else if (role === 'main') {
       if (cols.pairReferenceOnly) {
@@ -663,33 +667,57 @@ function buildScalarComparison(
     };
   });
 
-  // Guardrail summary strictly reflects the evaluated column(s)
+  // Guardrail summary strictly reflects measured vs crossed vs unmeasured on the evaluated column(s)
+  const evalAnyMetricMeasured = allMetricRows.some((r) => r.evalHasValue);
   const guardRows = allMetricRows.filter((r) => r.role === 'guard');
   const guardFailed = guardRows.filter((r) => r.status === 'fail');
   const guardPassed = guardRows.filter((r) => r.status === 'pass');
+  const guardPartial = guardRows.filter((r) => r.status === 'warn');
   const guardMissing = guardRows.filter((r) => r.status === 'missing');
   const guardMeasured = guardPassed.length + guardFailed.length;
-  const guardSummary = guardRows.length ? {
-    kind: guardFailed.length > 0 ? 'fail' : guardMeasured > 0 ? 'allPass' : 'unmeasured',
-    total: guardRows.length,
-    measured: guardMeasured,
-    passed: guardPassed.length,
-    failed: guardFailed.length,
-    missing: guardMissing.length,
-    tone: guardFailed.length > 0 ? 'danger' : guardMeasured > 0 ? 'ok' : 'muted',
-    text: guardFailed.length > 0
-      ? `质量护栏 ${guardPassed.length}/${guardMeasured} 通过 · ${guardFailed.length} 项越线`
-      : guardMeasured > 0
-        ? `质量护栏 ${guardPassed.length}/${guardMeasured} 全部通过`
-        : `质量护栏 ${guardRows.length} 项暂未测`,
-  } : null;
+  const guardUnmeasured = guardMissing.length + guardPartial.length;
+  const guardSummary = !evalAnyMetricMeasured
+    ? {
+        kind: 'noOutput',
+        total: guardRows.length,
+        measured: 0,
+        passed: 0,
+        failed: 0,
+        missing: guardRows.length,
+        tone: 'muted',
+        text: '本轮未产出正式指标',
+      }
+    : guardRows.length
+      ? {
+          kind: guardFailed.length > 0
+            ? (guardUnmeasured > 0 ? 'failPartial' : 'fail')
+            : guardMeasured > 0
+              ? (guardUnmeasured > 0 ? 'passPartial' : 'allPass')
+              : 'unmeasured',
+          total: guardRows.length,
+          measured: guardMeasured,
+          passed: guardPassed.length,
+          failed: guardFailed.length,
+          missing: guardUnmeasured,
+          tone: guardFailed.length > 0 ? 'danger' : guardMeasured > 0 ? (guardUnmeasured > 0 ? 'warn' : 'ok') : 'muted',
+          text: guardFailed.length > 0
+            ? (guardUnmeasured > 0
+                ? `质量护栏 通过 ${guardPassed.length}/${guardMeasured} · ${guardFailed.length} 项越线 · ${guardUnmeasured} 项未测`
+                : `质量护栏 通过 ${guardPassed.length}/${guardMeasured} · ${guardFailed.length} 项越线`)
+            : guardMeasured > 0
+              ? (guardUnmeasured > 0
+                  ? `质量护栏 通过 ${guardPassed.length}/${guardMeasured} · ${guardUnmeasured} 项未测`
+                  : `质量护栏 ${guardPassed.length}/${guardMeasured} 全部通过`)
+              : `质量护栏 ${guardRows.length} 项暂未测`,
+        }
+      : null;
 
   const collapsePassGuards = guardPassed.length > 3 || guardFailed.length > 0;
   const defaultVisibleMetrics = allMetricRows.filter((r) => {
     if (r.role === 'main') return true;
     if (r.role === 'guard' && r.status === 'fail') return true;
     if (r.role === 'guard' && r.status === 'pass') return !collapsePassGuards;
-    if (r.role === 'other' && r.anyValue) return true;
+    if (r.role === 'other' && r.evalHasValue) return true;
     return false;
   });
   const defaultAux = defaultVisibleMetrics.filter((r) => r.role === 'other');
@@ -729,8 +757,10 @@ function buildScalarComparison(
   const secGuardFail = shownRows.filter((x) => x.role === 'guard' && x.status === 'fail');
   const secGuardPassShown = shownRows.filter((x) => x.role === 'guard' && x.status === 'pass');
   const secGuardPassCollapsed = !metricCustomized && collapsePassGuards ? guardPassed : [];
-  const secOther = shownRows.filter((x) => x.role === 'other' && x.anyValue);
-  const secMissing = shownRows.filter((x) => (x.role === 'guard' ? x.status === 'missing' : !x.anyValue && x.role !== 'main'));
+  const secOther = shownRows.filter((x) => x.role === 'other' && x.evalHasValue);
+  const secMissing = metricCustomized
+    ? shownRows.filter((x) => (x.role === 'guard' ? (x.status === 'missing' || x.status === 'warn') : !x.evalHasValue && x.role !== 'main'))
+    : allMetricRows.filter((x) => (x.role === 'guard' ? (x.status === 'missing' || x.status === 'warn') : !x.evalHasValue && x.role !== 'main'));
 
   const sections = [
     { k: 'main', title: '主指标', defaultOpen: true, tone: 'info', rows: secMain },
@@ -740,8 +770,8 @@ function buildScalarComparison(
       k: 'guard_pass',
       collapsedSummary: true,
       passedCount: secGuardPassCollapsed.length,
-      totalCount: guardRows.length,
-      title: `已通过护栏（${secGuardPassCollapsed.length}/${guardRows.length} 全部通过，点击展开）`,
+      totalCount: guardMeasured || guardRows.length,
+      title: `已通过护栏（${secGuardPassCollapsed.length}/${guardMeasured || guardRows.length} 全部通过，点击展开）`,
       defaultOpen: false,
       tone: 'ok',
       rows: secGuardPassCollapsed,
@@ -751,6 +781,7 @@ function buildScalarComparison(
   ].filter((sec) => sec.rows.length > 0);
 
   return {
+    evalAnyMetricMeasured,
     guardSummary,
     metricChips,
     addMetrics,
@@ -1044,6 +1075,10 @@ export function formatComparisonMarkdown(d: Experiment, round: Data): string {
     return lines.join('\n');
   }
 
+  if (!table.evalAnyMetricMeasured) {
+    return '> 本轮未产出正式指标';
+  }
+
   const displayRows: Data[] = [];
   for (const sec of table.sections || []) {
     if (sec.k === 'missing') continue;
@@ -1051,7 +1086,7 @@ export function formatComparisonMarkdown(d: Experiment, round: Data): string {
     if (sec.k === 'other') displayRows.push(...sec.rows.slice(0, 4));
     else displayRows.push(...sec.rows);
   }
-  if (!displayRows.some((r) => r.anyValue)) return '';
+  if (!displayRows.some((r) => r.evalHasValue)) return '> 本轮未产出正式指标';
 
   const headers: string[] = ['指标', ...table.columns.map(colHdr)];
   if (table.hasPair) headers.push(`Δ${table.pairReferenceOnly ? ' (参考)' : ''}`);

@@ -2189,8 +2189,11 @@ views:
                         secOther: t:rsi.cmp.secOther
                         secMissing: t:rsi.cmp.secMissing
                         guardAllPass: t:rsi.cmp.guardAllPass
+                        guardPassPartial: t:rsi.cmp.guardPassPartial
                         guardFail: t:rsi.cmp.guardFail
+                        guardFailPartial: t:rsi.cmp.guardFailPartial
                         guardUnmeasured: t:rsi.cmp.guardUnmeasured
+                        guardNoOutput: t:rsi.cmp.guardNoOutput
                         guardPassFold: t:rsi.cmp.guardPassFold
                         stWin: t:rsi.cmp.stWin
                         stGuardFail: t:rsi.cmp.stGuardFail
@@ -2201,6 +2204,7 @@ views:
                         stBaseline: t:rsi.cmp.stBaseline
                         stPass: t:rsi.cmp.stPass
                         stCrossed: t:rsi.cmp.stCrossed
+                        stPartial: t:rsi.cmp.stPartial
                         stUnmeasured: t:rsi.cmp.stUnmeasured
                         stMissing: t:rsi.cmp.stMissing
                         stDiffScale: t:rsi.cmp.stDiffScale

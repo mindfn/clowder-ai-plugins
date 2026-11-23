@@ -167,10 +167,12 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
     tierExplore: '探索快筛', tierConfirm: '正式确认', hasCrossRef: '含跨周期参考', hasDiffScale: '含不同量尺',
     colControl: '对照', colSingle: '本轮', colCandidate: '候选', colConfirm: '复验', colExplore: '探索',
     secMain: '主指标', secGuardFail: '未通过护栏', secGuardPass: '已通过护栏', secOther: '诊断与辅助指标', secMissing: '本轮未测 / 暂无数据',
-    guardAllPass: '质量护栏 {0}/{1} 全部通过', guardFail: '质量护栏 {0}/{1} 通过 · {2} 项越线', guardUnmeasured: '质量护栏 {0} 项暂未测',
+    guardAllPass: '质量护栏 {0}/{1} 全部通过', guardPassPartial: '质量护栏 通过 {0}/{1} · {2} 项未测',
+    guardFail: '质量护栏 通过 {0}/{1} · {2} 项越线', guardFailPartial: '质量护栏 通过 {0}/{1} · {2} 项越线 · {3} 项未测',
+    guardUnmeasured: '质量护栏 {0} 项暂未测', guardNoOutput: '本轮未产出正式指标',
     guardPassFold: '已通过护栏（{0}/{1} 全部通过，点击展开）',
     stWin: '胜过对照', stGuardFail: '护栏越线', stIncomparable: '不可比', stBetter: '更好', stWorse: '更差',
-    stSame: '持平', stBaseline: '基线', stPass: '通过', stCrossed: '越线', stUnmeasured: '未测', stMissing: '本轮未测',
+    stSame: '持平', stBaseline: '基线', stPass: '通过', stCrossed: '越线', stPartial: '部分未测', stUnmeasured: '未测', stMissing: '本轮未测',
     stDiffScale: '量尺不同', stCrossRef: '跨周期参考', stRef: '参考',
     dirUp: '越大越好', dirDown: '越小越好', trend: '趋势', trendOn: '趋势中',
     seedOk: '正常', seedCross: '越线', seedEnv: '环境失败', seedFail: '无结果',
@@ -208,7 +210,10 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
   };
   const guardTextOf = function (gs) {
     if (!gs) return '';
+    if (gs.kind === 'noOutput') return L.guardNoOutput;
+    if (gs.kind === 'failPartial') return fmtTpl(L.guardFailPartial, [gs.passed, gs.measured, gs.failed, gs.missing]);
     if (gs.kind === 'fail') return fmtTpl(L.guardFail, [gs.passed, gs.measured, gs.failed]);
+    if (gs.kind === 'passPartial') return fmtTpl(L.guardPassPartial, [gs.passed, gs.measured, gs.missing]);
     if (gs.kind === 'allPass') return fmtTpl(L.guardAllPass, [gs.passed, gs.measured]);
     if (gs.kind === 'unmeasured') return fmtTpl(L.guardUnmeasured, [gs.total]);
     return gs.text || '';
@@ -225,7 +230,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
     const map = {
       win: L.stWin, guardFail: L.stGuardFail, incomparable: L.stIncomparable,
       better: L.stBetter, worse: L.stWorse, same: L.stSame, baseline: L.stBaseline,
-      pass: L.stPass, crossed: L.stCrossed, unmeasured: L.stUnmeasured, missing: L.stMissing,
+      pass: L.stPass, crossed: L.stCrossed, partial: L.stPartial, unmeasured: L.stUnmeasured, missing: L.stMissing,
       diffScale: L.stDiffScale, crossRef: L.stCrossRef, ref: L.stRef,
     };
     return (m.statusKey && map[m.statusKey]) || m.statusText || '';
