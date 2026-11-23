@@ -1122,3 +1122,14 @@ stop:
   title: 改何时停
 demoProject: "{0}（演示）"
 memberOption: "{0} {1}"
+cmp:
+  colsLabel: 对比组
+  colAdd: 添加对比版本/实验组
+  colRemove: 移除该对比组
+  metricsLabel: 指标
+  metricAdd: 添加显示指标
+  metricRemove: 隐藏该指标
+  statsLabel: 分档统计
+  statAdd: 添加分档统计列
+  statRemove: 隐藏该统计列
+  reset: 恢复默认

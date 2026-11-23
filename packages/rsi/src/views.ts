@@ -3,6 +3,7 @@ import type { Data, RsiState } from './types.js';
 import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData, memberIds } from './data.js';
 import { formatPolicy, maxRunsText, nextScheduledRuns, policiesOf, scheduleForm, scheduleSummary, timeRange, validatePolicy } from './schedule.js';
 import { analystsOf, resolveRsiParent, short, signed, testedVersion } from './cycles.js';
+import { buildComparisonTable } from './compare.js';
 
 const tc = (key: string, ...args: unknown[]) => ({ t: key, args });
 
@@ -147,7 +148,10 @@ export function viewModel(state: RsiState, view: string, query: Data = {}): any 
     rsiTrendMetric: typeof query.trendMetric === 'string' ? query.trendMetric : '',
     rsiOverviewMode: query.overviewMode === 'map' ? 'map' : 'trend',
     rsiOverviewLens: query.overviewLens === 'aspect' ? 'aspect' : 'metric',
-    rsiCmpMode: query.cmpMode === 'cross' ? 'cross' : 'cycle',
+    rsiCmpCols: typeof query.cmpCols === 'string' ? query.cmpCols : '',
+    rsiCmpMetrics: typeof query.cmpMetrics === 'string' ? query.cmpMetrics : '',
+    rsiCmpStats: typeof query.cmpStats === 'string' ? query.cmpStats : '',
+    rsiCmpView: typeof query.cmpView === 'string' ? query.cmpView : '',
     dialog: query.dialog,
   };
   if (view === 'doc' && (query.id || query.doc)) S.dialog = { kind: 'rsiDoc', args: { id: query.id || query.doc } };
@@ -385,6 +389,20 @@ function exp(): any {
   // A concluded cycle's numbers, from the comparison stored with its report (cycles.ts comparison): a block per metric — the main one, then
   // the guardrails, then the rest — and in it a row per group, the control first: mean and sample SD over the seeds, the difference from the
   // same cycle's control, better or worse by the metric's direction, and on a guardrail whether every seed kept to it.
+  const leadDeltaOf = function (r: Data): string | null {
+    const report = r.report, lead = mainOf(r);
+    if (!report?.matrix || !lead) return null;
+    const groups = r.plan.groups || [], control = groups.find((g: Data) => g.control);
+    if (!control) return null;
+    const cell = (g: string) => report.matrix.find((c: Data) => c.group === g && c.metric === lead.id);
+    const judged = (g: string) => report.compare?.groups?.find((x: Data) => x.group === g);
+    const winners = groups.filter((g: Data) => judged(g.id)?.beatsControl).sort((a: Data, b: Data) => lead.dir === 'down' ? (cell(a.id)?.mean ?? 0) - (cell(b.id)?.mean ?? 0) : (cell(b.id)?.mean ?? 0) - (cell(a.id)?.mean ?? 0));
+    if (!winners.length) return null;
+    const c = cell(winners[0].id), base = cell(control.id);
+    if (typeof c?.mean !== 'number' || typeof base?.mean !== 'number') return null;
+    const delta = c.mean - base.mean;
+    return delta ? signed(delta) : '0';
+  };
   const compareOf = function (r: Data) {
     const report = r.report, items = (r.metrics || d.metrics).items, lead = mainOf(r);
     const groups = [...r.plan.groups.filter((g: Data) => g.control), ...r.plan.groups.filter((g: Data) => !g.control)], control = groups.find((g: Data) => g.control);
@@ -412,98 +430,15 @@ function exp(): any {
     const metrics = [lead, ...items.filter((m: Data) => m.guard), ...items.filter((m: Data) => m !== lead && !m.guard)].map((m: Data) => ({ id: m.id, name: m.name, role: m === lead ? 'main' : m.guard ? 'guard' : 'other', dir: m.dir,
       rule: m !== lead ? '' : m.margin !== undefined ? 'margin' : m.minDelta ? 'minDelta' : '', ruleValue: m.margin ?? m.minDelta, limit: m.guard && typeof m.threshold === 'number' ? m.dir : '', threshold: m.threshold,
       items: groups.map((g: Data) => row(g, m)) }));
-    const concludedRounds = rounds.filter((x: Data) => x.report && (x.n === r.n || (x.report.matrix || []).some((c: Data) => typeof c.mean === 'number' && Number.isFinite(c.mean))));
-    const crossCols = concludedRounds.map((x: Data) => ({ cycle: x.n, label: `${x.version}-${x.k}`, version: x.version, current: x.n === r.n }));
     const seriesIds = new Set(trendSeries.map((s: Data) => s.id));
-    const nonControlGroups = groups.filter((g: Data) => !g.control);
-    const buildTableRow = (m: Data) => {
-      const def = items.find((x: Data) => x.id === m.id) || {};
-      const ctrlItem = m.items.find((x: Data) => x.control) || null;
-      const candItems = m.items.filter((x: Data) => !x.control);
-      const anyValue = m.items.some((x: Data) => x.mean != null);
-      const anyFail = m.role === 'guard' && m.items.some((x: Data) => x.guard === 'fail');
-      const allPass = m.role === 'guard' && anyValue && !anyFail && m.items.some((x: Data) => x.guard === 'pass');
-      const leadCand = candItems[0] || null;
-      let status = 'info', statusText = '';
-      if (!anyValue) { status = 'missing'; statusText = '本轮未测'; }
-      else if (m.role === 'main') {
-        if (candItems.some((x: Data) => x.standing === 'beats')) { status = 'win'; statusText = '胜过对照'; }
-        else if (candItems.some((x: Data) => x.standing === 'guard')) { status = 'fail'; statusText = '护栏越线'; }
-        else if (candItems.some((x: Data) => x.standing === 'control' || x.standing === 'runs')) { status = 'warn'; statusText = '不可比'; }
-        else if (leadCand?.better === 'better') { status = 'win'; statusText = '更好'; }
-        else if (leadCand?.better === 'worse') { status = 'fail'; statusText = '更差'; }
-        else if (leadCand?.better === 'same') { status = 'info'; statusText = '持平'; }
-        else { status = 'info'; statusText = '基线'; }
-      } else if (m.role === 'guard') {
-        if (anyFail) { status = 'fail'; statusText = '越线'; }
-        else if (allPass) { status = 'pass'; statusText = '通过'; }
-        else { status = 'missing'; statusText = '未测'; }
-      } else if (leadCand) {
-        if (leadCand.better === 'better') { status = 'pass'; statusText = '更好'; }
-        else if (leadCand.better === 'worse') { status = 'warn'; statusText = '更差'; }
-        else if (leadCand.better === 'same') { status = 'info'; statusText = '持平'; }
-      }
-      const ruleText = m.role === 'guard' && typeof m.threshold === 'number'
-        ? `${m.dir === 'up' ? '≥' : '≤'} ${m.threshold}${def.unit ? ' ' + def.unit : ''}`
-        : `${m.dir === 'up' ? '↑ 越大越好' : '↓ 越小越好'}${def.unit ? ' · ' + def.unit : ''}`;
-      const crossValues = concludedRounds.map((x: Data) => {
-        const c = metricValueInRound(x, m.id, m.dir);
-        const val = num(c?.mean);
-        const pass = m.role === 'guard' && typeof m.threshold === 'number' && typeof c?.mean === 'number'
-          ? (m.dir === 'up' ? c.mean >= m.threshold : c.mean <= m.threshold)
-          : null;
-        return { label: `${x.version}-${x.k}`, value: val, current: x.n === r.n, guard: pass === null ? '' : pass ? 'pass' : 'fail' };
-      });
-      return {
-        id: m.id,
-        name: m.name,
-        role: m.role,
-        dir: m.dir,
-        unit: def.unit || '',
-        ruleText,
-        hasTrend: seriesIds.has(m.id),
-        active: m.id === activeTrendId,
-        status,
-        statusText,
-        anyValue,
-        control: ctrlItem ? {
-          id: ctrlItem.id, version: ctrlItem.version, mean: ctrlItem.mean, sd: ctrlItem.sd, n: ctrlItem.n, partial: ctrlItem.partial, guard: ctrlItem.guard,
-          seeds: (ctrlItem.seeds || []).map((s: Data, idx: number) => ({ round: idx + 1, seed: s.seed, value: s.value, state: s.state })),
-        } : null,
-        candidates: candItems.map((c: Data) => ({
-          id: c.id, label: c.label, version: c.version, confirm: c.confirm, mean: c.mean, sd: c.sd, n: c.n, partial: c.partial,
-          delta: c.delta, better: c.better, guard: c.guard, crossed: c.crossed, standing: c.standing,
-          seeds: (c.seeds || []).map((s: Data, idx: number) => ({ round: idx + 1, seed: s.seed, value: s.value, state: s.state })),
-        })),
-        crossValues,
-      };
-    };
-    const tableRows = metrics.map(buildTableRow);
-    const secMain = tableRows.filter((x: Data) => x.role === 'main');
-    const secGuardFail = tableRows.filter((x: Data) => x.role === 'guard' && x.anyValue && x.status === 'fail');
-    const secGuardPass = tableRows.filter((x: Data) => x.role === 'guard' && x.anyValue && x.status === 'pass');
-    const secOther = tableRows.filter((x: Data) => x.role === 'other' && x.anyValue);
-    const secMissing = tableRows.filter((x: Data) => !x.anyValue && x.role !== 'main');
-    const sections = [
-      { k: 'main', title: '主指标', defaultOpen: true, tone: 'info', rows: secMain },
-      { k: 'guard_fail', title: '未通过护栏', defaultOpen: true, tone: 'danger', rows: secGuardFail },
-      { k: 'guard_pass', title: '已通过护栏', defaultOpen: secGuardPass.length <= 4 && secGuardFail.length === 0, tone: 'ok', rows: secGuardPass },
-      { k: 'other', title: '诊断与辅助指标', defaultOpen: secOther.length <= 5, tone: '', rows: secOther },
-      { k: 'missing', title: '本轮未测 / 暂无数据', defaultOpen: false, tone: 'muted', rows: secMissing },
-    ].filter((sec) => sec.rows.length > 0);
-    const table = {
-      mode: S.rsiCmpMode,
-      tier: r.plan.tier || '',
-      skipControl: !!r.plan.skipControl,
-      selectedMetric: activeTrendId,
-      cycleLabel: `${r.version}-${r.k}`,
-      seeds: r.plan.seeds,
-      controlGroup: control ? { id: control.id, version: control.version, label: control.label } : null,
-      candidateGroups: nonControlGroups.map((g: Data) => ({ id: g.id, version: g.version, label: g.label, confirm: !!g.confirm })),
-      crossCols,
-      sections,
-      totalMetrics: tableRows.length,
-    };
+    const table = buildComparisonTable(d, r, rounds, {
+      activeTrendId,
+      seriesIds,
+      cmpCols: S.rsiCmpCols,
+      cmpMetrics: S.rsiCmpMetrics,
+      cmpStats: S.rsiCmpStats,
+      cmpView: S.rsiCmpView,
+    });
     return { seeds: r.plan.seeds.length, single: r.plan.seeds.length === 1, metrics, table, group: conf?.group, version: conf?.version,
       result: conf ? conf.status : !report.compare.groups ? '' : groups.length < 2 ? 'baseline' : !report.compare.comparable ? 'incomparable' : 'none',
       // The difference the stepper shows: that of the best group that beats the control; none when no group does.
@@ -751,7 +686,7 @@ function exp(): any {
         const applyState = hasEnvFail ? (o.projectPath && r.report && r.report.verdict !== 'insufficient' ? 'concluded' : 'failed') : 'done';
         return { n: r.k, apply: applyState, collect: true, live: live,
           done: live ? r.runs.filter((u: Data) => u.state === 'done' || u.state === 'failed').length : null, total: r.runs.length,
-          eval: r.report ? r.report.verdict : evalStateOf(r), delta: r.report && compareOf(r).lead,
+          eval: r.report ? r.report.verdict : evalStateOf(r), delta: r.report && leadDeltaOf(r),
           discuss: disc ? { result: disc.status, resolved: !!r.decision, count: disc.count, done: disc.done, asked: disc.asked, missing: disc.missing.length } : (o.projectPath ? { result: (!hasAnalysts || bypassed) ? 'skipped' : 'waiting', resolved: false, count: 0 } : null),
           gov: govOf(r) || 'waiting' };
       }),
@@ -845,7 +780,10 @@ function exp(): any {
     selected: activeKey === 'ready',
     visible: activeKey === 'ready',
   };
-  const dagNodes = [...steps, readyNode];
+  const dagNodes = [
+    ...steps.map((s: Data) => ({ k: s.k, i: s.i, role: s.role, owner: s.owner, depKeys: s.depKeys, stage: s.stage, state: s.state, needCount: s.needCount, selected: s.selected })),
+    readyNode,
+  ];
   const prepBySec = (sec: string) => d.prep.filter((p: Data) => p.section === sec && p.value);
   const clipLine = (text: unknown, max = 120) => {
     const s = String(text ?? '').replace(/\s+/g, ' ').trim();
@@ -948,7 +886,8 @@ function exp(): any {
           return `#${i + 1} ${a.state || 'unknown'}${a.jobId ? ` (${a.jobId})` : ''}${aDur ? ` ${aDur}` : ''}${aErr}`;
         }).join('；')
       : '';
-    return Object.assign({}, u, {
+    const { attempts: _dropAttempts, slices: _dropSlices, ...runRest } = u;
+    return Object.assign({}, runRest, {
       roundNo: idx + 1,
       roundTitle: `第 ${idx + 1} 轮`,
       seedText: `seed ${u.seed}`,
@@ -960,6 +899,7 @@ function exp(): any {
       jobId: u.jobId || '',
       directory: u.directory || '',
       errorBrief: u.error?.raw ? clipLine(u.error.raw, 120) : '',
+      attemptsCount: attemptsList.length,
       attemptsText,
       metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })),
       groupLabel: g.label,
@@ -1449,6 +1389,43 @@ function exp(): any {
     at: ver.at || null,
     canWake: !!o.projectPath && !!ver.preparing,
   } : null;
+  const slimPrepSteps = expSection === 'execute'
+    ? steps.map((s: Data) => s.visible ? s : Object.assign({}, s, { items: [], revOptions: [] }))
+    : steps;
+  const cycleReportSlim = r?.report ? (() => {
+    const { matrix: _dropMatrix, slices: _dropSlices, ...rest } = r.report;
+    return rest;
+  })() : null;
+  const cycleView = r ? (() => {
+    const { runs: _dropRawRuns, report: _dropRawReport, metrics: _dropRawMetrics, ...rRest } = r;
+    return Object.assign({}, rRest, {
+      report: cycleReportSlim,
+      versionRound: `${r.version}-${r.k}`,
+      canReeval: !!o.projectPath && ['done', 'evaluating'].includes(r.state),
+      waiting: waiting(r),
+      evaluating: r.state === 'evaluating',
+      evalState: evalStateOf(r),
+      discussState: discussStateOf(r),
+      evalMetrics: evalMetricsOf(r),
+      groups: cycleGroups,
+      main: mainOf(r),
+      stage: stageOfCycle(r, currentStep),
+      stageOwners: stageOwnersOf(r),
+      runs: cycleRuns,
+      collectSummary,
+      notAssessed: r.report && RSI_LAYERS.filter(function (l: any): any { return r.report.attribution.assessedLayers.indexOf(l) < 0; }),
+      // A conclusion stores a placeholder attribution (no layer assessed): only one that assessed a layer is an attribution.
+      attribution: r.report && r.report.attribution.assessedLayers.length ? r.report.attribution : null,
+      // The findings after their first line, which is the headline.
+      body: cycleBody,
+      detailCard: cycleDetailCard,
+      comparisons: r.report ? comparisonsOf(r) : [],
+      compare: cycleCompare,
+      discussion: r.report && discussionOf(r),
+      decision: repairDecisionOf(r),
+      gov: (r.report || r.state === 'repaired' || r.state === 'repairing') && govFor(r),
+    });
+  })() : null;
   return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, projectPath: o.projectPath, goal: o.goal, goalQuote, editingGoal: S.rsiEditGoal, execStatus, execFlow, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
     trend: legacyTrend,
@@ -1462,20 +1439,8 @@ function exp(): any {
     overviewMap,
     hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.filter(function (p: any): any { return p.result !== 'unresolved'; }).length },
     versions: tree.rows, ver: ver, step: currentStep, prepStage, candidate: d.candidate ? d.candidate.version : null,
-    cycle: r && Object.assign({}, r, { versionRound: `${r.version}-${r.k}`, canReeval: !!o.projectPath && ['done', 'evaluating'].includes(r.state), waiting: waiting(r), evaluating: r.state === 'evaluating', evalState: evalStateOf(r), discussState: discussStateOf(r), evalMetrics: evalMetricsOf(r), groups: cycleGroups, main: mainOf(r),
-      stage: stageOfCycle(r, currentStep),
-      stageOwners: stageOwnersOf(r),
-      runs: cycleRuns,
-      collectSummary,
-      notAssessed: r.report && RSI_LAYERS.filter(function (l: any): any { return r.report.attribution.assessedLayers.indexOf(l) < 0; }),
-      // A conclusion stores a placeholder attribution (no layer assessed): only one that assessed a layer is an attribution.
-      attribution: r.report && r.report.attribution.assessedLayers.length ? r.report.attribution : null,
-      // The findings after their first line, which is the headline.
-      body: cycleBody,
-      detailCard: cycleDetailCard,
-      comparisons: r.report ? comparisonsOf(r) : [],
-      compare: cycleCompare, discussion: r.report && discussionOf(r), decision: repairDecisionOf(r), gov: (r.report || r.state === 'repaired' || r.state === 'repairing') && govFor(r) }),
-    prep: { needYou: needYou, steps: steps, dagNodes: dagNodes, visibleSteps: steps.filter((s: Data) => s.visible), ready: readyInfo, activeKey: activeKey, showAll: showAll }, executor: d.executor && Object.assign({}, d.executor, { ops: (d.executor.ops || []).map(function (op: any) { const p = op.params; const params = typeof p === 'string' ? p : p && typeof p === 'object' && Object.keys(p).length ? JSON.stringify(p) : ''; return Object.assign({}, op, { params: params || op.tool || '' }); }) }), members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, roleMembers: o.projectPath ? d.members.filter(function (m: any): any { return m.catId && m.role !== 'analyze'; }) : d.members, execStages, discussion: d.members.filter(function (m: any): any { return m.role === 'analyze' && m.catId; }).map(function (m: any): any { return { id: m.catId, name: m.name }; }), memberIds: { prepare: (d.members.find(function (m: any): any { return m.role === 'prepare'; }) || {}).catId, evaluate: (d.members.find(function (m: any): any { return m.role === 'evaluate'; }) || {}).catId, iterate: (d.members.find(function (m: any): any { return m.role === 'iterate'; }) || {}).catId }, policy: policyOf(d, o, schedNow), policyEditor: policyEditorOf(d, schedNow), metrics: d.metrics,
+    cycle: cycleView,
+    prep: { needYou: needYou, steps: slimPrepSteps, dagNodes: dagNodes, visibleSteps: slimPrepSteps.filter((s: Data) => s.visible), ready: readyInfo, activeKey: activeKey, showAll: showAll }, executor: d.executor && Object.assign({}, d.executor, { ops: (d.executor.ops || []).map(function (op: any) { const p = op.params; const params = typeof p === 'string' ? p : p && typeof p === 'object' && Object.keys(p).length ? JSON.stringify(p) : ''; return Object.assign({}, op, { params: params || op.tool || '' }); }) }), members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, roleMembers: o.projectPath ? d.members.filter(function (m: any): any { return m.catId && m.role !== 'analyze'; }) : d.members, execStages, discussion: d.members.filter(function (m: any): any { return m.role === 'analyze' && m.catId; }).map(function (m: any): any { return { id: m.catId, name: m.name }; }), memberIds: { prepare: (d.members.find(function (m: any): any { return m.role === 'prepare'; }) || {}).catId, evaluate: (d.members.find(function (m: any): any { return m.role === 'evaluate'; }) || {}).catId, iterate: (d.members.find(function (m: any): any { return m.role === 'iterate'; }) || {}).catId }, policy: policyOf(d, o, schedNow), policyEditor: policyEditorOf(d, schedNow), metrics: d.metrics,
     eTree: [{ id: d.metrics.version }], cTree: [{ id: 'C1' }] };
 };
 function record(): any {

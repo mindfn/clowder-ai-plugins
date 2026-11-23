@@ -2389,3 +2389,45 @@ test('alpha.114/115: pure RSI lineage parent (decoupled from git), preparing nod
   assert.equal(run2.error.kind, 'real');
   assert.equal(run2.evidence, true);
 });
+
+test('alpha.118: subprocess collect slices flow end-to-end into run.slices, rsi_task evaluate.slices, report.slices and chat conclusion card table', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  Object.assign(f.commands, {
+    submit: `node -e 'const fs=require("fs"),c=JSON.parse(fs.readFileSync(process.argv[1],"utf8")),d=c.delta||0;fs.writeFileSync(process.argv[2]+"/metrics.json",JSON.stringify({metrics:{score:10+d,g1:0},slices:{load:[{at:1,values:{qps:40+d*10,p99:30}},{at:8,values:{qps:80+d*20,p99:d>0?60:95}}]}}))' {config} {run}`,
+    collect: '{run}/metrics.json',
+  });
+  // Initialize with Step 4 declaring slices + guardrail
+  const metricsWithSlices = {
+    version: 'E1',
+    items: [
+      { id: 'score', name: 'Score', how: 'metrics.json score', dir: 'up', guard: false },
+      { id: 'g1', name: 'ZeroDrift', how: 'metrics.json g1', dir: 'down', threshold: 0, guard: true },
+    ],
+    slices: [{
+      id: 'load', name: '负载档位', axis: '并发', axisUnit: 'c',
+      stats: [
+        { id: 'qps', name: 'QPS', dir: 'up', primary: true },
+        { id: 'p99', name: 'P99', unit: 'ms', dir: 'down', threshold: 80 },
+      ],
+    }],
+  };
+  await f.initialize(o, plan({ delta: 2 }), { metrics: metricsWithSlices });
+  const ran = await execute(f, o);
+  assert.equal(ran.runs.every((r) => Array.isArray(r.slices?.load) && r.slices.load.length === 2), true);
+  // rsi_task exposes aggregated slices to evaluator
+  const evalTask = await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal(evalTask.evaluate.slices.length, 1);
+  assert.equal(evalTask.evaluate.slices[0].cells.find((c) => c.group === 'control' && c.at === 8).pass, false);
+  assert.equal(evalTask.evaluate.slices[0].cells.find((c) => c.group === 'change' && c.at === 8).pass, true);
+  // Conclude persists report.slices, compacts duplicate attempt.slices, and sends Markdown table in chat conclusion card
+  const concluded = await f.tool('conclude', { cycle: 1, verdict: 'keep', findings: 'Slice throughput improved', options: [{ k: 'next', title: 'Next', why: 'keep going' }] }, 'cat-b5ddoo9l', o.thread);
+  assert.equal(concluded.ok, true);
+  const stored = (await f.read()).experiments[o.id].rounds[0];
+  assert.equal(stored.report.slices.length, 1);
+  assert.equal(stored.runs.every((r) => r.attempts.every((a) => !a.slices)), true);
+  await until(() => f.sends.some((s) => s.payload.elements.some((e) => e.kind === 'rich_block' && e.payload.title.includes('第 1 周期结论'))), (ok) => ok, 'conclusion card with slice table');
+  const card = f.sends.flatMap((s) => s.payload.elements).find((e) => e.kind === 'rich_block' && e.payload.title.includes('第 1 周期结论'));
+  assert.match(card.payload.bodyMarkdown, /\| 并发 \|/);
+  assert.match(card.payload.bodyMarkdown, /1\.5×/);
+  assert.match(card.payload.bodyMarkdown, /质量护栏 1\/1 全部通过/);
+});

@@ -157,21 +157,21 @@ PDL_COMPONENTS['plugin:official.rsi/rsiTrend'] = function (p, sc, root) {
 
 PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) {
   const table = pv(p.from, sc, root);
-  if (!table || !Array.isArray(table.sections) || !table.sections.length) return '';
+  if (!table) return '';
+  const columns = Array.isArray(table.columns) ? table.columns : [];
+  const sections = Array.isArray(table.sections) ? table.sections : [];
+  if (!columns.length || (!table.isSliceView && !sections.length)) return '';
   const folds = (typeof S !== 'undefined' && S.folds) ? S.folds : {};
-  const mode = table.mode === 'cross' && Array.isArray(table.crossCols) && table.crossCols.length > 1 ? 'cross' : 'cycle';
-  const showCrossToggle = Array.isArray(table.crossCols) && table.crossCols.length > 1;
-  const ctrl = table.controlGroup;
-  const cands = Array.isArray(table.candidateGroups) ? table.candidateGroups : [];
+  const seeds = Array.isArray(table.seeds) ? table.seeds : [];
+  const badgeHtml = function (tone, text) {
+    if (!text) return '';
+    return '<span class="rsi-mx-pill" data-tone="' + h(tone || 'muted') + '">' + h(text) + '</span>';
+  };
   const fmtMeanSd = function (cell) {
     if (!cell || cell.mean == null) return '<span class="rsi-mx-empty">—</span>';
     return '<span class="rsi-mx-num">' + h(cell.mean) + '</span>' +
       (cell.sd != null ? '<span class="rsi-mx-sd">±' + h(cell.sd) + '</span>' : '') +
-      (cell.partial ? '<span class="rsi-mx-part">' + h(cell.n + '/' + (table.seeds ? table.seeds.length : '?')) + '</span>' : '');
-  };
-  const badgeHtml = function (tone, text) {
-    if (!text) return '';
-    return '<span class="rsi-mx-pill" data-tone="' + h(tone || 'muted') + '">' + h(text) + '</span>';
+      (cell.partial ? '<span class="rsi-mx-part">' + h(cell.n + '/' + (seeds.length || '?')) + '</span>' : '');
   };
   const seedStateHtml = function (st) {
     if (st === 'cross') return badgeHtml('danger', '越线');
@@ -179,35 +179,129 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
     if (st === 'failed') return badgeHtml('danger', '无结果');
     return badgeHtml('ok', '正常');
   };
+  const colTitleHtml = function (c) {
+    const lbl = String(c.label || '');
+    const v = String(c.version || '');
+    if (c.sameCycle && v && lbl.endsWith(' ' + v)) {
+      return h(lbl.slice(0, lbl.length - v.length)) + '<span class="rsi-mx-ver">' + h(v) + '</span>';
+    }
+    return '<span class="rsi-mx-ver">' + h(lbl) + '</span>';
+  };
   const tierPill = table.tier === 'explore' ? badgeHtml('warn', '探索快筛') : table.tier === 'confirm' ? badgeHtml('ok', '正式确认') : '';
-  const topBar = '<div class="rsi-mx-bar">' +
-    '<span class="rsi-mx-hint">' + (tierPill ? tierPill + ' ' : '') + h('共 ' + (table.totalMetrics || 0) + ' 项指标 · 点击指标行展开逐轮结果') + '</span>' +
-    (showCrossToggle ? '<div class="rsi-mx-seg" role="group" aria-label="对比视角">' +
-      '<button type="button" class="rsi-mx-seg-btn' + (mode === 'cycle' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="cmpMode" data-v="cycle">' + h(ctrl && cands.length ? '当轮对照' : '本轮实测') + '</button>' +
-      '<button type="button" class="rsi-mx-seg-btn' + (mode === 'cross' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="cmpMode" data-v="cross">跨版本</button>' +
-      '</div>' : '') +
-    '</div>';
-  let thead = '', colCount = 0;
-  const hasPair = !!ctrl && cands.length > 0;
-  if (mode === 'cycle') {
-    const cols = ['<th class="rsi-mx-col-m">指标</th>'];
-    if (ctrl) cols.push('<th class="rsi-mx-col-v">' + h(cands.length ? '对照' : '本轮') + ' <span class="rsi-mx-ver">' + h(ctrl.version) + '</span></th>');
-    cands.forEach(function (g) {
-      cols.push('<th class="rsi-mx-col-v">' + h(g.confirm ? '复验' : ctrl ? '候选' : '探索') + ' <span class="rsi-mx-ver">' + h(g.version) + '</span></th>');
+  const guardPill = table.guardSummary ? badgeHtml(table.guardSummary.tone, table.guardSummary.text) : '';
+  const refPill = table.pairReferenceOnly ? badgeHtml('warn', table.pairSameScale ? '含跨周期参考' : '含不同量尺') : '';
+
+  if (table.isSliceView && table.sliceTable && Array.isArray(table.sliceTable.rows) && table.sliceTable.rows.length) {
+    const st = table.sliceTable;
+    const stats = Array.isArray(st.stats) ? st.stats : [];
+    const perColSpan = stats.length + (st.showPass ? 1 : 0);
+    const hasDiff = !!(table.hasPair && st.primaryStat);
+    const topBar = '<div class="rsi-mx-bar">' +
+      '<span class="rsi-mx-hint">' + [tierPill, guardPill, refPill].filter(Boolean).join(' ') + ' ' +
+      h(st.name + ' · 共 ' + st.rows.length + ' 档' + (seeds.length ? ' · 点击档位展开逐轮结果' : '')) + '</span>' +
+      '</div>';
+    const row1 = ['<th rowspan="2" class="rsi-mx-col-m">' + h(st.axis) + (st.axisUnit ? ' <span class="rsi-mx-unit">(' + h(st.axisUnit) + ')</span>' : '') + '</th>'];
+    const row2 = [];
+    columns.forEach(function (c, ci) {
+      const tags = [];
+      if (c.crossCycle) tags.push('<span class="rsi-mx-ref-tag">跨周期参考</span>');
+      if (!c.sameScale && c.metricVersion) tags.push('<span class="rsi-mx-ref-tag">量尺 ' + h(c.metricVersion) + '</span>');
+      row1.push('<th colspan="' + perColSpan + '" class="rsi-mx-grp-th' + (ci > 0 ? ' has-sep' : '') + (c.crossCycle ? ' is-ref' : '') + '">' +
+        colTitleHtml(c) + (tags.length ? ' ' + tags.join(' ') : '') + '</th>');
+      stats.forEach(function (s, si) {
+        row2.push('<th class="rsi-mx-sub-th' + (ci > 0 && si === 0 ? ' has-sep' : '') + (c.crossCycle ? ' is-ref' : '') + '">' +
+          h(s.name) + (s.unit ? ' <span class="rsi-mx-unit">' + h(s.unit) + '</span>' : '') +
+          (s.ruleText ? '<div class="rsi-mx-m-rule">' + h(s.ruleText) + '</div>' : '') + '</th>');
+      });
+      if (st.showPass) row2.push('<th class="rsi-mx-sub-th' + (c.crossCycle ? ' is-ref' : '') + '">判定</th>');
     });
-    if (hasPair) cols.push('<th class="rsi-mx-col-d">Δ 变化</th>');
-    cols.push('<th class="rsi-mx-col-s">判定</th>');
-    colCount = cols.length;
-    thead = '<thead><tr>' + cols.join('') + '</tr></thead>';
-  } else {
-    const cols = ['<th class="rsi-mx-col-m">指标</th>'];
-    table.crossCols.forEach(function (c) {
-      cols.push('<th class="rsi-mx-col-v' + (c.current ? ' is-cur' : '') + '">' + h(c.label) + '</th>');
-    });
-    colCount = cols.length;
-    thead = '<thead><tr>' + cols.join('') + '</tr></thead>';
+    if (hasDiff) {
+      row1.push('<th rowspan="2" class="rsi-mx-col-d has-sep">' + h(st.primaryStat.name + ' 对比') +
+        (table.pairReferenceOnly ? ' <span class="rsi-mx-ref-tag">参考</span>' : '') + '</th>');
+    }
+    const thead = '<thead><tr>' + row1.join('') + '</tr><tr>' + row2.join('') + '</tr></thead>';
+    const bodyHtml = st.rows.map(function (row) {
+      const foldKey = 'rsi-cmp-slice:' + (table.cycleLabel || '') + ':' + st.id + ':' + row.at;
+      const isOpen = !!folds[foldKey];
+      const canExpand = seeds.length > 0 && row.cols.some(function (cc) { return cc.sameCycle && cc.stats.some(function (s) { return s.seeds && s.seeds.length; }); });
+      let tds = '<td class="rsi-mx-col-m">' + (canExpand
+        ? '<button type="button" class="rsi-mx-m-btn" data-act="fold" data-f="result" data-k="' + h(foldKey) + '" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' +
+          '<span class="rsi-mx-chev">' + (isOpen ? '▾' : '▸') + '</span><span class="rsi-mx-m-name">' + h(row.label) + '</span></button>'
+        : '<span class="rsi-mx-m-name">' + h(row.label) + '</span>') + '</td>';
+      row.cols.forEach(function (cc, ci) {
+        const colMeta = columns[ci] || {};
+        cc.stats.forEach(function (cell, si) {
+          const cls = 'rsi-mx-col-v' + (ci > 0 && si === 0 ? ' has-sep' : '') + (colMeta.crossCycle ? ' is-ref' : '') + (cell.pass === false ? ' is-fail' : '');
+          tds += '<td class="' + cls + '">' + fmtMeanSd(cell) + '</td>';
+        });
+        if (st.showPass) {
+          const pCls = 'rsi-mx-col-s' + (colMeta.crossCycle ? ' is-ref' : '') + (cc.pass === false ? ' is-fail' : '');
+          const pHtml = cc.pass === true ? badgeHtml('ok', 'PASS') : cc.pass === false ? badgeHtml('danger', 'FAIL') : '<span class="rsi-mx-empty">—</span>';
+          tds += '<td class="' + pCls + '">' + pHtml + '</td>';
+        }
+      });
+      if (hasDiff) {
+        const diff = row.diff;
+        let diffHtml = '<span class="rsi-mx-empty">—</span>';
+        if (diff && diff.suppressed) {
+          diffHtml = '<span class="rsi-mx-empty" title="量尺不同，不可直接算差值">—</span>';
+        } else if (diff && (diff.ratio || diff.delta != null)) {
+          const txt = [diff.ratio, diff.delta].filter(Boolean).join(' / ');
+          diffHtml = '<span class="rsi-mx-delta" data-better="' + h(diff.better || '') + '">' + h(txt) + '</span>';
+        }
+        tds += '<td class="rsi-mx-col-d has-sep">' + diffHtml + '</td>';
+      }
+      let detailHtml = '';
+      if (isOpen && canExpand) {
+        detailHtml = seeds.map(function (seed, si) {
+          let sTds = '<td class="rsi-mx-col-m rsi-mx-seed-cell"><span class="rsi-mx-sub-rd">第 ' + (si + 1) + ' 轮 <span class="rsi-mx-seed">seed ' + h(seed) + '</span></span></td>';
+          row.cols.forEach(function (cc, ci) {
+            const colMeta = columns[ci] || {};
+            cc.stats.forEach(function (cell, sti) {
+              const sv = cell.seeds && cell.seeds[si];
+              const cls = 'rsi-mx-col-v' + (ci > 0 && sti === 0 ? ' has-sep' : '') + (colMeta.crossCycle ? ' is-ref' : '') + (sv && sv.pass === false ? ' is-fail' : '');
+              sTds += '<td class="' + cls + '">' + (sv && sv.value != null ? '<span class="rsi-mx-num">' + h(sv.value) + '</span>' : '<span class="rsi-mx-empty">—</span>') + '</td>';
+            });
+            if (st.showPass) {
+              const allOk = cc.sameCycle && cc.stats.every(function (cell) { const sv = cell.seeds && cell.seeds[si]; return !sv || sv.pass !== false; });
+              const anyChecked = cc.sameCycle && cc.stats.some(function (cell) { const sv = cell.seeds && cell.seeds[si]; return sv && sv.pass !== null && sv.pass !== undefined; });
+              sTds += '<td class="rsi-mx-col-s' + (colMeta.crossCycle ? ' is-ref' : '') + '">' + (anyChecked ? badgeHtml(allOk ? 'ok' : 'danger', allOk ? 'PASS' : 'FAIL') : '<span class="rsi-mx-empty">—</span>') + '</td>';
+            }
+          });
+          if (hasDiff) sTds += '<td class="rsi-mx-col-d has-sep"><span class="rsi-mx-empty">—</span></td>';
+          return '<tr class="rsi-mx-seed-row">' + sTds + '</tr>';
+        }).join('');
+      }
+      return '<tr class="rsi-mx-row">' + tds + '</tr>' + detailHtml;
+    }).join('');
+    return '<div class="rsi-mx-wrap">' + topBar + '<div class="scroll-x rsi-mx-scroll"><table class="rsi-mx rsi-mx-slice">' + thead + '<tbody>' + bodyHtml + '</tbody></table></div></div>';
   }
-  const bodyHtml = table.sections.map(function (sec) {
+
+  // Scalar comparison matrix (dynamic columns + guardrail rollup + expandable per-seed rows)
+  const hasPair = !!table.hasPair;
+  const topBar = '<div class="rsi-mx-bar">' +
+    '<span class="rsi-mx-hint">' + [tierPill, guardPill, refPill].filter(Boolean).join(' ') + ' ' +
+    h('共 ' + (table.totalMetrics || 0) + ' 项指标 · 点击指标行展开逐轮结果') + '</span>' +
+    '</div>';
+  const cols = ['<th class="rsi-mx-col-m">指标</th>'];
+  columns.forEach(function (c) {
+    const tags = [];
+    if (c.crossCycle) tags.push('<span class="rsi-mx-ref-tag">跨周期参考</span>');
+    if (!c.sameScale && c.metricVersion) tags.push('<span class="rsi-mx-ref-tag">量尺 ' + h(c.metricVersion) + '</span>');
+    cols.push('<th class="rsi-mx-col-v' + (c.crossCycle ? ' is-ref' : '') + (c.current && c.crossCycle ? ' is-cur' : '') + '">' +
+      colTitleHtml(c) + (tags.length ? ' ' + tags.join(' ') : '') + '</th>');
+  });
+  if (hasPair) {
+    cols.push('<th class="rsi-mx-col-d">Δ 变化' + (table.pairReferenceOnly ? ' <span class="rsi-mx-ref-tag">参考</span>' : '') + '</th>');
+  }
+  cols.push('<th class="rsi-mx-col-s">判定</th>');
+  const colCount = cols.length;
+  const thead = '<thead><tr>' + cols.join('') + '</tr></thead>';
+
+  const anchorIdx = columns.findIndex(function (c) { return c.id === table.anchorColId; });
+  const compareIdx = columns.findIndex(function (c) { return c.id === table.compareColId; });
+
+  const bodyHtml = sections.map(function (sec) {
     const secFoldKey = 'rsi-cmp-sec:' + (table.cycleLabel || '') + ':' + sec.k;
     const isOpen = sec.defaultOpen ? !folds[secFoldKey] : !!folds[secFoldKey];
     const secHead = '<tr class="rsi-mx-sec" data-tone="' + h(sec.tone || '') + '"><td colspan="' + colCount + '">' +
@@ -230,34 +324,28 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
         (m.ruleText ? '<span class="rsi-mx-m-rule">' + h(m.ruleText) + '</span>' : '') +
         '</span></button>' + trendBtn + '</div></td>';
       let cellsHtml = metricCell;
-      if (mode === 'cycle') {
-        if (ctrl) cellsHtml += '<td class="rsi-mx-col-v">' + fmtMeanSd(m.control) + '</td>';
-        cands.forEach(function (g, gi) {
-          const c = m.candidates && m.candidates[gi];
-          cellsHtml += '<td class="rsi-mx-col-v' + (c && c.guard === 'fail' ? ' is-fail' : '') + '">' + fmtMeanSd(c) + '</td>';
-        });
-        if (hasPair) {
-          const lead = m.candidates && m.candidates[0];
+      (m.cells || []).forEach(function (cell, ci) {
+        const colMeta = columns[ci] || {};
+        cellsHtml += '<td class="rsi-mx-col-v' + (colMeta.crossCycle ? ' is-ref' : '') + (cell.guard === 'fail' ? ' is-fail' : '') + '">' + fmtMeanSd(cell) + '</td>';
+      });
+      if (hasPair) {
+        let deltaHtml = '<span class="rsi-mx-empty">—</span>';
+        if (m.deltaSuppressed) {
+          deltaHtml = '<span class="rsi-mx-empty" title="量尺不同，不可直接算差值">—</span>';
+        } else if (m.delta != null) {
           const dirHint = m.dir === 'down' ? '越小越好' : '越大越好';
-          const deltaTip = lead && lead.better === 'better' ? '变好（' + dirHint + '）' : lead && lead.better === 'worse' ? '变差（' + dirHint + '）' : '持平（' + dirHint + '）';
-          const deltaHtml = lead && lead.delta != null
-            ? '<span class="rsi-mx-delta" data-better="' + h(lead.better || '') + '" title="' + h(deltaTip) + '">' + h(lead.delta) + '</span>'
-            : '<span class="rsi-mx-empty">—</span>';
-          cellsHtml += '<td class="rsi-mx-col-d">' + deltaHtml + '</td>';
+          const deltaTip = (m.deltaRef ? '跨周期参考 · ' : '') + (m.better === 'better' ? '变好（' + dirHint + '）' : m.better === 'worse' ? '变差（' + dirHint + '）' : '持平（' + dirHint + '）');
+          deltaHtml = '<span class="rsi-mx-delta" data-better="' + h(m.better || '') + '" title="' + h(deltaTip) + '">' + h(m.delta) + '</span>';
         }
-        const statusTone = m.status === 'win' || m.status === 'pass' ? 'ok' : m.status === 'fail' ? 'danger' : m.status === 'warn' ? 'warn' : 'muted';
-        cellsHtml += '<td class="rsi-mx-col-s">' + badgeHtml(statusTone, m.statusText) + '</td>';
-      } else {
-        (m.crossValues || []).forEach(function (cv) {
-          cellsHtml += '<td class="rsi-mx-col-v' + (cv.current ? ' is-cur' : '') + (cv.guard === 'fail' ? ' is-fail' : '') + '">' +
-            (cv.value != null ? '<span class="rsi-mx-num">' + h(cv.value) + '</span>' : '<span class="rsi-mx-empty">—</span>') +
-            '</td>';
-        });
+        cellsHtml += '<td class="rsi-mx-col-d">' + deltaHtml + '</td>';
       }
+      const statusTone = m.status === 'win' || m.status === 'pass' ? 'ok' : m.status === 'fail' ? 'danger' : m.status === 'warn' ? 'warn' : 'muted';
+      cellsHtml += '<td class="rsi-mx-col-s">' + badgeHtml(statusTone, m.statusText) + '</td>';
+
       let detailHtml = '';
-      if (rowOpen) {
-        const seeds = Array.isArray(table.seeds) ? table.seeds : [];
+      if (rowOpen && seeds.length) {
         const fmtSeedDelta = function (cv, sv) {
+          if (!table.pairSameScale || table.pairReferenceOnly) return '<span class="rsi-mx-empty">—</span>';
           const a = cv != null ? Number(cv) : NaN, b = sv != null ? Number(sv) : NaN;
           if (!Number.isFinite(a) || !Number.isFinite(b)) return '<span class="rsi-mx-empty">—</span>';
           const diff = b - a;
@@ -271,63 +359,30 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
           if (list.indexOf('failed') >= 0) return 'failed';
           return list.length ? list[0] : '';
         };
-        if (mode === 'cycle') {
-          detailHtml = seeds.map(function (seed, si) {
-            const cs = m.control && m.control.seeds ? m.control.seeds[si] : null;
-            const states = [];
-            let rowTds = '<td class="rsi-mx-col-m rsi-mx-seed-cell"><span class="rsi-mx-sub-rd">第 ' + (si + 1) + ' 轮 <span class="rsi-mx-seed">seed ' + h(seed) + '</span></span></td>';
-            if (ctrl) {
-              if (cs && cs.state) states.push(cs.state);
-              rowTds += '<td class="rsi-mx-col-v' + (cs && (cs.state === 'cross' || cs.state === 'failed') ? ' is-fail' : '') + '">' +
-                (cs && cs.value != null ? '<span class="rsi-mx-num">' + h(cs.value) + '</span>' : '<span class="rsi-mx-empty">—</span>') + '</td>';
-            }
-            let leadSeed = null;
-            cands.forEach(function (g, gi) {
-              const cand = m.candidates && m.candidates[gi];
-              const s = cand && cand.seeds ? cand.seeds[si] : null;
-              if (gi === 0) leadSeed = s;
-              if (s && s.state) states.push(s.state);
-              rowTds += '<td class="rsi-mx-col-v' + (s && (s.state === 'cross' || s.state === 'failed') ? ' is-fail' : '') + '">' +
-                (s && s.value != null ? '<span class="rsi-mx-num">' + h(s.value) + '</span>' : '<span class="rsi-mx-empty">—</span>') + '</td>';
-            });
-            if (hasPair) rowTds += '<td class="rsi-mx-col-d">' + fmtSeedDelta(cs && cs.value, leadSeed && leadSeed.value) + '</td>';
-            const st = worstState(states);
-            rowTds += '<td class="rsi-mx-col-s">' + (st ? seedStateHtml(st) : '<span class="rsi-mx-empty">—</span>') + '</td>';
-            return '<tr class="rsi-mx-seed-row">' + rowTds + '</tr>';
-          }).join('');
-        } else {
-          const subCols = ['<th>当轮明细</th>'];
-          if (ctrl) subCols.push('<th>对照 ' + h(ctrl.version) + '</th>');
-          cands.forEach(function (g) { subCols.push('<th>' + h(g.confirm ? '复验 ' : ctrl ? '候选 ' : '探索 ') + h(g.version) + '</th>'); });
-          subCols.push('<th>判定</th>');
-          const subRows = seeds.map(function (seed, si) {
-            const cs = m.control && m.control.seeds ? m.control.seeds[si] : null;
-            const states = [];
-            const tds = ['<td class="rsi-mx-sub-rd">第 ' + (si + 1) + ' 轮 <span class="rsi-mx-seed">seed ' + h(seed) + '</span></td>'];
-            if (ctrl) {
-              if (cs && cs.state) states.push(cs.state);
-              tds.push('<td class="rsi-mx-col-v">' + (cs && cs.value != null ? '<span class="rsi-mx-num">' + h(cs.value) + '</span>' : '<span class="rsi-mx-empty">—</span>') + '</td>');
-            }
-            cands.forEach(function (g, gi) {
-              const cand = m.candidates && m.candidates[gi];
-              const s = cand && cand.seeds ? cand.seeds[si] : null;
-              if (s && s.state) states.push(s.state);
-              tds.push('<td class="rsi-mx-col-v">' + (s && s.value != null ? '<span class="rsi-mx-num">' + h(s.value) + '</span>' : '<span class="rsi-mx-empty">—</span>') + '</td>');
-            });
-            const st = worstState(states);
-            tds.push('<td>' + (st ? seedStateHtml(st) : '<span class="rsi-mx-empty">—</span>') + '</td>');
-            return '<tr>' + tds.join('') + '</tr>';
-          }).join('');
-          detailHtml = '<tr class="rsi-mx-detail-row"><td colspan="' + colCount + '"><div class="rsi-mx-sub-wrap">' +
-            '<table class="rsi-mx-sub"><thead><tr>' + subCols.join('') + '</tr></thead><tbody>' + subRows + '</tbody></table>' +
-            '</div></td></tr>';
-        }
+        detailHtml = seeds.map(function (seed, si) {
+          const states = [];
+          let rowTds = '<td class="rsi-mx-col-m rsi-mx-seed-cell"><span class="rsi-mx-sub-rd">第 ' + (si + 1) + ' 轮 <span class="rsi-mx-seed">seed ' + h(seed) + '</span></span></td>';
+          let anchorSeed = null, compareSeed = null;
+          (m.cells || []).forEach(function (cell, ci) {
+            const colMeta = columns[ci] || {};
+            const s = cell.sameCycle && cell.seeds ? cell.seeds[si] : null;
+            if (ci === anchorIdx) anchorSeed = s;
+            if (ci === compareIdx) compareSeed = s;
+            if (s && s.state) states.push(s.state);
+            rowTds += '<td class="rsi-mx-col-v' + (colMeta.crossCycle ? ' is-ref' : '') + (s && (s.state === 'cross' || s.state === 'failed') ? ' is-fail' : '') + '">' +
+              (s && s.value != null ? '<span class="rsi-mx-num">' + h(s.value) + '</span>' : '<span class="rsi-mx-empty">—</span>') + '</td>';
+          });
+          if (hasPair) rowTds += '<td class="rsi-mx-col-d">' + fmtSeedDelta(anchorSeed && anchorSeed.value, compareSeed && compareSeed.value) + '</td>';
+          const st = worstState(states);
+          rowTds += '<td class="rsi-mx-col-s">' + (st ? seedStateHtml(st) : '<span class="rsi-mx-empty">—</span>') + '</td>';
+          return '<tr class="rsi-mx-seed-row">' + rowTds + '</tr>';
+        }).join('');
       }
       return '<tr class="rsi-mx-row' + (m.active ? ' is-active' : '') + '">' + cellsHtml + '</tr>' + detailHtml;
     }).join('');
     return secHead + rowsHtml;
   }).join('');
-  return '<div class="rsi-mx-wrap">' + topBar + '<div class="scroll-x rsi-mx-scroll"><table class="rsi-mx' + (mode === 'cross' ? ' is-cross' : '') + '">' + thead + '<tbody>' + bodyHtml + '</tbody></table></div></div>';
+  return '<div class="rsi-mx-wrap">' + topBar + '<div class="scroll-x rsi-mx-scroll"><table class="rsi-mx">' + thead + '<tbody>' + bodyHtml + '</tbody></table></div></div>';
 };
 
 PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {

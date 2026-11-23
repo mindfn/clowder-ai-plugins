@@ -117,7 +117,7 @@ test('i18n yaml packs parse cleanly and rsi.exp dual-tab removes trailing lineag
       const target=pdl.views[node.id];
       assert.ok(target,`data-bound view block in ${viewId} references unknown subview ${node.id}`);
       const checkRootRefs=(val,p)=>{
-        if(typeof val==='string')assert.doesNotMatch(val,/^\$\.(pending|state)(\.|$)/,`data-bound subview ${node.id} (embedded from ${viewId}) references plugin root ${val} at ${p}, which resolves to undefined under pdlViewOf`);
+        if(typeof val==='string')assert.doesNotMatch(val,/(^|!)\$\.(pending|state)(\.|$)/,`data-bound subview ${node.id} (embedded from ${viewId}) references plugin root ${val} at ${p}, which resolves to undefined under pdlViewOf`);
         else if(val&&typeof val==='object')for(const [k,v] of Object.entries(val))checkRootRefs(v,`${p}.${k}`);
       };
       checkRootRefs(target.blocks,`${node.id}.blocks`);

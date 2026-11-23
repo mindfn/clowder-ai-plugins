@@ -74,6 +74,14 @@
 .rsi-mx .rsi-mx-col-s{text-align:left;min-width:76px}
 .rsi-mx .rsi-mx-ver{font-family:var(--font-mono);color:var(--fg-strong)}
 .rsi-mx th.is-cur,.rsi-mx td.is-cur{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.rsi-mx th.is-ref,.rsi-mx td.is-ref{background:color-mix(in srgb,var(--warn) 4%,transparent)}
+.rsi-mx th.has-sep,.rsi-mx td.has-sep{border-inline-start:1px solid color-mix(in srgb,var(--line) 75%,transparent)}
+.rsi-mx-grp-th{text-align:left;padding-bottom:4px!important;border-bottom:1px solid color-mix(in srgb,var(--line) 45%,transparent)!important}
+.rsi-mx-sub-th{padding-top:4px!important;font-weight:500!important}
+.rsi-mx-unit{font-weight:400;color:var(--fg-muted);font-family:var(--font-mono)}
+.rsi-mx-ref-tag{display:inline-block;padding:0 5px;border-radius:var(--r-full);background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);font-size:10px;font-weight:500;line-height:1.45;vertical-align:middle}
+.rsi-mx.rsi-mx-slice .rsi-mx-col-m{min-width:110px;width:auto}
+.rsi-mx.rsi-mx-slice .rsi-mx-col-v{min-width:74px;padding-inline:10px}
 .rsi-mx td.is-fail{background:color-mix(in srgb,var(--danger) 6%,transparent)}
 .rsi-mx-sec td{padding:0;background:color-mix(in srgb,var(--bg-group) 70%,transparent)}
 .rsi-mx-sec-btn{display:flex;align-items:center;gap:6px;width:100%;padding:6px 14px;border:0;background:transparent;color:var(--fg-strong);font-size:var(--fs-xs);font-weight:600;cursor:pointer;text-align:left}

@@ -44,7 +44,7 @@ export function compact(state: RsiState, now = Date.now()) {
         if (typeof run.log === 'string') run.log = run.log.slice(-(archived ? ARCHIVED_LOG_KEEP : closed ? CLOSED_LOG_KEEP : LOG_KEEP));
         if (archived && ri > 0 && run.env && baseEnv && same(run.env, baseEnv)) delete run.env;
         for (const failure of [run.error, ...(run.attempts || []).map((a: Data) => a.error)]) if (typeof failure?.raw === 'string') failure.raw = clip(failure.raw);
-        if (closed) for (const a of run.attempts || []) for (const k of ['env', 'metrics']) if (same(a[k], run[k])) delete a[k];
+        if (closed) for (const a of run.attempts || []) for (const k of ['env', 'metrics', 'slices']) if (same(a[k], run[k])) delete a[k];
       }
     }
   }

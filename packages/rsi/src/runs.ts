@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { arch, cpus, platform, release } from 'node:os';
 import { join, resolve } from 'node:path';
 import { finishCycle } from './cycles.js';
+import { normalizeSlicesInput } from './compare.js';
 import { message, recordInitExecution, submitInitStep } from './init.js';
 import { insideWindow } from './schedule.js';
 import { clip, listOwners, LOG_KEEP, record, retain } from './store.js';
@@ -136,7 +137,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       if (!acquired || stopped) continue;
       busy = d.objective.id; runId = run.id;
       const priorEnv = run.jobId ? (run.attempts?.slice().reverse().find((a: Data) => a.jobId === run.jobId && record(a.env))?.env || (record(run.env) ? run.env : null)) : null;
-      let metrics: Data = {}, env: Data = { ...(priorEnv || {}), seed: run.seed, hardware: { os: `${platform()} ${release()}`, arch: arch(), chip: cpus()[0]?.model || 'unknown' } };
+      let metrics: Data = {}, slices: Data | undefined, env: Data = { ...(priorEnv || {}), seed: run.seed, hardware: { os: `${platform()} ${release()}`, arch: arch(), chip: cpus()[0]?.model || 'unknown' } };
       let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId, timedOut = false, pollLost = false, remoteEnded = false, submitted = !!jobId;
       // The foreground submit's limit: the registered timeout, else three times this objective's longest successful attempt (at least 10 minutes); none before one has succeeded.
       const succeeded = d.rounds.flatMap((r: Data) => r.runs.flatMap((x: Data) => (x.attempts || []).filter((a: Data) => !a.error).map((a: Data) => a.end - a.start)));
@@ -309,6 +310,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         const output = parseResult(raw);
         if (!record(output)) throw new Error('Collected metrics must be a JSON object');
         if (output.dataVersion !== undefined) env.data = output.dataVersion;
+        slices = normalizeSlicesInput(output.slices);
         const source = record(output.metrics) ? output.metrics : output, invalid: string[] = [];
         for (const metric of (round.metrics || d.metrics).items) {
           const mapping = d.executor.resultMap.find((m: Data) => m.metric === metric.id);
@@ -370,9 +372,9 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         if (entry.state !== 'running') return;
         const unconfirmed = keepJob ? `远端作业 ${jobId} 未确认结束或取消，可能仍在运行` : '';
         const end = Date.now(), failure = error ? { kind, step, raw: clip(unconfirmed ? `${unconfirmed}；${error}` : error), ...(analysis ? { analysis } : {}) } : null;
-        Object.assign(entry, { end, metrics, env, log: keptLog, error: failure, evidence: !error || kind === 'real' });
+        Object.assign(entry, { end, metrics, ...(slices ? { slices } : {}), env, log: keptLog, error: failure, evidence: !error || kind === 'real' });
         entry.attempts ||= [];
-        entry.attempts.push({ start, end, env, metrics, error: failure, jobId: jobId || null });
+        entry.attempts.push({ start, end, env, metrics, ...(slices ? { slices } : {}), error: failure, jobId: jobId || null });
         if (!keepJob) delete entry.jobId;
         if (error && kind === 'env' && entry.retries < 1) {
           retrying = true;

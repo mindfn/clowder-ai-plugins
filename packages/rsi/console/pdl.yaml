@@ -2006,6 +2006,161 @@ views:
                             when:
                               - "!@after.isMedia"
                               - "@after.text"
+                  - type: toolbar
+                    when: $.exp.cycle.compare.table.hasSlices
+                    left:
+                      - type: seg
+                        value: $.exp.cycle.compare.table.activeView
+                        options:
+                          - from: $.exp.cycle.compare.table.viewOptions
+                            item:
+                              v: "@v"
+                              label: "@label"
+                        act: plugSet
+                        args:
+                          k: cmpView
+                  - type: toolbar
+                    when: $.exp.cycle.compare.table.hasCols
+                    left:
+                      - type: text
+                        text: t:rsi.cmp.colsLabel
+                      - type: each
+                        from: $.exp.cycle.compare.table.columns
+                        control:
+                          type: stack
+                          items:
+                            - type: chip
+                              when: "@removable"
+                              label: "@chipLabel"
+                              tone: "@chipTone"
+                              x:
+                                act: plugSet
+                                icon: close
+                                label: t:rsi.cmp.colRemove
+                                args:
+                                  k: cmpCols
+                                  v: "@removeVal"
+                            - type: chip
+                              when: "!@removable"
+                              label: "@chipLabel"
+                              tone: "@chipTone"
+                      - type: button
+                        when: $.exp.cycle.compare.table.hasAddCols
+                        icon: plus
+                        iconOnly: true
+                        label: t:rsi.cmp.colAdd
+                        items:
+                          - from: $.exp.cycle.compare.table.addColumns
+                            item:
+                              label: "@menuLabel"
+                              act: plugSet
+                              args:
+                                k: cmpCols
+                                v: "@addVal"
+                    right:
+                      - type: button
+                        when: $.exp.cycle.compare.table.colCustomized
+                        label: t:rsi.cmp.reset
+                        act: plugSet
+                        args:
+                          k: cmpCols
+                          v: ""
+                  - type: toolbar
+                    when:
+                      - $.exp.cycle.compare.table.hasCols
+                      - "!$.exp.cycle.compare.table.isSliceView"
+                    left:
+                      - type: text
+                        text: t:rsi.cmp.metricsLabel
+                      - type: each
+                        from: $.exp.cycle.compare.table.metricChips
+                        control:
+                          type: stack
+                          items:
+                            - type: chip
+                              when: "@removable"
+                              label: "@label"
+                              tone: "@tone"
+                              x:
+                                act: plugSet
+                                icon: close
+                                label: t:rsi.cmp.metricRemove
+                                args:
+                                  k: cmpMetrics
+                                  v: "@removeVal"
+                            - type: chip
+                              when: "!@removable"
+                              label: "@label"
+                              tone: "@tone"
+                      - type: button
+                        when: $.exp.cycle.compare.table.hasAddMetrics
+                        icon: plus
+                        iconOnly: true
+                        label: t:rsi.cmp.metricAdd
+                        items:
+                          - from: $.exp.cycle.compare.table.addMetrics
+                            item:
+                              label: "@menuLabel"
+                              act: plugSet
+                              args:
+                                k: cmpMetrics
+                                v: "@addVal"
+                    right:
+                      - type: button
+                        when: $.exp.cycle.compare.table.metricCustomized
+                        label: t:rsi.cmp.reset
+                        act: plugSet
+                        args:
+                          k: cmpMetrics
+                          v: ""
+                  - type: toolbar
+                    when:
+                      - $.exp.cycle.compare.table.hasCols
+                      - $.exp.cycle.compare.table.isSliceView
+                    left:
+                      - type: text
+                        text: t:rsi.cmp.statsLabel
+                      - type: each
+                        from: $.exp.cycle.compare.table.statChips
+                        control:
+                          type: stack
+                          items:
+                            - type: chip
+                              when: "@removable"
+                              label: "@label"
+                              tone: "@tone"
+                              x:
+                                act: plugSet
+                                icon: close
+                                label: t:rsi.cmp.statRemove
+                                args:
+                                  k: cmpStats
+                                  v: "@removeVal"
+                            - type: chip
+                              when: "!@removable"
+                              label: "@label"
+                              tone: "@tone"
+                      - type: button
+                        when: $.exp.cycle.compare.table.hasAddStats
+                        icon: plus
+                        iconOnly: true
+                        label: t:rsi.cmp.statAdd
+                        items:
+                          - from: $.exp.cycle.compare.table.addStats
+                            item:
+                              label: "@menuLabel"
+                              act: plugSet
+                              args:
+                                k: cmpStats
+                                v: "@addVal"
+                    right:
+                      - type: button
+                        when: $.exp.cycle.compare.table.statCustomized
+                        label: t:rsi.cmp.reset
+                        act: plugSet
+                        args:
+                          k: cmpStats
+                          v: ""
                   - type: component
                     use: plugin:official.rsi/rsiCompareMatrix
                     props:
@@ -6590,7 +6745,10 @@ requests:
       trendMetric: state.trendMetric
       overviewMode: state.overviewMode
       overviewLens: state.overviewLens
-      cmpMode: state.cmpMode
+      cmpCols: state.cmpCols
+      cmpMetrics: state.cmpMetrics
+      cmpStats: state.cmpStats
+      cmpView: state.cmpView
       thread: host:currentThread.id
   record:
     path: rsi/view

@@ -1,4 +1,5 @@
 import { AUTO, enqueue, mention, message, prepSettled, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
+import { formatComparisonMarkdown, sliceMatrix } from './compare.js';
 import { insideWindow, windowEnd, windowStart } from './schedule.js';
 import { cycleResult, record, text } from './store.js';
 import type { Data, Experiment, RsiState } from './types.js';
@@ -335,7 +336,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     }
     tag = input.tag.trim();
   }
-  const findings = Array.isArray(input.findings) ? input.findings.join('\n') : input.findings, compared = comparison(d, round);
+  const findings = Array.isArray(input.findings) ? input.findings.join('\n') : input.findings, compared = comparison(d, round), slices = sliceMatrix(d, round);
   const member = d.members.find((m) => m.role === 'evaluate')!, { matrix: cells, ...compare } = compared;
   const comparisons = Array.isArray(input.comparisons)
     ? input.comparisons.filter((c: unknown) => record(c) && text(c.title) && record(c.before) && record(c.after)).map((c: Data, i: number) => ({
@@ -356,6 +357,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
       headline: findings.split('\n')[0],
       summary: findings,
       matrix: cells,
+      ...(slices.length ? { slices } : {}),
       ...(disposition ? { disposition } : {}),
       ...(tag ? { tag } : {}),
       ...(comparisons.length ? { comparisons } : {}),
@@ -370,7 +372,8 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
       objectives: [d.objective.id], cycle: round.n, tried: round.plan.groups.filter((g: Data) => !g.control), result: cycleResult(input.verdict, compared, round.confirmation || null), sources: [{ objective: d.objective.id, cycle: round.n }], state: 'confirmed', by: member.catId, at: now };
     const at = lib.findIndex((x: Data) => x.id === docId);
     if (at >= 0) lib[at] = doc; else lib.push(doc);
-    message(state, d, now, `第 ${round.n} 周期重新分析完成 · ${input.verdict}`, round.report.summary, 'conclusion');
+    const reCompareMd = formatComparisonMarkdown(d, round);
+    message(state, d, now, `第 ${round.n} 周期重新分析完成 · ${input.verdict}`, `${round.report.summary}${reCompareMd ? `\n\n${reCompareMd}` : ''}`, 'conclusion');
     syncObjective(state, d);
     return { ok: true, comparison: compared, confirmation: round.confirmation || null, reevaluated: true };
   }
@@ -420,6 +423,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   round.stageMembers.eval = { catId: member.catId, name: member.name };
   // The comparison's cells are stored once, as the report's matrix.
   round.report = { verdict: input.verdict, headline: findings.split('\n')[0], summary: findings, matrix: cells,
+    ...(slices.length ? { slices } : {}),
     ...(disposition ? { disposition } : {}),
     ...(tag ? { tag } : {}),
     ...(comparisons.length ? { comparisons } : {}),
@@ -457,8 +461,10 @@ function conclusionCard(state: RsiState, d: Experiment, round: Data, now: number
   const verdict = (round.analysis?.compared || 0) > 1 && !stopped ? `\n\n${report.agree ? '分析成员意见一致，可以直接采纳。' : '几个分析成员意见不一致，需要你判断。'}` : '';
   const absent = missing.length ? `\n\n${missing.map(nameOf).join('、')} 没在时限内给方向。` : '';
   const checked = report.predictions.length ? `\n\n${report.predictions.map((p: Data) => `预测核对 · ${p.text}：预期 ${p.expect}，实际 ${p.actual}，${p.result === 'hit' ? '命中' : p.result === 'unresolved' ? '无法核对' : '未命中'}`).join('\n')}` : '';
+  const compareMd = formatComparisonMarkdown(d, round);
+  const compareBlock = compareMd ? `\n\n${compareMd}` : '';
   const customSeedNote = !stopped && !d.candidate && Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length ? '（本周期含自定义 reservedSeeds 绑定，超时不会自动照旧续跑。）' : '';
-  message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${report.outcome}${checked}\n\n${lines.join('\n')}${verdict}${absent}${stopped ? '' : d.candidate ? '\n\n在 RSI 页面点「今晚照旧」，下一周期跑确认。' : `\n\n在 RSI 页面选择方向。${customSeedNote}`}`, 'conclusion');
+  message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${compareBlock}${report.outcome}${checked}\n\n${lines.join('\n')}${verdict}${absent}${stopped ? '' : d.candidate ? '\n\n在 RSI 页面点「今晚照旧」，下一周期跑确认。' : `\n\n在 RSI 页面选择方向。${customSeedNote}`}`, 'conclusion');
   if (stopped) message(state, d, now, stopped.text, `第 ${round.n} 周期结论后停止启动新周期。`, 'conclusion');
   if (!round.decision) decideAtNight(state, d, round, now);
 }

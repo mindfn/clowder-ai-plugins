@@ -2,6 +2,7 @@ import { RSI_CP_INIT, createFixtures } from './fixtures.js';
 import { act } from './actions.js';
 import { clipTitle, submitInitStep, enqueue, kick, message, prepSettled, stepMemberOf, STOP_TARGET, syncObjective } from './init.js';
 import { abandonRepair, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, resolveRsiParent, validateReservedSeeds, validPlan } from './cycles.js';
+import { sliceMatrix, validateSliceSpecs } from './compare.js';
 import { parseScheduleText } from './schedule.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, PrepItem, RsiState, Section, ToolContext } from './types.js';
@@ -77,7 +78,7 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
         examples: template.prep.filter((x) => x.section === p.k).map((x) => ({ id: x.id, title: x.title, value: x.value })) } : {}),
       deps: p.deps.map((k) => ({ step: d.plan.findIndex((p) => p.k === k) + 1, section: k, version: d.steps![k]!.rev, items: d.prep.filter((item) => item.section === k) })),
       ...(p.k === 'run' ? { window: '支持「不限制」「周一至周五 09:00–18:00；周六至周日 全天」「2026-11-21~2026-11-30 09:00–18:00」或「20:00–08:00」', executor: '先用原生 MCP 工具 rsi_executor 登记 preflight/submit/collect 命令（可用占位符 {config}/{run}/{seed}/{job}，同步前台 submit 省略 get，异步长任务请配 get 与 cancel，analyze 仅用于失败诊断）；异步 get 对已结束或未知/已清理作业应输出终态 JSON（如 {"state":"done","exitCode":0} 或 {"state":"cancelled"}），cancel 对已停止作业应幂等退出 0；preflight 通过且本步 items 已通过 rsi_submit 提交后才完成。' } : {}),
-      ...(p.k === 'rules' ? { metrics: { version: 'E1', items: [{ id: 'score', name: '得分', how: 'metrics.json 的 score', dir: 'up', unit: '分', locked: true, guard: false }] } } : {}),
+      ...(p.k === 'rules' ? { metrics: { version: 'E1', items: [{ id: 'score', name: '得分', how: 'metrics.json 的 score', dir: 'up', unit: '分', locked: true, guard: false }], slices: '可选分档量尺数组：[{ id, name, axis, axisUnit?, stats: [{ id, name, unit?, dir: up|down, threshold?, primary? }] }]；collect 对应输出 slices: { "<id>": [{ at, values: { "<stat>": number }, pass? }] }' } } : {}),
       ...(p.k === 'design' || p.k === 'baseline' ? { upcoming: { groups: [{ id: 'control', label: '对照', vars: {}, control: true }, { id: 'change', label: '一个改动', vars: { '<配置里的键>': '<新取值>' } }], seeds: [11, 23] } } : {}) };
   });
   const evaluate = d.members.find((m) => m.role === 'evaluate')?.catId === ctx.catId && d.rounds.find((r: Data) => r.state === 'evaluating');
@@ -93,11 +94,13 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
   if (evaluate) evaluate.invocationId = ctx.invocationId;
   if (analyze) (analyze.analysis.turns ||= {})[ctx.catId] = ctx.invocationId;
   if (version) version.invocationId = ctx.invocationId;
+  const evalSlices = evaluate ? sliceMatrix(d, evaluate) : [];
+  const analyzeSlices = analyze ? (Array.isArray(analyze.report?.slices) && analyze.report.slices.length ? analyze.report.slices : sliceMatrix(d, analyze)) : [];
   return { objective: d.objective, projectPath: d.objective.projectPath, steps, versions: d.versions,
     // The shell that runs the registered commands, so members write commands that run on this host.
-    shell: platform() === 'win32' ? 'cmd' : 'sh', stepVersions: d.steps, ...(evaluate ? { evaluate: { cycle: evaluate.n, plan: evaluate.plan, runs: evaluate.runs, metrics: evaluate.metrics || d.metrics, comparison: comparison(d, evaluate), library: cycleLibrary(state, d), next: '调用原生 MCP 工具 rsi_conclude 提交 verdict/findings/options；方向 cites 引用之前周期的资料库条目。' } } : {}),
+    shell: platform() === 'win32' ? 'cmd' : 'sh', stepVersions: d.steps, ...(evaluate ? { evaluate: { cycle: evaluate.n, plan: evaluate.plan, runs: evaluate.runs, metrics: evaluate.metrics || d.metrics, comparison: comparison(d, evaluate), ...(evalSlices.length ? { slices: evalSlices } : {}), library: cycleLibrary(state, d), next: '调用原生 MCP 工具 rsi_conclude 提交 verdict/findings/options；方向 cites 引用之前周期的资料库条目。' } } : {}),
     ...(analyze ? { analyze: { cycle: analyze.n, report: { verdict: analyze.report.verdict, findings: analyze.report.summary, confirmation: analyze.confirmation }, plan: analyze.plan, runs: analyze.runs,
-      metrics: analyze.metrics || d.metrics, comparison: comparison(d, analyze), library: cycleLibrary(state, d),
+      metrics: analyze.metrics || d.metrics, comparison: comparison(d, analyze), ...(analyzeSlices.length ? { slices: analyzeSlices } : {}), library: cycleLibrary(state, d),
       next: '调用原生 MCP 工具 rsi_propose({cycle,options:[{k,title,why,kind?,target?,cites?}]}) 交你的方向。target 写这个方向要改的对象（例如 lr、group_size、train.py 的奖励），几个分析成员的第一方向种类和对象都相同就算意见一致。' } } : {}),
     ...(version ? { version: { ...version, next: version.repair ? '修好让它跑不起来的问题并提交 git，调用原生 MCP 工具 rsi_version({change,commit,config})，插件用修好的版本重跑这一周期的计划；修不了就调 rsi_version({cannot:"原因"})。' : '按方向修改项目并提交 git；调用原生 MCP 工具 rsi_version({change,commit,config})。config 是 JSON 对象或项目内 JSON 文件路径（也可用 configPath）。若所选方向契约冲突或无法满足，可调 rsi_version({cannot:"原因"}) 退回重新选方向。' } } : {}) };
 }
@@ -301,6 +304,8 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     || new Set(input.metrics.items.map((m: Data) => m.id)).size !== input.metrics.items.length)) return { error: 'Step 4 requires metrics {version,items:[{id,name,how,dir:up|down,guard?,threshold?,minDelta?,margin?}]}; guardrails require a finite threshold; minDelta and margin are numbers ≥ 0' };
   if (section === 'rules' && input.metrics.items.some((m: Data) => m.minDelta !== undefined && m.margin !== undefined))
     return { error: '同一主指标不能同时设置 minDelta 和 margin：请选择最小有效提升或非劣效容差。' };
+  const sliceSpecErr = section === 'rules' ? validateSliceSpecs(input.metrics.slices) : null;
+  if (sliceSpecErr) return { error: sliceSpecErr };
   // A real objective's stop target names a metric; step 4 must define it, or the target could never be checked.
   const stopMetric = section === 'rules' && d.objective.projectPath && STOP_TARGET.exec(d.objective.stop?.target || '')?.[1].trim();
   if (stopMetric && !input.metrics.items.some((m: Data) => m.id === stopMetric || m.name === stopMetric))

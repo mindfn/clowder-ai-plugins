@@ -1364,3 +1364,228 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
   assert.match(html117OneCollapsed, /class="rsi-map-fold-box" data-fold-key="v2~v7"/);
   assert.match(html117OneCollapsed, /data-rsi-map-act="expand-all"/, 'top button switches back to expand-all when one group is collapsed');
 });
+
+test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user chip customization, cross-cycle/cross-scale honesty, chat markdown & slim exp payload', async () => {
+  const { validateSliceSpecs, normalizeSlicesInput, sliceMatrix, formatComparisonMarkdown } = await import('../dist/compare.js');
+  // 1) Slice spec validation & input normalization
+  assert.equal(validateSliceSpecs([{ id: 'load', name: '负载分档', axis: '并发', axisUnit: 'c', stats: [{ id: 'qps', name: 'QPS', dir: 'up', primary: true }, { id: 'p99', name: 'P99', unit: 'ms', dir: 'down', threshold: 80 }] }]), null);
+  assert.match(validateSliceSpecs([{ id: 'load', name: 'A', axis: 'x', stats: [{ id: 'q', name: 'Q', dir: 'sideways' }] }]), /dir/);
+  assert.match(validateSliceSpecs([{ id: 'a', name: 'A', axis: 'x', stats: [{ id: 'q', name: 'Q', dir: 'up' }] }, { id: 'a', name: 'B', axis: 'y', stats: [{ id: 'q', name: 'Q', dir: 'up' }] }]), /Duplicate slice table/);
+  const normSlices = normalizeSlicesInput({
+    load: [
+      { at: 1, values: { qps: 50, p99: 20, bad: NaN }, pass: true },
+      { at: 8, values: { qps: 120, p99: 75 } },
+      { at: '', values: { qps: 1 } },
+    ],
+  });
+  assert.equal(normSlices.load.length, 2);
+  assert.deepEqual(normSlices.load[0].values, { qps: 50, p99: 20 });
+
+  // 2) Build a realistic multi-cycle objective with 1 main + 8 guardrails + 2 aux + 1 slice table
+  const state = createFixtures(now).state;
+  const project = '/work/sliced-bench';
+  state.projects.unshift({ id: project, name: 'sliced-bench', projectPath: project, exp: true, hostKinds: ['mcp'] });
+  state.objectives[project] = []; state.groups[project] = []; state.units[project] = []; state.library[project] = [];
+  assert.equal(act(state, { op: 'new', statement: 'Throughput under SLA', projectPath: project, prepare: 'codex', evaluate: 'kimi', iterate: 'codex', cats: [{ id: 'codex', name: '砚砚' }, { id: 'kimi', name: '小狸' }] }, { project }, now).ok, true);
+  const id = state.objectives[project][0].id;
+  const d = state.experiments[id];
+  const guards = Array.from({ length: 8 }, (_, i) => ({ id: `g${i + 1}`, name: `质量护栏${i + 1}`, how: `m.g${i + 1}`, dir: 'down', threshold: 0, guard: true }));
+  const sliceSpec = [{
+    id: 'load', name: '负载分档', axis: '并发', axisUnit: 'c',
+    stats: [
+      { id: 'qps', name: 'QPS', dir: 'up', primary: true },
+      { id: 'p50', name: 'P50', unit: 'ms', dir: 'down' },
+      { id: 'p99', name: 'P99', unit: 'ms', dir: 'down', threshold: 80 },
+    ],
+  }];
+  d.metrics = {
+    version: 'E2',
+    items: [
+      { id: 'max-qps', name: '可持续 QPS', how: 'm.max_qps', dir: 'up', unit: 'QPS', guard: false },
+      ...guards,
+      { id: 'aux-mem', name: '显存占用', how: 'm.mem', dir: 'down', unit: 'GB', guard: false },
+    ],
+    slices: sliceSpec,
+  };
+  const zeroGuards = Object.fromEntries(guards.map((g) => [g.id, 0]));
+  d.versions.push(
+    { id: 'v2', parent: 'v1', change: 'E2 baseline', config: {}, at: now + 1000, current: true, status: 'confirmed' },
+    { id: 'v3', parent: 'v2', change: 'W8A8 dynamic batch', config: {}, at: now + 2000, current: false, status: 'proposed' },
+    { id: 'v4', parent: 'v3', change: 'Explore no-ctrl', config: {}, at: now + 3000, current: false, status: 'proposed' },
+  );
+  d.versions[0].current = false;
+  d.objective.currentVersion = 'v2';
+
+  // Round 1 on older scale E1 (tests cross-scale delta suppression!)
+  const r1Metrics = { version: 'E1', items: structuredClone(d.metrics.items), slices: sliceSpec };
+  d.rounds.push({
+    n: 1, version: 'v1', start: now, end: now + 500, state: 'evaluating',
+    plan: { baseline: true, groups: [{ id: 'control', label: '对照', version: 'v1', vars: {}, control: true }], seeds: [1] },
+    metrics: r1Metrics,
+    runs: [{
+      id: 'r1-c-1', group: 'control', seed: 1, state: 'done',
+      metrics: { 'max-qps': 40, ...zeroGuards, 'aux-mem': 12 },
+      slices: { load: [{ at: 1, values: { qps: 40, p50: 15, p99: 30 } }, { at: 8, values: { qps: 50, p50: 40, p99: 95 } }] },
+      env: {},
+    }],
+    report: null, decision: { pick: 'direction', directionId: 'd1', by: '你', at: now + 600 }, events: [],
+  });
+  assert.equal(conclude(state, d, { cycle: 1, verdict: 'baseline', findings: 'E1 baseline', options: [{ k: 'd1', title: 'v2', why: 'scale E2' }] }, now + 550).ok, true);
+
+  // Round 2 paired on E2 (v2 control vs v3 candidate, 2 seeds, all 8 guards pass)
+  d.rounds.push({
+    n: 2, version: 'v3', start: now + 1000, end: now + 1500, state: 'evaluating',
+    plan: {
+      baseline: false, tier: 'confirm',
+      groups: [
+        { id: 'control', label: '当前版本对照', version: 'v2', vars: {}, control: true },
+        { id: 'change', label: 'W8A8', version: 'v3', vars: {}, control: false },
+      ],
+      seeds: [11, 23],
+    },
+    metrics: structuredClone(d.metrics),
+    runs: [
+      { id: 'r2-c-11', group: 'control', seed: 11, state: 'done', metrics: { 'max-qps': 60, ...zeroGuards, 'aux-mem': 14 }, slices: { load: [{ at: 1, values: { qps: 45, p50: 14, p99: 28 } }, { at: 8, values: { qps: 60, p50: 38, p99: 72 } }, { at: 16, values: { qps: 65, p50: 60, p99: 110 } }] }, env: {} },
+      { id: 'r2-c-23', group: 'control', seed: 23, state: 'done', metrics: { 'max-qps': 60, ...zeroGuards, 'aux-mem': 14 }, slices: { load: [{ at: 1, values: { qps: 45, p50: 14, p99: 30 } }, { at: 8, values: { qps: 60, p50: 40, p99: 74 } }, { at: 16, values: { qps: 65, p50: 62, p99: 112 } }] }, env: {} },
+      { id: 'r2-g-11', group: 'change', seed: 11, state: 'done', metrics: { 'max-qps': 120, ...zeroGuards, 'aux-mem': 11 }, slices: { load: [{ at: 1, values: { qps: 90, p50: 8, p99: 15 } }, { at: 8, values: { qps: 120, p50: 22, p99: 52 } }, { at: 16, values: { qps: 130, p50: 35, p99: 76 } }] }, env: {} },
+      { id: 'r2-g-23', group: 'change', seed: 23, state: 'done', metrics: { 'max-qps': 120, ...zeroGuards, 'aux-mem': 11 }, slices: { load: [{ at: 1, values: { qps: 90, p50: 8, p99: 17 } }, { at: 8, values: { qps: 120, p50: 24, p99: 54 } }, { at: 16, values: { qps: 130, p50: 37, p99: 78 } }] }, env: {} },
+    ],
+    report: null, decision: null, events: [],
+  });
+  assert.equal(conclude(state, d, { cycle: 2, verdict: 'keep', findings: 'W8A8 doubles QPS\nClean SLA pass at c=16', options: [{ k: 'd2', title: 'next', why: 'keep tuning', cites: [`${id}-cycle-1`] }] }, now + 1600).ok, true);
+
+  // sliceMatrix aggregated deterministic pass/fail per slice against p99 <= 80 threshold
+  const r2Slices = sliceMatrix(d, d.rounds[1]);
+  assert.equal(r2Slices.length, 1);
+  const c16Ctrl = r2Slices[0].cells.find((c) => c.group === 'control' && c.at === 16);
+  const c16Cand = r2Slices[0].cells.find((c) => c.group === 'change' && c.at === 16);
+  assert.equal(c16Ctrl.pass, false);
+  assert.equal(c16Cand.pass, true);
+  assert.equal(c16Cand.stats.qps.mean, 130);
+
+  // Default console view on round 2: slice view active, 8/8 guards summarized in 1 badge, 2 paired columns
+  const vmSlice = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v3>c1.eval` });
+  const tbl = vmSlice.cycle.compare.table;
+  assert.equal(tbl.hasSlices, true);
+  assert.equal(tbl.isSliceView, true);
+  assert.equal(tbl.activeView, 'slice:load');
+  assert.equal(tbl.guardSummary.text, '质量护栏 8/8 全部通过');
+  assert.equal(tbl.columns.length, 2);
+  assert.equal(tbl.sliceTable.rows.length, 3);
+  assert.equal(tbl.sliceTable.rows[2].diff.ratio, '2×');
+  assert.equal(tbl.sliceTable.rows[2].diff.delta, '+65');
+  assert.equal(tbl.sliceTable.rows[2].diff.better, 'better');
+
+  // Switch to scalar view: >3 passing guardrails auto-collapse into 1 summary section (defaultOpen=false)
+  const vmScalar = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v3>c1.eval`, cmpView: 'scalar' });
+  const scTbl = vmScalar.cycle.compare.table;
+  assert.equal(scTbl.isSliceView, false);
+  const passSec = scTbl.sections.find((s) => s.k === 'guard_pass');
+  assert.equal(passSec.defaultOpen, false);
+  assert.match(passSec.title, /8\/8 全部通过/);
+  assert.equal(passSec.rows.length, 8);
+
+  // User customization via chips: remove stat p50 -> statCustomized=true; add historical E1 column -> crossCycle & sameScale=false
+  const p50Chip = tbl.statChips.find((c) => c.id === 'p50');
+  const vmNoP50 = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v3>c1.eval`, cmpStats: p50Chip.removeVal });
+  assert.equal(vmNoP50.cycle.compare.table.statCustomized, true);
+  assert.deepEqual(vmNoP50.cycle.compare.table.statChips.map((c) => c.id), ['qps', 'p99']);
+
+  const e1Add = tbl.addColumns.find((c) => c.id === 'c1:control');
+  assert.ok(e1Add, 'historical cycle 1 must be in addColumns');
+  assert.match(e1Add.menuLabel, /不同量尺 E1/);
+  // Compare E1 (c1:control) directly against E2 (c2:change) -> delta MUST be suppressed!
+  const vmCrossScale = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v3>c1.eval`, cmpCols: `${id}:2|c1:control,c2:change` });
+  assert.equal(vmCrossScale.cycle.compare.table.colCustomized, true);
+  assert.equal(vmCrossScale.cycle.compare.table.pairSameScale, false);
+  assert.equal(vmCrossScale.cycle.compare.table.pairReferenceOnly, true);
+  assert.equal(vmCrossScale.cycle.compare.table.sliceTable.rows[0].diff.suppressed, true);
+  const vmCrossScaleScalar = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v3>c1.eval`, cmpView: 'scalar', cmpCols: `${id}:2|c1:control,c2:change` });
+  assert.equal(vmCrossScaleScalar.cycle.compare.table.sections[0].rows[0].deltaSuppressed, true);
+  assert.equal(vmCrossScaleScalar.cycle.compare.table.sections[0].rows[0].statusText, '量尺不同');
+
+  // Add a specific passing guardrail into metric chips via cmpMetrics
+  const addG1 = scTbl.addMetrics.find((m) => m.id === 'g1');
+  const vmWithG1 = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v3>c1.eval`, cmpView: 'scalar', cmpMetrics: addG1.addVal });
+  assert.equal(vmWithG1.cycle.compare.table.metricCustomized, true);
+  assert.ok(vmWithG1.cycle.compare.table.metricChips.some((c) => c.id === 'g1'));
+
+  // Round 3 single-group explore (skipControl=true) on E2 -> automatically prepends 1 same-scale reference column (v3 from c2) tagged 跨周期参考
+  d.rounds.push({
+    n: 3, version: 'v4', start: now + 3000, end: now + 3500, state: 'evaluating',
+    plan: { baseline: false, tier: 'explore', skipControl: true, groups: [{ id: 'change', label: 'Explore', version: 'v4', vars: {}, control: false }], seeds: [31] },
+    metrics: structuredClone(d.metrics),
+    runs: [{
+      id: 'r3-g-31', group: 'change', seed: 31, state: 'done',
+      metrics: { 'max-qps': 140, ...zeroGuards, g2: 0.05, 'aux-mem': 10 },
+      slices: { load: [{ at: 1, values: { qps: 100, p50: 7, p99: 14 } }, { at: 8, values: { qps: 140, p50: 20, p99: 48 } }] },
+      env: {},
+    }],
+    report: null, decision: null, events: [],
+  });
+  assert.equal(conclude(state, d, { cycle: 3, verdict: 'tune', findings: 'Explore faster but g2 crossed', options: [{ k: 'd3', title: 'fix g2', why: 'guardrail', cites: [`${id}-cycle-2`] }] }, now + 3600).ok, true);
+  const vmExplore = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v4>c1.eval` });
+  assert.equal(vmExplore.cycle.compare.table.columns.length, 2);
+  assert.equal(vmExplore.cycle.compare.table.columns[0].crossCycle, true);
+  assert.match(vmExplore.cycle.compare.table.columns[0].chipLabel, /跨周期参考/);
+  assert.equal(vmExplore.cycle.compare.table.pairReferenceOnly, true);
+  assert.match(vmExplore.cycle.compare.table.guardSummary.text, /7\/8 通过 · 1 项越线/);
+
+  // 3) Render rsiCompareMatrix in node:vm for sliced view (grouped headers, PASS/FAIL, ratio, seed expansion)
+  const vmMod = await import('node:vm');
+  const src = readFileSync(new URL('../console/components/lineage.js', import.meta.url), 'utf8');
+  const sb = {
+    PDL_COMPONENTS: {},
+    S: { folds: { ['rsi-cmp-slice:v3-1:load:16']: true } },
+    h: (s) => String(s ?? ''),
+    pv: (e) => e === '$.slice' ? tbl : e === '$.cross' ? vmExplore.cycle.compare.table : e,
+    pvList: () => [],
+    pvText: (v) => String(v ?? ''),
+  };
+  vmMod.runInNewContext(src, sb);
+  const sliceHtml = sb.PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix']({ from: '$.slice' }, {}, {});
+  assert.match(sliceHtml, /class="rsi-mx rsi-mx-slice"/);
+  assert.match(sliceHtml, /rowspan="2"/);
+  assert.match(sliceHtml, /colspan="4"/);
+  assert.match(sliceHtml, /PASS/);
+  assert.match(sliceHtml, /FAIL/);
+  assert.match(sliceHtml, /2× \/ \+65/);
+  assert.match(sliceHtml, /质量护栏 8\/8 全部通过/);
+  assert.match(sliceHtml, /class="rsi-mx-seed-row"/);
+  const crossHtml = sb.PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix']({ from: '$.cross' }, {}, {});
+  assert.match(crossHtml, /跨周期参考/);
+
+  // 4) Chat conclusion card Markdown table (both sliced & flat scalar)
+  const sliceMd = formatComparisonMarkdown(d, d.rounds[1]);
+  assert.match(sliceMd, /> 质量护栏 8\/8 全部通过/);
+  assert.match(sliceMd, /\| 并发 \|/);
+  assert.match(sliceMd, /2× \/ \+65/);
+  assert.match(sliceMd, /PASS/);
+  assert.match(sliceMd, /\*\*FAIL\*\*/);
+  assert.doesNotMatch(sliceMd, /质量护栏3/, 'passing guardrails must stay rolled up, not spammed into chat');
+  const exploreMd = formatComparisonMarkdown(d, d.rounds[2]);
+  assert.match(exploreMd, /跨周期参考/);
+  assert.match(exploreMd, /越线护栏：质量护栏2/);
+  // Verify conclusionCard message in state.outbox includes the Markdown table
+  const conclMsg = state.outbox.find((e) => e.kind === 'message' && e.objective === id && e.message?.title?.includes('第 2 周期结论'));
+  assert.ok(conclMsg && conclMsg.message.body.includes('| 并发 |'));
+
+  // 5) Slim exp payload check on a 25-round objective
+  const bigD = state.experiments[id];
+  for (let n = 4; n <= 25; n++) {
+    bigD.versions.push({ id: `v${n + 1}`, parent: `v${n}`, change: `iter ${n}`, config: {}, at: now + n * 1000, current: false, status: 'proposed' });
+    bigD.rounds.push({
+      n, version: `v${n + 1}`, start: now + n * 1000, end: now + n * 1000 + 500, state: 'done',
+      plan: { baseline: false, groups: [{ id: 'control', label: '对照', version: 'v2', vars: {}, control: true }, { id: 'change', label: `iter ${n}`, version: `v${n + 1}`, vars: {}, control: false }], seeds: [100 + n] },
+      runs: [{ id: `r-${n}`, group: 'change', seed: 100 + n, state: 'done', metrics: { 'max-qps': 100 + n, ...zeroGuards, 'aux-mem': 12 }, attempts: [{ start: now, end: now + 100, log: 'x'.repeat(200) }], env: {} }],
+      report: { verdict: 'tune', headline: `r${n}`, summary: `r${n}`, matrix: [{ group: 'change', metric: 'max-qps', mean: 100 + n, sd: null, n: 1, seeds: [{ seed: 100 + n, value: 100 + n, state: 'done' }] }], directions: [], predictions: [], compare: { comparable: true, groups: [] }, attribution: { assessedLayers: [] } },
+      decision: { pick: 'same', by: 'RSI', at: now + n * 1000 + 600 }, events: [],
+    });
+  }
+  const bigVm = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v3>c1.eval` });
+  assert.equal(bigVm.prep.dagNodes.every((n) => !('items' in n)), true, 'dagNodes must not duplicate prep items');
+  assert.equal(bigVm.cycle.report.matrix, undefined, 'cycle.report.matrix must be omitted to avoid duplicating compare');
+  assert.equal(bigVm.cycle.runs[0].attempts, undefined, 'enriched runs must strip raw attempts array');
+  const bytes = Buffer.byteLength(JSON.stringify(bigVm));
+  assert.ok(bytes < 150_000, `expected slim exp payload < 150 KB for 25-round objective, got ${bytes} bytes`);
+});

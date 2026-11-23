@@ -107,7 +107,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
         window: { type: 'string', description: '第 3 步运行时段，如 "不限制"、"20:00–08:00"。' },
         goal: { type: 'object', additionalProperties: true, description: '可选目标补充对象。' },
         executor: { type: 'object', additionalProperties: true, description: '第 3 步可选内联执行器命令对象。' },
-        metrics: { type: 'object', additionalProperties: true, description: '第 4 步量尺定义 { version, items }。' },
+        metrics: { type: 'object', additionalProperties: true, description: '第 4 步量尺定义 { version, items, slices? }；可选 slices 声明分档量尺 [{ id, name, axis, axisUnit?, stats: [{ id, name, unit?, dir: up|down, threshold?, primary? }] }]。' },
         upcoming: { type: 'object', additionalProperties: true, description: '第 5/7 步下一周期计划 { groups, seeds }。' },
         docs: { type: 'array', items: { type: 'object', additionalProperties: true }, description: '可选附带项目/参考文档。' },
       },
@@ -125,7 +125,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
       properties: {
         preflight: { type: 'string', minLength: 1, description: '预检命令。' },
         submit: { type: 'string', minLength: 1, description: '执行命令，支持占位符 {config}、{run}、{seed}。' },
-        collect: { type: 'string', minLength: 1, description: '无空格 JSON 路径模板（如 {run}/metrics.json）或输出 JSON 的采集命令。' },
+        collect: { type: 'string', minLength: 1, description: '无空格 JSON 路径模板（如 {run}/metrics.json）或输出 JSON 的采集命令；支持 metrics 与可选分档输出 slices: { "<tableId>": [{ at, values: { "<stat>": number }, pass? }] }。' },
         get: { type: 'string', minLength: 1, description: '仅异步作业轮询用（使用 {job}）；同步前台 submit 请省略。' },
         cancel: { type: 'string', minLength: 1, description: '超时/失败/停止时的清理命令（支持 {job} 或 {run}）。' },
         analyze: { type: 'string', minLength: 1, description: '仅失败后调用的错误诊断命令（输出短文本，勿填 collect）。' },

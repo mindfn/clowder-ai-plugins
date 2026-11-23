@@ -1122,3 +1122,14 @@ stop:
   title: Change when to stop
 demoProject: "{0} (demo)"
 memberOption: "{0} {1}"
+cmp:
+  colsLabel: Compare
+  colAdd: Add version or group
+  colRemove: Remove from comparison
+  metricsLabel: Metrics
+  metricAdd: Add metric
+  metricRemove: Hide metric
+  statsLabel: Slice stats
+  statAdd: Add slice stat
+  statRemove: Hide slice stat
+  reset: Reset default
