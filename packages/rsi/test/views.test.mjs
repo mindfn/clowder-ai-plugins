@@ -1297,6 +1297,7 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
     { state: 'failed', jobId: 'job-15-a', start: now + 4000, end: now + 9000, error: { raw: 'exit 1' } },
   ];
   const vm117Collect = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: `${x.id}/v15>c1.collect` });
+  assert.equal(vm117Collect.cycle.groups[0].runListId, 'rsi-exp-runs:15:change');
   assert.equal(vm117Collect.cycle.collectSummary.tier, 'explore');
   assert.match(vm117Collect.cycle.collectSummary.concludedHeadline, /Preformal gate intercepted/);
   assert.equal(vm117Collect.cycle.runs[0].jobId, 'job-15-a');

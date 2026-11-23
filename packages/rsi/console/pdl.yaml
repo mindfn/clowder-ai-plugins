@@ -803,6 +803,7 @@ views:
                         text: "@reason"
                         when: "@reason"
                       - type: list
+                        id: rsi-exp-prep
                         from: "@items"
                         row: rsi.prep
                       - type: notice
@@ -1678,6 +1679,7 @@ views:
                     from: $.exp.cycle.groups
                     blocks:
                       - type: list
+                        id: "@runListId"
                         label:
                           t: rsi.exp.groupHead
                           args:
@@ -6197,6 +6199,7 @@ views:
             text: "@reason"
             when: "@reason"
           - type: list
+            id: rsi-dlg-prep
             from: "@items"
             row: rsi.prep
           - type: text

@@ -111,6 +111,18 @@ test('i18n yaml packs parse cleanly and rsi.exp dual-tab removes trailing lineag
   });
   assert.equal(discussRefs,3,'all 3 discussion member UI surfaces must reuse rsi.discussMembers');
   assert.equal(multiSelects,0,'no V2-degraded multi:true select controls should remain');
+  // Every expandable list must declare both `id` (required by Host rows.js `canOpen = ... && o.list`) and `row.key`
+  let expandableLists=0;
+  for(const [viewId,view] of Object.entries(pdl.views))walk(view,(node)=>{
+    if(node.type!=='list')return;
+    const rowObj=typeof node.row==='string'?pdl.rows?.[node.row]:node.row;
+    const hasExpand=node.expand!=null||(rowObj&&rowObj.expand!=null);
+    if(!hasExpand)return;
+    expandableLists++;
+    assert.ok(typeof node.id==='string'&&node.id.length>0,`expandable list in ${viewId} (from=${node.from}) missing id — Host lrow will disable click-to-expand`);
+    assert.ok(typeof rowObj?.key==='string'&&rowObj.key.length>0,`expandable list ${node.id} in ${viewId} missing row.key`);
+  });
+  assert.ok(expandableLists>=10,`expected >=10 expandable lists audited, got ${expandableLists}`);
   assert.equal(zh.applyResult.concluded,'运行失败·已有结论');
   assert.equal(en.applyResult.concluded,'Run failed · concluded');
 });

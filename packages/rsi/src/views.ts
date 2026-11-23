@@ -982,6 +982,7 @@ function exp(): any {
       const sampleCommand = enrichedRuns[0]?.command || renderRunCommand(x, g, { seed: x.plan.seeds?.[0] ?? 0 });
       // A variable may hold an object (reward weights): it reads as JSON.
       return Object.assign({}, g, {
+        runListId: `rsi-exp-runs:${x.n}:${g.id}`,
         shortTitle,
         fullDesc: rawLabel,
         versionChange: v?.change || '',
