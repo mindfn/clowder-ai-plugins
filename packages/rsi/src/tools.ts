@@ -490,7 +490,8 @@ function projectStatus(d: Experiment, input: Data): Data {
       headline: targetRound.report?.headline ? clipTitle(targetRound.report.headline, 120, '') : null,
       decision: targetRound.decision ? { pick: targetRound.decision.pick, directionId: targetRound.decision.directionId || null } : null,
       runsCount: (targetRound.runs || []).length,
-      failedCount: (targetRound.runs || []).filter((r: Data) => r.state === 'failed' || r.error).length,
+      failedCount: (targetRound.runs || []).filter((r: Data) => r.state === 'failed').length,
+      partialCount: (targetRound.runs || []).filter((r: Data) => r.state === 'done' && !!r.error).length,
     } : null;
     return {
       scope: 'brief',

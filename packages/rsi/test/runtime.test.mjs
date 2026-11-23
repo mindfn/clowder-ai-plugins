@@ -2431,3 +2431,33 @@ test('alpha.118: subprocess collect slices flow end-to-end into run.slices, rsi_
   assert.match(card.payload.bodyMarkdown, /1\.5×/);
   assert.match(card.payload.bodyMarkdown, /质量护栏 1\/1 全部通过/);
 });
+
+test('alpha.121: rsi_status brief separates failedCount (state===failed) from partialCount (state===done with error)', async (t) => {
+  const f = await fixture(t), o = await f.create({ repair: '0' });
+  // Seed 1: clean done; Seed 2: done with missing optional metric (real collect error); Seed 3: env failure -> state=failed
+  Object.assign(f.commands, {
+    submit: `node -e 'const fs=require("fs"),s=Number(process.argv[1]);if(s===3){process.exit(1);}const m=s===1?{score:10,guard:1}:{score:11};fs.writeFileSync(process.argv[2]+"/metrics.json",JSON.stringify({metrics:m}))' {seed} {run}`,
+    collect: '{run}/metrics.json',
+  });
+  const metrics = {
+    version: 'E1',
+    items: [
+      { id: 'score', name: 'Score', how: 'metrics.json score', dir: 'up', guard: false },
+      { id: 'guard', name: 'Guard', how: 'metrics.json guard', dir: 'down', threshold: 2, guard: true },
+    ],
+  };
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [1, 2, 3] }, { metrics });
+  const ran = await execute(f, o);
+  const bySeed = Object.fromEntries(ran.runs.map((r) => [r.seed, r]));
+  assert.equal(bySeed[1].state, 'done');
+  assert.equal(bySeed[1].error, null);
+  assert.equal(bySeed[2].state, 'done');
+  assert.equal(bySeed[2].error?.kind, 'real');
+  assert.equal(bySeed[3].state, 'failed');
+  assert.equal(bySeed[3].error?.kind, 'env');
+
+  const brief = await f.tool('status', { objectiveId: o.id, scope: 'brief' }, 'cat-b5ddoo9l', o.thread);
+  assert.equal(brief.round.runsCount, 3);
+  assert.equal(brief.round.failedCount, 1);
+  assert.equal(brief.round.partialCount, 1);
+});
