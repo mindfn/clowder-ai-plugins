@@ -32,6 +32,7 @@ tab:
   metrics: 指标
   collect: 采集
 step:
+  prep: 准备 · {0}
   apply: 应用 · {0}
   collect: 采集
   collectLive: 采集 · 进行中
@@ -79,12 +80,18 @@ govResult:
   direction: 采纳方向
   repairing: 修复中
   waiting: 待执行
+prepResult:
+  claimed: 实现中
+  unclaimed: 等待认领
+  queued: 待运行
+  _: "{0}"
 applyResult:
   done: 已部署
   concluded: 运行失败·已有结论
   failed: 有环境失败
   _: "{0}"
 stepName:
+  prep: 准备
   apply: 应用
   collect: 采集
   eval: 评估
@@ -92,6 +99,7 @@ stepName:
   gov: 治理
 detail:
   node: "{0}"
+  prep: "{0} · 准备"
   gov: "{0} · 治理"
   step: "{0}-{1} · {2}"
   mstep: "{0} · {1}"
@@ -850,6 +858,10 @@ exp:
   attempts: 重试记录
   collectProgress: 采集进度
   collectConcluded: "部分运行失败，但本周期已形成结论：{0}"
+  prepStageQueued: 版本已提交登记，已排入下一周期计划等待执行。
+  prepStageTrigger: 触发来源
+  prepStageTriggerDir: 第 {0} 周期采纳方向
+  prepStageTriggerRepair: 第 {0} 周期运行失败修复
   groupHead: "{0}（{1}）· {2}/{3}"
   readyOverviewTitle: 实验设计总览
   readyOverviewHint: 如需修改或查看原始依据，点击上方 1–7 对应节点即可

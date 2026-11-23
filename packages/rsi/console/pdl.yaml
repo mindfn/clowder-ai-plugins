@@ -1254,6 +1254,12 @@ views:
                     label:
                       of: "@k"
                       map:
+                        prep:
+                          t: rsi.step.prep
+                          args:
+                            - t: rsi.prepResult
+                              args:
+                                - "@result"
                         apply:
                           t: rsi.step.apply
                           args:
@@ -1311,6 +1317,7 @@ views:
                     faint:
                       of: "@k"
                       map:
+                        prep: "@owner"
                         collect:
                           of: "@live"
                           map:
@@ -1348,6 +1355,7 @@ views:
                           of: "@result"
                           map:
                             pending: warn
+                            unclaimed: warn
                             repairing: warn
                             rollback: warn
                             failed: warn
@@ -1362,6 +1370,10 @@ views:
               of: $.exp.step
               map:
                 node: $.exp.ver.id
+                prep:
+                  t: rsi.detail.prep
+                  args:
+                    - $.exp.ver.id
                 _:
                   t: rsi.detail.step
                   args:
@@ -1371,6 +1383,70 @@ views:
                       args:
                         - $.exp.step
             blocks:
+              - type: each
+                from:
+                  - {}
+                when: $.exp.prepStage
+                blocks:
+                  - type: notice
+                    tone: info
+                    text:
+                      of: $.exp.prepStage.status
+                      map:
+                        claimed:
+                          t: rsi.ov.basisPreparingClaimed
+                          args:
+                            - $.exp.prepStage.ownerName
+                        unclaimed:
+                          t: rsi.ov.basisPreparingWaiting
+                          args:
+                            - $.exp.prepStage.ownerName
+                        _: t:rsi.exp.prepStageQueued
+                    action:
+                      type: button
+                      label: t:rsi.exp.retryStage
+                      when: $.exp.prepStage.canWake
+                      act: plugin
+                      args:
+                        request: versionAgain
+                      disabled: $.pending
+                  - type: kv
+                    from:
+                      - k: t:rsi.detail.state
+                        v:
+                          t: rsi.prepResult
+                          args:
+                            - $.exp.prepStage.status
+                      - k: t:rsi.exp.stepMemberLabel
+                        v: $.exp.prepStage.ownerName
+                        when: $.exp.prepStage.ownerName
+                      - k: t:rsi.detail.parent
+                        v: $.exp.prepStage.parent
+                        when: $.exp.prepStage.parent
+                      - k: t:rsi.exp.prepStageTrigger
+                        v:
+                          of: $.exp.prepStage.repair
+                          map:
+                            "true":
+                              t: rsi.exp.prepStageTriggerRepair
+                              args:
+                                - $.exp.prepStage.triggerCycle
+                            _:
+                              t: rsi.exp.prepStageTriggerDir
+                              args:
+                                - $.exp.prepStage.triggerCycle
+                        when: $.exp.prepStage.triggerCycle
+                      - k: t:rsi.detail.change
+                        v: $.exp.prepStage.change
+                        when: $.exp.prepStage.change
+                      - k: t:rsi.detail.commit
+                        v: $.exp.prepStage.commitShort
+                        when: $.exp.prepStage.commitShort
+                      - k: t:rsi.detail.at
+                        v:
+                          of: $.exp.prepStage.at
+                          fmt: stamp
+                        when: $.exp.prepStage.at
               - type: kv
                 when:
                   of: $.exp.step
@@ -3031,6 +3107,12 @@ views:
                     label:
                       of: "@k"
                       map:
+                        prep:
+                          t: rsi.step.prep
+                          args:
+                            - t: rsi.prepResult
+                              args:
+                                - "@result"
                         apply:
                           t: rsi.step.apply
                           args:
@@ -3808,6 +3890,12 @@ views:
                     label:
                       of: "@k"
                       map:
+                        prep:
+                          t: rsi.step.prep
+                          args:
+                            - t: rsi.prepResult
+                              args:
+                                - "@result"
                         apply:
                           t: rsi.step.apply
                           args:
@@ -4156,6 +4244,12 @@ views:
                     label:
                       of: "@k"
                       map:
+                        prep:
+                          t: rsi.step.prep
+                          args:
+                            - t: rsi.prepResult
+                              args:
+                                - "@result"
                         apply:
                           t: rsi.step.apply
                           args:

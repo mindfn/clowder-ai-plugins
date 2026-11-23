@@ -1263,30 +1263,43 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
 
   // alpha.117:
   // 1) Shared preparing node single source of truth across version tree (vm.versions) and overviewMap.nodes,
-  //    with unified `${o.id}/vX>node` selection and safe ver detail without rounds/commit.
+  //    with explicit `prep` stage chip in version tree (`[v16] -> [准备 · 实现中]`), unified `>prep` / `>node` selection,
+  //    and safe ver/prepStage details without rounds/commit.
   x.d.versionRequest = { cycle: 15, title: 'Implement v16 zero-drift kernel', baseVersion: 'v2', since: now + 2000, invocationId: 'inv-117' };
-  const prepPick117 = `${x.id}/v16>node`;
-  const vm117Prep = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: prepPick117 });
+  const prepStepPick117 = `${x.id}/v16>prep`;
+  const prepNodePick117 = `${x.id}/v16>node`;
+  const vm117Prep = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: prepStepPick117 });
   const treePrepRow = vm117Prep.versions.find((row) => row.id === 'v16');
   const mapPrepNode = vm117Prep.overviewMap.nodes.find((n) => n.id === 'v16');
   assert.ok(treePrepRow, 'preparing version must appear in version tree (vm.versions)');
   assert.ok(mapPrepNode, 'preparing version must appear in overviewMap.nodes');
   assert.equal(treePrepRow.parentKey, `${x.id}/v2`);
   assert.equal(mapPrepNode.parent, 'v2');
-  assert.equal(treePrepRow.pick, prepPick117);
-  assert.equal(mapPrepNode.pick, prepPick117);
+  assert.equal(treePrepRow.pick, prepNodePick117);
+  assert.equal(treePrepRow.steps.length, 1);
+  assert.equal(treePrepRow.steps[0].k, 'prep');
+  assert.equal(treePrepRow.steps[0].result, 'claimed');
+  assert.equal(treePrepRow.steps[0].pick, prepStepPick117);
+  assert.equal(treePrepRow.steps[0].selected, true);
+  assert.equal(mapPrepNode.pick, prepStepPick117);
   assert.equal(treePrepRow.nodeState, 'preparing');
   assert.equal(mapPrepNode.state, 'preparing');
   assert.equal(vm117Prep.ver?.id, 'v16');
   assert.equal(vm117Prep.ver?.outcome, 'preparing');
   assert.equal(vm117Prep.ver?.preparing, true);
-  assert.equal(vm117Prep.step, 'node');
+  assert.equal(vm117Prep.step, 'prep');
+  assert.equal(vm117Prep.prepStage?.status, 'claimed');
+  assert.equal(vm117Prep.prepStage?.triggerCycle, 15);
+  assert.equal(vm117Prep.prepStage?.canWake, true);
   assert.equal(vm117Prep.cycle, null);
   assert.equal(vm117Prep.overviewMap.selectedVersion, 'v16');
   assert.equal(vm117Prep.overviewMap.selectedDetail?.id, 'v16');
   assert.equal(vm117Prep.overviewMap.selectedDetail?.causality?.basisKind, 'preparing');
   assert.equal(vm117Prep.overviewMap.stats.total, x.d.versions.length, 'stats.total counts registered versions, not virtual preparing node');
   assert.equal(vm117Prep.overviewMap.stats.preparing, 'v16');
+  const vm117PrepNode = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: prepNodePick117 });
+  assert.equal(vm117PrepNode.step, 'node');
+  assert.equal(vm117PrepNode.prepStage, null);
   delete x.d.versionRequest;
 
   // 2) Enriched collect step fields: collectSummary, jobId, directory, errorBrief, attemptsText

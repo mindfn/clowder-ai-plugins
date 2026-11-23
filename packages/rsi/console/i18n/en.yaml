@@ -32,6 +32,7 @@ tab:
   metrics: Metrics
   collect: Collection
 step:
+  prep: Prepare · {0}
   apply: Apply · {0}
   collect: Collect
   collectLive: Collect · In progress
@@ -79,12 +80,18 @@ govResult:
   direction: Adopted
   repairing: Repairing
   waiting: Pending
+prepResult:
+  claimed: Implementing
+  unclaimed: Awaiting claim
+  queued: Queued
+  _: "{0}"
 applyResult:
   done: Deployed
   concluded: Run failed · concluded
   failed: Environment failures
   _: "{0}"
 stepName:
+  prep: Prepare
   apply: Apply
   collect: Collect
   eval: Evaluate
@@ -92,6 +99,7 @@ stepName:
   gov: Govern
 detail:
   node: "{0}"
+  prep: "{0} · Prepare"
   gov: "{0} · Governance"
   step: "{0}-{1} · {2}"
   mstep: "{0} · {1}"
@@ -850,6 +858,10 @@ exp:
   attempts: Attempts
   collectProgress: Progress
   collectConcluded: "Some runs failed, but this cycle already reached a conclusion: {0}"
+  prepStageQueued: Version submitted and queued for the next cycle.
+  prepStageTrigger: Triggered by
+  prepStageTriggerDir: Cycle {0} adopted direction
+  prepStageTriggerRepair: Cycle {0} failure repair
   groupHead: "{0} ({1}) · {2}/{3}"
   readyOverviewTitle: Experiment design overview
   readyOverviewHint: Click steps 1–7 above to inspect or edit full details

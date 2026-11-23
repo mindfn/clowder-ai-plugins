@@ -193,6 +193,7 @@ function rsiTree(tree: any, rows: any, def: any): any {
   const stepOf = function (c: any): any { return 'c' + c.n + '.' + (c.eval && c.eval !== 'waiting' && c.eval !== 'skipped' ? 'eval' : 'collect'); };
   const out = rows.map(function (r: any, i: any): any {
     const sel = r.key === rowKey, vis = (sel && m && r.cycles.find(function (c: any): any { return c.n === +m[1]; })) || r.cycles[r.cycles.length - 1], steps: Data[] = [];
+    if (r.prep) steps.push(Object.assign({ k: 'prep', step: 'prep' }, r.prep));
     if (vis && vis.apply) steps.push({ k: 'apply', n: vis.n, result: vis.apply, step: 'c' + vis.n + '.apply' });
     if (vis && vis.collect) steps.push({ k: 'collect', n: vis.n, live: vis.live, done: vis.done, total: vis.total, step: 'c' + vis.n + '.collect' });
     if (vis && vis.eval) steps.push({ k: 'eval', n: vis.n, result: vis.eval, delta: vis.delta, step: 'c' + vis.n + '.eval' });
@@ -738,7 +739,12 @@ function exp(): any {
   const tree = rsiTree('rsiSelO', allVersions.map(function (v: any): any {
     const meta = versionMetaById[v.id];
     const verRounds = meta.verRounds;
-    return { key: key(v.id), parent: v.parent && key(v.parent),
+    const prepStep = v.preparing
+      ? { result: v.claimed ? 'claimed' : 'unclaimed', owner: v.ownerName || '' }
+      : meta.outcome === 'preparing'
+        ? { result: 'queued', owner: '' }
+        : null;
+    return { key: key(v.id), parent: v.parent && key(v.parent), prep: prepStep,
       cycles: verRounds.map(function (r: any): any {
         const live = r.state === 'running', disc = r.report && discussionOf(r), bypassed = r.state === 'repaired' || r.state === 'repairing';
         const hasEnvFail = r.runs.some((u: Data) => u.error && u.error.kind === 'env');
@@ -1146,7 +1152,7 @@ function exp(): any {
       values: liveOwners.map((x) => x.id),
     };
   };
-  const currentStep = m ? m[2] : 'node';
+  const currentStep = m ? m[2] : tree.stepKey === 'prep' ? 'prep' : 'node';
   const liveNow = Date.now();
   const schedNow = state.now && Math.abs(liveNow - state.now) < 36 * 3_600_000 ? state.now : liveNow;
   const legacyTrend = rounds.filter(best).map(function (x: any): any { return { n: x.k, version: x.version, label: `${x.version}-${x.k}`, value: Number(best(x).mean.toPrecision(4)) }; });
@@ -1216,7 +1222,7 @@ function exp(): any {
       return {
         id: v.id,
         parent: v.parent || null,
-        pick: `${key(v.id)}>node`,
+        pick: `${key(v.id)}>prep`,
         selected: ver?.id === v.id,
         state: 'preparing',
         preparing: true,
@@ -1274,7 +1280,7 @@ function exp(): any {
       better = diff === 0 ? 'same' : ((diff > 0) === (dir === 'up') ? 'better' : 'worse');
     }
     const tier = lastR?.plan?.tier || (lastR?.plan?.baseline ? 'baseline' : lastR ? 'confirm' : '');
-    const pickTarget = lastR ? `${key(v.id)}>c${lastR.k}.${lastR.report ? 'eval' : 'collect'}` : `${key(v.id)}>node`;
+    const pickTarget = lastR ? `${key(v.id)}>c${lastR.k}.${lastR.report ? 'eval' : 'collect'}` : meta.outcome === 'preparing' ? `${key(v.id)}>prep` : `${key(v.id)}>node`;
     return {
       id: v.id,
       parent: v.parent || null,
@@ -1430,6 +1436,19 @@ function exp(): any {
       concludedHeadline: failedN > 0 && r.report && r.report.verdict !== 'insufficient' && r.report.headline ? clipLine(r.report.headline, 180) : '',
     };
   })() : null;
+  const prepStage = ver && currentStep === 'prep' ? {
+    version: ver.id,
+    status: ver.preparing ? (ver.claimed ? 'claimed' : 'unclaimed') : 'queued',
+    ownerName: ver.ownerName || memberName('iterate') || '',
+    parent: ver.parent || '',
+    triggerCycle: ver.triggerCycle || null,
+    triggerVersion: ver.triggerVersion || ver.parent || '',
+    repair: !!ver.repair,
+    change: ver.change || '',
+    commitShort: ver.commitShort || '',
+    at: ver.at || null,
+    canWake: !!o.projectPath && !!ver.preparing,
+  } : null;
   return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, projectPath: o.projectPath, goal: o.goal, goalQuote, editingGoal: S.rsiEditGoal, execStatus, execFlow, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
     trend: legacyTrend,
@@ -1442,7 +1461,7 @@ function exp(): any {
     overviewLens: S.rsiOverviewLens,
     overviewMap,
     hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.filter(function (p: any): any { return p.result !== 'unresolved'; }).length },
-    versions: tree.rows, ver: ver, step: currentStep, candidate: d.candidate ? d.candidate.version : null,
+    versions: tree.rows, ver: ver, step: currentStep, prepStage, candidate: d.candidate ? d.candidate.version : null,
     cycle: r && Object.assign({}, r, { versionRound: `${r.version}-${r.k}`, canReeval: !!o.projectPath && ['done', 'evaluating'].includes(r.state), waiting: waiting(r), evaluating: r.state === 'evaluating', evalState: evalStateOf(r), discussState: discussStateOf(r), evalMetrics: evalMetricsOf(r), groups: cycleGroups, main: mainOf(r),
       stage: stageOfCycle(r, currentStep),
       stageOwners: stageOwnersOf(r),
