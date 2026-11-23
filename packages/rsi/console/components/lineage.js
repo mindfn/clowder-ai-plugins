@@ -467,8 +467,9 @@ function rsiOverviewDefaults() {
     clusterTitle: '{1} unpromoted trials from {0} (chronological, none replaced {0})',
     cycleOf: 'Cycle {0}',
     stCurrent: 'Current', stConfirmed: 'Confirmed', stRunning: 'Running', stPruned: 'Refuted ✕',
-    stGuardrail: 'Guardrail ✕', stWorse: 'Below control', stTied: 'Tied',
+    stDeadEnd: 'Dead-end ✕', stGuardrail: 'Guardrail ✕', stWorse: 'Below control', stTied: 'Tied',
     stInsufficient: 'Insufficient', stRepaired: 'Superseded', stExplore: 'Explore', stBaseline: 'Baseline',
+    annotatedBy: 'Source',
     trigBaseline: 'Initial baseline', trigParent: 'Based on {0}', trigRepair: 'Repaired after cycle {0} ({1})',
     trigDir: 'Cycle {0} direction: {1}', trigDec: 'Cycle {0} decision: {1}', trigCycle: 'Cycle {0} ({1})',
     basisRunning: 'Running', basisEval: 'Awaiting evaluation', basisRepaired: 'Superseded by repair', basisNone: 'No conclusion yet',
@@ -589,6 +590,7 @@ function rsiOverviewStateTag(n, L) {
   if (n.state === 'current') return { cls: 'ok', text: L.stCurrent };
   if (n.state === 'running') return { cls: 'info', text: L.stRunning };
   if (n.state === 'confirmed') return { cls: 'ok', text: L.stConfirmed };
+  if (n.state === 'deadEnd') return { cls: 'danger', text: L.stDeadEnd };
   if (n.state === 'guardrail') return { cls: 'danger', text: L.stGuardrail };
   if (n.pruned || n.state === 'pruned') return { cls: 'danger', text: L.stPruned };
   if (n.state === 'worse') return { cls: 'danger', text: L.stWorse };
@@ -681,7 +683,7 @@ function rsiRenderOverviewCanvas(data, L, opts) {
     return '<button type="button" class="' + cls + '" data-state="' + esc(n.state || '') + '" data-ver="' + esc(n.id) + '" aria-pressed="' + (isSel ? 'true' : 'false') + '"' + actAttrs +
       ' style="left:' + q.x + 'px;top:' + q.y + 'px;width:' + CW + 'px;height:' + CH + 'px" title="' + esc((n.id + ' · ' + (n.valueText || '—') + ' · ' + (n.changeBrief || n.changeShort || '')).trim()) + '">' +
       '<span class="rsi-map-top"><span class="rsi-map-id">' + esc(n.id) + '</span>' + stateBadge + '<span class="rsi-map-val">' + esc(compactVal) + '</span></span>' +
-      '<span class="rsi-map-sub">' + esc(n.changeShort || n.id) + '</span>' +
+      '<span class="rsi-map-sub">' + esc(n.tag || n.changeShort || n.id) + '</span>' +
       '<span class="rsi-map-foot"><span class="rsi-asp-dots">' + dots + '</span>' + deltaHtml + '</span>' +
       barHtml + '</button>';
   }).join('');
@@ -732,6 +734,10 @@ function rsiRenderOverviewInspector(data, L, selId, opts) {
           (r.commit ? ' · ' + esc(r.commit) : '') + (r.jobId ? ' · ' + esc(r.jobId) : '') + '</span>';
       }).join('') + '</div>'
     : '';
+  const notePills = [
+    n.tag ? '<span class="rsi-mx-pill" data-tone="' + (n.pruned ? 'danger' : 'muted') + '">' + esc(n.tag) + '</span>' : '',
+    n.annotatedBy ? '<span class="rsi-mx-pill" data-tone="muted">' + esc((L.annotatedBy || 'Source') + '：' + n.annotatedBy) + '</span>' : '',
+  ].filter(Boolean).join('');
   return '<div class="rsi-map-inspect' + (opts.mode === 'modal' ? ' in-modal' : '') + '">' +
     '<div class="rsi-map-ins-hd">' +
       '<div class="rsi-map-ins-id">' +
@@ -745,6 +751,7 @@ function rsiRenderOverviewInspector(data, L, selId, opts) {
       '</div>' +
     '</div>' +
     '<div class="rsi-map-ins-meta">' + esc(metaParts.join(' · ')) + '</div>' +
+    (notePills ? '<div class="rsi-map-ins-note">' + notePills + '</div>' : '') +
     '<div class="rsi-map-ins-chain">' +
       '<p><b>' + esc(L.lblTrigger) + '：</b>' + esc(c.trigger) + '</p>' +
       '<p><b>' + esc(L.lblAction) + '：</b>' + esc(c.action) + '</p>' +
@@ -968,16 +975,16 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
       'const sz=(id,sn)=>{if(sn[id])return{w:CW,h:CH};const ns=Object.assign({},sn);ns[id]=1;const ch=(kids[id]||[]).filter(c=>!ns[c.id]);if(!ch.length)return{w:CW,h:CH};const s=sp(ch);let h=0,mw=0;if(s.lf.length>=4){const cols=cf(s.lf.length),rows=Math.ceil(s.lf.length/cols);h=BH+BP*2+rows*CH+(rows-1)*GY;mw=BP*2+cols*CW+(cols-1)*GGX;s.br.forEach(b=>{const z=sz(b.id,ns);h+=GY+z.h;mw=Math.max(mw,z.w)})}else{ch.forEach((c,i)=>{const z=sz(c.id,ns);h+=(i?GY:0)+z.h;mw=Math.max(mw,z.w)})}return{w:CW+GX+mw,h:Math.max(CH,h)}};' +
       'const pl=(id,x,ty,sn)=>{if(sn[id])return;const ns=Object.assign({},sn);ns[id]=1;const z=sz(id,sn);pos[id]={x,y:ty+Math.round((z.h-CH)/2)};const ch=(kids[id]||[]).filter(c=>!ns[c.id]);if(!ch.length)return;const s=sp(ch),cx=x+CW+GX;if(s.lf.length>=4){const cols=cf(s.lf.length),rows=Math.ceil(s.lf.length/cols),bw=BP*2+cols*CW+(cols-1)*GGX,bh=BH+BP*2+rows*CH+(rows-1)*GY;let cy=ty;boxes.push({p:id,n:s.lf.length,x:cx,y:cy,w:bw,h:bh});edges.push({f:id,bx:cx,by:cy+Math.round(bh/2)});s.lf.forEach((lf,i)=>{const c=i%cols,r=Math.floor(i/cols);pos[lf.id]={x:cx+BP+c*(CW+GGX),y:cy+BH+BP+r*(CH+GY)}});cy+=bh;s.br.forEach(b=>{cy+=GY;const bz=sz(b.id,ns);pl(b.id,cx,cy,ns);edges.push({f:id,t:b.id});cy+=bz.h})}else{let cy=ty;ch.forEach(c=>{const cz=sz(c.id,ns);pl(c.id,cx,cy,ns);edges.push({f:id,t:c.id});cy+=cz.h+GY})}};' +
       'let ry=PAD;roots.forEach(r=>{const z=sz(r.id,{});pl(r.id,PAD,ry,{});ry+=z.h+GY*2});let mx=0,my=0;Object.values(pos).forEach(q=>{mx=Math.max(mx,q.x+CW);my=Math.max(my,q.y+CH)});boxes.forEach(b=>{mx=Math.max(mx,b.x+b.w);my=Math.max(my,b.y+b.h)});' +
-      'let sel=D.selectedVersion||D.currentVersion||(N[0]&&N[0].id);const stMap={current:L.stCurrent,confirmed:L.stConfirmed,running:L.stRunning,pruned:L.stPruned,guardrail:L.stGuardrail,worse:L.stWorse,tied:L.stTied,insufficient:L.stInsufficient,repaired:L.stRepaired,baseline:L.stBaseline,explored:L.stExplore};' +
+      'let sel=D.selectedVersion||D.currentVersion||(N[0]&&N[0].id);const stMap={current:L.stCurrent,confirmed:L.stConfirmed,running:L.stRunning,pruned:L.stPruned,deadEnd:L.stDeadEnd,guardrail:L.stGuardrail,worse:L.stWorse,tied:L.stTied,insufficient:L.stInsufficient,repaired:L.stRepaired,baseline:L.stBaseline,explored:L.stExplore};' +
       'document.getElementById("t").textContent=D.objectiveName||D.objectiveId;document.getElementById("sub").textContent=(L.metric||"Metric")+": "+(D.metric&&D.metric.name||"")+" · "+(L.scale||"Scale")+" "+(D.metricVersion||"E1");document.getElementById("st").textContent=(L.total||"Total")+" "+N.length+" · "+(L.current||"Current")+" "+(D.currentVersion||"—")+" · "+(L.pruned||"Refuted")+" "+((D.stats&&D.stats.pruned)||0);' +
       'const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");function render(){const on={};let c=sel,g=0;while(c&&!on[c]&&g++<500){on[c]=1;c=byId[c]&&byId[c].parent}const W=mx+PAD,H=my+PAD;const cv=document.getElementById("cv");cv.style.width=W+"px";cv.style.height=H+"px";' +
       'const bx=boxes.map(b=>"<div class=\\"clbox\\" style=\\"left:"+b.x+"px;top:"+b.y+"px;width:"+b.w+"px;height:"+b.h+"px\\"><div class=\\"clhdr\\">"+esc((L.clusterTitle||"{1} unpromoted trials from {0}").replace(/\\{0\\}/g,b.p).replace(/\\{1\\}/g,String(b.n)))+"</div></div>").join("");' +
       'const ep=edges.map(e=>{const a=pos[e.f],x1=a.x+CW,y1=a.y+CH/2;if(e.bx!=null){const m=Math.round((x1+e.bx)/2),cl="e cl"+(on[e.f]&&byId[sel]&&byId[sel].parent===e.f?" on":"");return"<path class=\\""+cl+"\\" d=\\""+(Math.abs(y1-e.by)<1?"M"+x1+","+y1+" L"+e.bx+","+e.by:"M"+x1+","+y1+" C"+m+","+y1+" "+m+","+e.by+" "+e.bx+","+e.by)+"\\"/>"}const b=pos[e.t],x2=b.x,y2=b.y+CH/2,m=Math.round((x1+x2)/2),cl="e"+(on[e.f]&&on[e.t]?" on":"")+(byId[e.t]&&byId[e.t].pruned?" pr":"");return"<path class=\\""+cl+"\\" d=\\""+(Math.abs(y1-y2)<1?"M"+x1+","+y1+" L"+x2+","+y2:"M"+x1+","+y1+" C"+m+","+y1+" "+m+","+y2+" "+x2+","+y2)+"\\"/>"}).join("");' +
-      'const nd=N.map(n=>{const q=pos[n.id],cl="nd"+(n.state==="current"?" cur":"")+(n.pruned?" pr":"")+(n.id===sel?" sel":""),dt=(n.aspects||[]).map(a=>"<i class=\\""+(a==="object"?"obj":a==="observability"?"obs":"rub")+"\\"></i>").join("");const st=stMap[n.state]||"";return"<button class=\\""+cl+"\\" data-id=\\""+esc(n.id)+"\\" style=\\"left:"+q.x+"px;top:"+q.y+"px;width:"+CW+"px;height:"+CH+"px\\"><div class=\\"top\\"><span class=\\"id\\">"+esc(n.id)+"</span><span class=\\"val\\">"+esc(n.value!=null?String(n.value):"—")+"</span></div><div class=\\"subt\\">"+esc(n.changeShort||"")+"</div><div class=\\"foot\\"><span class=\\"dots\\">"+dt+"</span><span>"+esc(n.pruned?st:n.deltaText||st)+"</span></div></button>"}).join("");' +
+      'const nd=N.map(n=>{const q=pos[n.id],cl="nd"+(n.state==="current"?" cur":"")+(n.pruned?" pr":"")+(n.id===sel?" sel":""),dt=(n.aspects||[]).map(a=>"<i class=\\""+(a==="object"?"obj":a==="observability"?"obs":"rub")+"\\"></i>").join("");const st=stMap[n.state]||"";return"<button class=\\""+cl+"\\" data-id=\\""+esc(n.id)+"\\" style=\\"left:"+q.x+"px;top:"+q.y+"px;width:"+CW+"px;height:"+CH+"px\\"><div class=\\"top\\"><span class=\\"id\\">"+esc(n.id)+"</span><span class=\\"val\\">"+esc(n.value!=null?String(n.value):"—")+"</span></div><div class=\\"subt\\">"+esc(n.tag||n.changeShort||"")+"</div><div class=\\"foot\\"><span class=\\"dots\\">"+dt+"</span><span>"+esc(n.pruned?st:n.deltaText||st)+"</span></div></button>"}).join("");' +
       'cv.innerHTML=bx+"<svg class=\\"edges\\" width=\\""+W+"\\" height=\\""+H+"\\">"+ep+"</svg>"+nd;cv.querySelectorAll(".nd").forEach(b=>b.onclick=()=>{sel=b.dataset.id;render()});const n=byId[sel]||N[0];if(!n)return;const sd=D.selectedDetail&&D.selectedDetail.id===n.id?D.selectedDetail:null;const st=stMap[n.state]||n.state||"";' +
       'const asp=n.aspectKind==="baseline"?(L.baseline||"Baseline"):(n.aspects&&n.aspects.length?n.aspects.map(a=>a==="object"?(L.obj||a):a==="observability"?(L.obs||a):(L.rub||a)).join(" · "):(L.unlabeled||"Unlabeled"));' +
       'const actTxt=(sd&&sd.causality&&sd.causality.action)||n.changeBrief||n.changeShort||"—";const basTxt=(sd&&sd.causality&&sd.causality.basisText)||n.headlineBrief||"";' +
-      'document.getElementById("as").innerHTML="<h2 style=\\"margin:0 0 6px;font-size:17px\\">"+esc(n.id)+" <span class=\\"pill\\">"+esc(st)+"</span></h2><div style=\\"font-size:12px;color:var(--muted);margin-bottom:12px\\">"+esc((n.parent?n.parent+" → ":"")+(n.metricVersion||"")+(n.commitShort?" · "+n.commitShort:"")+" · "+asp)+"</div>"+' +
+      'document.getElementById("as").innerHTML="<h2 style=\\"margin:0 0 6px;font-size:17px\\">"+esc(n.id)+" <span class=\\"pill\\">"+esc(st)+"</span>"+(n.tag?" <span class=\\"pill\\">"+esc(n.tag)+"</span>":"")+"</h2><div style=\\"font-size:12px;color:var(--muted);margin-bottom:12px\\">"+esc((n.parent?n.parent+" → ":"")+(n.metricVersion||"")+(n.commitShort?" · "+n.commitShort:"")+" · "+asp+(n.annotatedBy?" · "+(L.annotatedBy||"Source")+": "+n.annotatedBy:""))+"</div>"+' +
       '"<div style=\\"font-size:13px;margin-bottom:12px\\"><b>"+esc(D.metric&&D.metric.name||L.metric||"Metric")+": </b>"+esc(n.valueText||"—")+(n.deltaText?" ("+esc((n.comparable?(L.sameScale||"Same-scale"):(L.refDelta||"Ref"))+" "+n.deltaText)+")":"")+"</div>"+' +
       '"<div class=\\"chain\\"><p><b>"+esc(L.lblAction||"Change")+": </b>"+esc(actTxt)+"</p>"+(basTxt?"<p><b>"+esc(L.lblBasis||"Basis")+": </b>"+esc(basTxt)+"</p>":"")+"</div>"+' +
       '((sd&&sd.receipts&&sd.receipts.length)?"<table><thead><tr><th>"+esc(L.colSeed||"seed")+"</th><th>"+esc(L.colState||"status")+"</th><th>"+esc(L.colCommit||"commit")+"</th><th>"+esc(L.colNote||"note")+"</th></tr></thead><tbody>"+sd.receipts.map(r=>"<tr><td>"+esc(r.seed)+"</td><td>"+esc(r.state)+"</td><td>"+esc(r.commit||"—")+"</td><td>"+esc(r.jobId||r.error||"—")+"</td></tr>").join("")+"</tbody></table>":"")}render()})();</script></body></html>';

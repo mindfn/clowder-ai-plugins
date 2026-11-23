@@ -83,13 +83,19 @@ test('i18n yaml packs parse cleanly and rsi.exp dual-tab removes trailing lineag
   const js=readFileSync(new URL('../console/components/lineage.js',import.meta.url),'utf8');
   for(const m of js.matchAll(/data-act="plugSet"[^>]*data-k="([^"]+)"/g))usedKeys.add(m[1]);
   for(const k of usedKeys)assert.equal(expQuery[k],`state.${k}`,`requests.exp.query missing plugSet key: ${k}`);
-  // Fullscreen map preview must use Host native viewport dialog (dlg.rsiMap), never plugin-injected body modal
+  // Fullscreen map preview must use Host native viewport dialog (dlg.rsiMap), never plugin-injected body modal; narrow panel defaults to trend line and opens dlg.rsiMap directly
   const mapDlg=pdl.views['dlg.rsiMap'];
   assert.equal(mapDlg?.layout,'viewport');
   assert.equal(mapDlg?.span,'full');
   assert.equal(mapDlg?.sources?.exp,'exp');
-  let opensMapDlg=false;
-  walk(pdl.views['rsi.exp'],(node)=>{if(node.act==='dialog'&&node.args?.kind==='rsiMap')opensMapDlg=true;});
+  let opensMapDlg=false,inlineOverviewMaps=0,inlineTrends=0;
+  walk(pdl.views['rsi.exp'],(node)=>{
+    if(node.act==='dialog'&&node.args?.kind==='rsiMap')opensMapDlg=true;
+    if(node.use==='plugin:official.rsi/rsiOverviewMap')inlineOverviewMaps++;
+    if(node.use==='plugin:official.rsi/rsiTrend')inlineTrends++;
+  });
   assert.equal(opensMapDlg,true);
+  assert.equal(inlineOverviewMaps,0,'narrow rsi.exp panel should render rsiTrend directly and open dlg.rsiMap on click');
+  assert.equal(inlineTrends,1);
   assert.doesNotMatch(js,/rsi-map-modal|addEventListener\(['"]keydown['"]/);
 });

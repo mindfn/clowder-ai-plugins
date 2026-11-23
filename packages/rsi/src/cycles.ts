@@ -274,6 +274,17 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   if (!['baseline', 'keep', 'tune', 'rollback', 'sunset', 'insufficient'].includes(input.verdict)
     || !(text(input.findings) || Array.isArray(input.findings) && input.findings.length && input.findings.every(text))
     || (!analysts.length || options.length) && badOptions(state, d, options, round.n)) return { error: 'Provide verdict, findings and distinct options {k,title,why,kind?,target?,cites?}; cite previous cycle library entries when available' };
+  if (input.disposition !== undefined && !['advance', 'dead_end'].includes(input.disposition)) {
+    return { error: 'disposition must be "advance" or "dead_end"' };
+  }
+  const disposition = input.disposition as ('advance' | 'dead_end' | undefined);
+  let tag: string | undefined;
+  if (input.tag !== undefined) {
+    if (typeof input.tag !== 'string' || !input.tag.trim() || input.tag.trim().length > 32) {
+      return { error: 'tag must be a non-empty string of at most 32 characters' };
+    }
+    tag = input.tag.trim();
+  }
   const findings = Array.isArray(input.findings) ? input.findings.join('\n') : input.findings, compared = comparison(d, round);
   const member = d.members.find((m) => m.role === 'evaluate')!, { matrix: cells, ...compare } = compared;
   const comparisons = Array.isArray(input.comparisons)
@@ -295,6 +306,8 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
       headline: findings.split('\n')[0],
       summary: findings,
       matrix: cells,
+      ...(disposition ? { disposition } : {}),
+      ...(tag ? { tag } : {}),
       ...(comparisons.length ? { comparisons } : {}),
       compare: { ...compare, note: '仅比较本周期 control；区间为种子均值 ± 样本标准差。' },
     };
@@ -357,6 +370,8 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   round.stageMembers.eval = { catId: member.catId, name: member.name };
   // The comparison's cells are stored once, as the report's matrix.
   round.report = { verdict: input.verdict, headline: findings.split('\n')[0], summary: findings, matrix: cells,
+    ...(disposition ? { disposition } : {}),
+    ...(tag ? { tag } : {}),
     ...(comparisons.length ? { comparisons } : {}),
     predictions: checkPredictions(d, round, compared), asks: [], directions: directionsFrom(d, options, member, []), agree: true,
     compare: { ...compare, note: '仅比较本周期 control；区间为种子均值 ± 样本标准差。' }, confirmation,

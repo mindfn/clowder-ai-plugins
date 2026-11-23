@@ -127,6 +127,7 @@ ov:
   stConfirmed: Confirmed
   stRunning: Running
   stPruned: Refuted ✕
+  stDeadEnd: Dead-end ✕
   stGuardrail: Guardrail ✕
   stWorse: Below control
   stTied: Tied
@@ -135,6 +136,7 @@ ov:
   stExplore: Explore
   stBaseline: Baseline
   stCandidate: Candidate
+  annotatedBy: Source
   refPaired: vs {0}
   refExplore: Explore (no same-cycle control)
   refSingle: Baseline group

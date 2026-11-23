@@ -145,7 +145,7 @@ export function viewModel(state: RsiState, view: string, query: Data = {}): any 
     rsiGovFile: typeof query.govFile === 'string' ? query.govFile : '',
     rsiGovDiffMode: query.govDiffMode === 'split' ? 'split' : 'unified',
     rsiTrendMetric: typeof query.trendMetric === 'string' ? query.trendMetric : '',
-    rsiOverviewMode: query.overviewMode === 'trend' ? 'trend' : 'map',
+    rsiOverviewMode: query.overviewMode === 'map' ? 'map' : 'trend',
     rsiOverviewLens: query.overviewLens === 'aspect' ? 'aspect' : 'metric',
     rsiCmpMode: query.cmpMode === 'cross' ? 'cross' : 'cycle',
     dialog: query.dialog,
@@ -634,23 +634,41 @@ function exp(): any {
     if (v.status === 'confirmed') return { outcome: 'confirmed', pruned: false, reason: '' };
     if (v.status === 'candidate') return { outcome: 'candidate', pruned: false, reason: '' };
     const lastR = verRounds[verRounds.length - 1] || null;
-    if (v.status === 'rejected') return { outcome: 'pruned', pruned: true, reason: lastR?.report?.headline || '' };
+    const disposition = v.disposition || lastR?.report?.disposition || '';
+    const tagReason = v.tag || lastR?.report?.tag || lastR?.report?.headline || '';
+    if (disposition === 'dead_end') return { outcome: 'deadEnd', pruned: true, reason: tagReason };
+    if (v.status === 'rejected') return { outcome: 'pruned', pruned: true, reason: tagReason };
     if (!lastR) return { outcome: 'proposed', pruned: false, reason: '' };
     if (lastR.state === 'repaired') return { outcome: 'repaired', pruned: false, reason: '' };
     const verdict = lastR.report?.verdict || '';
-    if (verdict === 'rollback' || verdict === 'sunset') return { outcome: 'pruned', pruned: true, reason: lastR.report?.headline || '' };
-    if (verdict === 'insufficient') return { outcome: 'insufficient', pruned: false, reason: lastR.report?.headline || '' };
+    if (verdict === 'rollback' || verdict === 'sunset') return { outcome: 'pruned', pruned: true, reason: tagReason };
+    if (verdict === 'insufficient') return { outcome: 'insufficient', pruned: false, reason: tagReason };
     if (lastR.report?.compare?.comparable) {
       const candGroups = (lastR.plan?.groups || []).filter((g: Data) => g.version === v.id && !g.control);
       const judged = lastR.report.compare.groups || [];
       const ownJudged = candGroups.map((g: Data) => judged.find((j: Data) => j.group === g.id)).filter(Boolean);
       if (ownJudged.length && ownJudged.every((j: Data) => !j.eligible && Array.isArray(j.guardrails) && j.guardrails.some((g: Data) => g.pass === false || g.crossed === true))) {
-        return { outcome: 'guardrail', pruned: true, reason: lastR.report?.headline || '' };
+        return { outcome: 'guardrail', pruned: true, reason: tagReason };
       }
       if (ownJudged.length && ownJudged.every((j: Data) => j.eligible && !j.beatsControl)) {
-        const cmpDir = lastR.report.compare.dir || d.metrics.items.find((m: Data) => m.id === lastR.report.compare.metric || !m.guard)?.dir || 'up';
-        const isWorse = ownJudged.every((j: Data) => typeof j.delta === 'number' && Number.isFinite(j.delta) && (cmpDir === 'up' ? j.delta < -1e-9 : j.delta > 1e-9));
-        return { outcome: isWorse ? 'worse' : 'tied', pruned: false, reason: lastR.report?.headline || '' };
+        const mItems = (lastR.metrics || d.metrics).items || [];
+        const mDef = mItems.find((m: Data) => m.id === lastR.report.compare.metric) || mItems.find((m: Data) => !m.guard);
+        const cmpDir = lastR.report.compare.dir || mDef?.dir || 'up';
+        const minDelta = typeof mDef?.minDelta === 'number' && Number.isFinite(mDef.minDelta) && mDef.minDelta > 0 ? mDef.minDelta : 0;
+        const ctrlGroup = (lastR.plan?.groups || []).find((g: Data) => g.control);
+        const cells = Array.isArray(lastR.report.matrix) ? lastR.report.matrix : [];
+        const ctrlCell = ctrlGroup && mDef ? cells.find((c: Data) => c.group === ctrlGroup.id && c.metric === mDef.id) : null;
+        const isWorse = ownJudged.every((j: Data) => {
+          if (typeof j.delta !== 'number' || !Number.isFinite(j.delta)) return false;
+          if (minDelta > 0) return cmpDir === 'up' ? j.delta <= -minDelta : j.delta >= minDelta;
+          const candCell = mDef ? cells.find((c: Data) => c.group === j.group && c.metric === mDef.id) : null;
+          if (candCell && ctrlCell && typeof candCell.lo === 'number' && typeof candCell.hi === 'number' && typeof ctrlCell.lo === 'number' && typeof ctrlCell.hi === 'number') {
+            const overlaps = candCell.lo <= ctrlCell.hi && ctrlCell.lo <= candCell.hi;
+            if (overlaps) return false;
+          }
+          return cmpDir === 'up' ? j.delta < -1e-9 : j.delta > 1e-9;
+        });
+        return { outcome: isWorse ? 'worse' : 'tied', pruned: false, reason: tagReason };
       }
     }
     return { outcome: 'explored', pruned: false, reason: '' };
@@ -665,7 +683,7 @@ function exp(): any {
     const nodeState = v.current ? 'current'
       : isRunningVer ? 'running'
       : v.status === 'candidate' ? 'candidate'
-      : o.projectPath && ['pruned', 'guardrail', 'worse', 'tied', 'confirmed', 'insufficient', 'repaired'].includes(out.outcome) ? out.outcome
+      : o.projectPath && ['pruned', 'deadEnd', 'guardrail', 'worse', 'tied', 'confirmed', 'insufficient', 'repaired'].includes(out.outcome) ? out.outcome
       : '';
     versionMetaById[v.id] = {
       aspectKind: asp.kind,
@@ -673,6 +691,9 @@ function exp(): any {
       outcome: out.outcome,
       pruned: out.pruned,
       pruneReason: out.reason,
+      disposition: v.disposition || lastR?.report?.disposition || '',
+      tag: v.tag || lastR?.report?.tag || '',
+      annotatedBy: v.annotatedBy || '',
       nodeState,
       commitShort: v.commit ? String(v.commit).slice(0, 7) : '',
       metricVersion: lastR?.metrics?.version || d.metrics.version,
@@ -1178,6 +1199,9 @@ function exp(): any {
       better,
       comparable,
       commitShort: meta.commitShort,
+      ...(meta.disposition ? { disposition: meta.disposition } : {}),
+      ...(meta.tag ? { tag: meta.tag } : {}),
+      ...(meta.annotatedBy ? { annotatedBy: meta.annotatedBy } : {}),
       changeShort: clipTitle(v.change || '', 30, v.id),
       changeBrief: clipTitle(v.change || '', 120, ''),
       headlineBrief: lastR?.report?.headline ? clipTitle(lastR.report.headline, 140, '') : '',

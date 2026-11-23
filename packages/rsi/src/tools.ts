@@ -1,11 +1,36 @@
 import { RSI_CP_INIT, createFixtures } from './fixtures.js';
 import { act } from './actions.js';
-import { submitInitStep, enqueue, kick, message, prepSettled, stepMemberOf, STOP_TARGET, syncObjective } from './init.js';
+import { clipTitle, submitInitStep, enqueue, kick, message, prepSettled, stepMemberOf, STOP_TARGET, syncObjective } from './init.js';
 import { abandonRepair, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, validateReservedSeeds, validPlan } from './cycles.js';
 import { parseScheduleText } from './schedule.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, PrepItem, RsiState, Section, ToolContext } from './types.js';
+import { execFileSync } from 'node:child_process';
 import { platform } from 'node:os';
+
+function resolveGitParent(projectPath: string | undefined, commit: string | undefined, versions: Data[]): string | null {
+  if (!projectPath || !commit) return null;
+  const withCommit = versions.filter((v: Data) => typeof v.commit === 'string' && v.commit.trim().length >= 7);
+  if (!withCommit.length) return null;
+  try {
+    const out = execFileSync('git', ['rev-list', '--max-count=512', commit], {
+      cwd: projectPath,
+      encoding: 'utf8',
+      timeout: 2000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const ancestors = out.split(/\r?\n/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+    for (const sha of ancestors) {
+      for (let i = withCommit.length - 1; i >= 0; i--) {
+        const vc = String(withCommit[i].commit).trim().toLowerCase();
+        if (sha.startsWith(vc) || vc.startsWith(sha)) return withCommit[i].id;
+      }
+    }
+  } catch {
+    // Non-git path or commit not reachable in local repo: fall back to currentVersion.
+  }
+  return null;
+}
 
 const fields = ['preflight', 'submit', 'get', 'cancel', 'collect', 'analyze'];
 export function executorInput(input: Data): boolean {
@@ -193,13 +218,23 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     const scheduledSeeds = freshSeeds(d, seedCount);
     const reservedErr = validateReservedSeeds(d, input.reservedSeeds, scheduledSeeds);
     if (reservedErr) return { error: reservedErr };
+    let baseVersion: string | undefined;
+    if (input.baseVersion !== undefined) {
+      if (!text(input.baseVersion) || !d.versions.some((v: Data) => v.id === input.baseVersion.trim())) {
+        return { error: `Unknown baseVersion ${JSON.stringify(input.baseVersion)}: pass an existing version id such as ${d.objective.currentVersion}` };
+      }
+      baseVersion = input.baseVersion.trim();
+    }
     const previous = d.objective.currentVersion, id = `v${d.versions.length + 1}`;
+    const derivedParent = baseVersion
+      || (input.commit ? resolveGitParent(d.objective.projectPath, input.commit, d.versions) : null)
+      || previous;
     const changes = record(input.changes) ? {
       ...(record(input.changes.pr) && text(input.changes.pr.id) ? { pr: { id: input.changes.pr.id, ...(text(input.changes.pr.url) ? { url: input.changes.pr.url } : {}), ...(text(input.changes.pr.title) ? { title: input.changes.pr.title } : {}), ...(text(input.changes.pr.state) ? { state: input.changes.pr.state } : {}) } } : {}),
       ...(Array.isArray(input.changes.files) ? { files: input.changes.files.filter((f: unknown) => record(f) && text(f.path)).map((f: Data) => ({ path: f.path, op: ['modify', 'add', 'delete', 'rename'].includes(f.op) ? f.op : 'modify', ...(typeof f.added === 'number' ? { added: f.added } : {}), ...(typeof f.removed === 'number' ? { removed: f.removed } : {}), ...(Array.isArray(f.hunks) ? { hunks: f.hunks } : {}) })) } : {}),
       ...(Array.isArray(input.changes.items) ? { items: input.changes.items.filter((it: unknown) => record(it) && text(it.name)).map((it: Data) => ({ op: ['set', 'add', 'del'].includes(it.op) ? it.op : 'set', name: it.name, ...(it.from !== undefined ? { from: String(it.from) } : {}), ...(it.to !== undefined ? { to: String(it.to) } : {}) })) } : {}),
     } : null;
-    const versionRecord: Data = { id, parent: previous, change: input.change, commit: input.commit || null, config: configVal, at: now, current: false, status: 'proposed',
+    const versionRecord: Data = { id, parent: derivedParent, change: input.change, commit: input.commit || null, config: configVal, at: now, current: false, status: 'proposed',
       ...(aspects ? { aspects } : {}),
       ...(changes ? { changes } : {}),
       ...(changes?.pr?.id ? { pr: changes.pr.id } : {}),
@@ -347,6 +382,8 @@ function summarizeRound(round: Data) {
     })),
     report: round.report ? {
       verdict: round.report.verdict,
+      ...(round.report.disposition ? { disposition: round.report.disposition } : {}),
+      ...(round.report.tag ? { tag: round.report.tag } : {}),
       headline: round.report.headline,
       agree: round.report.agree,
       confirmation: round.report.confirmation || null,
@@ -394,21 +431,107 @@ export function statusAction(state: RsiState, raw: Data, ctx: ToolContext): Data
 }
 
 function projectStatus(d: Experiment, input: Data): Data {
-  let round: Data | null = null;
+  const scope = input.scope === undefined ? 'full' : input.scope;
+  if (scope !== 'full' && scope !== 'brief') return { error: 'scope must be "brief" or "full"', status: 400 };
+  let sinceIdx = 0;
+  if (input.sinceVersion !== undefined) {
+    if (!text(input.sinceVersion)) return { error: 'sinceVersion must be a non-empty version id', status: 400 };
+    const idx = d.versions.findIndex((v: Data) => v.id === input.sinceVersion.trim());
+    if (idx < 0) return { error: `Unknown sinceVersion ${JSON.stringify(input.sinceVersion)}`, status: 400 };
+    sinceIdx = idx + 1;
+  }
+  let versionsLimit: number | undefined;
+  if (input.versionsLimit !== undefined) {
+    const n = Number(input.versionsLimit);
+    if (!Number.isInteger(n) || n < 1) return { error: 'versionsLimit must be a positive integer', status: 400 };
+    versionsLimit = n;
+  } else if (scope === 'brief' && input.sinceVersion === undefined) {
+    versionsLimit = 12;
+  }
+  let targetRound: Data | null = null;
   if (input.cycle !== undefined) {
     const n = Number(input.cycle);
     if (!Number.isInteger(n) || n < 1) return { error: 'cycle must be a positive integer', status: 400 };
     const found = d.rounds.find((r: Data) => r.n === n);
     if (!found) return { error: `Cycle ${n} not found`, status: 404 };
-    round = summarizeRound(found);
+    targetRound = found;
   } else if (d.rounds.length) {
-    round = summarizeRound(d.rounds.at(-1)!);
+    targetRound = d.rounds.at(-1)!;
   }
   const evaluating = d.rounds.find((r: Data) => r.state === 'evaluating');
   const running = d.rounds.find((r: Data) => r.state === 'running');
   const interrupted = d.rounds.find((r: Data) => r.state === 'interrupted');
   const discussing = d.rounds.find((r: Data) => r.analysis?.waiting?.length);
   const undecided = d.rounds.find((r: Data) => r.report && !r.decision && !r.analysis?.waiting?.length);
+  const slicedVersions = d.versions.slice(sinceIdx);
+  const visibleVersions = versionsLimit !== undefined ? slicedVersions.slice(-versionsLimit) : slicedVersions;
+  const lastRoundOf = (vid: string) => {
+    for (let i = d.rounds.length - 1; i >= 0; i--) if (d.rounds[i].version === vid) return d.rounds[i];
+    return null;
+  };
+  const active = {
+    runningCycle: running?.n ?? null,
+    evaluatingCycle: evaluating?.n ?? null,
+    discussingCycle: discussing?.n ?? null,
+    analysisWaiting: discussing?.analysis?.waiting || [],
+    pendingDecisionCycle: undecided?.n ?? null,
+    interruptedCycle: interrupted?.n ?? null,
+    versionRequest: d.versionRequest ? {
+      cycle: d.versionRequest.cycle,
+      title: d.versionRequest.title,
+      direct: !!d.versionRequest.direct,
+      repair: !!d.versionRequest.repair,
+      claimed: !!d.versionRequest.invocationId,
+    } : null,
+  };
+  const mapVersion = (v: Data, brief: boolean) => {
+    const lr = lastRoundOf(v.id);
+    const disposition = v.disposition || lr?.report?.disposition || null;
+    const tag = v.tag || lr?.report?.tag || null;
+    return {
+      id: v.id,
+      parent: v.parent ?? null,
+      commit: v.commit || null,
+      status: v.status || null,
+      current: !!v.current,
+      ...(Array.isArray(v.aspects) && v.aspects.length ? { aspects: v.aspects } : {}),
+      ...(disposition ? { disposition } : {}),
+      ...(tag ? { tag } : {}),
+      ...(v.annotatedBy ? { annotatedBy: v.annotatedBy } : {}),
+      change: brief ? clipTitle(v.change || '', 80, v.id) : (v.change || ''),
+    };
+  };
+  if (scope === 'brief') {
+    const briefRound = targetRound ? {
+      n: targetRound.n,
+      state: targetRound.state,
+      version: targetRound.version,
+      verdict: targetRound.report?.verdict || null,
+      ...(targetRound.report?.disposition ? { disposition: targetRound.report.disposition } : {}),
+      ...(targetRound.report?.tag ? { tag: targetRound.report.tag } : {}),
+      headline: targetRound.report?.headline ? clipTitle(targetRound.report.headline, 120, '') : null,
+      decision: targetRound.decision ? { pick: targetRound.decision.pick, directionId: targetRound.decision.directionId || null } : null,
+      runsCount: (targetRound.runs || []).length,
+      failedCount: (targetRound.runs || []).filter((r: Data) => r.state === 'failed' || r.error).length,
+    } : null;
+    return {
+      scope: 'brief',
+      objective: {
+        id: d.objective.id,
+        name: d.objective.name,
+        state: d.objective.state,
+        round: d.objective.round,
+        currentVersion: d.objective.currentVersion,
+        thread: d.objective.thread || null,
+      },
+      prepSettled: prepSettled(d),
+      active,
+      versionsTotal: d.versions.length,
+      versions: visibleVersions.map((v: Data) => mapVersion(v, true)),
+      round: briefRound,
+    };
+  }
+  const round = targetRound ? summarizeRound(targetRound) : null;
   return {
     objective: {
       id: d.objective.id,
@@ -453,37 +576,16 @@ function projectStatus(d: Experiment, input: Data): Data {
         .filter((x) => x.section === p.k && x.neededFrom === 'human' && x.state !== 'confirmed')
         .map((x) => ({ id: x.id, title: x.title, state: x.state })),
     })),
-    active: {
-      runningCycle: running?.n ?? null,
-      evaluatingCycle: evaluating?.n ?? null,
-      discussingCycle: discussing?.n ?? null,
-      analysisWaiting: discussing?.analysis?.waiting || [],
-      pendingDecisionCycle: undecided?.n ?? null,
-      interruptedCycle: interrupted?.n ?? null,
-      versionRequest: d.versionRequest ? {
-        cycle: d.versionRequest.cycle,
-        title: d.versionRequest.title,
-        direct: !!d.versionRequest.direct,
-        repair: !!d.versionRequest.repair,
-        claimed: !!d.versionRequest.invocationId,
-      } : null,
-    },
+    active,
     upcoming: d.upcoming || null,
-    versions: d.versions.map((v: Data) => ({
-      id: v.id,
-      parent: v.parent ?? null,
-      commit: v.commit || null,
-      status: v.status || null,
-      current: !!v.current,
-      ...(Array.isArray(v.aspects) && v.aspects.length ? { aspects: v.aspects } : {}),
-      change: v.change || '',
-    })),
+    versionsTotal: d.versions.length,
+    versions: visibleVersions.map((v: Data) => mapVersion(v, false)),
     round,
   };
 }
 
 const DELEGATED_OPS = new Set([
-  'expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain',
+  'expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix',
 ]);
 
 // Delegated operator control: strictly gated to the owner-designated policy.manager catId.
@@ -551,6 +653,10 @@ export function operateAction(state: RsiState, raw: Data, ctx: ToolContext, now:
     const k = currentStep(d, { step: input.k ?? input.section });
     if (!k) return { error: 'Provide valid step k/section (1–7 or section name)' };
     return act(state, { op, objective: d.objective.id, k, ...(input.force !== undefined ? { force: input.force } : {}) }, query, now, actor);
+  }
+  if (op === 'lineageFix') {
+    const annotatedBy = text(input.annotatedBy) ? input.annotatedBy.trim() : `${manager.name || ctx.catId}（回填）`;
+    return act(state, { op: 'lineageFix', objective: d.objective.id, patches: input.patches, annotatedBy }, query, now, actor);
   }
   return act(state, { op, objective: d.objective.id, ...(input.n !== undefined ? { n: input.n } : {}) }, query, now, actor);
 }

@@ -127,6 +127,7 @@ ov:
   stConfirmed: 已确认
   stRunning: 运行中
   stPruned: 已证伪 ✕
+  stDeadEnd: 已淘汰 ✕
   stGuardrail: 越护栏 ✕
   stWorse: 低于对照
   stTied: 持平
@@ -135,6 +136,7 @@ ov:
   stExplore: 探索
   stBaseline: 基线
   stCandidate: 待复验候选
+  annotatedBy: 标注来源
   refPaired: 对照 {0}
   refExplore: 探索单组（无同轮对照）
   refSingle: 基线单组

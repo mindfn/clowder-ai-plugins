@@ -1198,23 +1198,9 @@ views:
                             - $.exp.hitRate.hit
                             - $.exp.hitRate.all
                 right:
-                  - type: seg
-                    value: $.exp.overviewMode
-                    options:
-                      - v: map
-                        label: t:rsi.exp.overviewMap
-                      - v: trend
-                        label: t:rsi.exp.overviewTrend
-                    act: plugSet
-                    args:
-                      k: overviewMode
                   - type: button
-                    label: t:rsi.ov.expand
-                    when:
-                      of: $.exp.overviewMode
-                      map:
-                        trend: false
-                        _: true
+                    label: t:rsi.exp.overviewMap
+                    when: $.exp.overviewMap.nodes.length
                     act: dialog
                     args:
                       kind: rsiMap
@@ -1233,73 +1219,7 @@ views:
                           v: "@v"
                           label: "@label"
               - type: component
-                when:
-                  of: $.exp.overviewMode
-                  map:
-                    trend: false
-                    _: true
-                use: plugin:official.rsi/rsiOverviewMap
-                props:
-                  from: $.exp.overviewMap
-                  labels:
-                    total: t:rsi.ov.total
-                    current: t:rsi.ov.current
-                    pruned: t:rsi.ov.pruned
-                    insufficient: t:rsi.ov.insufficient
-                    obj: t:rsi.ov.obj
-                    obs: t:rsi.ov.obs
-                    rub: t:rsi.ov.rub
-                    baseline: t:rsi.ov.baseline
-                    unlabeled: t:rsi.ov.unlabeled
-                    lensMetric: t:rsi.ov.lensMetric
-                    lensAspect: t:rsi.ov.lensAspect
-                    fit: t:rsi.ov.fit
-                    expand: t:rsi.ov.expand
-                    close: t:rsi.ov.close
-                    exportHtml: t:rsi.ov.exportHtml
-                    clusterTitle: t:rsi.ov.clusterTitle
-                    focusVersion: t:rsi.ov.focusVersion
-                    cycleOf: t:rsi.ov.cycleOf
-                    clickHint: t:rsi.ov.clickHint
-                    stCurrent: t:rsi.ov.stCurrent
-                    stConfirmed: t:rsi.ov.stConfirmed
-                    stRunning: t:rsi.ov.stRunning
-                    stPruned: t:rsi.ov.stPruned
-                    stGuardrail: t:rsi.ov.stGuardrail
-                    stWorse: t:rsi.ov.stWorse
-                    stTied: t:rsi.ov.stTied
-                    stInsufficient: t:rsi.ov.stInsufficient
-                    stRepaired: t:rsi.ov.stRepaired
-                    stExplore: t:rsi.ov.stExplore
-                    stBaseline: t:rsi.ov.stBaseline
-                    lblTrigger: t:rsi.ov.lblTrigger
-                    lblAction: t:rsi.ov.lblAction
-                    lblBasis: t:rsi.ov.lblBasis
-                    trigBaseline: t:rsi.ov.trigBaseline
-                    trigParent: t:rsi.ov.trigParent
-                    trigRepair: t:rsi.ov.trigRepair
-                    trigDir: t:rsi.ov.trigDir
-                    trigDec: t:rsi.ov.trigDec
-                    trigCycle: t:rsi.ov.trigCycle
-                    basisRunning: t:rsi.ov.basisRunning
-                    basisEval: t:rsi.ov.basisEval
-                    basisRepaired: t:rsi.ov.basisRepaired
-                    basisNone: t:rsi.ov.basisNone
-                    colSeed: t:rsi.ov.colSeed
-                    colState: t:rsi.ov.colState
-                    colCommit: t:rsi.ov.colCommit
-                    colNote: t:rsi.ov.colNote
-                    scale: t:rsi.ov.scale
-                    metric: t:rsi.ov.metric
-                    sameScale: t:rsi.ov.sameScale
-                    refDelta: t:rsi.ov.refDelta
-              - type: component
-                when:
-                  - $.exp.activeTrend
-                  - of: $.exp.overviewMode
-                    map:
-                      trend: true
-                      _: false
+                when: $.exp.activeTrend
                 use: plugin:official.rsi/rsiTrend
                 props:
                   series: $.exp.activeTrend
@@ -5295,6 +5215,7 @@ views:
             stConfirmed: t:rsi.ov.stConfirmed
             stRunning: t:rsi.ov.stRunning
             stPruned: t:rsi.ov.stPruned
+            stDeadEnd: t:rsi.ov.stDeadEnd
             stGuardrail: t:rsi.ov.stGuardrail
             stWorse: t:rsi.ov.stWorse
             stTied: t:rsi.ov.stTied
@@ -5302,6 +5223,7 @@ views:
             stRepaired: t:rsi.ov.stRepaired
             stExplore: t:rsi.ov.stExplore
             stBaseline: t:rsi.ov.stBaseline
+            annotatedBy: t:rsi.ov.annotatedBy
             lblTrigger: t:rsi.ov.lblTrigger
             lblAction: t:rsi.ov.lblAction
             lblBasis: t:rsi.ov.lblBasis

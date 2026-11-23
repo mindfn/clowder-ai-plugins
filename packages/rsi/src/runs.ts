@@ -23,6 +23,21 @@ const canCancel = (tpl: string | undefined, values: Data | undefined) => !!tpl &
 const field = (value: Data, path: string) => path.split('.').reduce((v: any, k) => v?.[k], value);
 const exists = (path: string) => stat(path).then(() => true, () => false);
 const parseResult = (raw: string) => JSON.parse(raw.replace(/"(?:\\.|[^"\\])*"|\bNaN\b|-?Infinity\b/g, (token) => token.startsWith('"') ? token : JSON.stringify(token)));
+function isNonRetryableOutput(raw: string | undefined): boolean {
+  if (!raw) return false;
+  const trimmed = raw.trim();
+  const candidates = [trimmed];
+  const lines = trimmed.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('{') && l.endsWith('}'));
+  if (lines.length) candidates.push(lines[lines.length - 1]);
+  for (const s of candidates) {
+    if (!s.startsWith('{')) continue;
+    try {
+      const parsed = parseResult(s);
+      if (record(parsed) && (parsed.retryable === false || parsed.errorKind === 'real' || parsed.failureKind === 'real')) return true;
+    } catch {}
+  }
+  return false;
+}
 
 export function createRuns(host: RsiHost, changed: (key: string) => Promise<void>) {
   let stopped = false, again = false, held = false, child: ChildProcess | undefined, job: Promise<void> | undefined, remote: Data | undefined;
@@ -211,7 +226,10 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           if (result.timedOut) timedOut = true;
           if (stopped) return;
           if (!d.executor.commands.get) remote = undefined;
-          if (result.code !== 0) throw new Error(`submit exited ${result.code}: ${result.log}`);
+          if (result.code !== 0) {
+            if (isNonRetryableOutput(result.stdout) || isNonRetryableOutput(result.log)) kind = 'real';
+            throw new Error(`submit exited ${result.code}: ${result.log}`);
+          }
           if (d.executor.commands.get) {
             const output = result.stdout.trim();
             jobId = output.startsWith('{') ? parseResult(output).jobId : output;
@@ -257,7 +275,11 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             }
             pollFails = 0; pollFailSince = 0;
             if (status!.state === 'done' && (status!.exitCode === undefined || status!.exitCode === 0)) { remoteEnded = true; break; }
-            if (!['queued', 'running'].includes(status!.state)) { remoteEnded = true; throw new Error(`Remote job ${status!.state}, exit ${status!.exitCode ?? 'unknown'}: ${status!.reason || ''}`); }
+            if (!['queued', 'running'].includes(status!.state)) {
+              remoteEnded = true;
+              if (status!.retryable === false || status!.errorKind === 'real' || status!.failureKind === 'real') kind = 'real';
+              throw new Error(`Remote job ${status!.state}, exit ${status!.exitCode ?? 'unknown'}: ${status!.reason || ''}`);
+            }
             if (d.executor.timeout && Date.now() - since > d.executor.timeout * 1000) { timedOut = true; throw new Error(`异步任务超过 ${d.executor.timeout} 秒没结束`); }
             await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, (d.executor.poll || 1) * 1000); });
             releasePoll = undefined; pollTimer = undefined;

@@ -1112,4 +1112,68 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
 
   const trHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiTrend']({ series: '$.trend', label: 'Trend' }, {}, {});
   assert.match(trHtml, /stick-end rsi-trend-scroll/);
+
+  // alpha.114: noise-band worse vs tied (minDelta + mean ± SD overlap), disposition: dead_end + tag + annotatedBy provenance
+  const noMinMetrics = { version: 'E2', items: [{ id: 'accuracy', name: 'holdout accuracy', dir: 'up', guard: false }] };
+  x.d.versions.push(
+    { id: 'v12', parent: 'v2', change: 'Within minDelta band', at: now + 1200, current: false, status: 'proposed', aspects: ['object'] },
+    { id: 'v13', parent: 'v2', change: 'Overlap SD noise band', at: now + 1300, current: false, status: 'proposed', aspects: ['object'] },
+    { id: 'v14', parent: 'v2', change: 'Dead-end experiment', at: now + 1400, current: false, status: 'proposed', aspects: ['object'], disposition: 'dead_end', tag: '融合精度差 0.038 拦截', annotatedBy: '墨墨（回填）' },
+  );
+  x.d.rounds.push(
+    {
+      n: 12, version: 'v12', state: 'done',
+      plan: { tier: 'confirm', seeds: [41], groups: [{ id: 'control', label: 'Control', version: 'v2', vars: {}, control: true }, { id: 'change', label: 'SmallDrop', version: 'v12', vars: {}, control: false }] },
+      runs: [],
+      metrics: x.d.metrics,
+      report: {
+        verdict: 'tune', headline: 'Within minDelta band', summary: 'Within minDelta band',
+        matrix: [
+          { group: 'control', metric: 'accuracy', mean: 0.70, sd: null, n: 1, seeds: [] },
+          { group: 'change', metric: 'accuracy', mean: 0.68, sd: null, n: 1, seeds: [] },
+        ],
+        compare: { comparable: true, metric: 'accuracy', dir: 'up', groups: [{ group: 'control', version: 'v2', control: true, eligible: true, mean: 0.70, delta: 0, beatsControl: false, guardrails: [] }, { group: 'change', version: 'v12', control: false, eligible: true, mean: 0.68, delta: -0.02, beatsControl: false, guardrails: [] }] },
+        predictions: [], directions: [], attribution: { assessedLayers: [] },
+      },
+      decision: { pick: 'same' }, events: [],
+    },
+    {
+      n: 13, version: 'v13', state: 'done',
+      plan: { tier: 'confirm', seeds: [42, 43], groups: [{ id: 'control', label: 'Control', version: 'v2', vars: {}, control: true }, { id: 'change', label: 'Overlap', version: 'v13', vars: {}, control: false }] },
+      runs: [],
+      metrics: noMinMetrics,
+      report: {
+        verdict: 'tune', headline: 'Within SD overlap band', summary: 'Within SD overlap band',
+        matrix: [
+          { group: 'control', metric: 'accuracy', mean: 0.86, sd: 0.02, lo: 0.84, hi: 0.88, n: 2, seeds: [] },
+          { group: 'change', metric: 'accuracy', mean: 0.845, sd: 0.02, lo: 0.825, hi: 0.865, n: 2, seeds: [] },
+        ],
+        compare: { comparable: true, metric: 'accuracy', dir: 'up', groups: [{ group: 'control', version: 'v2', control: true, eligible: true, mean: 0.86, delta: 0, beatsControl: false, guardrails: [] }, { group: 'change', version: 'v13', control: false, eligible: true, mean: 0.845, delta: -0.015, beatsControl: false, guardrails: [] }] },
+        predictions: [], directions: [], attribution: { assessedLayers: [] },
+      },
+      decision: { pick: 'same' }, events: [],
+    },
+    {
+      n: 14, version: 'v14', state: 'done',
+      plan: { tier: 'explore', skipControl: true, seeds: [44], groups: [{ id: 'change', label: 'DeadEnd', version: 'v14', vars: {}, control: false }] },
+      runs: [],
+      metrics: x.d.metrics,
+      report: { verdict: 'insufficient', disposition: 'dead_end', tag: '融合精度差 0.038 拦截', headline: 'Precision gate failed', summary: 'Precision gate failed', matrix: [{ group: 'change', metric: 'accuracy', mean: 0, sd: null, n: 1, seeds: [] }], compare: { comparable: false, metric: 'accuracy', dir: 'up', groups: [] }, predictions: [], directions: [], attribution: { assessedLayers: [] } },
+      decision: { pick: 'same' }, events: [],
+    },
+  );
+  const vm114 = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: `${x.id}/v14>c1.eval` });
+  assert.equal(vm114.overviewMode, 'trend');
+  assert.equal(vm114.overviewMap.nodes.find((n) => n.id === 'v12').state, 'tied', 'delta inside minDelta band must classify as tied');
+  assert.equal(vm114.overviewMap.nodes.find((n) => n.id === 'v13').state, 'tied', 'overlapping mean±SD intervals must classify as tied');
+  const n14 = vm114.overviewMap.nodes.find((n) => n.id === 'v14');
+  assert.equal(n14.state, 'deadEnd');
+  assert.equal(n14.pruned, true);
+  assert.equal(n14.tag, '融合精度差 0.038 拦截');
+  assert.equal(n14.annotatedBy, '墨墨（回填）');
+  sandbox.pv = (expr, sc) => expr === '$.map114' ? vm114.overviewMap : (typeof expr === 'string' && expr.startsWith('@') ? sc?.[expr.slice(1)] : expr);
+  const html114 = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.map114', mode: 'modal' }, {}, {});
+  assert.match(html114, /Dead-end ✕/);
+  assert.match(html114, /融合精度差 0\.038 拦截/);
+  assert.match(html114, /Source：墨墨（回填）/);
 });

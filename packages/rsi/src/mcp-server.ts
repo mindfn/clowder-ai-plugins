@@ -156,7 +156,8 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
       additionalProperties: false,
       properties: {
         change: { type: 'string', minLength: 1, description: '一句话说明改动内容。' },
-        commit: { type: 'string', pattern: '^[a-fA-F0-9]{7,40}$', description: '可选 7–40 位 git 提交号。' },
+        commit: { type: 'string', pattern: '^[a-fA-F0-9]{7,40}$', description: '可选 7–40 位 git 提交号；提供时插件会自动从 git 祖先推导最近已登记的父版本。' },
+        baseVersion: { type: 'string', minLength: 1, description: '可选显式父版本 ID（如 "v22"）；不传时优先按 commit 的 git 祖先推导，否则默认当前版本。' },
         config: { type: 'object', additionalProperties: true, description: '版本配置对象。' },
         configPath: { type: 'string', minLength: 1, description: '或者传项目内 JSON 配置文件路径。' },
         cannot: { type: 'string', minLength: 1, description: '修复失败时转交评估成员；非修复版本请求若方向无法满足或契约冲突时退回重新选方向。' },
@@ -181,6 +182,8 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
       properties: {
         cycle: { type: 'integer', minimum: 1 },
         verdict: { type: 'string', enum: ['baseline', 'keep', 'tune', 'rollback', 'sunset', 'insufficient'] },
+        disposition: { type: 'string', enum: ['advance', 'dead_end'], description: '可选路线处置标注：advance（继续沿此分支推进）或 dead_end（明确死胡同/已淘汰分支，不影响 verdict 与夜间策略状态机）。' },
+        tag: { type: 'string', minLength: 1, maxLength: 32, description: '可选短标签（≤32字，用于谱系卡片快速识别，如 "融合精度差 0.038 拦截"）。' },
         findings: {
           type: 'array',
           minItems: 1,
@@ -221,6 +224,9 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
       properties: {
         objectiveId: { type: 'string', minLength: 1, description: '可选评估项 ID（跨线程查询时传入）。' },
         cycle: { type: 'integer', minimum: 1, description: '可选查看指定周期号的运行/结论详情；省略则返回最新周期。' },
+        scope: { type: 'string', enum: ['brief', 'full'], description: '可选返回粒度：brief（精简摘要，默认近 12 个版本）或 full（完整详情，默认）。' },
+        sinceVersion: { type: 'string', minLength: 1, description: '可选增量查询：仅返回该版本 ID 之后的新增版本。' },
+        versionsLimit: { type: 'integer', minimum: 1, description: '可选限制返回最近 N 个版本（同时返回 versionsTotal）。' },
       },
     },
   },
@@ -236,7 +242,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
       properties: {
         op: {
           type: 'string',
-          enum: ['expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain'],
+          enum: ['expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix'],
           description: '要执行的受托管理操作。',
         },
         objectiveId: { type: 'string', minLength: 1, description: '可选评估项 ID（跨线程代操作时传入）。' },
@@ -250,6 +256,25 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
         catId: { type: 'string', minLength: 1, description: 'stepMember 要切换的目标成员 catId。' },
         action: { type: 'string', enum: ['start', 'pause', 'resume', 'retry'], description: 'life 生命周期动作。' },
         force: { type: 'boolean', description: 'initRetry 强制重新叫醒。' },
+        patches: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 200,
+          description: 'lineageFix 谱系校准列表：每项 { version, parent?, aspects?, disposition?, tag? }。',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['version'],
+            properties: {
+              version: { type: 'string', minLength: 1 },
+              parent: { type: ['string', 'null'] },
+              aspects: { type: ['array', 'null'], items: { type: 'string', enum: ['object', 'observability', 'rubric'] } },
+              disposition: { type: ['string', 'null'], enum: ['advance', 'dead_end', null] },
+              tag: { type: ['string', 'null'], maxLength: 32 },
+            },
+          },
+        },
+        annotatedBy: { type: 'string', minLength: 1, maxLength: 48, description: 'lineageFix 可选标注来源名（如 "墨墨（回填）"）。' },
       },
     },
   },

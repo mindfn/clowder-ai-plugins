@@ -666,6 +666,84 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       syncObjective(state, d);
       return { ok: true };
     }
+    case 'lineageFix': {
+      if (!d) return { error: 'Experiment not found', status: 404 };
+      const rawPatches = body.patches;
+      if (!Array.isArray(rawPatches) || !rawPatches.length || rawPatches.length > 200) {
+        return { error: 'Provide patches: a non-empty array of up to 200 version annotations' };
+      }
+      const byId = new Map<string, Data>(d.versions.map((v: Data) => [v.id, v]));
+      const nextParents = new Map<string, string | null>(d.versions.map((v: Data) => [v.id, v.parent ?? null]));
+      const validated: Data[] = [];
+      for (const raw of rawPatches) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { error: 'Each patch must be an object' };
+        const p = raw as Data;
+        const vid = typeof p.version === 'string' ? p.version.trim() : '';
+        if (!vid || !byId.has(vid)) return { error: `Unknown version in lineageFix: ${JSON.stringify(p.version)}`, status: 404 };
+        const hasField = p.parent !== undefined || p.aspects !== undefined || p.disposition !== undefined || p.tag !== undefined;
+        if (!hasField) return { error: `Patch for ${vid} must specify at least one of parent, aspects, disposition, or tag` };
+        let parent: string | null | undefined;
+        if (p.parent !== undefined) {
+          if (p.parent === null || p.parent === '') parent = null;
+          else if (typeof p.parent === 'string' && byId.has(p.parent.trim()) && p.parent.trim() !== vid) parent = p.parent.trim();
+          else return { error: `Invalid parent ${JSON.stringify(p.parent)} for version ${vid}` };
+          nextParents.set(vid, parent);
+        }
+        let aspects: string[] | null | undefined;
+        if (p.aspects !== undefined) {
+          if (p.aspects === null) aspects = null;
+          else if (Array.isArray(p.aspects) && p.aspects.length && p.aspects.every((a: unknown) => typeof a === 'string' && ['object', 'observability', 'rubric'].includes(a))) {
+            aspects = ['object', 'observability', 'rubric'].filter((k) => (p.aspects as string[]).includes(k));
+          } else return { error: `Invalid aspects for version ${vid}` };
+        }
+        let disposition: 'advance' | 'dead_end' | null | undefined;
+        if (p.disposition !== undefined) {
+          if (p.disposition === null || p.disposition === '') disposition = null;
+          else if (p.disposition === 'advance' || p.disposition === 'dead_end') disposition = p.disposition;
+          else return { error: `Invalid disposition for version ${vid}: must be "advance", "dead_end", or null` };
+        }
+        let tag: string | null | undefined;
+        if (p.tag !== undefined) {
+          if (p.tag === null || p.tag === '') tag = null;
+          else if (typeof p.tag === 'string' && p.tag.trim() && p.tag.trim().length <= 32) tag = p.tag.trim();
+          else return { error: `Invalid tag for version ${vid}: must be 1–32 characters or null` };
+        }
+        validated.push({ vid, parent, aspects, disposition, tag });
+      }
+      for (const vid of nextParents.keys()) {
+        const seen = new Set<string>();
+        let cur: string | null | undefined = vid;
+        while (cur) {
+          if (seen.has(cur)) return { error: `Lineage patch introduces a parent cycle involving ${cur}` };
+          seen.add(cur);
+          cur = nextParents.get(cur);
+        }
+      }
+      const annotatedBy = typeof body.annotatedBy === 'string' && body.annotatedBy.trim() ? body.annotatedBy.trim().slice(0, 48) : actor;
+      const updated: string[] = [];
+      for (const p of validated) {
+        const v = byId.get(p.vid)!;
+        if (p.parent !== undefined) v.parent = p.parent;
+        if (p.aspects !== undefined) {
+          if (p.aspects === null) delete v.aspects;
+          else v.aspects = p.aspects;
+        }
+        if (p.disposition !== undefined) {
+          if (p.disposition === null) delete v.disposition;
+          else v.disposition = p.disposition;
+        }
+        if (p.tag !== undefined) {
+          if (p.tag === null) delete v.tag;
+          else v.tag = p.tag;
+        }
+        v.annotatedBy = annotatedBy;
+        v.annotatedAt = now;
+        if (!updated.includes(p.vid)) updated.push(p.vid);
+      }
+      message(state, d, now, `${annotatedBy}校准了 ${updated.length} 个版本的谱系标注`, updated.join('、'), 'declare');
+      syncObjective(state, d);
+      return { ok: true, updated, annotatedBy };
+    }
     default: return { error: 'Unknown operation' };
   }
 }

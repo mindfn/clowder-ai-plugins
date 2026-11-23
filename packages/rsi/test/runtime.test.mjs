@@ -2222,3 +2222,124 @@ test('expDecide allows re-deciding an undecided-version cycle before version reg
   const late = await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 1, pick: 'direction', directionId: 'exec-fix' }, 'mgr-cat', 'infra-thread');
   assert.equal(late.status, 409);
 });
+
+test('alpha.114: git-derived parent & baseVersion, conclude disposition/tag, rsi_status slimming, lineageFix CAS op, and retryable:false real failures', async (t) => {
+  const f = await fixture(t), o = await f.create({ repair: '0' });
+  git(f.project, 'init', '-b', 'main');
+  git(f.project, 'config', 'user.email', 'rsi@test.local');
+  git(f.project, 'config', 'user.name', 'RSI Test');
+  await writeFile(join(f.project, 'a.txt'), 'v1\n');
+  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'base v1');
+  const c1 = git(f.project, 'rev-parse', 'HEAD');
+  await writeFile(join(f.project, 'a.txt'), 'v2\n');
+  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'branch A v2');
+  const c2 = git(f.project, 'rev-parse', 'HEAD');
+  git(f.project, 'checkout', '-b', 'alt', c1);
+  await writeFile(join(f.project, 'b.txt'), 'v3\n');
+  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'branch B v3 from c1');
+  const c3 = git(f.project, 'rev-parse', 'HEAD');
+  await writeFile(join(f.project, 'b.txt'), 'v4\n');
+  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'branch B v4 from c3');
+  const c4 = git(f.project, 'rev-parse', 'HEAD');
+  git(f.project, 'checkout', 'main');
+
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [401] });
+  const cats = [{ id: 'mgr-cat', name: '墨墨', model: 'm', handle: '@gemini' }, { id: 'codex', name: '砚砚', model: 'm', handle: '@codex' }];
+  assert.equal((await f.http('POST', { op: 'manager', objective: o.id, v: 'mgr-cat', cats })).status, 200);
+
+  await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', {
+    cycle: 1, verdict: 'keep', disposition: 'advance', tag: '基线稳定',
+    findings: 'Baseline verified',
+    options: [{ k: 'try-a', title: 'Try branch A', why: 'test', kind: 'code', target: 'a.txt' }],
+  }, 'cat-b5ddoo9l', o.thread)).ok, true);
+  assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 1, pick: 'direction', directionId: 'try-a' }, 'mgr-cat', 'infra')).ok, true);
+
+  // Register v2 with commit c2 -> falls back to currentVersion v1 (since v1 has no commit).
+  await f.tool('task', {}, 'codex', o.thread, 't-v2');
+  const r2 = await f.tool('version', { change: 'Branch A', commit: c2, config: { x: 2 }, tier: 'explore', seeds: 1, skipControl: true, aspects: ['object'] }, 'codex', o.thread, 't-v2');
+  assert.equal(r2.ok, true);
+  assert.equal((await f.read()).experiments[o.id].versions.find((v) => v.id === 'v2').parent, 'v1');
+
+  await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', {
+    cycle: 2, verdict: 'tune', disposition: 'dead_end', tag: '分支 A 退化',
+    findings: 'Branch A dead-end',
+    options: [{ k: 'try-b', title: 'Try branch B', why: 'branch back', kind: 'code', target: 'b.txt', cites: [`${o.id}-cycle-1`] }],
+  }, 'cat-b5ddoo9l', o.thread)).ok, true);
+  assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 2, pick: 'direction', directionId: 'try-b' }, 'mgr-cat', 'infra')).ok, true);
+
+  // Register v3 with commit c3 (branched from c1, not c2) -> parent stays v1 (not v2).
+  await f.tool('task', {}, 'codex', o.thread, 't-v3');
+  assert.equal((await f.tool('version', { change: 'Branch B', commit: c3, config: { x: 3 }, tier: 'explore', seeds: 1, skipControl: true }, 'codex', o.thread, 't-v3')).ok, true);
+  assert.equal((await f.read()).experiments[o.id].versions.find((v) => v.id === 'v3').parent, 'v1');
+
+  await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', {
+    cycle: 3, verdict: 'tune', findings: 'Branch B ok',
+    options: [{ k: 'try-b2', title: 'Continue B', why: 'next', kind: 'code', target: 'b.txt', cites: [`${o.id}-cycle-1`] }],
+  }, 'cat-b5ddoo9l', o.thread)).ok, true);
+  assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 3, pick: 'direction', directionId: 'try-b2' }, 'mgr-cat', 'infra')).ok, true);
+
+  // Register v4 with commit c4 (git child of c3) -> parent auto-derived as v3 (NOT currentVersion v1!).
+  await f.tool('task', {}, 'codex', o.thread, 't-v4');
+  const badBase = await f.tool('version', { change: 'bad', baseVersion: 'v999', config: { x: 4 } }, 'codex', o.thread, 't-v4');
+  assert.match(badBase.error, /Unknown baseVersion/);
+  assert.equal((await f.tool('version', { change: 'Branch B step 2', commit: c4, config: { x: 4 }, tier: 'explore', seeds: 1, skipControl: true }, 'codex', o.thread, 't-v4')).ok, true);
+  assert.equal((await f.read()).experiments[o.id].versions.find((v) => v.id === 'v4').parent, 'v3');
+
+  // Register v5 with explicit baseVersion='v2' (overrides git/currentVersion)
+  await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', {
+    cycle: 4, verdict: 'tune', findings: 'Branch B2 ok',
+    options: [{ k: 'try-cfg', title: 'Config branch from v2', why: 'override', kind: 'variable', target: 'x', cites: [`${o.id}-cycle-1`] }],
+  }, 'cat-b5ddoo9l', o.thread)).ok, true);
+  assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 4, pick: 'direction', directionId: 'try-cfg' }, 'mgr-cat', 'infra')).ok, true);
+  await f.tool('task', {}, 'codex', o.thread, 't-v5');
+  assert.equal((await f.tool('version', { change: 'Config retry off v2', baseVersion: 'v2', config: { x: 5 }, tier: 'explore', seeds: 1, skipControl: true }, 'codex', o.thread, 't-v5')).ok, true);
+  assert.equal((await f.read()).experiments[o.id].versions.find((v) => v.id === 'v5').parent, 'v2');
+
+  // Test rsi_status slimming: scope=brief, sinceVersion, versionsLimit
+  const brief = await f.tool('status', { objectiveId: o.id, scope: 'brief', sinceVersion: 'v2' }, 'mgr-cat', 'infra');
+  assert.equal(brief.scope, 'brief');
+  assert.equal(brief.versionsTotal, 5);
+  assert.deepEqual(brief.versions.map((v) => v.id), ['v3', 'v4', 'v5']);
+  assert.equal(brief.executor, undefined);
+  const limited = await f.tool('status', { objectiveId: o.id, versionsLimit: 2 }, 'mgr-cat', 'infra');
+  assert.equal(limited.versionsTotal, 5);
+  assert.deepEqual(limited.versions.map((v) => v.id), ['v4', 'v5']);
+
+  // Test lineageFix CAS op: non-manager rejected 403, cycle rejected 400, valid patch updates atomically with provenance
+  const unauth = await f.tool('operate', { op: 'lineageFix', objectiveId: o.id, patches: [{ version: 'v3', aspects: ['object'] }] }, 'codex', 'infra');
+  assert.equal(unauth.status, 403);
+  const cyc = await f.tool('operate', { op: 'lineageFix', objectiveId: o.id, patches: [{ version: 'v3', parent: 'v4' }] }, 'mgr-cat', 'infra');
+  assert.ok(cyc.error && /cycle/i.test(cyc.error));
+  const fixed = await f.tool('operate', {
+    op: 'lineageFix', objectiveId: o.id, annotatedBy: '墨墨（回填）',
+    patches: [{ version: 'v3', aspects: ['object', 'observability'], tag: '主干 B1' }],
+  }, 'mgr-cat', 'infra');
+  assert.equal(fixed.ok, true);
+  const stAfter = await f.tool('status', { objectiveId: o.id }, 'mgr-cat', 'infra');
+  const v3St = stAfter.versions.find((v) => v.id === 'v3');
+  assert.deepEqual(v3St.aspects, ['object', 'observability']);
+  assert.equal(v3St.tag, '主干 B1');
+  assert.equal(v3St.annotatedBy, '墨墨（回填）');
+  const v2St = stAfter.versions.find((v) => v.id === 'v2');
+  assert.equal(v2St.disposition, 'dead_end');
+  assert.equal(v2St.tag, '分支 A 退化');
+
+  // Test retryable:false on submit -> classified as kind:'real' with 0 retries (not env failure)
+  const f2 = await fixture(t), o2 = await f2.create({ repair: '0' });
+  f2.commands.submit = `node -e 'console.log(JSON.stringify({retryable:false,reason:"precision gate 0.038"}));process.exit(1)'`;
+  await f2.initialize(o2, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [501] });
+  await execute(f2, o2);
+  const run2 = (await f2.read()).experiments[o2.id].rounds[0].runs[0];
+  assert.equal(run2.retries, 0);
+  assert.equal(run2.state, 'done');
+  assert.equal(run2.error.kind, 'real');
+  assert.equal(run2.evidence, true);
+});
