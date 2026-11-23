@@ -607,8 +607,8 @@ function buildScalarComparison(
     const anyValue = cells.some((x) => x.mean !== null);
     const evalHasValue = evalCells.some((x) => x.mean !== null);
     const anyFail = role === 'guard' && evalCells.some((x) => x.guard === 'fail');
-    const anyPartial = role === 'guard' && !anyFail && evalCells.some((x) => x.guard === 'partial');
-    const allPass = role === 'guard' && evalHasValue && !anyFail && !anyPartial && evalCells.some((x) => x.guard === 'pass');
+    const allPass = role === 'guard' && evalCells.length > 0 && !anyFail && evalCells.every((x) => x.guard === 'pass');
+    const anyPartial = role === 'guard' && !anyFail && !allPass && evalCells.some((x) => x.guard === 'pass' || x.guard === 'partial');
 
     let status = 'info', statusKey = '', statusText = '';
     if (role === 'guard') {
@@ -669,6 +669,9 @@ function buildScalarComparison(
 
   // Guardrail summary strictly reflects measured vs crossed vs unmeasured on the evaluated column(s)
   const evalAnyMetricMeasured = allMetricRows.some((r) => r.evalHasValue);
+  const sameCycleOtherMeasured = !evalAnyMetricMeasured && allMetricRows.some((r) =>
+    r.cells.some((c: Data) => c.sameCycle && !cols.evalColIds.has(c.colId) && c.mean !== null),
+  );
   const guardRows = allMetricRows.filter((r) => r.role === 'guard');
   const guardFailed = guardRows.filter((r) => r.status === 'fail');
   const guardPassed = guardRows.filter((r) => r.status === 'pass');
@@ -678,14 +681,14 @@ function buildScalarComparison(
   const guardUnmeasured = guardMissing.length + guardPartial.length;
   const guardSummary = !evalAnyMetricMeasured
     ? {
-        kind: 'noOutput',
+        kind: sameCycleOtherMeasured ? 'noCandOutput' : 'noOutput',
         total: guardRows.length,
         measured: 0,
         passed: 0,
         failed: 0,
         missing: guardRows.length,
         tone: 'muted',
-        text: '本轮未产出正式指标',
+        text: sameCycleOtherMeasured ? '候选未产出正式指标' : '本轮未产出正式指标',
       }
     : guardRows.length
       ? {
@@ -771,7 +774,7 @@ function buildScalarComparison(
       collapsedSummary: true,
       passedCount: secGuardPassCollapsed.length,
       totalCount: guardMeasured || guardRows.length,
-      title: `已通过护栏（${secGuardPassCollapsed.length}/${guardMeasured || guardRows.length} 全部通过，点击展开）`,
+      title: `已通过护栏 ${secGuardPassCollapsed.length} 项（点击展开）`,
       defaultOpen: false,
       tone: 'ok',
       rows: secGuardPassCollapsed,
@@ -1076,7 +1079,7 @@ export function formatComparisonMarkdown(d: Experiment, round: Data): string {
   }
 
   if (!table.evalAnyMetricMeasured) {
-    return '> 本轮未产出正式指标';
+    return `> ${table.guardSummary?.text || '本轮未产出正式指标'}`;
   }
 
   const displayRows: Data[] = [];
@@ -1086,7 +1089,7 @@ export function formatComparisonMarkdown(d: Experiment, round: Data): string {
     if (sec.k === 'other') displayRows.push(...sec.rows.slice(0, 4));
     else displayRows.push(...sec.rows);
   }
-  if (!displayRows.some((r) => r.evalHasValue)) return '> 本轮未产出正式指标';
+  if (!displayRows.some((r) => r.evalHasValue)) return `> ${table.guardSummary?.text || '本轮未产出正式指标'}`;
 
   const headers: string[] = ['指标', ...table.columns.map(colHdr)];
   if (table.hasPair) headers.push(`Δ${table.pairReferenceOnly ? ' (参考)' : ''}`);

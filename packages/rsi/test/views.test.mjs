@@ -1487,7 +1487,7 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
   assert.equal(scTbl.isSliceView, false);
   const passSec = scTbl.sections.find((s) => s.k === 'guard_pass');
   assert.equal(passSec.defaultOpen, false);
-  assert.match(passSec.title, /8\/8 全部通过/);
+  assert.equal(passSec.title, '已通过护栏 8 项（点击展开）');
   assert.equal(passSec.rows.length, 8);
 
   // User customization via chips: remove stat p50 -> statCustomized=true; add historical E1 column -> crossCycle & sameScale=false
@@ -1556,7 +1556,6 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
   // and a probe-only cycle with all-null formal metrics must report 本轮未产出正式指标 instead of N crossed rows.
   d.versions.push(
     { id: 'v4b', parent: 'v3', change: 'Partial unmeasured guards', config: {}, at: now + 3700, current: false, status: 'proposed' },
-    { id: 'v4c', parent: 'v4b', change: 'Device probe only', config: {}, at: now + 3800, current: false, status: 'proposed' },
   );
   d.rounds.push({
     n: 4, version: 'v4b', start: now + 3700, end: now + 3750, state: 'evaluating',
@@ -1578,11 +1577,18 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
   assert.equal(missRows4.every((r) => r.status === 'missing' && r.statusText === '未测'), true);
   const partialMd = formatComparisonMarkdown(d, d.rounds[3]);
   assert.match(partialMd, /质量护栏 通过 5\/6 · 1 项越线 · 2 项未测/);
-  assert.doesNotMatch(partialMd, /质量护栏6.*越线/);
+  assert.doesNotMatch(partialMd, /质量护栏6/);
 
+  // alpha.119: (a) mixed measured+null seeds -> 部分未测; (b) multi-candidate with one passing & one unmeasured -> 部分未测 (NOT 全部通过);
+  // (c) paired cycle where same-cycle control measured metrics but candidate is all-null -> 候选未产出正式指标.
   const allNullMetrics = Object.fromEntries(d.metrics.items.map((m) => [m.id, null]));
+  d.versions.push(
+    { id: 'v4c', parent: 'v4b', change: 'Device probe only', config: {}, at: now + 3800, current: false, status: 'proposed' },
+    { id: 'v4d', parent: 'v3', change: 'Partial seed & multi-cand', config: {}, at: now + 3850, current: false, status: 'proposed' },
+    { id: 'v4e', parent: 'v3', change: 'Control ok cand null', config: {}, at: now + 3900, current: false, status: 'proposed' },
+  );
   d.rounds.push({
-    n: 5, version: 'v4c', start: now + 3800, end: now + 3850, state: 'evaluating',
+    n: 5, version: 'v4c', start: now + 3800, end: now + 3820, state: 'evaluating',
     plan: { baseline: false, tier: 'explore', skipControl: true, groups: [{ id: 'change', label: 'ProbeOnly', version: 'v4c', vars: {}, control: false }], seeds: [33] },
     metrics: structuredClone(d.metrics),
     runs: [{
@@ -1593,14 +1599,66 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
     }],
     report: null, decision: null, events: [],
   });
-  assert.equal(conclude(state, d, { cycle: 5, verdict: 'tune', findings: 'Device probe negative result', options: [{ k: 'd5', title: 'next', why: 'ok', cites: [`${id}-cycle-4`] }] }, now + 3860).ok, true);
+  assert.equal(conclude(state, d, { cycle: 5, verdict: 'tune', findings: 'Device probe negative result', options: [{ k: 'd5', title: 'next', why: 'ok', cites: [`${id}-cycle-4`] }] }, now + 3830).ok, true);
   const vmNoOutput = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v4c>c1.eval`, cmpView: 'scalar' });
   assert.equal(vmNoOutput.cycle.compare.table.guardSummary.kind, 'noOutput');
   assert.equal(vmNoOutput.cycle.compare.table.guardSummary.failed, 0);
   assert.equal(vmNoOutput.cycle.compare.table.guardSummary.text, '本轮未产出正式指标');
   assert.equal(vmNoOutput.cycle.compare.table.sections.find((s) => s.k === 'guard_fail'), undefined);
-  const noOutputMd = formatComparisonMarkdown(d, d.rounds[4]);
-  assert.equal(noOutputMd, '> 本轮未产出正式指标');
+  assert.equal(formatComparisonMarkdown(d, d.rounds[4]), '> 本轮未产出正式指标');
+
+  // Round 6: single candidate with 2 seeds where g8 has 1 finite pass + 1 null -> 部分未测
+  d.rounds.push({
+    n: 6, version: 'v4d', start: now + 3850, end: now + 3870, state: 'evaluating',
+    plan: { baseline: false, tier: 'explore', skipControl: true, groups: [{ id: 'change', label: 'MixedSeeds', version: 'v4d', vars: {}, control: false }], seeds: [34, 35] },
+    metrics: structuredClone(d.metrics),
+    runs: [
+      { id: 'r6-34', group: 'change', seed: 34, state: 'done', metrics: { 'max-qps': 110, ...zeroGuards, 'aux-mem': 10 }, env: {} },
+      { id: 'r6-35', group: 'change', seed: 35, state: 'done', metrics: { 'max-qps': 112, ...zeroGuards, g8: null, 'aux-mem': 10 }, env: {} },
+    ],
+    report: null, decision: null, events: [],
+  });
+  assert.equal(conclude(state, d, { cycle: 6, verdict: 'tune', findings: 'One seed missing g8', options: [{ k: 'd6', title: 'next', why: 'ok', cites: [`${id}-cycle-5`] }] }, now + 3880).ok, true);
+  const vmMixedSeeds = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v4d>c1.eval`, cmpView: 'scalar' });
+  const g8Row = vmMixedSeeds.cycle.compare.table.sections.find((s) => s.k === 'missing').rows.find((r) => r.id === 'g8');
+  assert.equal(g8Row.status, 'warn');
+  assert.equal(g8Row.statusText, '部分未测');
+  assert.equal(vmMixedSeeds.cycle.compare.table.guardSummary.text, '质量护栏 通过 7/7 · 1 项未测');
+
+  // Round 7: paired cycle where control measured metrics, candidate produced all nulls -> 候选未产出正式指标
+  d.rounds.push({
+    n: 7, version: 'v4e', start: now + 3900, end: now + 3920, state: 'evaluating',
+    plan: {
+      baseline: false, tier: 'confirm',
+      groups: [
+        { id: 'control', label: '对照', version: 'v2', vars: {}, control: true },
+        { id: 'change', label: 'CandNull', version: 'v4e', vars: {}, control: false },
+      ],
+      seeds: [36],
+    },
+    metrics: structuredClone(d.metrics),
+    runs: [
+      { id: 'r7-c-36', group: 'control', seed: 36, state: 'done', metrics: { 'max-qps': 60, ...zeroGuards, 'aux-mem': 14 }, env: {} },
+      { id: 'r7-g-36', group: 'change', seed: 36, state: 'done', error: { kind: 'real', step: 'collect', raw: 'missing metrics' }, metrics: allNullMetrics, env: {} },
+    ],
+    report: null, decision: null, events: [],
+  });
+  assert.equal(conclude(state, d, { cycle: 7, verdict: 'insufficient', findings: 'Candidate produced no metrics', options: [{ k: 'd7', title: 'next', why: 'ok', cites: [`${id}-cycle-6`] }] }, now + 3930).ok, true);
+  const vmNoCand = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v4e>c1.eval`, cmpView: 'scalar' });
+  assert.equal(vmNoCand.cycle.compare.table.guardSummary.kind, 'noCandOutput');
+  assert.equal(vmNoCand.cycle.compare.table.guardSummary.text, '候选未产出正式指标');
+  assert.equal(formatComparisonMarkdown(d, d.rounds[6]), '> 候选未产出正式指标');
+
+  // Multi-candidate: Cand A all pass, Cand B all-null guardrails -> row must be 部分未测 (warn), NOT 全部通过!
+  const multiObj = arith();
+  multiObj.d.rounds[0].runs.filter((u) => u.group === 'lr-low').forEach((u) => { u.metrics.signal = 0.5; u.metrics.tail = 0.2; });
+  multiObj.d.rounds[0].runs.filter((u) => u.group === 'format-zero').forEach((u) => { u.metrics.signal = null; u.metrics.tail = null; });
+  assert.equal(conclude(multiObj.s, multiObj.d, { cycle: 1, verdict: 'tune', findings: 'cand B missing guards', options: [option('m1', 'variable', 'lr')] }, now + 3950).ok, true);
+  const multiTbl = multiObj.view('eval').cycle.compare.table;
+  const multiMiss = multiTbl.sections.find((s) => s.k === 'missing').rows;
+  assert.deepEqual(multiMiss.map((r) => [r.id, r.status, r.statusText]), [['signal', 'warn', '部分未测'], ['tail', 'warn', '部分未测']]);
+  assert.equal(multiTbl.guardSummary.kind, 'unmeasured');
+  assert.equal(multiTbl.guardSummary.passed, 0);
 
   // P2-1: multi-group same-version cycle disambiguates candidate column headers with group name
   const arithObj = arith();
@@ -1660,7 +1718,7 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
 
   // 5) Slim exp payload check on a 25-round objective
   const bigD = state.experiments[id];
-  for (let n = 6; n <= 25; n++) {
+  for (let n = 8; n <= 25; n++) {
     bigD.versions.push({ id: `v${n + 1}`, parent: `v${n}`, change: `iter ${n}`, config: {}, at: now + n * 1000, current: false, status: 'proposed' });
     bigD.rounds.push({
       n, version: `v${n + 1}`, start: now + n * 1000, end: now + n * 1000 + 500, state: 'done',

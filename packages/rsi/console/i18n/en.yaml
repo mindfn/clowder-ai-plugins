@@ -1161,7 +1161,8 @@ cmp:
   guardFailPartial: Guardrails {0}/{1} passed · {2} crossed · {3} unmeasured
   guardUnmeasured: Guardrails {0} unmeasured
   guardNoOutput: No formal metrics produced this cycle
-  guardPassFold: Passed guardrails ({0}/{1} passed, click to expand)
+  guardNoCandOutput: Candidate produced no formal metrics
+  guardPassFold: Passed guardrails ({0}, click to expand)
   stWin: Beats control
   stGuardFail: Guardrail failed
   stIncomparable: Incomparable

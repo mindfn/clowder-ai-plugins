@@ -2194,6 +2194,7 @@ views:
                         guardFailPartial: t:rsi.cmp.guardFailPartial
                         guardUnmeasured: t:rsi.cmp.guardUnmeasured
                         guardNoOutput: t:rsi.cmp.guardNoOutput
+                        guardNoCandOutput: t:rsi.cmp.guardNoCandOutput
                         guardPassFold: t:rsi.cmp.guardPassFold
                         stWin: t:rsi.cmp.stWin
                         stGuardFail: t:rsi.cmp.stGuardFail
