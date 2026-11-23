@@ -1050,6 +1050,10 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
   }
   if (hostGlobal.__rsiMapWheelHandler) {
     document.removeEventListener('wheel', hostGlobal.__rsiMapWheelHandler);
+    delete hostGlobal.__rsiMapWheelHandler;
+  }
+  if (hostGlobal.__rsiMapPointerOverHandler) {
+    document.removeEventListener('pointerover', hostGlobal.__rsiMapPointerOverHandler);
   }
   if (hostGlobal.__rsiMapKeyHandler) {
     document.removeEventListener('keydown', hostGlobal.__rsiMapKeyHandler);
@@ -1215,19 +1219,24 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
     }
     applyZoom(wrap, act);
   };
-  const onWheel = function (ev) {
+  const onScrollWheel = function (ev) {
     if (!(ev.ctrlKey || ev.metaKey)) return;
-    const scroll = ev.target && ev.target.closest && ev.target.closest('.rsi-map-scroll');
-    if (!scroll) return;
-    const wrap = scroll.closest('.rsi-map-wrap');
+    const scroll = ev.currentTarget;
+    const wrap = scroll && scroll.closest && scroll.closest('.rsi-map-wrap');
     if (!wrap) return;
     ev.preventDefault();
     const cur = parseFloat(wrap.getAttribute('data-zoom') || '1') || 1;
     const step = ev.deltaY < 0 ? 1.08 : 1 / 1.08;
     setZoom(wrap, cur * step, ev);
   };
+  const onPointerOver = function (ev) {
+    const scroll = ev.target && ev.target.closest && ev.target.closest('.rsi-map-scroll');
+    if (!scroll || scroll.__rsiWheelBound) return;
+    scroll.__rsiWheelBound = true;
+    scroll.addEventListener('wheel', onScrollWheel, { passive: false });
+  };
   hostGlobal.__rsiMapClickHandler = onClick;
-  hostGlobal.__rsiMapWheelHandler = onWheel;
+  hostGlobal.__rsiMapPointerOverHandler = onPointerOver;
   document.addEventListener('click', onClick);
-  document.addEventListener('wheel', onWheel, { passive: false });
+  document.addEventListener('pointerover', onPointerOver, { passive: true });
 })();

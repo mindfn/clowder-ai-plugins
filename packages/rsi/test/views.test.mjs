@@ -1042,13 +1042,24 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
   const clickListeners = [];
   const keyListeners = [];
   const wheelListeners = [];
+  const pointerOverListeners = [];
   const fakeWindow = {};
   const sandbox = {
     window: fakeWindow,
     globalThis: fakeWindow,
     document: {
-      addEventListener: (ev, fn) => { if (ev === 'click') clickListeners.push(fn); if (ev === 'keydown') keyListeners.push(fn); if (ev === 'wheel') wheelListeners.push(fn); },
+      addEventListener: (ev, fn, opts) => {
+        if (ev === 'click') clickListeners.push(fn);
+        if (ev === 'keydown') keyListeners.push(fn);
+        if (ev === 'wheel') wheelListeners.push(fn);
+        if (ev === 'pointerover') pointerOverListeners.push({ fn, opts });
+      },
       removeEventListener: (ev, fn) => {
+        if (ev === 'pointerover') {
+          const idx = pointerOverListeners.findIndex((x) => x.fn === fn);
+          if (idx >= 0) pointerOverListeners.splice(idx, 1);
+          return;
+        }
         const arr = ev === 'click' ? clickListeners : ev === 'keydown' ? keyListeners : ev === 'wheel' ? wheelListeners : null;
         if (arr) { const idx = arr.indexOf(fn); if (idx >= 0) arr.splice(idx, 1); }
       },
@@ -1068,8 +1079,18 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
   vmMod.runInNewContext(src, sandbox);
   vmMod.runInNewContext(src, sandbox);
   assert.equal(clickListeners.length, 1);
-  assert.equal(wheelListeners.length, 1);
+  assert.equal(wheelListeners.length, 0, 'must never attach document-level wheel listener');
+  assert.equal(pointerOverListeners.length, 1);
+  assert.equal(pointerOverListeners[0].opts?.passive, true);
   assert.equal(keyListeners.length, 0);
+  // Lazy element-scoped wheel binding via passive pointerover: binds once per .rsi-map-scroll element
+  const elemWheel = [];
+  const fakeScroll = { addEventListener: (ev, fn, opts) => { if (ev === 'wheel') elemWheel.push({ fn, opts }); } };
+  const fakeTarget = { closest: (sel) => sel === '.rsi-map-scroll' ? fakeScroll : null };
+  pointerOverListeners[0].fn({ target: fakeTarget });
+  pointerOverListeners[0].fn({ target: fakeTarget });
+  assert.equal(elemWheel.length, 1, 'element-scoped wheel listener binds strictly once');
+  assert.equal(elemWheel[0].opts?.passive, false);
 
   const mapHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.map' }, {}, {});
   assert.match(mapHtml, /Refuted ✕/);
