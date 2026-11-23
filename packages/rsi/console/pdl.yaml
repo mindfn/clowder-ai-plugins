@@ -4520,9 +4520,134 @@ views:
       - type: each
         from: $.cards.cards
         blocks:
-          - type: view
-            id: rsi.cardBody
-            data: "@"
+          - type: box
+            variant: card
+            blocks:
+              - type: text
+                variant: title
+                text:
+                  t: rsi.card.titleOf
+                  args:
+                    - "@objectiveName"
+                    - "@from"
+                    - "@to"
+              - type: text
+                variant: meta
+                when:
+                  of: "@round"
+                  gte: 2
+                text:
+                  t: rsi.card.round
+                  args:
+                    - "@round"
+              - type: label
+                text: t:rsi.card.basis
+              - type: text
+                variant: para
+                text: "@basis"
+              - type: text
+                variant: list
+                from: "@reasons"
+              - type: label
+                text: t:rsi.card.proposal
+              - type: list
+                from: "@actions"
+                row:
+                  layout: line
+                  key: "@unit"
+                  title:
+                    text:
+                      of: "@op"
+                      map:
+                        modify:
+                          t: rsi.change.modify
+                          args:
+                            - "@unitName"
+                            - "@from"
+                            - "@to"
+                        add:
+                          t: rsi.change.add
+                          args:
+                            - "@unitName"
+                        remove:
+                          t: rsi.change.remove
+                          args:
+                            - "@unitName"
+                        enable:
+                          t: rsi.change.enable
+                          args:
+                            - "@unitName"
+                        disable:
+                          t: rsi.change.disable
+                          args:
+                            - "@unitName"
+                        _: "@unitName"
+                  cols:
+                    - v:
+                        text:
+                          t: rsi.card.shared
+                          args:
+                            - of: "@sharedNames"
+                              sep: 、
+                        tone: warn
+                      w: label
+                      when: "@sharedNames"
+                    - v:
+                        text:
+                          t: rsi.apply
+                          args:
+                            - "@apply"
+                      w: state
+              - type: label
+                text: t:rsi.card.predictions
+              - type: list
+                from: "@predictions"
+                row:
+                  layout: line
+                  key: "@metric"
+                  title: "@metric"
+                  inline:
+                    - chip: t:rsi.metric.locked
+                      when: "@locked"
+                    - chip: t:rsi.metric.guard
+                      when: "@guard"
+                  cols:
+                    - v:
+                        text: "@expect"
+                      w: label
+              - type: label
+                text: t:rsi.card.collab
+                when: "@collab"
+              - type: text
+                variant: para
+                text: "@collab.text"
+                when: "@collab"
+              - type: toolbar
+                items:
+                  - type: button
+                    primary: true
+                    label: t:rsi.card.apply
+                    act: plugin
+                    args:
+                      request: decide
+                      card: "@id"
+                      decision: apply
+                    disabled: $.pending
+                  - type: button
+                    label: t:rsi.card.reevaluate
+                    act: dialog
+                    args:
+                      kind: rsiReeval
+                      card: "@id"
+                    disabled: $.pending
+                  - type: button
+                    label: t:rsi.card.skip
+                    act: plugin
+                    args:
+                      request: decide
+                      card: "@id"
+                      decision: skip
+                    disabled: $.pending
     sources:
       cards: cards
     loading: t:rsi.console.loading
@@ -4585,9 +4710,134 @@ views:
                 request: go
                 objective: "@objective"
           expand:
-            - type: view
-              id: rsi.cardBody
-              data: "@"
+            - type: box
+              variant: card
+              blocks:
+                - type: text
+                  variant: title
+                  text:
+                    t: rsi.card.titleOf
+                    args:
+                      - "@objectiveName"
+                      - "@from"
+                      - "@to"
+                - type: text
+                  variant: meta
+                  when:
+                    of: "@round"
+                    gte: 2
+                  text:
+                    t: rsi.card.round
+                    args:
+                      - "@round"
+                - type: label
+                  text: t:rsi.card.basis
+                - type: text
+                  variant: para
+                  text: "@basis"
+                - type: text
+                  variant: list
+                  from: "@reasons"
+                - type: label
+                  text: t:rsi.card.proposal
+                - type: list
+                  from: "@actions"
+                  row:
+                    layout: line
+                    key: "@unit"
+                    title:
+                      text:
+                        of: "@op"
+                        map:
+                          modify:
+                            t: rsi.change.modify
+                            args:
+                              - "@unitName"
+                              - "@from"
+                              - "@to"
+                          add:
+                            t: rsi.change.add
+                            args:
+                              - "@unitName"
+                          remove:
+                            t: rsi.change.remove
+                            args:
+                              - "@unitName"
+                          enable:
+                            t: rsi.change.enable
+                            args:
+                              - "@unitName"
+                          disable:
+                            t: rsi.change.disable
+                            args:
+                              - "@unitName"
+                          _: "@unitName"
+                    cols:
+                      - v:
+                          text:
+                            t: rsi.card.shared
+                            args:
+                              - of: "@sharedNames"
+                                sep: 、
+                          tone: warn
+                        w: label
+                        when: "@sharedNames"
+                      - v:
+                          text:
+                            t: rsi.apply
+                            args:
+                              - "@apply"
+                        w: state
+                - type: label
+                  text: t:rsi.card.predictions
+                - type: list
+                  from: "@predictions"
+                  row:
+                    layout: line
+                    key: "@metric"
+                    title: "@metric"
+                    inline:
+                      - chip: t:rsi.metric.locked
+                        when: "@locked"
+                      - chip: t:rsi.metric.guard
+                        when: "@guard"
+                    cols:
+                      - v:
+                          text: "@expect"
+                        w: label
+                - type: label
+                  text: t:rsi.card.collab
+                  when: "@collab"
+                - type: text
+                  variant: para
+                  text: "@collab.text"
+                  when: "@collab"
+                - type: toolbar
+                  items:
+                    - type: button
+                      primary: true
+                      label: t:rsi.card.apply
+                      act: plugin
+                      args:
+                        request: decide
+                        card: "@id"
+                        decision: apply
+                      disabled: $.pending
+                    - type: button
+                      label: t:rsi.card.reevaluate
+                      act: dialog
+                      args:
+                        kind: rsiReeval
+                        card: "@id"
+                      disabled: $.pending
+                    - type: button
+                      label: t:rsi.card.skip
+                      act: plugin
+                      args:
+                        request: decide
+                        card: "@id"
+                        decision: skip
+                      disabled: $.pending
               when:
                 of: "@kind"
                 map:
@@ -4910,137 +5160,6 @@ views:
       doc: doc
     loading: t:rsi.console.loading
     error: t:rsi.console.error
-  rsi.cardBody:
-    bare: true
-    blocks:
-      - type: box
-        variant: card
-        blocks:
-          - type: text
-            variant: title
-            text:
-              t: rsi.card.titleOf
-              args:
-                - "@objectiveName"
-                - "@from"
-                - "@to"
-          - type: text
-            variant: meta
-            when:
-              of: "@round"
-              gte: 2
-            text:
-              t: rsi.card.round
-              args:
-                - "@round"
-          - type: label
-            text: t:rsi.card.basis
-          - type: text
-            variant: para
-            text: "@basis"
-          - type: text
-            variant: list
-            from: "@reasons"
-          - type: label
-            text: t:rsi.card.proposal
-          - type: list
-            from: "@actions"
-            row:
-              layout: line
-              key: "@unit"
-              title:
-                text:
-                  of: "@op"
-                  map:
-                    modify:
-                      t: rsi.change.modify
-                      args:
-                        - "@unitName"
-                        - "@from"
-                        - "@to"
-                    add:
-                      t: rsi.change.add
-                      args:
-                        - "@unitName"
-                    remove:
-                      t: rsi.change.remove
-                      args:
-                        - "@unitName"
-                    enable:
-                      t: rsi.change.enable
-                      args:
-                        - "@unitName"
-                    disable:
-                      t: rsi.change.disable
-                      args:
-                        - "@unitName"
-                    _: "@unitName"
-              cols:
-                - v:
-                    text:
-                      t: rsi.card.shared
-                      args:
-                        - of: "@sharedNames"
-                          sep: 、
-                    tone: warn
-                  w: label
-                  when: "@sharedNames"
-                - v:
-                    text:
-                      t: rsi.apply
-                      args:
-                        - "@apply"
-                  w: state
-          - type: label
-            text: t:rsi.card.predictions
-          - type: list
-            from: "@predictions"
-            row:
-              layout: line
-              key: "@metric"
-              title: "@metric"
-              inline:
-                - chip: t:rsi.metric.locked
-                  when: "@locked"
-                - chip: t:rsi.metric.guard
-                  when: "@guard"
-              cols:
-                - v:
-                    text: "@expect"
-                  w: label
-          - type: label
-            text: t:rsi.card.collab
-            when: "@collab"
-          - type: text
-            variant: para
-            text: "@collab.text"
-            when: "@collab"
-          - type: toolbar
-            items:
-              - type: button
-                primary: true
-                label: t:rsi.card.apply
-                act: plugin
-                args:
-                  request: decide
-                  card: "@id"
-                  decision: apply
-                disabled: $.pending
-              - type: button
-                label: t:rsi.card.reevaluate
-                act: dialog
-                args:
-                  kind: rsiReeval
-                  card: "@id"
-                disabled: $.pending
-              - type: button
-                label: t:rsi.card.skip
-                act: plugin
-                args:
-                  request: decide
-                  card: "@id"
-                  decision: skip
-                disabled: $.pending
   rsi.objectiveTraces:
     bare: true
     blocks:
