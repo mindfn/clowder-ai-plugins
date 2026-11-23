@@ -1241,4 +1241,23 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
   assert.match(html115, /砚砚 is implementing/);
   assert.doesNotMatch(html115, /class="rsi-cc-asp obs"/, 'must not collide with host .obs flex-column CSS class');
   assert.match(html115, /rsi-asp-obs/, 'must use namespaced rsi-asp-obs class');
+
+  // alpha.116: card without numeric metric or manual tag surfaces headlineBrief (instead of hiding verdict behind changeShort),
+  // and version tree marks env-failed runs with non-insufficient report verdict as 'concluded' instead of misleading 'failed'.
+  x.d.versions.push({ id: 'v15', parent: 'v2', change: 'Code change description hidden behind headline', at: now + 1500, current: false, status: 'proposed', aspects: ['object'] });
+  x.d.rounds.push({
+    n: 15, version: 'v15', state: 'done',
+    plan: { tier: 'explore', skipControl: true, seeds: [45], groups: [{ id: 'change', label: 'GateStop', version: 'v15', vars: {}, control: false }] },
+    runs: [{ id: 'r15-1', group: 'change', seed: 45, state: 'failed', retries: 1, error: { kind: 'env', step: 'get', raw: 'exit 1' }, metrics: {} }],
+    metrics: x.d.metrics,
+    report: { verdict: 'tune', headline: 'Preformal gate intercepted 176 score diffs', summary: 'Gate intercepted', matrix: [], compare: { comparable: false, metric: 'accuracy', dir: 'up', groups: [] }, predictions: [], directions: [], attribution: { assessedLayers: [] } },
+    decision: { pick: 'same' }, events: [],
+  });
+  const vm116 = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: `${x.id}/v15>c1.eval` });
+  const v15Row = vm116.versions.find((row) => row.id === 'v15');
+  const v15ApplyStep = v15Row?.steps?.find((st) => st.k === 'apply');
+  assert.equal(v15ApplyStep?.result, 'concluded', 'env-failed run with non-insufficient report must surface concluded instead of failed');
+  sandbox.pv = (expr, sc) => expr === '$.map116' ? vm116.overviewMap : (typeof expr === 'string' && expr.startsWith('@') ? sc?.[expr.slice(1)] : expr);
+  const html116 = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.map116', mode: 'modal' }, {}, {});
+  assert.match(html116, /Preformal gate intercepted 176 score diffs/, 'untagged metricless node must display headlineBrief on card');
 });

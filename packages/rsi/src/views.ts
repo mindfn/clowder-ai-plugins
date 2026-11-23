@@ -712,7 +712,9 @@ function exp(): any {
     return { key: key(v.id), parent: v.parent && key(v.parent),
       cycles: verRounds.map(function (r: any): any {
         const live = r.state === 'running', disc = r.report && discussionOf(r), bypassed = r.state === 'repaired' || r.state === 'repairing';
-        return { n: r.k, apply: r.runs.some(function (u: any): any { return u.error && u.error.kind === 'env'; }) ? 'failed' : 'done', collect: true, live: live,
+        const hasEnvFail = r.runs.some((u: Data) => u.error && u.error.kind === 'env');
+        const applyState = hasEnvFail ? (o.projectPath && r.report && r.report.verdict !== 'insufficient' ? 'concluded' : 'failed') : 'done';
+        return { n: r.k, apply: applyState, collect: true, live: live,
           done: live ? r.runs.filter((u: Data) => u.state === 'done' || u.state === 'failed').length : null, total: r.runs.length,
           eval: r.report ? r.report.verdict : evalStateOf(r), delta: r.report && compareOf(r).lead,
           discuss: disc ? { result: disc.status, resolved: !!r.decision, count: disc.count, done: disc.done, asked: disc.asked, missing: disc.missing.length } : (o.projectPath ? { result: (!hasAnalysts || bypassed) ? 'skipped' : 'waiting', resolved: false, count: 0 } : null),

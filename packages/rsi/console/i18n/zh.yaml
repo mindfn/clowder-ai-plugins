@@ -81,6 +81,7 @@ govResult:
   waiting: 待执行
 applyResult:
   done: 已部署
+  concluded: 已拦截·有结论
   failed: 有环境失败
   _: "{0}"
 stepName:

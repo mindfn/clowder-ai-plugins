@@ -56,8 +56,13 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
     const timer = limit ? setTimeout(() => {
       expired = true;
       log += `\n超过 ${Math.round(limit / 1000)} 秒没结束，已停止`;
-      try { killTree(process.pid!); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') host.log('error', 'RSI could not stop a timed-out command', { error: String(error) }); }
+      if (process.pid && process.exitCode === null && process.signalCode === null) {
+        try { killTree(process.pid); }
+        catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code !== 'ESRCH' && code !== 'EPERM') host.log('error', 'RSI could not stop a timed-out command', { error: String(error) });
+        }
+      }
     }, limit) : undefined;
     const code = await new Promise<number>((done) => {
       process.once('error', (error) => { log += error.message; done(-1); });
@@ -388,6 +393,15 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       }
     }
   }
+  function killChild(proc: ChildProcess | undefined) {
+    if (!proc?.pid || proc.exitCode !== null || proc.signalCode !== null) return;
+    try { killTree(proc.pid); }
+    catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      // On macOS/POSIX, signalling a process group whose leader just exited and has not yet been reaped returns EPERM (ESRCH after reaping).
+      if (code !== 'ESRCH' && code !== 'EPERM') throw error;
+    }
+  }
   return {
     // Deleting objectives: an async job is cancelled, a running command is killed, and no further command starts for them.
     async drop(ids: string[]) {
@@ -400,10 +414,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       for (const id of ids) dropped.add(id);
       if (busy && ids.includes(busy)) {
         clearTimeout(pollTimer); releasePoll?.();
-        if (child?.pid) {
-          try { killTree(child.pid); }
-          catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
-        }
+        killChild(child);
       }
     },
     // The window of the cycle the schedule started closed: its running run is stopped and waits, like its queued ones, for the window to open again.
@@ -411,10 +422,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       if (held || !runId || !ids.includes(runId)) return;
       held = true;
       clearTimeout(pollTimer); releasePoll?.();
-      if (child?.pid) {
-        try { killTree(child.pid); }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
-      }
+      killChild(child);
     },
     wake() {
       if (stopped) return;
@@ -425,10 +433,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
     async stop() {
       stopped = true;
       clearTimeout(pollTimer); releasePoll?.();
-      if (child?.pid) {
-        try { killTree(child.pid); }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
-      }
+      killChild(child);
       await job;
       if (remote?.cancel) {
         const active = remote;

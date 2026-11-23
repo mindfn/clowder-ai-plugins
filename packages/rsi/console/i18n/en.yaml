@@ -81,6 +81,7 @@ govResult:
   waiting: Pending
 applyResult:
   done: Deployed
+  concluded: Intercepted · concluded
   failed: Environment failures
   _: "{0}"
 stepName:
