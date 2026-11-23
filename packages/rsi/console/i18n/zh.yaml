@@ -106,26 +106,32 @@ detail:
 ov:
   total: 共
   current: 当前
+  preparingStat: 准备中
   pruned: 已证伪
   insufficient: 未测成
-  obj: 进化对象
-  obs: 可观测性
-  rub: 规约尺子
+  obj: 治理对象
+  obs: 执行采集
+  rub: 好坏规约
   baseline: 基线
   unlabeled: 未标注
   lensMetric: 指标
-  lensAspect: 三元
+  lensAspect: 维度
   fit: 适应
+  expandAll: 全部展开
+  collapseChains: 折叠长链
   expand: 大图预览
   close: 关闭
   exportHtml: 导出 HTML
   clusterTitle: 基于 {0} 的 {1} 次未晋级探索（按时间先后，均未替换 {0}）
+  foldCount: 共 {0} 版
+  foldHint: 点击展开连续 {0} 版
   focusVersion: 定位到下方详情
   cycleOf: 第 {0} 周期
   clickHint: 点击节点查看说明
   stCurrent: 当前
   stConfirmed: 已确认
   stRunning: 运行中
+  stPreparing: 准备中
   stPruned: 已证伪 ✕
   stDeadEnd: 已淘汰 ✕
   stGuardrail: 越护栏 ✕
@@ -152,6 +158,9 @@ ov:
   trigDec: 第 {0} 周期决策：{1}
   trigCycle: 第 {0} 周期（{1}）推进
   basisRunning: 正在执行实验运行
+  basisPreparing: 正在准备新版本，提交登记后将自动进入运行
+  basisPreparingClaimed: "{0} 正在实现与复核，提交版本后自动进入运行"
+  basisPreparingWaiting: 等待 {0} 认领并准备版本
   basisEval: 运行已完成，等待评估结论
   basisRepaired: 已被后续修复版本取代
   basisNone: 尚未形成评估结论

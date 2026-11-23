@@ -1,42 +1,11 @@
 import { RSI_CP_INIT, createFixtures } from './fixtures.js';
 import { act } from './actions.js';
 import { clipTitle, submitInitStep, enqueue, kick, message, prepSettled, stepMemberOf, STOP_TARGET, syncObjective } from './init.js';
-import { abandonRepair, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, validateReservedSeeds, validPlan } from './cycles.js';
+import { abandonRepair, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, resolveRsiParent, validateReservedSeeds, validPlan } from './cycles.js';
 import { parseScheduleText } from './schedule.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, PrepItem, RsiState, Section, ToolContext } from './types.js';
-import { execFile } from 'node:child_process';
 import { platform } from 'node:os';
-import { promisify } from 'node:util';
-
-const execFileAsync = promisify(execFile);
-
-export async function gitAncestorsOf(projectPath: string | undefined, commit: string | undefined): Promise<string[]> {
-  if (!projectPath || !commit || !/^[a-f0-9]{7,40}$/i.test(commit.trim())) return [];
-  try {
-    const { stdout } = await execFileAsync('git', ['rev-list', '--max-count=512', commit.trim()], {
-      cwd: projectPath,
-      encoding: 'utf8',
-      timeout: 2000,
-    });
-    return stdout.split(/\r?\n/).map((s) => s.trim().toLowerCase()).filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-function matchGitParent(ancestors: readonly string[] | undefined, versions: Data[]): string | null {
-  if (!ancestors?.length) return null;
-  const withCommit = versions.filter((v: Data) => typeof v.commit === 'string' && v.commit.trim().length >= 7);
-  if (!withCommit.length) return null;
-  for (const sha of ancestors) {
-    for (let i = withCommit.length - 1; i >= 0; i--) {
-      const vc = String(withCommit[i].commit).trim().toLowerCase();
-      if (sha.startsWith(vc) || vc.startsWith(sha)) return withCommit[i].id;
-    }
-  }
-  return null;
-}
 
 const fields = ['preflight', 'submit', 'get', 'cancel', 'collect', 'analyze'];
 export function executorInput(input: Data): boolean {
@@ -137,7 +106,7 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
 // Text that is not JSON (a shell command such as "[ -f train.py ]") stays as it is.
 const structured = (v: unknown) => { if (typeof v !== 'string' || !/^\s*[[{]/.test(v)) return v; try { return JSON.parse(v); } catch { return v; } };
 
-export function toolAction(state: RsiState, method: string, raw: Data, ctx: ToolContext, now: number, opts?: { gitAncestors?: readonly string[] }): Data {
+export function toolAction(state: RsiState, method: string, raw: Data, ctx: ToolContext, now: number): Data {
   const input: Data = Object.fromEntries(Object.entries(raw || {}).map(([k, v]) => [k, structured(v)]));
   const d = Object.values(state.experiments).find((d) => d.objective.thread === ctx.threadId);
   if (!d?.objective.projectPath) return { error: 'No real RSI objective in this thread', status: 404 };
@@ -232,9 +201,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       baseVersion = input.baseVersion.trim();
     }
     const previous = d.objective.currentVersion, id = `v${d.versions.length + 1}`;
-    const derivedParent = baseVersion
-      || (input.commit ? matchGitParent(opts?.gitAncestors, d.versions) : null)
-      || previous;
+    const derivedParent = resolveRsiParent(d, last, baseVersion, !!d.versionRequest.direct);
     const changes = record(input.changes) ? {
       ...(record(input.changes.pr) && text(input.changes.pr.id) ? { pr: { id: input.changes.pr.id, ...(text(input.changes.pr.url) ? { url: input.changes.pr.url } : {}), ...(text(input.changes.pr.title) ? { title: input.changes.pr.title } : {}), ...(text(input.changes.pr.state) ? { state: input.changes.pr.state } : {}) } } : {}),
       ...(Array.isArray(input.changes.files) ? { files: input.changes.files.filter((f: unknown) => record(f) && text(f.path)).map((f: Data) => ({ path: f.path, op: ['modify', 'add', 'delete', 'rename'].includes(f.op) ? f.op : 'modify', ...(typeof f.added === 'number' ? { added: f.added } : {}), ...(typeof f.removed === 'number' ? { removed: f.removed } : {}), ...(Array.isArray(f.hunks) ? { hunks: f.hunks } : {}) })) } : {}),

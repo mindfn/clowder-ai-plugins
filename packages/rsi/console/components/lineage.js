@@ -24,7 +24,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiLineage'] = function (p, sc, root) {
     const raw = pvParts(n.label, r, root);
     return String(raw || keyOf(r) || '').replace(/<[^>]*>/g, '').trim();
   };
-  const aspectMeta = { object: { cls: 'obj', key: 'object' }, observability: { cls: 'obs', key: 'observability' }, rubric: { cls: 'rub', key: 'rubric' } };
+  const aspectMeta = { object: { cls: 'rsi-asp-obj', key: 'object' }, observability: { cls: 'rsi-asp-obs', key: 'observability' }, rubric: { cls: 'rsi-asp-rub', key: 'rubric' } };
   const renderAspectDots = function (r) {
     if (!r || !Array.isArray(r.aspects) || !r.aspects.length) return '';
     return '<span class="rsi-asp-dots">' + r.aspects.map(function (a) {
@@ -455,28 +455,114 @@ function rsiFormatCausality(c, L) {
   else if (c.triggerKind === 'decision') trigger = L.trigDec.replace('{0}', String(c.triggerCycle || '')).replace('{1}', String(c.triggerDetail || ''));
   else if (c.triggerKind === 'cycle') trigger = L.trigCycle.replace('{0}', String(c.triggerCycle || '')).replace('{1}', String(c.triggerVersion || ''));
   else if (c.triggerVersion) trigger = L.trigParent.replace('{0}', String(c.triggerVersion));
-  const basis = c.basisText || (c.basisKind === 'running' ? L.basisRunning : c.basisKind === 'evaluating' ? L.basisEval : c.basisKind === 'repaired' ? L.basisRepaired : L.basisNone);
+  const prepBasis = c.basisKind === 'preparing'
+    ? (c.ownerName
+      ? (c.claimed ? L.basisPreparingClaimed : L.basisPreparingWaiting).replace('{0}', String(c.ownerName))
+      : L.basisPreparing)
+    : '';
+  const basis = c.basisText || prepBasis || (c.basisKind === 'running' ? L.basisRunning : c.basisKind === 'evaluating' ? L.basisEval : c.basisKind === 'repaired' ? L.basisRepaired : L.basisNone);
   return { trigger: trigger, action: c.action || '—', basis: basis };
 }
 
 function rsiOverviewDefaults() {
   return {
-    total: 'Total', current: 'Current', pruned: 'Refuted', insufficient: 'Insufficient',
+    total: 'Total', current: 'Current', preparingStat: 'Preparing', pruned: 'Refuted', insufficient: 'Insufficient',
     obj: 'Object', obs: 'Observability', rub: 'Rubric', baseline: 'Baseline', unlabeled: 'Unlabeled',
-    lensMetric: 'Metric', lensAspect: 'Aspects', fit: 'Fit', exportHtml: 'Export HTML',
+    lensMetric: 'Metric', lensAspect: 'Aspects', fit: 'Fit', expandAll: 'Expand all', collapseChains: 'Fold chains', exportHtml: 'Export HTML',
     clusterTitle: '{1} unpromoted trials from {0} (chronological, none replaced {0})',
+    foldCount: '{0} versions', foldHint: 'Click to expand {0} versions',
     cycleOf: 'Cycle {0}',
-    stCurrent: 'Current', stConfirmed: 'Confirmed', stRunning: 'Running', stPruned: 'Refuted ✕',
+    stCurrent: 'Current', stConfirmed: 'Confirmed', stRunning: 'Running', stPreparing: 'Preparing', stPruned: 'Refuted ✕',
     stDeadEnd: 'Dead-end ✕', stGuardrail: 'Guardrail ✕', stWorse: 'Below control', stTied: 'Tied',
     stInsufficient: 'Insufficient', stRepaired: 'Superseded', stExplore: 'Explore', stBaseline: 'Baseline',
     annotatedBy: 'Source',
     trigBaseline: 'Initial baseline', trigParent: 'Based on {0}', trigRepair: 'Repaired after cycle {0} ({1})',
     trigDir: 'Cycle {0} direction: {1}', trigDec: 'Cycle {0} decision: {1}', trigCycle: 'Cycle {0} ({1})',
-    basisRunning: 'Running', basisEval: 'Awaiting evaluation', basisRepaired: 'Superseded by repair', basisNone: 'No conclusion yet',
+    basisRunning: 'Running', basisPreparing: 'Preparing next version; will run once submitted',
+    basisPreparingClaimed: '{0} is implementing & reviewing; will run once submitted',
+    basisPreparingWaiting: 'Waiting for {0} to claim and prepare',
+    basisEval: 'Awaiting evaluation', basisRepaired: 'Superseded by repair', basisNone: 'No conclusion yet',
     lblTrigger: 'Trigger', lblAction: 'Change', lblBasis: 'Verdict basis',
     colSeed: 'seed', colState: 'status', colCommit: 'commit', colNote: 'job / note',
     scale: 'Scale', metric: 'Metric', sameScale: 'Same-scale', refDelta: 'Ref',
   };
+}
+
+function rsiFoldLinearChains(nodes, selectedId, expandedMap, metricDir) {
+  const byId = {}, kids = {};
+  nodes.forEach(function (n) { byId[n.id] = n; });
+  nodes.forEach(function (n) {
+    if (n.parent && byId[n.parent]) (kids[n.parent] = kids[n.parent] || []).push(n);
+  });
+  const isBoundary = function (n) {
+    if (!n) return true;
+    if (!n.parent || !byId[n.parent]) return true;
+    if ((kids[n.parent] || []).length > 1) return true;
+    if ((kids[n.id] || []).length !== 1) return true;
+    if (n.state === 'current' || n.state === 'running' || n.state === 'preparing' || n.pruned) return true;
+    if (n.disposition === 'advance') return true;
+    if (n.id === selectedId) return true;
+    return false;
+  };
+  const swallowed = {}, foldBeforeTail = {}, reparent = {};
+  let foldableCount = 0, expandedCount = 0;
+  nodes.forEach(function (head) {
+    if (!isBoundary(head)) return;
+    (kids[head.id] || []).forEach(function (ch) {
+      if (isBoundary(ch)) return;
+      const mid = [], seen = {};
+      let cur = ch;
+      while (cur && !isBoundary(cur) && !seen[cur.id]) {
+        seen[cur.id] = true;
+        mid.push(cur);
+        const nextList = kids[cur.id] || [];
+        cur = nextList.length === 1 ? nextList[0] : null;
+      }
+      const tail = cur;
+      // Fold only when total linear run (head + mid + tail) has >= 4 nodes (i.e. >= 2 middle nodes).
+      if (!tail || mid.length < 2) return;
+      const foldKey = mid[0].id + '~' + mid[mid.length - 1].id;
+      foldableCount += 1;
+      const isOpen = !!(expandedMap && (expandedMap['*'] || expandedMap[foldKey]));
+      if (isOpen) {
+        expandedCount += 1;
+        return;
+      }
+      const aspSet = {};
+      let bestVal = null;
+      mid.forEach(function (m) {
+        swallowed[m.id] = true;
+        (m.aspects || []).forEach(function (a) { aspSet[a] = true; });
+        if (typeof m.value === 'number' && Number.isFinite(m.value)) {
+          if (bestVal == null || (metricDir === 'down' ? m.value < bestVal : m.value > bestVal)) bestVal = m.value;
+        }
+      });
+      const mergedAspects = ['object', 'observability', 'rubric'].filter(function (a) { return !!aspSet[a]; });
+      const foldNode = {
+        id: 'fold:' + foldKey,
+        parent: head.id,
+        isFold: true,
+        foldKey: foldKey,
+        displayId: mid[0].id + ' ~ ' + mid[mid.length - 1].id,
+        count: mid.length,
+        memberIds: mid.map(function (m) { return m.id; }),
+        aspects: mergedAspects,
+        aspectKind: mergedAspects.length ? 'declared' : 'unlabeled',
+        value: bestVal,
+        state: 'folded',
+        pruned: false,
+      };
+      foldBeforeTail[tail.id] = foldNode;
+      reparent[tail.id] = foldNode.id;
+    });
+  });
+  const out = [];
+  nodes.forEach(function (n) {
+    if (swallowed[n.id]) return;
+    if (foldBeforeTail[n.id]) out.push(foldBeforeTail[n.id]);
+    out.push(reparent[n.id] ? Object.assign({}, n, { parent: reparent[n.id] }) : n);
+  });
+  return { nodes: out, foldableCount: foldableCount, expandedCount: expandedCount };
 }
 
 function rsiLayoutOverviewMap(nodes) {
@@ -589,6 +675,7 @@ function rsiOverviewStateTag(n, L) {
   if (!n) return null;
   if (n.state === 'current') return { cls: 'ok', text: L.stCurrent };
   if (n.state === 'running') return { cls: 'info', text: L.stRunning };
+  if (n.state === 'preparing') return { cls: 'prep', text: L.stPreparing };
   if (n.state === 'confirmed') return { cls: 'ok', text: L.stConfirmed };
   if (n.state === 'deadEnd') return { cls: 'danger', text: L.stDeadEnd };
   if (n.state === 'guardrail') return { cls: 'danger', text: L.stGuardrail };
@@ -604,10 +691,13 @@ function rsiOverviewStateTag(n, L) {
 
 function rsiRenderOverviewCanvas(data, L, opts) {
   const esc = opts.esc;
-  const nodes = data.nodes || [];
+  const rawNodes = data.nodes || [];
+  const metric = data.metric || { dir: 'up', unit: '' };
+  const selectedId = opts.selectedId || data.selectedVersion || data.currentVersion || (rawNodes[rawNodes.length - 1] && rawNodes[rawNodes.length - 1].id);
+  const folded = rsiFoldLinearChains(rawNodes, selectedId, opts.expandedMap || null, metric.dir || 'up');
+  const nodes = folded.nodes;
   const layout = rsiLayoutOverviewMap(nodes);
   const byId = layout.byId, pos = layout.pos, CW = layout.CW, CH = layout.CH;
-  const selectedId = opts.selectedId || data.selectedVersion || data.currentVersion || (nodes[nodes.length - 1] && nodes[nodes.length - 1].id);
   const lens = opts.lens === 'aspect' ? 'aspect' : 'metric';
   const activePath = {};
   (function traceUp(id) {
@@ -617,8 +707,7 @@ function rsiRenderOverviewCanvas(data, L, opts) {
       cur = byId[cur] && byId[cur].parent;
     }
   })(selectedId);
-  const metric = data.metric || { dir: 'up', unit: '' };
-  const finiteVals = nodes.map(function (n) { return n.value; }).filter(function (v) { return typeof v === 'number' && Number.isFinite(v); });
+  const finiteVals = rawNodes.map(function (n) { return n.value; }).filter(function (v) { return typeof v === 'number' && Number.isFinite(v); });
   const vMin = finiteVals.length ? Math.min.apply(null, finiteVals) : 0;
   const vMax = finiteVals.length ? Math.max.apply(null, finiteVals) : 1;
   const normOf = function (v) {
@@ -627,7 +716,7 @@ function rsiRenderOverviewCanvas(data, L, opts) {
     const raw = (v - vMin) / (vMax - vMin);
     return metric.dir === 'down' ? 1 - raw : raw;
   };
-  const aspectMeta = { object: { cls: 'obj', label: L.obj }, observability: { cls: 'obs', label: L.obs }, rubric: { cls: 'rub', label: L.rub } };
+  const aspectMeta = { object: { cls: 'rsi-asp-obj', label: L.obj }, observability: { cls: 'rsi-asp-obs', label: L.obs }, rubric: { cls: 'rsi-asp-rub', label: L.rub } };
   const aspectTextOf = function (n) {
     if (n.aspectKind === 'baseline') return L.baseline;
     if (n.aspects && n.aspects.length) return n.aspects.map(function (a) { return aspectMeta[a] ? aspectMeta[a].label : a; }).join(' · ');
@@ -648,8 +737,10 @@ function rsiRenderOverviewCanvas(data, L, opts) {
     if (!b) return '';
     const x1 = a.x + CW, y1 = a.y + CH / 2, x2 = b.x, y2 = b.y + CH / 2;
     const onPath = !!(activePath[e.from] && activePath[e.to]);
-    const pruned = !!(byId[e.to] && byId[e.to].pruned);
-    const cls = 'rsi-map-edge' + (onPath ? ' active' : '') + (pruned ? ' pruned' : '');
+    const targetNode = byId[e.to];
+    const pruned = !!(targetNode && targetNode.pruned);
+    const prepEdge = !!(targetNode && targetNode.state === 'preparing');
+    const cls = 'rsi-map-edge' + (onPath ? ' active' : '') + (pruned ? ' pruned' : '') + (prepEdge ? ' preparing' : '');
     if (Math.abs(y1 - y2) < 1) return '<path class="' + cls + '" d="M' + x1 + ',' + y1 + ' L' + x2 + ',' + y2 + '"/>';
     const mx = Math.round((x1 + x2) / 2);
     return '<path class="' + cls + '" d="M' + x1 + ',' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2 + '"/>';
@@ -662,6 +753,21 @@ function rsiRenderOverviewCanvas(data, L, opts) {
   const cardsHtml = nodes.map(function (n) {
     const q = pos[n.id];
     if (!q) return '';
+    if (n.isFold) {
+      const foldDots = (n.aspects || []).map(function (a) {
+        const m = aspectMeta[a];
+        return m ? '<i class="rsi-asp-dot ' + m.cls + '" title="' + esc(m.label) + '"></i>' : '';
+      }).join('');
+      const countTxt = L.foldCount.replace(/\{0\}/g, String(n.count));
+      const hintTxt = L.foldHint.replace(/\{0\}/g, String(n.count));
+      const foldVal = n.value != null ? String(n.value) : '▸';
+      return '<button type="button" class="rsi-map-node is-fold' + (activePath[n.id] ? ' on-path' : '') + '" data-state="folded" data-rsi-map-act="toggle-fold" data-fold-key="' + esc(n.foldKey) + '"' +
+        ' style="left:' + q.x + 'px;top:' + q.y + 'px;width:' + CW + 'px;height:' + CH + 'px" title="' + esc(n.displayId + ' · ' + hintTxt) + '">' +
+        '<span class="rsi-map-top"><span class="rsi-map-id">' + esc(n.displayId) + '</span><span class="rsi-map-tag muted">' + esc(countTxt) + '</span><span class="rsi-map-val">' + esc(foldVal) + '</span></span>' +
+        '<span class="rsi-map-sub">' + esc(hintTxt) + '</span>' +
+        '<span class="rsi-map-foot"><span class="rsi-asp-dots">' + foldDots + '</span><span class="rsi-map-fold-cue">▾</span></span>' +
+        '</button>';
+    }
     const primaryAspect = n.aspectKind === 'baseline' ? 'baseline' : (n.aspects && n.aspects[0]) || 'unlabeled';
     const tag = rsiOverviewStateTag(n, L);
     const stateBadge = tag ? '<span class="rsi-map-tag ' + tag.cls + '">' + esc(tag.text) + '</span>' : '';
@@ -671,15 +777,17 @@ function rsiRenderOverviewCanvas(data, L, opts) {
     }).join('');
     const deltaHtml = lens === 'aspect'
       ? '<span class="rsi-map-asp-lbl">' + esc(aspectTextOf(n)) + '</span>'
-      : n.deltaText
-        ? '<span class="rsi-map-delta" data-better="' + esc(n.comparable ? (n.better || '') : 'muted') + '">' + esc((n.comparable ? '' : '~') + n.deltaText) + '</span>'
-        : (n.metricVersion ? '<span class="rsi-map-scale">' + esc(n.metricVersion) + '</span>' : '');
+      : n.state === 'preparing' && n.ownerName
+        ? '<span class="rsi-map-scale">' + esc(n.ownerName) + '</span>'
+        : n.deltaText
+          ? '<span class="rsi-map-delta" data-better="' + esc(n.comparable ? (n.better || '') : 'muted') + '">' + esc((n.comparable ? '' : '~') + n.deltaText) + '</span>'
+          : (n.metricVersion ? '<span class="rsi-map-scale">' + esc(n.metricVersion) + '</span>' : '');
     const pct = lens === 'metric' && !n.pruned ? normOf(n.value) : null;
     const barHtml = pct != null ? '<span class="rsi-map-bar"><span class="rsi-map-bar-fill" style="width:' + Math.max(8, Math.round(pct * 100)) + '%"></span></span>' : '';
     const cls = 'rsi-map-node' + (lens === 'aspect' ? ' lens-aspect asp-' + primaryAspect : '') + (n.pruned ? ' is-pruned' : '');
     const isSel = n.id === selectedId;
     const actAttrs = ' data-act="plugSet" data-plugin="official.rsi" data-k="selO" data-v="' + esc(n.pick || '') + '"';
-    const compactVal = n.value != null ? String(n.value) : '—';
+    const compactVal = n.value != null ? String(n.value) : (n.state === 'preparing' ? '…' : '—');
     return '<button type="button" class="' + cls + '" data-state="' + esc(n.state || '') + '" data-ver="' + esc(n.id) + '" aria-pressed="' + (isSel ? 'true' : 'false') + '"' + actAttrs +
       ' style="left:' + q.x + 'px;top:' + q.y + 'px;width:' + CW + 'px;height:' + CH + 'px" title="' + esc((n.id + ' · ' + (n.valueText || '—') + ' · ' + (n.changeBrief || n.changeShort || '')).trim()) + '">' +
       '<span class="rsi-map-top"><span class="rsi-map-id">' + esc(n.id) + '</span>' + stateBadge + '<span class="rsi-map-val">' + esc(compactVal) + '</span></span>' +
@@ -688,10 +796,14 @@ function rsiRenderOverviewCanvas(data, L, opts) {
       barHtml + '</button>';
   }).join('');
   const svg = '<svg class="rsi-map-svg" width="' + layout.totalW + '" height="' + layout.totalH + '" viewBox="0 0 ' + layout.totalW + ' ' + layout.totalH + '" aria-hidden="true">' + svgEdges + '</svg>';
+  const zoom = opts.zoom && opts.zoom > 0 ? opts.zoom : 1;
+  const transformStyle = zoom !== 1 ? ';transform:scale(' + zoom + ')' : '';
   return {
     totalW: layout.totalW,
     totalH: layout.totalH,
-    html: '<div class="rsi-map-canvas" style="width:' + layout.totalW + 'px;height:' + layout.totalH + 'px">' + clusterHtml + svg + cardsHtml + '</div>',
+    foldableCount: folded.foldableCount,
+    expandedCount: folded.expandedCount,
+    html: '<div class="rsi-map-canvas" data-base-w="' + layout.totalW + '" data-base-h="' + layout.totalH + '" style="width:' + layout.totalW + 'px;height:' + layout.totalH + 'px' + transformStyle + '">' + clusterHtml + svg + cardsHtml + '</div>',
   };
 }
 
@@ -702,7 +814,7 @@ function rsiRenderOverviewInspector(data, L, selId, opts) {
   if (!n) return '';
   const sd = data.selectedDetail && data.selectedDetail.id === n.id ? data.selectedDetail : null;
   const tag = rsiOverviewStateTag(n, L);
-  const aspectMeta = { object: { cls: 'obj', label: L.obj }, observability: { cls: 'obs', label: L.obs }, rubric: { cls: 'rub', label: L.rub } };
+  const aspectMeta = { object: { cls: 'rsi-asp-obj', label: L.obj }, observability: { cls: 'rsi-asp-obs', label: L.obs }, rubric: { cls: 'rsi-asp-rub', label: L.rub } };
   const aspChips = n.aspectKind === 'baseline'
     ? '<span class="rsi-cc-asp">' + esc(L.baseline) + '</span>'
     : (n.aspects && n.aspects.length)
@@ -716,7 +828,7 @@ function rsiRenderOverviewInspector(data, L, selId, opts) {
     : {
         trigger: n.parent ? L.trigParent.replace('{0}', n.parent) : L.trigBaseline,
         action: n.changeBrief || n.changeShort || '—',
-        basis: n.headlineBrief || (n.state === 'running' ? L.basisRunning : n.state === 'repaired' ? L.basisRepaired : L.basisNone),
+        basis: n.headlineBrief || (n.state === 'preparing' ? (n.ownerName ? (n.claimed ? L.basisPreparingClaimed : L.basisPreparingWaiting).replace('{0}', n.ownerName) : L.basisPreparing) : n.state === 'running' ? L.basisRunning : n.state === 'repaired' ? L.basisRepaired : L.basisNone),
       };
   const metaParts = [
     n.parent ? (n.parent + ' → ' + n.id) : L.stBaseline,
@@ -769,37 +881,50 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
   const mode = isModal ? 'modal' : 'inline';
   const nodes = data.nodes;
   const lens = data.lens === 'aspect' ? 'aspect' : 'metric';
+  const objId = String(data.objectiveId || 'default');
+  const hostGlobal = typeof window !== 'undefined' ? window : globalThis;
+  const zoomStore = hostGlobal.__rsiMapZoom || (hostGlobal.__rsiMapZoom = {});
+  const foldStore = hostGlobal.__rsiMapExpanded || (hostGlobal.__rsiMapExpanded = {});
+  const savedZoom = typeof zoomStore[objId] === 'number' && zoomStore[objId] >= 0.25 && zoomStore[objId] <= 2 ? zoomStore[objId] : 1;
+  const expandedMap = foldStore[objId] || {};
   const selectedId = data.selectedVersion || data.currentVersion || (nodes[nodes.length - 1] && nodes[nodes.length - 1].id);
-  const rendered = rsiRenderOverviewCanvas(data, L, { esc: h, lens: lens, selectedId: selectedId, mode: mode });
+  const rendered = rsiRenderOverviewCanvas(data, L, { esc: h, lens: lens, selectedId: selectedId, mode: mode, zoom: savedZoom, expandedMap: expandedMap });
   const inspectorHtml = rsiRenderOverviewInspector(data, L, selectedId, { esc: h, mode: mode });
   const stats = data.stats || { total: nodes.length, pruned: 0, insufficient: 0, current: data.currentVersion };
   const exportPayload = Object.assign({}, data, { labels: L });
   const safeJson = JSON.stringify(exportPayload).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+  const allExpanded = rendered.foldableCount > 0 && (!!expandedMap['*'] || rendered.expandedCount >= rendered.foldableCount);
+  const foldBtn = rendered.foldableCount > 0
+    ? '<button type="button" class="rsi-map-btn" data-rsi-map-act="' + (allExpanded ? 'collapse-all' : 'expand-all') + '">' + h(allExpanded ? L.collapseChains : L.expandAll) + '</button>'
+    : '';
   const headBar = '<div class="rsi-map-bar-top">' +
     '<div class="rsi-map-stats">' +
       '<span>' + h(L.total) + ' <b>' + h(stats.total) + '</b></span>' +
       '<span>' + h(L.current) + ' <b>' + h(stats.current || '—') + '</b></span>' +
+      (stats.preparing ? '<span class="is-prep">' + h(L.preparingStat) + ' <b>' + h(stats.preparing) + '</b></span>' : '') +
       (stats.pruned ? '<span class="is-pruned">' + h(L.pruned) + ' <b>' + h(stats.pruned) + '</b></span>' : '') +
       (stats.insufficient ? '<span>' + h(L.insufficient) + ' <b>' + h(stats.insufficient) + '</b></span>' : '') +
-      '<span class="rsi-map-leg"><i class="rsi-asp-dot obj"></i>' + h(L.obj) + ' <i class="rsi-asp-dot obs"></i>' + h(L.obs) + ' <i class="rsi-asp-dot rub"></i>' + h(L.rub) + '</span>' +
+      '<span class="rsi-map-leg"><i class="rsi-asp-dot rsi-asp-obj"></i>' + h(L.obj) + ' <i class="rsi-asp-dot rsi-asp-obs"></i>' + h(L.obs) + ' <i class="rsi-asp-dot rsi-asp-rub"></i>' + h(L.rub) + '</span>' +
     '</div>' +
     '<div class="rsi-map-tools">' +
       '<div class="rsi-mx-seg" role="group">' +
         '<button type="button" class="rsi-mx-seg-btn' + (lens === 'metric' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="overviewLens" data-v="metric">' + h(L.lensMetric) + '</button>' +
         '<button type="button" class="rsi-mx-seg-btn' + (lens === 'aspect' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="overviewLens" data-v="aspect">' + h(L.lensAspect) + '</button>' +
       '</div>' +
-      '<button type="button" class="rsi-map-btn" data-rsi-map-act="zoom-out">−</button>' +
-      '<span class="rsi-map-zl">100%</span>' +
-      '<button type="button" class="rsi-map-btn" data-rsi-map-act="zoom-in">+</button>' +
+      foldBtn +
+      '<button type="button" class="rsi-map-btn" data-rsi-map-act="zoom-out" aria-label="Zoom out">−</button>' +
+      '<button type="button" class="rsi-map-btn rsi-map-zl" data-rsi-map-act="zoom-reset" title="100%">' + Math.round(savedZoom * 100) + '%</button>' +
+      '<button type="button" class="rsi-map-btn" data-rsi-map-act="zoom-in" aria-label="Zoom in">+</button>' +
       '<button type="button" class="rsi-map-btn" data-rsi-map-act="fit">' + h(L.fit) + '</button>' +
       '<button type="button" class="rsi-map-btn" data-rsi-map-act="export-html">' + h(L.exportHtml) + '</button>' +
     '</div>' +
   '</div>';
-  const canvasScroll = '<div class="scroll-x rsi-map-scroll"><div class="rsi-map-stage" style="width:' + rendered.totalW + 'px;height:' + rendered.totalH + 'px">' + rendered.html + '</div></div>';
+  const stageW = Math.round(rendered.totalW * savedZoom), stageH = Math.round(rendered.totalH * savedZoom);
+  const canvasScroll = '<div class="scroll-x rsi-map-scroll"><div class="rsi-map-stage" style="width:' + stageW + 'px;height:' + stageH + 'px">' + rendered.html + '</div></div>';
   const bodyHtml = isModal
     ? '<div class="rsi-map-split">' + canvasScroll + '<aside class="rsi-map-aside">' + inspectorHtml + '</aside></div>'
     : canvasScroll + inspectorHtml;
-  return '<div class="rsi-map-wrap' + (isModal ? ' is-modal' : '') + '" data-zoom="1">' + headBar + bodyHtml +
+  return '<div class="rsi-map-wrap' + (isModal ? ' is-modal' : '') + '" data-obj-id="' + h(objId) + '" data-zoom="' + savedZoom + '">' + headBar + bodyHtml +
     '<script type="application/json" class="rsi-map-data">' + safeJson + '</script></div>';
 };
 
@@ -832,7 +957,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
     insufficient: { tone: 'warn', label: L.vInsufficient },
   };
   const vm = verdictMeta[card.verdict] || { tone: 'muted', label: card.verdict || '' };
-  const aspectMeta = { object: { cls: 'obj', label: L.obj }, observability: { cls: 'obs', label: L.obs }, rubric: { cls: 'rub', label: L.rub } };
+  const aspectMeta = { object: { cls: 'rsi-asp-obj', label: L.obj }, observability: { cls: 'rsi-asp-obs', label: L.obs }, rubric: { cls: 'rsi-asp-rub', label: L.rub } };
   const aspChips = card.aspectKind === 'baseline'
     ? '<span class="rsi-cc-asp">' + h(L.baseline) + '</span>'
     : (card.aspects && card.aspects.length)
@@ -923,30 +1048,88 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
   if (hostGlobal.__rsiMapClickHandler) {
     document.removeEventListener('click', hostGlobal.__rsiMapClickHandler);
   }
+  if (hostGlobal.__rsiMapWheelHandler) {
+    document.removeEventListener('wheel', hostGlobal.__rsiMapWheelHandler);
+  }
   if (hostGlobal.__rsiMapKeyHandler) {
     document.removeEventListener('keydown', hostGlobal.__rsiMapKeyHandler);
     delete hostGlobal.__rsiMapKeyHandler;
   }
-  function applyZoom(root, act) {
+  const ZOOM_MIN = 0.25, ZOOM_MAX = 2.0;
+  function clampZoom(v) {
+    return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(v * 100) / 100));
+  }
+  function escHtml(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function setZoom(root, nextZoom, anchor) {
     const stage = root.querySelector('.rsi-map-stage');
     const canvas = root.querySelector('.rsi-map-canvas');
     const scroll = root.querySelector('.rsi-map-scroll');
     const zl = root.querySelector('.rsi-map-zl');
     if (!stage || !canvas) return;
-    const baseW = parseFloat(canvas.style.width) || canvas.offsetWidth || 400;
-    const baseH = parseFloat(canvas.style.height) || canvas.offsetHeight || 200;
-    let z = parseFloat(root.getAttribute('data-zoom') || '1') || 1;
-    if (act === 'zoom-in') z = Math.min(1.5, Math.round((z + 0.15) * 100) / 100);
-    else if (act === 'zoom-out') z = Math.max(0.45, Math.round((z - 0.15) * 100) / 100);
-    else if (act === 'fit' && scroll) {
-      const availW = Math.max(240, (scroll.clientWidth || 720) - 24);
-      z = Math.max(0.45, Math.min(1, Math.round((availW / baseW) * 100) / 100));
+    const baseW = parseFloat(canvas.getAttribute('data-base-w') || canvas.style.width) || canvas.offsetWidth || 400;
+    const baseH = parseFloat(canvas.getAttribute('data-base-h') || canvas.style.height) || canvas.offsetHeight || 200;
+    const prevZ = parseFloat(root.getAttribute('data-zoom') || '1') || 1;
+    const z = clampZoom(nextZoom);
+    let anchorX = 0, anchorY = 0, relX = 0, relY = 0;
+    if (anchor && scroll) {
+      const rect = scroll.getBoundingClientRect();
+      relX = anchor.clientX - rect.left;
+      relY = anchor.clientY - rect.top;
+      anchorX = (scroll.scrollLeft + relX) / prevZ;
+      anchorY = (scroll.scrollTop + relY) / prevZ;
     }
     root.setAttribute('data-zoom', String(z));
-    canvas.style.transform = 'scale(' + z + ')';
+    const objId = root.getAttribute('data-obj-id') || 'default';
+    (hostGlobal.__rsiMapZoom = hostGlobal.__rsiMapZoom || {})[objId] = z;
+    canvas.style.transform = z === 1 ? '' : 'scale(' + z + ')';
     stage.style.width = Math.round(baseW * z) + 'px';
     stage.style.height = Math.round(baseH * z) + 'px';
     if (zl) zl.textContent = Math.round(z * 100) + '%';
+    if (anchor && scroll) {
+      scroll.scrollLeft = Math.max(0, Math.round(anchorX * z - relX));
+      scroll.scrollTop = Math.max(0, Math.round(anchorY * z - relY));
+    }
+  }
+  function applyZoom(root, act) {
+    const canvas = root.querySelector('.rsi-map-canvas');
+    const scroll = root.querySelector('.rsi-map-scroll');
+    if (!canvas) return;
+    const baseW = parseFloat(canvas.getAttribute('data-base-w') || canvas.style.width) || canvas.offsetWidth || 400;
+    const baseH = parseFloat(canvas.getAttribute('data-base-h') || canvas.style.height) || canvas.offsetHeight || 200;
+    const cur = parseFloat(root.getAttribute('data-zoom') || '1') || 1;
+    if (act === 'zoom-in') setZoom(root, cur + 0.15);
+    else if (act === 'zoom-out') setZoom(root, cur - 0.15);
+    else if (act === 'zoom-reset') setZoom(root, 1);
+    else if (act === 'fit' && scroll) {
+      const availW = Math.max(240, (scroll.clientWidth || 720) - 24);
+      const availH = Math.max(180, (scroll.clientHeight || 420) - 24);
+      setZoom(root, Math.min(1, availW / baseW, availH / baseH));
+    }
+  }
+  function rerenderCanvasInPlace(root) {
+    const dataEl = root.querySelector('.rsi-map-data');
+    const stage = root.querySelector('.rsi-map-stage');
+    if (!dataEl || !stage) return;
+    let payload;
+    try { payload = JSON.parse(dataEl.textContent || '{}'); } catch (_) { return; }
+    const L = Object.assign(rsiOverviewDefaults(), payload.labels || {});
+    const objId = root.getAttribute('data-obj-id') || String(payload.objectiveId || 'default');
+    const expandedMap = (hostGlobal.__rsiMapExpanded && hostGlobal.__rsiMapExpanded[objId]) || {};
+    const curZoom = parseFloat(root.getAttribute('data-zoom') || '1') || 1;
+    const lens = payload.lens === 'aspect' ? 'aspect' : 'metric';
+    const selectedId = payload.selectedVersion || payload.currentVersion;
+    const rendered = rsiRenderOverviewCanvas(payload, L, { esc: escHtml, lens: lens, selectedId: selectedId, zoom: curZoom, expandedMap: expandedMap });
+    stage.innerHTML = rendered.html;
+    stage.style.width = Math.round(rendered.totalW * curZoom) + 'px';
+    stage.style.height = Math.round(rendered.totalH * curZoom) + 'px';
+    const foldToggleBtn = root.querySelector('[data-rsi-map-act="expand-all"], [data-rsi-map-act="collapse-all"]');
+    if (foldToggleBtn) {
+      const allExpanded = rendered.foldableCount > 0 && (!!expandedMap['*'] || rendered.expandedCount >= rendered.foldableCount);
+      foldToggleBtn.setAttribute('data-rsi-map-act', allExpanded ? 'collapse-all' : 'expand-all');
+      foldToggleBtn.textContent = allExpanded ? L.collapseChains : L.expandAll;
+    }
   }
   function buildStandaloneHtml(data) {
     const json = JSON.stringify(data).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
@@ -975,7 +1158,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
       'const sz=(id,sn)=>{if(sn[id])return{w:CW,h:CH};const ns=Object.assign({},sn);ns[id]=1;const ch=(kids[id]||[]).filter(c=>!ns[c.id]);if(!ch.length)return{w:CW,h:CH};const s=sp(ch);let h=0,mw=0;if(s.lf.length>=4){const cols=cf(s.lf.length),rows=Math.ceil(s.lf.length/cols);h=BH+BP*2+rows*CH+(rows-1)*GY;mw=BP*2+cols*CW+(cols-1)*GGX;s.br.forEach(b=>{const z=sz(b.id,ns);h+=GY+z.h;mw=Math.max(mw,z.w)})}else{ch.forEach((c,i)=>{const z=sz(c.id,ns);h+=(i?GY:0)+z.h;mw=Math.max(mw,z.w)})}return{w:CW+GX+mw,h:Math.max(CH,h)}};' +
       'const pl=(id,x,ty,sn)=>{if(sn[id])return;const ns=Object.assign({},sn);ns[id]=1;const z=sz(id,sn);pos[id]={x,y:ty+Math.round((z.h-CH)/2)};const ch=(kids[id]||[]).filter(c=>!ns[c.id]);if(!ch.length)return;const s=sp(ch),cx=x+CW+GX;if(s.lf.length>=4){const cols=cf(s.lf.length),rows=Math.ceil(s.lf.length/cols),bw=BP*2+cols*CW+(cols-1)*GGX,bh=BH+BP*2+rows*CH+(rows-1)*GY;let cy=ty;boxes.push({p:id,n:s.lf.length,x:cx,y:cy,w:bw,h:bh});edges.push({f:id,bx:cx,by:cy+Math.round(bh/2)});s.lf.forEach((lf,i)=>{const c=i%cols,r=Math.floor(i/cols);pos[lf.id]={x:cx+BP+c*(CW+GGX),y:cy+BH+BP+r*(CH+GY)}});cy+=bh;s.br.forEach(b=>{cy+=GY;const bz=sz(b.id,ns);pl(b.id,cx,cy,ns);edges.push({f:id,t:b.id});cy+=bz.h})}else{let cy=ty;ch.forEach(c=>{const cz=sz(c.id,ns);pl(c.id,cx,cy,ns);edges.push({f:id,t:c.id});cy+=cz.h+GY})}};' +
       'let ry=PAD;roots.forEach(r=>{const z=sz(r.id,{});pl(r.id,PAD,ry,{});ry+=z.h+GY*2});let mx=0,my=0;Object.values(pos).forEach(q=>{mx=Math.max(mx,q.x+CW);my=Math.max(my,q.y+CH)});boxes.forEach(b=>{mx=Math.max(mx,b.x+b.w);my=Math.max(my,b.y+b.h)});' +
-      'let sel=D.selectedVersion||D.currentVersion||(N[0]&&N[0].id);const stMap={current:L.stCurrent,confirmed:L.stConfirmed,running:L.stRunning,pruned:L.stPruned,deadEnd:L.stDeadEnd,guardrail:L.stGuardrail,worse:L.stWorse,tied:L.stTied,insufficient:L.stInsufficient,repaired:L.stRepaired,baseline:L.stBaseline,explored:L.stExplore};' +
+      'let sel=D.selectedVersion||D.currentVersion||(N[0]&&N[0].id);const stMap={current:L.stCurrent,confirmed:L.stConfirmed,running:L.stRunning,preparing:L.stPreparing,pruned:L.stPruned,deadEnd:L.stDeadEnd,guardrail:L.stGuardrail,worse:L.stWorse,tied:L.stTied,insufficient:L.stInsufficient,repaired:L.stRepaired,baseline:L.stBaseline,explored:L.stExplore};' +
       'document.getElementById("t").textContent=D.objectiveName||D.objectiveId;document.getElementById("sub").textContent=(L.metric||"Metric")+": "+(D.metric&&D.metric.name||"")+" · "+(L.scale||"Scale")+" "+(D.metricVersion||"E1");document.getElementById("st").textContent=(L.total||"Total")+" "+N.length+" · "+(L.current||"Current")+" "+(D.currentVersion||"—")+" · "+(L.pruned||"Refuted")+" "+((D.stats&&D.stats.pruned)||0);' +
       'const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");function render(){const on={};let c=sel,g=0;while(c&&!on[c]&&g++<500){on[c]=1;c=byId[c]&&byId[c].parent}const W=mx+PAD,H=my+PAD;const cv=document.getElementById("cv");cv.style.width=W+"px";cv.style.height=H+"px";' +
       'const bx=boxes.map(b=>"<div class=\\"clbox\\" style=\\"left:"+b.x+"px;top:"+b.y+"px;width:"+b.w+"px;height:"+b.h+"px\\"><div class=\\"clhdr\\">"+esc((L.clusterTitle||"{1} unpromoted trials from {0}").replace(/\\{0\\}/g,b.p).replace(/\\{1\\}/g,String(b.n)))+"</div></div>").join("");' +
@@ -1015,8 +1198,36 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
       try { downloadStandaloneHtml(JSON.parse(dataEl.textContent || '{}')); } catch (_) {}
       return;
     }
+    if (act === 'toggle-fold' || act === 'expand-all' || act === 'collapse-all') {
+      const objId = wrap.getAttribute('data-obj-id') || 'default';
+      const store = (hostGlobal.__rsiMapExpanded = hostGlobal.__rsiMapExpanded || {});
+      const map = (store[objId] = store[objId] || {});
+      if (act === 'toggle-fold') {
+        const fk = btn.getAttribute('data-fold-key');
+        if (fk) map[fk] = !map[fk];
+      } else if (act === 'expand-all') {
+        map['*'] = true;
+      } else {
+        store[objId] = {};
+      }
+      rerenderCanvasInPlace(wrap);
+      return;
+    }
     applyZoom(wrap, act);
   };
+  const onWheel = function (ev) {
+    if (!(ev.ctrlKey || ev.metaKey)) return;
+    const scroll = ev.target && ev.target.closest && ev.target.closest('.rsi-map-scroll');
+    if (!scroll) return;
+    const wrap = scroll.closest('.rsi-map-wrap');
+    if (!wrap) return;
+    ev.preventDefault();
+    const cur = parseFloat(wrap.getAttribute('data-zoom') || '1') || 1;
+    const step = ev.deltaY < 0 ? 1.08 : 1 / 1.08;
+    setZoom(wrap, cur * step, ev);
+  };
   hostGlobal.__rsiMapClickHandler = onClick;
+  hostGlobal.__rsiMapWheelHandler = onWheel;
   document.addEventListener('click', onClick);
+  document.addEventListener('wheel', onWheel, { passive: false });
 })();

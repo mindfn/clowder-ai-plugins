@@ -106,6 +106,7 @@ detail:
 ov:
   total: Versions
   current: Current
+  preparingStat: Preparing
   pruned: Refuted
   insufficient: Incomplete
   obj: Object
@@ -116,16 +117,21 @@ ov:
   lensMetric: Metric
   lensAspect: Aspects
   fit: Fit
+  expandAll: Expand all
+  collapseChains: Fold chains
   expand: Expand
   close: Close
   exportHtml: Export HTML
   clusterTitle: "{1} unpromoted trials from {0} (chronological, none replaced {0})"
+  foldCount: "{0} versions"
+  foldHint: Click to expand {0} versions
   focusVersion: Focus in panel
   cycleOf: Cycle {0}
   clickHint: Click any node for details
   stCurrent: Current
   stConfirmed: Confirmed
   stRunning: Running
+  stPreparing: Preparing
   stPruned: Refuted ✕
   stDeadEnd: Dead-end ✕
   stGuardrail: Guardrail ✕
@@ -152,6 +158,9 @@ ov:
   trigDec: "Cycle {0} decision: {1}"
   trigCycle: Cycle {0} ({1})
   basisRunning: Experiment running
+  basisPreparing: Preparing next version; will run once submitted
+  basisPreparingClaimed: "{0} is implementing & reviewing; will run once submitted"
+  basisPreparingWaiting: Waiting for {0} to claim and prepare
   basisEval: Awaiting evaluation
   basisRepaired: Superseded by repair
   basisNone: No conclusion yet

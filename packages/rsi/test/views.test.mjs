@@ -1041,14 +1041,15 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
   const src = readFileSync(new URL('../console/components/lineage.js', import.meta.url), 'utf8');
   const clickListeners = [];
   const keyListeners = [];
+  const wheelListeners = [];
   const fakeWindow = {};
   const sandbox = {
     window: fakeWindow,
     globalThis: fakeWindow,
     document: {
-      addEventListener: (ev, fn) => { if (ev === 'click') clickListeners.push(fn); if (ev === 'keydown') keyListeners.push(fn); },
+      addEventListener: (ev, fn) => { if (ev === 'click') clickListeners.push(fn); if (ev === 'keydown') keyListeners.push(fn); if (ev === 'wheel') wheelListeners.push(fn); },
       removeEventListener: (ev, fn) => {
-        const arr = ev === 'click' ? clickListeners : ev === 'keydown' ? keyListeners : null;
+        const arr = ev === 'click' ? clickListeners : ev === 'keydown' ? keyListeners : ev === 'wheel' ? wheelListeners : null;
         if (arr) { const idx = arr.indexOf(fn); if (idx >= 0) arr.splice(idx, 1); }
       },
     },
@@ -1067,6 +1068,7 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
   vmMod.runInNewContext(src, sandbox);
   vmMod.runInNewContext(src, sandbox);
   assert.equal(clickListeners.length, 1);
+  assert.equal(wheelListeners.length, 1);
   assert.equal(keyListeners.length, 0);
 
   const mapHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.map' }, {}, {});
@@ -1176,4 +1178,46 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
   assert.match(html114, /Dead-end ✕/);
   assert.match(html114, /融合精度差 0\.038 拦截/);
   assert.match(html114, /Source：墨墨（回填）/);
+
+  // alpha.115: linear chain folding (>=4 folds into Vm~Vn card, <=3 stays unfolded), preparing stage node, and persisted zoom across re-renders
+  const chainMap = {
+    objectiveId: 'obj-fold-test',
+    objectiveName: 'Fold & Preparing test',
+    currentVersion: 'v4',
+    metricVersion: 'E1',
+    lens: 'metric',
+    metric: { id: 'qps', name: 'QPS', dir: 'up', unit: '' },
+    selectedVersion: 'v9',
+    stats: { total: 8, pruned: 1, insufficient: 0, running: 0, preparing: 'v9', current: 'v4' },
+    nodes: [
+      { id: 'v1', parent: null, state: 'baseline', value: 1, valueText: '1', aspects: [], changeShort: 'root' },
+      { id: 'v2', parent: 'v1', state: 'explored', value: 2, valueText: '2', aspects: ['observability'], changeShort: 'step 2' },
+      { id: 'v3', parent: 'v2', state: 'explored', value: 3, valueText: '3', aspects: ['rubric'], changeShort: 'step 3' },
+      { id: 'v4', parent: 'v3', state: 'current', value: 4, valueText: '4', aspects: ['object'], changeShort: 'cur v4' },
+      // 3-node branch (v5 -> v6 -> v7): MUST NOT fold
+      { id: 'v5', parent: 'v4', state: 'explored', value: 4.1, valueText: '4.1', aspects: ['object'], changeShort: 'b1' },
+      { id: 'v6', parent: 'v5', state: 'explored', value: 4.2, valueText: '4.2', aspects: ['object'], changeShort: 'b2' },
+      { id: 'v7', parent: 'v6', state: 'deadEnd', pruned: true, value: 0, valueText: '0', aspects: ['object'], changeShort: 'b3 dead' },
+      // Preparing virtual node hanging off v4
+      { id: 'v8', parent: 'v4', state: 'explored', value: 5, valueText: '5', aspects: ['object'], changeShort: 'b4' },
+      { id: 'v9', parent: 'v4', state: 'preparing', preparing: true, value: null, valueText: '—', ownerName: '砚砚', claimed: true, aspects: [], changeShort: 'next direction' },
+    ],
+    selectedDetail: { id: 'v9', causality: { triggerKind: 'direction', triggerCycle: 8, triggerDetail: 'next direction', action: 'next direction', basisKind: 'preparing', ownerName: '砚砚', claimed: true }, receipts: [] },
+  };
+  sandbox.globalThis.__rsiMapZoom = { 'obj-fold-test': 0.65 };
+  sandbox.globalThis.__rsiMapExpanded = {};
+  sandbox.pv = (expr, sc) => expr === '$.map115' ? chainMap : (typeof expr === 'string' && expr.startsWith('@') ? sc?.[expr.slice(1)] : expr);
+  const html115 = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.map115', mode: 'modal' }, {}, {});
+  assert.match(html115, /data-fold-key="v2~v3"/, '4-node linear chain v1->v2->v3->v4 must fold middle v2~v3');
+  assert.match(html115, /v2 ~ v3/);
+  assert.doesNotMatch(html115, /data-fold-key="v6~v6"/, '3-node branch v5->v6->v7 must NOT fold');
+  assert.match(html115, /data-ver="v6"/, 'v6 in 3-node branch remains directly visible');
+  assert.match(html115, /data-state="preparing" data-ver="v9"/, 'preparing virtual node must render');
+  assert.match(html115, /rsi-map-edge[^"]*preparing/, 'preparing edge must render with dashed class');
+  assert.match(html115, /data-zoom="0\.65"/, 'saved zoom must persist across re-renders');
+  assert.match(html115, />65%</, 'zoom pill must display persisted percentage');
+  assert.match(html115, /data-rsi-map-act="expand-all"/, 'toolbar must offer expand-all when chains are folded');
+  assert.match(html115, /砚砚 is implementing/);
+  assert.doesNotMatch(html115, /class="rsi-cc-asp obs"/, 'must not collide with host .obs flex-column CSS class');
+  assert.match(html115, /rsi-asp-obs/, 'must use namespaced rsi-asp-obs class');
 });

@@ -2223,7 +2223,7 @@ test('expDecide allows re-deciding an undecided-version cycle before version reg
   assert.equal(late.status, 409);
 });
 
-test('alpha.114: git-derived parent & baseVersion, conclude disposition/tag, rsi_status slimming, lineageFix CAS op, and retryable:false real failures', async (t) => {
+test('alpha.114/115: pure RSI lineage parent (decoupled from git), preparing node, baseVersion in direction, conclude disposition/tag, rsi_status slimming, lineageFix CAS op, and retryable:false real failures', async (t) => {
   const f = await fixture(t), o = await f.create({ repair: '0' });
   git(f.project, 'init', '-b', 'main');
   git(f.project, 'config', 'user.email', 'rsi@test.local');
@@ -2234,14 +2234,14 @@ test('alpha.114: git-derived parent & baseVersion, conclude disposition/tag, rsi
   await writeFile(join(f.project, 'a.txt'), 'v2\n');
   git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'branch A v2');
   const c2 = git(f.project, 'rev-parse', 'HEAD');
-  git(f.project, 'checkout', '-b', 'alt', c1);
+  // Even when c3 is committed linearly on top of dead-end c2 (typical single-branch dev workflow),
+  // RSI experimental lineage must backtrack past dead_end v2 to v1 rather than following git commit ancestry!
   await writeFile(join(f.project, 'b.txt'), 'v3\n');
-  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'branch B v3 from c1');
+  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'branch B v3 committed linearly on c2');
   const c3 = git(f.project, 'rev-parse', 'HEAD');
   await writeFile(join(f.project, 'b.txt'), 'v4\n');
-  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'branch B v4 from c3');
+  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'branch B v4');
   const c4 = git(f.project, 'rev-parse', 'HEAD');
-  git(f.project, 'checkout', 'main');
 
   await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [401] });
   const cats = [{ id: 'mgr-cat', name: '墨墨', model: 'm', handle: '@gemini' }, { id: 'codex', name: '砚砚', model: 'm', handle: '@codex' }];
@@ -2256,7 +2256,7 @@ test('alpha.114: git-derived parent & baseVersion, conclude disposition/tag, rsi
   }, 'cat-b5ddoo9l', o.thread)).ok, true);
   assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 1, pick: 'direction', directionId: 'try-a' }, 'mgr-cat', 'infra')).ok, true);
 
-  // Register v2 with commit c2 -> falls back to currentVersion v1 (since v1 has no commit).
+  // Register v2 with commit c2 -> parent is v1 (non-dead-end lastRound version).
   await f.tool('task', {}, 'codex', o.thread, 't-v2');
   const r2 = await f.tool('version', { change: 'Branch A', commit: c2, config: { x: 2 }, tier: 'explore', seeds: 1, skipControl: true, aspects: ['object'] }, 'codex', o.thread, 't-v2');
   assert.equal(r2.ok, true);
@@ -2271,17 +2271,27 @@ test('alpha.114: git-derived parent & baseVersion, conclude disposition/tag, rsi
   }, 'cat-b5ddoo9l', o.thread)).ok, true);
   assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 2, pick: 'direction', directionId: 'try-b' }, 'mgr-cat', 'infra')).ok, true);
 
-  // Register v3 with commit c3 (branched from c1, not c2) -> parent stays v1 (not v2), and MUST NOT inherit Cycle 2's dead_end/tag.
+  // Before v3 is registered, overviewMap must surface a virtual "preparing" v3 node hanging off v1 (backtracked past dead_end v2)!
+  const { viewModel } = await import('../dist/views.js');
+  const vmPrep = viewModel(await f.read(), 'exp', { project: f.project, pick: `obj:${o.id}`, selO: `${o.id}/v3>prep` });
+  const prepNode = vmPrep.overviewMap.nodes.find((n) => n.id === 'v3');
+  assert.ok(prepNode && prepNode.preparing === true && prepNode.state === 'preparing');
+  assert.equal(prepNode.parent, 'v1');
+  assert.equal(vmPrep.overviewMap.stats.total, 2);
+  assert.equal(vmPrep.overviewMap.stats.preparing, 'v3');
+  assert.equal(vmPrep.overviewMap.selectedVersion, 'v3');
+  assert.equal(vmPrep.overviewMap.selectedDetail.causality.basisKind, 'preparing');
+
+  // Register v3 with linear git commit c3 (child of dead_end c2) -> pure RSI lineage backtracks past dead_end v2 to v1, and MUST NOT inherit dead_end/tag.
   await f.tool('task', {}, 'codex', o.thread, 't-v3');
   assert.equal((await f.tool('version', { change: 'Branch B', commit: c3, config: { x: 3 }, tier: 'explore', seeds: 1, skipControl: true }, 'codex', o.thread, 't-v3')).ok, true);
   const v3AfterReg = (await f.read()).experiments[o.id].versions.find((v) => v.id === 'v3');
   assert.equal(v3AfterReg.parent, 'v1');
   assert.equal(v3AfterReg.disposition, undefined);
   assert.equal(v3AfterReg.tag, undefined);
-  const { viewModel } = await import('../dist/views.js');
   const vmBeforeC3 = viewModel(await f.read(), 'exp', { project: f.project, pick: `obj:${o.id}` });
   const v3NodeBefore = vmBeforeC3.overviewMap.nodes.find((n) => n.id === 'v3');
-  assert.notEqual(v3NodeBefore.state, 'deadEnd');
+  assert.equal(v3NodeBefore.state, 'preparing', 'registered upcoming version before first run shows preparing');
   assert.equal(v3NodeBefore.pruned, false);
 
   await execute(f, o);
@@ -2298,23 +2308,24 @@ test('alpha.114: git-derived parent & baseVersion, conclude disposition/tag, rsi
   assert.notEqual(v3NodeAfter.state, 'deadEnd');
   assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 3, pick: 'direction', directionId: 'try-b2' }, 'mgr-cat', 'infra')).ok, true);
 
-  // Register v4 with commit c4 (git child of c3) -> parent auto-derived as v3 (NOT currentVersion v1!).
+  // Register v4 continuing non-dead-end v3 -> parent auto-derived as v3 (independent of git).
   await f.tool('task', {}, 'codex', o.thread, 't-v4');
   const badBase = await f.tool('version', { change: 'bad', baseVersion: 'v999', config: { x: 4 } }, 'codex', o.thread, 't-v4');
   assert.match(badBase.error, /Unknown baseVersion/);
   assert.equal((await f.tool('version', { change: 'Branch B step 2', commit: c4, config: { x: 4 }, tier: 'explore', seeds: 1, skipControl: true }, 'codex', o.thread, 't-v4')).ok, true);
   assert.equal((await f.read()).experiments[o.id].versions.find((v) => v.id === 'v4').parent, 'v3');
 
-  // Register v5 with explicit baseVersion='v2' (overrides git/currentVersion)
+  // Register v5 via direction baseVersion='v2' (persisted on versionRequest and inherited by rsi_version)
   await execute(f, o);
   await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
   assert.equal((await f.tool('conclude', {
     cycle: 4, verdict: 'tune', findings: 'Branch B2 ok',
-    options: [{ k: 'try-cfg', title: 'Config branch from v2', why: 'override', kind: 'variable', target: 'x', cites: [`${o.id}-cycle-1`] }],
+    options: [{ k: 'try-cfg', title: 'Config branch from v2', why: 'override', kind: 'variable', target: 'x', baseVersion: 'v2', cites: [`${o.id}-cycle-1`] }],
   }, 'cat-b5ddoo9l', o.thread)).ok, true);
   assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 4, pick: 'direction', directionId: 'try-cfg' }, 'mgr-cat', 'infra')).ok, true);
+  assert.equal((await f.read()).experiments[o.id].versionRequest.baseVersion, 'v2');
   await f.tool('task', {}, 'codex', o.thread, 't-v5');
-  assert.equal((await f.tool('version', { change: 'Config retry off v2', baseVersion: 'v2', config: { x: 5 }, tier: 'explore', seeds: 1, skipControl: true }, 'codex', o.thread, 't-v5')).ok, true);
+  assert.equal((await f.tool('version', { change: 'Config retry off v2', config: { x: 5 }, tier: 'explore', seeds: 1, skipControl: true }, 'codex', o.thread, 't-v5')).ok, true);
   assert.equal((await f.read()).experiments[o.id].versions.find((v) => v.id === 'v5').parent, 'v2');
 
   // Test rsi_status slimming: scope=brief, sinceVersion, versionsLimit

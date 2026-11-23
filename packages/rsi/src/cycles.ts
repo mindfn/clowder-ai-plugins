@@ -209,11 +209,12 @@ function stopAfterConclusion(state: RsiState, d: Experiment, round: Data, compar
   return reason;
 }
 
-// Directions a member proposes for a cycle: distinct k, title and why; kind and target optional; cites must name an earlier cycle when there is one.
+// Directions a member proposes for a cycle: distinct k, title and why; kind, target and baseVersion optional; cites must name an earlier cycle when there is one.
 function badOptions(state: RsiState, d: Experiment, options: unknown, cycle: number): boolean {
   const previous = cycleLibrary(state, d).filter((doc: Data) => doc.cycle < cycle);
   return !Array.isArray(options) || !options.length || options.some((o: unknown) => !record(o) || !text(o.k) || !text(o.title) || !text(o.why)
       || o.target !== undefined && !text(o.target)
+      || o.baseVersion !== undefined && (!text(o.baseVersion) || !d.versions.some((v: Data) => v.id === o.baseVersion.trim()))
       || o.expect !== undefined && !(record(o.expect) && Number.isFinite(+o.expect.lo) && Number.isFinite(+o.expect.hi) && +o.expect.lo <= +o.expect.hi
         && (o.expect.metric === undefined || d.metrics.items.some((m: Data) => m.id === o.expect.metric)))
       || o.cites !== undefined && (!Array.isArray(o.cites) || o.cites.some((id: unknown) => !text(id) || !state.library[d.objective.projectId].some((doc: Data) => doc.id === id)))
@@ -225,9 +226,58 @@ export const signed = (x: number) => (x >= 0 ? '+' : '') + short(x);
 const directionsFrom = (d: Experiment, options: Data[], member: Data, taken: string[]) => options.map((o: Data) => {
   const metric = record(o.expect) ? o.expect.metric || d.metrics.items.find((m: Data) => !m.guard)?.id : null;
   const predict = metric ? { metric, lo: +o.expect.lo, hi: +o.expect.hi } : null;
+  const baseVersion = text(o.baseVersion) ? o.baseVersion.trim() : undefined;
   return { id: taken.includes(o.k) ? `${o.k}-${member.catId}` : o.k, title: o.title, why: o.why, ...(text(o.kind) ? { kind: o.kind } : {}), ...(text(o.target) ? { target: o.target.trim() } : {}),
+    ...(baseVersion ? { baseVersion } : {}),
     by: member.catId, model: member.model, expect: predict ? `${metric} ${signed(predict.lo)} ~ ${signed(predict.hi)}` : '', ...(predict ? { predict } : {}), cites: o.cites || [] };
 });
+
+// Pure RSI experimental lineage parent resolution (independent of git commit topology).
+// Priority: explicit baseVersion > direction/request baseVersion > currentVersion (direct fix) >
+// lastRound.version (when continuing a non-dead-end branch) > nearest viable ancestor along RSI's own lineage (when backtracking from a dead-end) > currentVersion.
+export function resolveRsiParent(d: Experiment, lastRound: Data | undefined, explicitBaseVersion?: string, direct?: boolean): string {
+  if (explicitBaseVersion && d.versions.some((v: Data) => v.id === explicitBaseVersion)) return explicitBaseVersion;
+  if (d.versionRequest?.baseVersion && d.versions.some((v: Data) => v.id === d.versionRequest.baseVersion)) return d.versionRequest.baseVersion;
+  if (direct) return d.objective.currentVersion;
+  const startId = lastRound?.version;
+  if (!startId || !d.versions.some((v: Data) => v.id === startId)) return d.objective.currentVersion;
+
+  const byId = new Map<string, Data>(d.versions.map((v: Data) => [v.id, v]));
+  const lastRoundOf = (vid: string): Data | null => {
+    for (let i = d.rounds.length - 1; i >= 0; i--) {
+      if (d.rounds[i].version === vid) return d.rounds[i];
+    }
+    return null;
+  };
+  const isDeadEnd = (v: Data): boolean => {
+    const r = lastRoundOf(v.id);
+    const disp = v.disposition || r?.report?.disposition || '';
+    const verdict = r?.report?.verdict || '';
+    return disp === 'dead_end' || v.status === 'rejected' || verdict === 'rollback' || verdict === 'sunset';
+  };
+  const startVer = byId.get(startId)!;
+  if (!isDeadEnd(startVer)) return startVer.id;
+
+  const isViableAnchor = (v: Data): boolean => {
+    if (isDeadEnd(v)) return false;
+    if (v.current || v.status === 'confirmed' || !v.parent) return true;
+    const r = lastRoundOf(v.id);
+    const disp = v.disposition || r?.report?.disposition || '';
+    if (disp === 'advance') return true;
+    const verdict = r?.report?.verdict || '';
+    return !!verdict && verdict !== 'insufficient';
+  };
+  const seen = new Set<string>([startVer.id]);
+  let cur: string | null | undefined = startVer.parent;
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const node = byId.get(cur);
+    if (!node) break;
+    if (isViableAnchor(node)) return node.id;
+    cur = node.parent;
+  }
+  return d.objective.currentVersion;
+}
 
 // Analysts are members chosen for the role; demo placeholders (no member id, kept by objectives created before alpha.24) never act.
 export const analystsOf = (d: Experiment) => d.members.filter((m) => m.role === 'analyze' && m.catId);
@@ -438,12 +488,13 @@ export function requestVersion(state: RsiState, d: Experiment, round: Data, now 
   const direction = round.report.directions.find((x: Data) => x.id === round.decision.directionId);
   // An execution fix must not change what is measured: its version replaces the default directly instead of competing with it.
   const direct = direction?.kind === 'execution';
-  d.versionRequest = { cycle: round.n, since: now, decision: round.decision, title: direction?.title || round.decision.note || round.decision.pick, ...(direct ? { direct } : {}),
+  const baseVersion = resolveRsiParent(d, round, direction?.baseVersion, direct);
+  d.versionRequest = { cycle: round.n, since: now, decision: round.decision, title: direction?.title || round.decision.note || round.decision.pick, baseVersion, ...(direct ? { direct } : {}),
     ...(direction?.predict ? { prediction: { ...direction.predict, by: direction.by, text: direction.title, expect: direction.expect, direction: direction.id, cycle: round.n } } : {}) };
   d.objective.state = 'running';
   const member = d.members.find((m) => m.role === 'iterate')!;
   enqueue(state, d, 'agent', { member: member.catId, cycle: round.n, action: 'version',
-    message: { title: '准备下一个版本', body: `${mention(member)} 按「${d.versionRequest.title}」出下一个版本。${direct ? '这是执行修复：不和当前版本对比，登记后直接作为默认版本，所以只修执行，不改训练和评测。' : ''}先调原生 MCP 工具 rsi_task，改项目并提交 git 后调 rsi_version。${WORKTREE}` } });
+    message: { title: '准备下一个版本', body: `${mention(member)} 按「${d.versionRequest.title}」出下一个版本（谱系父版本默认 ${baseVersion}，如改换分支起点请在 rsi_version 显式传 baseVersion）。${direct ? '这是执行修复：不和当前版本对比，登记后直接作为默认版本，所以只修执行，不改训练和评测。' : ''}先调原生 MCP 工具 rsi_task，改项目并提交 git 后调 rsi_version。${WORKTREE}` } });
   syncObjective(state, d);
 }
 

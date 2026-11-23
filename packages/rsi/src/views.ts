@@ -2,7 +2,7 @@ import { AUTO, autoKey, clipTitle, prepSettled, REPAIR_DEFAULT, repairText, step
 import type { Data, RsiState } from './types.js';
 import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData, memberIds } from './data.js';
 import { formatPolicy, maxRunsText, nextScheduledRuns, policiesOf, scheduleForm, scheduleSummary, timeRange, validatePolicy } from './schedule.js';
-import { analystsOf, short, signed, testedVersion } from './cycles.js';
+import { analystsOf, resolveRsiParent, short, signed, testedVersion } from './cycles.js';
 
 const tc = (key: string, ...args: unknown[]) => ({ t: key, args });
 
@@ -638,7 +638,10 @@ function exp(): any {
     const tagReason = v.tag || lastR?.report?.tag || lastR?.report?.headline || '';
     if (disposition === 'dead_end') return { outcome: 'deadEnd', pruned: true, reason: tagReason };
     if (v.status === 'rejected') return { outcome: 'pruned', pruned: true, reason: tagReason };
-    if (!lastR) return { outcome: 'proposed', pruned: false, reason: '' };
+    if (!lastR) {
+      const queued = Array.isArray(d.upcoming?.groups) && d.upcoming.groups.some((g: Data) => g.version === v.id);
+      return { outcome: queued ? 'preparing' : 'proposed', pruned: false, reason: '' };
+    }
     if (lastR.state === 'repaired') return { outcome: 'repaired', pruned: false, reason: '' };
     const verdict = lastR.report?.verdict || '';
     if (verdict === 'rollback' || verdict === 'sunset') return { outcome: 'pruned', pruned: true, reason: tagReason };
@@ -682,6 +685,7 @@ function exp(): any {
     const lastR = verRounds[verRounds.length - 1] || null;
     const nodeState = v.current ? 'current'
       : isRunningVer ? 'running'
+      : out.outcome === 'preparing' ? 'preparing'
       : v.status === 'candidate' ? 'candidate'
       : o.projectPath && ['pruned', 'deadEnd', 'guardrail', 'worse', 'tied', 'confirmed', 'insufficient', 'repaired'].includes(out.outcome) ? out.outcome
       : '';
@@ -1207,7 +1211,68 @@ function exp(): any {
       headlineBrief: lastR?.report?.headline ? clipTitle(lastR.report.headline, 140, '') : '',
     };
   });
-  const selectedOverviewDetail = ver ? (() => {
+  const prepNode = d.versionRequest ? (() => {
+    const req = d.versionRequest;
+    const prepId = `v${d.versions.length + 1}`;
+    const trigRound = d.rounds.find((x: Data) => x.n === req.cycle);
+    const prepParent = resolveRsiParent(d, trigRound, req.baseVersion, !!req.direct);
+    const iterMember = d.members.find((m: Data) => m.role === 'iterate');
+    const ownerName = iterMember?.name || '';
+    const claimed = !!req.invocationId;
+    const prepPick = `${key(prepId)}>prep`;
+    const title = req.title || (req.repair ? `第 ${req.cycle} 周期修复` : '');
+    return {
+      id: prepId,
+      parent: prepParent,
+      pick: prepPick,
+      selected: S.rsiSelO === prepPick,
+      state: 'preparing',
+      preparing: true,
+      pruned: false,
+      aspectKind: req.direct ? 'derived' : 'unlabeled',
+      aspects: req.direct ? ['observability'] : [],
+      verdict: 'preparing',
+      tier: '',
+      metricVersion: d.metrics.version,
+      cycleN: req.cycle || null,
+      value: null,
+      valueText: '—',
+      refId: prepParent,
+      deltaText: '',
+      better: '',
+      comparable: false,
+      commitShort: '',
+      ownerName,
+      claimed,
+      repair: !!req.repair,
+      changeShort: clipTitle(title, 30, prepId),
+      changeBrief: clipTitle(title, 120, ''),
+      headlineBrief: '',
+    };
+  })() : null;
+  if (prepNode) {
+    if (prepNode.selected) overviewNodes.forEach((n: Data) => { n.selected = false; });
+    overviewNodes.push(prepNode);
+  }
+  const selectedOverviewDetail = prepNode?.selected ? (() => {
+    const req = d.versionRequest!;
+    const trigRound = d.rounds.find((x: Data) => x.n === req.cycle);
+    return {
+      id: prepNode.id,
+      causality: {
+        triggerKind: req.repair ? 'repair' : 'direction',
+        triggerCycle: req.cycle || null,
+        triggerVersion: trigRound?.version || prepNode.parent || '',
+        triggerDetail: clipTitle(req.title || '', 72, ''),
+        action: req.title || '',
+        basisKind: 'preparing',
+        basisText: '',
+        ownerName: prepNode.ownerName,
+        claimed: prepNode.claimed,
+      },
+      receipts: [],
+    };
+  })() : ver ? (() => {
     const meta = versionMetaById[ver.id];
     const lastR = meta?.lastRound || null;
     return {
@@ -1237,12 +1302,13 @@ function exp(): any {
       threshold: activeMetricDef.guard && typeof activeMetricDef.threshold === 'number' ? activeMetricDef.threshold : null,
       role: activeMetricDef.id === main ? 'main' : activeMetricDef.guard ? 'guard' : 'other',
     },
-    selectedVersion: ver?.id || o.currentVersion,
+    selectedVersion: prepNode?.selected ? prepNode.id : (ver?.id || o.currentVersion),
     stats: {
-      total: overviewNodes.length,
+      total: d.versions.length,
       pruned: overviewNodes.filter((n: Data) => n.pruned).length,
       insufficient: overviewNodes.filter((n: Data) => n.state === 'insufficient').length,
       running: overviewNodes.filter((n: Data) => n.state === 'running').length,
+      preparing: prepNode ? prepNode.id : (overviewNodes.find((n: Data) => n.state === 'preparing')?.id || null),
       current: o.currentVersion,
     },
     nodes: overviewNodes,

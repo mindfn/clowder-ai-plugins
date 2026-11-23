@@ -5198,6 +5198,7 @@ views:
           labels:
             total: t:rsi.ov.total
             current: t:rsi.ov.current
+            preparingStat: t:rsi.ov.preparingStat
             pruned: t:rsi.ov.pruned
             insufficient: t:rsi.ov.insufficient
             obj: t:rsi.ov.obj
@@ -5208,12 +5209,17 @@ views:
             lensMetric: t:rsi.ov.lensMetric
             lensAspect: t:rsi.ov.lensAspect
             fit: t:rsi.ov.fit
+            expandAll: t:rsi.ov.expandAll
+            collapseChains: t:rsi.ov.collapseChains
             exportHtml: t:rsi.ov.exportHtml
             clusterTitle: t:rsi.ov.clusterTitle
+            foldCount: t:rsi.ov.foldCount
+            foldHint: t:rsi.ov.foldHint
             cycleOf: t:rsi.ov.cycleOf
             stCurrent: t:rsi.ov.stCurrent
             stConfirmed: t:rsi.ov.stConfirmed
             stRunning: t:rsi.ov.stRunning
+            stPreparing: t:rsi.ov.stPreparing
             stPruned: t:rsi.ov.stPruned
             stDeadEnd: t:rsi.ov.stDeadEnd
             stGuardrail: t:rsi.ov.stGuardrail
@@ -5234,6 +5240,9 @@ views:
             trigDec: t:rsi.ov.trigDec
             trigCycle: t:rsi.ov.trigCycle
             basisRunning: t:rsi.ov.basisRunning
+            basisPreparing: t:rsi.ov.basisPreparing
+            basisPreparingClaimed: t:rsi.ov.basisPreparingClaimed
+            basisPreparingWaiting: t:rsi.ov.basisPreparingWaiting
             basisEval: t:rsi.ov.basisEval
             basisRepaired: t:rsi.ov.basisRepaired
             basisNone: t:rsi.ov.basisNone
