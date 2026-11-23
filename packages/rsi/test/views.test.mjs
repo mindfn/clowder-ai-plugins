@@ -1373,13 +1373,18 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
   assert.match(validateSliceSpecs([{ id: 'a', name: 'A', axis: 'x', stats: [{ id: 'q', name: 'Q', dir: 'up' }] }, { id: 'a', name: 'B', axis: 'y', stats: [{ id: 'q', name: 'Q', dir: 'up' }] }]), /Duplicate slice table/);
   const normSlices = normalizeSlicesInput({
     load: [
-      { at: 1, values: { qps: 50, p99: 20, bad: NaN }, pass: true },
-      { at: 8, values: { qps: 120, p99: 75 } },
+      { at: 1, values: { qps: 50, p99: 20, bad: NaN, undeclared_extra: 999 }, pass: true },
+      { at: 'x'.repeat(100), values: { qps: 120, p99: 75 } },
       { at: '', values: { qps: 1 } },
     ],
-  });
+  }, [{ id: 'load', name: '负载分档', axis: '并发', stats: [{ id: 'qps', name: 'QPS', dir: 'up' }, { id: 'p99', name: 'P99', dir: 'down' }] }]);
   assert.equal(normSlices.load.length, 2);
-  assert.deepEqual(normSlices.load[0].values, { qps: 50, p99: 20 });
+  assert.deepEqual(normSlices.load[0].values, { qps: 50, p99: 20 }, 'undeclared stats must be stripped when Step 4 declared slices');
+  assert.equal(normSlices.load[1].at.length, 64, 'slice at string must be capped at 64 chars');
+  // Even without declared specs, values keys are capped at 24
+  const manyStats = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`s${i}`, i]));
+  const capped = normalizeSlicesInput({ raw: [{ at: 'k', values: manyStats }] });
+  assert.equal(Object.keys(capped.raw[0].values).length, 24);
 
   // 2) Build a realistic multi-cycle objective with 1 main + 8 guardrails + 2 aux + 1 slice table
   const state = createFixtures(now).state;
@@ -1510,35 +1515,59 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
   assert.equal(vmWithG1.cycle.compare.table.metricCustomized, true);
   assert.ok(vmWithG1.cycle.compare.table.metricChips.some((c) => c.id === 'g1'));
 
-  // Round 3 single-group explore (skipControl=true) on E2 -> automatically prepends 1 same-scale reference column (v3 from c2) tagged 跨周期参考
+  // Round 3 single-group explore (skipControl=true) on E2: v4's parent is v3 (120 QPS on c2), while currentVersion is still v2 (60 QPS on c2).
+  // P1-1: default reference MUST pick parent v3 (v3 · C2), NOT ancient currentVersion v2, so v4's 100 QPS shows honest -20 regression!
+  // P1-2: even if reference v3 had a failed guardrail (g3=9) while candidate v4 passes g3=0 and only fails g2, guardSummary MUST count only v4's 1 failure (7/8, NOT 6/8)!
+  d.rounds[1].runs.filter((u) => u.group === 'change').forEach((u) => { u.metrics.g3 = 9; });
+  d.rounds[1].report.matrix.find((m) => m.group === 'change' && m.metric === 'g3').mean = 9;
+  const r2ChangeJudged = d.rounds[1].report.compare.groups.find((g) => g.group === 'change');
+  r2ChangeJudged.guardrails.filter((g) => g.metric === 'g3').forEach((g) => { g.value = 9; g.pass = false; });
   d.rounds.push({
     n: 3, version: 'v4', start: now + 3000, end: now + 3500, state: 'evaluating',
     plan: { baseline: false, tier: 'explore', skipControl: true, groups: [{ id: 'change', label: 'Explore', version: 'v4', vars: {}, control: false }], seeds: [31] },
     metrics: structuredClone(d.metrics),
     runs: [{
       id: 'r3-g-31', group: 'change', seed: 31, state: 'done',
-      metrics: { 'max-qps': 140, ...zeroGuards, g2: 0.05, 'aux-mem': 10 },
-      slices: { load: [{ at: 1, values: { qps: 100, p50: 7, p99: 14 } }, { at: 8, values: { qps: 140, p50: 20, p99: 48 } }] },
+      metrics: { 'max-qps': 100, ...zeroGuards, g2: 0.05, 'aux-mem': 10 },
+      slices: { load: [{ at: 1, values: { qps: 80, p50: 9, p99: 16 } }, { at: 8, values: { qps: 100, p50: 25, p99: 55 } }] },
       env: {},
     }],
     report: null, decision: null, events: [],
   });
-  assert.equal(conclude(state, d, { cycle: 3, verdict: 'tune', findings: 'Explore faster but g2 crossed', options: [{ k: 'd3', title: 'fix g2', why: 'guardrail', cites: [`${id}-cycle-2`] }] }, now + 3600).ok, true);
+  assert.equal(conclude(state, d, { cycle: 3, verdict: 'tune', findings: 'Explore regressed vs parent v3 and g2 crossed', options: [{ k: 'd3', title: 'fix g2', why: 'guardrail', cites: [`${id}-cycle-2`] }] }, now + 3600).ok, true);
   const vmExplore = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v4>c1.eval` });
   assert.equal(vmExplore.cycle.compare.table.columns.length, 2);
+  assert.equal(vmExplore.cycle.compare.table.columns[0].id, 'c2:change', 'P1-1: must default reference to lineage parent v3, not currentVersion v2');
+  assert.equal(vmExplore.cycle.compare.table.columns[0].label, 'v3 · C2', 'P1-1: cross-cycle header must show version · C<n>');
   assert.equal(vmExplore.cycle.compare.table.columns[0].crossCycle, true);
-  assert.match(vmExplore.cycle.compare.table.columns[0].chipLabel, /跨周期参考/);
+  assert.match(vmExplore.cycle.compare.table.columns[0].chipLabel, /v3 · C2 · 跨周期参考/);
   assert.equal(vmExplore.cycle.compare.table.pairReferenceOnly, true);
-  assert.match(vmExplore.cycle.compare.table.guardSummary.text, /7\/8 通过 · 1 项越线/);
+  assert.equal(vmExplore.cycle.compare.table.sliceTable.rows[1].diff.delta, '-20', 'P1-1: delta must reflect -20 regression vs parent v3');
+  assert.equal(vmExplore.cycle.compare.table.guardSummary.text, '质量护栏 7/8 通过 · 1 项越线', 'P1-2: reference v3 g3 failure must not taint v4 guardrail summary');
+  const vmExploreScalar = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v4>c1.eval`, cmpView: 'scalar' });
+  const failSec3 = vmExploreScalar.cycle.compare.table.sections.find((s) => s.k === 'guard_fail');
+  assert.deepEqual(failSec3.rows.map((r) => r.id), ['g2'], 'P1-2: only candidate v4 failed guardrail g2 appears in guard_fail, not ref-only g3');
+  const passSec3 = vmExploreScalar.cycle.compare.table.sections.find((s) => s.k === 'guard_pass');
+  const g3Row = passSec3.rows.find((r) => r.id === 'g3');
+  assert.equal(g3Row.status, 'pass', 'P1-2: g3 passes on evaluated v4');
+  assert.equal(g3Row.cells[0].guard, 'fail', 'P1-2: reference cell still marks its own failure');
 
-  // 3) Render rsiCompareMatrix in node:vm for sliced view (grouped headers, PASS/FAIL, ratio, seed expansion)
+  // P2-1: multi-group same-version cycle disambiguates candidate column headers with group name
+  const arithObj = arith();
+  assert.equal(conclude(arithObj.s, arithObj.d, { cycle: 1, verdict: 'tune', findings: 'multi-arm v1', options: [option('o1', 'variable', 'lr')] }, now + 4000).ok, true);
+  const arithTbl = arithObj.view('eval').cycle.compare.table;
+  assert.deepEqual(arithTbl.columns.map((c) => c.label), ['对照 v1', '候选 只降学习率 (v1)', '候选 去掉格式奖励 (v1)']);
+
+  // 3) Render rsiCompareMatrix in node:vm for sliced view (grouped headers, PASS/FAIL, ratio, seed expansion) + P2-2 English i18n labels
   const vmMod = await import('node:vm');
+  const { parse: parseYaml } = await import('yaml');
+  const enPack = parseYaml(readFileSync(new URL('../console/i18n/en.yaml', import.meta.url), 'utf8'));
   const src = readFileSync(new URL('../console/components/lineage.js', import.meta.url), 'utf8');
   const sb = {
     PDL_COMPONENTS: {},
     S: { folds: { ['rsi-cmp-slice:v3-1:load:16']: true } },
     h: (s) => String(s ?? ''),
-    pv: (e) => e === '$.slice' ? tbl : e === '$.cross' ? vmExplore.cycle.compare.table : e,
+    pv: (e) => e === '$.slice' ? tbl : e === '$.cross' ? vmExplore.cycle.compare.table : e === '$.scalar' ? vmScalar.cycle.compare.table : e,
     pvList: () => [],
     pvText: (v) => String(v ?? ''),
   };
@@ -1554,18 +1583,27 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
   assert.match(sliceHtml, /class="rsi-mx-seed-row"/);
   const crossHtml = sb.PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix']({ from: '$.cross' }, {}, {});
   assert.match(crossHtml, /跨周期参考/);
+  assert.match(crossHtml, /v3 · C2/);
+  // P2-2: English labels render without leaked Chinese chrome
+  const enScalarHtml = sb.PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix']({ from: '$.scalar', labels: enPack.cmp }, {}, {});
+  assert.match(enScalarHtml, /Guardrails 8\/8 passed/);
+  assert.match(enScalarHtml, /Primary metric/);
+  assert.match(enScalarHtml, /Beats control/);
+  assert.doesNotMatch(enScalarHtml, /质量护栏|主指标|胜过对照/);
 
   // 4) Chat conclusion card Markdown table (both sliced & flat scalar)
   const sliceMd = formatComparisonMarkdown(d, d.rounds[1]);
-  assert.match(sliceMd, /> 质量护栏 8\/8 全部通过/);
+  assert.match(sliceMd, /> 质量护栏 7\/8 通过 · 1 项越线/);
   assert.match(sliceMd, /\| 并发 \|/);
   assert.match(sliceMd, /2× \/ \+65/);
   assert.match(sliceMd, /PASS/);
   assert.match(sliceMd, /\*\*FAIL\*\*/);
-  assert.doesNotMatch(sliceMd, /质量护栏3/, 'passing guardrails must stay rolled up, not spammed into chat');
+  assert.doesNotMatch(sliceMd, /质量护栏4/, 'passing guardrails must stay rolled up, not spammed into chat');
   const exploreMd = formatComparisonMarkdown(d, d.rounds[2]);
-  assert.match(exploreMd, /跨周期参考/);
+  assert.match(exploreMd, /v3 · C2 \(跨周期参考\)/);
+  assert.match(exploreMd, /-20/);
   assert.match(exploreMd, /越线护栏：质量护栏2/);
+  assert.doesNotMatch(exploreMd, /质量护栏3/, 'P1-2: reference g3 failure must not appear in candidate v4 chat failed guardrails');
   // Verify conclusionCard message in state.outbox includes the Markdown table
   const conclMsg = state.outbox.find((e) => e.kind === 'message' && e.objective === id && e.message?.title?.includes('第 2 周期结论'));
   assert.ok(conclMsg && conclMsg.message.body.includes('| 并发 |'));

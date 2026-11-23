@@ -310,7 +310,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         const output = parseResult(raw);
         if (!record(output)) throw new Error('Collected metrics must be a JSON object');
         if (output.dataVersion !== undefined) env.data = output.dataVersion;
-        slices = normalizeSlicesInput(output.slices);
+        slices = normalizeSlicesInput(output.slices, (round.metrics || d.metrics).slices);
         const source = record(output.metrics) ? output.metrics : output, invalid: string[] = [];
         for (const metric of (round.metrics || d.metrics).items) {
           const mapping = d.executor.resultMap.find((m: Data) => m.metric === metric.id);

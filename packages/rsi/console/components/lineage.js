@@ -161,6 +161,24 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
   const columns = Array.isArray(table.columns) ? table.columns : [];
   const sections = Array.isArray(table.sections) ? table.sections : [];
   if (!columns.length || (!table.isSliceView && !sections.length)) return '';
+  const L = rsiResolveLabels(p.labels, sc, root, {
+    colMetric: '指标', colDelta: 'Δ 变化', colStatus: '判定', colCompareSuffix: '对比',
+    refTag: '跨周期参考', refShort: '参考', scalePrefix: '量尺', diffScaleTip: '量尺不同，不可直接算差值',
+    tierExplore: '探索快筛', tierConfirm: '正式确认', hasCrossRef: '含跨周期参考', hasDiffScale: '含不同量尺',
+    colControl: '对照', colSingle: '本轮', colCandidate: '候选', colConfirm: '复验', colExplore: '探索',
+    secMain: '主指标', secGuardFail: '未通过护栏', secGuardPass: '已通过护栏', secOther: '诊断与辅助指标', secMissing: '本轮未测 / 暂无数据',
+    guardAllPass: '质量护栏 {0}/{1} 全部通过', guardFail: '质量护栏 {0}/{1} 通过 · {2} 项越线', guardUnmeasured: '质量护栏 {0} 项暂未测',
+    guardPassFold: '已通过护栏（{0}/{1} 全部通过，点击展开）',
+    stWin: '胜过对照', stGuardFail: '护栏越线', stIncomparable: '不可比', stBetter: '更好', stWorse: '更差',
+    stSame: '持平', stBaseline: '基线', stPass: '通过', stCrossed: '越线', stUnmeasured: '未测', stMissing: '本轮未测',
+    stDiffScale: '量尺不同', stCrossRef: '跨周期参考', stRef: '参考',
+    dirUp: '越大越好', dirDown: '越小越好', trend: '趋势', trendOn: '趋势中',
+    seedOk: '正常', seedCross: '越线', seedEnv: '环境失败', seedFail: '无结果',
+    hintMetrics: '共 {0} 项指标 · 点击指标行展开逐轮结果', hintSlices: '{0} · 共 {1} 档', hintSlicesExpand: '点击档位展开逐轮结果',
+  });
+  const fmtTpl = function (tpl, args) {
+    return String(tpl || '').replace(/\{(\d+)\}/g, function (_, idx) { return args[Number(idx)] != null ? String(args[Number(idx)]) : ''; });
+  };
   const folds = (typeof S !== 'undefined' && S.folds) ? S.folds : {};
   const seeds = Array.isArray(table.seeds) ? table.seeds : [];
   const badgeHtml = function (tone, text) {
@@ -174,38 +192,72 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
       (cell.partial ? '<span class="rsi-mx-part">' + h(cell.n + '/' + (seeds.length || '?')) + '</span>' : '');
   };
   const seedStateHtml = function (st) {
-    if (st === 'cross') return badgeHtml('danger', '越线');
-    if (st === 'env') return badgeHtml('warn', '环境失败');
-    if (st === 'failed') return badgeHtml('danger', '无结果');
-    return badgeHtml('ok', '正常');
+    if (st === 'cross') return badgeHtml('danger', L.seedCross);
+    if (st === 'env') return badgeHtml('warn', L.seedEnv);
+    if (st === 'failed') return badgeHtml('danger', L.seedFail);
+    return badgeHtml('ok', L.seedOk);
+  };
+  const colPrefix = function (rk) {
+    return rk === 'control' ? L.colControl : rk === 'single' ? L.colSingle : rk === 'confirm' ? L.colConfirm : rk === 'explore' ? L.colExplore : L.colCandidate;
   };
   const colTitleHtml = function (c) {
-    const lbl = String(c.label || '');
-    const v = String(c.version || '');
-    if (c.sameCycle && v && lbl.endsWith(' ' + v)) {
-      return h(lbl.slice(0, lbl.length - v.length)) + '<span class="rsi-mx-ver">' + h(v) + '</span>';
-    }
-    return '<span class="rsi-mx-ver">' + h(lbl) + '</span>';
+    if (!c.sameCycle) return '<span class="rsi-mx-ver">' + h(c.label || (c.version + ' · C' + c.cycle)) + '</span>';
+    const pref = colPrefix(c.roleKey || c.role);
+    if (c.groupTag) return h(pref + ' ' + c.groupTag + ' (') + '<span class="rsi-mx-ver">' + h(c.version) + '</span>' + h(')');
+    return h(pref + ' ') + '<span class="rsi-mx-ver">' + h(c.version) + '</span>';
   };
-  const tierPill = table.tier === 'explore' ? badgeHtml('warn', '探索快筛') : table.tier === 'confirm' ? badgeHtml('ok', '正式确认') : '';
-  const guardPill = table.guardSummary ? badgeHtml(table.guardSummary.tone, table.guardSummary.text) : '';
-  const refPill = table.pairReferenceOnly ? badgeHtml('warn', table.pairSameScale ? '含跨周期参考' : '含不同量尺') : '';
+  const guardTextOf = function (gs) {
+    if (!gs) return '';
+    if (gs.kind === 'fail') return fmtTpl(L.guardFail, [gs.passed, gs.measured, gs.failed]);
+    if (gs.kind === 'allPass') return fmtTpl(L.guardAllPass, [gs.passed, gs.measured]);
+    if (gs.kind === 'unmeasured') return fmtTpl(L.guardUnmeasured, [gs.total]);
+    return gs.text || '';
+  };
+  const secTitleOf = function (sec) {
+    if (sec.k === 'main') return L.secMain;
+    if (sec.k === 'guard_fail') return L.secGuardFail;
+    if (sec.k === 'guard_pass') return sec.collapsedSummary ? fmtTpl(L.guardPassFold, [sec.passedCount, sec.totalCount]) : L.secGuardPass;
+    if (sec.k === 'other') return L.secOther;
+    if (sec.k === 'missing') return L.secMissing;
+    return sec.title || '';
+  };
+  const statusLabelOf = function (m) {
+    const map = {
+      win: L.stWin, guardFail: L.stGuardFail, incomparable: L.stIncomparable,
+      better: L.stBetter, worse: L.stWorse, same: L.stSame, baseline: L.stBaseline,
+      pass: L.stPass, crossed: L.stCrossed, unmeasured: L.stUnmeasured, missing: L.stMissing,
+      diffScale: L.stDiffScale, crossRef: L.stCrossRef, ref: L.stRef,
+    };
+    return (m.statusKey && map[m.statusKey]) || m.statusText || '';
+  };
+  const ruleLabelOf = function (m) {
+    if (m.ruleKind === 'threshold' && m.threshold != null) {
+      return (m.dir === 'up' ? '≥ ' : '≤ ') + m.threshold + (m.unit ? ' ' + m.unit : '');
+    }
+    if (m.ruleKind === 'dir') {
+      return (m.dir === 'down' ? '↓ ' + L.dirDown : '↑ ' + L.dirUp) + (m.unit ? ' · ' + m.unit : '');
+    }
+    return m.ruleText || '';
+  };
+  const tierPill = table.tier === 'explore' ? badgeHtml('warn', L.tierExplore) : table.tier === 'confirm' ? badgeHtml('ok', L.tierConfirm) : '';
+  const guardPill = table.guardSummary ? badgeHtml(table.guardSummary.tone, guardTextOf(table.guardSummary)) : '';
+  const refPill = table.pairReferenceOnly ? badgeHtml('warn', table.pairSameScale ? L.hasCrossRef : L.hasDiffScale) : '';
 
   if (table.isSliceView && table.sliceTable && Array.isArray(table.sliceTable.rows) && table.sliceTable.rows.length) {
     const st = table.sliceTable;
     const stats = Array.isArray(st.stats) ? st.stats : [];
     const perColSpan = stats.length + (st.showPass ? 1 : 0);
     const hasDiff = !!(table.hasPair && st.primaryStat);
+    const hintText = fmtTpl(L.hintSlices, [st.name, st.rows.length]) + (seeds.length ? ' · ' + L.hintSlicesExpand : '');
     const topBar = '<div class="rsi-mx-bar">' +
-      '<span class="rsi-mx-hint">' + [tierPill, guardPill, refPill].filter(Boolean).join(' ') + ' ' +
-      h(st.name + ' · 共 ' + st.rows.length + ' 档' + (seeds.length ? ' · 点击档位展开逐轮结果' : '')) + '</span>' +
+      '<span class="rsi-mx-hint">' + [tierPill, guardPill, refPill].filter(Boolean).join(' ') + ' ' + h(hintText) + '</span>' +
       '</div>';
     const row1 = ['<th rowspan="2" class="rsi-mx-col-m">' + h(st.axis) + (st.axisUnit ? ' <span class="rsi-mx-unit">(' + h(st.axisUnit) + ')</span>' : '') + '</th>'];
     const row2 = [];
     columns.forEach(function (c, ci) {
       const tags = [];
-      if (c.crossCycle) tags.push('<span class="rsi-mx-ref-tag">跨周期参考</span>');
-      if (!c.sameScale && c.metricVersion) tags.push('<span class="rsi-mx-ref-tag">量尺 ' + h(c.metricVersion) + '</span>');
+      if (c.crossCycle) tags.push('<span class="rsi-mx-ref-tag">' + h(L.refTag) + '</span>');
+      if (!c.sameScale && c.metricVersion) tags.push('<span class="rsi-mx-ref-tag">' + h(L.scalePrefix + ' ' + c.metricVersion) + '</span>');
       row1.push('<th colspan="' + perColSpan + '" class="rsi-mx-grp-th' + (ci > 0 ? ' has-sep' : '') + (c.crossCycle ? ' is-ref' : '') + '">' +
         colTitleHtml(c) + (tags.length ? ' ' + tags.join(' ') : '') + '</th>');
       stats.forEach(function (s, si) {
@@ -213,11 +265,11 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
           h(s.name) + (s.unit ? ' <span class="rsi-mx-unit">' + h(s.unit) + '</span>' : '') +
           (s.ruleText ? '<div class="rsi-mx-m-rule">' + h(s.ruleText) + '</div>' : '') + '</th>');
       });
-      if (st.showPass) row2.push('<th class="rsi-mx-sub-th' + (c.crossCycle ? ' is-ref' : '') + '">判定</th>');
+      if (st.showPass) row2.push('<th class="rsi-mx-sub-th' + (c.crossCycle ? ' is-ref' : '') + '">' + h(L.colStatus) + '</th>');
     });
     if (hasDiff) {
-      row1.push('<th rowspan="2" class="rsi-mx-col-d has-sep">' + h(st.primaryStat.name + ' 对比') +
-        (table.pairReferenceOnly ? ' <span class="rsi-mx-ref-tag">参考</span>' : '') + '</th>');
+      row1.push('<th rowspan="2" class="rsi-mx-col-d has-sep">' + h(st.primaryStat.name + ' ' + L.colCompareSuffix) +
+        (table.pairReferenceOnly ? ' <span class="rsi-mx-ref-tag">' + h(L.refShort) + '</span>' : '') + '</th>');
     }
     const thead = '<thead><tr>' + row1.join('') + '</tr><tr>' + row2.join('') + '</tr></thead>';
     const bodyHtml = st.rows.map(function (row) {
@@ -244,7 +296,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
         const diff = row.diff;
         let diffHtml = '<span class="rsi-mx-empty">—</span>';
         if (diff && diff.suppressed) {
-          diffHtml = '<span class="rsi-mx-empty" title="量尺不同，不可直接算差值">—</span>';
+          diffHtml = '<span class="rsi-mx-empty" title="' + h(L.diffScaleTip) + '">—</span>';
         } else if (diff && (diff.ratio || diff.delta != null)) {
           const txt = [diff.ratio, diff.delta].filter(Boolean).join(' / ');
           diffHtml = '<span class="rsi-mx-delta" data-better="' + h(diff.better || '') + '">' + h(txt) + '</span>';
@@ -254,7 +306,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
       let detailHtml = '';
       if (isOpen && canExpand) {
         detailHtml = seeds.map(function (seed, si) {
-          let sTds = '<td class="rsi-mx-col-m rsi-mx-seed-cell"><span class="rsi-mx-sub-rd">第 ' + (si + 1) + ' 轮 <span class="rsi-mx-seed">seed ' + h(seed) + '</span></span></td>';
+          let sTds = '<td class="rsi-mx-col-m rsi-mx-seed-cell"><span class="rsi-mx-sub-rd">#' + (si + 1) + ' <span class="rsi-mx-seed">seed ' + h(seed) + '</span></span></td>';
           row.cols.forEach(function (cc, ci) {
             const colMeta = columns[ci] || {};
             cc.stats.forEach(function (cell, sti) {
@@ -281,20 +333,20 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
   const hasPair = !!table.hasPair;
   const topBar = '<div class="rsi-mx-bar">' +
     '<span class="rsi-mx-hint">' + [tierPill, guardPill, refPill].filter(Boolean).join(' ') + ' ' +
-    h('共 ' + (table.totalMetrics || 0) + ' 项指标 · 点击指标行展开逐轮结果') + '</span>' +
+    h(fmtTpl(L.hintMetrics, [table.totalMetrics || 0])) + '</span>' +
     '</div>';
-  const cols = ['<th class="rsi-mx-col-m">指标</th>'];
+  const cols = ['<th class="rsi-mx-col-m">' + h(L.colMetric) + '</th>'];
   columns.forEach(function (c) {
     const tags = [];
-    if (c.crossCycle) tags.push('<span class="rsi-mx-ref-tag">跨周期参考</span>');
-    if (!c.sameScale && c.metricVersion) tags.push('<span class="rsi-mx-ref-tag">量尺 ' + h(c.metricVersion) + '</span>');
+    if (c.crossCycle) tags.push('<span class="rsi-mx-ref-tag">' + h(L.refTag) + '</span>');
+    if (!c.sameScale && c.metricVersion) tags.push('<span class="rsi-mx-ref-tag">' + h(L.scalePrefix + ' ' + c.metricVersion) + '</span>');
     cols.push('<th class="rsi-mx-col-v' + (c.crossCycle ? ' is-ref' : '') + (c.current && c.crossCycle ? ' is-cur' : '') + '">' +
       colTitleHtml(c) + (tags.length ? ' ' + tags.join(' ') : '') + '</th>');
   });
   if (hasPair) {
-    cols.push('<th class="rsi-mx-col-d">Δ 变化' + (table.pairReferenceOnly ? ' <span class="rsi-mx-ref-tag">参考</span>' : '') + '</th>');
+    cols.push('<th class="rsi-mx-col-d">' + h(L.colDelta) + (table.pairReferenceOnly ? ' <span class="rsi-mx-ref-tag">' + h(L.refShort) + '</span>' : '') + '</th>');
   }
-  cols.push('<th class="rsi-mx-col-s">判定</th>');
+  cols.push('<th class="rsi-mx-col-s">' + h(L.colStatus) + '</th>');
   const colCount = cols.length;
   const thead = '<thead><tr>' + cols.join('') + '</tr></thead>';
 
@@ -307,7 +359,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
     const secHead = '<tr class="rsi-mx-sec" data-tone="' + h(sec.tone || '') + '"><td colspan="' + colCount + '">' +
       '<button type="button" class="rsi-mx-sec-btn" data-act="fold" data-f="result" data-k="' + h(secFoldKey) + '" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' +
       '<span class="rsi-mx-chev">' + (isOpen ? '▾' : '▸') + '</span>' +
-      '<span class="rsi-mx-sec-title">' + h(sec.title) + '</span>' +
+      '<span class="rsi-mx-sec-title">' + h(secTitleOf(sec)) + '</span>' +
       '<span class="rsi-mx-sec-cnt">' + sec.rows.length + '</span>' +
       '</button></td></tr>';
     if (!isOpen) return secHead;
@@ -315,13 +367,14 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
       const rowFoldKey = 'rsi-cmp-row:' + (table.cycleLabel || '') + ':' + m.id;
       const rowOpen = !!folds[rowFoldKey];
       const trendBtn = m.hasTrend
-        ? '<button type="button" class="rsi-mx-trend-btn' + (m.active ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="trendMetric" data-v="' + h(m.id) + '" title="在顶部趋势图查看此指标">' + (m.active ? '趋势中' : '趋势') + '</button>'
+        ? '<button type="button" class="rsi-mx-trend-btn' + (m.active ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="trendMetric" data-v="' + h(m.id) + '">' + h(m.active ? L.trendOn : L.trend) + '</button>'
         : '';
+      const ruleTxt = ruleLabelOf(m);
       const metricCell = '<td class="rsi-mx-col-m"><div class="rsi-mx-m-wrap">' +
         '<button type="button" class="rsi-mx-m-btn" data-act="fold" data-f="result" data-k="' + h(rowFoldKey) + '" aria-expanded="' + (rowOpen ? 'true' : 'false') + '">' +
         '<span class="rsi-mx-chev">' + (rowOpen ? '▾' : '▸') + '</span>' +
         '<span class="rsi-mx-m-info"><span class="rsi-mx-m-name">' + h(m.name) + '</span>' +
-        (m.ruleText ? '<span class="rsi-mx-m-rule">' + h(m.ruleText) + '</span>' : '') +
+        (ruleTxt ? '<span class="rsi-mx-m-rule">' + h(ruleTxt) + '</span>' : '') +
         '</span></button>' + trendBtn + '</div></td>';
       let cellsHtml = metricCell;
       (m.cells || []).forEach(function (cell, ci) {
@@ -331,16 +384,16 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
       if (hasPair) {
         let deltaHtml = '<span class="rsi-mx-empty">—</span>';
         if (m.deltaSuppressed) {
-          deltaHtml = '<span class="rsi-mx-empty" title="量尺不同，不可直接算差值">—</span>';
+          deltaHtml = '<span class="rsi-mx-empty" title="' + h(L.diffScaleTip) + '">—</span>';
         } else if (m.delta != null) {
-          const dirHint = m.dir === 'down' ? '越小越好' : '越大越好';
-          const deltaTip = (m.deltaRef ? '跨周期参考 · ' : '') + (m.better === 'better' ? '变好（' + dirHint + '）' : m.better === 'worse' ? '变差（' + dirHint + '）' : '持平（' + dirHint + '）');
+          const dirHint = m.dir === 'down' ? L.dirDown : L.dirUp;
+          const deltaTip = (m.deltaRef ? L.refTag + ' · ' : '') + (m.better === 'better' ? L.stBetter : m.better === 'worse' ? L.stWorse : L.stSame) + ' (' + dirHint + ')';
           deltaHtml = '<span class="rsi-mx-delta" data-better="' + h(m.better || '') + '" title="' + h(deltaTip) + '">' + h(m.delta) + '</span>';
         }
         cellsHtml += '<td class="rsi-mx-col-d">' + deltaHtml + '</td>';
       }
       const statusTone = m.status === 'win' || m.status === 'pass' ? 'ok' : m.status === 'fail' ? 'danger' : m.status === 'warn' ? 'warn' : 'muted';
-      cellsHtml += '<td class="rsi-mx-col-s">' + badgeHtml(statusTone, m.statusText) + '</td>';
+      cellsHtml += '<td class="rsi-mx-col-s">' + badgeHtml(statusTone, statusLabelOf(m)) + '</td>';
 
       let detailHtml = '';
       if (rowOpen && seeds.length) {
@@ -361,7 +414,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
         };
         detailHtml = seeds.map(function (seed, si) {
           const states = [];
-          let rowTds = '<td class="rsi-mx-col-m rsi-mx-seed-cell"><span class="rsi-mx-sub-rd">第 ' + (si + 1) + ' 轮 <span class="rsi-mx-seed">seed ' + h(seed) + '</span></span></td>';
+          let rowTds = '<td class="rsi-mx-col-m rsi-mx-seed-cell"><span class="rsi-mx-sub-rd">#' + (si + 1) + ' <span class="rsi-mx-seed">seed ' + h(seed) + '</span></span></td>';
           let anchorSeed = null, compareSeed = null;
           (m.cells || []).forEach(function (cell, ci) {
             const colMeta = columns[ci] || {};

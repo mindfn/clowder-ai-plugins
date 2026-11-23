@@ -1133,3 +1133,54 @@ cmp:
   statAdd: Add slice stat
   statRemove: Hide slice stat
   reset: Reset default
+  colMetric: Metric
+  colDelta: Δ Change
+  colStatus: Verdict
+  colCompareSuffix: vs
+  refTag: Cross-cycle ref
+  refShort: Ref
+  scalePrefix: Scale
+  diffScaleTip: Different metric scale; delta suppressed
+  tierExplore: Explore
+  tierConfirm: Confirm
+  hasCrossRef: Includes cross-cycle ref
+  hasDiffScale: Includes different scale
+  colControl: Control
+  colSingle: Cycle
+  colCandidate: Candidate
+  colConfirm: Confirm
+  colExplore: Explore
+  secMain: Primary metric
+  secGuardFail: Failed guardrails
+  secGuardPass: Passed guardrails
+  secOther: Diagnostics & auxiliary
+  secMissing: Unmeasured / no data
+  guardAllPass: Guardrails {0}/{1} passed
+  guardFail: Guardrails {0}/{1} passed · {2} failed
+  guardUnmeasured: Guardrails {0} unmeasured
+  guardPassFold: Passed guardrails ({0}/{1} passed, click to expand)
+  stWin: Beats control
+  stGuardFail: Guardrail failed
+  stIncomparable: Incomparable
+  stBetter: Better
+  stWorse: Worse
+  stSame: Tied
+  stBaseline: Baseline
+  stPass: Pass
+  stCrossed: Crossed
+  stUnmeasured: Unmeasured
+  stMissing: Unmeasured
+  stDiffScale: Diff scale
+  stCrossRef: Cross-cycle ref
+  stRef: Ref
+  dirUp: Higher is better
+  dirDown: Lower is better
+  trend: Trend
+  trendOn: Active
+  seedOk: OK
+  seedCross: Crossed
+  seedEnv: Env fail
+  seedFail: No result
+  hintMetrics: "{0} metrics · click row for per-seed breakdown"
+  hintSlices: "{0} · {1} slices"
+  hintSlicesExpand: click slice for per-seed breakdown

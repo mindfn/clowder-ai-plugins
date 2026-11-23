@@ -2165,6 +2165,58 @@ views:
                     use: plugin:official.rsi/rsiCompareMatrix
                     props:
                       from: $.exp.cycle.compare.table
+                      labels:
+                        colMetric: t:rsi.cmp.colMetric
+                        colDelta: t:rsi.cmp.colDelta
+                        colStatus: t:rsi.cmp.colStatus
+                        colCompareSuffix: t:rsi.cmp.colCompareSuffix
+                        refTag: t:rsi.cmp.refTag
+                        refShort: t:rsi.cmp.refShort
+                        scalePrefix: t:rsi.cmp.scalePrefix
+                        diffScaleTip: t:rsi.cmp.diffScaleTip
+                        tierExplore: t:rsi.cmp.tierExplore
+                        tierConfirm: t:rsi.cmp.tierConfirm
+                        hasCrossRef: t:rsi.cmp.hasCrossRef
+                        hasDiffScale: t:rsi.cmp.hasDiffScale
+                        colControl: t:rsi.cmp.colControl
+                        colSingle: t:rsi.cmp.colSingle
+                        colCandidate: t:rsi.cmp.colCandidate
+                        colConfirm: t:rsi.cmp.colConfirm
+                        colExplore: t:rsi.cmp.colExplore
+                        secMain: t:rsi.cmp.secMain
+                        secGuardFail: t:rsi.cmp.secGuardFail
+                        secGuardPass: t:rsi.cmp.secGuardPass
+                        secOther: t:rsi.cmp.secOther
+                        secMissing: t:rsi.cmp.secMissing
+                        guardAllPass: t:rsi.cmp.guardAllPass
+                        guardFail: t:rsi.cmp.guardFail
+                        guardUnmeasured: t:rsi.cmp.guardUnmeasured
+                        guardPassFold: t:rsi.cmp.guardPassFold
+                        stWin: t:rsi.cmp.stWin
+                        stGuardFail: t:rsi.cmp.stGuardFail
+                        stIncomparable: t:rsi.cmp.stIncomparable
+                        stBetter: t:rsi.cmp.stBetter
+                        stWorse: t:rsi.cmp.stWorse
+                        stSame: t:rsi.cmp.stSame
+                        stBaseline: t:rsi.cmp.stBaseline
+                        stPass: t:rsi.cmp.stPass
+                        stCrossed: t:rsi.cmp.stCrossed
+                        stUnmeasured: t:rsi.cmp.stUnmeasured
+                        stMissing: t:rsi.cmp.stMissing
+                        stDiffScale: t:rsi.cmp.stDiffScale
+                        stCrossRef: t:rsi.cmp.stCrossRef
+                        stRef: t:rsi.cmp.stRef
+                        dirUp: t:rsi.cmp.dirUp
+                        dirDown: t:rsi.cmp.dirDown
+                        trend: t:rsi.cmp.trend
+                        trendOn: t:rsi.cmp.trendOn
+                        seedOk: t:rsi.cmp.seedOk
+                        seedCross: t:rsi.cmp.seedCross
+                        seedEnv: t:rsi.cmp.seedEnv
+                        seedFail: t:rsi.cmp.seedFail
+                        hintMetrics: t:rsi.cmp.hintMetrics
+                        hintSlices: t:rsi.cmp.hintSlices
+                        hintSlicesExpand: t:rsi.cmp.hintSlicesExpand
                   - type: text
                     variant: meta
                     tone: warn

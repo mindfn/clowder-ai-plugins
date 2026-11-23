@@ -1133,3 +1133,54 @@ cmp:
   statAdd: 添加分档统计列
   statRemove: 隐藏该统计列
   reset: 恢复默认
+  colMetric: 指标
+  colDelta: Δ 变化
+  colStatus: 判定
+  colCompareSuffix: 对比
+  refTag: 跨周期参考
+  refShort: 参考
+  scalePrefix: 量尺
+  diffScaleTip: 量尺不同，不可直接算差值
+  tierExplore: 探索快筛
+  tierConfirm: 正式确认
+  hasCrossRef: 含跨周期参考
+  hasDiffScale: 含不同量尺
+  colControl: 对照
+  colSingle: 本轮
+  colCandidate: 候选
+  colConfirm: 复验
+  colExplore: 探索
+  secMain: 主指标
+  secGuardFail: 未通过护栏
+  secGuardPass: 已通过护栏
+  secOther: 诊断与辅助指标
+  secMissing: 本轮未测 / 暂无数据
+  guardAllPass: 质量护栏 {0}/{1} 全部通过
+  guardFail: 质量护栏 {0}/{1} 通过 · {2} 项越线
+  guardUnmeasured: 质量护栏 {0} 项暂未测
+  guardPassFold: 已通过护栏（{0}/{1} 全部通过，点击展开）
+  stWin: 胜过对照
+  stGuardFail: 护栏越线
+  stIncomparable: 不可比
+  stBetter: 更好
+  stWorse: 更差
+  stSame: 持平
+  stBaseline: 基线
+  stPass: 通过
+  stCrossed: 越线
+  stUnmeasured: 未测
+  stMissing: 本轮未测
+  stDiffScale: 量尺不同
+  stCrossRef: 跨周期参考
+  stRef: 参考
+  dirUp: 越大越好
+  dirDown: 越小越好
+  trend: 趋势
+  trendOn: 趋势中
+  seedOk: 正常
+  seedCross: 越线
+  seedEnv: 环境失败
+  seedFail: 无结果
+  hintMetrics: 共 {0} 项指标 · 点击指标行展开逐轮结果
+  hintSlices: "{0} · 共 {1} 档"
+  hintSlicesExpand: 点击档位展开逐轮结果
