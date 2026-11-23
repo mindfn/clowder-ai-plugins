@@ -2023,27 +2023,29 @@ views:
                     when: $.exp.cycle.compare.table.hasCols
                     left:
                       - type: text
+                        variant: meta
                         text: t:rsi.cmp.colsLabel
                       - type: each
+                        when: $.exp.cycle.compare.table.colsRemovable
                         from: $.exp.cycle.compare.table.columns
                         control:
-                          type: stack
-                          items:
-                            - type: chip
-                              when: "@removable"
-                              label: "@chipLabel"
-                              tone: "@chipTone"
-                              x:
-                                act: plugSet
-                                icon: close
-                                label: t:rsi.cmp.colRemove
-                                args:
-                                  k: cmpCols
-                                  v: "@removeVal"
-                            - type: chip
-                              when: "!@removable"
-                              label: "@chipLabel"
-                              tone: "@chipTone"
+                          type: chip
+                          label: "@chipLabel"
+                          tone: "@chipTone"
+                          x:
+                            act: plugSet
+                            icon: close
+                            label: t:rsi.cmp.colRemove
+                            args:
+                              k: cmpCols
+                              v: "@removeVal"
+                      - type: each
+                        when: "!$.exp.cycle.compare.table.colsRemovable"
+                        from: $.exp.cycle.compare.table.columns
+                        control:
+                          type: chip
+                          label: "@chipLabel"
+                          tone: "@chipTone"
                       - type: button
                         when: $.exp.cycle.compare.table.hasAddCols
                         icon: plus
@@ -2071,27 +2073,29 @@ views:
                       - "!$.exp.cycle.compare.table.isSliceView"
                     left:
                       - type: text
+                        variant: meta
                         text: t:rsi.cmp.metricsLabel
                       - type: each
+                        when: $.exp.cycle.compare.table.metricsRemovable
                         from: $.exp.cycle.compare.table.metricChips
                         control:
-                          type: stack
-                          items:
-                            - type: chip
-                              when: "@removable"
-                              label: "@label"
-                              tone: "@tone"
-                              x:
-                                act: plugSet
-                                icon: close
-                                label: t:rsi.cmp.metricRemove
-                                args:
-                                  k: cmpMetrics
-                                  v: "@removeVal"
-                            - type: chip
-                              when: "!@removable"
-                              label: "@label"
-                              tone: "@tone"
+                          type: chip
+                          label: "@label"
+                          tone: "@tone"
+                          x:
+                            act: plugSet
+                            icon: close
+                            label: t:rsi.cmp.metricRemove
+                            args:
+                              k: cmpMetrics
+                              v: "@removeVal"
+                      - type: each
+                        when: "!$.exp.cycle.compare.table.metricsRemovable"
+                        from: $.exp.cycle.compare.table.metricChips
+                        control:
+                          type: chip
+                          label: "@label"
+                          tone: "@tone"
                       - type: button
                         when: $.exp.cycle.compare.table.hasAddMetrics
                         icon: plus
@@ -2119,27 +2123,29 @@ views:
                       - $.exp.cycle.compare.table.isSliceView
                     left:
                       - type: text
+                        variant: meta
                         text: t:rsi.cmp.statsLabel
                       - type: each
+                        when: $.exp.cycle.compare.table.statsRemovable
                         from: $.exp.cycle.compare.table.statChips
                         control:
-                          type: stack
-                          items:
-                            - type: chip
-                              when: "@removable"
-                              label: "@label"
-                              tone: "@tone"
-                              x:
-                                act: plugSet
-                                icon: close
-                                label: t:rsi.cmp.statRemove
-                                args:
-                                  k: cmpStats
-                                  v: "@removeVal"
-                            - type: chip
-                              when: "!@removable"
-                              label: "@label"
-                              tone: "@tone"
+                          type: chip
+                          label: "@label"
+                          tone: "@tone"
+                          x:
+                            act: plugSet
+                            icon: close
+                            label: t:rsi.cmp.statRemove
+                            args:
+                              k: cmpStats
+                              v: "@removeVal"
+                      - type: each
+                        when: "!$.exp.cycle.compare.table.statsRemovable"
+                        from: $.exp.cycle.compare.table.statChips
+                        control:
+                          type: chip
+                          label: "@label"
+                          tone: "@tone"
                       - type: button
                         when: $.exp.cycle.compare.table.hasAddStats
                         icon: plus

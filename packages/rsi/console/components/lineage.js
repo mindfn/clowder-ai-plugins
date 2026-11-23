@@ -332,7 +332,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
       }
       return '<tr class="rsi-mx-row">' + tds + '</tr>' + detailHtml;
     }).join('');
-    return '<div class="rsi-mx-wrap">' + topBar + '<div class="scroll-x rsi-mx-scroll"><table class="rsi-mx rsi-mx-slice">' + thead + '<tbody>' + bodyHtml + '</tbody></table></div></div>';
+    return '<div class="rsi-mx-wrap">' + topBar + '<div class="rsi-mx-scroll"><table class="rsi-mx rsi-mx-slice">' + thead + '<tbody>' + bodyHtml + '</tbody></table></div></div>';
   }
 
   // Scalar comparison matrix (dynamic columns + guardrail rollup + expandable per-seed rows)
@@ -364,10 +364,11 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
     const isOpen = sec.defaultOpen ? !folds[secFoldKey] : !!folds[secFoldKey];
     const secHead = '<tr class="rsi-mx-sec" data-tone="' + h(sec.tone || '') + '"><td colspan="' + colCount + '">' +
       '<button type="button" class="rsi-mx-sec-btn" data-act="fold" data-f="result" data-k="' + h(secFoldKey) + '" aria-expanded="' + (isOpen ? 'true' : 'false') + '">' +
+      '<span class="rsi-mx-sec-in">' +
       '<span class="rsi-mx-chev">' + (isOpen ? '▾' : '▸') + '</span>' +
       '<span class="rsi-mx-sec-title">' + h(secTitleOf(sec)) + '</span>' +
-      '<span class="rsi-mx-sec-cnt">' + sec.rows.length + '</span>' +
-      '</button></td></tr>';
+      (sec.collapsedSummary ? '' : '<span class="rsi-mx-sec-cnt">' + sec.rows.length + '</span>') +
+      '</span></button></td></tr>';
     if (!isOpen) return secHead;
     const rowsHtml = sec.rows.map(function (m) {
       const rowFoldKey = 'rsi-cmp-row:' + (table.cycleLabel || '') + ':' + m.id;
@@ -441,7 +442,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix'] = function (p, sc, root) 
     }).join('');
     return secHead + rowsHtml;
   }).join('');
-  return '<div class="rsi-mx-wrap">' + topBar + '<div class="scroll-x rsi-mx-scroll"><table class="rsi-mx">' + thead + '<tbody>' + bodyHtml + '</tbody></table></div></div>';
+  return '<div class="rsi-mx-wrap">' + topBar + '<div class="rsi-mx-scroll"><table class="rsi-mx">' + thead + '<tbody>' + bodyHtml + '</tbody></table></div></div>';
 };
 
 PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {

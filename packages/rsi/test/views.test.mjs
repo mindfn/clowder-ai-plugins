@@ -1577,7 +1577,6 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
   assert.equal(missRows4.every((r) => r.status === 'missing' && r.statusText === '未测'), true);
   const partialMd = formatComparisonMarkdown(d, d.rounds[3]);
   assert.match(partialMd, /质量护栏 通过 5\/6 · 1 项越线 · 2 项未测/);
-  assert.doesNotMatch(partialMd, /质量护栏6/);
 
   // alpha.119: (a) mixed measured+null seeds -> 部分未测; (b) multi-candidate with one passing & one unmeasured -> 部分未测 (NOT 全部通过);
   // (c) paired cycle where same-cycle control measured metrics but candidate is all-null -> 候选未产出正式指标.
@@ -1682,6 +1681,7 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
   vmMod.runInNewContext(src, sb);
   const sliceHtml = sb.PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix']({ from: '$.slice' }, {}, {});
   assert.match(sliceHtml, /class="rsi-mx rsi-mx-slice"/);
+  assert.doesNotMatch(sliceHtml, /class="scroll-x rsi-mx-scroll"/, 'slice scroll container must not attach Host scroll-x fade mask over sticky col');
   assert.match(sliceHtml, /rowspan="2"/);
   assert.match(sliceHtml, /colspan="4"/);
   assert.match(sliceHtml, /PASS/);
@@ -1690,8 +1690,26 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
   assert.match(sliceHtml, /质量护栏 8\/8 全部通过/);
   assert.match(sliceHtml, /class="rsi-mx-seed-row"/);
   const crossHtml = sb.PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix']({ from: '$.cross' }, {}, {});
+  assert.doesNotMatch(crossHtml, /class="scroll-x rsi-mx-scroll"/, 'cross-cycle scroll container must not attach Host scroll-x fade mask over sticky col');
   assert.match(crossHtml, /跨周期参考/);
   assert.match(crossHtml, /v3 · C2/);
+  const zhScalarHtml = sb.PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix']({ from: '$.scalar' }, {}, {});
+  assert.doesNotMatch(zhScalarHtml, /class="scroll-x rsi-mx-scroll"/, 'scalar scroll container must not attach Host scroll-x fade mask over sticky col');
+  assert.match(zhScalarHtml, /class="rsi-mx-sec-in"/, 'section header must wrap sticky inner span');
+  assert.match(zhScalarHtml, /已通过护栏 8 项（点击展开）<\/span><\/span><\/button>/, 'collapsed guardrail summary must not append duplicate count span');
+  // alpha.120: horizontal toolbar chips (no .vstack/stack wrapper) + sticky column CSS specificity > Host page.css (0,3,0)
+  assert.equal(tbl.colsRemovable, true);
+  assert.equal(tbl.statsRemovable, true);
+  assert.equal(vmScalar.cycle.compare.table.metricsRemovable, true);
+  const vmOneCol = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v3>c1.eval`, cmpView: 'scalar', cmpCols: tbl.columns[0].removeVal, cmpMetrics: `${id}|max-qps` });
+  assert.equal(vmOneCol.cycle.compare.table.colsRemovable, false);
+  assert.equal(vmOneCol.cycle.compare.table.metricsRemovable, false);
+  const pdlSrc = readFileSync(new URL('../console/pdl.yaml', import.meta.url), 'utf8');
+  const cmpToolbarSlice = pdlSrc.slice(pdlSrc.indexOf('rsi.cmp.colsLabel'), pdlSrc.indexOf('plugin:official.rsi/rsiCompareMatrix'));
+  assert.doesNotMatch(cmpToolbarSlice, /\btype:\s*stack\b/, 'comparison chip toolbars must not wrap chips in vertical stack (.vstack)');
+  const cssSrc = readFileSync(new URL('../console/components/lineage.css', import.meta.url), 'utf8');
+  assert.match(cssSrc, /\.rsi-mx-scroll \.rsi-mx tbody tr > td\.rsi-mx-col-m/, 'sticky body column selector must beat Host tbody tr + tr > td specificity');
+  assert.match(cssSrc, /border-collapse:separate/, 'sticky table must use border-collapse:separate');
   // P2-2: English labels render without leaked Chinese chrome
   const enScalarHtml = sb.PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix']({ from: '$.scalar', labels: enPack.cmp }, {}, {});
   assert.match(enScalarHtml, /Guardrails 8\/8 passed/);

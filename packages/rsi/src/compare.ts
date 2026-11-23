@@ -787,6 +787,7 @@ function buildScalarComparison(
     evalAnyMetricMeasured,
     guardSummary,
     metricChips,
+    metricsRemovable: metricChips.length > 1,
     addMetrics,
     hasAddMetrics: addMetrics.length > 0,
     metricCustomized,
@@ -834,7 +835,7 @@ function buildSliceComparison(
   const isSliceView = activeView.startsWith('slice:');
 
   if (!isSliceView) {
-    return { hasSlices, viewOptions, activeView, isSliceView, sliceTable: null, statChips: [], addStats: [], hasAddStats: false, statCustomized: false };
+    return { hasSlices, viewOptions, activeView, isSliceView, sliceTable: null, statChips: [], statsRemovable: false, addStats: [], hasAddStats: false, statCustomized: false };
   }
 
   const activeSliceId = activeView.slice('slice:'.length);
@@ -970,6 +971,7 @@ function buildSliceComparison(
     isSliceView,
     sliceTable,
     statChips,
+    statsRemovable: statChips.length > 1,
     addStats,
     hasAddStats: addStats.length > 0,
     statCustomized,
@@ -1014,6 +1016,7 @@ export function buildComparisonTable(
     candidateGroups: nonCtrlGroups.map((g: Data) => ({ id: g.id, version: g.version, label: g.label, confirm: !!g.confirm })),
     columns: cols.columns,
     hasCols: cols.columns.length > 0,
+    colsRemovable: cols.columns.length > 1,
     addColumns: cols.addColumns,
     hasAddCols: cols.addColumns.length > 0,
     colCustomized: cols.colCustomized,

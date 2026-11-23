@@ -60,14 +60,15 @@
 .rsi-mx-seg-btn:hover{color:var(--fg-strong)}
 .rsi-mx-seg-btn.on{background:var(--bg-page);color:var(--fg-strong);font-weight:600;box-shadow:0 1px 2px color-mix(in srgb,var(--fg-strong) 8%,transparent)}
 .rsi-mx-scroll{width:100%;max-width:100%;overflow-x:auto;border:0;border-radius:var(--r-l);background:var(--bg-page)}
-.rsi-mx{width:100%;min-width:0;border-collapse:collapse;border-spacing:0;font-size:var(--fs-s);font-variant-numeric:tabular-nums}
+.rsi-mx{width:100%;min-width:0;border-collapse:separate;border-spacing:0;font-size:var(--fs-s);font-variant-numeric:tabular-nums}
 .rsi-mx th,.rsi-mx td{height:auto;padding:8px 14px;border:0;border-radius:0;text-align:left;vertical-align:middle;white-space:nowrap}
 .rsi-mx tbody tr{cursor:default}
 .rsi-mx tbody tr td:first-child,.rsi-mx tbody tr td:last-child{border-radius:0}
 .rsi-mx tbody tr + tr > td::before,.rsi-mx-sub tbody tr + tr > td::before{display:none}
-.rsi-mx thead th{position:sticky;top:0;background:var(--bg-group);color:var(--fg-muted);font-size:var(--fs-xs);font-weight:600;z-index:1;text-align:left;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
-.rsi-mx .rsi-mx-col-m{position:sticky;left:0;background:var(--bg-page);z-index:2;min-width:200px;width:36%;max-width:320px;padding-inline-end:20px;text-align:left}
-.rsi-mx thead .rsi-mx-col-m{background:var(--bg-group);z-index:3}
+.rsi-mx-scroll .rsi-mx thead th{position:sticky;top:0;background:linear-gradient(var(--bg-group),var(--bg-group)),var(--bg-page);color:var(--fg-muted);font-size:var(--fs-xs);font-weight:600;z-index:1;text-align:left;border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
+.rsi-mx-scroll .rsi-mx tbody tr > td.rsi-mx-col-m,.rsi-mx-scroll .rsi-mx thead th.rsi-mx-col-m{position:sticky;left:0;min-width:200px;width:36%;max-width:320px;padding-inline-end:20px;text-align:left;box-shadow:inset -1px 0 0 color-mix(in srgb,var(--line) 55%,transparent)}
+.rsi-mx-scroll .rsi-mx tbody tr > td.rsi-mx-col-m{background:var(--bg-page);z-index:2}
+.rsi-mx-scroll .rsi-mx thead th.rsi-mx-col-m{background:linear-gradient(var(--bg-group),var(--bg-group)),var(--bg-page);z-index:4}
 .rsi-mx .rsi-mx-col-v{text-align:left;font-family:var(--font-mono);min-width:112px}
 .rsi-mx.is-cross .rsi-mx-col-v{min-width:78px}
 .rsi-mx .rsi-mx-col-d{text-align:left;font-family:var(--font-mono);min-width:82px}
@@ -80,11 +81,12 @@
 .rsi-mx-sub-th{padding-top:4px!important;font-weight:500!important}
 .rsi-mx-unit{font-weight:400;color:var(--fg-muted);font-family:var(--font-mono)}
 .rsi-mx-ref-tag{display:inline-block;padding:0 5px;border-radius:var(--r-full);background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn);font-size:10px;font-weight:500;line-height:1.45;vertical-align:middle}
-.rsi-mx.rsi-mx-slice .rsi-mx-col-m{min-width:110px;width:auto}
+.rsi-mx-scroll .rsi-mx.rsi-mx-slice tbody tr > td.rsi-mx-col-m,.rsi-mx-scroll .rsi-mx.rsi-mx-slice thead th.rsi-mx-col-m{min-width:110px;width:auto}
 .rsi-mx.rsi-mx-slice .rsi-mx-col-v{min-width:74px;padding-inline:10px}
 .rsi-mx td.is-fail{background:color-mix(in srgb,var(--danger) 6%,transparent)}
 .rsi-mx-sec td{padding:0;background:color-mix(in srgb,var(--bg-group) 70%,transparent)}
-.rsi-mx-sec-btn{display:flex;align-items:center;gap:6px;width:100%;padding:6px 14px;border:0;background:transparent;color:var(--fg-strong);font-size:var(--fs-xs);font-weight:600;cursor:pointer;text-align:left}
+.rsi-mx-sec-btn{display:block;width:100%;padding:0;border:0;background:transparent;color:var(--fg-strong);font-size:var(--fs-xs);font-weight:600;cursor:pointer;text-align:left}
+.rsi-mx-sec-in{position:sticky;left:0;display:inline-flex;align-items:center;gap:6px;padding:6px 14px}
 .rsi-mx-sec-btn:hover{background:var(--bg-hover)}
 .rsi-mx-sec[data-tone="danger"] .rsi-mx-sec-title{color:var(--danger)}
 .rsi-mx-sec[data-tone="ok"] .rsi-mx-sec-title{color:var(--ok)}
@@ -95,10 +97,13 @@
 .rsi-mx-row td{border-top:1px solid color-mix(in srgb,var(--line) 48%,transparent)}
 .rsi-mx-sec + .rsi-mx-row td{border-top:0}
 .rsi-mx-row:hover td{background:var(--bg-hover)}
+.rsi-mx-scroll .rsi-mx tbody tr.rsi-mx-row:hover > td.rsi-mx-col-m{background:linear-gradient(var(--bg-hover),var(--bg-hover)),var(--bg-page)}
 .rsi-mx-row.is-active td{background:color-mix(in srgb,var(--info) 6%,var(--bg-page))}
+.rsi-mx-scroll .rsi-mx tbody tr.rsi-mx-row.is-active > td.rsi-mx-col-m{background:color-mix(in srgb,var(--info) 6%,var(--bg-page))}
 .rsi-mx-seed-row td{padding:4px 14px;font-size:var(--fs-xs);background:color-mix(in srgb,var(--bg-group) 45%,var(--bg-page))}
 .rsi-mx-seed-row:hover td{background:color-mix(in srgb,var(--bg-hover) 80%,var(--bg-group))}
-.rsi-mx-seed-row .rsi-mx-col-m{padding-inline-start:30px;background:color-mix(in srgb,var(--bg-group) 45%,var(--bg-page))}
+.rsi-mx-scroll .rsi-mx tbody tr.rsi-mx-seed-row > td.rsi-mx-col-m{padding-inline-start:30px;background:color-mix(in srgb,var(--bg-group) 45%,var(--bg-page))}
+.rsi-mx-scroll .rsi-mx tbody tr.rsi-mx-seed-row:hover > td.rsi-mx-col-m{background:linear-gradient(var(--bg-hover),var(--bg-hover)),color-mix(in srgb,var(--bg-group) 45%,var(--bg-page))}
 .rsi-mx-m-wrap{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
 .rsi-mx-m-btn{display:flex;align-items:center;gap:4px;min-width:0;flex:1;padding:0;border:0;background:transparent;color:var(--fg);cursor:pointer;text-align:left}
 .rsi-mx-m-info{display:flex;flex-direction:column;min-width:0}
