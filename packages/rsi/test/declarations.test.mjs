@@ -99,17 +99,24 @@ test('i18n yaml packs parse cleanly and rsi.exp dual-tab removes trailing lineag
   assert.equal(inlineTrends,1);
   assert.doesNotMatch(js,/rsi-map-modal|addEventListener\(['"]keydown['"]/);
   assert.doesNotMatch(js,/class="scroll-x rsi-map-scroll"/,'overview map scroll must not attach Host .scroll-x which locks overflow-y');
-  // alpha.117: reusable bare subview rsi.discussMembers replaces multi:true selects across all 3 discussion-member spots
+  // alpha.117: reusable bare subviews deduplicate discussion members, card body, and objective traces; orphaned dlg.rsiExpPrep removed
   const discussView=pdl.views['rsi.discussMembers'];
   assert.equal(discussView?.bare,true);
   assert.equal(discussView?.sources?.exp,'exp');
   assert.equal(discussView?.sources?.members,'host:members');
-  let discussRefs=0,multiSelects=0;
+  assert.equal(pdl.views['rsi.cardBody']?.bare,true);
+  assert.equal(pdl.views['rsi.objectiveTraces']?.bare,true);
+  assert.equal(pdl.views['dlg.rsiExpPrep'],undefined,'orphaned dlg.rsiExpPrep duplicate must stay removed');
+  let discussRefs=0,cardBodyRefs=0,tracesRefs=0,multiSelects=0;
   for(const view of Object.values(pdl.views))walk(view,(node)=>{
     if(node.type==='view'&&node.id==='rsi.discussMembers')discussRefs++;
+    if(node.type==='view'&&node.id==='rsi.cardBody')cardBodyRefs++;
+    if(node.type==='view'&&node.id==='rsi.objectiveTraces')tracesRefs++;
     if(node.type==='select'&&node.multi===true)multiSelects++;
   });
-  assert.equal(discussRefs,3,'all 3 discussion member UI surfaces must reuse rsi.discussMembers');
+  assert.equal(discussRefs,2,'both active discussion member UI surfaces must reuse rsi.discussMembers');
+  assert.equal(cardBodyRefs,2,'dlg.rsiCards and rsi.cards must share rsi.cardBody');
+  assert.equal(tracesRefs,2,'both trace panels in rsi.objective must share rsi.objectiveTraces');
   assert.equal(multiSelects,0,'no V2-degraded multi:true select controls should remain');
   // Every expandable list must declare both `id` (required by Host rows.js `canOpen = ... && o.list`) and `row.key`
   let expandableLists=0;
@@ -122,7 +129,7 @@ test('i18n yaml packs parse cleanly and rsi.exp dual-tab removes trailing lineag
     assert.ok(typeof node.id==='string'&&node.id.length>0,`expandable list in ${viewId} (from=${node.from}) missing id — Host lrow will disable click-to-expand`);
     assert.ok(typeof rowObj?.key==='string'&&rowObj.key.length>0,`expandable list ${node.id} in ${viewId} missing row.key`);
   });
-  assert.ok(expandableLists>=10,`expected >=10 expandable lists audited, got ${expandableLists}`);
+  assert.ok(expandableLists>=9,`expected >=9 expandable lists audited, got ${expandableLists}`);
   assert.equal(zh.applyResult.concluded,'运行失败·已有结论');
   assert.equal(en.applyResult.concluded,'Run failed · concluded');
 });

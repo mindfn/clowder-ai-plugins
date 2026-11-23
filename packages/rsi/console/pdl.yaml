@@ -897,15 +897,15 @@ views:
                   - type: settings
                     when:
                       - $.exp.projectPath
-                      - $.exp.execFlow.selected.isEvaluate
+                      - $.exp.execFlow.selected.memberStage
                     rows:
                       - label: t:rsi.exp.stepMemberLabel
                         help: t:rsi.exp.execStageMemberHelp
                         control:
                           type: select
-                          id: rsi-exec-eval-member
+                          id: rsi-exec-stage-member
                           label: t:rsi.exp.stepMemberLabel
-                          value: $.exp.execFlow.selected.evaluateCatId
+                          value: $.exp.execFlow.selected.memberStage.value
                           options:
                             - from: $.members.rows
                               item:
@@ -920,7 +920,7 @@ views:
                           args:
                             request: memberRole
                             objective: $.exp.id
-                            role: evaluate
+                            role: $.exp.execFlow.selected.memberStage.role
                             cats: $.members.rows
                   - type: view
                     id: rsi.discussMembers
@@ -933,34 +933,6 @@ views:
                     when:
                       - $.exp.projectPath
                       - $.exp.execFlow.selected.isDiscuss
-                  - type: settings
-                    when:
-                      - $.exp.projectPath
-                      - $.exp.execFlow.selected.isIterate
-                    rows:
-                      - label: t:rsi.exp.stepMemberLabel
-                        help: t:rsi.exp.execStageMemberHelp
-                        control:
-                          type: select
-                          id: rsi-exec-iter-member
-                          label: t:rsi.exp.stepMemberLabel
-                          value: $.exp.execFlow.selected.iterateCatId
-                          options:
-                            - from: $.members.rows
-                              item:
-                                v: "@id"
-                                label:
-                                  t: rsi.memberOption
-                                  args:
-                                    - "@name"
-                                    - "@handle"
-                                when: "@on"
-                          change: plugin
-                          args:
-                            request: memberRole
-                            objective: $.exp.id
-                            role: iterate
-                            cats: $.members.rows
           - type: section
             title: t:rsi.exp.sec.execPolicy
             actions:
@@ -3424,49 +3396,9 @@ views:
                             text: "@value"
                             num: true
                           w: num
-                  - type: list
-                    id: rsi-traces
+                  - type: view
+                    id: rsi.objectiveTraces
                     when: $.objective.traces
-                    label:
-                      t: rsi.trace.label
-                      args:
-                        - $.objective.traces.total
-                        - $.objective.traces.items.length
-                    from: $.objective.traces.items
-                    empty: t:rsi.trace.none
-                    row:
-                      layout: two
-                      key: "@id"
-                      title: "@source"
-                      sub:
-                        sep: " · "
-                        parts:
-                          - text: "@cat"
-                          - text:
-                              t: rsi.trace.whereOf
-                              args:
-                                - "@version"
-                                - "@cycle"
-                      cols:
-                        - v:
-                            status:
-                              tone: warn
-                              text: t:rsi.trace.counter
-                          w: state
-                          when: "@counter"
-                        - v:
-                            text:
-                              of: "@at"
-                              fmt: ago
-                          w: time
-                      act: dialog
-                      args:
-                        kind: rsiRecord
-                        type: trace
-                        objective: $.objective.id
-                        cycle: "@cycleId"
-                        id: "@id"
-                        title: "@source"
               - type: each
                 from:
                   - {}
@@ -4308,49 +4240,9 @@ views:
                     _: false
                     node: true
                 from: $.objective.cSel.pointNames
-              - type: list
-                id: rsi-traces
+              - type: view
+                id: rsi.objectiveTraces
                 when: $.objective.traces
-                label:
-                  t: rsi.trace.label
-                  args:
-                    - $.objective.traces.total
-                    - $.objective.traces.items.length
-                from: $.objective.traces.items
-                empty: t:rsi.trace.none
-                row:
-                  layout: two
-                  key: "@id"
-                  title: "@source"
-                  sub:
-                    sep: " · "
-                    parts:
-                      - text: "@cat"
-                      - text:
-                          t: rsi.trace.whereOf
-                          args:
-                            - "@version"
-                            - "@cycle"
-                  cols:
-                    - v:
-                        status:
-                          tone: warn
-                          text: t:rsi.trace.counter
-                      w: state
-                      when: "@counter"
-                    - v:
-                        text:
-                          of: "@at"
-                          fmt: ago
-                      w: time
-                  act: dialog
-                  args:
-                    kind: rsiRecord
-                    type: trace
-                    objective: $.objective.id
-                    cycle: "@cycleId"
-                    id: "@id"
-                    title: "@source"
               - type: text
                 variant: para
                 when:
@@ -4534,134 +4426,9 @@ views:
       - type: each
         from: $.cards.cards
         blocks:
-          - type: box
-            variant: card
-            blocks:
-              - type: text
-                variant: title
-                text:
-                  t: rsi.card.titleOf
-                  args:
-                    - "@objectiveName"
-                    - "@from"
-                    - "@to"
-              - type: text
-                variant: meta
-                when:
-                  of: "@round"
-                  gte: 2
-                text:
-                  t: rsi.card.round
-                  args:
-                    - "@round"
-              - type: label
-                text: t:rsi.card.basis
-              - type: text
-                variant: para
-                text: "@basis"
-              - type: text
-                variant: list
-                from: "@reasons"
-              - type: label
-                text: t:rsi.card.proposal
-              - type: list
-                from: "@actions"
-                row:
-                  layout: line
-                  key: "@unit"
-                  title:
-                    text:
-                      of: "@op"
-                      map:
-                        modify:
-                          t: rsi.change.modify
-                          args:
-                            - "@unitName"
-                            - "@from"
-                            - "@to"
-                        add:
-                          t: rsi.change.add
-                          args:
-                            - "@unitName"
-                        remove:
-                          t: rsi.change.remove
-                          args:
-                            - "@unitName"
-                        enable:
-                          t: rsi.change.enable
-                          args:
-                            - "@unitName"
-                        disable:
-                          t: rsi.change.disable
-                          args:
-                            - "@unitName"
-                        _: "@unitName"
-                  cols:
-                    - v:
-                        text:
-                          t: rsi.card.shared
-                          args:
-                            - of: "@sharedNames"
-                              sep: 、
-                        tone: warn
-                      w: label
-                      when: "@sharedNames"
-                    - v:
-                        text:
-                          t: rsi.apply
-                          args:
-                            - "@apply"
-                      w: state
-              - type: label
-                text: t:rsi.card.predictions
-              - type: list
-                from: "@predictions"
-                row:
-                  layout: line
-                  key: "@metric"
-                  title: "@metric"
-                  inline:
-                    - chip: t:rsi.metric.locked
-                      when: "@locked"
-                    - chip: t:rsi.metric.guard
-                      when: "@guard"
-                  cols:
-                    - v:
-                        text: "@expect"
-                      w: label
-              - type: label
-                text: t:rsi.card.collab
-                when: "@collab"
-              - type: text
-                variant: para
-                text: "@collab.text"
-                when: "@collab"
-              - type: toolbar
-                items:
-                  - type: button
-                    primary: true
-                    label: t:rsi.card.apply
-                    act: plugin
-                    args:
-                      request: decide
-                      card: "@id"
-                      decision: apply
-                    disabled: $.pending
-                  - type: button
-                    label: t:rsi.card.reevaluate
-                    act: dialog
-                    args:
-                      kind: rsiReeval
-                      card: "@id"
-                    disabled: $.pending
-                  - type: button
-                    label: t:rsi.card.skip
-                    act: plugin
-                    args:
-                      request: decide
-                      card: "@id"
-                      decision: skip
-                    disabled: $.pending
+          - type: view
+            id: rsi.cardBody
+            data: "@"
     sources:
       cards: cards
     loading: t:rsi.console.loading
@@ -4724,134 +4491,9 @@ views:
                 request: go
                 objective: "@objective"
           expand:
-            - type: box
-              variant: card
-              blocks:
-                - type: text
-                  variant: title
-                  text:
-                    t: rsi.card.titleOf
-                    args:
-                      - "@objectiveName"
-                      - "@from"
-                      - "@to"
-                - type: text
-                  variant: meta
-                  when:
-                    of: "@round"
-                    gte: 2
-                  text:
-                    t: rsi.card.round
-                    args:
-                      - "@round"
-                - type: label
-                  text: t:rsi.card.basis
-                - type: text
-                  variant: para
-                  text: "@basis"
-                - type: text
-                  variant: list
-                  from: "@reasons"
-                - type: label
-                  text: t:rsi.card.proposal
-                - type: list
-                  from: "@actions"
-                  row:
-                    layout: line
-                    key: "@unit"
-                    title:
-                      text:
-                        of: "@op"
-                        map:
-                          modify:
-                            t: rsi.change.modify
-                            args:
-                              - "@unitName"
-                              - "@from"
-                              - "@to"
-                          add:
-                            t: rsi.change.add
-                            args:
-                              - "@unitName"
-                          remove:
-                            t: rsi.change.remove
-                            args:
-                              - "@unitName"
-                          enable:
-                            t: rsi.change.enable
-                            args:
-                              - "@unitName"
-                          disable:
-                            t: rsi.change.disable
-                            args:
-                              - "@unitName"
-                          _: "@unitName"
-                    cols:
-                      - v:
-                          text:
-                            t: rsi.card.shared
-                            args:
-                              - of: "@sharedNames"
-                                sep: 、
-                          tone: warn
-                        w: label
-                        when: "@sharedNames"
-                      - v:
-                          text:
-                            t: rsi.apply
-                            args:
-                              - "@apply"
-                        w: state
-                - type: label
-                  text: t:rsi.card.predictions
-                - type: list
-                  from: "@predictions"
-                  row:
-                    layout: line
-                    key: "@metric"
-                    title: "@metric"
-                    inline:
-                      - chip: t:rsi.metric.locked
-                        when: "@locked"
-                      - chip: t:rsi.metric.guard
-                        when: "@guard"
-                    cols:
-                      - v:
-                          text: "@expect"
-                        w: label
-                - type: label
-                  text: t:rsi.card.collab
-                  when: "@collab"
-                - type: text
-                  variant: para
-                  text: "@collab.text"
-                  when: "@collab"
-                - type: toolbar
-                  items:
-                    - type: button
-                      primary: true
-                      label: t:rsi.card.apply
-                      act: plugin
-                      args:
-                        request: decide
-                        card: "@id"
-                        decision: apply
-                      disabled: $.pending
-                    - type: button
-                      label: t:rsi.card.reevaluate
-                      act: dialog
-                      args:
-                        kind: rsiReeval
-                        card: "@id"
-                      disabled: $.pending
-                    - type: button
-                      label: t:rsi.card.skip
-                      act: plugin
-                      args:
-                        request: decide
-                        card: "@id"
-                        decision: skip
-                      disabled: $.pending
+            - type: view
+              id: rsi.cardBody
+              data: "@"
               when:
                 of: "@kind"
                 map:
@@ -5172,6 +4814,187 @@ views:
         text: $.doc.body
     sources:
       doc: doc
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
+  rsi.cardBody:
+    bare: true
+    blocks:
+      - type: box
+        variant: card
+        blocks:
+          - type: text
+            variant: title
+            text:
+              t: rsi.card.titleOf
+              args:
+                - "@objectiveName"
+                - "@from"
+                - "@to"
+          - type: text
+            variant: meta
+            when:
+              of: "@round"
+              gte: 2
+            text:
+              t: rsi.card.round
+              args:
+                - "@round"
+          - type: label
+            text: t:rsi.card.basis
+          - type: text
+            variant: para
+            text: "@basis"
+          - type: text
+            variant: list
+            from: "@reasons"
+          - type: label
+            text: t:rsi.card.proposal
+          - type: list
+            from: "@actions"
+            row:
+              layout: line
+              key: "@unit"
+              title:
+                text:
+                  of: "@op"
+                  map:
+                    modify:
+                      t: rsi.change.modify
+                      args:
+                        - "@unitName"
+                        - "@from"
+                        - "@to"
+                    add:
+                      t: rsi.change.add
+                      args:
+                        - "@unitName"
+                    remove:
+                      t: rsi.change.remove
+                      args:
+                        - "@unitName"
+                    enable:
+                      t: rsi.change.enable
+                      args:
+                        - "@unitName"
+                    disable:
+                      t: rsi.change.disable
+                      args:
+                        - "@unitName"
+                    _: "@unitName"
+              cols:
+                - v:
+                    text:
+                      t: rsi.card.shared
+                      args:
+                        - of: "@sharedNames"
+                          sep: 、
+                    tone: warn
+                  w: label
+                  when: "@sharedNames"
+                - v:
+                    text:
+                      t: rsi.apply
+                      args:
+                        - "@apply"
+                  w: state
+          - type: label
+            text: t:rsi.card.predictions
+          - type: list
+            from: "@predictions"
+            row:
+              layout: line
+              key: "@metric"
+              title: "@metric"
+              inline:
+                - chip: t:rsi.metric.locked
+                  when: "@locked"
+                - chip: t:rsi.metric.guard
+                  when: "@guard"
+              cols:
+                - v:
+                    text: "@expect"
+                  w: label
+          - type: label
+            text: t:rsi.card.collab
+            when: "@collab"
+          - type: text
+            variant: para
+            text: "@collab.text"
+            when: "@collab"
+          - type: toolbar
+            items:
+              - type: button
+                primary: true
+                label: t:rsi.card.apply
+                act: plugin
+                args:
+                  request: decide
+                  card: "@id"
+                  decision: apply
+                disabled: $.pending
+              - type: button
+                label: t:rsi.card.reevaluate
+                act: dialog
+                args:
+                  kind: rsiReeval
+                  card: "@id"
+                disabled: $.pending
+              - type: button
+                label: t:rsi.card.skip
+                act: plugin
+                args:
+                  request: decide
+                  card: "@id"
+                  decision: skip
+                disabled: $.pending
+  rsi.objectiveTraces:
+    bare: true
+    blocks:
+      - type: list
+        id: rsi-traces
+        when: $.objective.traces
+        label:
+          t: rsi.trace.label
+          args:
+            - $.objective.traces.total
+            - $.objective.traces.items.length
+        from: $.objective.traces.items
+        empty: t:rsi.trace.none
+        row:
+          layout: two
+          key: "@id"
+          title: "@source"
+          sub:
+            sep: " · "
+            parts:
+              - text: "@cat"
+              - text:
+                  t: rsi.trace.whereOf
+                  args:
+                    - "@version"
+                    - "@cycle"
+          cols:
+            - v:
+                status:
+                  tone: warn
+                  text: t:rsi.trace.counter
+              w: state
+              when: "@counter"
+            - v:
+                text:
+                  of: "@at"
+                  fmt: ago
+              w: time
+          act: dialog
+          args:
+            kind: rsiRecord
+            type: trace
+            objective: $.objective.id
+            cycle: "@cycleId"
+            id: "@id"
+            title: "@source"
+    sources:
+      objective: objective
     loading: t:rsi.console.loading
     error: t:rsi.console.error
   rsi.discussMembers:
@@ -6020,288 +5843,6 @@ views:
       request: prep
       id: $.id
       op: edit
-  dlg.rsiExpPrep:
-    title: t:rsi.exp.declare
-    wide: true
-    blocks:
-      - type: component
-        use: plugin:official.rsi/rsiInitDag
-        props:
-          from: $.exp.prep.dagNodes
-          act: plugSet
-          args:
-            k: initStep
-            v: "@k"
-          terminalTitle: t:rsi.exp.dagReady
-          title:
-            t: rsi.exp.initStep
-            args:
-              - "@i"
-              - t: rsi.exp.init
-                args:
-                  - "@k"
-          stages:
-            waiting: t:rsi.exp.dagStage.waiting
-            running: t:rsi.exp.dagStage.running
-            pending: t:rsi.exp.dagStage.pending
-            done: t:rsi.exp.dagStage.done
-            error: t:rsi.exp.dagStage.error
-      - type: each
-        from:
-          - {}
-        when: $.exp.prep.ready.selected
-        blocks:
-          - type: text
-            parts:
-              - text: t:rsi.exp.dagReady
-                strong: true
-              - status:
-                  of: $.exp.prep.ready.stage
-                  map:
-                    done:
-                      tone: ok
-                      text: t:rsi.exp.dagStage.done
-                    pending:
-                      tone: warn
-                      text: t:rsi.exp.dagReadyCanStart
-                    _:
-                      tone: ""
-                      text: t:rsi.exp.dagStage.waiting
-          - type: kv
-            from:
-              - k: t:rsi.exp.dagReadyProgress
-                v:
-                  t: rsi.exp.dagReadyProgressOf
-                  args:
-                    - $.exp.prep.ready.doneCount
-                    - $.exp.prep.ready.totalCount
-              - k: t:rsi.exp.dagReadyRemain
-                v:
-                  t: rsi.exp.dagReadyRemainOf
-                  args:
-                    - $.exp.prep.ready.remaining
-                when: $.exp.prep.ready.remaining
-              - k: t:rsi.exp.pol.schedule
-                v: $.exp.prep.ready.schedule
-                when: $.exp.prep.ready.schedule
-          - type: label
-            text: t:rsi.exp.readyOverviewTitle
-            help: t:rsi.exp.readyOverviewHint
-            when: $.exp.prep.ready.overview
-          - type: each
-            from: $.exp.prep.ready.overview
-            blocks:
-              - type: box
-                blocks:
-                  - type: label
-                    text: "@title"
-                  - type: kv
-                    from: "@items"
-      - type: each
-        from: $.exp.prep.visibleSteps
-        blocks:
-          - type: text
-            parts:
-              - text:
-                  t: rsi.exp.initStep
-                  args:
-                    - "@i"
-                    - t: rsi.exp.init
-                      args:
-                        - "@k"
-                strong: true
-              - status:
-                  of: "@state"
-                  map:
-                    confirmed:
-                      tone: ok
-                      text: t:rsi.exp.prep.state.confirmed
-                    preparing:
-                      tone: info
-                      text: t:rsi.exp.prep.state.preparing
-                    submitted:
-                      tone: warn
-                      text: t:rsi.exp.prep.state.submitted
-                    cancelled:
-                      tone: danger
-                      text: t:rsi.exp.prep.state.cancelled
-                    failed:
-                      tone: danger
-                      text: t:rsi.exp.prep.state.failed
-                    blocked:
-                      tone: danger
-                      text: t:rsi.exp.prep.state.blocked
-                    missing:
-                      tone: danger
-                      text: t:rsi.exp.prep.state.missing
-                    stale:
-                      tone: warn
-                      text: t:rsi.exp.prep.state.stale
-                    waiting:
-                      tone: ""
-                      text: t:rsi.exp.prep.state.waiting
-                    queued:
-                      tone: ""
-                      text: t:rsi.exp.prep.state.queued
-                    _:
-                      tone: ""
-                      text: t:rsi.exp.prep.state.uninvestigated
-              - text:
-                  t: rsi.exp.byOf
-                  args:
-                    - "@by"
-                when: "@by"
-              - text:
-                  t: rsi.exp.waitOnOf
-                  args:
-                    - "@waitOn"
-                when: "@waitOn"
-              - text:
-                  t: rsi.exp.initOut
-                  args:
-                    - "@k"
-              - text:
-                  t: rsi.exp.depsOf
-                  args:
-                    - "@deps"
-                when: "@deps"
-            actions:
-              - type: button
-                label: t:rsi.exp.retry
-                act: plugin
-                args:
-                  request: initRetry
-                  k: "@k"
-                when:
-                  of: "@state"
-                  map:
-                    _: false
-                    cancelled: true
-                    failed: true
-                    blocked: true
-                    missing: true
-                disabled: $.pending
-              - type: button
-                label: t:rsi.exp.wakeAgain
-                act: plugin
-                args:
-                  request: initRetry
-                  k: "@k"
-                  force: "true"
-                when:
-                  of: "@state"
-                  map:
-                    _: false
-                    preparing: true
-                disabled: $.pending
-          - type: notice
-            tone: danger
-            text: "@reason"
-            when: "@reason"
-          - type: list
-            id: rsi-dlg-prep
-            from: "@items"
-            row: rsi.prep
-          - type: text
-            variant: meta
-            text:
-              t: rsi.exp.unknownsOf
-              args:
-                - "@unknowns"
-            when: "@unknowns"
-          - type: text
-            variant: meta
-            text:
-              t: rsi.exp.nextOf
-              args:
-                - "@next"
-            when: "@next"
-      - type: label
-        text: t:rsi.exp.members
-      - type: list
-        from: $.exp.roleMembers
-        row:
-          layout: two
-          lead:
-            who: "@catId"
-            form: avatar
-            when: "@catId"
-          title:
-            text:
-              t: rsi.exp.role
-              args:
-                - "@role"
-          sub:
-            parts:
-              - who: "@catId"
-                form: title
-                when: "@catId"
-              - text: "@name"
-                when: "!@catId"
-          cols:
-            - v:
-                text: "@model"
-                mono: true
-              w: id
-      - type: button
-        label: t:rsi.exp.membersEdit
-        when: $.exp.projectPath
-        act: dialog
-        args:
-          kind: rsiMembers
-          objective: $.exp.id
-          prepare: $.exp.memberIds.prepare
-          evaluate: $.exp.memberIds.evaluate
-          iterate: $.exp.memberIds.iterate
-          cats: $.members.rows
-      - type: view
-        id: rsi.discussMembers
-        when: $.exp.projectPath
-      - type: label
-        text: t:rsi.exp.policyTitle
-        action:
-          type: button
-          label: t:rsi.exp.pol.editSchedule
-          act: dialog
-          args:
-            kind: rsiSchedule
-            objective: $.exp.id
-            mode: $.exp.policy.schedule.form.mode
-            dateFrom: $.exp.policy.schedule.form.dateFrom
-            dateTo: $.exp.policy.schedule.form.dateTo
-            start: $.exp.policy.schedule.form.start
-            end: $.exp.policy.schedule.form.end
-            custom: $.exp.policy.schedule.form.custom
-      - type: kv
-        from:
-          - k: t:rsi.exp.pol.schedule
-            v: $.exp.policy.schedule.window
-            when: $.exp.policy.schedule.window
-          - k: t:rsi.exp.pol.schedule
-            v: t:rsi.exp.pol.scheduleUnset
-            when: "!$.exp.policy.schedule.window"
-          - k: t:rsi.exp.pol.seeds
-            v:
-              t: rsi.exp.seedsOf
-              args:
-                - $.exp.policy.seeds
-          - k: t:rsi.exp.pol.vars
-            v:
-              of: $.exp.policy.vars
-              sep: ；
-              item:
-                t: rsi.exp.varOf
-                args:
-                  - "@name"
-                  - of: "@values"
-                    sep: " / "
-          - k: t:rsi.exp.pol.auto
-            v: $.exp.policy.autoText
-    sources:
-      exp: exp
-      members: host:members
-    loading: t:rsi.console.loading
-    error: t:rsi.console.error
   dlg.rsiExpNote:
     title:
       t: rsi.exp.pickName

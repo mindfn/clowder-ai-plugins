@@ -1041,6 +1041,8 @@ function exp(): any {
     pick: 'node',
     steps: execFlowNodes.map((n) => ({ k: n.k, faint: n.owner, selected: n.selected, pick: n.k })),
   }];
+  const evalCatId = (d.members.find((m: Data) => m.role === 'evaluate') || {}).catId || '';
+  const iterCatId = (d.members.find((m: Data) => m.role === 'iterate') || {}).catId || '';
   const execFlow = {
     nodes: execFlowNodes,
     rows: execFlowRows,
@@ -1055,8 +1057,11 @@ function exp(): any {
       isIterate: activeExecStage === 'iterate',
       executorMcp: d.executor.mcp || 'rsi.executor',
       executorState: d.executor.state || 'none',
-      evaluateCatId: (d.members.find((m: Data) => m.role === 'evaluate') || {}).catId || '',
-      iterateCatId: (d.members.find((m: Data) => m.role === 'iterate') || {}).catId || '',
+      evaluateCatId: evalCatId,
+      iterateCatId: iterCatId,
+      memberStage: (activeExecStage === 'evaluate' || activeExecStage === 'iterate')
+        ? { role: activeExecStage, value: activeExecStage === 'evaluate' ? evalCatId : iterCatId }
+        : null,
       discussionIds: discussionList.map((m: Data) => m.id),
       discussionText: discussionList.map((m: Data) => m.name).join('、'),
     },
