@@ -1260,4 +1260,93 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
   sandbox.pv = (expr, sc) => expr === '$.map116' ? vm116.overviewMap : (typeof expr === 'string' && expr.startsWith('@') ? sc?.[expr.slice(1)] : expr);
   const html116 = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.map116', mode: 'modal' }, {}, {});
   assert.match(html116, /Preformal gate intercepted 176 score diffs/, 'untagged metricless node must display headlineBrief on card');
+
+  // alpha.117:
+  // 1) Shared preparing node single source of truth across version tree (vm.versions) and overviewMap.nodes,
+  //    with unified `${o.id}/vX>node` selection and safe ver detail without rounds/commit.
+  x.d.versionRequest = { cycle: 15, title: 'Implement v16 zero-drift kernel', baseVersion: 'v2', since: now + 2000, invocationId: 'inv-117' };
+  const prepPick117 = `${x.id}/v16>node`;
+  const vm117Prep = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: prepPick117 });
+  const treePrepRow = vm117Prep.versions.find((row) => row.id === 'v16');
+  const mapPrepNode = vm117Prep.overviewMap.nodes.find((n) => n.id === 'v16');
+  assert.ok(treePrepRow, 'preparing version must appear in version tree (vm.versions)');
+  assert.ok(mapPrepNode, 'preparing version must appear in overviewMap.nodes');
+  assert.equal(treePrepRow.parentKey, `${x.id}/v2`);
+  assert.equal(mapPrepNode.parent, 'v2');
+  assert.equal(treePrepRow.pick, prepPick117);
+  assert.equal(mapPrepNode.pick, prepPick117);
+  assert.equal(treePrepRow.nodeState, 'preparing');
+  assert.equal(mapPrepNode.state, 'preparing');
+  assert.equal(vm117Prep.ver?.id, 'v16');
+  assert.equal(vm117Prep.ver?.outcome, 'preparing');
+  assert.equal(vm117Prep.ver?.preparing, true);
+  assert.equal(vm117Prep.step, 'node');
+  assert.equal(vm117Prep.cycle, null);
+  assert.equal(vm117Prep.overviewMap.selectedVersion, 'v16');
+  assert.equal(vm117Prep.overviewMap.selectedDetail?.id, 'v16');
+  assert.equal(vm117Prep.overviewMap.selectedDetail?.causality?.basisKind, 'preparing');
+  assert.equal(vm117Prep.overviewMap.stats.total, x.d.versions.length, 'stats.total counts registered versions, not virtual preparing node');
+  assert.equal(vm117Prep.overviewMap.stats.preparing, 'v16');
+  delete x.d.versionRequest;
+
+  // 2) Enriched collect step fields: collectSummary, jobId, directory, errorBrief, attemptsText
+  x.d.rounds[x.d.rounds.length - 1].runs[0].jobId = 'job-15-a';
+  x.d.rounds[x.d.rounds.length - 1].runs[0].directory = '/tmp/rsi/run-15';
+  x.d.rounds[x.d.rounds.length - 1].runs[0].attempts = [
+    { state: 'failed', jobId: 'job-15-0', start: now, end: now + 3000, error: { raw: 'first attempt timeout' } },
+    { state: 'failed', jobId: 'job-15-a', start: now + 4000, end: now + 9000, error: { raw: 'exit 1' } },
+  ];
+  const vm117Collect = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: `${x.id}/v15>c1.collect` });
+  assert.equal(vm117Collect.cycle.collectSummary.tier, 'explore');
+  assert.match(vm117Collect.cycle.collectSummary.concludedHeadline, /Preformal gate intercepted/);
+  assert.equal(vm117Collect.cycle.runs[0].jobId, 'job-15-a');
+  assert.equal(vm117Collect.cycle.runs[0].directory, '/tmp/rsi/run-15');
+  assert.equal(vm117Collect.cycle.runs[0].errorBrief, 'exit 1');
+  assert.match(vm117Collect.cycle.runs[0].attemptsText, /#1 failed \(job-15-0\)/);
+  assert.match(vm117Collect.cycle.runs[0].attemptsText, /#2 failed \(job-15-a\)/);
+
+  // 3) Overview fold groups: max 6 per chunk, expanded dashed box with per-group Collapse button,
+  //    selecting a node inside an expanded group keeps the group intact, and no Host .scroll-x on .rsi-map-scroll.
+  const longChainNodes = [{ id: 'v1', parent: null, state: 'baseline', value: 1, valueText: '1', aspects: [], changeShort: 'root' }];
+  for (let i = 2; i <= 14; i++) {
+    longChainNodes.push({ id: `v${i}`, parent: `v${i - 1}`, state: 'explored', value: i, valueText: String(i), aspects: ['object'], changeShort: `step ${i}` });
+  }
+  longChainNodes.push({ id: 'v15', parent: 'v14', state: 'current', value: 15, valueText: '15', aspects: ['object'], changeShort: 'cur v15' });
+  const longChainMap = {
+    objectiveId: 'obj-chunk-test',
+    objectiveName: 'Chunked fold test',
+    currentVersion: 'v15',
+    metricVersion: 'E1',
+    lens: 'metric',
+    metric: { id: 'qps', name: 'QPS', dir: 'up', unit: '' },
+    selectedVersion: 'v15',
+    stats: { total: 15, pruned: 0, insufficient: 0, running: 0, preparing: null, current: 'v15' },
+    nodes: longChainNodes,
+  };
+  sandbox.globalThis.__rsiMapZoom = {};
+  sandbox.globalThis.__rsiMapExpanded = {};
+  sandbox.pv = (expr, sc) => expr === '$.map117' ? longChainMap : (typeof expr === 'string' && expr.startsWith('@') ? sc?.[expr.slice(1)] : expr);
+  const html117Collapsed = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.map117', mode: 'modal' }, {}, {});
+  // 13 middle nodes (v2..v14) split into chunks of <=6 with no 1-node chunk: [6, 5, 2] -> v2~v7, v8~v12, v13~v14
+  assert.match(html117Collapsed, /data-fold-key="v2~v7"/);
+  assert.match(html117Collapsed, /data-fold-key="v8~v12"/);
+  assert.match(html117Collapsed, /data-fold-key="v13~v14"/);
+  assert.doesNotMatch(html117Collapsed, /class="scroll-x rsi-map-scroll"/, 'must not attach Host scroll-x class');
+  assert.match(html117Collapsed, /class="rsi-map-scroll"/);
+  // Expanding v8~v12 while selecting v10 inside it keeps v8~v12 intact as one dashed container with a Collapse button
+  sandbox.globalThis.__rsiMapExpanded = { 'obj-chunk-test': { 'v8~v12': true } };
+  const longChainSelInside = Object.assign({}, longChainMap, { selectedVersion: 'v10' });
+  sandbox.pv = (expr, sc) => expr === '$.map117b' ? longChainSelInside : (typeof expr === 'string' && expr.startsWith('@') ? sc?.[expr.slice(1)] : expr);
+  const html117Expanded = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.map117b', mode: 'modal' }, {}, {});
+  assert.match(html117Expanded, /class="rsi-map-fold-box" data-fold-key="v8~v12"/, 'expanded chunk renders persistent dashed fold container');
+  assert.match(html117Expanded, /data-rsi-map-act="toggle-fold" data-fold-key="v8~v12" data-fold-open="1"/, 'expanded container renders individual Collapse button');
+  assert.match(html117Expanded, /data-ver="v10" aria-pressed="true"/, 'selected node inside expanded group remains selected without splitting the group');
+  assert.match(html117Expanded, /data-fold-key="v2~v7" data-fold-open="0"/, 'other chunks remain collapsed');
+  assert.match(html117Expanded, /data-fold-key="v13~v14" data-fold-open="0"/);
+  // Explicit collapse overrides wildcard '*' so collapsing one group from expand-all mode works
+  sandbox.globalThis.__rsiMapExpanded = { 'obj-chunk-test': { '*': true, 'v8~v12': false } };
+  const html117OneCollapsed = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.map117b', mode: 'modal' }, {}, {});
+  assert.match(html117OneCollapsed, /data-fold-key="v8~v12" data-fold-open="0"/, 'explicit false must collapse even under expand-all wildcard');
+  assert.match(html117OneCollapsed, /class="rsi-map-fold-box" data-fold-key="v2~v7"/);
+  assert.match(html117OneCollapsed, /data-rsi-map-act="expand-all"/, 'top button switches back to expand-all when one group is collapsed');
 });

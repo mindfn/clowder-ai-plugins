@@ -81,7 +81,7 @@ govResult:
   waiting: 待执行
 applyResult:
   done: 已部署
-  concluded: 已拦截·有结论
+  concluded: 运行失败·已有结论
   failed: 有环境失败
   _: "{0}"
 stepName:
@@ -120,6 +120,7 @@ ov:
   fit: 适应
   expandAll: 全部展开
   collapseChains: 折叠长链
+  collapseGroup: 收起
   expand: 大图预览
   close: 关闭
   exportHtml: 导出 HTML
@@ -844,6 +845,11 @@ exp:
   groupCmd: 执行命令
   startTime: 开始时间
   duration: 耗时
+  jobId: 作业 ID
+  runDir: 运行目录
+  attempts: 重试记录
+  collectProgress: 采集进度
+  collectConcluded: "部分运行失败，但本周期已形成结论：{0}"
   groupHead: "{0}（{1}）· {2}/{3}"
   readyOverviewTitle: 实验设计总览
   readyOverviewHint: 如需修改或查看原始依据，点击上方 1–7 对应节点即可

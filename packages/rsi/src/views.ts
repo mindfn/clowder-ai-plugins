@@ -605,6 +605,7 @@ function exp(): any {
     return decided.length ? { round: decided[decided.length - 1], repair: false } : null;
   };
   const aspectsOfVersion = (v: Data, verRounds: Data[]) => {
+    if (v.preparing) return { kind: v.direct ? 'derived' : 'unlabeled', aspects: v.direct ? ['observability'] : [] };
     if (!v.parent) return { kind: 'baseline', aspects: [] as string[] };
     if (Array.isArray(v.aspects) && v.aspects.length) {
       const declared = ['object', 'observability', 'rubric'].filter((k) => v.aspects.includes(k));
@@ -630,6 +631,7 @@ function exp(): any {
   const outcomeOfVersion = (v: Data, verRounds: Data[], isRunningVer: boolean) => {
     if (v.current) return { outcome: 'current', pruned: false, reason: '' };
     if (isRunningVer) return { outcome: 'running', pruned: false, reason: '' };
+    if (v.preparing || v.status === 'preparing') return { outcome: 'preparing', pruned: false, reason: '' };
     if (!v.parent) return { outcome: 'baseline', pruned: false, reason: '' };
     if (v.status === 'confirmed') return { outcome: 'confirmed', pruned: false, reason: '' };
     if (v.status === 'candidate') return { outcome: 'candidate', pruned: false, reason: '' };
@@ -676,9 +678,36 @@ function exp(): any {
     }
     return { outcome: 'explored', pruned: false, reason: '' };
   };
+  // Single source of truth for versions across the version tree and overview map:
+  // when a versionRequest is in flight, project the pending version once and share it everywhere.
+  const prepVer: Data | null = d.versionRequest ? (() => {
+    const req = d.versionRequest;
+    const prepId = `v${d.versions.length + 1}`;
+    const trigRound = d.rounds.find((x: Data) => x.n === req.cycle);
+    const prepParent = resolveRsiParent(d, trigRound, req.baseVersion, !!req.direct);
+    const iterMember = d.members.find((m: Data) => m.role === 'iterate');
+    const title = req.title || (req.repair ? `第 ${req.cycle} 周期修复` : '');
+    return {
+      id: prepId,
+      parent: prepParent,
+      change: title,
+      commit: null,
+      at: req.since || null,
+      current: false,
+      status: 'preparing',
+      preparing: true,
+      direct: !!req.direct,
+      repair: !!req.repair,
+      triggerCycle: req.cycle || null,
+      triggerVersion: trigRound?.version || prepParent || '',
+      ownerName: iterMember?.name || '',
+      claimed: !!req.invocationId,
+    };
+  })() : null;
+  const allVersions: Data[] = prepVer ? [...d.versions, prepVer] : d.versions;
   const versionMetaById: Record<string, Data> = {};
-  d.versions.forEach((v: Data) => {
-    const verRounds = rounds.filter((x: Data) => x.version === v.id);
+  allVersions.forEach((v: Data) => {
+    const verRounds = v.preparing ? [] : rounds.filter((x: Data) => x.version === v.id);
     const isRunningVer = !!o.projectPath && verRounds.some((x: Data) => ['running', 'evaluating', 'repairing'].includes(x.state));
     const asp = aspectsOfVersion(v, verRounds);
     const out = outcomeOfVersion(v, verRounds, isRunningVer);
@@ -706,7 +735,7 @@ function exp(): any {
       isRunningVer,
     };
   });
-  const tree = rsiTree('rsiSelO', d.versions.map(function (v: any): any {
+  const tree = rsiTree('rsiSelO', allVersions.map(function (v: any): any {
     const meta = versionMetaById[v.id];
     const verRounds = meta.verRounds;
     return { key: key(v.id), parent: v.parent && key(v.parent),
@@ -731,7 +760,7 @@ function exp(): any {
         metricVersion: meta.metricVersion,
       }) };
   }), { row: key(focus ? focus.version : o.currentVersion) });
-  const verRaw = d.versions.find(function (v: any): any { return key(v.id) === tree.rowKey; }), m = /^c(\d+)\.(\w+)$/.exec(tree.stepKey);
+  const verRaw = allVersions.find(function (v: any): any { return key(v.id) === tree.rowKey; }), m = /^c(\d+)\.(\w+)$/.exec(tree.stepKey);
   const ver = verRaw ? Object.assign({}, verRaw, {
     nodeState: versionMetaById[verRaw.id]?.nodeState || '',
     outcome: versionMetaById[verRaw.id]?.outcome || '',
@@ -742,7 +771,7 @@ function exp(): any {
     commitShort: versionMetaById[verRaw.id]?.commitShort || '',
     metricVersion: versionMetaById[verRaw.id]?.metricVersion || d.metrics.version,
   }) : null;
-  const r = m && rounds.find(function (x: any): any { return x.version === ver.id && x.k === +m[1]; });
+  const r = m && ver && rounds.find(function (x: any): any { return x.version === ver.id && x.k === +m[1]; });
   const best = function (x: any): any { return x.report && x.report.matrix.filter(function (y: any): any { return y.metric === main && y.mean != null && (!o.projectPath || x.report.compare.groups?.some((g: Data) => g.group === y.group && g.eligible)) && x.plan.groups.find(function (g: any): any { return g.id === y.group; }).version === x.version; }).sort(function (a: any, b: any): any { return d.metrics.items.find((m: Data) => m.id === main).dir === 'down' ? a.mean - b.mean : b.mean - a.mean; })[0]; };
   const preds = ([] as Data[]).concat.apply([], rounds.map(function (x: any): any { return x.report ? x.report.predictions : []; }));
   const needYou = d.prep.filter(function (i: any): any { return i.neededFrom === 'human' && i.state !== 'confirmed'; }).length;
@@ -905,6 +934,14 @@ function exp(): any {
     const durSec = durMs != null ? Math.round(durMs / 1000) : null;
     const commitRaw = u.env?.commit || v?.commit || '';
     const commitShort = commitRaw ? String(commitRaw).slice(0, 7) : '';
+    const attemptsList: Data[] = Array.isArray(u.attempts) ? u.attempts : [];
+    const attemptsText = attemptsList.length > 1
+      ? attemptsList.map((a: Data, i: number) => {
+          const aDur = a.start && a.end ? fmtDuration(a.end - a.start) : '';
+          const aErr = a.error?.raw ? `: ${clipLine(a.error.raw, 48)}` : '';
+          return `#${i + 1} ${a.state || 'unknown'}${a.jobId ? ` (${a.jobId})` : ''}${aDur ? ` ${aDur}` : ''}${aErr}`;
+        }).join('；')
+      : '';
     return Object.assign({}, u, {
       roundNo: idx + 1,
       roundTitle: `第 ${idx + 1} 轮`,
@@ -914,6 +951,10 @@ function exp(): any {
       durationText: u.state === 'running' && durMs != null ? `已跑 ${fmtDuration(durMs)}` : fmtDuration(durMs),
       command: renderRunCommand(x, g, u),
       commitShort,
+      jobId: u.jobId || '',
+      directory: u.directory || '',
+      errorBrief: u.error?.raw ? clipLine(u.error.raw, 120) : '',
+      attemptsText,
       metricRows: Object.entries(u.metrics || {}).map(([id, value]) => ({ k: d.metrics.items.find((m: Data) => m.id === id)?.name || id, v: value })),
       groupLabel: g.label,
     });
@@ -1121,6 +1162,19 @@ function exp(): any {
   };
   const fmtMetricNum = (val: number | null, unit: string) => val == null ? '—' : `${Number(val.toPrecision(4))}${unit ? ' ' + unit : ''}`;
   const buildCausality = (v: Data, targetRound: Data | null) => {
+    if (v.preparing) {
+      return {
+        triggerKind: v.repair ? 'repair' : 'direction',
+        triggerCycle: v.triggerCycle || null,
+        triggerVersion: v.triggerVersion || v.parent || '',
+        triggerDetail: clipTitle(v.change || '', 72, ''),
+        action: v.change || '',
+        basisKind: 'preparing',
+        basisText: '',
+        ownerName: v.ownerName || '',
+        claimed: !!v.claimed,
+      };
+    }
     const trig = findTriggerRound(v, versionMetaById[v.id]?.verRounds || []);
     let triggerKind = !v.parent ? 'baseline' : 'parent';
     let triggerCycle: number | null = null;
@@ -1149,9 +1203,39 @@ function exp(): any {
       basisText: targetRound?.report?.headline || '',
     };
   };
-  const overviewNodes = d.versions.map((v: Data) => {
+  const overviewNodes = allVersions.map((v: Data) => {
     const meta = versionMetaById[v.id];
     const lastR = meta.lastRound;
+    if (v.preparing) {
+      return {
+        id: v.id,
+        parent: v.parent || null,
+        pick: `${key(v.id)}>node`,
+        selected: ver?.id === v.id,
+        state: 'preparing',
+        preparing: true,
+        pruned: false,
+        aspectKind: meta.aspectKind,
+        aspects: meta.aspects,
+        verdict: 'preparing',
+        tier: '',
+        metricVersion: meta.metricVersion,
+        cycleN: v.triggerCycle || null,
+        value: null,
+        valueText: '—',
+        refId: v.parent || null,
+        deltaText: '',
+        better: '',
+        comparable: false,
+        commitShort: '',
+        ownerName: v.ownerName || '',
+        claimed: !!v.claimed,
+        repair: !!v.repair,
+        changeShort: clipTitle(v.change || '', 30, v.id),
+        changeBrief: clipTitle(v.change || '', 120, ''),
+        headlineBrief: '',
+      };
+    }
     const ownVal = valueOfVersionOnMetric(v.id, activeMetricDef.id, activeMetricDef.dir || 'up');
     const val = ownVal ? ownVal.value : null;
     const ownScale = ownVal?.cycle?.metrics?.version || meta.metricVersion;
@@ -1213,68 +1297,7 @@ function exp(): any {
       headlineBrief: lastR?.report?.headline ? clipTitle(lastR.report.headline, 140, '') : '',
     };
   });
-  const prepNode = d.versionRequest ? (() => {
-    const req = d.versionRequest;
-    const prepId = `v${d.versions.length + 1}`;
-    const trigRound = d.rounds.find((x: Data) => x.n === req.cycle);
-    const prepParent = resolveRsiParent(d, trigRound, req.baseVersion, !!req.direct);
-    const iterMember = d.members.find((m: Data) => m.role === 'iterate');
-    const ownerName = iterMember?.name || '';
-    const claimed = !!req.invocationId;
-    const prepPick = `${key(prepId)}>prep`;
-    const title = req.title || (req.repair ? `第 ${req.cycle} 周期修复` : '');
-    return {
-      id: prepId,
-      parent: prepParent,
-      pick: prepPick,
-      selected: S.rsiSelO === prepPick,
-      state: 'preparing',
-      preparing: true,
-      pruned: false,
-      aspectKind: req.direct ? 'derived' : 'unlabeled',
-      aspects: req.direct ? ['observability'] : [],
-      verdict: 'preparing',
-      tier: '',
-      metricVersion: d.metrics.version,
-      cycleN: req.cycle || null,
-      value: null,
-      valueText: '—',
-      refId: prepParent,
-      deltaText: '',
-      better: '',
-      comparable: false,
-      commitShort: '',
-      ownerName,
-      claimed,
-      repair: !!req.repair,
-      changeShort: clipTitle(title, 30, prepId),
-      changeBrief: clipTitle(title, 120, ''),
-      headlineBrief: '',
-    };
-  })() : null;
-  if (prepNode) {
-    if (prepNode.selected) overviewNodes.forEach((n: Data) => { n.selected = false; });
-    overviewNodes.push(prepNode);
-  }
-  const selectedOverviewDetail = prepNode?.selected ? (() => {
-    const req = d.versionRequest!;
-    const trigRound = d.rounds.find((x: Data) => x.n === req.cycle);
-    return {
-      id: prepNode.id,
-      causality: {
-        triggerKind: req.repair ? 'repair' : 'direction',
-        triggerCycle: req.cycle || null,
-        triggerVersion: trigRound?.version || prepNode.parent || '',
-        triggerDetail: clipTitle(req.title || '', 72, ''),
-        action: req.title || '',
-        basisKind: 'preparing',
-        basisText: '',
-        ownerName: prepNode.ownerName,
-        claimed: prepNode.claimed,
-      },
-      receipts: [],
-    };
-  })() : ver ? (() => {
+  const selectedOverviewDetail = ver ? (() => {
     const meta = versionMetaById[ver.id];
     const lastR = meta?.lastRound || null;
     return {
@@ -1304,13 +1327,13 @@ function exp(): any {
       threshold: activeMetricDef.guard && typeof activeMetricDef.threshold === 'number' ? activeMetricDef.threshold : null,
       role: activeMetricDef.id === main ? 'main' : activeMetricDef.guard ? 'guard' : 'other',
     },
-    selectedVersion: prepNode?.selected ? prepNode.id : (ver?.id || o.currentVersion),
+    selectedVersion: ver?.id || o.currentVersion,
     stats: {
       total: d.versions.length,
       pruned: overviewNodes.filter((n: Data) => n.pruned).length,
       insufficient: overviewNodes.filter((n: Data) => n.state === 'insufficient').length,
       running: overviewNodes.filter((n: Data) => n.state === 'running').length,
-      preparing: prepNode ? prepNode.id : (overviewNodes.find((n: Data) => n.state === 'preparing')?.id || null),
+      preparing: prepVer ? prepVer.id : (overviewNodes.find((n: Data) => n.state === 'preparing')?.id || null),
       current: o.currentVersion,
     },
     nodes: overviewNodes,
@@ -1381,6 +1404,26 @@ function exp(): any {
   const cycleCompare = r && r.report ? compareOf(r) : null;
   const cycleBody = r && r.report ? (r.report.summary.startsWith(r.report.headline) ? r.report.summary.slice(r.report.headline.length).trim() : r.report.summary) : '';
   const cycleDetailCard = buildCycleDetailCard(r || null, ver, cycleCompare, cycleBody);
+  const collectSummary = r ? (() => {
+    const doneOk = cycleRuns.filter((u: Data) => u.state === 'done').length;
+    const failedN = cycleRuns.filter((u: Data) => u.state === 'failed').length;
+    const runningN = cycleRuns.filter((u: Data) => u.state === 'running').length;
+    const totalN = cycleRuns.length;
+    const seeds = Array.isArray(r.plan?.seeds) ? r.plan.seeds : [];
+    const reserved = Array.isArray(r.plan?.reservedSeeds) ? r.plan.reservedSeeds : [];
+    const seedsText = [seeds.join(', '), reserved.length ? `预留 ${reserved.join(', ')}` : ''].filter(Boolean).join(' · ');
+    const progParts = [`${doneOk}/${totalN}`];
+    if (failedN) progParts.push(`${failedN} 失败`);
+    if (runningN) progParts.push(`${runningN} 运行中`);
+    return {
+      tier: r.plan?.tier || (r.plan?.baseline ? 'baseline' : 'confirm'),
+      metricVersion: (r.metrics || d.metrics).version,
+      seedsText,
+      progressText: progParts.join(' · '),
+      failed: failedN,
+      concludedHeadline: failedN > 0 && r.report && r.report.verdict !== 'insufficient' && r.report.headline ? clipLine(r.report.headline, 180) : '',
+    };
+  })() : null;
   return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, projectPath: o.projectPath, goal: o.goal, goalQuote, editingGoal: S.rsiEditGoal, execStatus, execFlow, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
     trend: legacyTrend,
@@ -1398,6 +1441,7 @@ function exp(): any {
       stage: stageOfCycle(r, currentStep),
       stageOwners: stageOwnersOf(r),
       runs: cycleRuns,
+      collectSummary,
       notAssessed: r.report && RSI_LAYERS.filter(function (l: any): any { return r.report.attribution.assessedLayers.indexOf(l) < 0; }),
       // A conclusion stores a placeholder attribution (no layer assessed): only one that assessed a layer is an attribution.
       attribution: r.report && r.report.attribution.assessedLayers.length ? r.report.attribution : null,

@@ -1418,16 +1418,16 @@ test('stopping async polling calls optional cancel and preserves retryable inter
 test('alpha.116: stop() during unreaped exited child window does not throw EPERM and still cancels remote job', async (t) => {
   const f = await fixture(t), o = await f.create();
   Object.assign(f.commands, asyncExecutor, {
-    get: 'node -e "const fs=require(\'fs\');fs.writeFileSync(process.argv[1]+\'/get-started\',\'1\');console.log(JSON.stringify({state:\'running\'}))" {run}',
+    get: 'node -e "const fs=require(\'fs\');fs.writeFileSync(process.argv[1]+\'/get-started\',\'1\');setTimeout(()=>console.log(JSON.stringify({state:\'running\'})),400)" {run}',
   });
   await f.initialize(o, { groups: [{ id: 'control', label: 'Async control', vars: {}, control: true }], seeds: [7] });
   await f.http('POST', { op: 'runCycle', objective: o.id });
   const state = await until(f.read, (s) => s.experiments[o.id].rounds[0]?.runs[0]?.jobId);
   const directory = state.experiments[o.id].rounds[0].runs[0].directory;
-  // Wait for the short-lived `get` child to spawn & write its marker, then synchronously block the event loop
+  // Wait for the `get` child to spawn & write its marker, then synchronously block the event loop past its 400ms exit
   // so the child exits into an unreaped zombie state before Node processes its exit/close event (reproducing macOS EPERM).
   await until(() => readFile(join(directory, 'get-started'), 'utf8').catch(() => ''), (v) => v === '1');
-  const end = Date.now() + 80;
+  const end = Date.now() + 1000;
   while (Date.now() < end) { /* intentional sync block so child exits before reaping */ }
   await f.activation().stop();
   assert.equal((await readFile(join(directory, 'cancelled'), 'utf8')).trim(), 'job with spaces;literal');

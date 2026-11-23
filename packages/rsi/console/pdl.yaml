@@ -921,35 +921,17 @@ views:
                             objective: $.exp.id
                             role: evaluate
                             cats: $.members.rows
-                  - type: settings
+                  - type: view
+                    id: rsi.discussMembers
                     when:
                       - $.exp.projectPath
                       - $.exp.execFlow.selected.isDiscuss
-                    rows:
-                      - label: t:rsi.exp.execStageDiscussMembers
-                        help: t:rsi.exp.execStageMemberHelp
-                        control:
-                          type: select
-                          id: rsi-exec-discuss-members
-                          multi: true
-                          label: t:rsi.exp.execStageDiscussMembers
-                          none: t:rsi.exp.execStageDiscussNone
-                          value: $.exp.execFlow.selected.discussionIds
-                          options:
-                            - from: $.members.rows
-                              item:
-                                v: "@id"
-                                label:
-                                  t: rsi.memberOption
-                                  args:
-                                    - "@name"
-                                    - "@handle"
-                                when: "@on"
-                          act: plugin
-                          args:
-                            request: analystToggle
-                            objective: $.exp.id
-                            cats: $.members.rows
+                  - type: text
+                    variant: meta
+                    text: t:rsi.exp.execStageMemberHelp
+                    when:
+                      - $.exp.projectPath
+                      - $.exp.execFlow.selected.isDiscuss
                   - type: settings
                     when:
                       - $.exp.projectPath
@@ -1430,7 +1412,9 @@ views:
                         current: t:rsi.ov.stCurrent
                         confirmed: t:rsi.ov.stConfirmed
                         running: t:rsi.ov.stRunning
+                        preparing: t:rsi.ov.stPreparing
                         pruned: t:rsi.ov.stPruned
+                        deadEnd: t:rsi.ov.stDeadEnd
                         guardrail: t:rsi.ov.stGuardrail
                         worse: t:rsi.ov.stWorse
                         tied: t:rsi.ov.stTied
@@ -1441,6 +1425,11 @@ views:
                         explored: t:rsi.ov.stExplore
                         _: ""
                     when: $.exp.ver.outcome
+                  - k: t:rsi.exp.stepMemberLabel
+                    v: $.exp.ver.ownerName
+                    when:
+                      - $.exp.ver.preparing
+                      - $.exp.ver.ownerName
                   - k: t:rsi.detail.aspect
                     v:
                       of: $.exp.ver.aspects
@@ -1483,6 +1472,7 @@ views:
                     v:
                       of: $.exp.ver.at
                       fmt: stamp
+                    when: $.exp.ver.at
               - type: each
                 from:
                   - {}
@@ -1516,35 +1506,17 @@ views:
                             objective: $.exp.id
                             role: $.exp.cycle.stage.role
                             cats: $.members.rows
-                  - type: settings
+                  - type: view
+                    id: rsi.discussMembers
                     when:
                       - $.exp.cycle.stage.canEdit
                       - $.exp.cycle.stage.multi
-                    rows:
-                      - label: t:rsi.exp.execStageDiscussMembers
-                        help: t:rsi.exp.execStageMemberHelp
-                        control:
-                          type: select
-                          id: rsi-cycle-stage-discuss
-                          multi: true
-                          label: t:rsi.exp.execStageDiscussMembers
-                          none: t:rsi.exp.execStageDiscussNone
-                          value: $.exp.cycle.stage.values
-                          options:
-                            - from: $.members.rows
-                              item:
-                                v: "@id"
-                                label:
-                                  t: rsi.memberOption
-                                  args:
-                                    - "@name"
-                                    - "@handle"
-                                when: "@on"
-                          act: plugin
-                          args:
-                            request: analystToggle
-                            objective: $.exp.id
-                            cats: $.members.rows
+                  - type: text
+                    variant: meta
+                    text: t:rsi.exp.execStageMemberHelp
+                    when:
+                      - $.exp.cycle.stage.canEdit
+                      - $.exp.cycle.stage.multi
                   - type: text
                     variant: meta
                     when:
@@ -1657,6 +1629,32 @@ views:
                     _: false
                     collect: true
                 blocks:
+                  - type: notice
+                    tone: info
+                    when: $.exp.cycle.collectSummary.concludedHeadline
+                    text:
+                      t: rsi.exp.collectConcluded
+                      args:
+                        - $.exp.cycle.collectSummary.concludedHeadline
+                  - type: kv
+                    when: $.exp.cycle.collectSummary
+                    from:
+                      - k: t:rsi.ov.ckTier
+                        v:
+                          of: $.exp.cycle.collectSummary.tier
+                          map:
+                            explore: t:rsi.ov.tierExplore
+                            baseline: t:rsi.ov.tierBaseline
+                            _: t:rsi.ov.tierConfirm
+                      - k: t:rsi.ov.ckMetricVersion
+                        v: $.exp.cycle.collectSummary.metricVersion
+                        when: $.exp.cycle.collectSummary.metricVersion
+                      - k: t:rsi.ov.ckSeeds
+                        v: $.exp.cycle.collectSummary.seedsText
+                        when: $.exp.cycle.collectSummary.seedsText
+                      - k: t:rsi.exp.collectProgress
+                        v: $.exp.cycle.collectSummary.progressText
+                        when: $.exp.cycle.collectSummary.progressText
                   - type: list
                     id: rsi-exp-events
                     label: t:rsi.exp.events
@@ -1702,6 +1700,9 @@ views:
                               - text: "@commitShort"
                                 mono: true
                                 when: "@commitShort"
+                              - text: "@jobId"
+                                mono: true
+                                when: "@jobId"
                               - text: "@env.hw"
                                 when: "@env.hw"
                               - text: "@durationText"
@@ -1712,6 +1713,9 @@ views:
                                   args:
                                     - "@retries"
                                 when: "@retries"
+                              - text: "@errorBrief"
+                                tone: danger
+                                when: "@errorBrief"
                           cols:
                             - v:
                                 text: "@value"
@@ -1759,6 +1763,15 @@ views:
                                 - k: t:rsi.exp.duration
                                   v: "@durationText"
                                   when: "@durationText"
+                                - k: t:rsi.exp.jobId
+                                  v: "@jobId"
+                                  when: "@jobId"
+                                - k: t:rsi.exp.runDir
+                                  v: "@directory"
+                                  when: "@directory"
+                                - k: t:rsi.exp.attempts
+                                  v: "@attemptsText"
+                                  when: "@attemptsText"
                                 - k: t:rsi.exp.env.commit
                                   v: "@env.commit"
                                   when: "@env.commit"
@@ -5159,6 +5172,49 @@ views:
       doc: doc
     loading: t:rsi.console.loading
     error: t:rsi.console.error
+  rsi.discussMembers:
+    bare: true
+    blocks:
+      - type: toolbar
+        when: $.exp.projectPath
+        left:
+          - type: text
+            text: t:rsi.exp.discussLabel
+          - type: each
+            from: $.exp.discussion
+            control:
+              type: chip
+              label: "@name"
+              x:
+                act: plugin
+                icon: close
+                label: t:rsi.exp.analystRemove
+                args:
+                  request: analystRemove
+                  catId: "@id"
+          - type: button
+            icon: plus
+            iconOnly: true
+            label: t:rsi.exp.discussAdd
+            items:
+              - from: $.members.rows
+                item:
+                  label:
+                    t: rsi.memberOption
+                    args:
+                      - "@name"
+                      - "@handle"
+                  act: plugin
+                  args:
+                    request: analystAdd
+                    v: "@id"
+                    cats: $.members.rows
+                  when: "@on"
+    sources:
+      exp: exp
+      members: host:members
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
   dlg.rsiMap:
     title: $.title
     layout: viewport
@@ -5211,6 +5267,7 @@ views:
             fit: t:rsi.ov.fit
             expandAll: t:rsi.ov.expandAll
             collapseChains: t:rsi.ov.collapseChains
+            collapseGroup: t:rsi.ov.collapseGroup
             exportHtml: t:rsi.ov.exportHtml
             clusterTitle: t:rsi.ov.clusterTitle
             foldCount: t:rsi.ov.foldCount
@@ -6194,41 +6251,9 @@ views:
           evaluate: $.exp.memberIds.evaluate
           iterate: $.exp.memberIds.iterate
           cats: $.members.rows
-      - type: toolbar
+      - type: view
+        id: rsi.discussMembers
         when: $.exp.projectPath
-        left:
-          - type: text
-            text: t:rsi.exp.discussLabel
-          - type: each
-            from: $.exp.discussion
-            control:
-              type: chip
-              label: "@name"
-              x:
-                act: plugin
-                icon: close
-                label: t:rsi.exp.analystRemove
-                args:
-                  request: analystRemove
-                  catId: "@id"
-          - type: button
-            icon: plus
-            iconOnly: true
-            label: t:rsi.exp.discussAdd
-            items:
-            - from: $.members.rows
-              item:
-                label:
-                  t: rsi.memberOption
-                  args:
-                    - "@name"
-                    - "@handle"
-                act: plugin
-                args:
-                  request: analystAdd
-                  v: "@id"
-                  cats: $.members.rows
-                when: "@on"
       - type: label
         text: t:rsi.exp.policyTitle
         action:

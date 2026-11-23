@@ -81,7 +81,7 @@ govResult:
   waiting: Pending
 applyResult:
   done: Deployed
-  concluded: Intercepted · concluded
+  concluded: Run failed · concluded
   failed: Environment failures
   _: "{0}"
 stepName:
@@ -120,6 +120,7 @@ ov:
   fit: Fit
   expandAll: Expand all
   collapseChains: Fold chains
+  collapseGroup: Collapse
   expand: Expand
   close: Close
   exportHtml: Export HTML
@@ -844,6 +845,11 @@ exp:
   groupCmd: Command
   startTime: Started
   duration: Duration
+  jobId: Job ID
+  runDir: Run directory
+  attempts: Attempts
+  collectProgress: Progress
+  collectConcluded: "Some runs failed, but this cycle already reached a conclusion: {0}"
   groupHead: "{0} ({1}) · {2}/{3}"
   readyOverviewTitle: Experiment design overview
   readyOverviewHint: Click steps 1–7 above to inspect or edit full details

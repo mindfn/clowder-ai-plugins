@@ -98,4 +98,19 @@ test('i18n yaml packs parse cleanly and rsi.exp dual-tab removes trailing lineag
   assert.equal(inlineOverviewMaps,0,'narrow rsi.exp panel should render rsiTrend directly and open dlg.rsiMap on click');
   assert.equal(inlineTrends,1);
   assert.doesNotMatch(js,/rsi-map-modal|addEventListener\(['"]keydown['"]/);
+  assert.doesNotMatch(js,/class="scroll-x rsi-map-scroll"/,'overview map scroll must not attach Host .scroll-x which locks overflow-y');
+  // alpha.117: reusable bare subview rsi.discussMembers replaces multi:true selects across all 3 discussion-member spots
+  const discussView=pdl.views['rsi.discussMembers'];
+  assert.equal(discussView?.bare,true);
+  assert.equal(discussView?.sources?.exp,'exp');
+  assert.equal(discussView?.sources?.members,'host:members');
+  let discussRefs=0,multiSelects=0;
+  for(const view of Object.values(pdl.views))walk(view,(node)=>{
+    if(node.type==='view'&&node.id==='rsi.discussMembers')discussRefs++;
+    if(node.type==='select'&&node.multi===true)multiSelects++;
+  });
+  assert.equal(discussRefs,3,'all 3 discussion member UI surfaces must reuse rsi.discussMembers');
+  assert.equal(multiSelects,0,'no V2-degraded multi:true select controls should remain');
+  assert.equal(zh.applyResult.concluded,'运行失败·已有结论');
+  assert.equal(en.applyResult.concluded,'Run failed · concluded');
 });

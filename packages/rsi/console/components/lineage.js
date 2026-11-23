@@ -14,7 +14,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiLineage'] = function (p, sc, root) {
     flat.slice(-keepRecent).forEach(function (r) { pinned[keyOf(r)] = true; });
     flat.forEach(function (r) {
       const k = keyOf(r), pk = parentOf(r), st = pv(n.state, r, root);
-      if (r.selected || r.nodeSelected || (n.pressed && pv(n.pressed, r, root)) || st === 'current' || st === 'running') pinned[k] = true;
+      if (r.selected || r.nodeSelected || (n.pressed && pv(n.pressed, r, root)) || st === 'current' || st === 'running' || st === 'preparing') pinned[k] = true;
       if ((kids[k] || []).length > 1) pinned[k] = true;
       if (pk != null && (kids[pk] || []).length > 1) pinned[k] = true;
     });
@@ -468,7 +468,7 @@ function rsiOverviewDefaults() {
   return {
     total: 'Total', current: 'Current', preparingStat: 'Preparing', pruned: 'Refuted', insufficient: 'Insufficient',
     obj: 'Object', obs: 'Observability', rub: 'Rubric', baseline: 'Baseline', unlabeled: 'Unlabeled',
-    lensMetric: 'Metric', lensAspect: 'Aspects', fit: 'Fit', expandAll: 'Expand all', collapseChains: 'Fold chains', exportHtml: 'Export HTML',
+    lensMetric: 'Metric', lensAspect: 'Aspects', fit: 'Fit', expandAll: 'Expand all', collapseChains: 'Fold chains', collapseGroup: 'Collapse', exportHtml: 'Export HTML',
     clusterTitle: '{1} unpromoted trials from {0} (chronological, none replaced {0})',
     foldCount: '{0} versions', foldHint: 'Click to expand {0} versions',
     cycleOf: 'Cycle {0}',
@@ -489,11 +489,13 @@ function rsiOverviewDefaults() {
 }
 
 function rsiFoldLinearChains(nodes, selectedId, expandedMap, metricDir) {
+  const MAX_FOLD_GROUP = 6;
   const byId = {}, kids = {};
   nodes.forEach(function (n) { byId[n.id] = n; });
   nodes.forEach(function (n) {
     if (n.parent && byId[n.parent]) (kids[n.parent] = kids[n.parent] || []).push(n);
   });
+  // Structural boundaries only (never split a linear group just because a member inside it is selected).
   const isBoundary = function (n) {
     if (!n) return true;
     if (!n.parent || !byId[n.parent]) return true;
@@ -501,11 +503,29 @@ function rsiFoldLinearChains(nodes, selectedId, expandedMap, metricDir) {
     if ((kids[n.id] || []).length !== 1) return true;
     if (n.state === 'current' || n.state === 'running' || n.state === 'preparing' || n.pruned) return true;
     if (n.disposition === 'advance') return true;
-    if (n.id === selectedId) return true;
     return false;
   };
-  const swallowed = {}, foldBeforeTail = {}, reparent = {};
+  const splitChunks = function (list) {
+    if (list.length <= MAX_FOLD_GROUP) return [list];
+    const chunks = [];
+    let i = 0;
+    while (i < list.length) {
+      const rem = list.length - i;
+      if (rem <= MAX_FOLD_GROUP) {
+        chunks.push(list.slice(i));
+        break;
+      }
+      // Never leave a trailing 1-node chunk.
+      const take = rem === MAX_FOLD_GROUP + 1 ? MAX_FOLD_GROUP - 1 : MAX_FOLD_GROUP;
+      chunks.push(list.slice(i, i + take));
+      i += take;
+    }
+    return chunks;
+  };
+  const swallowed = {}, foldAtFirst = {}, reparent = {}, expandedGroups = [];
   let foldableCount = 0, expandedCount = 0;
+  const hasOwn = Object.prototype.hasOwnProperty;
+  const wildcard = expandedMap && hasOwn.call(expandedMap, '*') ? expandedMap['*'] : undefined;
   nodes.forEach(function (head) {
     if (!isBoundary(head)) return;
     (kids[head.id] || []).forEach(function (ch) {
@@ -521,58 +541,85 @@ function rsiFoldLinearChains(nodes, selectedId, expandedMap, metricDir) {
       const tail = cur;
       // Fold only when total linear run (head + mid + tail) has >= 4 nodes (i.e. >= 2 middle nodes).
       if (!tail || mid.length < 2) return;
-      const foldKey = mid[0].id + '~' + mid[mid.length - 1].id;
-      foldableCount += 1;
-      const isOpen = !!(expandedMap && (expandedMap['*'] || expandedMap[foldKey]));
-      if (isOpen) {
-        expandedCount += 1;
-        return;
-      }
-      const aspSet = {};
-      let bestVal = null;
-      mid.forEach(function (m) {
-        swallowed[m.id] = true;
-        (m.aspects || []).forEach(function (a) { aspSet[a] = true; });
-        if (typeof m.value === 'number' && Number.isFinite(m.value)) {
-          if (bestVal == null || (metricDir === 'down' ? m.value < bestVal : m.value > bestVal)) bestVal = m.value;
+      const chunks = splitChunks(mid);
+      let prevParent = head.id;
+      chunks.forEach(function (ck) {
+        const foldKey = ck[0].id + '~' + ck[ck.length - 1].id;
+        const displayId = ck[0].id + ' ~ ' + ck[ck.length - 1].id;
+        const hasSelected = !!(selectedId && ck.some(function (m) { return m.id === selectedId; }));
+        const explicit = expandedMap && hasOwn.call(expandedMap, foldKey) ? expandedMap[foldKey] : undefined;
+        const isOpen = explicit === true ? true
+          : explicit === false ? false
+          : wildcard === true ? true
+          : wildcard === false ? false
+          : hasSelected;
+        foldableCount += 1;
+        if (isOpen) {
+          expandedCount += 1;
+          if (prevParent !== ck[0].parent) reparent[ck[0].id] = prevParent;
+          expandedGroups.push({
+            foldKey: foldKey,
+            displayId: displayId,
+            count: ck.length,
+            memberIds: ck.map(function (m) { return m.id; }),
+          });
+          prevParent = ck[ck.length - 1].id;
+          return;
         }
+        const aspSet = {};
+        let bestVal = null;
+        ck.forEach(function (m) {
+          swallowed[m.id] = true;
+          (m.aspects || []).forEach(function (a) { aspSet[a] = true; });
+          if (typeof m.value === 'number' && Number.isFinite(m.value)) {
+            if (bestVal == null || (metricDir === 'down' ? m.value < bestVal : m.value > bestVal)) bestVal = m.value;
+          }
+        });
+        const mergedAspects = ['object', 'observability', 'rubric'].filter(function (a) { return !!aspSet[a]; });
+        const foldNode = {
+          id: 'fold:' + foldKey,
+          parent: prevParent,
+          isFold: true,
+          foldKey: foldKey,
+          displayId: displayId,
+          count: ck.length,
+          memberIds: ck.map(function (m) { return m.id; }),
+          aspects: mergedAspects,
+          aspectKind: mergedAspects.length ? 'declared' : 'unlabeled',
+          value: bestVal,
+          state: 'folded',
+          pruned: false,
+        };
+        foldAtFirst[ck[0].id] = foldNode;
+        prevParent = foldNode.id;
       });
-      const mergedAspects = ['object', 'observability', 'rubric'].filter(function (a) { return !!aspSet[a]; });
-      const foldNode = {
-        id: 'fold:' + foldKey,
-        parent: head.id,
-        isFold: true,
-        foldKey: foldKey,
-        displayId: mid[0].id + ' ~ ' + mid[mid.length - 1].id,
-        count: mid.length,
-        memberIds: mid.map(function (m) { return m.id; }),
-        aspects: mergedAspects,
-        aspectKind: mergedAspects.length ? 'declared' : 'unlabeled',
-        value: bestVal,
-        state: 'folded',
-        pruned: false,
-      };
-      foldBeforeTail[tail.id] = foldNode;
-      reparent[tail.id] = foldNode.id;
+      if (prevParent !== tail.parent) reparent[tail.id] = prevParent;
     });
   });
   const out = [];
   nodes.forEach(function (n) {
+    if (foldAtFirst[n.id]) out.push(foldAtFirst[n.id]);
     if (swallowed[n.id]) return;
-    if (foldBeforeTail[n.id]) out.push(foldBeforeTail[n.id]);
     out.push(reparent[n.id] ? Object.assign({}, n, { parent: reparent[n.id] }) : n);
   });
-  return { nodes: out, foldableCount: foldableCount, expandedCount: expandedCount };
+  return { nodes: out, foldableCount: foldableCount, expandedCount: expandedCount, expandedGroups: expandedGroups };
 }
 
-function rsiLayoutOverviewMap(nodes) {
-  const byId = {}, kids = {}, roots = [];
+function rsiLayoutOverviewMap(nodes, expandedGroups) {
+  const byId = {}, kids = {}, roots = {};
+  const rootList = [];
   nodes.forEach(function (n) { byId[n.id] = n; });
   nodes.forEach(function (n) {
     if (n.parent && byId[n.parent]) (kids[n.parent] = kids[n.parent] || []).push(n);
-    else roots.push(n);
+    else { roots[n.id] = true; rootList.push(n); }
+  });
+  const inExpandedGroup = {};
+  (expandedGroups || []).forEach(function (g) {
+    (g.memberIds || []).forEach(function (id) { inExpandedGroup[id] = true; });
   });
   const CW = 178, CH = 70, GX = 38, GY = 10, PAD = 14, GRID_GX = 12, BOX_PAD = 12, BOX_HDR = 26;
+  const FOLD_BOX_TOP = 30, FOLD_BOX_BOT = 10, FOLD_PAD_X = 8;
+  const slotHOf = function (id) { return inExpandedGroup[id] ? CH + FOLD_BOX_TOP + FOLD_BOX_BOT : CH; };
   const pos = {}, edges = [], clusters = [];
   const leafClusterOf = function (list) {
     const leaves = [], branches = [];
@@ -586,10 +633,11 @@ function rsiLayoutOverviewMap(nodes) {
     return Math.min(4, Math.max(2, Math.ceil(Math.sqrt(count))));
   };
   const subtreeSize = function (id, seen) {
-    if (seen[id]) return { w: CW, h: CH };
+    const ownH = slotHOf(id);
+    if (seen[id]) return { w: CW, h: ownH };
     const nextSeen = Object.assign({}, seen); nextSeen[id] = true;
     const ch = (kids[id] || []).filter(function (c) { return !nextSeen[c.id]; });
-    if (!ch.length) return { w: CW, h: CH };
+    if (!ch.length) return { w: CW, h: ownH };
     const split = leafClusterOf(ch);
     let totalH = 0, maxChildW = 0;
     if (split.leaves.length >= 4) {
@@ -611,13 +659,14 @@ function rsiLayoutOverviewMap(nodes) {
         maxChildW = Math.max(maxChildW, sz.w);
       });
     }
-    return { w: CW + GX + maxChildW, h: Math.max(CH, totalH) };
+    return { w: CW + GX + maxChildW, h: Math.max(ownH, totalH) };
   };
   const place = function (id, x, topY, seen) {
     if (seen[id]) return;
     const nextSeen = Object.assign({}, seen); nextSeen[id] = true;
     const sz = subtreeSize(id, seen);
-    const y = topY + Math.round((sz.h - CH) / 2);
+    const ownH = slotHOf(id);
+    const y = topY + Math.round((sz.h - ownH) / 2) + (inExpandedGroup[id] ? FOLD_BOX_TOP : 0);
     pos[id] = { x: x, y: y };
     const ch = (kids[id] || []).filter(function (c) { return !nextSeen[c.id]; });
     if (!ch.length) return;
@@ -654,10 +703,31 @@ function rsiLayoutOverviewMap(nodes) {
     }
   };
   let rootY = PAD;
-  roots.forEach(function (r) {
+  rootList.forEach(function (r) {
     const sz = subtreeSize(r.id, {});
     place(r.id, PAD, rootY, {});
     rootY += sz.h + GY * 2;
+  });
+  const foldBoxes = [];
+  (expandedGroups || []).forEach(function (g) {
+    const pts = (g.memberIds || []).map(function (id) { return pos[id]; }).filter(Boolean);
+    if (!pts.length) return;
+    let minX = Infinity, maxX2 = -Infinity, minY = Infinity, maxY2 = -Infinity;
+    pts.forEach(function (q) {
+      if (q.x < minX) minX = q.x;
+      if (q.x + CW > maxX2) maxX2 = q.x + CW;
+      if (q.y < minY) minY = q.y;
+      if (q.y + CH > maxY2) maxY2 = q.y + CH;
+    });
+    foldBoxes.push({
+      foldKey: g.foldKey,
+      displayId: g.displayId,
+      count: g.count,
+      x: minX - FOLD_PAD_X,
+      y: minY - FOLD_BOX_TOP,
+      w: (maxX2 - minX) + FOLD_PAD_X * 2,
+      h: (maxY2 - minY) + FOLD_BOX_TOP + FOLD_BOX_BOT,
+    });
   });
   let maxX = 0, maxY = 0;
   Object.keys(pos).forEach(function (k) {
@@ -668,7 +738,11 @@ function rsiLayoutOverviewMap(nodes) {
     if (cl.x + cl.w > maxX) maxX = cl.x + cl.w;
     if (cl.y + cl.h > maxY) maxY = cl.y + cl.h;
   });
-  return { byId: byId, pos: pos, edges: edges, clusters: clusters, CW: CW, CH: CH, totalW: maxX + PAD, totalH: maxY + PAD };
+  foldBoxes.forEach(function (fb) {
+    if (fb.x + fb.w > maxX) maxX = fb.x + fb.w;
+    if (fb.y + fb.h > maxY) maxY = fb.y + fb.h;
+  });
+  return { byId: byId, pos: pos, edges: edges, clusters: clusters, foldBoxes: foldBoxes, CW: CW, CH: CH, totalW: maxX + PAD, totalH: maxY + PAD };
 }
 
 function rsiOverviewStateTag(n, L) {
@@ -696,7 +770,7 @@ function rsiRenderOverviewCanvas(data, L, opts) {
   const selectedId = opts.selectedId || data.selectedVersion || data.currentVersion || (rawNodes[rawNodes.length - 1] && rawNodes[rawNodes.length - 1].id);
   const folded = rsiFoldLinearChains(rawNodes, selectedId, opts.expandedMap || null, metric.dir || 'up');
   const nodes = folded.nodes;
-  const layout = rsiLayoutOverviewMap(nodes);
+  const layout = rsiLayoutOverviewMap(nodes, folded.expandedGroups);
   const byId = layout.byId, pos = layout.pos, CW = layout.CW, CH = layout.CH;
   const lens = opts.lens === 'aspect' ? 'aspect' : 'metric';
   const activePath = {};
@@ -750,6 +824,14 @@ function rsiRenderOverviewCanvas(data, L, opts) {
     return '<div class="rsi-map-cluster" style="left:' + cl.x + 'px;top:' + cl.y + 'px;width:' + cl.w + 'px;height:' + cl.h + 'px">' +
       '<div class="rsi-map-cluster-hdr">' + esc(title) + '</div></div>';
   }).join('');
+  const foldBoxesHtml = (layout.foldBoxes || []).map(function (fb) {
+    const countTxt = L.foldCount.replace(/\{0\}/g, String(fb.count));
+    return '<div class="rsi-map-fold-box" data-fold-key="' + esc(fb.foldKey) + '" style="left:' + fb.x + 'px;top:' + fb.y + 'px;width:' + fb.w + 'px;height:' + fb.h + 'px">' +
+      '<div class="rsi-map-fold-box-hdr">' +
+        '<span class="rsi-map-fold-box-title">' + esc(fb.displayId + ' · ' + countTxt) + '</span>' +
+        '<button type="button" class="rsi-map-fold-box-btn" data-rsi-map-act="toggle-fold" data-fold-key="' + esc(fb.foldKey) + '" data-fold-open="1">' + esc(L.collapseGroup) + '</button>' +
+      '</div></div>';
+  }).join('');
   const cardsHtml = nodes.map(function (n) {
     const q = pos[n.id];
     if (!q) return '';
@@ -761,7 +843,7 @@ function rsiRenderOverviewCanvas(data, L, opts) {
       const countTxt = L.foldCount.replace(/\{0\}/g, String(n.count));
       const hintTxt = L.foldHint.replace(/\{0\}/g, String(n.count));
       const foldVal = n.value != null ? String(n.value) : '▸';
-      return '<button type="button" class="rsi-map-node is-fold' + (activePath[n.id] ? ' on-path' : '') + '" data-state="folded" data-rsi-map-act="toggle-fold" data-fold-key="' + esc(n.foldKey) + '"' +
+      return '<button type="button" class="rsi-map-node is-fold' + (activePath[n.id] ? ' on-path' : '') + '" data-state="folded" data-rsi-map-act="toggle-fold" data-fold-key="' + esc(n.foldKey) + '" data-fold-open="0"' +
         ' style="left:' + q.x + 'px;top:' + q.y + 'px;width:' + CW + 'px;height:' + CH + 'px" title="' + esc(n.displayId + ' · ' + hintTxt) + '">' +
         '<span class="rsi-map-top"><span class="rsi-map-id">' + esc(n.displayId) + '</span><span class="rsi-map-tag muted">' + esc(countTxt) + '</span><span class="rsi-map-val">' + esc(foldVal) + '</span></span>' +
         '<span class="rsi-map-sub">' + esc(hintTxt) + '</span>' +
@@ -803,7 +885,7 @@ function rsiRenderOverviewCanvas(data, L, opts) {
     totalH: layout.totalH,
     foldableCount: folded.foldableCount,
     expandedCount: folded.expandedCount,
-    html: '<div class="rsi-map-canvas" data-base-w="' + layout.totalW + '" data-base-h="' + layout.totalH + '" style="width:' + layout.totalW + 'px;height:' + layout.totalH + 'px' + transformStyle + '">' + clusterHtml + svg + cardsHtml + '</div>',
+    html: '<div class="rsi-map-canvas" data-base-w="' + layout.totalW + '" data-base-h="' + layout.totalH + '" style="width:' + layout.totalW + 'px;height:' + layout.totalH + 'px' + transformStyle + '">' + clusterHtml + foldBoxesHtml + svg + cardsHtml + '</div>',
   };
 }
 
@@ -893,7 +975,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
   const stats = data.stats || { total: nodes.length, pruned: 0, insufficient: 0, current: data.currentVersion };
   const exportPayload = Object.assign({}, data, { labels: L });
   const safeJson = JSON.stringify(exportPayload).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
-  const allExpanded = rendered.foldableCount > 0 && (!!expandedMap['*'] || rendered.expandedCount >= rendered.foldableCount);
+  const allExpanded = rendered.foldableCount > 0 && rendered.expandedCount >= rendered.foldableCount;
   const foldBtn = rendered.foldableCount > 0
     ? '<button type="button" class="rsi-map-btn" data-rsi-map-act="' + (allExpanded ? 'collapse-all' : 'expand-all') + '">' + h(allExpanded ? L.collapseChains : L.expandAll) + '</button>'
     : '';
@@ -920,7 +1002,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
     '</div>' +
   '</div>';
   const stageW = Math.round(rendered.totalW * savedZoom), stageH = Math.round(rendered.totalH * savedZoom);
-  const canvasScroll = '<div class="scroll-x rsi-map-scroll"><div class="rsi-map-stage" style="width:' + stageW + 'px;height:' + stageH + 'px">' + rendered.html + '</div></div>';
+  const canvasScroll = '<div class="rsi-map-scroll"><div class="rsi-map-stage" style="width:' + stageW + 'px;height:' + stageH + 'px">' + rendered.html + '</div></div>';
   const bodyHtml = isModal
     ? '<div class="rsi-map-split">' + canvasScroll + '<aside class="rsi-map-aside">' + inspectorHtml + '</aside></div>'
     : canvasScroll + inspectorHtml;
@@ -1107,8 +1189,8 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
     else if (act === 'zoom-out') setZoom(root, cur - 0.15);
     else if (act === 'zoom-reset') setZoom(root, 1);
     else if (act === 'fit' && scroll) {
-      const availW = Math.max(240, (scroll.clientWidth || 720) - 24);
-      const availH = Math.max(180, (scroll.clientHeight || 420) - 24);
+      const availW = Math.max(240, (scroll.clientWidth || 720) - 40);
+      const availH = Math.max(180, (scroll.clientHeight || 420) - 40);
       setZoom(root, Math.min(1, availW / baseW, availH / baseH));
     }
   }
@@ -1130,7 +1212,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
     stage.style.height = Math.round(rendered.totalH * curZoom) + 'px';
     const foldToggleBtn = root.querySelector('[data-rsi-map-act="expand-all"], [data-rsi-map-act="collapse-all"]');
     if (foldToggleBtn) {
-      const allExpanded = rendered.foldableCount > 0 && (!!expandedMap['*'] || rendered.expandedCount >= rendered.foldableCount);
+      const allExpanded = rendered.foldableCount > 0 && rendered.expandedCount >= rendered.foldableCount;
       foldToggleBtn.setAttribute('data-rsi-map-act', allExpanded ? 'collapse-all' : 'expand-all');
       foldToggleBtn.textContent = allExpanded ? L.collapseChains : L.expandAll;
     }
@@ -1208,11 +1290,14 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
       const map = (store[objId] = store[objId] || {});
       if (act === 'toggle-fold') {
         const fk = btn.getAttribute('data-fold-key');
-        if (fk) map[fk] = !map[fk];
+        if (fk) {
+          const wasOpen = btn.getAttribute('data-fold-open') === '1';
+          map[fk] = !wasOpen;
+        }
       } else if (act === 'expand-all') {
-        map['*'] = true;
+        store[objId] = { '*': true };
       } else {
-        store[objId] = {};
+        store[objId] = { '*': false };
       }
       rerenderCanvasInPlace(wrap);
       return;
