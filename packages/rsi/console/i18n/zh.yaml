@@ -95,6 +95,11 @@ detail:
   step: "{0}-{1} · {2}"
   mstep: "{0} · {1}"
   change: 改了什么
+  state: 状态
+  aspect: 变更维度
+  pruneReason: 剪枝原因
+  metricVersion: 量尺版本
+  commit: Commit
   parent: 源自
   at: 开始于
   ec: 指标 · 采集
@@ -742,6 +747,8 @@ exp:
   trend: "{0} · 每个周期取这个版本最好的一组 · 预测兑现 {1} / {2}"
   trendLabel: 指标趋势
   trendPick: 趋势指标
+  overviewMap: 谱系总览
+  overviewTrend: 趋势折线
   reEval: 重新分析指标
   jumpThread: 跳转原对话
   groupChange: 改动说明

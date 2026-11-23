@@ -95,6 +95,11 @@ detail:
   step: "{0}-{1} · {2}"
   mstep: "{0} · {1}"
   change: What changed
+  state: Status
+  aspect: Change aspect
+  pruneReason: Prune reason
+  metricVersion: Metric scale
+  commit: Commit
   parent: Based on
   at: Started at
   ec: Metrics · Collection
@@ -742,6 +747,8 @@ exp:
   trend: "{0} · Best group for this version in each cycle · Predictions met {1} / {2}"
   trendLabel: Metric trend
   trendPick: Trend metric
+  overviewMap: Lineage map
+  overviewTrend: Trend line
   reEval: Re-analyze metrics
   jumpThread: Open thread
   groupChange: Change details

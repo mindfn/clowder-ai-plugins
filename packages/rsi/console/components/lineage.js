@@ -24,10 +24,19 @@ PDL_COMPONENTS['plugin:official.rsi/rsiLineage'] = function (p, sc, root) {
     const raw = pvParts(n.label, r, root);
     return String(raw || keyOf(r) || '').replace(/<[^>]*>/g, '').trim();
   };
+  const aspectMeta = { object: { cls: 'obj', label: '进化对象' }, observability: { cls: 'obs', label: '可观测性' }, rubric: { cls: 'rub', label: '规约尺子' } };
+  const renderAspectDots = function (r) {
+    if (!r || !Array.isArray(r.aspects) || !r.aspects.length) return '';
+    return '<span class="rsi-asp-dots" aria-label="变更维度">' + r.aspects.map(function (a) {
+      const m = aspectMeta[a];
+      return m ? '<i class="rsi-asp-dot ' + m.cls + '" title="' + h(m.label) + '"></i>' : '';
+    }).join('') + '</span>';
+  };
   const renderNodeRow = function (r, depth, lines, insideBox) {
-    const state = pv(n.state, r, root);
+    const state = pv(n.state, r, root) || (r && r.pruned ? 'pruned' : '');
     const node = chipHtml({ cls: 'rsi-lin-v', label: pvParts(n.label, r, root), tone: pv(n.tone, r, root), pressed: n.pressed ? !!pv(n.pressed, r, root) : null,
       act: n.act, data: n.act ? pvArgs(n.args, r, root) : '', attrs: state ? ' data-state="' + h(state) + '"' : '' });
+    const dots = renderAspectDots(r);
     const tail = p.tail ? pvParts(p.tail, r, root) : '';
     const cellList = [];
     (Array.isArray(p.cells) ? p.cells : p.cells ? [p.cells] : []).forEach(function (c) {
@@ -42,7 +51,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiLineage'] = function (p, sc, root) {
       }
     });
     const arr = '<svg class="rsi-lin-arr" viewBox="0 0 14 10" aria-hidden="true"><path d="M1 5h10.5M8 1.8L11.8 5 8 8.2"/></svg>';
-    const chain = [node].concat(cellList).join(arr);
+    const chain = [node + dots].concat(cellList).join(arr);
     return '<div class="rsi-lin-row' + (insideBox ? ' rsi-lin-row-in' : '') + '" style="--d:' + depth + '">' + lines + chain + (tail ? '<span class="rsi-lin-tail">' + tail + '</span>' : '') + '</div>';
   };
   const out = [];
@@ -114,8 +123,8 @@ PDL_COMPONENTS['plugin:official.rsi/rsiTrend'] = function (p, sc, root) {
   const vs = xs.map(function (x) { return x.value; }).concat(threshold != null ? [threshold] : []);
   const lo = Math.min.apply(null, vs), hi = Math.max.apply(null, vs);
   const span = hi === lo ? 1 : (hi - lo);
-  const padX = 42, padTop = 26, padBot = 26, H = 132;
-  const W = Math.max(360, padX * 2 + Math.max(1, xs.length - 1) * 76);
+  const padX = 56, padTop = 26, padBot = 28, H = 136;
+  const W = Math.max(360, padX * 2 + Math.max(1, xs.length - 1) * 82);
   const svgStyle = xs.length <= 5 ? 'width:100%' : 'width:' + W + 'px;min-width:100%';
   const yOf = function (v) { return H - padBot - (hi === lo ? 0.5 : (v - lo) / span) * (H - padTop - padBot); };
   const pts = xs.map(function (x, i) {
@@ -139,10 +148,10 @@ PDL_COMPONENTS['plugin:official.rsi/rsiTrend'] = function (p, sc, root) {
     const cls = [moved ? 'moved' : '', isCur ? 'current' : ''].filter(Boolean).join(' ');
     return '<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="' + (isCur ? '5' : '4') + '"' + (cls ? ' class="' + cls + '"' : '') + '/>' +
       '<text class="val' + (isCur ? ' current' : '') + '" x="' + q[0].toFixed(1) + '" y="' + (q[1] - 10).toFixed(1) + '">' + h(String(x.value)) + '</text>' +
-      '<text class="axis' + (isCur ? ' current' : '') + '" x="' + q[0].toFixed(1) + '" y="' + (H - 7) + '">' + h(axisLabel) + '</text>';
+      '<text class="axis' + (isCur ? ' current' : '') + '" x="' + q[0].toFixed(1) + '" y="' + (H - 8) + '">' + h(axisLabel) + '</text>';
   }).join('');
   const aria = series && series.name ? series.name : pvText(p.label, sc, root);
-  return '<div class="rsi-trend-wrap"><div class="scroll-x rsi-trend-scroll"><svg class="rsi-trend" style="' + svgStyle + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + h(aria) + '">' +
+  return '<div class="rsi-trend-wrap"><div class="scroll-x stick-end rsi-trend-scroll"><svg class="rsi-trend" style="' + svgStyle + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + h(aria) + '">' +
     grid + thLine + line + dots + '</svg></div></div>';
 };
 
@@ -425,3 +434,355 @@ PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {
   }).join('');
   return '<div class="rsi-dag-wrap">' + legend + '<div class="scroll-x rsi-dag-scroll"><div class="rsi-dag-canvas" style="width:' + totalW + 'px;height:' + totalH + 'px">' + svg + nodes + '</div></div></div>';
 };
+
+PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
+  const data = pv(p.from, sc, root);
+  if (!data || !Array.isArray(data.nodes) || !data.nodes.length) return '';
+  const nodes = data.nodes;
+  const byId = {}, kids = {}, roots = [];
+  nodes.forEach(function (n) { byId[n.id] = n; });
+  nodes.forEach(function (n) {
+    if (n.parent && byId[n.parent]) (kids[n.parent] = kids[n.parent] || []).push(n);
+    else roots.push(n);
+  });
+  const CW = 160, CH = 64, GX = 36, GY = 12, PAD = 14, GRID_GX = 14;
+  const pos = {}, edges = [];
+  const leafClusterOf = function (list) {
+    const leaves = [], branches = [];
+    list.forEach(function (c) {
+      if ((kids[c.id] || []).length === 0) leaves.push(c);
+      else branches.push(c);
+    });
+    return { leaves: leaves, branches: branches };
+  };
+  const subtreeSize = function (id, seen) {
+    if (seen[id]) return { w: CW, h: CH };
+    const nextSeen = Object.assign({}, seen); nextSeen[id] = true;
+    const ch = (kids[id] || []).filter(function (c) { return !nextSeen[c.id]; });
+    if (!ch.length) return { w: CW, h: CH };
+    const split = leafClusterOf(ch);
+    let totalH = 0, maxChildW = 0;
+    if (split.leaves.length >= 6) {
+      const cols = Math.min(4, Math.ceil(split.leaves.length / 4));
+      const rows = Math.ceil(split.leaves.length / cols);
+      const gridW = cols * CW + (cols - 1) * GRID_GX;
+      const gridH = rows * CH + (rows - 1) * GY;
+      totalH += gridH;
+      maxChildW = Math.max(maxChildW, gridW);
+      split.branches.forEach(function (b) {
+        const sz = subtreeSize(b.id, nextSeen);
+        totalH += GY + sz.h;
+        maxChildW = Math.max(maxChildW, sz.w);
+      });
+    } else {
+      ch.forEach(function (c, i) {
+        const sz = subtreeSize(c.id, nextSeen);
+        totalH += (i > 0 ? GY : 0) + sz.h;
+        maxChildW = Math.max(maxChildW, sz.w);
+      });
+    }
+    return { w: CW + GX + maxChildW, h: Math.max(CH, totalH) };
+  };
+  const place = function (id, x, topY, seen) {
+    if (seen[id]) return;
+    const nextSeen = Object.assign({}, seen); nextSeen[id] = true;
+    const sz = subtreeSize(id, seen);
+    const y = topY + Math.round((sz.h - CH) / 2);
+    pos[id] = { x: x, y: y };
+    const ch = (kids[id] || []).filter(function (c) { return !nextSeen[c.id]; });
+    if (!ch.length) return;
+    const split = leafClusterOf(ch);
+    const childX = x + CW + GX;
+    if (split.leaves.length >= 6) {
+      const cols = Math.min(4, Math.ceil(split.leaves.length / 4));
+      const rows = Math.ceil(split.leaves.length / cols);
+      const gridH = rows * CH + (rows - 1) * GY;
+      let cursorY = topY;
+      split.leaves.forEach(function (lf, idx) {
+        const col = idx % cols, row = Math.floor(idx / cols);
+        pos[lf.id] = { x: childX + col * (CW + GRID_GX), y: cursorY + row * (CH + GY) };
+        if (col === 0) edges.push({ from: id, to: lf.id, cluster: true });
+        else edges.push({ from: split.leaves[idx - 1].id, to: lf.id, chain: true });
+      });
+      cursorY += gridH;
+      split.branches.forEach(function (b) {
+        cursorY += GY;
+        const bsz = subtreeSize(b.id, nextSeen);
+        place(b.id, childX, cursorY, nextSeen);
+        edges.push({ from: id, to: b.id });
+        cursorY += bsz.h;
+      });
+    } else {
+      let cursorY = topY;
+      ch.forEach(function (c) {
+        const csz = subtreeSize(c.id, nextSeen);
+        place(c.id, childX, cursorY, nextSeen);
+        edges.push({ from: id, to: c.id });
+        cursorY += csz.h + GY;
+      });
+    }
+  };
+  let rootY = PAD;
+  roots.forEach(function (r) {
+    const sz = subtreeSize(r.id, {});
+    place(r.id, PAD, rootY, {});
+    rootY += sz.h + GY * 2;
+  });
+  let maxX = 0, maxY = 0;
+  Object.keys(pos).forEach(function (k) {
+    if (pos[k].x + CW > maxX) maxX = pos[k].x + CW;
+    if (pos[k].y + CH > maxY) maxY = pos[k].y + CH;
+  });
+  const totalW = maxX + PAD, totalH = maxY + PAD;
+  const selectedId = data.selectedVersion || data.currentVersion || (nodes[nodes.length - 1] && nodes[nodes.length - 1].id);
+  const activePath = {};
+  (function traceUp(id) {
+    let cur = id, guard = 0;
+    while (cur && !activePath[cur] && guard++ < 500) {
+      activePath[cur] = true;
+      cur = byId[cur] && byId[cur].parent;
+    }
+  })(selectedId);
+  const metric = data.metric || { dir: 'up', unit: '' };
+  const finiteVals = nodes.map(function (n) { return n.value; }).filter(function (v) { return typeof v === 'number' && Number.isFinite(v); });
+  const vMin = finiteVals.length ? Math.min.apply(null, finiteVals) : 0;
+  const vMax = finiteVals.length ? Math.max.apply(null, finiteVals) : 1;
+  const normOf = function (v) {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+    if (vMax === vMin) return 0.65;
+    const raw = (v - vMin) / (vMax - vMin);
+    return metric.dir === 'down' ? 1 - raw : raw;
+  };
+  const lens = data.lens === 'aspect' ? 'aspect' : 'metric';
+  const aspectMeta = { object: { cls: 'obj', label: '对象' }, observability: { cls: 'obs', label: '观测' }, rubric: { cls: 'rub', label: '规约' } };
+  const svgEdges = edges.map(function (e) {
+    const a = pos[e.from], b = pos[e.to];
+    if (!a || !b) return '';
+    const x1 = a.x + CW, y1 = a.y + CH / 2, x2 = b.x, y2 = b.y + CH / 2;
+    const onPath = !!(activePath[e.from] && activePath[e.to]);
+    const pruned = !!(byId[e.to] && byId[e.to].pruned);
+    const cls = 'rsi-map-edge' + (onPath ? ' active' : '') + (pruned ? ' pruned' : '') + (e.chain ? ' chain' : '');
+    if (e.chain || Math.abs(y1 - y2) < 1) {
+      return '<path class="' + cls + '" d="M' + x1 + ',' + y1 + ' L' + x2 + ',' + y2 + '"/>';
+    }
+    const mx = Math.round((x1 + x2) / 2);
+    return '<path class="' + cls + '" d="M' + x1 + ',' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2 + '"/>';
+  }).join('');
+  const cardsHtml = nodes.map(function (n) {
+    const q = pos[n.id];
+    if (!q) return '';
+    const primaryAspect = (n.aspects && n.aspects[0]) || 'object';
+    const stateBadge = n.state === 'current' ? '<span class="rsi-map-tag ok">当前</span>'
+      : n.state === 'running' ? '<span class="rsi-map-tag info">运行中</span>'
+      : n.pruned ? '<span class="rsi-map-tag danger">剪枝 ✕</span>'
+      : n.tier === 'explore' ? '<span class="rsi-map-tag warn">探索</span>'
+      : '';
+    const dots = (n.aspects || []).map(function (a) {
+      const m = aspectMeta[a];
+      return m ? '<i class="rsi-asp-dot ' + m.cls + '" title="' + h(m.label) + '"></i>' : '';
+    }).join('');
+    const deltaHtml = lens === 'aspect'
+      ? '<span class="rsi-map-asp-lbl">' + h(n.aspectText || '') + '</span>'
+      : n.deltaText
+        ? '<span class="rsi-map-delta" data-better="' + h(n.comparable ? (n.better || '') : 'muted') + '">' + h((n.comparable ? '' : '~') + n.deltaText) + '</span>'
+        : (n.metricVersion ? '<span class="rsi-map-scale">' + h(n.metricVersion) + '</span>' : '');
+    const pct = lens === 'metric' && !n.pruned ? normOf(n.value) : null;
+    const barHtml = pct != null ? '<span class="rsi-map-bar"><span class="rsi-map-bar-fill" style="width:' + Math.max(8, Math.round(pct * 100)) + '%"></span></span>' : '';
+    const cls = 'rsi-map-node' + (lens === 'aspect' ? ' lens-aspect asp-' + primaryAspect : '') + (n.pruned ? ' is-pruned' : '');
+    return '<button type="button" class="' + cls + '" data-state="' + h(n.state || '') + '" data-ver="' + h(n.id) + '" aria-pressed="' + (n.selected ? 'true' : 'false') + '"' +
+      ' data-act="plugSet" data-plugin="official.rsi" data-k="selO" data-v="' + h(n.pick || '') + '"' +
+      ' style="left:' + q.x + 'px;top:' + q.y + 'px;width:' + CW + 'px;height:' + CH + 'px" title="' + h((n.id + ' · ' + (n.change || '')).trim()) + '">' +
+      '<span class="rsi-map-top"><span class="rsi-map-id">' + h(n.id) + '</span>' + stateBadge + '<span class="rsi-map-val">' + h(n.valueText || '—') + '</span></span>' +
+      '<span class="rsi-map-sub">' + h(n.changeShort || n.id) + '</span>' +
+      '<span class="rsi-map-foot"><span class="rsi-asp-dots">' + dots + '</span>' + deltaHtml + '</span>' +
+      barHtml + '</button>';
+  }).join('');
+  const stats = data.stats || { total: nodes.length, pruned: 0, current: data.currentVersion };
+  const safeJson = JSON.stringify(data).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+  const headBar = '<div class="rsi-map-bar-top">' +
+    '<div class="rsi-map-stats">' +
+      '<span>共 <b>' + h(stats.total) + '</b> 版</span>' +
+      '<span>当前 <b>' + h(stats.current || '—') + '</b></span>' +
+      (stats.pruned ? '<span class="is-pruned">剪枝 <b>' + h(stats.pruned) + '</b></span>' : '') +
+      '<span class="rsi-map-leg"><i class="rsi-asp-dot obj"></i>对象 <i class="rsi-asp-dot obs"></i>观测 <i class="rsi-asp-dot rub"></i>规约</span>' +
+    '</div>' +
+    '<div class="rsi-map-tools">' +
+      '<div class="rsi-mx-seg" role="group" aria-label="着色视角">' +
+        '<button type="button" class="rsi-mx-seg-btn' + (lens === 'metric' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="overviewLens" data-v="metric">指标</button>' +
+        '<button type="button" class="rsi-mx-seg-btn' + (lens === 'aspect' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="overviewLens" data-v="aspect">三元</button>' +
+      '</div>' +
+      '<button type="button" class="rsi-map-btn" data-rsi-map-act="zoom-out" title="缩小">−</button>' +
+      '<span class="rsi-map-zl">100%</span>' +
+      '<button type="button" class="rsi-map-btn" data-rsi-map-act="zoom-in" title="放大">+</button>' +
+      '<button type="button" class="rsi-map-btn" data-rsi-map-act="fit" title="缩放适应视口">适应</button>' +
+      '<button type="button" class="rsi-map-btn" data-rsi-map-act="export-html" title="导出零依赖单文件交互 HTML">导出 HTML</button>' +
+    '</div>' +
+  '</div>';
+  const svg = '<svg class="rsi-map-svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + ' ' + totalH + '" aria-hidden="true">' + svgEdges + '</svg>';
+  return '<div class="rsi-map-wrap" data-zoom="1">' + headBar +
+    '<div class="scroll-x rsi-map-scroll"><div class="rsi-map-stage" style="width:' + totalW + 'px;height:' + totalH + 'px"><div class="rsi-map-canvas" style="width:' + totalW + 'px;height:' + totalH + 'px">' + svg + cardsHtml + '</div></div></div>' +
+    '<script type="application/json" class="rsi-map-data">' + safeJson + '</script></div>';
+};
+
+PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
+  const card = pv(p.from, sc, root);
+  if (!card) return '';
+  const folds = (typeof S !== 'undefined' && S.folds) ? S.folds : {};
+  const verdictMeta = {
+    baseline: { tone: 'info', label: '基线' },
+    keep: { tone: 'ok', label: '保持' },
+    tune: { tone: 'ok', label: '继续调优' },
+    rollback: { tone: 'danger', label: '回退' },
+    sunset: { tone: 'muted', label: '终止' },
+    insufficient: { tone: 'warn', label: '证据不足' },
+  };
+  const vm = verdictMeta[card.verdict] || { tone: 'muted', label: card.verdict || '' };
+  const aspectMeta = { object: { cls: 'obj', label: '进化对象' }, observability: { cls: 'obs', label: '可观测性' }, rubric: { cls: 'rub', label: '规约尺子' } };
+  const aspChips = (card.aspects || []).map(function (a) {
+    const m = aspectMeta[a];
+    return m ? '<span class="rsi-cc-asp ' + m.cls + '"><i class="rsi-asp-dot ' + m.cls + '"></i>' + h(m.label) + '</span>' : '';
+  }).join('');
+  const main = card.main;
+  const metricStrip = main ? (
+    '<div class="rsi-cc-metric">' +
+      '<div class="rsi-cc-m-left"><span class="rsi-cc-m-lbl">' + h(main.name) + ' · ' + h(main.refLabel) + '</span>' +
+      '<div class="rsi-cc-m-vals">' +
+        (main.comparable && main.refValue != null ? '<span class="rsi-cc-m-ref">' + h(main.refValue) + ' → </span>' : '') +
+        '<span class="rsi-cc-m-num">' + h(main.value) + '</span>' +
+        (main.sd != null ? '<span class="rsi-mx-sd">±' + h(main.sd) + '</span>' : '') +
+        (main.comparable && main.delta != null
+          ? '<span class="rsi-mx-pill" data-tone="' + (main.better === 'better' ? 'ok' : main.better === 'worse' ? 'danger' : 'muted') + '">' + h(main.delta) + '</span>'
+          : '<span class="rsi-mx-pill" data-tone="warn">' + h(card.tier === 'explore' ? '探索参考（非同轮对照）' : '无同轮对照') + '</span>') +
+      '</div></div>' +
+      '<div class="rsi-cc-badges">' +
+        '<span class="rsi-mx-pill" data-tone="' + h(vm.tone) + '">' + h(vm.label) + '</span>' +
+        '<span class="rsi-mx-pill" data-tone="muted">' + h(card.metricVersion || 'E1') + '</span>' +
+        aspChips +
+      '</div>' +
+    '</div>'
+  ) : '';
+  const c = card.causality || {};
+  const chainHtml = '<div class="rsi-cc-chain">' +
+    '<p><b>上游触发：</b>' + h(c.trigger || '—') + '</p>' +
+    '<p><b>本版动作：</b>' + h(c.action || '—') + '</p>' +
+    '<p><b>判断依据：</b>' + h(c.basis || card.headline || '—') + '</p>' +
+  '</div>';
+  const condKey = 'rsi-cc-cond:' + card.foldId;
+  const condOpen = !!folds[condKey];
+  const condHtml = (card.conditions && card.conditions.length) ? (
+    '<div class="rsi-cc-fold">' +
+      '<button type="button" class="rsi-cc-fold-btn" data-act="fold" data-f="result" data-k="' + h(condKey) + '" aria-expanded="' + (condOpen ? 'true' : 'false') + '">' +
+        '<span class="rsi-mx-chev">' + (condOpen ? '▾' : '▸') + '</span><span>实验固定条件与规约（' + card.conditions.length + '）</span></button>' +
+      (condOpen ? '<div class="rsi-cc-conds">' + card.conditions.map(function (rw) {
+        return '<div class="rsi-cc-crow"><span class="rsi-cc-ck">' + h(rw.k) + '</span><span class="rsi-cc-cv">' + h(rw.v) + '</span></div>';
+      }).join('') + '</div>' : '') +
+    '</div>'
+  ) : '';
+  const bodyKey = 'rsi-cc-body:' + card.foldId;
+  const bodyOpen = card.autoFoldBody ? !!folds[bodyKey] : !folds[bodyKey];
+  const bodyHtml = card.body ? (
+    '<div class="rsi-cc-fold">' +
+      '<button type="button" class="rsi-cc-fold-btn" data-act="fold" data-f="result" data-k="' + h(bodyKey) + '" aria-expanded="' + (bodyOpen ? 'true' : 'false') + '">' +
+        '<span class="rsi-mx-chev">' + (bodyOpen ? '▾' : '▸') + '</span><span>' + (bodyOpen ? '收起完整评估正文' : '展开完整评估正文（' + card.bodyLength + ' 字）') + '</span></button>' +
+      (bodyOpen ? '<div class="rsi-cc-body">' + h(card.body).replace(/\n/g, '<br>') + '</div>' : '') +
+    '</div>'
+  ) : '';
+  const rcptKey = 'rsi-cc-rcpt:' + card.foldId;
+  const rcptOpen = !!folds[rcptKey];
+  const rcptHtml = (card.receipts && card.receipts.length) ? (
+    '<div class="rsi-cc-fold">' +
+      '<button type="button" class="rsi-cc-fold-btn" data-act="fold" data-f="result" data-k="' + h(rcptKey) + '" aria-expanded="' + (rcptOpen ? 'true' : 'false') + '">' +
+        '<span class="rsi-mx-chev">' + (rcptOpen ? '▾' : '▸') + '</span><span>执行与原件回执（' + card.receipts.length + '）</span></button>' +
+      (rcptOpen ? '<div class="scroll-x rsi-cc-rcpt-wrap"><table class="rsi-mx-sub"><thead><tr><th>seed</th><th>状态</th><th>commit</th><th>耗时</th><th>job / 说明</th></tr></thead><tbody>' +
+        card.receipts.map(function (r) {
+          return '<tr><td class="rsi-mx-seed">' + h(r.seed) + '</td><td>' + h(r.state) + '</td><td class="rsi-mx-seed">' + h(r.commit || '—') + '</td><td>' + h(r.duration || '—') + '</td><td>' + h(r.jobId || r.error || '—') + '</td></tr>';
+        }).join('') + '</tbody></table></div>' : '') +
+    '</div>'
+  ) : '';
+  return '<div class="rsi-cc-wrap">' + metricStrip + chainHtml + condHtml + bodyHtml + rcptHtml + '</div>';
+};
+
+(function () {
+  if (typeof document === 'undefined' || document.__rsiMapBound) return;
+  document.__rsiMapBound = true;
+  function buildStandaloneHtml(data) {
+    const json = JSON.stringify(data).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+    const title = String(data.objectiveName || data.objectiveId || 'RSI Lineage').replace(/[<>&"]/g, '');
+    return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>' + title + ' · RSI 进化谱系总览</title>' +
+      '<style>:root{--bg:#f8fafc;--card:#fff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--ok:#0f766e;--info:#2563eb;--warn:#b45309;--danger:#b91c1c;--obj:#0f766e;--obs:#9333ea;--rub:#4338ca}' +
+      '@media(prefers-color-scheme:dark){:root{--bg:#0b1120;--card:#111827;--ink:#f1f5f9;--muted:#94a3b8;--line:#1f2937;--ok:#2dd4bf;--info:#60a5fa;--warn:#fbbf24;--danger:#f87171;--obj:#2dd4bf;--obs:#c084fc;--rub:#818cf8}}' +
+      '*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;height:100vh}' +
+      'header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--card)}' +
+      'header h1{margin:0;font-size:15px}header .sub{font-size:12px;color:var(--muted)}main{display:grid;grid-template-columns:1fr 340px;flex:1;min-height:0}' +
+      '.map{position:relative;overflow:auto;padding:16px}.canvas{position:relative}svg.edges{position:absolute;inset:0;pointer-events:none}' +
+      'path.e{fill:none;stroke:var(--line);stroke-width:1.6}path.e.on{stroke:var(--ok);stroke-width:2.2}path.e.pr{stroke:var(--danger);stroke-dasharray:4 3;opacity:.6}' +
+      '.nd{position:absolute;display:flex;flex-direction:column;justify-content:space-between;padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--ink);cursor:pointer;text-align:left}' +
+      '.nd.cur{border-color:var(--ok);box-shadow:0 0 0 2px color-mix(in srgb,var(--ok) 30%,transparent)}.nd.pr{border-color:color-mix(in srgb,var(--danger) 55%,var(--line));background:color-mix(in srgb,var(--danger) 7%,var(--card))}' +
+      '.nd.sel{outline:2px solid var(--info);outline-offset:1px}.top{display:flex;align-items:center;gap:6px;font-size:12px}.id{font-family:monospace;font-weight:700}.val{margin-left:auto;font-family:monospace;font-size:11px;font-weight:600}' +
+      '.subt{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.foot{display:flex;align-items:center;justify-content:space-between;font-size:10px;color:var(--muted)}' +
+      '.dots{display:inline-flex;gap:3px}.dots i{width:7px;height:7px;border-radius:2px;display:inline-block}.dots .obj{background:var(--obj)}.dots .obs{background:var(--obs)}.dots .rub{background:var(--rub)}' +
+      'aside{border-left:1px solid var(--line);background:var(--card);padding:16px;overflow:auto}.chain p{margin:0 0 8px;padding-left:10px;border-left:2px solid var(--line);font-size:13px;line-height:1.5}' +
+      '.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;background:color-mix(in srgb,var(--muted) 15%,transparent)}table{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}td,th{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);font-family:monospace}</style></head>' +
+      '<body><header><div><h1 id="t"></h1><div class="sub" id="sub"></div></div><div class="sub" id="st"></div></header><main><div class="map"><div class="canvas" id="cv"></div></div><aside id="as"></aside></main>' +
+      '<script id="D" type="application/json">' + json + '</script>' +
+      '<script>(function(){const D=JSON.parse(document.getElementById("D").textContent);const N=D.nodes||[];const byId={},kids={},roots=[];N.forEach(n=>byId[n.id]=n);N.forEach(n=>{if(n.parent&&byId[n.parent])(kids[n.parent]=kids[n.parent]||[]).push(n);else roots.push(n)});' +
+      'const CW=164,CH=66,GX=38,GY=12,PAD=18,GGX=14,pos={},edges=[];const sp=l=>({lf:l.filter(c=>!(kids[c.id]||[]).length),br:l.filter(c=>(kids[c.id]||[]).length)});' +
+      'const sz=id=>{const ch=kids[id]||[];if(!ch.length)return{w:CW,h:CH};const s=sp(ch);let h=0,mw=0;if(s.lf.length>=6){const cols=Math.min(4,Math.ceil(s.lf.length/4)),rows=Math.ceil(s.lf.length/cols);h=rows*CH+(rows-1)*GY;mw=cols*CW+(cols-1)*GGX;s.br.forEach(b=>{const z=sz(b.id);h+=GY+z.h;mw=Math.max(mw,z.w)})}else{ch.forEach((c,i)=>{const z=sz(c.id);h+=(i?GY:0)+z.h;mw=Math.max(mw,z.w)})}return{w:CW+GX+mw,h:Math.max(CH,h)}};' +
+      'const pl=(id,x,ty)=>{const z=sz(id);pos[id]={x,y:ty+Math.round((z.h-CH)/2)};const ch=kids[id]||[];if(!ch.length)return;const s=sp(ch),cx=x+CW+GX;if(s.lf.length>=6){const cols=Math.min(4,Math.ceil(s.lf.length/4)),rows=Math.ceil(s.lf.length/cols);let cy=ty;s.lf.forEach((lf,i)=>{const c=i%cols,r=Math.floor(i/cols);pos[lf.id]={x:cx+c*(CW+GGX),y:cy+r*(CH+GY)};edges.push(c?{f:s.lf[i-1].id,t:lf.id,ch:1}:{f:id,t:lf.id})});cy+=rows*CH+(rows-1)*GY;s.br.forEach(b=>{cy+=GY;const bz=sz(b.id);pl(b.id,cx,cy);edges.push({f:id,t:b.id});cy+=bz.h})}else{let cy=ty;ch.forEach(c=>{const cz=sz(c.id);pl(c.id,cx,cy);edges.push({f:id,t:c.id});cy+=cz.h+GY})}};' +
+      'let ry=PAD;roots.forEach(r=>{const z=sz(r.id);pl(r.id,PAD,ry);ry+=z.h+GY*2});let mx=0,my=0;Object.values(pos).forEach(q=>{mx=Math.max(mx,q.x+CW);my=Math.max(my,q.y+CH)});' +
+      'let sel=D.selectedVersion||D.currentVersion||(N[0]&&N[0].id);document.getElementById("t").textContent=D.objectiveName||D.objectiveId;document.getElementById("sub").textContent="指标："+(D.metric&&D.metric.name||"")+" · 量尺 "+(D.metricVersion||"E1");document.getElementById("st").textContent="共 "+N.length+" 版 · 当前 "+(D.currentVersion||"—")+" · 剪枝 "+((D.stats&&D.stats.pruned)||0);' +
+      'const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");function render(){const on={};let c=sel,g=0;while(c&&!on[c]&&g++<500){on[c]=1;c=byId[c]&&byId[c].parent}const W=mx+PAD,H=my+PAD;const cv=document.getElementById("cv");cv.style.width=W+"px";cv.style.height=H+"px";' +
+      'const ep=edges.map(e=>{const a=pos[e.f],b=pos[e.t],x1=a.x+CW,y1=a.y+CH/2,x2=b.x,y2=b.y+CH/2,m=Math.round((x1+x2)/2);const cl="e"+(on[e.f]&&on[e.t]?" on":"")+(byId[e.t]&&byId[e.t].pruned?" pr":"");return"<path class=\\""+cl+"\\" d=\\""+(e.ch||Math.abs(y1-y2)<1?"M"+x1+","+y1+" L"+x2+","+y2:"M"+x1+","+y1+" C"+m+","+y1+" "+m+","+y2+" "+x2+","+y2)+"\\"/>"}).join("");' +
+      'const nd=N.map(n=>{const q=pos[n.id],cl="nd"+(n.state==="current"?" cur":"")+(n.pruned?" pr":"")+(n.id===sel?" sel":""),dt=(n.aspects||[]).map(a=>"<i class=\\""+(a==="object"?"obj":a==="observability"?"obs":"rub")+"\\"></i>").join("");return"<button class=\\""+cl+"\\" data-id=\\""+esc(n.id)+"\\" style=\\"left:"+q.x+"px;top:"+q.y+"px;width:"+CW+"px;height:"+CH+"px\\"><div class=\\"top\\"><span class=\\"id\\">"+esc(n.id)+"</span><span class=\\"val\\">"+esc(n.valueText||"—")+"</span></div><div class=\\"subt\\">"+esc(n.changeShort||"")+"</div><div class=\\"foot\\"><span class=\\"dots\\">"+dt+"</span><span>"+esc(n.pruned?"剪枝 ✕":n.deltaText||n.stateText||"")+"</span></div></button>"}).join("");' +
+      'cv.innerHTML="<svg class=\\"edges\\" width=\\""+W+"\\" height=\\""+H+"\\">"+ep+"</svg>"+nd;cv.querySelectorAll(".nd").forEach(b=>b.onclick=()=>{sel=b.dataset.id;render()});const n=byId[sel]||N[0];if(!n)return;const cs=n.causality||{};' +
+      'document.getElementById("as").innerHTML="<h2 style=\\"margin:0 0 6px;font-size:17px\\">"+esc(n.id)+" <span class=\\"pill\\">"+esc(n.stateText||"")+"</span></h2><div style=\\"font-size:12px;color:var(--muted);margin-bottom:12px\\">"+esc((n.parent?"源自 "+n.parent+" · ":"")+(n.metricVersion||"")+(n.commitShort?" · "+n.commitShort:""))+"</div>"+' +
+      '"<div style=\\"font-size:13px;margin-bottom:12px\\"><b>"+esc(D.metric&&D.metric.name||"指标")+"：</b>"+esc(n.valueText||"—")+(n.deltaText?" ("+esc((n.comparable?"同口径 ":"参考 ")+n.deltaText)+")":"")+"</div>"+' +
+      '"<div class=\\"chain\\"><p><b>上游触发：</b>"+esc(cs.trigger||"—")+"</p><p><b>本版动作：</b>"+esc(cs.action||"—")+"</p><p><b>判断依据：</b>"+esc(cs.basis||"—")+"</p></div>"+' +
+      '((n.receipts&&n.receipts.length)?"<table><thead><tr><th>seed</th><th>状态</th><th>commit</th><th>job/备注</th></tr></thead><tbody>"+n.receipts.map(r=>"<tr><td>"+esc(r.seed)+"</td><td>"+esc(r.state)+"</td><td>"+esc(r.commit||"—")+"</td><td>"+esc(r.jobId||r.error||"—")+"</td></tr>").join("")+"</tbody></table>":"")}render()})();</script></body></html>';
+  }
+  document.addEventListener('click', function (ev) {
+    const btn = ev.target && ev.target.closest && ev.target.closest('[data-rsi-map-act]');
+    if (!btn) return;
+    const wrap = btn.closest('.rsi-map-wrap');
+    if (!wrap) return;
+    const act = btn.getAttribute('data-rsi-map-act');
+    if (act === 'export-html') {
+      const dataEl = wrap.querySelector('.rsi-map-data');
+      if (!dataEl) return;
+      try {
+        const data = JSON.parse(dataEl.textContent || '{}');
+        const html = buildStandaloneHtml(data);
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'rsi-lineage-' + String(data.objectiveId || 'export').replace(/[^a-zA-Z0-9_-]/g, '') + '.html';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      } catch (_) {}
+      return;
+    }
+    const stage = wrap.querySelector('.rsi-map-stage');
+    const canvas = wrap.querySelector('.rsi-map-canvas');
+    const scroll = wrap.querySelector('.rsi-map-scroll');
+    const zl = wrap.querySelector('.rsi-map-zl');
+    if (!stage || !canvas) return;
+    const baseW = parseFloat(canvas.style.width) || canvas.offsetWidth || 400;
+    const baseH = parseFloat(canvas.style.height) || canvas.offsetHeight || 200;
+    let z = parseFloat(wrap.getAttribute('data-zoom') || '1') || 1;
+    if (act === 'zoom-in') z = Math.min(1.5, Math.round((z + 0.15) * 100) / 100);
+    else if (act === 'zoom-out') z = Math.max(0.45, Math.round((z - 0.15) * 100) / 100);
+    else if (act === 'fit' && scroll) {
+      const availW = Math.max(240, scroll.clientWidth - 16);
+      z = Math.max(0.45, Math.min(1, Math.round((availW / baseW) * 100) / 100));
+    }
+    wrap.setAttribute('data-zoom', String(z));
+    canvas.style.transform = 'scale(' + z + ')';
+    stage.style.width = Math.round(baseW * z) + 'px';
+    stage.style.height = Math.round(baseH * z) + 'px';
+    if (zl) zl.textContent = Math.round(z * 100) + '%';
+  });
+})();

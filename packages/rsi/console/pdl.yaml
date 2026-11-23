@@ -1184,11 +1184,12 @@ views:
           - type: each
             from:
               - {}
-            when: $.exp.activeTrend
+            when: $.exp.hasRounds
             blocks:
               - type: toolbar
                 left:
                   - type: text
+                    when: $.exp.activeTrend
                     parts:
                       - text:
                           t: rsi.exp.trend
@@ -1197,6 +1198,16 @@ views:
                             - $.exp.hitRate.hit
                             - $.exp.hitRate.all
                 right:
+                  - type: seg
+                    value: $.exp.overviewMode
+                    options:
+                      - v: map
+                        label: t:rsi.exp.overviewMap
+                      - v: trend
+                        label: t:rsi.exp.overviewTrend
+                    act: plugSet
+                    args:
+                      k: overviewMode
                   - type: select
                     id: rsi-trend-pick
                     label: t:rsi.exp.trendPick
@@ -1211,6 +1222,21 @@ views:
                           v: "@v"
                           label: "@label"
               - type: component
+                when:
+                  of: $.exp.overviewMode
+                  map:
+                    trend: false
+                    _: true
+                use: plugin:official.rsi/rsiOverviewMap
+                props:
+                  from: $.exp.overviewMap
+              - type: component
+                when:
+                  - $.exp.activeTrend
+                  - of: $.exp.overviewMode
+                    map:
+                      trend: true
+                      _: false
                 use: plugin:official.rsi/rsiTrend
                 props:
                   series: $.exp.activeTrend
@@ -1414,11 +1440,26 @@ views:
                     _: false
                     node: true
                 from:
+                  - k: t:rsi.detail.state
+                    v: $.exp.ver.stateText
+                    when: $.exp.ver.stateText
+                  - k: t:rsi.detail.aspect
+                    v: $.exp.ver.aspectText
+                    when: $.exp.ver.aspectText
                   - k: t:rsi.detail.change
                     v: $.exp.ver.change
+                  - k: t:rsi.detail.pruneReason
+                    v: $.exp.ver.pruneReason
+                    when: $.exp.ver.pruned
                   - k: t:rsi.detail.parent
                     v: $.exp.ver.parent
                     when: $.exp.ver.parent
+                  - k: t:rsi.detail.metricVersion
+                    v: $.exp.ver.metricVersion
+                    when: $.exp.ver.metricVersion
+                  - k: t:rsi.detail.commit
+                    v: $.exp.ver.commitShort
+                    when: $.exp.ver.commitShort
                   - k: t:rsi.exp.pr
                     v: $.exp.ver.pr
                     when: $.exp.ver.pr
@@ -1899,7 +1940,13 @@ views:
                     text: t:rsi.exp.noCompare
                   - type: label
                     text: t:rsi.exp.conclusion
+                  - type: component
+                    when: $.exp.cycle.detailCard
+                    use: plugin:official.rsi/rsiCycleCard
+                    props:
+                      from: $.exp.cycle.detailCard
                   - type: text
+                    when: "!$.exp.cycle.detailCard"
                     parts:
                       - status:
                           of: $.exp.cycle.report.verdict
@@ -1926,6 +1973,7 @@ views:
                       - text: $.exp.cycle.report.headline
                         strong: true
                   - type: markdown
+                    when: "!$.exp.cycle.detailCard"
                     text: $.exp.cycle.body
                   - type: label
                     text: t:rsi.exp.attribution
