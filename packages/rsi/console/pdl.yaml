@@ -1230,6 +1230,39 @@ views:
                 use: plugin:official.rsi/rsiOverviewMap
                 props:
                   from: $.exp.overviewMap
+                  labels:
+                    total: t:rsi.ov.total
+                    current: t:rsi.ov.current
+                    pruned: t:rsi.ov.pruned
+                    insufficient: t:rsi.ov.insufficient
+                    obj: t:rsi.ov.obj
+                    obs: t:rsi.ov.obs
+                    rub: t:rsi.ov.rub
+                    baseline: t:rsi.ov.baseline
+                    unlabeled: t:rsi.ov.unlabeled
+                    lensMetric: t:rsi.ov.lensMetric
+                    lensAspect: t:rsi.ov.lensAspect
+                    fit: t:rsi.ov.fit
+                    exportHtml: t:rsi.ov.exportHtml
+                    stCurrent: t:rsi.ov.stCurrent
+                    stConfirmed: t:rsi.ov.stConfirmed
+                    stRunning: t:rsi.ov.stRunning
+                    stPruned: t:rsi.ov.stPruned
+                    stInsufficient: t:rsi.ov.stInsufficient
+                    stRepaired: t:rsi.ov.stRepaired
+                    stExplore: t:rsi.ov.stExplore
+                    stBaseline: t:rsi.ov.stBaseline
+                    lblTrigger: t:rsi.ov.lblTrigger
+                    lblAction: t:rsi.ov.lblAction
+                    lblBasis: t:rsi.ov.lblBasis
+                    colSeed: t:rsi.ov.colSeed
+                    colState: t:rsi.ov.colState
+                    colCommit: t:rsi.ov.colCommit
+                    colNote: t:rsi.ov.colNote
+                    scale: t:rsi.ov.scale
+                    metric: t:rsi.ov.metric
+                    sameScale: t:rsi.ov.sameScale
+                    refDelta: t:rsi.ov.refDelta
               - type: component
                 when:
                   - $.exp.activeTrend
@@ -1441,16 +1474,46 @@ views:
                     node: true
                 from:
                   - k: t:rsi.detail.state
-                    v: $.exp.ver.stateText
-                    when: $.exp.ver.stateText
+                    v:
+                      of: $.exp.ver.outcome
+                      map:
+                        current: t:rsi.ov.stCurrent
+                        confirmed: t:rsi.ov.stConfirmed
+                        running: t:rsi.ov.stRunning
+                        pruned: t:rsi.ov.stPruned
+                        insufficient: t:rsi.ov.stInsufficient
+                        repaired: t:rsi.ov.stRepaired
+                        baseline: t:rsi.ov.stBaseline
+                        candidate: t:rsi.ov.stCandidate
+                        explored: t:rsi.ov.stExplore
+                        _: ""
+                    when: $.exp.ver.outcome
                   - k: t:rsi.detail.aspect
-                    v: $.exp.ver.aspectText
-                    when: $.exp.ver.aspectText
+                    v:
+                      of: $.exp.ver.aspects
+                      sep: " · "
+                      item:
+                        of: "@"
+                        map:
+                          object: t:rsi.ov.obj
+                          observability: t:rsi.ov.obs
+                          rubric: t:rsi.ov.rub
+                          _: "@"
+                    when: $.exp.ver.aspects.length
+                  - k: t:rsi.detail.aspect
+                    v:
+                      of: $.exp.ver.aspectKind
+                      map:
+                        baseline: t:rsi.ov.baseline
+                        _: t:rsi.ov.unlabeled
+                    when: "!$.exp.ver.aspects.length"
                   - k: t:rsi.detail.change
                     v: $.exp.ver.change
                   - k: t:rsi.detail.pruneReason
                     v: $.exp.ver.pruneReason
-                    when: $.exp.ver.pruned
+                    when:
+                      - $.exp.ver.pruned
+                      - $.exp.ver.pruneReason
                   - k: t:rsi.detail.parent
                     v: $.exp.ver.parent
                     when: $.exp.ver.parent
@@ -1945,6 +2008,58 @@ views:
                     use: plugin:official.rsi/rsiCycleCard
                     props:
                       from: $.exp.cycle.detailCard
+                      labels:
+                        vBaseline: t:rsi.exp.verdict.baseline
+                        vKeep: t:rsi.exp.verdict.keep
+                        vTune: t:rsi.exp.verdict.tune
+                        vRollback: t:rsi.exp.verdict.rollback
+                        vSunset: t:rsi.exp.verdict.sunset
+                        vInsufficient: t:rsi.exp.verdict.insufficient
+                        obj: t:rsi.ov.obj
+                        obs: t:rsi.ov.obs
+                        rub: t:rsi.ov.rub
+                        baseline: t:rsi.ov.baseline
+                        unlabeled: t:rsi.ov.unlabeled
+                        refPaired: t:rsi.ov.refPaired
+                        refExplore: t:rsi.ov.refExplore
+                        refSingle: t:rsi.ov.refSingle
+                        tagExploreNoCtrl: t:rsi.ov.tagExploreNoCtrl
+                        tagNoCtrl: t:rsi.ov.tagNoCtrl
+                        lblTrigger: t:rsi.ov.lblTrigger
+                        lblAction: t:rsi.ov.lblAction
+                        lblBasis: t:rsi.ov.lblBasis
+                        trigBaseline: t:rsi.ov.trigBaseline
+                        trigParent: t:rsi.ov.trigParent
+                        trigRepair: t:rsi.ov.trigRepair
+                        trigDir: t:rsi.ov.trigDir
+                        trigDec: t:rsi.ov.trigDec
+                        trigCycle: t:rsi.ov.trigCycle
+                        basisRunning: t:rsi.ov.basisRunning
+                        basisEval: t:rsi.ov.basisEval
+                        basisRepaired: t:rsi.ov.basisRepaired
+                        basisNone: t:rsi.ov.basisNone
+                        condTitle: t:rsi.ov.condTitle
+                        bodyHide: t:rsi.ov.bodyHide
+                        bodyShow: t:rsi.ov.bodyShow
+                        rcptTitle: t:rsi.ov.rcptTitle
+                        ckMetricVersion: t:rsi.ov.ckMetricVersion
+                        ckTier: t:rsi.ov.ckTier
+                        ckSeeds: t:rsi.ov.ckSeeds
+                        ckControl: t:rsi.ov.ckControl
+                        ckConfig: t:rsi.ov.ckConfig
+                        ckGuardrails: t:rsi.ov.ckGuardrails
+                        tierExplore: t:rsi.ov.tierExplore
+                        tierConfirm: t:rsi.ov.tierConfirm
+                        tierBaseline: t:rsi.ov.tierBaseline
+                        ctrlSkip: t:rsi.ov.ctrlSkip
+                        ctrlPaired: t:rsi.ov.ctrlPaired
+                        ctrlSingle: t:rsi.ov.ctrlSingle
+                        reserved: t:rsi.ov.reserved
+                        colSeed: t:rsi.ov.colSeed
+                        colState: t:rsi.ov.colState
+                        colCommit: t:rsi.ov.colCommit
+                        colDur: t:rsi.ov.colDur
+                        colNote: t:rsi.ov.colNote
                   - type: text
                     when: "!$.exp.cycle.detailCard"
                     parts:

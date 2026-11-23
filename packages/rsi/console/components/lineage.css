@@ -20,6 +20,9 @@
 .rsi-lin-v[data-state="running"]{background:color-mix(in srgb,var(--info) var(--d-wash),var(--bg-field));color:var(--info);outline:1px solid color-mix(in srgb,var(--info) 55%,transparent)}
 .rsi-lin-v[data-state="running"]::before{content:"";display:inline-block;width:6px;height:6px;margin-inline-end:4px;border-radius:50%;background:var(--info);animation:mo-row var(--loop) ease-in-out infinite backwards}
 .rsi-lin-v[data-state="candidate"]{background:transparent;outline:var(--sp-hairline) dashed var(--line-strong);color:var(--fg-faint)}
+.rsi-lin-v[data-state="confirmed"]{background:color-mix(in srgb,var(--ok) 7%,var(--bg-field));color:var(--fg-strong);outline:1px solid color-mix(in srgb,var(--ok) 28%,transparent)}
+.rsi-lin-v[data-state="insufficient"]{background:color-mix(in srgb,var(--warn) 10%,var(--bg-field));color:var(--warn);outline:1px solid color-mix(in srgb,var(--warn) 38%,transparent)}
+.rsi-lin-v[data-state="repaired"]{background:var(--bg-group);color:var(--fg-muted);outline:var(--sp-hairline) dashed var(--line-strong)}
 .rsi-lin-v[data-state="pruned"]{background:color-mix(in srgb,var(--danger) 12%,var(--bg-field));color:var(--danger);outline:1px solid color-mix(in srgb,var(--danger) 42%,transparent)}
 .rsi-lin-v[data-state="pruned"]::after{content:" ✕";font-size:10px;opacity:.85}
 .rsi-lin-v[data-state="external"]{background:color-mix(in srgb,var(--info) var(--d-wash),var(--bg-field));color:var(--info)}
@@ -174,6 +177,9 @@
 .rsi-map-node.lens-aspect.asp-object{background:color-mix(in srgb,var(--ok) 11%,var(--bg-page));border-color:color-mix(in srgb,var(--ok) 48%,var(--line-strong))}
 .rsi-map-node.lens-aspect.asp-observability{background:color-mix(in srgb,#a855f7 12%,var(--bg-page));border-color:color-mix(in srgb,#a855f7 48%,var(--line-strong))}
 .rsi-map-node.lens-aspect.asp-rubric{background:color-mix(in srgb,var(--info) 12%,var(--bg-page));border-color:color-mix(in srgb,var(--info) 48%,var(--line-strong))}
+.rsi-map-node.lens-aspect.asp-unlabeled{border-style:dashed;opacity:.82}
+.rsi-map-node.lens-aspect.asp-baseline{background:color-mix(in srgb,var(--fg-muted) 8%,var(--bg-page))}
+.rsi-map-tag.muted{background:var(--bg-group);color:var(--fg-muted)}
 .rsi-map-top{display:flex;align-items:center;gap:4px;min-width:0}
 .rsi-map-id{font-family:var(--font-mono);font-size:var(--fs-s);font-weight:600;color:var(--fg-strong);flex:none}
 .rsi-map-val{margin-inline-start:auto;font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--fg-strong);white-space:nowrap}

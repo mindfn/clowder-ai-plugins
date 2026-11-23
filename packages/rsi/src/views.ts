@@ -593,70 +593,82 @@ function exp(): any {
       })),
     };
   };
-  const ASPECT_LABELS: Record<string, string> = { object: '进化对象', observability: '可观测性', rubric: '规约尺子' };
   const findTriggerRound = (v: Data, verRounds: Data[]) => {
     const repairedFrom = rounds.find((x: Data) => x.repairedBy === v.id);
     if (repairedFrom) return { round: repairedFrom, repair: true };
-    const firstN = verRounds.length ? verRounds[0].n : Infinity;
-    const candidates = rounds.filter((x: Data) => x.n < firstN && (x.decision || x.state === 'repaired'));
-    for (let i = candidates.length - 1; i >= 0; i--) {
-      const cand = candidates[i];
-      if (cand.version === v.parent) return { round: cand, repair: false };
+    if (verRounds.length) {
+      const firstN = verRounds[0].n;
+      const prior = rounds.filter((x: Data) => x.n < firstN && (x.decision || x.state === 'repaired'));
+      if (prior.length) return { round: prior[prior.length - 1], repair: false };
     }
-    return candidates.length ? { round: candidates[candidates.length - 1], repair: false } : null;
+    const decided = rounds.filter((x: Data) => x.decision && (!v.at || !x.decision.at || x.decision.at <= v.at + 60_000));
+    return decided.length ? { round: decided[decided.length - 1], repair: false } : null;
   };
   const aspectsOfVersion = (v: Data, verRounds: Data[]) => {
-    if (!v.parent) return ['object', 'observability', 'rubric'];
+    if (!v.parent) return { kind: 'baseline', aspects: [] as string[] };
+    if (Array.isArray(v.aspects) && v.aspects.length) {
+      const declared = ['object', 'observability', 'rubric'].filter((k) => v.aspects.includes(k));
+      if (declared.length) return { kind: 'declared', aspects: declared };
+    }
     const set = new Set<string>();
     const trig = findTriggerRound(v, verRounds);
-    if (trig?.repair) set.add('observability');
-    else if (trig?.round?.decision) {
-      const dec = trig.round.decision;
-      const dir = dirOf(trig.round);
-      const kind = dir?.kind || '';
-      if (kind === 'code' || kind === 'variable' || dec.pick === 'addVar') set.add('object');
-      else if (kind === 'execution' || kind === 'discriminate') set.add('observability');
-      else if (kind === 'metric' || kind === 'goal' || dec.pick === 'metric' || dec.pick === 'goal') set.add('rubric');
-    }
     const parentRounds = rounds.filter((x: Data) => x.version === v.parent);
     const parentMetricVer = parentRounds[parentRounds.length - 1]?.metrics?.version || d.metrics.version;
     const ownMetricVer = verRounds[0]?.metrics?.version || d.metrics.version;
     if (ownMetricVer && parentMetricVer && ownMetricVer !== parentMetricVer) set.add('rubric');
-    const parentV = d.versions.find((x: Data) => x.id === v.parent);
-    if (parentV) {
-      const sameVars = JSON.stringify(v.vars || {}) === JSON.stringify(parentV.vars || {});
-      const sameCfg = JSON.stringify(v.config || {}) === JSON.stringify(parentV.config || {});
-      if ((!sameVars || !sameCfg) && !set.has('observability') && !set.has('rubric')) set.add('object');
+    if (trig?.repair || v.direct) set.add('observability');
+    else if (trig?.round?.decision) {
+      const dec = trig.round.decision;
+      const dir = dirOf(trig.round);
+      const kind = dir?.kind || '';
+      if (kind === 'execution') set.add('observability');
+      else if (kind === 'metric' || kind === 'goal' || dec.pick === 'metric' || dec.pick === 'goal') set.add('rubric');
     }
-    if (!set.size) set.add('object');
-    return ['object', 'observability', 'rubric'].filter((k) => set.has(k));
+    const derived = ['object', 'observability', 'rubric'].filter((k) => set.has(k));
+    return { kind: derived.length ? 'derived' : 'unlabeled', aspects: derived };
   };
-  const pruneInfoOfVersion = (v: Data, verRounds: Data[], isRunningVer: boolean) => {
-    if (v.current || isRunningVer || v.status === 'candidate' || !verRounds.length) return { pruned: false, reason: '' };
-    const lastR = verRounds[verRounds.length - 1];
-    if (lastR.state === 'repaired') return { pruned: true, reason: '执行失败已由后续版本修复' };
+  const outcomeOfVersion = (v: Data, verRounds: Data[], isRunningVer: boolean) => {
+    if (v.current) return { outcome: 'current', pruned: false, reason: '' };
+    if (isRunningVer) return { outcome: 'running', pruned: false, reason: '' };
+    if (!v.parent) return { outcome: 'baseline', pruned: false, reason: '' };
+    if (v.status === 'confirmed') return { outcome: 'confirmed', pruned: false, reason: '' };
+    if (v.status === 'candidate') return { outcome: 'candidate', pruned: false, reason: '' };
+    const lastR = verRounds[verRounds.length - 1] || null;
+    if (v.status === 'rejected') return { outcome: 'pruned', pruned: true, reason: lastR?.report?.headline || '' };
+    if (!lastR) return { outcome: 'proposed', pruned: false, reason: '' };
+    if (lastR.state === 'repaired') return { outcome: 'repaired', pruned: false, reason: '' };
     const verdict = lastR.report?.verdict || '';
-    if (verdict === 'rollback') return { pruned: true, reason: lastR.report?.headline || '回退剪枝' };
-    if (verdict === 'sunset') return { pruned: true, reason: lastR.report?.headline || '已终止剪枝' };
-    if (verdict === 'insufficient') return { pruned: true, reason: lastR.report?.headline || '证据不足 / 门禁拦截' };
-    return { pruned: false, reason: '' };
+    if (verdict === 'rollback' || verdict === 'sunset') return { outcome: 'pruned', pruned: true, reason: lastR.report?.headline || '' };
+    if (verdict === 'insufficient') return { outcome: 'insufficient', pruned: false, reason: lastR.report?.headline || '' };
+    if (lastR.report?.compare?.comparable) {
+      const candGroups = (lastR.plan?.groups || []).filter((g: Data) => g.version === v.id && !g.control);
+      const judged = lastR.report.compare.groups || [];
+      const ownJudged = candGroups.map((g: Data) => judged.find((j: Data) => j.group === g.id)).filter(Boolean);
+      if (ownJudged.length && ownJudged.every((j: Data) => j.eligible && !j.beatsControl)) {
+        return { outcome: 'pruned', pruned: true, reason: lastR.report?.headline || '' };
+      }
+    }
+    return { outcome: 'explored', pruned: false, reason: '' };
   };
   const versionMetaById: Record<string, Data> = {};
   d.versions.forEach((v: Data) => {
     const verRounds = rounds.filter((x: Data) => x.version === v.id);
     const isRunningVer = !!o.projectPath && verRounds.some((x: Data) => ['running', 'evaluating', 'repairing'].includes(x.state));
-    const aspects = aspectsOfVersion(v, verRounds);
-    const prune = pruneInfoOfVersion(v, verRounds, isRunningVer);
+    const asp = aspectsOfVersion(v, verRounds);
+    const out = outcomeOfVersion(v, verRounds, isRunningVer);
     const lastR = verRounds[verRounds.length - 1] || null;
-    const nodeState = v.current ? 'current' : isRunningVer ? 'running' : v.status === 'candidate' ? 'candidate' : (o.projectPath && prune.pruned) ? 'pruned' : '';
-    const stateText = nodeState === 'current' ? '当前运行中' : nodeState === 'running' ? '评估运行中' : prune.pruned ? '已证伪 / 拦截' : nodeState === 'candidate' ? '待验证候选' : '已探索';
+    const nodeState = v.current ? 'current'
+      : isRunningVer ? 'running'
+      : v.status === 'candidate' ? 'candidate'
+      : o.projectPath && ['pruned', 'confirmed', 'insufficient', 'repaired'].includes(out.outcome) ? out.outcome
+      : '';
     versionMetaById[v.id] = {
-      aspects,
-      aspectText: aspects.map((a) => ASPECT_LABELS[a] || a).join(' · '),
-      pruned: prune.pruned,
-      pruneReason: prune.reason,
+      aspectKind: asp.kind,
+      aspects: asp.aspects,
+      outcome: out.outcome,
+      pruned: out.pruned,
+      pruneReason: out.reason,
       nodeState,
-      stateText,
       commitShort: v.commit ? String(v.commit).slice(0, 7) : '',
       metricVersion: lastR?.metrics?.version || d.metrics.version,
       verRounds,
@@ -678,9 +690,9 @@ function exp(): any {
       }),
       data: Object.assign({}, v, {
         nodeState: meta.nodeState,
-        stateText: meta.stateText,
+        outcome: meta.outcome,
+        aspectKind: meta.aspectKind,
         aspects: meta.aspects,
-        aspectText: meta.aspectText,
         pruned: meta.pruned,
         pruneReason: meta.pruneReason,
         commitShort: meta.commitShort,
@@ -690,9 +702,9 @@ function exp(): any {
   const verRaw = d.versions.find(function (v: any): any { return key(v.id) === tree.rowKey; }), m = /^c(\d+)\.(\w+)$/.exec(tree.stepKey);
   const ver = verRaw ? Object.assign({}, verRaw, {
     nodeState: versionMetaById[verRaw.id]?.nodeState || '',
-    stateText: versionMetaById[verRaw.id]?.stateText || '',
+    outcome: versionMetaById[verRaw.id]?.outcome || '',
+    aspectKind: versionMetaById[verRaw.id]?.aspectKind || 'unlabeled',
     aspects: versionMetaById[verRaw.id]?.aspects || [],
-    aspectText: versionMetaById[verRaw.id]?.aspectText || '',
     pruned: !!versionMetaById[verRaw.id]?.pruned,
     pruneReason: versionMetaById[verRaw.id]?.pruneReason || '',
     commitShort: versionMetaById[verRaw.id]?.commitShort || '',
@@ -1078,19 +1090,32 @@ function exp(): any {
   const fmtMetricNum = (val: number | null, unit: string) => val == null ? '—' : `${Number(val.toPrecision(4))}${unit ? ' ' + unit : ''}`;
   const buildCausality = (v: Data, targetRound: Data | null) => {
     const trig = findTriggerRound(v, versionMetaById[v.id]?.verRounds || []);
-    let triggerText = !v.parent ? '初始基线版本' : `源自 ${v.parent}`;
-    if (trig?.repair) triggerText = `第 ${trig.round.n} 周期（${trig.round.version}）执行失败后自动修复`;
-    else if (trig?.round?.decision) {
+    let triggerKind = !v.parent ? 'baseline' : 'parent';
+    let triggerCycle: number | null = null;
+    let triggerVersion = v.parent || '';
+    let triggerDetail = '';
+    if (trig?.repair) {
+      triggerKind = 'repair';
+      triggerCycle = trig.round.n;
+      triggerVersion = trig.round.version;
+    } else if (trig?.round?.decision) {
       const dir = dirOf(trig.round);
-      triggerText = dir?.title
-        ? `第 ${trig.round.n} 周期采纳方向：${clipTitle(dir.title, 72, dir.id)}`
-        : trig.round.decision.note
-          ? `第 ${trig.round.n} 周期决策：${clipTitle(trig.round.decision.note, 72, trig.round.decision.pick)}`
-          : `第 ${trig.round.n} 周期（${trig.round.version}）推进`;
+      triggerCycle = trig.round.n;
+      triggerVersion = trig.round.version;
+      if (dir?.title) { triggerKind = 'direction'; triggerDetail = clipTitle(dir.title, 72, dir.id); }
+      else if (trig.round.decision.note) { triggerKind = 'decision'; triggerDetail = clipTitle(trig.round.decision.note, 72, trig.round.decision.pick); }
+      else { triggerKind = 'cycle'; }
     }
-    const basisText = targetRound?.report?.headline
-      || (targetRound?.state === 'running' ? '正在执行实验运行' : targetRound?.state === 'evaluating' ? '运行已完成，等待评估结论' : targetRound?.state === 'repaired' ? '运行失败并已由后续版本修复' : '尚未形成评估结论');
-    return { trigger: triggerText, action: v.change || '—', basis: basisText };
+    const basisKind = targetRound?.report?.headline ? 'headline' : (targetRound?.state || 'none');
+    return {
+      triggerKind,
+      triggerCycle,
+      triggerVersion,
+      triggerDetail,
+      action: v.change || '',
+      basisKind,
+      basisText: targetRound?.report?.headline || '',
+    };
   };
   const overviewNodes = d.versions.map((v: Data) => {
     const meta = versionMetaById[v.id];
@@ -1128,51 +1153,44 @@ function exp(): any {
     }
     const tier = lastR?.plan?.tier || (lastR?.plan?.baseline ? 'baseline' : lastR ? 'confirm' : '');
     const pickTarget = lastR ? `${key(v.id)}>c${lastR.k}.${lastR.report ? 'eval' : 'collect'}` : `${key(v.id)}>node`;
-    const guardFail = !!(lastR?.report?.compare?.groups || []).some((g: Data) => {
-      const gp = lastR.plan?.groups?.find((x: Data) => x.id === g.group);
-      return gp && gp.version === v.id && !gp.control && Array.isArray(g.guardrails) && g.guardrails.some((gr: Data) => !gr.pass);
-    });
-    const receipts = lastR ? lastR.runs.slice(0, 6).map((u: Data) => ({
-      runId: u.id,
-      seed: u.seed,
-      state: u.state,
-      jobId: u.jobId || '',
-      commit: (u.env?.commit || v.commit || '').slice(0, 7),
-      error: u.error?.raw ? clipTitle(String(u.error.raw), 80, '') : '',
-    })) : [];
     return {
       id: v.id,
       parent: v.parent || null,
       pick: pickTarget,
       selected: ver?.id === v.id,
-      state: meta.nodeState,
-      stateText: meta.stateText,
+      state: meta.outcome,
       pruned: meta.pruned,
-      pruneReason: meta.pruneReason,
+      aspectKind: meta.aspectKind,
       aspects: meta.aspects,
-      aspectText: meta.aspectText,
       verdict: lastR?.report?.verdict || (lastR?.state === 'running' ? 'running' : lastR?.state === 'repaired' ? 'repaired' : ''),
       tier,
       metricVersion: ownScale,
       cycleN: lastR?.n || null,
-      cycleK: lastR?.k || null,
-      roundsCount: meta.verRounds.length,
       value: val,
       valueText: fmtMetricNum(val, activeMetricDef.unit || ''),
       refId,
-      refValue: refVal,
       deltaText,
       better,
       comparable,
-      guardFail,
       commitShort: meta.commitShort,
-      change: v.change || '',
-      changeShort: clipTitle(v.change || '', 24, v.id),
-      headline: lastR?.report?.headline || '',
-      causality: buildCausality(v, lastR),
-      receipts,
+      changeShort: clipTitle(v.change || '', 26, v.id),
     };
   });
+  const selectedOverviewDetail = ver ? (() => {
+    const meta = versionMetaById[ver.id];
+    const lastR = meta?.lastRound || null;
+    return {
+      id: ver.id,
+      causality: buildCausality(ver, lastR),
+      receipts: lastR ? lastR.runs.slice(0, 6).map((u: Data) => ({
+        seed: u.seed,
+        state: u.state,
+        jobId: u.jobId || '',
+        commit: (u.env?.commit || ver.commit || '').slice(0, 7),
+        error: u.error?.raw ? clipTitle(String(u.error.raw), 80, '') : '',
+      })) : [],
+    };
+  })() : null;
   const overviewMap = {
     objectiveId: o.id,
     objectiveName: clipTitle(o.name, 64, o.id),
@@ -1192,37 +1210,34 @@ function exp(): any {
     stats: {
       total: overviewNodes.length,
       pruned: overviewNodes.filter((n: Data) => n.pruned).length,
+      insufficient: overviewNodes.filter((n: Data) => n.state === 'insufficient').length,
       running: overviewNodes.filter((n: Data) => n.state === 'running').length,
       current: o.currentVersion,
     },
     nodes: overviewNodes,
+    selectedDetail: selectedOverviewDetail,
   };
   const buildCycleDetailCard = (targetR: Data | null, targetV: Data | null, cmp: Data | null, bodyText: string) => {
     if (!targetR || !targetR.report || !targetV) return null;
-    const meta = versionMetaById[targetV.id] || { aspects: [], aspectText: '', pruned: false, commitShort: '' };
+    const meta = versionMetaById[targetV.id] || { aspectKind: 'unlabeled', aspects: [], pruned: false, commitShort: '' };
     const mainMetric = cmp?.metrics?.[0] || null;
     const ctrlItem = mainMetric?.items?.find((it: Data) => it.control) || null;
     const candItem = mainMetric?.items?.find((it: Data) => !it.control) || ctrlItem;
     const comparable = !!targetR.report.compare?.comparable && !!ctrlItem && candItem !== ctrlItem;
     const tier = targetR.plan.tier || (targetR.plan.baseline ? 'baseline' : 'confirm');
-    const tierLabel = tier === 'explore' ? '探索快筛（不可直接晋级）' : tier === 'baseline' ? '基线标定' : '正式确认';
     const scaleVer = (targetR.metrics || d.metrics).version;
-    const seedsText = [
-      ...(targetR.plan.seeds || []).map(String),
-      ...((targetR.plan.reservedSeeds || []).length ? [`预留 ${targetR.plan.reservedSeeds.join(', ')}`] : []),
-    ].join(' · ');
     const guardrailsText = ((targetR.metrics || d.metrics).items || [])
       .filter((it: Data) => it.guard)
       .slice(0, 6)
       .map((it: Data) => `${it.name}${it.threshold != null ? ` (${it.dir === 'up' ? '≥' : '≤'}${it.threshold}${it.unit ? ' ' + it.unit : ''})` : ''}`)
-      .join('；');
+      .join('; ');
     const conditions = [
-      { k: '量尺版本', v: scaleVer },
-      { k: '实验层级', v: tierLabel },
-      { k: '到达/种子', v: seedsText || '—' },
-      { k: '外层对照', v: targetR.plan.skipControl ? '探索跳过外层对照' : (ctrlItem ? `同周期对照 ${ctrlItem.version}` : '基线单组') },
-      ...(cycleGroups.filter((g: Data) => g.configSummary).map((g: Data) => ({ k: `配置 (${g.version})`, v: g.configSummary }))),
-      ...(guardrailsText ? [{ k: '护栏约束', v: guardrailsText }] : []),
+      { kKey: 'metricVersion', v: scaleVer },
+      { kKey: 'tier', vKey: tier },
+      { kKey: 'seeds', v: (targetR.plan.seeds || []).join(', '), reserved: (targetR.plan.reservedSeeds || []).join(', ') },
+      { kKey: 'control', vKey: targetR.plan.skipControl ? 'skipControl' : (ctrlItem ? 'paired' : 'single'), version: ctrlItem?.version || '' },
+      ...(cycleGroups.filter((g: Data) => g.configSummary).map((g: Data) => ({ kKey: 'config', version: g.version, v: g.configSummary }))),
+      ...(guardrailsText ? [{ kKey: 'guardrails', v: guardrailsText }] : []),
     ];
     const receipts = cycleRuns.map((u: Data) => ({
       id: u.id,
@@ -1241,16 +1256,16 @@ function exp(): any {
       verdict: targetR.report.verdict,
       headline: targetR.report.headline,
       tier,
-      tierLabel,
       metricVersion: scaleVer,
+      aspectKind: meta.aspectKind,
       aspects: meta.aspects,
-      aspectText: meta.aspectText,
       pruned: meta.pruned,
       main: mainMetric ? {
         name: mainMetric.name,
         value: candItem?.mean ?? '—',
         sd: candItem?.sd ?? null,
-        refLabel: comparable ? `对照 ${ctrlItem.version}` : (targetR.plan.skipControl ? '探索单组（无同轮对照）' : '基线单组'),
+        refKind: comparable ? 'paired' : (targetR.plan.skipControl ? 'explore' : 'single'),
+        refVersion: comparable ? ctrlItem.version : '',
         refValue: comparable ? ctrlItem.mean : null,
         delta: comparable ? candItem?.delta : null,
         better: comparable ? (candItem?.better || '') : '',

@@ -161,6 +161,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
         configPath: { type: 'string', minLength: 1, description: '或者传项目内 JSON 配置文件路径。' },
         cannot: { type: 'string', minLength: 1, description: '修复失败时转交评估成员；非修复版本请求若方向无法满足或契约冲突时退回重新选方向。' },
         changes: { type: 'object', additionalProperties: true, description: '可选结构化变更摘要 { pr?, files?, items? }。' },
+        aspects: { type: 'array', items: { type: 'string', enum: ['object', 'observability', 'rubric'] }, minItems: 1, maxItems: 3, description: '可选变更维度声明：object（进化对象）、observability（可观测性/探针/执行链）、rubric（规约/量尺）。' },
         tier: { type: 'string', enum: ['explore', 'confirm'], description: '可选本轮验证档位：explore（快筛，不直接晋级）或 confirm（正式确认，强保留对照与满血确认种子数）；会透传进 config.json。' },
         seeds: { type: 'integer', minimum: 1, maximum: 20, description: '可选覆盖本轮种子/样本批次数（1–20）；进入确认轮自动恢复完整确认种子数。' },
         reservedSeeds: { type: 'array', items: { type: 'integer', minimum: 0 }, maxItems: 20, description: '仅当 tier="explore" 时可用：可选登记单次运行内部额外消耗的种子号（仅填附加种子，不得内部重复、不得与历史种子或本轮自动分配种子重叠）；下一周期自动分配新种子时一并避开。' },

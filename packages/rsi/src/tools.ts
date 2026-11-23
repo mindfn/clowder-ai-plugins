@@ -178,6 +178,13 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     if (input.skipControl === true && input.tier !== 'explore') return { error: 'skipControl is only allowed when tier is "explore"' };
     if (d.versionRequest.direct && input.reservedSeeds !== undefined) return { error: 'reservedSeeds is not allowed on direct execution fixes' };
     if (input.reservedSeeds !== undefined && input.tier !== 'explore') return { error: 'reservedSeeds is only allowed when tier is "explore"' };
+    let aspects: string[] | undefined;
+    if (input.aspects !== undefined) {
+      if (!Array.isArray(input.aspects) || !input.aspects.length || input.aspects.some((a: unknown) => typeof a !== 'string' || !['object', 'observability', 'rubric'].includes(a))) {
+        return { error: 'aspects must be a non-empty array of "object", "observability", or "rubric"' };
+      }
+      aspects = ['object', 'observability', 'rubric'].filter((k) => (input.aspects as string[]).includes(k));
+    }
     const last = d.rounds.find((r: Data) => r.n === d.versionRequest.cycle);
     const tier = input.tier as ('explore' | 'confirm' | undefined);
     const skipControl = tier === 'explore' && input.skipControl === true;
@@ -193,6 +200,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       ...(Array.isArray(input.changes.items) ? { items: input.changes.items.filter((it: unknown) => record(it) && text(it.name)).map((it: Data) => ({ op: ['set', 'add', 'del'].includes(it.op) ? it.op : 'set', name: it.name, ...(it.from !== undefined ? { from: String(it.from) } : {}), ...(it.to !== undefined ? { to: String(it.to) } : {}) })) } : {}),
     } : null;
     const versionRecord: Data = { id, parent: previous, change: input.change, commit: input.commit || null, config: configVal, at: now, current: false, status: 'proposed',
+      ...(aspects ? { aspects } : {}),
       ...(changes ? { changes } : {}),
       ...(changes?.pr?.id ? { pr: changes.pr.id } : {}),
       ...(d.versionRequest.prediction ? { prediction: d.versionRequest.prediction } : {}) };
@@ -467,6 +475,7 @@ function projectStatus(d: Experiment, input: Data): Data {
       commit: v.commit || null,
       status: v.status || null,
       current: !!v.current,
+      ...(Array.isArray(v.aspects) && v.aspects.length ? { aspects: v.aspects } : {}),
       change: v.change || '',
     })),
     round,

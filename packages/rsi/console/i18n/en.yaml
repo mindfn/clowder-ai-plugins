@@ -97,12 +97,79 @@ detail:
   change: What changed
   state: Status
   aspect: Change aspect
-  pruneReason: Prune reason
+  pruneReason: Refutation basis
   metricVersion: Metric scale
   commit: Commit
   parent: Based on
   at: Started at
   ec: Metrics · Collection
+ov:
+  total: Versions
+  current: Current
+  pruned: Refuted
+  insufficient: Incomplete
+  obj: Object
+  obs: Observability
+  rub: Rubric
+  baseline: Baseline
+  unlabeled: Unlabeled
+  lensMetric: Metric
+  lensAspect: Aspects
+  fit: Fit
+  exportHtml: Export HTML
+  stCurrent: Current
+  stConfirmed: Confirmed
+  stRunning: Running
+  stPruned: Refuted ✕
+  stInsufficient: Insufficient
+  stRepaired: Superseded
+  stExplore: Explore
+  stBaseline: Baseline
+  stCandidate: Candidate
+  refPaired: vs {0}
+  refExplore: Explore (no same-cycle control)
+  refSingle: Baseline group
+  tagExploreNoCtrl: Explore reference
+  tagNoCtrl: No same-cycle control
+  lblTrigger: Trigger
+  lblAction: Change
+  lblBasis: Verdict basis
+  trigBaseline: Initial baseline
+  trigParent: Based on {0}
+  trigRepair: Repaired after cycle {0} ({1})
+  trigDir: "Cycle {0} direction: {1}"
+  trigDec: "Cycle {0} decision: {1}"
+  trigCycle: Cycle {0} ({1})
+  basisRunning: Experiment running
+  basisEval: Awaiting evaluation
+  basisRepaired: Superseded by repair
+  basisNone: No conclusion yet
+  condTitle: Fixed conditions & rubric
+  bodyHide: Hide full evaluation details
+  bodyShow: Show full evaluation details ({0} chars)
+  rcptTitle: Execution & artifact receipts
+  ckMetricVersion: Metric scale
+  ckTier: Tier
+  ckSeeds: Seeds
+  ckControl: Control
+  ckConfig: Config ({0})
+  ckGuardrails: Guardrails
+  tierExplore: Explore (non-promoting)
+  tierConfirm: Formal confirm
+  tierBaseline: Baseline
+  ctrlSkip: Skipped outer control
+  ctrlPaired: Paired with {0}
+  ctrlSingle: Single group
+  reserved: reserved {0}
+  colSeed: seed
+  colState: status
+  colCommit: commit
+  colDur: duration
+  colNote: job / note
+  scale: Scale
+  metric: Metric
+  sameScale: Same-scale
+  refDelta: Ref
 mstep:
   goVersion: Go to this version
   cyclesOf: "{0} cycles · Kept {1} · Insufficient evidence {2} · Evolved {3} · Rolled back {4}"

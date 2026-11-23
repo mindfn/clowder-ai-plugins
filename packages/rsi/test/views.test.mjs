@@ -868,69 +868,151 @@ test('universal explore/confirm tier supports single-group explore without outer
   assert.deepEqual(x.d.upcoming.groups.map((g) => g.id), ['control', 'change']);
 });
 
-test('overview lineage map, tri-aspect/pruned states, layered cycle detail card and stick-end trend render cleanly', async () => {
+test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-reload listener safety, i18n labels and slim payload', async () => {
+  const { toolAction } = await import('../dist/tools.js');
   const x = arith({ analysts: [['a1', '甲'], ['a2', '乙']], values: SPLIT });
-  // v1 is current baseline; v2 is a code evolution (tune, NOT pruned); v3 is a rollback/pruned execution branch; plus 6 leaf siblings under v1 to exercise compact grid clustering
+  x.d.objective.thread = 't-ov';
+  // v1: root baseline (current=false once v2 is confirmed current, never pruned); v2: confirmed historical default (never pruned);
+  // v3: rollback after immediately preceding execution direction -> pruned + observability;
+  // v4: insufficient explore -> neutral 'insufficient', NOT pruned;
+  // v5: repaired cycle -> neutral 'repaired', NOT pruned;
+  // v6: status='rejected' -> pruned;
+  // v7: comparable control eligible && !beatsControl -> pruned;
+  // v8: unlabeled code version -> aspectKind='unlabeled', aspects=[] (NO false 'object' default);
+  // v9: declared aspects via rsi_version -> aspectKind='declared', aspects=['object','rubric']
   x.d.versions[0].commit = '1111111aaaa';
+  x.d.versions[0].current = false;
   x.d.versions.push(
-    { id: 'v2', parent: 'v1', change: 'bf16 kernel fusion', commit: '2222222bbbb', at: now + 100, current: false, status: 'proposed' },
-    { id: 'v3', parent: 'v1', change: 'probe schema repair', commit: '3333333cccc', at: now + 200, current: false, status: 'proposed' },
+    { id: 'v2', parent: 'v1', change: 'confirmed historical default', commit: '2222222bbbb', at: now + 100, current: false, status: 'confirmed' },
+    { id: 'v3', parent: 'v1', change: 'probe schema rollback', commit: '3333333cccc', at: now + 200, current: false, status: 'proposed' },
+    { id: 'v4', parent: 'v1', change: 'missing field registration', commit: '4444444dddd', at: now + 300, current: false, status: 'proposed' },
+    { id: 'v5', parent: 'v1', change: 'broken runner superseded', commit: '5555555eeee', at: now + 400, current: false, status: 'proposed' },
+    { id: 'v6', parent: 'v1', change: 'rejected on fresh seeds', commit: '6666666ffff', at: now + 500, current: false, status: 'rejected' },
+    { id: 'v7', parent: 'v1', change: 'lost to control', commit: '77777770000', at: now + 600, current: false, status: 'proposed' },
+    { id: 'v8', parent: 'v1', change: 'unlabeled explore tune', commit: '88888881111', at: now + 700, current: false, status: 'proposed' },
   );
-  for (let i = 4; i <= 9; i++) {
-    x.d.versions.push({ id: `v${i}`, parent: 'v1', change: `explore candidate ${i}`, commit: `${i}${i}${i}${i}${i}${i}${i}def`, at: now + i * 100, current: false, status: 'proposed' });
-  }
+  x.d.versions[0].current = true;
   x.d.rounds[0].plan.groups[1].version = 'v2';
-  const longBody = '主结论行\n' + '详细审计证据段落。'.repeat(40);
+  const longBody = 'Headline\n' + 'Detailed evaluation audit paragraph. '.repeat(25);
   x.d.rounds[0].state = 'evaluating';
   conclude(x.s, x.d, { cycle: 1, verdict: 'tune', findings: longBody, options: [option('d-exec', 'execution', 'probe.py')] }, now + 120);
   x.d.rounds[0].decision = { pick: 'direction', directionId: 'd-exec', by: '墨墨', at: now + 130 };
-  // Cycle 2 on v3 ends as rollback -> must mark v3 pruned & observability aspect (triggered by execution direction)
+  // Cycle 2 on v3: rollback (immediately follows execution decision -> observability + pruned)
   x.d.rounds.push({
     n: 2, version: 'v3', start: now + 200, end: now + 250, state: 'done',
     plan: { tier: 'explore', skipControl: true, seeds: [31], reservedSeeds: [32], groups: [{ id: 'change', label: 'v3 explore', version: 'v3', vars: {}, control: false }] },
     runs: [{ id: 'r-v3-1', group: 'change', seed: 31, state: 'done', jobId: 'job-v3', start: now + 200, end: now + 240, metrics: { accuracy: 0.41, format: 1, latency: 0.3 }, env: { commit: '3333333cccc' } }],
     report: {
-      verdict: 'rollback', headline: 'v3 退化回退', summary: 'v3 退化回退\n短说明正文',
+      verdict: 'rollback', headline: 'v3 regressed', summary: 'v3 regressed\nShort note',
       matrix: [{ group: 'change', metric: 'accuracy', mean: 0.41, sd: null, n: 1, seeds: [{ seed: 31, value: 0.41, state: 'done' }] }],
-      directions: [], compare: { comparable: false, groups: [{ group: 'change', eligible: false, beatsControl: false, guardrails: [{ metric: 'latency', seed: 31, pass: false }] }] },
+      directions: [option('d-code', 'code', 'serve.py')], compare: { comparable: false, groups: [{ group: 'change', eligible: false, beatsControl: false, guardrails: [] }] },
       predictions: [], attribution: { assessedLayers: [] },
     },
+    decision: { pick: 'direction', directionId: 'd-code', by: '墨墨', at: now + 260 }, events: [],
+  });
+  // Cycle 3 on v4: insufficient (must NOT be pruned even if comparable && !beatsControl)
+  x.d.rounds.push({
+    n: 3, version: 'v4', start: now + 300, end: now + 340, state: 'done',
+    plan: { tier: 'confirm', skipControl: false, seeds: [33], groups: [{ id: 'control', label: 'v1', version: 'v1', vars: {}, control: true }, { id: 'change', label: 'v4', version: 'v4', vars: {}, control: false }] },
+    runs: [], report: { verdict: 'insufficient', headline: 'v4 incomplete', summary: 'v4 incomplete', matrix: [], directions: [], compare: { comparable: true, groups: [{ group: 'control', eligible: true, beatsControl: false, guardrails: [] }, { group: 'change', eligible: true, beatsControl: false, guardrails: [] }] }, predictions: [], attribution: { assessedLayers: [] } },
+    decision: null, events: [],
+  });
+  // Cycle 4 on v5: repaired (must NOT be pruned)
+  x.d.rounds.push({
+    n: 4, version: 'v5', start: now + 400, end: now + 420, state: 'repaired', repairedBy: 'v6',
+    plan: { tier: 'explore', skipControl: true, seeds: [34], groups: [{ id: 'change', label: 'v5', version: 'v5', vars: {}, control: false }] },
+    runs: [], report: null, decision: null, events: [],
+  });
+  // Cycle 5 on v7: comparable control where candidate eligible && !beatsControl -> pruned
+  x.d.rounds.push({
+    n: 5, version: 'v7', start: now + 600, end: now + 640, state: 'done',
+    plan: { tier: 'confirm', skipControl: false, seeds: [35], groups: [{ id: 'control', label: 'v1', version: 'v1', vars: {}, control: true }, { id: 'change', label: 'v7', version: 'v7', vars: {}, control: false }] },
+    runs: [],
+    report: {
+      verdict: 'tune', headline: 'v7 lost to control', summary: 'v7 lost to control',
+      matrix: [{ group: 'control', metric: 'accuracy', mean: 0.7, sd: null, n: 1, seeds: [] }, { group: 'change', metric: 'accuracy', mean: 0.65, sd: null, n: 1, seeds: [] }],
+      directions: [option('d-code-2', 'code', 'model.py')],
+      compare: { comparable: true, groups: [{ group: 'control', eligible: true, beatsControl: false, guardrails: [] }, { group: 'change', eligible: true, beatsControl: false, guardrails: [] }] },
+      predictions: [], attribution: { assessedLayers: [] },
+    },
+    decision: { pick: 'direction', directionId: 'd-code-2', by: '墨墨', at: now + 650 }, events: [],
+  });
+  // Cycle 6 on v8: explore tune (non-comparable, immediately follows kind=code -> unlabeled, NOT pruned)
+  x.d.rounds.push({
+    n: 6, version: 'v8', start: now + 700, end: now + 740, state: 'done',
+    plan: { tier: 'explore', skipControl: true, seeds: [36], groups: [{ id: 'change', label: 'v8', version: 'v8', vars: {}, control: false }] },
+    runs: [],
+    report: { verdict: 'tune', headline: 'v8 promising explore', summary: 'v8 promising explore', matrix: [{ group: 'change', metric: 'accuracy', mean: 0.75, sd: null, n: 1, seeds: [] }], directions: [], compare: { comparable: false, groups: [{ group: 'change', eligible: false, beatsControl: false, guardrails: [] }] }, predictions: [], attribution: { assessedLayers: [] } },
     decision: null, events: [],
   });
 
-  const vmMap = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: `${x.id}/v2>c1.eval` });
-  assert.equal(vmMap.overviewMode, 'map');
-  assert.equal(vmMap.overviewLens, 'metric');
-  const v1Row = vmMap.versions.find((v) => v.id === 'v1');
-  const v2Row = vmMap.versions.find((v) => v.id === 'v2');
-  const v3Row = vmMap.versions.find((v) => v.id === 'v3');
-  assert.deepEqual(v1Row.aspects, ['object', 'observability', 'rubric']);
-  assert.equal(v1Row.nodeState, 'current');
-  assert.equal(v2Row.pruned, false);
-  assert.equal(v3Row.pruned, true);
-  assert.equal(v3Row.nodeState, 'pruned');
-  assert.deepEqual(v3Row.aspects, ['observability']);
-  assert.equal(vmMap.overviewMap.stats.total, 9);
-  assert.equal(vmMap.overviewMap.stats.pruned, 1);
+  // Exercise rsi_version optional aspects validation + persistence -> v9
+  x.d.versionRequest = { cycle: 6, title: 'v9 declared', since: now + 750, invocationId: 'inv-asp' };
+  const badAsp = toolAction(x.s, 'rsi.version', { change: 'bad aspect', config: { a: 1 }, aspects: ['bogus'] }, { catId: x.d.members.find((m) => m.role === 'iterate').catId, threadId: 't-ov', invocationId: 'inv-asp' }, now + 755);
+  assert.match(badAsp.error, /aspects must be a non-empty array/);
+  const okAsp = toolAction(x.s, 'rsi.version', { change: 'declared object+rubric', config: { a: 2 }, aspects: ['rubric', 'object'] }, { catId: x.d.members.find((m) => m.role === 'iterate').catId, threadId: 't-ov', invocationId: 'inv-asp' }, now + 760);
+  assert.equal(okAsp.ok, true);
+  assert.equal(okAsp.version, 'v9');
 
-  // Layered detail card on long body (c1 on v2): autoFoldBody=true, comparable=true with same-cycle control
-  assert.ok(vmMap.cycle.detailCard);
+  const vmMap = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: `${x.id}/v2>c1.eval` });
+  const row = (id) => vmMap.versions.find((v) => v.id === id);
+  // P1-1: honest states
+  assert.equal(row('v1').outcome, 'current');
+  assert.equal(row('v1').pruned, false);
+  assert.equal(row('v2').outcome, 'confirmed');
+  assert.equal(row('v2').pruned, false);
+  assert.equal(row('v3').outcome, 'pruned');
+  assert.equal(row('v3').pruned, true);
+  assert.equal(row('v4').outcome, 'insufficient');
+  assert.equal(row('v4').pruned, false);
+  assert.equal(row('v5').outcome, 'repaired');
+  assert.equal(row('v5').pruned, false);
+  assert.equal(row('v6').outcome, 'pruned');
+  assert.equal(row('v6').pruned, true);
+  assert.equal(row('v7').outcome, 'pruned');
+  assert.equal(row('v7').pruned, true);
+  assert.equal(row('v8').outcome, 'explored');
+  assert.equal(row('v8').pruned, false);
+  assert.equal(vmMap.overviewMap.stats.pruned, 3); // strictly v3, v6, v7
+  assert.equal(vmMap.overviewMap.stats.insufficient, 1); // v4
+
+  // P1-2: reliable aspects only (no fake 'object' default on unlabeled code versions)
+  assert.equal(row('v1').aspectKind, 'baseline');
+  assert.deepEqual(row('v1').aspects, []);
+  assert.deepEqual(row('v3').aspects, ['observability']);
+  assert.equal(row('v8').aspectKind, 'unlabeled');
+  assert.deepEqual(row('v8').aspects, []);
+  assert.equal(row('v9').aspectKind, 'declared');
+  assert.deepEqual(row('v9').aspects, ['object', 'rubric']);
+
+  // P2-3: slim overviewMap nodes (no causality/receipts/full change bloat on all nodes; selectedDetail only for selected)
+  for (const n of vmMap.overviewMap.nodes) {
+    assert.equal('causality' in n, false);
+    assert.equal('receipts' in n, false);
+    assert.equal('change' in n, false);
+  }
+  assert.equal(vmMap.overviewMap.selectedDetail.id, 'v2');
+
+  // Layered detail card checks
   assert.equal(vmMap.cycle.detailCard.autoFoldBody, true);
   assert.equal(vmMap.cycle.detailCard.main.comparable, true);
-  assert.ok(vmMap.cycle.detailCard.conditions.length >= 4);
-
-  // Switch to v3 explore rollback cycle: comparable=false, short body autoFoldBody=false
   const vmV3 = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: `${x.id}/v3>c1.eval`, overviewMode: 'trend', overviewLens: 'aspect' });
-  assert.equal(vmV3.overviewMode, 'trend');
-  assert.equal(vmV3.overviewLens, 'aspect');
   assert.equal(vmV3.cycle.detailCard.main.comparable, false);
   assert.equal(vmV3.cycle.detailCard.autoFoldBody, false);
 
-  // Sandbox render rsiOverviewMap, rsiCycleCard, upgraded rsiLineage, and stick-end rsiTrend
+  // P2-1 + P2-2: hot-reload listener replacement & zero hardcoded Chinese in default English rendering
   const vmMod = await import('node:vm');
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../console/components/lineage.js', import.meta.url), 'utf8');
+  const listeners = [];
+  const fakeWindow = {};
   const sandbox = {
+    window: fakeWindow,
+    globalThis: fakeWindow,
+    document: {
+      addEventListener: (ev, fn) => { if (ev === 'click') listeners.push(fn); },
+      removeEventListener: (ev, fn) => { if (ev === 'click') { const idx = listeners.indexOf(fn); if (idx >= 0) listeners.splice(idx, 1); } },
+    },
     PDL_COMPONENTS: {},
     S: { folds: {} },
     h: (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
@@ -942,35 +1024,38 @@ test('overview lineage map, tri-aspect/pruned states, layered cycle detail card 
     pvText: (v) => String(v ?? ''),
     chipHtml: (o) => `<button class="${o.cls}"${o.attrs || ''}>${o.label}</button>`,
   };
+  // Load twice (simulating hot-install reload without page refresh) -> must keep strictly 1 active listener
   vmMod.runInNewContext(src, sandbox);
+  vmMod.runInNewContext(src, sandbox);
+  assert.equal(listeners.length, 1);
 
   const mapHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.map' }, {}, {});
-  assert.match(mapHtml, /rsi-map-wrap/);
-  assert.match(mapHtml, /data-rsi-map-act="export-html"/);
-  assert.match(mapHtml, /data-state="pruned"/);
-  assert.match(mapHtml, /剪枝 ✕/);
-  assert.match(mapHtml, /rsi-map-data/);
-  assert.match(mapHtml, /data-k="selO"/);
+  assert.match(mapHtml, /Refuted ✕/);
+  assert.match(mapHtml, /Insufficient/);
+  assert.match(mapHtml, /Superseded/);
+  assert.doesNotMatch(mapHtml, /已证伪|证据不足|剪枝/);
 
   const aspectMapHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.mapAspect' }, {}, {});
-  assert.match(aspectMapHtml, /lens-aspect/);
-  assert.match(aspectMapHtml, /asp-observability/);
+  assert.match(aspectMapHtml, /asp-unlabeled/);
+  assert.match(aspectMapHtml, /asp-baseline/);
 
   const longCardHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard']({ from: '$.cardLong' }, {}, {});
-  assert.match(longCardHtml, /展开完整评估正文/);
+  assert.match(longCardHtml, /Show full evaluation details/);
   assert.doesNotMatch(longCardHtml, /class="rsi-cc-body"/);
   sandbox.S.folds['rsi-cc-body:' + vmMap.cycle.detailCard.foldId] = true;
-  const expandedCardHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard']({ from: '$.cardLong' }, {}, {});
-  assert.match(expandedCardHtml, /class="rsi-cc-body"/);
+  assert.match(sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard']({ from: '$.cardLong' }, {}, {}), /class="rsi-cc-body"/);
 
   const shortCardHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard']({ from: '$.cardShort' }, {}, {});
-  assert.match(shortCardHtml, /探索参考（非同轮对照）/);
+  assert.match(shortCardHtml, /Explore reference/);
   assert.match(shortCardHtml, /class="rsi-cc-body"/);
+  assert.doesNotMatch(shortCardHtml, /探索参考|上游触发|判断依据/);
 
   const linHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiLineage']({ from: vmMap.versions, key: '@key', parent: '@parentKey', node: { label: [{ text: '@id' }], state: '@nodeState' } }, {}, {});
   assert.match(linHtml, /data-state="pruned"/);
-  assert.match(linHtml, /rsi-asp-dots/);
+  assert.match(linHtml, /data-state="confirmed"/);
+  assert.match(linHtml, /data-state="insufficient"/);
+  assert.match(linHtml, /data-state="repaired"/);
 
-  const trHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiTrend']({ series: '$.trend', label: '趋势' }, {}, {});
+  const trHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiTrend']({ series: '$.trend', label: 'Trend' }, {}, {});
   assert.match(trHtml, /stick-end rsi-trend-scroll/);
 });

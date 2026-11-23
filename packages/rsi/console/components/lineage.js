@@ -24,12 +24,12 @@ PDL_COMPONENTS['plugin:official.rsi/rsiLineage'] = function (p, sc, root) {
     const raw = pvParts(n.label, r, root);
     return String(raw || keyOf(r) || '').replace(/<[^>]*>/g, '').trim();
   };
-  const aspectMeta = { object: { cls: 'obj', label: '进化对象' }, observability: { cls: 'obs', label: '可观测性' }, rubric: { cls: 'rub', label: '规约尺子' } };
+  const aspectMeta = { object: { cls: 'obj', key: 'object' }, observability: { cls: 'obs', key: 'observability' }, rubric: { cls: 'rub', key: 'rubric' } };
   const renderAspectDots = function (r) {
     if (!r || !Array.isArray(r.aspects) || !r.aspects.length) return '';
-    return '<span class="rsi-asp-dots" aria-label="变更维度">' + r.aspects.map(function (a) {
+    return '<span class="rsi-asp-dots">' + r.aspects.map(function (a) {
       const m = aspectMeta[a];
-      return m ? '<i class="rsi-asp-dot ' + m.cls + '" title="' + h(m.label) + '"></i>' : '';
+      return m ? '<i class="rsi-asp-dot ' + m.cls + '" data-aspect="' + m.key + '"></i>' : '';
     }).join('') + '</span>';
   };
   const renderNodeRow = function (r, depth, lines, insideBox) {
@@ -435,9 +435,46 @@ PDL_COMPONENTS['plugin:official.rsi/rsiInitDag'] = function (p, sc, root) {
   return '<div class="rsi-dag-wrap">' + legend + '<div class="scroll-x rsi-dag-scroll"><div class="rsi-dag-canvas" style="width:' + totalW + 'px;height:' + totalH + 'px">' + svg + nodes + '</div></div></div>';
 };
 
+function rsiResolveLabels(raw, sc, root, defaults) {
+  const out = Object.assign({}, defaults);
+  if (raw && typeof raw === 'object') {
+    Object.keys(raw).forEach(function (k) {
+      const v = pvText(raw[k], sc, root);
+      if (v) out[k] = v;
+    });
+  }
+  return out;
+}
+
+function rsiFormatCausality(c, L) {
+  if (!c) return { trigger: '—', action: '—', basis: '—' };
+  let trigger = '—';
+  if (c.triggerKind === 'baseline') trigger = L.trigBaseline;
+  else if (c.triggerKind === 'repair') trigger = L.trigRepair.replace('{0}', String(c.triggerCycle || '')).replace('{1}', String(c.triggerVersion || ''));
+  else if (c.triggerKind === 'direction') trigger = L.trigDir.replace('{0}', String(c.triggerCycle || '')).replace('{1}', String(c.triggerDetail || ''));
+  else if (c.triggerKind === 'decision') trigger = L.trigDec.replace('{0}', String(c.triggerCycle || '')).replace('{1}', String(c.triggerDetail || ''));
+  else if (c.triggerKind === 'cycle') trigger = L.trigCycle.replace('{0}', String(c.triggerCycle || '')).replace('{1}', String(c.triggerVersion || ''));
+  else if (c.triggerVersion) trigger = L.trigParent.replace('{0}', String(c.triggerVersion));
+  const basis = c.basisText || (c.basisKind === 'running' ? L.basisRunning : c.basisKind === 'evaluating' ? L.basisEval : c.basisKind === 'repaired' ? L.basisRepaired : L.basisNone);
+  return { trigger: trigger, action: c.action || '—', basis: basis };
+}
+
 PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
   const data = pv(p.from, sc, root);
   if (!data || !Array.isArray(data.nodes) || !data.nodes.length) return '';
+  const L = rsiResolveLabels(p.labels, sc, root, {
+    total: 'Total', current: 'Current', pruned: 'Refuted', insufficient: 'Insufficient',
+    obj: 'Object', obs: 'Observability', rub: 'Rubric', baseline: 'Baseline', unlabeled: 'Unlabeled',
+    lensMetric: 'Metric', lensAspect: 'Aspects', fit: 'Fit', exportHtml: 'Export HTML',
+    stCurrent: 'Current', stConfirmed: 'Confirmed', stRunning: 'Running', stPruned: 'Refuted ✕',
+    stInsufficient: 'Insufficient', stRepaired: 'Superseded', stExplore: 'Explore', stBaseline: 'Baseline',
+    trigBaseline: 'Initial baseline', trigParent: 'Based on {0}', trigRepair: 'Repaired after cycle {0} ({1})',
+    trigDir: 'Cycle {0} direction: {1}', trigDec: 'Cycle {0} decision: {1}', trigCycle: 'Cycle {0} ({1})',
+    basisRunning: 'Running', basisEval: 'Awaiting evaluation', basisRepaired: 'Superseded by repair', basisNone: 'No conclusion yet',
+    lblTrigger: 'Trigger', lblAction: 'Change', lblBasis: 'Verdict basis',
+    colSeed: 'seed', colState: 'status', colCommit: 'commit', colNote: 'job / note',
+    scale: 'Scale', metric: 'Metric', sameScale: 'Same-scale', refDelta: 'Ref',
+  });
   const nodes = data.nodes;
   const byId = {}, kids = {}, roots = [];
   nodes.forEach(function (n) { byId[n.id] = n; });
@@ -445,7 +482,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
     if (n.parent && byId[n.parent]) (kids[n.parent] = kids[n.parent] || []).push(n);
     else roots.push(n);
   });
-  const CW = 160, CH = 64, GX = 36, GY = 12, PAD = 14, GRID_GX = 14;
+  const CW = 162, CH = 64, GX = 36, GY = 12, PAD = 14, GRID_GX = 14;
   const pos = {}, edges = [];
   const leafClusterOf = function (list) {
     const leaves = [], branches = [];
@@ -554,7 +591,23 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
     return metric.dir === 'down' ? 1 - raw : raw;
   };
   const lens = data.lens === 'aspect' ? 'aspect' : 'metric';
-  const aspectMeta = { object: { cls: 'obj', label: '对象' }, observability: { cls: 'obs', label: '观测' }, rubric: { cls: 'rub', label: '规约' } };
+  const aspectMeta = { object: { cls: 'obj', label: L.obj }, observability: { cls: 'obs', label: L.obs }, rubric: { cls: 'rub', label: L.rub } };
+  const aspectTextOf = function (n) {
+    if (n.aspectKind === 'baseline') return L.baseline;
+    if (n.aspects && n.aspects.length) return n.aspects.map(function (a) { return aspectMeta[a] ? aspectMeta[a].label : a; }).join(' · ');
+    return L.unlabeled;
+  };
+  const stateTagOf = function (n) {
+    if (n.state === 'current') return { cls: 'ok', text: L.stCurrent };
+    if (n.state === 'running') return { cls: 'info', text: L.stRunning };
+    if (n.state === 'confirmed') return { cls: 'ok', text: L.stConfirmed };
+    if (n.pruned) return { cls: 'danger', text: L.stPruned };
+    if (n.state === 'insufficient') return { cls: 'warn', text: L.stInsufficient };
+    if (n.state === 'repaired') return { cls: 'muted', text: L.stRepaired };
+    if (n.state === 'baseline') return { cls: 'muted', text: L.stBaseline };
+    if (n.tier === 'explore') return { cls: 'muted', text: L.stExplore };
+    return null;
+  };
   const svgEdges = edges.map(function (e) {
     const a = pos[e.from], b = pos[e.to];
     if (!a || !b) return '';
@@ -571,18 +624,15 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
   const cardsHtml = nodes.map(function (n) {
     const q = pos[n.id];
     if (!q) return '';
-    const primaryAspect = (n.aspects && n.aspects[0]) || 'object';
-    const stateBadge = n.state === 'current' ? '<span class="rsi-map-tag ok">当前</span>'
-      : n.state === 'running' ? '<span class="rsi-map-tag info">运行中</span>'
-      : n.pruned ? '<span class="rsi-map-tag danger">剪枝 ✕</span>'
-      : n.tier === 'explore' ? '<span class="rsi-map-tag warn">探索</span>'
-      : '';
+    const primaryAspect = n.aspectKind === 'baseline' ? 'baseline' : (n.aspects && n.aspects[0]) || 'unlabeled';
+    const tag = stateTagOf(n);
+    const stateBadge = tag ? '<span class="rsi-map-tag ' + tag.cls + '">' + h(tag.text) + '</span>' : '';
     const dots = (n.aspects || []).map(function (a) {
       const m = aspectMeta[a];
       return m ? '<i class="rsi-asp-dot ' + m.cls + '" title="' + h(m.label) + '"></i>' : '';
     }).join('');
     const deltaHtml = lens === 'aspect'
-      ? '<span class="rsi-map-asp-lbl">' + h(n.aspectText || '') + '</span>'
+      ? '<span class="rsi-map-asp-lbl">' + h(aspectTextOf(n)) + '</span>'
       : n.deltaText
         ? '<span class="rsi-map-delta" data-better="' + h(n.comparable ? (n.better || '') : 'muted') + '">' + h((n.comparable ? '' : '~') + n.deltaText) + '</span>'
         : (n.metricVersion ? '<span class="rsi-map-scale">' + h(n.metricVersion) + '</span>' : '');
@@ -591,31 +641,33 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
     const cls = 'rsi-map-node' + (lens === 'aspect' ? ' lens-aspect asp-' + primaryAspect : '') + (n.pruned ? ' is-pruned' : '');
     return '<button type="button" class="' + cls + '" data-state="' + h(n.state || '') + '" data-ver="' + h(n.id) + '" aria-pressed="' + (n.selected ? 'true' : 'false') + '"' +
       ' data-act="plugSet" data-plugin="official.rsi" data-k="selO" data-v="' + h(n.pick || '') + '"' +
-      ' style="left:' + q.x + 'px;top:' + q.y + 'px;width:' + CW + 'px;height:' + CH + 'px" title="' + h((n.id + ' · ' + (n.change || '')).trim()) + '">' +
+      ' style="left:' + q.x + 'px;top:' + q.y + 'px;width:' + CW + 'px;height:' + CH + 'px" title="' + h((n.id + ' · ' + (n.changeShort || '')).trim()) + '">' +
       '<span class="rsi-map-top"><span class="rsi-map-id">' + h(n.id) + '</span>' + stateBadge + '<span class="rsi-map-val">' + h(n.valueText || '—') + '</span></span>' +
       '<span class="rsi-map-sub">' + h(n.changeShort || n.id) + '</span>' +
       '<span class="rsi-map-foot"><span class="rsi-asp-dots">' + dots + '</span>' + deltaHtml + '</span>' +
       barHtml + '</button>';
   }).join('');
-  const stats = data.stats || { total: nodes.length, pruned: 0, current: data.currentVersion };
-  const safeJson = JSON.stringify(data).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+  const stats = data.stats || { total: nodes.length, pruned: 0, insufficient: 0, current: data.currentVersion };
+  const exportPayload = Object.assign({}, data, { labels: L });
+  const safeJson = JSON.stringify(exportPayload).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
   const headBar = '<div class="rsi-map-bar-top">' +
     '<div class="rsi-map-stats">' +
-      '<span>共 <b>' + h(stats.total) + '</b> 版</span>' +
-      '<span>当前 <b>' + h(stats.current || '—') + '</b></span>' +
-      (stats.pruned ? '<span class="is-pruned">剪枝 <b>' + h(stats.pruned) + '</b></span>' : '') +
-      '<span class="rsi-map-leg"><i class="rsi-asp-dot obj"></i>对象 <i class="rsi-asp-dot obs"></i>观测 <i class="rsi-asp-dot rub"></i>规约</span>' +
+      '<span>' + h(L.total) + ' <b>' + h(stats.total) + '</b></span>' +
+      '<span>' + h(L.current) + ' <b>' + h(stats.current || '—') + '</b></span>' +
+      (stats.pruned ? '<span class="is-pruned">' + h(L.pruned) + ' <b>' + h(stats.pruned) + '</b></span>' : '') +
+      (stats.insufficient ? '<span>' + h(L.insufficient) + ' <b>' + h(stats.insufficient) + '</b></span>' : '') +
+      '<span class="rsi-map-leg"><i class="rsi-asp-dot obj"></i>' + h(L.obj) + ' <i class="rsi-asp-dot obs"></i>' + h(L.obs) + ' <i class="rsi-asp-dot rub"></i>' + h(L.rub) + '</span>' +
     '</div>' +
     '<div class="rsi-map-tools">' +
-      '<div class="rsi-mx-seg" role="group" aria-label="着色视角">' +
-        '<button type="button" class="rsi-mx-seg-btn' + (lens === 'metric' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="overviewLens" data-v="metric">指标</button>' +
-        '<button type="button" class="rsi-mx-seg-btn' + (lens === 'aspect' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="overviewLens" data-v="aspect">三元</button>' +
+      '<div class="rsi-mx-seg" role="group">' +
+        '<button type="button" class="rsi-mx-seg-btn' + (lens === 'metric' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="overviewLens" data-v="metric">' + h(L.lensMetric) + '</button>' +
+        '<button type="button" class="rsi-mx-seg-btn' + (lens === 'aspect' ? ' on' : '') + '" data-act="plugSet" data-plugin="official.rsi" data-k="overviewLens" data-v="aspect">' + h(L.lensAspect) + '</button>' +
       '</div>' +
-      '<button type="button" class="rsi-map-btn" data-rsi-map-act="zoom-out" title="缩小">−</button>' +
+      '<button type="button" class="rsi-map-btn" data-rsi-map-act="zoom-out">−</button>' +
       '<span class="rsi-map-zl">100%</span>' +
-      '<button type="button" class="rsi-map-btn" data-rsi-map-act="zoom-in" title="放大">+</button>' +
-      '<button type="button" class="rsi-map-btn" data-rsi-map-act="fit" title="缩放适应视口">适应</button>' +
-      '<button type="button" class="rsi-map-btn" data-rsi-map-act="export-html" title="导出零依赖单文件交互 HTML">导出 HTML</button>' +
+      '<button type="button" class="rsi-map-btn" data-rsi-map-act="zoom-in">+</button>' +
+      '<button type="button" class="rsi-map-btn" data-rsi-map-act="fit">' + h(L.fit) + '</button>' +
+      '<button type="button" class="rsi-map-btn" data-rsi-map-act="export-html">' + h(L.exportHtml) + '</button>' +
     '</div>' +
   '</div>';
   const svg = '<svg class="rsi-map-svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + ' ' + totalH + '" aria-hidden="true">' + svgEdges + '</svg>';
@@ -627,32 +679,53 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
 PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
   const card = pv(p.from, sc, root);
   if (!card) return '';
+  const L = rsiResolveLabels(p.labels, sc, root, {
+    vBaseline: 'Baseline', vKeep: 'Keep', vTune: 'Tune', vRollback: 'Rollback', vSunset: 'Sunset', vInsufficient: 'Insufficient',
+    obj: 'Object', obs: 'Observability', rub: 'Rubric', baseline: 'Baseline', unlabeled: 'Unlabeled',
+    refPaired: 'vs {0}', refExplore: 'Explore (no same-cycle control)', refSingle: 'Baseline group',
+    tagExploreNoCtrl: 'Explore reference', tagNoCtrl: 'No same-cycle control',
+    lblTrigger: 'Trigger', lblAction: 'Change', lblBasis: 'Verdict basis',
+    trigBaseline: 'Initial baseline', trigParent: 'Based on {0}', trigRepair: 'Repaired after cycle {0} ({1})',
+    trigDir: 'Cycle {0} direction: {1}', trigDec: 'Cycle {0} decision: {1}', trigCycle: 'Cycle {0} ({1})',
+    basisRunning: 'Running', basisEval: 'Awaiting evaluation', basisRepaired: 'Superseded by repair', basisNone: 'No conclusion yet',
+    condTitle: 'Fixed conditions & rubric', bodyHide: 'Hide full evaluation details', bodyShow: 'Show full evaluation details ({0} chars)',
+    rcptTitle: 'Execution & artifact receipts',
+    ckMetricVersion: 'Metric scale', ckTier: 'Tier', ckSeeds: 'Seeds', ckControl: 'Control', ckConfig: 'Config ({0})', ckGuardrails: 'Guardrails',
+    tierExplore: 'Explore (non-promoting)', tierConfirm: 'Confirm', tierBaseline: 'Baseline',
+    ctrlSkip: 'Skipped outer control', ctrlPaired: 'Paired {0}', ctrlSingle: 'Single group', reserved: 'reserved {0}',
+    colSeed: 'seed', colState: 'status', colCommit: 'commit', colDur: 'duration', colNote: 'job / note',
+  });
   const folds = (typeof S !== 'undefined' && S.folds) ? S.folds : {};
   const verdictMeta = {
-    baseline: { tone: 'info', label: '基线' },
-    keep: { tone: 'ok', label: '保持' },
-    tune: { tone: 'ok', label: '继续调优' },
-    rollback: { tone: 'danger', label: '回退' },
-    sunset: { tone: 'muted', label: '终止' },
-    insufficient: { tone: 'warn', label: '证据不足' },
+    baseline: { tone: 'info', label: L.vBaseline },
+    keep: { tone: 'ok', label: L.vKeep },
+    tune: { tone: 'ok', label: L.vTune },
+    rollback: { tone: 'danger', label: L.vRollback },
+    sunset: { tone: 'muted', label: L.vSunset },
+    insufficient: { tone: 'warn', label: L.vInsufficient },
   };
   const vm = verdictMeta[card.verdict] || { tone: 'muted', label: card.verdict || '' };
-  const aspectMeta = { object: { cls: 'obj', label: '进化对象' }, observability: { cls: 'obs', label: '可观测性' }, rubric: { cls: 'rub', label: '规约尺子' } };
-  const aspChips = (card.aspects || []).map(function (a) {
-    const m = aspectMeta[a];
-    return m ? '<span class="rsi-cc-asp ' + m.cls + '"><i class="rsi-asp-dot ' + m.cls + '"></i>' + h(m.label) + '</span>' : '';
-  }).join('');
+  const aspectMeta = { object: { cls: 'obj', label: L.obj }, observability: { cls: 'obs', label: L.obs }, rubric: { cls: 'rub', label: L.rub } };
+  const aspChips = card.aspectKind === 'baseline'
+    ? '<span class="rsi-cc-asp">' + h(L.baseline) + '</span>'
+    : (card.aspects && card.aspects.length)
+      ? card.aspects.map(function (a) {
+          const m = aspectMeta[a];
+          return m ? '<span class="rsi-cc-asp ' + m.cls + '"><i class="rsi-asp-dot ' + m.cls + '"></i>' + h(m.label) + '</span>' : '';
+        }).join('')
+      : '<span class="rsi-cc-asp">' + h(L.unlabeled) + '</span>';
   const main = card.main;
+  const refText = main ? (main.refKind === 'paired' ? L.refPaired.replace('{0}', main.refVersion || '') : main.refKind === 'explore' ? L.refExplore : L.refSingle) : '';
   const metricStrip = main ? (
     '<div class="rsi-cc-metric">' +
-      '<div class="rsi-cc-m-left"><span class="rsi-cc-m-lbl">' + h(main.name) + ' · ' + h(main.refLabel) + '</span>' +
+      '<div class="rsi-cc-m-left"><span class="rsi-cc-m-lbl">' + h(main.name) + ' · ' + h(refText) + '</span>' +
       '<div class="rsi-cc-m-vals">' +
         (main.comparable && main.refValue != null ? '<span class="rsi-cc-m-ref">' + h(main.refValue) + ' → </span>' : '') +
         '<span class="rsi-cc-m-num">' + h(main.value) + '</span>' +
         (main.sd != null ? '<span class="rsi-mx-sd">±' + h(main.sd) + '</span>' : '') +
         (main.comparable && main.delta != null
           ? '<span class="rsi-mx-pill" data-tone="' + (main.better === 'better' ? 'ok' : main.better === 'worse' ? 'danger' : 'muted') + '">' + h(main.delta) + '</span>'
-          : '<span class="rsi-mx-pill" data-tone="warn">' + h(card.tier === 'explore' ? '探索参考（非同轮对照）' : '无同轮对照') + '</span>') +
+          : '<span class="rsi-mx-pill" data-tone="warn">' + h(card.tier === 'explore' ? L.tagExploreNoCtrl : L.tagNoCtrl) + '</span>') +
       '</div></div>' +
       '<div class="rsi-cc-badges">' +
         '<span class="rsi-mx-pill" data-tone="' + h(vm.tone) + '">' + h(vm.label) + '</span>' +
@@ -661,20 +734,35 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
       '</div>' +
     '</div>'
   ) : '';
-  const c = card.causality || {};
+  const c = rsiFormatCausality(card.causality, L);
   const chainHtml = '<div class="rsi-cc-chain">' +
-    '<p><b>上游触发：</b>' + h(c.trigger || '—') + '</p>' +
-    '<p><b>本版动作：</b>' + h(c.action || '—') + '</p>' +
-    '<p><b>判断依据：</b>' + h(c.basis || card.headline || '—') + '</p>' +
+    '<p><b>' + h(L.lblTrigger) + '：</b>' + h(c.trigger) + '</p>' +
+    '<p><b>' + h(L.lblAction) + '：</b>' + h(c.action) + '</p>' +
+    '<p><b>' + h(L.lblBasis) + '：</b>' + h(c.basis || card.headline || '—') + '</p>' +
   '</div>';
   const condKey = 'rsi-cc-cond:' + card.foldId;
   const condOpen = !!folds[condKey];
+  const condLabel = function (rw) {
+    if (rw.kKey === 'metricVersion') return L.ckMetricVersion;
+    if (rw.kKey === 'tier') return L.ckTier;
+    if (rw.kKey === 'seeds') return L.ckSeeds;
+    if (rw.kKey === 'control') return L.ckControl;
+    if (rw.kKey === 'config') return L.ckConfig.replace('{0}', rw.version || '');
+    if (rw.kKey === 'guardrails') return L.ckGuardrails;
+    return rw.k || rw.kKey || '';
+  };
+  const condVal = function (rw) {
+    if (rw.kKey === 'tier') return rw.vKey === 'explore' ? L.tierExplore : rw.vKey === 'baseline' ? L.tierBaseline : L.tierConfirm;
+    if (rw.kKey === 'control') return rw.vKey === 'skipControl' ? L.ctrlSkip : rw.vKey === 'paired' ? L.ctrlPaired.replace('{0}', rw.version || '') : L.ctrlSingle;
+    if (rw.kKey === 'seeds') return [rw.v, rw.reserved ? L.reserved.replace('{0}', rw.reserved) : ''].filter(Boolean).join(' · ') || '—';
+    return rw.v || '—';
+  };
   const condHtml = (card.conditions && card.conditions.length) ? (
     '<div class="rsi-cc-fold">' +
       '<button type="button" class="rsi-cc-fold-btn" data-act="fold" data-f="result" data-k="' + h(condKey) + '" aria-expanded="' + (condOpen ? 'true' : 'false') + '">' +
-        '<span class="rsi-mx-chev">' + (condOpen ? '▾' : '▸') + '</span><span>实验固定条件与规约（' + card.conditions.length + '）</span></button>' +
+        '<span class="rsi-mx-chev">' + (condOpen ? '▾' : '▸') + '</span><span>' + h(L.condTitle) + ' (' + card.conditions.length + ')</span></button>' +
       (condOpen ? '<div class="rsi-cc-conds">' + card.conditions.map(function (rw) {
-        return '<div class="rsi-cc-crow"><span class="rsi-cc-ck">' + h(rw.k) + '</span><span class="rsi-cc-cv">' + h(rw.v) + '</span></div>';
+        return '<div class="rsi-cc-crow"><span class="rsi-cc-ck">' + h(condLabel(rw)) + '</span><span class="rsi-cc-cv">' + h(condVal(rw)) + '</span></div>';
       }).join('') + '</div>' : '') +
     '</div>'
   ) : '';
@@ -683,7 +771,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
   const bodyHtml = card.body ? (
     '<div class="rsi-cc-fold">' +
       '<button type="button" class="rsi-cc-fold-btn" data-act="fold" data-f="result" data-k="' + h(bodyKey) + '" aria-expanded="' + (bodyOpen ? 'true' : 'false') + '">' +
-        '<span class="rsi-mx-chev">' + (bodyOpen ? '▾' : '▸') + '</span><span>' + (bodyOpen ? '收起完整评估正文' : '展开完整评估正文（' + card.bodyLength + ' 字）') + '</span></button>' +
+        '<span class="rsi-mx-chev">' + (bodyOpen ? '▾' : '▸') + '</span><span>' + h(bodyOpen ? L.bodyHide : L.bodyShow.replace('{0}', String(card.bodyLength))) + '</span></button>' +
       (bodyOpen ? '<div class="rsi-cc-body">' + h(card.body).replace(/\n/g, '<br>') + '</div>' : '') +
     '</div>'
   ) : '';
@@ -692,8 +780,8 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
   const rcptHtml = (card.receipts && card.receipts.length) ? (
     '<div class="rsi-cc-fold">' +
       '<button type="button" class="rsi-cc-fold-btn" data-act="fold" data-f="result" data-k="' + h(rcptKey) + '" aria-expanded="' + (rcptOpen ? 'true' : 'false') + '">' +
-        '<span class="rsi-mx-chev">' + (rcptOpen ? '▾' : '▸') + '</span><span>执行与原件回执（' + card.receipts.length + '）</span></button>' +
-      (rcptOpen ? '<div class="scroll-x rsi-cc-rcpt-wrap"><table class="rsi-mx-sub"><thead><tr><th>seed</th><th>状态</th><th>commit</th><th>耗时</th><th>job / 说明</th></tr></thead><tbody>' +
+        '<span class="rsi-mx-chev">' + (rcptOpen ? '▾' : '▸') + '</span><span>' + h(L.rcptTitle) + ' (' + card.receipts.length + ')</span></button>' +
+      (rcptOpen ? '<div class="scroll-x rsi-cc-rcpt-wrap"><table class="rsi-mx-sub"><thead><tr><th>' + h(L.colSeed) + '</th><th>' + h(L.colState) + '</th><th>' + h(L.colCommit) + '</th><th>' + h(L.colDur) + '</th><th>' + h(L.colNote) + '</th></tr></thead><tbody>' +
         card.receipts.map(function (r) {
           return '<tr><td class="rsi-mx-seed">' + h(r.seed) + '</td><td>' + h(r.state) + '</td><td class="rsi-mx-seed">' + h(r.commit || '—') + '</td><td>' + h(r.duration || '—') + '</td><td>' + h(r.jobId || r.error || '—') + '</td></tr>';
         }).join('') + '</tbody></table></div>' : '') +
@@ -703,13 +791,16 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
 };
 
 (function () {
-  if (typeof document === 'undefined' || document.__rsiMapBound) return;
-  document.__rsiMapBound = true;
+  if (typeof document === 'undefined') return;
+  const hostGlobal = typeof window !== 'undefined' ? window : globalThis;
+  if (hostGlobal.__rsiMapClickHandler) {
+    document.removeEventListener('click', hostGlobal.__rsiMapClickHandler);
+  }
   function buildStandaloneHtml(data) {
     const json = JSON.stringify(data).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
     const title = String(data.objectiveName || data.objectiveId || 'RSI Lineage').replace(/[<>&"]/g, '');
-    return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-      '<title>' + title + ' · RSI 进化谱系总览</title>' +
+    return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>' + title + '</title>' +
       '<style>:root{--bg:#f8fafc;--card:#fff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--ok:#0f766e;--info:#2563eb;--warn:#b45309;--danger:#b91c1c;--obj:#0f766e;--obs:#9333ea;--rub:#4338ca}' +
       '@media(prefers-color-scheme:dark){:root{--bg:#0b1120;--card:#111827;--ink:#f1f5f9;--muted:#94a3b8;--line:#1f2937;--ok:#2dd4bf;--info:#60a5fa;--warn:#fbbf24;--danger:#f87171;--obj:#2dd4bf;--obs:#c084fc;--rub:#818cf8}}' +
       '*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;height:100vh}' +
@@ -726,22 +817,24 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
       '.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;background:color-mix(in srgb,var(--muted) 15%,transparent)}table{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}td,th{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);font-family:monospace}</style></head>' +
       '<body><header><div><h1 id="t"></h1><div class="sub" id="sub"></div></div><div class="sub" id="st"></div></header><main><div class="map"><div class="canvas" id="cv"></div></div><aside id="as"></aside></main>' +
       '<script id="D" type="application/json">' + json + '</script>' +
-      '<script>(function(){const D=JSON.parse(document.getElementById("D").textContent);const N=D.nodes||[];const byId={},kids={},roots=[];N.forEach(n=>byId[n.id]=n);N.forEach(n=>{if(n.parent&&byId[n.parent])(kids[n.parent]=kids[n.parent]||[]).push(n);else roots.push(n)});' +
+      '<script>(function(){const D=JSON.parse(document.getElementById("D").textContent);const L=D.labels||{};const N=D.nodes||[];const byId={},kids={},roots=[];N.forEach(n=>byId[n.id]=n);N.forEach(n=>{if(n.parent&&byId[n.parent])(kids[n.parent]=kids[n.parent]||[]).push(n);else roots.push(n)});' +
       'const CW=164,CH=66,GX=38,GY=12,PAD=18,GGX=14,pos={},edges=[];const sp=l=>({lf:l.filter(c=>!(kids[c.id]||[]).length),br:l.filter(c=>(kids[c.id]||[]).length)});' +
-      'const sz=id=>{const ch=kids[id]||[];if(!ch.length)return{w:CW,h:CH};const s=sp(ch);let h=0,mw=0;if(s.lf.length>=6){const cols=Math.min(4,Math.ceil(s.lf.length/4)),rows=Math.ceil(s.lf.length/cols);h=rows*CH+(rows-1)*GY;mw=cols*CW+(cols-1)*GGX;s.br.forEach(b=>{const z=sz(b.id);h+=GY+z.h;mw=Math.max(mw,z.w)})}else{ch.forEach((c,i)=>{const z=sz(c.id);h+=(i?GY:0)+z.h;mw=Math.max(mw,z.w)})}return{w:CW+GX+mw,h:Math.max(CH,h)}};' +
-      'const pl=(id,x,ty)=>{const z=sz(id);pos[id]={x,y:ty+Math.round((z.h-CH)/2)};const ch=kids[id]||[];if(!ch.length)return;const s=sp(ch),cx=x+CW+GX;if(s.lf.length>=6){const cols=Math.min(4,Math.ceil(s.lf.length/4)),rows=Math.ceil(s.lf.length/cols);let cy=ty;s.lf.forEach((lf,i)=>{const c=i%cols,r=Math.floor(i/cols);pos[lf.id]={x:cx+c*(CW+GGX),y:cy+r*(CH+GY)};edges.push(c?{f:s.lf[i-1].id,t:lf.id,ch:1}:{f:id,t:lf.id})});cy+=rows*CH+(rows-1)*GY;s.br.forEach(b=>{cy+=GY;const bz=sz(b.id);pl(b.id,cx,cy);edges.push({f:id,t:b.id});cy+=bz.h})}else{let cy=ty;ch.forEach(c=>{const cz=sz(c.id);pl(c.id,cx,cy);edges.push({f:id,t:c.id});cy+=cz.h+GY})}};' +
-      'let ry=PAD;roots.forEach(r=>{const z=sz(r.id);pl(r.id,PAD,ry);ry+=z.h+GY*2});let mx=0,my=0;Object.values(pos).forEach(q=>{mx=Math.max(mx,q.x+CW);my=Math.max(my,q.y+CH)});' +
-      'let sel=D.selectedVersion||D.currentVersion||(N[0]&&N[0].id);document.getElementById("t").textContent=D.objectiveName||D.objectiveId;document.getElementById("sub").textContent="指标："+(D.metric&&D.metric.name||"")+" · 量尺 "+(D.metricVersion||"E1");document.getElementById("st").textContent="共 "+N.length+" 版 · 当前 "+(D.currentVersion||"—")+" · 剪枝 "+((D.stats&&D.stats.pruned)||0);' +
+      'const sz=(id,sn)=>{if(sn[id])return{w:CW,h:CH};const ns=Object.assign({},sn);ns[id]=1;const ch=(kids[id]||[]).filter(c=>!ns[c.id]);if(!ch.length)return{w:CW,h:CH};const s=sp(ch);let h=0,mw=0;if(s.lf.length>=6){const cols=Math.min(4,Math.ceil(s.lf.length/4)),rows=Math.ceil(s.lf.length/cols);h=rows*CH+(rows-1)*GY;mw=cols*CW+(cols-1)*GGX;s.br.forEach(b=>{const z=sz(b.id,ns);h+=GY+z.h;mw=Math.max(mw,z.w)})}else{ch.forEach((c,i)=>{const z=sz(c.id,ns);h+=(i?GY:0)+z.h;mw=Math.max(mw,z.w)})}return{w:CW+GX+mw,h:Math.max(CH,h)}};' +
+      'const pl=(id,x,ty,sn)=>{if(sn[id])return;const ns=Object.assign({},sn);ns[id]=1;const z=sz(id,sn);pos[id]={x,y:ty+Math.round((z.h-CH)/2)};const ch=(kids[id]||[]).filter(c=>!ns[c.id]);if(!ch.length)return;const s=sp(ch),cx=x+CW+GX;if(s.lf.length>=6){const cols=Math.min(4,Math.ceil(s.lf.length/4)),rows=Math.ceil(s.lf.length/cols);let cy=ty;s.lf.forEach((lf,i)=>{const c=i%cols,r=Math.floor(i/cols);pos[lf.id]={x:cx+c*(CW+GGX),y:cy+r*(CH+GY)};edges.push(c?{f:s.lf[i-1].id,t:lf.id,ch:1}:{f:id,t:lf.id})});cy+=rows*CH+(rows-1)*GY;s.br.forEach(b=>{cy+=GY;const bz=sz(b.id,ns);pl(b.id,cx,cy,ns);edges.push({f:id,t:b.id});cy+=bz.h})}else{let cy=ty;ch.forEach(c=>{const cz=sz(c.id,ns);pl(c.id,cx,cy,ns);edges.push({f:id,t:c.id});cy+=cz.h+GY})}};' +
+      'let ry=PAD;roots.forEach(r=>{const z=sz(r.id,{});pl(r.id,PAD,ry,{});ry+=z.h+GY*2});let mx=0,my=0;Object.values(pos).forEach(q=>{mx=Math.max(mx,q.x+CW);my=Math.max(my,q.y+CH)});' +
+      'let sel=D.selectedVersion||D.currentVersion||(N[0]&&N[0].id);const stMap={current:L.stCurrent,confirmed:L.stConfirmed,running:L.stRunning,pruned:L.stPruned,insufficient:L.stInsufficient,repaired:L.stRepaired,baseline:L.stBaseline,explored:L.stExplore};' +
+      'document.getElementById("t").textContent=D.objectiveName||D.objectiveId;document.getElementById("sub").textContent=(L.metric||"Metric")+": "+(D.metric&&D.metric.name||"")+" · "+(L.scale||"Scale")+" "+(D.metricVersion||"E1");document.getElementById("st").textContent=(L.total||"Total")+" "+N.length+" · "+(L.current||"Current")+" "+(D.currentVersion||"—")+" · "+(L.pruned||"Refuted")+" "+((D.stats&&D.stats.pruned)||0);' +
       'const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");function render(){const on={};let c=sel,g=0;while(c&&!on[c]&&g++<500){on[c]=1;c=byId[c]&&byId[c].parent}const W=mx+PAD,H=my+PAD;const cv=document.getElementById("cv");cv.style.width=W+"px";cv.style.height=H+"px";' +
       'const ep=edges.map(e=>{const a=pos[e.f],b=pos[e.t],x1=a.x+CW,y1=a.y+CH/2,x2=b.x,y2=b.y+CH/2,m=Math.round((x1+x2)/2);const cl="e"+(on[e.f]&&on[e.t]?" on":"")+(byId[e.t]&&byId[e.t].pruned?" pr":"");return"<path class=\\""+cl+"\\" d=\\""+(e.ch||Math.abs(y1-y2)<1?"M"+x1+","+y1+" L"+x2+","+y2:"M"+x1+","+y1+" C"+m+","+y1+" "+m+","+y2+" "+x2+","+y2)+"\\"/>"}).join("");' +
-      'const nd=N.map(n=>{const q=pos[n.id],cl="nd"+(n.state==="current"?" cur":"")+(n.pruned?" pr":"")+(n.id===sel?" sel":""),dt=(n.aspects||[]).map(a=>"<i class=\\""+(a==="object"?"obj":a==="observability"?"obs":"rub")+"\\"></i>").join("");return"<button class=\\""+cl+"\\" data-id=\\""+esc(n.id)+"\\" style=\\"left:"+q.x+"px;top:"+q.y+"px;width:"+CW+"px;height:"+CH+"px\\"><div class=\\"top\\"><span class=\\"id\\">"+esc(n.id)+"</span><span class=\\"val\\">"+esc(n.valueText||"—")+"</span></div><div class=\\"subt\\">"+esc(n.changeShort||"")+"</div><div class=\\"foot\\"><span class=\\"dots\\">"+dt+"</span><span>"+esc(n.pruned?"剪枝 ✕":n.deltaText||n.stateText||"")+"</span></div></button>"}).join("");' +
-      'cv.innerHTML="<svg class=\\"edges\\" width=\\""+W+"\\" height=\\""+H+"\\">"+ep+"</svg>"+nd;cv.querySelectorAll(".nd").forEach(b=>b.onclick=()=>{sel=b.dataset.id;render()});const n=byId[sel]||N[0];if(!n)return;const cs=n.causality||{};' +
-      'document.getElementById("as").innerHTML="<h2 style=\\"margin:0 0 6px;font-size:17px\\">"+esc(n.id)+" <span class=\\"pill\\">"+esc(n.stateText||"")+"</span></h2><div style=\\"font-size:12px;color:var(--muted);margin-bottom:12px\\">"+esc((n.parent?"源自 "+n.parent+" · ":"")+(n.metricVersion||"")+(n.commitShort?" · "+n.commitShort:""))+"</div>"+' +
-      '"<div style=\\"font-size:13px;margin-bottom:12px\\"><b>"+esc(D.metric&&D.metric.name||"指标")+"：</b>"+esc(n.valueText||"—")+(n.deltaText?" ("+esc((n.comparable?"同口径 ":"参考 ")+n.deltaText)+")":"")+"</div>"+' +
-      '"<div class=\\"chain\\"><p><b>上游触发：</b>"+esc(cs.trigger||"—")+"</p><p><b>本版动作：</b>"+esc(cs.action||"—")+"</p><p><b>判断依据：</b>"+esc(cs.basis||"—")+"</p></div>"+' +
-      '((n.receipts&&n.receipts.length)?"<table><thead><tr><th>seed</th><th>状态</th><th>commit</th><th>job/备注</th></tr></thead><tbody>"+n.receipts.map(r=>"<tr><td>"+esc(r.seed)+"</td><td>"+esc(r.state)+"</td><td>"+esc(r.commit||"—")+"</td><td>"+esc(r.jobId||r.error||"—")+"</td></tr>").join("")+"</tbody></table>":"")}render()})();</script></body></html>';
+      'const nd=N.map(n=>{const q=pos[n.id],cl="nd"+(n.state==="current"?" cur":"")+(n.pruned?" pr":"")+(n.id===sel?" sel":""),dt=(n.aspects||[]).map(a=>"<i class=\\""+(a==="object"?"obj":a==="observability"?"obs":"rub")+"\\"></i>").join("");const st=stMap[n.state]||"";return"<button class=\\""+cl+"\\" data-id=\\""+esc(n.id)+"\\" style=\\"left:"+q.x+"px;top:"+q.y+"px;width:"+CW+"px;height:"+CH+"px\\"><div class=\\"top\\"><span class=\\"id\\">"+esc(n.id)+"</span><span class=\\"val\\">"+esc(n.valueText||"—")+"</span></div><div class=\\"subt\\">"+esc(n.changeShort||"")+"</div><div class=\\"foot\\"><span class=\\"dots\\">"+dt+"</span><span>"+esc(n.pruned?(L.stPruned||"Refuted"):n.deltaText||st)+"</span></div></button>"}).join("");' +
+      'cv.innerHTML="<svg class=\\"edges\\" width=\\""+W+"\\" height=\\""+H+"\\">"+ep+"</svg>"+nd;cv.querySelectorAll(".nd").forEach(b=>b.onclick=()=>{sel=b.dataset.id;render()});const n=byId[sel]||N[0];if(!n)return;const sd=D.selectedDetail&&D.selectedDetail.id===n.id?D.selectedDetail:null;const st=stMap[n.state]||n.state||"";' +
+      'const asp=n.aspectKind==="baseline"?(L.baseline||"Baseline"):(n.aspects&&n.aspects.length?n.aspects.map(a=>a==="object"?(L.obj||a):a==="observability"?(L.obs||a):(L.rub||a)).join(" · "):(L.unlabeled||"Unlabeled"));' +
+      'document.getElementById("as").innerHTML="<h2 style=\\"margin:0 0 6px;font-size:17px\\">"+esc(n.id)+" <span class=\\"pill\\">"+esc(st)+"</span></h2><div style=\\"font-size:12px;color:var(--muted);margin-bottom:12px\\">"+esc((n.parent?n.parent+" → ":"")+(n.metricVersion||"")+(n.commitShort?" · "+n.commitShort:"")+" · "+asp)+"</div>"+' +
+      '"<div style=\\"font-size:13px;margin-bottom:12px\\"><b>"+esc(D.metric&&D.metric.name||L.metric||"Metric")+": </b>"+esc(n.valueText||"—")+(n.deltaText?" ("+esc((n.comparable?(L.sameScale||"Same-scale"):(L.refDelta||"Ref"))+" "+n.deltaText)+")":"")+"</div>"+' +
+      '"<div class=\\"chain\\"><p><b>"+esc(L.lblAction||"Change")+": </b>"+esc((sd&&sd.causality&&sd.causality.action)||n.changeShort||"—")+"</p>"+(sd&&sd.causality&&sd.causality.basisText?"<p><b>"+esc(L.lblBasis||"Basis")+": </b>"+esc(sd.causality.basisText)+"</p>":"")+"</div>"+' +
+      '((sd&&sd.receipts&&sd.receipts.length)?"<table><thead><tr><th>"+esc(L.colSeed||"seed")+"</th><th>"+esc(L.colState||"status")+"</th><th>"+esc(L.colCommit||"commit")+"</th><th>"+esc(L.colNote||"note")+"</th></tr></thead><tbody>"+sd.receipts.map(r=>"<tr><td>"+esc(r.seed)+"</td><td>"+esc(r.state)+"</td><td>"+esc(r.commit||"—")+"</td><td>"+esc(r.jobId||r.error||"—")+"</td></tr>").join("")+"</tbody></table>":"")}render()})();</script></body></html>';
   }
-  document.addEventListener('click', function (ev) {
+  const onClick = function (ev) {
     const btn = ev.target && ev.target.closest && ev.target.closest('[data-rsi-map-act]');
     if (!btn) return;
     const wrap = btn.closest('.rsi-map-wrap');
@@ -784,5 +877,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
     stage.style.width = Math.round(baseW * z) + 'px';
     stage.style.height = Math.round(baseH * z) + 'px';
     if (zl) zl.textContent = Math.round(z * 100) + '%';
-  });
+  };
+  hostGlobal.__rsiMapClickHandler = onClick;
+  document.addEventListener('click', onClick);
 })();

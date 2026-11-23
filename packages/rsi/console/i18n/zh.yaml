@@ -97,12 +97,79 @@ detail:
   change: 改了什么
   state: 状态
   aspect: 变更维度
-  pruneReason: 剪枝原因
+  pruneReason: 否决依据
   metricVersion: 量尺版本
   commit: Commit
   parent: 源自
   at: 开始于
   ec: 指标 · 采集
+ov:
+  total: 共
+  current: 当前
+  pruned: 已证伪
+  insufficient: 未测成
+  obj: 进化对象
+  obs: 可观测性
+  rub: 规约尺子
+  baseline: 基线
+  unlabeled: 未标注
+  lensMetric: 指标
+  lensAspect: 三元
+  fit: 适应
+  exportHtml: 导出 HTML
+  stCurrent: 当前
+  stConfirmed: 已确认
+  stRunning: 运行中
+  stPruned: 已证伪 ✕
+  stInsufficient: 证据不足
+  stRepaired: 已被修复取代
+  stExplore: 探索
+  stBaseline: 基线
+  stCandidate: 待复验候选
+  refPaired: 对照 {0}
+  refExplore: 探索单组（无同轮对照）
+  refSingle: 基线单组
+  tagExploreNoCtrl: 探索参考（非同轮对照）
+  tagNoCtrl: 无同轮对照
+  lblTrigger: 上游触发
+  lblAction: 本版动作
+  lblBasis: 判断依据
+  trigBaseline: 初始基线版本
+  trigParent: 源自 {0}
+  trigRepair: 第 {0} 周期（{1}）执行失败后自动修复
+  trigDir: 第 {0} 周期采纳方向：{1}
+  trigDec: 第 {0} 周期决策：{1}
+  trigCycle: 第 {0} 周期（{1}）推进
+  basisRunning: 正在执行实验运行
+  basisEval: 运行已完成，等待评估结论
+  basisRepaired: 已被后续修复版本取代
+  basisNone: 尚未形成评估结论
+  condTitle: 实验固定条件与规约
+  bodyHide: 收起完整评估正文
+  bodyShow: 展开完整评估正文（{0} 字）
+  rcptTitle: 执行与原件回执
+  ckMetricVersion: 量尺版本
+  ckTier: 实验层级
+  ckSeeds: 到达/种子
+  ckControl: 外层对照
+  ckConfig: 配置 ({0})
+  ckGuardrails: 护栏约束
+  tierExplore: 探索快筛（不可直接晋级）
+  tierConfirm: 正式确认
+  tierBaseline: 基线标定
+  ctrlSkip: 探索跳过外层对照
+  ctrlPaired: 同周期对照 {0}
+  ctrlSingle: 基线单组
+  reserved: 预留 {0}
+  colSeed: seed
+  colState: 状态
+  colCommit: commit
+  colDur: 耗时
+  colNote: job / 说明
+  scale: 量尺
+  metric: 指标
+  sameScale: 同口径
+  refDelta: 参考
 mstep:
   goVersion: 去这个版本
   cyclesOf: "{0} 个周期 · 保持 {1} · 证据不足 {2} · 演进 {3} · 回退 {4}"
