@@ -1243,11 +1243,19 @@ views:
                     lensMetric: t:rsi.ov.lensMetric
                     lensAspect: t:rsi.ov.lensAspect
                     fit: t:rsi.ov.fit
+                    expand: t:rsi.ov.expand
+                    close: t:rsi.ov.close
                     exportHtml: t:rsi.ov.exportHtml
+                    clusterTitle: t:rsi.ov.clusterTitle
+                    focusVersion: t:rsi.ov.focusVersion
+                    cycleOf: t:rsi.ov.cycleOf
+                    clickHint: t:rsi.ov.clickHint
                     stCurrent: t:rsi.ov.stCurrent
                     stConfirmed: t:rsi.ov.stConfirmed
                     stRunning: t:rsi.ov.stRunning
                     stPruned: t:rsi.ov.stPruned
+                    stGuardrail: t:rsi.ov.stGuardrail
+                    stNoGain: t:rsi.ov.stNoGain
                     stInsufficient: t:rsi.ov.stInsufficient
                     stRepaired: t:rsi.ov.stRepaired
                     stExplore: t:rsi.ov.stExplore
@@ -1255,6 +1263,16 @@ views:
                     lblTrigger: t:rsi.ov.lblTrigger
                     lblAction: t:rsi.ov.lblAction
                     lblBasis: t:rsi.ov.lblBasis
+                    trigBaseline: t:rsi.ov.trigBaseline
+                    trigParent: t:rsi.ov.trigParent
+                    trigRepair: t:rsi.ov.trigRepair
+                    trigDir: t:rsi.ov.trigDir
+                    trigDec: t:rsi.ov.trigDec
+                    trigCycle: t:rsi.ov.trigCycle
+                    basisRunning: t:rsi.ov.basisRunning
+                    basisEval: t:rsi.ov.basisEval
+                    basisRepaired: t:rsi.ov.basisRepaired
+                    basisNone: t:rsi.ov.basisNone
                     colSeed: t:rsi.ov.colSeed
                     colState: t:rsi.ov.colState
                     colCommit: t:rsi.ov.colCommit
@@ -1481,6 +1499,8 @@ views:
                         confirmed: t:rsi.ov.stConfirmed
                         running: t:rsi.ov.stRunning
                         pruned: t:rsi.ov.stPruned
+                        guardrail: t:rsi.ov.stGuardrail
+                        noGain: t:rsi.ov.stNoGain
                         insufficient: t:rsi.ov.stInsufficient
                         repaired: t:rsi.ov.stRepaired
                         baseline: t:rsi.ov.stBaseline
@@ -6754,6 +6774,8 @@ requests:
       govFile: state.govFile
       govDiffMode: state.govDiffMode
       trendMetric: state.trendMetric
+      overviewMode: state.overviewMode
+      overviewLens: state.overviewLens
       cmpMode: state.cmpMode
       thread: host:currentThread.id
   record:

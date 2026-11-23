@@ -116,11 +116,19 @@ ov:
   lensMetric: 指标
   lensAspect: 三元
   fit: 适应
+  expand: 大图预览
+  close: 关闭
   exportHtml: 导出 HTML
+  clusterTitle: 基于 {0} 的 {1} 次未晋级探索（按时间先后，均未替换 {0}）
+  focusVersion: 定位到下方详情
+  cycleOf: 第 {0} 周期
+  clickHint: 点击节点查看说明
   stCurrent: 当前
   stConfirmed: 已确认
   stRunning: 运行中
   stPruned: 已证伪 ✕
+  stGuardrail: 越护栏 ✕
+  stNoGain: 未胜对照
   stInsufficient: 证据不足
   stRepaired: 已被修复取代
   stExplore: 探索

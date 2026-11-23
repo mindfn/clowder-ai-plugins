@@ -116,11 +116,19 @@ ov:
   lensMetric: Metric
   lensAspect: Aspects
   fit: Fit
+  expand: Expand
+  close: Close
   exportHtml: Export HTML
+  clusterTitle: "{1} unpromoted trials from {0} (chronological, none replaced {0})"
+  focusVersion: Focus in panel
+  cycleOf: Cycle {0}
+  clickHint: Click any node for details
   stCurrent: Current
   stConfirmed: Confirmed
   stRunning: Running
   stPruned: Refuted ✕
+  stGuardrail: Guardrail ✕
+  stNoGain: No gain
   stInsufficient: Insufficient
   stRepaired: Superseded
   stExplore: Explore

@@ -73,4 +73,14 @@ test('i18n yaml packs parse cleanly and rsi.exp dual-tab removes trailing lineag
     }
   });
   assert.equal(expLineages,1);
+  // Every plugSet key used in rsi.exp or lineage.js (except _r refresh) must be forwarded in requests.exp.query
+  const expQuery=pdl.requests.exp.query;
+  const usedKeys=new Set();
+  walk(pdl.views['rsi.exp'],(node)=>{
+    if((node.act==='plugSet'||node.change==='plugSet')&&typeof node.args?.k==='string'&&node.args.k!=='_r')usedKeys.add(node.args.k);
+    if(node.args?.also&&typeof node.args.also==='object')for(const k of Object.keys(node.args.also))usedKeys.add(k);
+  });
+  const js=readFileSync(new URL('../console/components/lineage.js',import.meta.url),'utf8');
+  for(const m of js.matchAll(/data-act="plugSet"[^>]*data-k="([^"]+)"/g))usedKeys.add(m[1]);
+  for(const k of usedKeys)assert.equal(expQuery[k],`state.${k}`,`requests.exp.query missing plugSet key: ${k}`);
 });

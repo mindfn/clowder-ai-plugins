@@ -644,8 +644,11 @@ function exp(): any {
       const candGroups = (lastR.plan?.groups || []).filter((g: Data) => g.version === v.id && !g.control);
       const judged = lastR.report.compare.groups || [];
       const ownJudged = candGroups.map((g: Data) => judged.find((j: Data) => j.group === g.id)).filter(Boolean);
+      if (ownJudged.length && ownJudged.every((j: Data) => !j.eligible && Array.isArray(j.guardrails) && j.guardrails.some((g: Data) => g.crossed))) {
+        return { outcome: 'guardrail', pruned: true, reason: lastR.report?.headline || '' };
+      }
       if (ownJudged.length && ownJudged.every((j: Data) => j.eligible && !j.beatsControl)) {
-        return { outcome: 'pruned', pruned: true, reason: lastR.report?.headline || '' };
+        return { outcome: 'noGain', pruned: false, reason: lastR.report?.headline || '' };
       }
     }
     return { outcome: 'explored', pruned: false, reason: '' };
@@ -660,7 +663,7 @@ function exp(): any {
     const nodeState = v.current ? 'current'
       : isRunningVer ? 'running'
       : v.status === 'candidate' ? 'candidate'
-      : o.projectPath && ['pruned', 'confirmed', 'insufficient', 'repaired'].includes(out.outcome) ? out.outcome
+      : o.projectPath && ['pruned', 'guardrail', 'noGain', 'confirmed', 'insufficient', 'repaired'].includes(out.outcome) ? out.outcome
       : '';
     versionMetaById[v.id] = {
       aspectKind: asp.kind,
@@ -1173,7 +1176,9 @@ function exp(): any {
       better,
       comparable,
       commitShort: meta.commitShort,
-      changeShort: clipTitle(v.change || '', 26, v.id),
+      changeShort: clipTitle(v.change || '', 30, v.id),
+      changeBrief: clipTitle(v.change || '', 120, ''),
+      headlineBrief: lastR?.report?.headline ? clipTitle(lastR.report.headline, 140, '') : '',
     };
   });
   const selectedOverviewDetail = ver ? (() => {

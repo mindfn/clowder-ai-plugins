@@ -459,14 +459,15 @@ function rsiFormatCausality(c, L) {
   return { trigger: trigger, action: c.action || '—', basis: basis };
 }
 
-PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
-  const data = pv(p.from, sc, root);
-  if (!data || !Array.isArray(data.nodes) || !data.nodes.length) return '';
-  const L = rsiResolveLabels(p.labels, sc, root, {
+function rsiOverviewDefaults() {
+  return {
     total: 'Total', current: 'Current', pruned: 'Refuted', insufficient: 'Insufficient',
     obj: 'Object', obs: 'Observability', rub: 'Rubric', baseline: 'Baseline', unlabeled: 'Unlabeled',
-    lensMetric: 'Metric', lensAspect: 'Aspects', fit: 'Fit', exportHtml: 'Export HTML',
+    lensMetric: 'Metric', lensAspect: 'Aspects', fit: 'Fit', expand: 'Expand', close: 'Close', exportHtml: 'Export HTML',
+    clusterTitle: '{1} unpromoted trials from {0} (chronological, none replaced {0})',
+    focusVersion: 'Focus in panel', cycleOf: 'Cycle {0}', clickHint: 'Click any node for details',
     stCurrent: 'Current', stConfirmed: 'Confirmed', stRunning: 'Running', stPruned: 'Refuted ✕',
+    stGuardrail: 'Guardrail ✕', stNoGain: 'No gain',
     stInsufficient: 'Insufficient', stRepaired: 'Superseded', stExplore: 'Explore', stBaseline: 'Baseline',
     trigBaseline: 'Initial baseline', trigParent: 'Based on {0}', trigRepair: 'Repaired after cycle {0} ({1})',
     trigDir: 'Cycle {0} direction: {1}', trigDec: 'Cycle {0} decision: {1}', trigCycle: 'Cycle {0} ({1})',
@@ -474,16 +475,18 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
     lblTrigger: 'Trigger', lblAction: 'Change', lblBasis: 'Verdict basis',
     colSeed: 'seed', colState: 'status', colCommit: 'commit', colNote: 'job / note',
     scale: 'Scale', metric: 'Metric', sameScale: 'Same-scale', refDelta: 'Ref',
-  });
-  const nodes = data.nodes;
+  };
+}
+
+function rsiLayoutOverviewMap(nodes) {
   const byId = {}, kids = {}, roots = [];
   nodes.forEach(function (n) { byId[n.id] = n; });
   nodes.forEach(function (n) {
     if (n.parent && byId[n.parent]) (kids[n.parent] = kids[n.parent] || []).push(n);
     else roots.push(n);
   });
-  const CW = 162, CH = 64, GX = 36, GY = 12, PAD = 14, GRID_GX = 14;
-  const pos = {}, edges = [];
+  const CW = 178, CH = 70, GX = 38, GY = 10, PAD = 14, GRID_GX = 12, BOX_PAD = 12, BOX_HDR = 26;
+  const pos = {}, edges = [], clusters = [];
   const leafClusterOf = function (list) {
     const leaves = [], branches = [];
     list.forEach(function (c) {
@@ -492,6 +495,9 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
     });
     return { leaves: leaves, branches: branches };
   };
+  const colsFor = function (count) {
+    return Math.min(4, Math.max(2, Math.ceil(Math.sqrt(count))));
+  };
   const subtreeSize = function (id, seen) {
     if (seen[id]) return { w: CW, h: CH };
     const nextSeen = Object.assign({}, seen); nextSeen[id] = true;
@@ -499,13 +505,13 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
     if (!ch.length) return { w: CW, h: CH };
     const split = leafClusterOf(ch);
     let totalH = 0, maxChildW = 0;
-    if (split.leaves.length >= 6) {
-      const cols = Math.min(4, Math.ceil(split.leaves.length / 4));
+    if (split.leaves.length >= 4) {
+      const cols = colsFor(split.leaves.length);
       const rows = Math.ceil(split.leaves.length / cols);
-      const gridW = cols * CW + (cols - 1) * GRID_GX;
-      const gridH = rows * CH + (rows - 1) * GY;
-      totalH += gridH;
-      maxChildW = Math.max(maxChildW, gridW);
+      const boxW = BOX_PAD * 2 + cols * CW + (cols - 1) * GRID_GX;
+      const boxH = BOX_HDR + BOX_PAD * 2 + rows * CH + (rows - 1) * GY;
+      totalH += boxH;
+      maxChildW = Math.max(maxChildW, boxW);
       split.branches.forEach(function (b) {
         const sz = subtreeSize(b.id, nextSeen);
         totalH += GY + sz.h;
@@ -530,18 +536,19 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
     if (!ch.length) return;
     const split = leafClusterOf(ch);
     const childX = x + CW + GX;
-    if (split.leaves.length >= 6) {
-      const cols = Math.min(4, Math.ceil(split.leaves.length / 4));
+    if (split.leaves.length >= 4) {
+      const cols = colsFor(split.leaves.length);
       const rows = Math.ceil(split.leaves.length / cols);
-      const gridH = rows * CH + (rows - 1) * GY;
+      const boxW = BOX_PAD * 2 + cols * CW + (cols - 1) * GRID_GX;
+      const boxH = BOX_HDR + BOX_PAD * 2 + rows * CH + (rows - 1) * GY;
       let cursorY = topY;
+      clusters.push({ parentId: id, count: split.leaves.length, x: childX, y: cursorY, w: boxW, h: boxH, leafIds: split.leaves.map(function (lf) { return lf.id; }) });
+      edges.push({ from: id, toBox: { x: childX, y: cursorY + Math.round(boxH / 2), parentId: id }, cluster: true });
       split.leaves.forEach(function (lf, idx) {
         const col = idx % cols, row = Math.floor(idx / cols);
-        pos[lf.id] = { x: childX + col * (CW + GRID_GX), y: cursorY + row * (CH + GY) };
-        if (col === 0) edges.push({ from: id, to: lf.id, cluster: true });
-        else edges.push({ from: split.leaves[idx - 1].id, to: lf.id, chain: true });
+        pos[lf.id] = { x: childX + BOX_PAD + col * (CW + GRID_GX), y: cursorY + BOX_HDR + BOX_PAD + row * (CH + GY) };
       });
-      cursorY += gridH;
+      cursorY += boxH;
       split.branches.forEach(function (b) {
         cursorY += GY;
         const bsz = subtreeSize(b.id, nextSeen);
@@ -570,8 +577,35 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
     if (pos[k].x + CW > maxX) maxX = pos[k].x + CW;
     if (pos[k].y + CH > maxY) maxY = pos[k].y + CH;
   });
-  const totalW = maxX + PAD, totalH = maxY + PAD;
-  const selectedId = data.selectedVersion || data.currentVersion || (nodes[nodes.length - 1] && nodes[nodes.length - 1].id);
+  clusters.forEach(function (cl) {
+    if (cl.x + cl.w > maxX) maxX = cl.x + cl.w;
+    if (cl.y + cl.h > maxY) maxY = cl.y + cl.h;
+  });
+  return { byId: byId, pos: pos, edges: edges, clusters: clusters, CW: CW, CH: CH, totalW: maxX + PAD, totalH: maxY + PAD };
+}
+
+function rsiOverviewStateTag(n, L) {
+  if (!n) return null;
+  if (n.state === 'current') return { cls: 'ok', text: L.stCurrent };
+  if (n.state === 'running') return { cls: 'info', text: L.stRunning };
+  if (n.state === 'confirmed') return { cls: 'ok', text: L.stConfirmed };
+  if (n.state === 'guardrail') return { cls: 'danger', text: L.stGuardrail };
+  if (n.pruned || n.state === 'pruned') return { cls: 'danger', text: L.stPruned };
+  if (n.state === 'noGain') return { cls: 'muted', text: L.stNoGain };
+  if (n.state === 'insufficient') return { cls: 'warn', text: L.stInsufficient };
+  if (n.state === 'repaired') return { cls: 'muted', text: L.stRepaired };
+  if (n.state === 'baseline') return { cls: 'muted', text: L.stBaseline };
+  if (n.tier === 'explore' || n.state === 'explored') return { cls: 'muted', text: L.stExplore };
+  return null;
+}
+
+function rsiRenderOverviewCanvas(data, L, opts) {
+  const esc = opts.esc;
+  const nodes = data.nodes || [];
+  const layout = rsiLayoutOverviewMap(nodes);
+  const byId = layout.byId, pos = layout.pos, CW = layout.CW, CH = layout.CH;
+  const selectedId = opts.selectedId || data.selectedVersion || data.currentVersion || (nodes[nodes.length - 1] && nodes[nodes.length - 1].id);
+  const lens = opts.lens === 'aspect' ? 'aspect' : 'metric';
   const activePath = {};
   (function traceUp(id) {
     let cur = id, guard = 0;
@@ -590,63 +624,149 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
     const raw = (v - vMin) / (vMax - vMin);
     return metric.dir === 'down' ? 1 - raw : raw;
   };
-  const lens = data.lens === 'aspect' ? 'aspect' : 'metric';
   const aspectMeta = { object: { cls: 'obj', label: L.obj }, observability: { cls: 'obs', label: L.obs }, rubric: { cls: 'rub', label: L.rub } };
   const aspectTextOf = function (n) {
     if (n.aspectKind === 'baseline') return L.baseline;
     if (n.aspects && n.aspects.length) return n.aspects.map(function (a) { return aspectMeta[a] ? aspectMeta[a].label : a; }).join(' · ');
     return L.unlabeled;
   };
-  const stateTagOf = function (n) {
-    if (n.state === 'current') return { cls: 'ok', text: L.stCurrent };
-    if (n.state === 'running') return { cls: 'info', text: L.stRunning };
-    if (n.state === 'confirmed') return { cls: 'ok', text: L.stConfirmed };
-    if (n.pruned) return { cls: 'danger', text: L.stPruned };
-    if (n.state === 'insufficient') return { cls: 'warn', text: L.stInsufficient };
-    if (n.state === 'repaired') return { cls: 'muted', text: L.stRepaired };
-    if (n.state === 'baseline') return { cls: 'muted', text: L.stBaseline };
-    if (n.tier === 'explore') return { cls: 'muted', text: L.stExplore };
-    return null;
-  };
-  const svgEdges = edges.map(function (e) {
-    const a = pos[e.from], b = pos[e.to];
-    if (!a || !b) return '';
+  const svgEdges = layout.edges.map(function (e) {
+    const a = pos[e.from];
+    if (!a) return '';
+    if (e.toBox) {
+      const x1 = a.x + CW, y1 = a.y + CH / 2, x2 = e.toBox.x, y2 = e.toBox.y;
+      const onPath = !!activePath[e.from] && byId[selectedId] && byId[selectedId].parent === e.from;
+      const cls = 'rsi-map-edge cluster' + (onPath ? ' active' : '');
+      if (Math.abs(y1 - y2) < 1) return '<path class="' + cls + '" d="M' + x1 + ',' + y1 + ' L' + x2 + ',' + y2 + '"/>';
+      const mx = Math.round((x1 + x2) / 2);
+      return '<path class="' + cls + '" d="M' + x1 + ',' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2 + '"/>';
+    }
+    const b = pos[e.to];
+    if (!b) return '';
     const x1 = a.x + CW, y1 = a.y + CH / 2, x2 = b.x, y2 = b.y + CH / 2;
     const onPath = !!(activePath[e.from] && activePath[e.to]);
     const pruned = !!(byId[e.to] && byId[e.to].pruned);
-    const cls = 'rsi-map-edge' + (onPath ? ' active' : '') + (pruned ? ' pruned' : '') + (e.chain ? ' chain' : '');
-    if (e.chain || Math.abs(y1 - y2) < 1) {
-      return '<path class="' + cls + '" d="M' + x1 + ',' + y1 + ' L' + x2 + ',' + y2 + '"/>';
-    }
+    const cls = 'rsi-map-edge' + (onPath ? ' active' : '') + (pruned ? ' pruned' : '');
+    if (Math.abs(y1 - y2) < 1) return '<path class="' + cls + '" d="M' + x1 + ',' + y1 + ' L' + x2 + ',' + y2 + '"/>';
     const mx = Math.round((x1 + x2) / 2);
     return '<path class="' + cls + '" d="M' + x1 + ',' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2 + '"/>';
+  }).join('');
+  const clusterHtml = layout.clusters.map(function (cl) {
+    const title = L.clusterTitle.replace(/\{0\}/g, cl.parentId).replace(/\{1\}/g, String(cl.count));
+    return '<div class="rsi-map-cluster" style="left:' + cl.x + 'px;top:' + cl.y + 'px;width:' + cl.w + 'px;height:' + cl.h + 'px">' +
+      '<div class="rsi-map-cluster-hdr">' + esc(title) + '</div></div>';
   }).join('');
   const cardsHtml = nodes.map(function (n) {
     const q = pos[n.id];
     if (!q) return '';
     const primaryAspect = n.aspectKind === 'baseline' ? 'baseline' : (n.aspects && n.aspects[0]) || 'unlabeled';
-    const tag = stateTagOf(n);
-    const stateBadge = tag ? '<span class="rsi-map-tag ' + tag.cls + '">' + h(tag.text) + '</span>' : '';
+    const tag = rsiOverviewStateTag(n, L);
+    const stateBadge = tag ? '<span class="rsi-map-tag ' + tag.cls + '">' + esc(tag.text) + '</span>' : '';
     const dots = (n.aspects || []).map(function (a) {
       const m = aspectMeta[a];
-      return m ? '<i class="rsi-asp-dot ' + m.cls + '" title="' + h(m.label) + '"></i>' : '';
+      return m ? '<i class="rsi-asp-dot ' + m.cls + '" title="' + esc(m.label) + '"></i>' : '';
     }).join('');
     const deltaHtml = lens === 'aspect'
-      ? '<span class="rsi-map-asp-lbl">' + h(aspectTextOf(n)) + '</span>'
+      ? '<span class="rsi-map-asp-lbl">' + esc(aspectTextOf(n)) + '</span>'
       : n.deltaText
-        ? '<span class="rsi-map-delta" data-better="' + h(n.comparable ? (n.better || '') : 'muted') + '">' + h((n.comparable ? '' : '~') + n.deltaText) + '</span>'
-        : (n.metricVersion ? '<span class="rsi-map-scale">' + h(n.metricVersion) + '</span>' : '');
+        ? '<span class="rsi-map-delta" data-better="' + esc(n.comparable ? (n.better || '') : 'muted') + '">' + esc((n.comparable ? '' : '~') + n.deltaText) + '</span>'
+        : (n.metricVersion ? '<span class="rsi-map-scale">' + esc(n.metricVersion) + '</span>' : '');
     const pct = lens === 'metric' && !n.pruned ? normOf(n.value) : null;
     const barHtml = pct != null ? '<span class="rsi-map-bar"><span class="rsi-map-bar-fill" style="width:' + Math.max(8, Math.round(pct * 100)) + '%"></span></span>' : '';
     const cls = 'rsi-map-node' + (lens === 'aspect' ? ' lens-aspect asp-' + primaryAspect : '') + (n.pruned ? ' is-pruned' : '');
-    return '<button type="button" class="' + cls + '" data-state="' + h(n.state || '') + '" data-ver="' + h(n.id) + '" aria-pressed="' + (n.selected ? 'true' : 'false') + '"' +
-      ' data-act="plugSet" data-plugin="official.rsi" data-k="selO" data-v="' + h(n.pick || '') + '"' +
-      ' style="left:' + q.x + 'px;top:' + q.y + 'px;width:' + CW + 'px;height:' + CH + 'px" title="' + h((n.id + ' · ' + (n.changeShort || '')).trim()) + '">' +
-      '<span class="rsi-map-top"><span class="rsi-map-id">' + h(n.id) + '</span>' + stateBadge + '<span class="rsi-map-val">' + h(n.valueText || '—') + '</span></span>' +
-      '<span class="rsi-map-sub">' + h(n.changeShort || n.id) + '</span>' +
+    const isSel = n.id === selectedId;
+    const actAttrs = opts.mode === 'modal'
+      ? ' data-rsi-modal-node="' + esc(n.id) + '"'
+      : ' data-act="plugSet" data-plugin="official.rsi" data-k="selO" data-v="' + esc(n.pick || '') + '"';
+    const compactVal = n.value != null ? String(n.value) : '—';
+    return '<button type="button" class="' + cls + '" data-state="' + esc(n.state || '') + '" data-ver="' + esc(n.id) + '" aria-pressed="' + (isSel ? 'true' : 'false') + '"' + actAttrs +
+      ' style="left:' + q.x + 'px;top:' + q.y + 'px;width:' + CW + 'px;height:' + CH + 'px" title="' + esc((n.id + ' · ' + (n.valueText || '—') + ' · ' + (n.changeBrief || n.changeShort || '')).trim()) + '">' +
+      '<span class="rsi-map-top"><span class="rsi-map-id">' + esc(n.id) + '</span>' + stateBadge + '<span class="rsi-map-val">' + esc(compactVal) + '</span></span>' +
+      '<span class="rsi-map-sub">' + esc(n.changeShort || n.id) + '</span>' +
       '<span class="rsi-map-foot"><span class="rsi-asp-dots">' + dots + '</span>' + deltaHtml + '</span>' +
       barHtml + '</button>';
   }).join('');
+  const svg = '<svg class="rsi-map-svg" width="' + layout.totalW + '" height="' + layout.totalH + '" viewBox="0 0 ' + layout.totalW + ' ' + layout.totalH + '" aria-hidden="true">' + svgEdges + '</svg>';
+  return {
+    totalW: layout.totalW,
+    totalH: layout.totalH,
+    html: '<div class="rsi-map-canvas" style="width:' + layout.totalW + 'px;height:' + layout.totalH + 'px">' + clusterHtml + svg + cardsHtml + '</div>',
+  };
+}
+
+function rsiRenderOverviewInspector(data, L, selId, opts) {
+  const esc = opts.esc;
+  const nodes = data.nodes || [];
+  const n = nodes.find(function (x) { return x.id === selId; }) || nodes[0];
+  if (!n) return '';
+  const sd = data.selectedDetail && data.selectedDetail.id === n.id ? data.selectedDetail : null;
+  const tag = rsiOverviewStateTag(n, L);
+  const aspectMeta = { object: { cls: 'obj', label: L.obj }, observability: { cls: 'obs', label: L.obs }, rubric: { cls: 'rub', label: L.rub } };
+  const aspChips = n.aspectKind === 'baseline'
+    ? '<span class="rsi-cc-asp">' + esc(L.baseline) + '</span>'
+    : (n.aspects && n.aspects.length)
+      ? n.aspects.map(function (a) {
+          const m = aspectMeta[a];
+          return m ? '<span class="rsi-cc-asp ' + m.cls + '"><i class="rsi-asp-dot ' + m.cls + '"></i>' + esc(m.label) + '</span>' : '';
+        }).join('')
+      : '<span class="rsi-cc-asp">' + esc(L.unlabeled) + '</span>';
+  const c = sd && sd.causality
+    ? rsiFormatCausality(sd.causality, L)
+    : {
+        trigger: n.parent ? L.trigParent.replace('{0}', n.parent) : L.trigBaseline,
+        action: n.changeBrief || n.changeShort || '—',
+        basis: n.headlineBrief || (n.state === 'running' ? L.basisRunning : n.state === 'repaired' ? L.basisRepaired : L.basisNone),
+      };
+  const metaParts = [
+    n.parent ? (n.parent + ' → ' + n.id) : L.stBaseline,
+    n.cycleN ? L.cycleOf.replace('{0}', String(n.cycleN)) : '',
+    n.metricVersion || '',
+    n.commitShort || '',
+  ].filter(Boolean);
+  const deltaBadge = n.deltaText
+    ? '<span class="rsi-mx-pill" data-tone="' + (n.comparable ? (n.better === 'better' ? 'ok' : n.better === 'worse' ? 'danger' : 'muted') : 'warn') + '">' +
+      esc((n.comparable ? L.sameScale : L.refDelta) + ' ' + n.deltaText) + '</span>'
+    : '';
+  const focusBtn = opts.mode === 'modal' && n.pick
+    ? '<button type="button" class="rsi-map-btn" data-rsi-modal-focus="' + esc(n.pick) + '">' + esc(L.focusVersion) + '</button>'
+    : '';
+  const receiptsHtml = (sd && sd.receipts && sd.receipts.length)
+    ? '<div class="rsi-map-rcpts">' + sd.receipts.map(function (r) {
+        return '<span class="rsi-map-rcpt"><b>' + esc(L.colSeed + ' ' + r.seed) + '</b> · ' + esc(r.state) +
+          (r.commit ? ' · ' + esc(r.commit) : '') + (r.jobId ? ' · ' + esc(r.jobId) : '') + '</span>';
+      }).join('') + '</div>'
+    : '';
+  return '<div class="rsi-map-inspect' + (opts.mode === 'modal' ? ' in-modal' : '') + '">' +
+    '<div class="rsi-map-ins-hd">' +
+      '<div class="rsi-map-ins-id">' +
+        '<b>' + esc(n.id) + '</b>' +
+        (tag ? '<span class="rsi-map-tag ' + tag.cls + '">' + esc(tag.text) + '</span>' : '') +
+        aspChips +
+      '</div>' +
+      '<div class="rsi-map-ins-metric">' +
+        '<span class="rsi-map-ins-mval">' + esc((data.metric && data.metric.name ? data.metric.name + ': ' : '') + (n.valueText || '—')) + '</span>' +
+        deltaBadge + focusBtn +
+      '</div>' +
+    '</div>' +
+    '<div class="rsi-map-ins-meta">' + esc(metaParts.join(' · ')) + '</div>' +
+    '<div class="rsi-map-ins-chain">' +
+      '<p><b>' + esc(L.lblTrigger) + '：</b>' + esc(c.trigger) + '</p>' +
+      '<p><b>' + esc(L.lblAction) + '：</b>' + esc(c.action) + '</p>' +
+      '<p><b>' + esc(L.lblBasis) + '：</b>' + esc(c.basis) + '</p>' +
+    '</div>' +
+    receiptsHtml +
+  '</div>';
+}
+
+PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
+  const data = pv(p.from, sc, root);
+  if (!data || !Array.isArray(data.nodes) || !data.nodes.length) return '';
+  const L = rsiResolveLabels(p.labels, sc, root, rsiOverviewDefaults());
+  const nodes = data.nodes;
+  const lens = data.lens === 'aspect' ? 'aspect' : 'metric';
+  const selectedId = data.selectedVersion || data.currentVersion || (nodes[nodes.length - 1] && nodes[nodes.length - 1].id);
+  const rendered = rsiRenderOverviewCanvas(data, L, { esc: h, lens: lens, selectedId: selectedId, mode: 'inline' });
+  const inspectorHtml = rsiRenderOverviewInspector(data, L, selectedId, { esc: h, mode: 'inline' });
   const stats = data.stats || { total: nodes.length, pruned: 0, insufficient: 0, current: data.currentVersion };
   const exportPayload = Object.assign({}, data, { labels: L });
   const safeJson = JSON.stringify(exportPayload).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
@@ -667,12 +787,13 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
       '<span class="rsi-map-zl">100%</span>' +
       '<button type="button" class="rsi-map-btn" data-rsi-map-act="zoom-in">+</button>' +
       '<button type="button" class="rsi-map-btn" data-rsi-map-act="fit">' + h(L.fit) + '</button>' +
+      '<button type="button" class="rsi-map-btn primary" data-rsi-map-act="expand">' + h(L.expand) + '</button>' +
       '<button type="button" class="rsi-map-btn" data-rsi-map-act="export-html">' + h(L.exportHtml) + '</button>' +
     '</div>' +
   '</div>';
-  const svg = '<svg class="rsi-map-svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + ' ' + totalH + '" aria-hidden="true">' + svgEdges + '</svg>';
   return '<div class="rsi-map-wrap" data-zoom="1">' + headBar +
-    '<div class="scroll-x rsi-map-scroll"><div class="rsi-map-stage" style="width:' + totalW + 'px;height:' + totalH + 'px"><div class="rsi-map-canvas" style="width:' + totalW + 'px;height:' + totalH + 'px">' + svg + cardsHtml + '</div></div></div>' +
+    '<div class="scroll-x rsi-map-scroll"><div class="rsi-map-stage" style="width:' + rendered.totalW + 'px;height:' + rendered.totalH + 'px">' + rendered.html + '</div></div>' +
+    inspectorHtml +
     '<script type="application/json" class="rsi-map-data">' + safeJson + '</script></div>';
 };
 
@@ -796,6 +917,139 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
   if (hostGlobal.__rsiMapClickHandler) {
     document.removeEventListener('click', hostGlobal.__rsiMapClickHandler);
   }
+  if (hostGlobal.__rsiMapKeyHandler) {
+    document.removeEventListener('keydown', hostGlobal.__rsiMapKeyHandler);
+  }
+  const escHtml = function (s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  };
+  function closeOverviewModal() {
+    const cur = document.querySelector && document.querySelector('.rsi-map-modal');
+    if (cur) cur.remove();
+  }
+  function applyZoom(root, act) {
+    const stage = root.querySelector('.rsi-map-stage');
+    const canvas = root.querySelector('.rsi-map-canvas');
+    const scroll = root.querySelector('.rsi-map-scroll');
+    const zl = root.querySelector('.rsi-map-zl');
+    if (!stage || !canvas) return;
+    const baseW = parseFloat(canvas.style.width) || canvas.offsetWidth || 400;
+    const baseH = parseFloat(canvas.style.height) || canvas.offsetHeight || 200;
+    let z = parseFloat(root.getAttribute('data-zoom') || '1') || 1;
+    if (act === 'zoom-in') z = Math.min(1.5, Math.round((z + 0.15) * 100) / 100);
+    else if (act === 'zoom-out') z = Math.max(0.45, Math.round((z - 0.15) * 100) / 100);
+    else if (act === 'fit' && scroll) {
+      const availW = Math.max(240, (scroll.clientWidth || 720) - 24);
+      z = Math.max(0.45, Math.min(1, Math.round((availW / baseW) * 100) / 100));
+    }
+    root.setAttribute('data-zoom', String(z));
+    canvas.style.transform = 'scale(' + z + ')';
+    stage.style.width = Math.round(baseW * z) + 'px';
+    stage.style.height = Math.round(baseH * z) + 'px';
+    if (zl) zl.textContent = Math.round(z * 100) + '%';
+  }
+  function openOverviewModal(data, sourceWrap) {
+    closeOverviewModal();
+    const L = Object.assign(rsiOverviewDefaults(), data.labels || {});
+    const state = {
+      sel: data.selectedVersion || data.currentVersion || (data.nodes && data.nodes[0] && data.nodes[0].id) || '',
+      lens: data.lens === 'aspect' ? 'aspect' : 'metric',
+      zoom: 1,
+    };
+    const modal = document.createElement('div');
+    modal.className = 'rsi-map-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const renderModal = function (shouldFit) {
+      const rendered = rsiRenderOverviewCanvas(data, L, { esc: escHtml, lens: state.lens, selectedId: state.sel, mode: 'modal' });
+      const inspector = rsiRenderOverviewInspector(data, L, state.sel, { esc: escHtml, mode: 'modal' });
+      const stats = data.stats || { total: (data.nodes || []).length, pruned: 0, insufficient: 0, current: data.currentVersion };
+      modal.innerHTML =
+        '<div class="rsi-map-modal-backdrop" data-rsi-modal-close="1"></div>' +
+        '<div class="rsi-map-modal-panel" data-zoom="' + state.zoom + '">' +
+          '<div class="rsi-map-modal-hd">' +
+            '<div class="rsi-map-modal-title">' +
+              '<b>' + escHtml(data.objectiveName || data.objectiveId || 'RSI Lineage') + '</b>' +
+              '<span>' + escHtml((data.metric && data.metric.name ? data.metric.name + ' · ' : '') + (data.metricVersion || 'E1') + ' · ' + L.total + ' ' + stats.total + ' · ' + L.current + ' ' + (stats.current || '—')) + '</span>' +
+            '</div>' +
+            '<div class="rsi-map-tools">' +
+              '<div class="rsi-mx-seg" role="group">' +
+                '<button type="button" class="rsi-mx-seg-btn' + (state.lens === 'metric' ? ' on' : '') + '" data-rsi-modal-lens="metric">' + escHtml(L.lensMetric) + '</button>' +
+                '<button type="button" class="rsi-mx-seg-btn' + (state.lens === 'aspect' ? ' on' : '') + '" data-rsi-modal-lens="aspect">' + escHtml(L.lensAspect) + '</button>' +
+              '</div>' +
+              '<button type="button" class="rsi-map-btn" data-rsi-modal-zoom="zoom-out">−</button>' +
+              '<span class="rsi-map-zl">' + Math.round(state.zoom * 100) + '%</span>' +
+              '<button type="button" class="rsi-map-btn" data-rsi-modal-zoom="zoom-in">+</button>' +
+              '<button type="button" class="rsi-map-btn" data-rsi-modal-zoom="fit">' + escHtml(L.fit) + '</button>' +
+              '<button type="button" class="rsi-map-btn" data-rsi-modal-export="1">' + escHtml(L.exportHtml) + '</button>' +
+              '<button type="button" class="rsi-map-btn" data-rsi-modal-close="1">' + escHtml(L.close) + '</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="rsi-map-modal-body">' +
+            '<div class="rsi-map-scroll"><div class="rsi-map-stage" style="width:' + rendered.totalW + 'px;height:' + rendered.totalH + 'px">' + rendered.html + '</div></div>' +
+            '<aside class="rsi-map-modal-aside">' + inspector + '</aside>' +
+          '</div>' +
+        '</div>';
+      const panel = modal.querySelector('.rsi-map-modal-panel');
+      if (panel) {
+        if (shouldFit) {
+          applyZoom(panel, 'fit');
+          state.zoom = parseFloat(panel.getAttribute('data-zoom') || '1') || 1;
+        } else {
+          const stage = panel.querySelector('.rsi-map-stage');
+          const canvas = panel.querySelector('.rsi-map-canvas');
+          if (stage && canvas) {
+            canvas.style.transform = 'scale(' + state.zoom + ')';
+            stage.style.width = Math.round(rendered.totalW * state.zoom) + 'px';
+            stage.style.height = Math.round(rendered.totalH * state.zoom) + 'px';
+          }
+        }
+      }
+    };
+    modal.addEventListener('click', function (ev) {
+      const t = ev.target;
+      if (!t || !t.closest) return;
+      if (t.closest('[data-rsi-modal-close]')) { closeOverviewModal(); return; }
+      const nodeBtn = t.closest('[data-rsi-modal-node]');
+      if (nodeBtn) {
+        state.sel = nodeBtn.getAttribute('data-rsi-modal-node') || state.sel;
+        renderModal(false);
+        return;
+      }
+      const lensBtn = t.closest('[data-rsi-modal-lens]');
+      if (lensBtn) {
+        state.lens = lensBtn.getAttribute('data-rsi-modal-lens') === 'aspect' ? 'aspect' : 'metric';
+        renderModal(false);
+        return;
+      }
+      const zBtn = t.closest('[data-rsi-modal-zoom]');
+      if (zBtn) {
+        const panel = modal.querySelector('.rsi-map-modal-panel');
+        if (panel) {
+          applyZoom(panel, zBtn.getAttribute('data-rsi-modal-zoom'));
+          state.zoom = parseFloat(panel.getAttribute('data-zoom') || '1') || 1;
+        }
+        return;
+      }
+      if (t.closest('[data-rsi-modal-export]')) {
+        downloadStandaloneHtml(data);
+        return;
+      }
+      const focusBtn = t.closest('[data-rsi-modal-focus]');
+      if (focusBtn) {
+        const pick = focusBtn.getAttribute('data-rsi-modal-focus') || '';
+        closeOverviewModal();
+        if (pick && typeof A !== 'undefined' && A && typeof A.plugSet === 'function') {
+          A.plugSet({ plugin: 'official.rsi', k: 'selO', v: pick });
+        } else if (pick && sourceWrap) {
+          const inlineBtn = sourceWrap.querySelector('[data-ver="' + state.sel.replace(/"/g, '') + '"]');
+          if (inlineBtn) inlineBtn.click();
+        }
+      }
+    });
+    document.body.appendChild(modal);
+    renderModal(true);
+  }
   function buildStandaloneHtml(data) {
     const json = JSON.stringify(data).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
     const title = String(data.objectiveName || data.objectiveId || 'RSI Lineage').replace(/[<>&"]/g, '');
@@ -805,9 +1059,10 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
       '@media(prefers-color-scheme:dark){:root{--bg:#0b1120;--card:#111827;--ink:#f1f5f9;--muted:#94a3b8;--line:#1f2937;--ok:#2dd4bf;--info:#60a5fa;--warn:#fbbf24;--danger:#f87171;--obj:#2dd4bf;--obs:#c084fc;--rub:#818cf8}}' +
       '*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;height:100vh}' +
       'header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--card)}' +
-      'header h1{margin:0;font-size:15px}header .sub{font-size:12px;color:var(--muted)}main{display:grid;grid-template-columns:1fr 340px;flex:1;min-height:0}' +
+      'header h1{margin:0;font-size:15px}header .sub{font-size:12px;color:var(--muted)}main{display:grid;grid-template-columns:1fr 360px;flex:1;min-height:0}' +
       '.map{position:relative;overflow:auto;padding:16px}.canvas{position:relative}svg.edges{position:absolute;inset:0;pointer-events:none}' +
-      'path.e{fill:none;stroke:var(--line);stroke-width:1.6}path.e.on{stroke:var(--ok);stroke-width:2.2}path.e.pr{stroke:var(--danger);stroke-dasharray:4 3;opacity:.6}' +
+      'path.e{fill:none;stroke:var(--line);stroke-width:1.6}path.e.on{stroke:var(--ok);stroke-width:2.2}path.e.pr{stroke:var(--danger);stroke-dasharray:4 3;opacity:.6}path.e.cl{stroke-dasharray:4 4;opacity:.75}' +
+      '.clbox{position:absolute;border:1px dashed var(--line);border-radius:12px;background:color-mix(in srgb,var(--card) 55%,transparent)}.clhdr{padding:6px 10px;font-size:11px;color:var(--muted);font-weight:600}' +
       '.nd{position:absolute;display:flex;flex-direction:column;justify-content:space-between;padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--ink);cursor:pointer;text-align:left}' +
       '.nd.cur{border-color:var(--ok);box-shadow:0 0 0 2px color-mix(in srgb,var(--ok) 30%,transparent)}.nd.pr{border-color:color-mix(in srgb,var(--danger) 55%,var(--line));background:color-mix(in srgb,var(--danger) 7%,var(--card))}' +
       '.nd.sel{outline:2px solid var(--info);outline-offset:1px}.top{display:flex;align-items:center;gap:6px;font-size:12px}.id{font-family:monospace;font-weight:700}.val{margin-left:auto;font-family:monospace;font-size:11px;font-weight:600}' +
@@ -818,21 +1073,37 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
       '<body><header><div><h1 id="t"></h1><div class="sub" id="sub"></div></div><div class="sub" id="st"></div></header><main><div class="map"><div class="canvas" id="cv"></div></div><aside id="as"></aside></main>' +
       '<script id="D" type="application/json">' + json + '</script>' +
       '<script>(function(){const D=JSON.parse(document.getElementById("D").textContent);const L=D.labels||{};const N=D.nodes||[];const byId={},kids={},roots=[];N.forEach(n=>byId[n.id]=n);N.forEach(n=>{if(n.parent&&byId[n.parent])(kids[n.parent]=kids[n.parent]||[]).push(n);else roots.push(n)});' +
-      'const CW=164,CH=66,GX=38,GY=12,PAD=18,GGX=14,pos={},edges=[];const sp=l=>({lf:l.filter(c=>!(kids[c.id]||[]).length),br:l.filter(c=>(kids[c.id]||[]).length)});' +
-      'const sz=(id,sn)=>{if(sn[id])return{w:CW,h:CH};const ns=Object.assign({},sn);ns[id]=1;const ch=(kids[id]||[]).filter(c=>!ns[c.id]);if(!ch.length)return{w:CW,h:CH};const s=sp(ch);let h=0,mw=0;if(s.lf.length>=6){const cols=Math.min(4,Math.ceil(s.lf.length/4)),rows=Math.ceil(s.lf.length/cols);h=rows*CH+(rows-1)*GY;mw=cols*CW+(cols-1)*GGX;s.br.forEach(b=>{const z=sz(b.id,ns);h+=GY+z.h;mw=Math.max(mw,z.w)})}else{ch.forEach((c,i)=>{const z=sz(c.id,ns);h+=(i?GY:0)+z.h;mw=Math.max(mw,z.w)})}return{w:CW+GX+mw,h:Math.max(CH,h)}};' +
-      'const pl=(id,x,ty,sn)=>{if(sn[id])return;const ns=Object.assign({},sn);ns[id]=1;const z=sz(id,sn);pos[id]={x,y:ty+Math.round((z.h-CH)/2)};const ch=(kids[id]||[]).filter(c=>!ns[c.id]);if(!ch.length)return;const s=sp(ch),cx=x+CW+GX;if(s.lf.length>=6){const cols=Math.min(4,Math.ceil(s.lf.length/4)),rows=Math.ceil(s.lf.length/cols);let cy=ty;s.lf.forEach((lf,i)=>{const c=i%cols,r=Math.floor(i/cols);pos[lf.id]={x:cx+c*(CW+GGX),y:cy+r*(CH+GY)};edges.push(c?{f:s.lf[i-1].id,t:lf.id,ch:1}:{f:id,t:lf.id})});cy+=rows*CH+(rows-1)*GY;s.br.forEach(b=>{cy+=GY;const bz=sz(b.id,ns);pl(b.id,cx,cy,ns);edges.push({f:id,t:b.id});cy+=bz.h})}else{let cy=ty;ch.forEach(c=>{const cz=sz(c.id,ns);pl(c.id,cx,cy,ns);edges.push({f:id,t:c.id});cy+=cz.h+GY})}};' +
-      'let ry=PAD;roots.forEach(r=>{const z=sz(r.id,{});pl(r.id,PAD,ry,{});ry+=z.h+GY*2});let mx=0,my=0;Object.values(pos).forEach(q=>{mx=Math.max(mx,q.x+CW);my=Math.max(my,q.y+CH)});' +
-      'let sel=D.selectedVersion||D.currentVersion||(N[0]&&N[0].id);const stMap={current:L.stCurrent,confirmed:L.stConfirmed,running:L.stRunning,pruned:L.stPruned,insufficient:L.stInsufficient,repaired:L.stRepaired,baseline:L.stBaseline,explored:L.stExplore};' +
+      'const CW=178,CH=70,GX=38,GY=10,PAD=18,GGX=12,BP=12,BH=26,pos={},edges=[],boxes=[];const sp=l=>({lf:l.filter(c=>!(kids[c.id]||[]).length),br:l.filter(c=>(kids[c.id]||[]).length)});const cf=n=>Math.min(4,Math.max(2,Math.ceil(Math.sqrt(n))));' +
+      'const sz=(id,sn)=>{if(sn[id])return{w:CW,h:CH};const ns=Object.assign({},sn);ns[id]=1;const ch=(kids[id]||[]).filter(c=>!ns[c.id]);if(!ch.length)return{w:CW,h:CH};const s=sp(ch);let h=0,mw=0;if(s.lf.length>=4){const cols=cf(s.lf.length),rows=Math.ceil(s.lf.length/cols);h=BH+BP*2+rows*CH+(rows-1)*GY;mw=BP*2+cols*CW+(cols-1)*GGX;s.br.forEach(b=>{const z=sz(b.id,ns);h+=GY+z.h;mw=Math.max(mw,z.w)})}else{ch.forEach((c,i)=>{const z=sz(c.id,ns);h+=(i?GY:0)+z.h;mw=Math.max(mw,z.w)})}return{w:CW+GX+mw,h:Math.max(CH,h)}};' +
+      'const pl=(id,x,ty,sn)=>{if(sn[id])return;const ns=Object.assign({},sn);ns[id]=1;const z=sz(id,sn);pos[id]={x,y:ty+Math.round((z.h-CH)/2)};const ch=(kids[id]||[]).filter(c=>!ns[c.id]);if(!ch.length)return;const s=sp(ch),cx=x+CW+GX;if(s.lf.length>=4){const cols=cf(s.lf.length),rows=Math.ceil(s.lf.length/cols),bw=BP*2+cols*CW+(cols-1)*GGX,bh=BH+BP*2+rows*CH+(rows-1)*GY;let cy=ty;boxes.push({p:id,n:s.lf.length,x:cx,y:cy,w:bw,h:bh});edges.push({f:id,bx:cx,by:cy+Math.round(bh/2)});s.lf.forEach((lf,i)=>{const c=i%cols,r=Math.floor(i/cols);pos[lf.id]={x:cx+BP+c*(CW+GGX),y:cy+BH+BP+r*(CH+GY)}});cy+=bh;s.br.forEach(b=>{cy+=GY;const bz=sz(b.id,ns);pl(b.id,cx,cy,ns);edges.push({f:id,t:b.id});cy+=bz.h})}else{let cy=ty;ch.forEach(c=>{const cz=sz(c.id,ns);pl(c.id,cx,cy,ns);edges.push({f:id,t:c.id});cy+=cz.h+GY})}};' +
+      'let ry=PAD;roots.forEach(r=>{const z=sz(r.id,{});pl(r.id,PAD,ry,{});ry+=z.h+GY*2});let mx=0,my=0;Object.values(pos).forEach(q=>{mx=Math.max(mx,q.x+CW);my=Math.max(my,q.y+CH)});boxes.forEach(b=>{mx=Math.max(mx,b.x+b.w);my=Math.max(my,b.y+b.h)});' +
+      'let sel=D.selectedVersion||D.currentVersion||(N[0]&&N[0].id);const stMap={current:L.stCurrent,confirmed:L.stConfirmed,running:L.stRunning,pruned:L.stPruned,guardrail:L.stGuardrail,noGain:L.stNoGain,insufficient:L.stInsufficient,repaired:L.stRepaired,baseline:L.stBaseline,explored:L.stExplore};' +
       'document.getElementById("t").textContent=D.objectiveName||D.objectiveId;document.getElementById("sub").textContent=(L.metric||"Metric")+": "+(D.metric&&D.metric.name||"")+" · "+(L.scale||"Scale")+" "+(D.metricVersion||"E1");document.getElementById("st").textContent=(L.total||"Total")+" "+N.length+" · "+(L.current||"Current")+" "+(D.currentVersion||"—")+" · "+(L.pruned||"Refuted")+" "+((D.stats&&D.stats.pruned)||0);' +
       'const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");function render(){const on={};let c=sel,g=0;while(c&&!on[c]&&g++<500){on[c]=1;c=byId[c]&&byId[c].parent}const W=mx+PAD,H=my+PAD;const cv=document.getElementById("cv");cv.style.width=W+"px";cv.style.height=H+"px";' +
-      'const ep=edges.map(e=>{const a=pos[e.f],b=pos[e.t],x1=a.x+CW,y1=a.y+CH/2,x2=b.x,y2=b.y+CH/2,m=Math.round((x1+x2)/2);const cl="e"+(on[e.f]&&on[e.t]?" on":"")+(byId[e.t]&&byId[e.t].pruned?" pr":"");return"<path class=\\""+cl+"\\" d=\\""+(e.ch||Math.abs(y1-y2)<1?"M"+x1+","+y1+" L"+x2+","+y2:"M"+x1+","+y1+" C"+m+","+y1+" "+m+","+y2+" "+x2+","+y2)+"\\"/>"}).join("");' +
-      'const nd=N.map(n=>{const q=pos[n.id],cl="nd"+(n.state==="current"?" cur":"")+(n.pruned?" pr":"")+(n.id===sel?" sel":""),dt=(n.aspects||[]).map(a=>"<i class=\\""+(a==="object"?"obj":a==="observability"?"obs":"rub")+"\\"></i>").join("");const st=stMap[n.state]||"";return"<button class=\\""+cl+"\\" data-id=\\""+esc(n.id)+"\\" style=\\"left:"+q.x+"px;top:"+q.y+"px;width:"+CW+"px;height:"+CH+"px\\"><div class=\\"top\\"><span class=\\"id\\">"+esc(n.id)+"</span><span class=\\"val\\">"+esc(n.valueText||"—")+"</span></div><div class=\\"subt\\">"+esc(n.changeShort||"")+"</div><div class=\\"foot\\"><span class=\\"dots\\">"+dt+"</span><span>"+esc(n.pruned?(L.stPruned||"Refuted"):n.deltaText||st)+"</span></div></button>"}).join("");' +
-      'cv.innerHTML="<svg class=\\"edges\\" width=\\""+W+"\\" height=\\""+H+"\\">"+ep+"</svg>"+nd;cv.querySelectorAll(".nd").forEach(b=>b.onclick=()=>{sel=b.dataset.id;render()});const n=byId[sel]||N[0];if(!n)return;const sd=D.selectedDetail&&D.selectedDetail.id===n.id?D.selectedDetail:null;const st=stMap[n.state]||n.state||"";' +
+      'const bx=boxes.map(b=>"<div class=\\"clbox\\" style=\\"left:"+b.x+"px;top:"+b.y+"px;width:"+b.w+"px;height:"+b.h+"px\\"><div class=\\"clhdr\\">"+esc((L.clusterTitle||"{1} unpromoted trials from {0}").replace(/\\{0\\}/g,b.p).replace(/\\{1\\}/g,String(b.n)))+"</div></div>").join("");' +
+      'const ep=edges.map(e=>{const a=pos[e.f],x1=a.x+CW,y1=a.y+CH/2;if(e.bx!=null){const m=Math.round((x1+e.bx)/2),cl="e cl"+(on[e.f]&&byId[sel]&&byId[sel].parent===e.f?" on":"");return"<path class=\\""+cl+"\\" d=\\""+(Math.abs(y1-e.by)<1?"M"+x1+","+y1+" L"+e.bx+","+e.by:"M"+x1+","+y1+" C"+m+","+y1+" "+m+","+e.by+" "+e.bx+","+e.by)+"\\"/>"}const b=pos[e.t],x2=b.x,y2=b.y+CH/2,m=Math.round((x1+x2)/2),cl="e"+(on[e.f]&&on[e.t]?" on":"")+(byId[e.t]&&byId[e.t].pruned?" pr":"");return"<path class=\\""+cl+"\\" d=\\""+(Math.abs(y1-y2)<1?"M"+x1+","+y1+" L"+x2+","+y2:"M"+x1+","+y1+" C"+m+","+y1+" "+m+","+y2+" "+x2+","+y2)+"\\"/>"}).join("");' +
+      'const nd=N.map(n=>{const q=pos[n.id],cl="nd"+(n.state==="current"?" cur":"")+(n.pruned?" pr":"")+(n.id===sel?" sel":""),dt=(n.aspects||[]).map(a=>"<i class=\\""+(a==="object"?"obj":a==="observability"?"obs":"rub")+"\\"></i>").join("");const st=stMap[n.state]||"";return"<button class=\\""+cl+"\\" data-id=\\""+esc(n.id)+"\\" style=\\"left:"+q.x+"px;top:"+q.y+"px;width:"+CW+"px;height:"+CH+"px\\"><div class=\\"top\\"><span class=\\"id\\">"+esc(n.id)+"</span><span class=\\"val\\">"+esc(n.value!=null?String(n.value):"—")+"</span></div><div class=\\"subt\\">"+esc(n.changeShort||"")+"</div><div class=\\"foot\\"><span class=\\"dots\\">"+dt+"</span><span>"+esc(n.pruned?st:n.deltaText||st)+"</span></div></button>"}).join("");' +
+      'cv.innerHTML=bx+"<svg class=\\"edges\\" width=\\""+W+"\\" height=\\""+H+"\\">"+ep+"</svg>"+nd;cv.querySelectorAll(".nd").forEach(b=>b.onclick=()=>{sel=b.dataset.id;render()});const n=byId[sel]||N[0];if(!n)return;const sd=D.selectedDetail&&D.selectedDetail.id===n.id?D.selectedDetail:null;const st=stMap[n.state]||n.state||"";' +
       'const asp=n.aspectKind==="baseline"?(L.baseline||"Baseline"):(n.aspects&&n.aspects.length?n.aspects.map(a=>a==="object"?(L.obj||a):a==="observability"?(L.obs||a):(L.rub||a)).join(" · "):(L.unlabeled||"Unlabeled"));' +
+      'const actTxt=(sd&&sd.causality&&sd.causality.action)||n.changeBrief||n.changeShort||"—";const basTxt=(sd&&sd.causality&&sd.causality.basisText)||n.headlineBrief||"";' +
       'document.getElementById("as").innerHTML="<h2 style=\\"margin:0 0 6px;font-size:17px\\">"+esc(n.id)+" <span class=\\"pill\\">"+esc(st)+"</span></h2><div style=\\"font-size:12px;color:var(--muted);margin-bottom:12px\\">"+esc((n.parent?n.parent+" → ":"")+(n.metricVersion||"")+(n.commitShort?" · "+n.commitShort:"")+" · "+asp)+"</div>"+' +
       '"<div style=\\"font-size:13px;margin-bottom:12px\\"><b>"+esc(D.metric&&D.metric.name||L.metric||"Metric")+": </b>"+esc(n.valueText||"—")+(n.deltaText?" ("+esc((n.comparable?(L.sameScale||"Same-scale"):(L.refDelta||"Ref"))+" "+n.deltaText)+")":"")+"</div>"+' +
-      '"<div class=\\"chain\\"><p><b>"+esc(L.lblAction||"Change")+": </b>"+esc((sd&&sd.causality&&sd.causality.action)||n.changeShort||"—")+"</p>"+(sd&&sd.causality&&sd.causality.basisText?"<p><b>"+esc(L.lblBasis||"Basis")+": </b>"+esc(sd.causality.basisText)+"</p>":"")+"</div>"+' +
+      '"<div class=\\"chain\\"><p><b>"+esc(L.lblAction||"Change")+": </b>"+esc(actTxt)+"</p>"+(basTxt?"<p><b>"+esc(L.lblBasis||"Basis")+": </b>"+esc(basTxt)+"</p>":"")+"</div>"+' +
       '((sd&&sd.receipts&&sd.receipts.length)?"<table><thead><tr><th>"+esc(L.colSeed||"seed")+"</th><th>"+esc(L.colState||"status")+"</th><th>"+esc(L.colCommit||"commit")+"</th><th>"+esc(L.colNote||"note")+"</th></tr></thead><tbody>"+sd.receipts.map(r=>"<tr><td>"+esc(r.seed)+"</td><td>"+esc(r.state)+"</td><td>"+esc(r.commit||"—")+"</td><td>"+esc(r.jobId||r.error||"—")+"</td></tr>").join("")+"</tbody></table>":"")}render()})();</script></body></html>';
+  }
+  function downloadStandaloneHtml(data) {
+    try {
+      const html = buildStandaloneHtml(data);
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'rsi-lineage-' + String(data.objectiveId || 'export').replace(/[^a-zA-Z0-9_-]/g, '') + '.html';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    } catch (_) {}
   }
   const onClick = function (ev) {
     const btn = ev.target && ev.target.closest && ev.target.closest('[data-rsi-map-act]');
@@ -840,44 +1111,23 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
     const wrap = btn.closest('.rsi-map-wrap');
     if (!wrap) return;
     const act = btn.getAttribute('data-rsi-map-act');
-    if (act === 'export-html') {
+    if (act === 'export-html' || act === 'expand') {
       const dataEl = wrap.querySelector('.rsi-map-data');
       if (!dataEl) return;
       try {
         const data = JSON.parse(dataEl.textContent || '{}');
-        const html = buildStandaloneHtml(data);
-        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'rsi-lineage-' + String(data.objectiveId || 'export').replace(/[^a-zA-Z0-9_-]/g, '') + '.html';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        if (act === 'expand') openOverviewModal(data, wrap);
+        else downloadStandaloneHtml(data);
       } catch (_) {}
       return;
     }
-    const stage = wrap.querySelector('.rsi-map-stage');
-    const canvas = wrap.querySelector('.rsi-map-canvas');
-    const scroll = wrap.querySelector('.rsi-map-scroll');
-    const zl = wrap.querySelector('.rsi-map-zl');
-    if (!stage || !canvas) return;
-    const baseW = parseFloat(canvas.style.width) || canvas.offsetWidth || 400;
-    const baseH = parseFloat(canvas.style.height) || canvas.offsetHeight || 200;
-    let z = parseFloat(wrap.getAttribute('data-zoom') || '1') || 1;
-    if (act === 'zoom-in') z = Math.min(1.5, Math.round((z + 0.15) * 100) / 100);
-    else if (act === 'zoom-out') z = Math.max(0.45, Math.round((z - 0.15) * 100) / 100);
-    else if (act === 'fit' && scroll) {
-      const availW = Math.max(240, scroll.clientWidth - 16);
-      z = Math.max(0.45, Math.min(1, Math.round((availW / baseW) * 100) / 100));
-    }
-    wrap.setAttribute('data-zoom', String(z));
-    canvas.style.transform = 'scale(' + z + ')';
-    stage.style.width = Math.round(baseW * z) + 'px';
-    stage.style.height = Math.round(baseH * z) + 'px';
-    if (zl) zl.textContent = Math.round(z * 100) + '%';
+    applyZoom(wrap, act);
+  };
+  const onKeyDown = function (ev) {
+    if (ev && ev.key === 'Escape') closeOverviewModal();
   };
   hostGlobal.__rsiMapClickHandler = onClick;
+  hostGlobal.__rsiMapKeyHandler = onKeyDown;
   document.addEventListener('click', onClick);
+  document.addEventListener('keydown', onKeyDown);
 })();
