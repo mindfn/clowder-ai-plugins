@@ -2271,17 +2271,31 @@ test('alpha.114: git-derived parent & baseVersion, conclude disposition/tag, rsi
   }, 'cat-b5ddoo9l', o.thread)).ok, true);
   assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 2, pick: 'direction', directionId: 'try-b' }, 'mgr-cat', 'infra')).ok, true);
 
-  // Register v3 with commit c3 (branched from c1, not c2) -> parent stays v1 (not v2).
+  // Register v3 with commit c3 (branched from c1, not c2) -> parent stays v1 (not v2), and MUST NOT inherit Cycle 2's dead_end/tag.
   await f.tool('task', {}, 'codex', o.thread, 't-v3');
   assert.equal((await f.tool('version', { change: 'Branch B', commit: c3, config: { x: 3 }, tier: 'explore', seeds: 1, skipControl: true }, 'codex', o.thread, 't-v3')).ok, true);
-  assert.equal((await f.read()).experiments[o.id].versions.find((v) => v.id === 'v3').parent, 'v1');
+  const v3AfterReg = (await f.read()).experiments[o.id].versions.find((v) => v.id === 'v3');
+  assert.equal(v3AfterReg.parent, 'v1');
+  assert.equal(v3AfterReg.disposition, undefined);
+  assert.equal(v3AfterReg.tag, undefined);
+  const { viewModel } = await import('../dist/views.js');
+  const vmBeforeC3 = viewModel(await f.read(), 'exp', { project: f.project, pick: `obj:${o.id}` });
+  const v3NodeBefore = vmBeforeC3.overviewMap.nodes.find((n) => n.id === 'v3');
+  assert.notEqual(v3NodeBefore.state, 'deadEnd');
+  assert.equal(v3NodeBefore.pruned, false);
 
   await execute(f, o);
   await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
   assert.equal((await f.tool('conclude', {
-    cycle: 3, verdict: 'tune', findings: 'Branch B ok',
+    cycle: 3, verdict: 'tune', disposition: 'advance', tag: '分支 B 推进', findings: 'Branch B ok',
     options: [{ k: 'try-b2', title: 'Continue B', why: 'next', kind: 'code', target: 'b.txt', cites: [`${o.id}-cycle-1`] }],
   }, 'cat-b5ddoo9l', o.thread)).ok, true);
+  const vmAfterC3 = viewModel(await f.read(), 'exp', { project: f.project, pick: `obj:${o.id}` });
+  const v3NodeAfter = vmAfterC3.overviewMap.nodes.find((n) => n.id === 'v3');
+  assert.equal(v3NodeAfter.disposition, 'advance');
+  assert.equal(v3NodeAfter.tag, '分支 B 推进');
+  assert.equal(v3NodeAfter.pruned, false);
+  assert.notEqual(v3NodeAfter.state, 'deadEnd');
   assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 3, pick: 'direction', directionId: 'try-b2' }, 'mgr-cat', 'infra')).ok, true);
 
   // Register v4 with commit c4 (git child of c3) -> parent auto-derived as v3 (NOT currentVersion v1!).

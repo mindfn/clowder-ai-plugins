@@ -3,7 +3,7 @@ import { act } from './actions.js';
 import { createRuntime } from './runtime.js';
 import { mergeProjects, projects } from './projects.js';
 import { isState, load, ownerKey, readState, record, update } from './store.js';
-import { operateAction, statusAction, toolAction } from './tools.js';
+import { gitAncestorsOf, operateAction, statusAction, toolAction } from './tools.js';
 import type { Data, Experiment, OwnerContext, RsiHost, ToolContext } from './types.js';
 export { ownerKey, readState } from './store.js';
 
@@ -88,11 +88,19 @@ export function createRsi(host: RsiHost) {
         return statusAction(stored.value, input, ctx);
       }
       if (!(await host.storage.get(key))) return { error: 'No RSI objective for this owner', status: 404 };
+      let gitAncestors: string[] | undefined;
+      if (method === 'rsi.version' && typeof input.commit === 'string' && input.commit.trim() && input.baseVersion === undefined) {
+        const snap = await readState(host.storage, key);
+        const exp = snap && isState(snap.value)
+          ? Object.values(snap.value.experiments).find((x) => x.objective.projectPath && x.objective.thread === ctx.threadId)
+          : undefined;
+        if (exp?.objective.projectPath) gitAncestors = await gitAncestorsOf(exp.objective.projectPath, input.commit);
+      }
       const result = await update(host.storage, key, (state) => {
         const before = state.outbox.length;
         const result = method === 'rsi.operate'
           ? operateAction(state, input, ctx, Date.now())
-          : toolAction(state, method, input, ctx, Date.now());
+          : toolAction(state, method, input, ctx, Date.now(), gitAncestors ? { gitAncestors } : undefined);
         if (result.error) return result;
         // Steps that became this member's while it is still in this turn (same thread): tell it here instead of waking it again.
         const mine = state.outbox.slice(before).filter((e) => e.kind === 'agent' && e.member === ctx.catId && e.thread === ctx.threadId && !e.sent);

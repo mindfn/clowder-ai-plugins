@@ -5,29 +5,35 @@ import { abandonRepair, conclude, comparison, controlGroup, cycleLibrary, freshS
 import { parseScheduleText } from './schedule.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, PrepItem, RsiState, Section, ToolContext } from './types.js';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { platform } from 'node:os';
+import { promisify } from 'node:util';
 
-function resolveGitParent(projectPath: string | undefined, commit: string | undefined, versions: Data[]): string | null {
-  if (!projectPath || !commit) return null;
-  const withCommit = versions.filter((v: Data) => typeof v.commit === 'string' && v.commit.trim().length >= 7);
-  if (!withCommit.length) return null;
+const execFileAsync = promisify(execFile);
+
+export async function gitAncestorsOf(projectPath: string | undefined, commit: string | undefined): Promise<string[]> {
+  if (!projectPath || !commit || !/^[a-f0-9]{7,40}$/i.test(commit.trim())) return [];
   try {
-    const out = execFileSync('git', ['rev-list', '--max-count=512', commit], {
+    const { stdout } = await execFileAsync('git', ['rev-list', '--max-count=512', commit.trim()], {
       cwd: projectPath,
       encoding: 'utf8',
       timeout: 2000,
-      stdio: ['ignore', 'pipe', 'ignore'],
     });
-    const ancestors = out.split(/\r?\n/).map((s) => s.trim().toLowerCase()).filter(Boolean);
-    for (const sha of ancestors) {
-      for (let i = withCommit.length - 1; i >= 0; i--) {
-        const vc = String(withCommit[i].commit).trim().toLowerCase();
-        if (sha.startsWith(vc) || vc.startsWith(sha)) return withCommit[i].id;
-      }
-    }
+    return stdout.split(/\r?\n/).map((s) => s.trim().toLowerCase()).filter(Boolean);
   } catch {
-    // Non-git path or commit not reachable in local repo: fall back to currentVersion.
+    return [];
+  }
+}
+
+function matchGitParent(ancestors: readonly string[] | undefined, versions: Data[]): string | null {
+  if (!ancestors?.length) return null;
+  const withCommit = versions.filter((v: Data) => typeof v.commit === 'string' && v.commit.trim().length >= 7);
+  if (!withCommit.length) return null;
+  for (const sha of ancestors) {
+    for (let i = withCommit.length - 1; i >= 0; i--) {
+      const vc = String(withCommit[i].commit).trim().toLowerCase();
+      if (sha.startsWith(vc) || vc.startsWith(sha)) return withCommit[i].id;
+    }
   }
   return null;
 }
@@ -131,7 +137,7 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
 // Text that is not JSON (a shell command such as "[ -f train.py ]") stays as it is.
 const structured = (v: unknown) => { if (typeof v !== 'string' || !/^\s*[[{]/.test(v)) return v; try { return JSON.parse(v); } catch { return v; } };
 
-export function toolAction(state: RsiState, method: string, raw: Data, ctx: ToolContext, now: number): Data {
+export function toolAction(state: RsiState, method: string, raw: Data, ctx: ToolContext, now: number, opts?: { gitAncestors?: readonly string[] }): Data {
   const input: Data = Object.fromEntries(Object.entries(raw || {}).map(([k, v]) => [k, structured(v)]));
   const d = Object.values(state.experiments).find((d) => d.objective.thread === ctx.threadId);
   if (!d?.objective.projectPath) return { error: 'No real RSI objective in this thread', status: 404 };
@@ -227,7 +233,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     }
     const previous = d.objective.currentVersion, id = `v${d.versions.length + 1}`;
     const derivedParent = baseVersion
-      || (input.commit ? resolveGitParent(d.objective.projectPath, input.commit, d.versions) : null)
+      || (input.commit ? matchGitParent(opts?.gitAncestors, d.versions) : null)
       || previous;
     const changes = record(input.changes) ? {
       ...(record(input.changes.pr) && text(input.changes.pr.id) ? { pr: { id: input.changes.pr.id, ...(text(input.changes.pr.url) ? { url: input.changes.pr.url } : {}), ...(text(input.changes.pr.title) ? { title: input.changes.pr.title } : {}), ...(text(input.changes.pr.state) ? { state: input.changes.pr.state } : {}) } } : {}),
