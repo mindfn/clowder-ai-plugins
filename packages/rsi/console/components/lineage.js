@@ -463,11 +463,11 @@ function rsiOverviewDefaults() {
   return {
     total: 'Total', current: 'Current', pruned: 'Refuted', insufficient: 'Insufficient',
     obj: 'Object', obs: 'Observability', rub: 'Rubric', baseline: 'Baseline', unlabeled: 'Unlabeled',
-    lensMetric: 'Metric', lensAspect: 'Aspects', fit: 'Fit', expand: 'Expand', close: 'Close', exportHtml: 'Export HTML',
+    lensMetric: 'Metric', lensAspect: 'Aspects', fit: 'Fit', exportHtml: 'Export HTML',
     clusterTitle: '{1} unpromoted trials from {0} (chronological, none replaced {0})',
-    focusVersion: 'Focus in panel', cycleOf: 'Cycle {0}', clickHint: 'Click any node for details',
+    cycleOf: 'Cycle {0}',
     stCurrent: 'Current', stConfirmed: 'Confirmed', stRunning: 'Running', stPruned: 'Refuted ✕',
-    stGuardrail: 'Guardrail ✕', stNoGain: 'No gain',
+    stGuardrail: 'Guardrail ✕', stWorse: 'Below control', stTied: 'Tied',
     stInsufficient: 'Insufficient', stRepaired: 'Superseded', stExplore: 'Explore', stBaseline: 'Baseline',
     trigBaseline: 'Initial baseline', trigParent: 'Based on {0}', trigRepair: 'Repaired after cycle {0} ({1})',
     trigDir: 'Cycle {0} direction: {1}', trigDec: 'Cycle {0} decision: {1}', trigCycle: 'Cycle {0} ({1})',
@@ -591,7 +591,8 @@ function rsiOverviewStateTag(n, L) {
   if (n.state === 'confirmed') return { cls: 'ok', text: L.stConfirmed };
   if (n.state === 'guardrail') return { cls: 'danger', text: L.stGuardrail };
   if (n.pruned || n.state === 'pruned') return { cls: 'danger', text: L.stPruned };
-  if (n.state === 'noGain') return { cls: 'muted', text: L.stNoGain };
+  if (n.state === 'worse') return { cls: 'danger', text: L.stWorse };
+  if (n.state === 'tied') return { cls: 'muted', text: L.stTied };
   if (n.state === 'insufficient') return { cls: 'warn', text: L.stInsufficient };
   if (n.state === 'repaired') return { cls: 'muted', text: L.stRepaired };
   if (n.state === 'baseline') return { cls: 'muted', text: L.stBaseline };
@@ -675,9 +676,7 @@ function rsiRenderOverviewCanvas(data, L, opts) {
     const barHtml = pct != null ? '<span class="rsi-map-bar"><span class="rsi-map-bar-fill" style="width:' + Math.max(8, Math.round(pct * 100)) + '%"></span></span>' : '';
     const cls = 'rsi-map-node' + (lens === 'aspect' ? ' lens-aspect asp-' + primaryAspect : '') + (n.pruned ? ' is-pruned' : '');
     const isSel = n.id === selectedId;
-    const actAttrs = opts.mode === 'modal'
-      ? ' data-rsi-modal-node="' + esc(n.id) + '"'
-      : ' data-act="plugSet" data-plugin="official.rsi" data-k="selO" data-v="' + esc(n.pick || '') + '"';
+    const actAttrs = ' data-act="plugSet" data-plugin="official.rsi" data-k="selO" data-v="' + esc(n.pick || '') + '"';
     const compactVal = n.value != null ? String(n.value) : '—';
     return '<button type="button" class="' + cls + '" data-state="' + esc(n.state || '') + '" data-ver="' + esc(n.id) + '" aria-pressed="' + (isSel ? 'true' : 'false') + '"' + actAttrs +
       ' style="left:' + q.x + 'px;top:' + q.y + 'px;width:' + CW + 'px;height:' + CH + 'px" title="' + esc((n.id + ' · ' + (n.valueText || '—') + ' · ' + (n.changeBrief || n.changeShort || '')).trim()) + '">' +
@@ -727,9 +726,6 @@ function rsiRenderOverviewInspector(data, L, selId, opts) {
     ? '<span class="rsi-mx-pill" data-tone="' + (n.comparable ? (n.better === 'better' ? 'ok' : n.better === 'worse' ? 'danger' : 'muted') : 'warn') + '">' +
       esc((n.comparable ? L.sameScale : L.refDelta) + ' ' + n.deltaText) + '</span>'
     : '';
-  const focusBtn = opts.mode === 'modal' && n.pick
-    ? '<button type="button" class="rsi-map-btn" data-rsi-modal-focus="' + esc(n.pick) + '">' + esc(L.focusVersion) + '</button>'
-    : '';
   const receiptsHtml = (sd && sd.receipts && sd.receipts.length)
     ? '<div class="rsi-map-rcpts">' + sd.receipts.map(function (r) {
         return '<span class="rsi-map-rcpt"><b>' + esc(L.colSeed + ' ' + r.seed) + '</b> · ' + esc(r.state) +
@@ -745,7 +741,7 @@ function rsiRenderOverviewInspector(data, L, selId, opts) {
       '</div>' +
       '<div class="rsi-map-ins-metric">' +
         '<span class="rsi-map-ins-mval">' + esc((data.metric && data.metric.name ? data.metric.name + ': ' : '') + (n.valueText || '—')) + '</span>' +
-        deltaBadge + focusBtn +
+        deltaBadge +
       '</div>' +
     '</div>' +
     '<div class="rsi-map-ins-meta">' + esc(metaParts.join(' · ')) + '</div>' +
@@ -762,11 +758,13 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
   const data = pv(p.from, sc, root);
   if (!data || !Array.isArray(data.nodes) || !data.nodes.length) return '';
   const L = rsiResolveLabels(p.labels, sc, root, rsiOverviewDefaults());
+  const isModal = p.mode === 'modal' || pv(p.mode, sc, root) === 'modal';
+  const mode = isModal ? 'modal' : 'inline';
   const nodes = data.nodes;
   const lens = data.lens === 'aspect' ? 'aspect' : 'metric';
   const selectedId = data.selectedVersion || data.currentVersion || (nodes[nodes.length - 1] && nodes[nodes.length - 1].id);
-  const rendered = rsiRenderOverviewCanvas(data, L, { esc: h, lens: lens, selectedId: selectedId, mode: 'inline' });
-  const inspectorHtml = rsiRenderOverviewInspector(data, L, selectedId, { esc: h, mode: 'inline' });
+  const rendered = rsiRenderOverviewCanvas(data, L, { esc: h, lens: lens, selectedId: selectedId, mode: mode });
+  const inspectorHtml = rsiRenderOverviewInspector(data, L, selectedId, { esc: h, mode: mode });
   const stats = data.stats || { total: nodes.length, pruned: 0, insufficient: 0, current: data.currentVersion };
   const exportPayload = Object.assign({}, data, { labels: L });
   const safeJson = JSON.stringify(exportPayload).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
@@ -787,13 +785,14 @@ PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap'] = function (p, sc, root) {
       '<span class="rsi-map-zl">100%</span>' +
       '<button type="button" class="rsi-map-btn" data-rsi-map-act="zoom-in">+</button>' +
       '<button type="button" class="rsi-map-btn" data-rsi-map-act="fit">' + h(L.fit) + '</button>' +
-      '<button type="button" class="rsi-map-btn primary" data-rsi-map-act="expand">' + h(L.expand) + '</button>' +
       '<button type="button" class="rsi-map-btn" data-rsi-map-act="export-html">' + h(L.exportHtml) + '</button>' +
     '</div>' +
   '</div>';
-  return '<div class="rsi-map-wrap" data-zoom="1">' + headBar +
-    '<div class="scroll-x rsi-map-scroll"><div class="rsi-map-stage" style="width:' + rendered.totalW + 'px;height:' + rendered.totalH + 'px">' + rendered.html + '</div></div>' +
-    inspectorHtml +
+  const canvasScroll = '<div class="scroll-x rsi-map-scroll"><div class="rsi-map-stage" style="width:' + rendered.totalW + 'px;height:' + rendered.totalH + 'px">' + rendered.html + '</div></div>';
+  const bodyHtml = isModal
+    ? '<div class="rsi-map-split">' + canvasScroll + '<aside class="rsi-map-aside">' + inspectorHtml + '</aside></div>'
+    : canvasScroll + inspectorHtml;
+  return '<div class="rsi-map-wrap' + (isModal ? ' is-modal' : '') + '" data-zoom="1">' + headBar + bodyHtml +
     '<script type="application/json" class="rsi-map-data">' + safeJson + '</script></div>';
 };
 
@@ -919,13 +918,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
   }
   if (hostGlobal.__rsiMapKeyHandler) {
     document.removeEventListener('keydown', hostGlobal.__rsiMapKeyHandler);
-  }
-  const escHtml = function (s) {
-    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  };
-  function closeOverviewModal() {
-    const cur = document.querySelector && document.querySelector('.rsi-map-modal');
-    if (cur) cur.remove();
+    delete hostGlobal.__rsiMapKeyHandler;
   }
   function applyZoom(root, act) {
     const stage = root.querySelector('.rsi-map-stage');
@@ -947,108 +940,6 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
     stage.style.width = Math.round(baseW * z) + 'px';
     stage.style.height = Math.round(baseH * z) + 'px';
     if (zl) zl.textContent = Math.round(z * 100) + '%';
-  }
-  function openOverviewModal(data, sourceWrap) {
-    closeOverviewModal();
-    const L = Object.assign(rsiOverviewDefaults(), data.labels || {});
-    const state = {
-      sel: data.selectedVersion || data.currentVersion || (data.nodes && data.nodes[0] && data.nodes[0].id) || '',
-      lens: data.lens === 'aspect' ? 'aspect' : 'metric',
-      zoom: 1,
-    };
-    const modal = document.createElement('div');
-    modal.className = 'rsi-map-modal';
-    modal.setAttribute('role', 'dialog');
-    modal.setAttribute('aria-modal', 'true');
-    const renderModal = function (shouldFit) {
-      const rendered = rsiRenderOverviewCanvas(data, L, { esc: escHtml, lens: state.lens, selectedId: state.sel, mode: 'modal' });
-      const inspector = rsiRenderOverviewInspector(data, L, state.sel, { esc: escHtml, mode: 'modal' });
-      const stats = data.stats || { total: (data.nodes || []).length, pruned: 0, insufficient: 0, current: data.currentVersion };
-      modal.innerHTML =
-        '<div class="rsi-map-modal-backdrop" data-rsi-modal-close="1"></div>' +
-        '<div class="rsi-map-modal-panel" data-zoom="' + state.zoom + '">' +
-          '<div class="rsi-map-modal-hd">' +
-            '<div class="rsi-map-modal-title">' +
-              '<b>' + escHtml(data.objectiveName || data.objectiveId || 'RSI Lineage') + '</b>' +
-              '<span>' + escHtml((data.metric && data.metric.name ? data.metric.name + ' · ' : '') + (data.metricVersion || 'E1') + ' · ' + L.total + ' ' + stats.total + ' · ' + L.current + ' ' + (stats.current || '—')) + '</span>' +
-            '</div>' +
-            '<div class="rsi-map-tools">' +
-              '<div class="rsi-mx-seg" role="group">' +
-                '<button type="button" class="rsi-mx-seg-btn' + (state.lens === 'metric' ? ' on' : '') + '" data-rsi-modal-lens="metric">' + escHtml(L.lensMetric) + '</button>' +
-                '<button type="button" class="rsi-mx-seg-btn' + (state.lens === 'aspect' ? ' on' : '') + '" data-rsi-modal-lens="aspect">' + escHtml(L.lensAspect) + '</button>' +
-              '</div>' +
-              '<button type="button" class="rsi-map-btn" data-rsi-modal-zoom="zoom-out">−</button>' +
-              '<span class="rsi-map-zl">' + Math.round(state.zoom * 100) + '%</span>' +
-              '<button type="button" class="rsi-map-btn" data-rsi-modal-zoom="zoom-in">+</button>' +
-              '<button type="button" class="rsi-map-btn" data-rsi-modal-zoom="fit">' + escHtml(L.fit) + '</button>' +
-              '<button type="button" class="rsi-map-btn" data-rsi-modal-export="1">' + escHtml(L.exportHtml) + '</button>' +
-              '<button type="button" class="rsi-map-btn" data-rsi-modal-close="1">' + escHtml(L.close) + '</button>' +
-            '</div>' +
-          '</div>' +
-          '<div class="rsi-map-modal-body">' +
-            '<div class="rsi-map-scroll"><div class="rsi-map-stage" style="width:' + rendered.totalW + 'px;height:' + rendered.totalH + 'px">' + rendered.html + '</div></div>' +
-            '<aside class="rsi-map-modal-aside">' + inspector + '</aside>' +
-          '</div>' +
-        '</div>';
-      const panel = modal.querySelector('.rsi-map-modal-panel');
-      if (panel) {
-        if (shouldFit) {
-          applyZoom(panel, 'fit');
-          state.zoom = parseFloat(panel.getAttribute('data-zoom') || '1') || 1;
-        } else {
-          const stage = panel.querySelector('.rsi-map-stage');
-          const canvas = panel.querySelector('.rsi-map-canvas');
-          if (stage && canvas) {
-            canvas.style.transform = 'scale(' + state.zoom + ')';
-            stage.style.width = Math.round(rendered.totalW * state.zoom) + 'px';
-            stage.style.height = Math.round(rendered.totalH * state.zoom) + 'px';
-          }
-        }
-      }
-    };
-    modal.addEventListener('click', function (ev) {
-      const t = ev.target;
-      if (!t || !t.closest) return;
-      if (t.closest('[data-rsi-modal-close]')) { closeOverviewModal(); return; }
-      const nodeBtn = t.closest('[data-rsi-modal-node]');
-      if (nodeBtn) {
-        state.sel = nodeBtn.getAttribute('data-rsi-modal-node') || state.sel;
-        renderModal(false);
-        return;
-      }
-      const lensBtn = t.closest('[data-rsi-modal-lens]');
-      if (lensBtn) {
-        state.lens = lensBtn.getAttribute('data-rsi-modal-lens') === 'aspect' ? 'aspect' : 'metric';
-        renderModal(false);
-        return;
-      }
-      const zBtn = t.closest('[data-rsi-modal-zoom]');
-      if (zBtn) {
-        const panel = modal.querySelector('.rsi-map-modal-panel');
-        if (panel) {
-          applyZoom(panel, zBtn.getAttribute('data-rsi-modal-zoom'));
-          state.zoom = parseFloat(panel.getAttribute('data-zoom') || '1') || 1;
-        }
-        return;
-      }
-      if (t.closest('[data-rsi-modal-export]')) {
-        downloadStandaloneHtml(data);
-        return;
-      }
-      const focusBtn = t.closest('[data-rsi-modal-focus]');
-      if (focusBtn) {
-        const pick = focusBtn.getAttribute('data-rsi-modal-focus') || '';
-        closeOverviewModal();
-        if (pick && typeof A !== 'undefined' && A && typeof A.plugSet === 'function') {
-          A.plugSet({ plugin: 'official.rsi', k: 'selO', v: pick });
-        } else if (pick && sourceWrap) {
-          const inlineBtn = sourceWrap.querySelector('[data-ver="' + state.sel.replace(/"/g, '') + '"]');
-          if (inlineBtn) inlineBtn.click();
-        }
-      }
-    });
-    document.body.appendChild(modal);
-    renderModal(true);
   }
   function buildStandaloneHtml(data) {
     const json = JSON.stringify(data).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
@@ -1077,7 +968,7 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
       'const sz=(id,sn)=>{if(sn[id])return{w:CW,h:CH};const ns=Object.assign({},sn);ns[id]=1;const ch=(kids[id]||[]).filter(c=>!ns[c.id]);if(!ch.length)return{w:CW,h:CH};const s=sp(ch);let h=0,mw=0;if(s.lf.length>=4){const cols=cf(s.lf.length),rows=Math.ceil(s.lf.length/cols);h=BH+BP*2+rows*CH+(rows-1)*GY;mw=BP*2+cols*CW+(cols-1)*GGX;s.br.forEach(b=>{const z=sz(b.id,ns);h+=GY+z.h;mw=Math.max(mw,z.w)})}else{ch.forEach((c,i)=>{const z=sz(c.id,ns);h+=(i?GY:0)+z.h;mw=Math.max(mw,z.w)})}return{w:CW+GX+mw,h:Math.max(CH,h)}};' +
       'const pl=(id,x,ty,sn)=>{if(sn[id])return;const ns=Object.assign({},sn);ns[id]=1;const z=sz(id,sn);pos[id]={x,y:ty+Math.round((z.h-CH)/2)};const ch=(kids[id]||[]).filter(c=>!ns[c.id]);if(!ch.length)return;const s=sp(ch),cx=x+CW+GX;if(s.lf.length>=4){const cols=cf(s.lf.length),rows=Math.ceil(s.lf.length/cols),bw=BP*2+cols*CW+(cols-1)*GGX,bh=BH+BP*2+rows*CH+(rows-1)*GY;let cy=ty;boxes.push({p:id,n:s.lf.length,x:cx,y:cy,w:bw,h:bh});edges.push({f:id,bx:cx,by:cy+Math.round(bh/2)});s.lf.forEach((lf,i)=>{const c=i%cols,r=Math.floor(i/cols);pos[lf.id]={x:cx+BP+c*(CW+GGX),y:cy+BH+BP+r*(CH+GY)}});cy+=bh;s.br.forEach(b=>{cy+=GY;const bz=sz(b.id,ns);pl(b.id,cx,cy,ns);edges.push({f:id,t:b.id});cy+=bz.h})}else{let cy=ty;ch.forEach(c=>{const cz=sz(c.id,ns);pl(c.id,cx,cy,ns);edges.push({f:id,t:c.id});cy+=cz.h+GY})}};' +
       'let ry=PAD;roots.forEach(r=>{const z=sz(r.id,{});pl(r.id,PAD,ry,{});ry+=z.h+GY*2});let mx=0,my=0;Object.values(pos).forEach(q=>{mx=Math.max(mx,q.x+CW);my=Math.max(my,q.y+CH)});boxes.forEach(b=>{mx=Math.max(mx,b.x+b.w);my=Math.max(my,b.y+b.h)});' +
-      'let sel=D.selectedVersion||D.currentVersion||(N[0]&&N[0].id);const stMap={current:L.stCurrent,confirmed:L.stConfirmed,running:L.stRunning,pruned:L.stPruned,guardrail:L.stGuardrail,noGain:L.stNoGain,insufficient:L.stInsufficient,repaired:L.stRepaired,baseline:L.stBaseline,explored:L.stExplore};' +
+      'let sel=D.selectedVersion||D.currentVersion||(N[0]&&N[0].id);const stMap={current:L.stCurrent,confirmed:L.stConfirmed,running:L.stRunning,pruned:L.stPruned,guardrail:L.stGuardrail,worse:L.stWorse,tied:L.stTied,insufficient:L.stInsufficient,repaired:L.stRepaired,baseline:L.stBaseline,explored:L.stExplore};' +
       'document.getElementById("t").textContent=D.objectiveName||D.objectiveId;document.getElementById("sub").textContent=(L.metric||"Metric")+": "+(D.metric&&D.metric.name||"")+" · "+(L.scale||"Scale")+" "+(D.metricVersion||"E1");document.getElementById("st").textContent=(L.total||"Total")+" "+N.length+" · "+(L.current||"Current")+" "+(D.currentVersion||"—")+" · "+(L.pruned||"Refuted")+" "+((D.stats&&D.stats.pruned)||0);' +
       'const esc=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");function render(){const on={};let c=sel,g=0;while(c&&!on[c]&&g++<500){on[c]=1;c=byId[c]&&byId[c].parent}const W=mx+PAD,H=my+PAD;const cv=document.getElementById("cv");cv.style.width=W+"px";cv.style.height=H+"px";' +
       'const bx=boxes.map(b=>"<div class=\\"clbox\\" style=\\"left:"+b.x+"px;top:"+b.y+"px;width:"+b.w+"px;height:"+b.h+"px\\"><div class=\\"clhdr\\">"+esc((L.clusterTitle||"{1} unpromoted trials from {0}").replace(/\\{0\\}/g,b.p).replace(/\\{1\\}/g,String(b.n)))+"</div></div>").join("");' +
@@ -1111,23 +1002,14 @@ PDL_COMPONENTS['plugin:official.rsi/rsiCycleCard'] = function (p, sc, root) {
     const wrap = btn.closest('.rsi-map-wrap');
     if (!wrap) return;
     const act = btn.getAttribute('data-rsi-map-act');
-    if (act === 'export-html' || act === 'expand') {
+    if (act === 'export-html') {
       const dataEl = wrap.querySelector('.rsi-map-data');
       if (!dataEl) return;
-      try {
-        const data = JSON.parse(dataEl.textContent || '{}');
-        if (act === 'expand') openOverviewModal(data, wrap);
-        else downloadStandaloneHtml(data);
-      } catch (_) {}
+      try { downloadStandaloneHtml(JSON.parse(dataEl.textContent || '{}')); } catch (_) {}
       return;
     }
     applyZoom(wrap, act);
   };
-  const onKeyDown = function (ev) {
-    if (ev && ev.key === 'Escape') closeOverviewModal();
-  };
   hostGlobal.__rsiMapClickHandler = onClick;
-  hostGlobal.__rsiMapKeyHandler = onKeyDown;
   document.addEventListener('click', onClick);
-  document.addEventListener('keydown', onKeyDown);
 })();

@@ -644,11 +644,13 @@ function exp(): any {
       const candGroups = (lastR.plan?.groups || []).filter((g: Data) => g.version === v.id && !g.control);
       const judged = lastR.report.compare.groups || [];
       const ownJudged = candGroups.map((g: Data) => judged.find((j: Data) => j.group === g.id)).filter(Boolean);
-      if (ownJudged.length && ownJudged.every((j: Data) => !j.eligible && Array.isArray(j.guardrails) && j.guardrails.some((g: Data) => g.crossed))) {
+      if (ownJudged.length && ownJudged.every((j: Data) => !j.eligible && Array.isArray(j.guardrails) && j.guardrails.some((g: Data) => g.pass === false || g.crossed === true))) {
         return { outcome: 'guardrail', pruned: true, reason: lastR.report?.headline || '' };
       }
       if (ownJudged.length && ownJudged.every((j: Data) => j.eligible && !j.beatsControl)) {
-        return { outcome: 'noGain', pruned: false, reason: lastR.report?.headline || '' };
+        const cmpDir = lastR.report.compare.dir || d.metrics.items.find((m: Data) => m.id === lastR.report.compare.metric || !m.guard)?.dir || 'up';
+        const isWorse = ownJudged.every((j: Data) => typeof j.delta === 'number' && Number.isFinite(j.delta) && (cmpDir === 'up' ? j.delta < -1e-9 : j.delta > 1e-9));
+        return { outcome: isWorse ? 'worse' : 'tied', pruned: false, reason: lastR.report?.headline || '' };
       }
     }
     return { outcome: 'explored', pruned: false, reason: '' };
@@ -663,7 +665,7 @@ function exp(): any {
     const nodeState = v.current ? 'current'
       : isRunningVer ? 'running'
       : v.status === 'candidate' ? 'candidate'
-      : o.projectPath && ['pruned', 'guardrail', 'noGain', 'confirmed', 'insufficient', 'repaired'].includes(out.outcome) ? out.outcome
+      : o.projectPath && ['pruned', 'guardrail', 'worse', 'tied', 'confirmed', 'insufficient', 'repaired'].includes(out.outcome) ? out.outcome
       : '';
     versionMetaById[v.id] = {
       aspectKind: asp.kind,

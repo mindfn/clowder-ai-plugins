@@ -1208,6 +1208,17 @@ views:
                     act: plugSet
                     args:
                       k: overviewMode
+                  - type: button
+                    label: t:rsi.ov.expand
+                    when:
+                      of: $.exp.overviewMode
+                      map:
+                        trend: false
+                        _: true
+                    act: dialog
+                    args:
+                      kind: rsiMap
+                      title: $.exp.name
                   - type: select
                     id: rsi-trend-pick
                     label: t:rsi.exp.trendPick
@@ -1255,7 +1266,8 @@ views:
                     stRunning: t:rsi.ov.stRunning
                     stPruned: t:rsi.ov.stPruned
                     stGuardrail: t:rsi.ov.stGuardrail
-                    stNoGain: t:rsi.ov.stNoGain
+                    stWorse: t:rsi.ov.stWorse
+                    stTied: t:rsi.ov.stTied
                     stInsufficient: t:rsi.ov.stInsufficient
                     stRepaired: t:rsi.ov.stRepaired
                     stExplore: t:rsi.ov.stExplore
@@ -1500,7 +1512,8 @@ views:
                         running: t:rsi.ov.stRunning
                         pruned: t:rsi.ov.stPruned
                         guardrail: t:rsi.ov.stGuardrail
-                        noGain: t:rsi.ov.stNoGain
+                        worse: t:rsi.ov.stWorse
+                        tied: t:rsi.ov.stTied
                         insufficient: t:rsi.ov.stInsufficient
                         repaired: t:rsi.ov.stRepaired
                         baseline: t:rsi.ov.stBaseline
@@ -5224,6 +5237,94 @@ views:
         text: $.doc.body
     sources:
       doc: doc
+    loading: t:rsi.console.loading
+    error: t:rsi.console.error
+  dlg.rsiMap:
+    title: $.title
+    layout: viewport
+    span: full
+    noFieldFocus: true
+    blocks:
+      - type: toolbar
+        left:
+          - type: text
+            when: $.exp.activeTrend
+            parts:
+              - text:
+                  t: rsi.exp.trend
+                  args:
+                    - $.exp.activeTrend.name
+                    - $.exp.hitRate.hit
+                    - $.exp.hitRate.all
+        right:
+          - type: select
+            id: rsi-map-dlg-metric
+            label: t:rsi.exp.trendPick
+            when: $.exp.trendOptions.length
+            value: $.exp.activeTrendId
+            change: plugSet
+            args:
+              k: trendMetric
+            options:
+              - from: $.exp.trendOptions
+                item:
+                  v: "@v"
+                  label: "@label"
+      - type: component
+        use: plugin:official.rsi/rsiOverviewMap
+        props:
+          from: $.exp.overviewMap
+          mode: modal
+          labels:
+            total: t:rsi.ov.total
+            current: t:rsi.ov.current
+            pruned: t:rsi.ov.pruned
+            insufficient: t:rsi.ov.insufficient
+            obj: t:rsi.ov.obj
+            obs: t:rsi.ov.obs
+            rub: t:rsi.ov.rub
+            baseline: t:rsi.ov.baseline
+            unlabeled: t:rsi.ov.unlabeled
+            lensMetric: t:rsi.ov.lensMetric
+            lensAspect: t:rsi.ov.lensAspect
+            fit: t:rsi.ov.fit
+            exportHtml: t:rsi.ov.exportHtml
+            clusterTitle: t:rsi.ov.clusterTitle
+            cycleOf: t:rsi.ov.cycleOf
+            stCurrent: t:rsi.ov.stCurrent
+            stConfirmed: t:rsi.ov.stConfirmed
+            stRunning: t:rsi.ov.stRunning
+            stPruned: t:rsi.ov.stPruned
+            stGuardrail: t:rsi.ov.stGuardrail
+            stWorse: t:rsi.ov.stWorse
+            stTied: t:rsi.ov.stTied
+            stInsufficient: t:rsi.ov.stInsufficient
+            stRepaired: t:rsi.ov.stRepaired
+            stExplore: t:rsi.ov.stExplore
+            stBaseline: t:rsi.ov.stBaseline
+            lblTrigger: t:rsi.ov.lblTrigger
+            lblAction: t:rsi.ov.lblAction
+            lblBasis: t:rsi.ov.lblBasis
+            trigBaseline: t:rsi.ov.trigBaseline
+            trigParent: t:rsi.ov.trigParent
+            trigRepair: t:rsi.ov.trigRepair
+            trigDir: t:rsi.ov.trigDir
+            trigDec: t:rsi.ov.trigDec
+            trigCycle: t:rsi.ov.trigCycle
+            basisRunning: t:rsi.ov.basisRunning
+            basisEval: t:rsi.ov.basisEval
+            basisRepaired: t:rsi.ov.basisRepaired
+            basisNone: t:rsi.ov.basisNone
+            colSeed: t:rsi.ov.colSeed
+            colState: t:rsi.ov.colState
+            colCommit: t:rsi.ov.colCommit
+            colNote: t:rsi.ov.colNote
+            scale: t:rsi.ov.scale
+            metric: t:rsi.ov.metric
+            sameScale: t:rsi.ov.sameScale
+            refDelta: t:rsi.ov.refDelta
+    sources:
+      exp: exp
     loading: t:rsi.console.loading
     error: t:rsi.console.error
   dlg.rsiDocAdd:

@@ -83,4 +83,13 @@ test('i18n yaml packs parse cleanly and rsi.exp dual-tab removes trailing lineag
   const js=readFileSync(new URL('../console/components/lineage.js',import.meta.url),'utf8');
   for(const m of js.matchAll(/data-act="plugSet"[^>]*data-k="([^"]+)"/g))usedKeys.add(m[1]);
   for(const k of usedKeys)assert.equal(expQuery[k],`state.${k}`,`requests.exp.query missing plugSet key: ${k}`);
+  // Fullscreen map preview must use Host native viewport dialog (dlg.rsiMap), never plugin-injected body modal
+  const mapDlg=pdl.views['dlg.rsiMap'];
+  assert.equal(mapDlg?.layout,'viewport');
+  assert.equal(mapDlg?.span,'full');
+  assert.equal(mapDlg?.sources?.exp,'exp');
+  let opensMapDlg=false;
+  walk(pdl.views['rsi.exp'],(node)=>{if(node.act==='dialog'&&node.args?.kind==='rsiMap')opensMapDlg=true;});
+  assert.equal(opensMapDlg,true);
+  assert.doesNotMatch(js,/rsi-map-modal|addEventListener\(['"]keydown['"]/);
 });

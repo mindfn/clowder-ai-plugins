@@ -923,16 +923,16 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
     plan: { tier: 'explore', skipControl: true, seeds: [34], groups: [{ id: 'change', label: 'v5', version: 'v5', vars: {}, control: false }] },
     runs: [], report: null, decision: null, events: [],
   });
-  // Cycle 5 on v7: comparable control where candidate eligible && !beatsControl -> noGain (honest, not harsh refuted)
+  // Cycle 5 on v7: comparable control where candidate eligible && !beatsControl with worse delta -> worse (red, no ✕)
   x.d.rounds.push({
     n: 5, version: 'v7', start: now + 600, end: now + 640, state: 'done',
     plan: { tier: 'confirm', skipControl: false, seeds: [35], groups: [{ id: 'control', label: 'v1', version: 'v1', vars: {}, control: true }, { id: 'change', label: 'v7', version: 'v7', vars: {}, control: false }] },
     runs: [],
     report: {
-      verdict: 'tune', headline: 'v7 tied/below control', summary: 'v7 tied/below control',
+      verdict: 'tune', headline: 'v7 worse than control', summary: 'v7 worse than control',
       matrix: [{ group: 'control', metric: 'accuracy', mean: 0.7, sd: null, n: 1, seeds: [] }, { group: 'change', metric: 'accuracy', mean: 0.65, sd: null, n: 1, seeds: [] }],
       directions: [option('d-code-2', 'code', 'model.py')],
-      compare: { comparable: true, groups: [{ group: 'control', eligible: true, beatsControl: false, guardrails: [] }, { group: 'change', eligible: true, beatsControl: false, guardrails: [] }] },
+      compare: { comparable: true, metric: 'accuracy', dir: 'up', groups: [{ group: 'control', eligible: true, delta: 0, beatsControl: false, guardrails: [] }, { group: 'change', eligible: true, delta: -0.05, beatsControl: false, guardrails: [] }] },
       predictions: [], attribution: { assessedLayers: [] },
     },
     decision: { pick: 'direction', directionId: 'd-code-2', by: '墨墨', at: now + 650 }, events: [],
@@ -946,7 +946,7 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
     decision: null, events: [],
   });
 
-  // Add v9 (guardrail violation on comparable round -> guardrail & pruned)
+  // Add v9 (guardrail violation on comparable round using real cycles.ts pass:false -> guardrail & pruned)
   x.d.versions.push({ id: 'v9', parent: 'v1', change: 'v9 crossed guardrail', commit: 'aaaaaaa', config: {}, at: now + 745, current: false, status: 'proposed' });
   x.d.rounds.push({
     n: 7, version: 'v9', start: now + 746, end: now + 748, state: 'done',
@@ -956,23 +956,38 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
       verdict: 'tune', headline: 'v9 crossed format guardrail', summary: 'v9 crossed format guardrail',
       matrix: [{ group: 'control', metric: 'accuracy', mean: 0.7, sd: null, n: 1, seeds: [] }, { group: 'change', metric: 'accuracy', mean: 0.8, sd: null, n: 1, seeds: [] }],
       directions: [],
-      compare: { comparable: true, groups: [{ group: 'control', eligible: true, beatsControl: false, guardrails: [] }, { group: 'change', eligible: false, beatsControl: false, guardrails: [{ metric: 'format', crossed: true }] }] },
+      compare: { comparable: true, metric: 'accuracy', dir: 'up', groups: [{ group: 'control', eligible: true, delta: 0, beatsControl: false, guardrails: [] }, { group: 'change', eligible: false, delta: 0.1, beatsControl: false, guardrails: [{ metric: 'format', pass: false }] }] },
+      predictions: [], attribution: { assessedLayers: [] },
+    },
+    decision: null, events: [],
+  });
+  // Add v10 (comparable tie delta=0 -> tied, neutral)
+  x.d.versions.push({ id: 'v10', parent: 'v1', change: 'v10 tied control', commit: 'bbbbbbb', config: {}, at: now + 749, current: false, status: 'proposed' });
+  x.d.rounds.push({
+    n: 8, version: 'v10', start: now + 749, end: now + 750, state: 'done',
+    plan: { tier: 'confirm', skipControl: false, seeds: [38], groups: [{ id: 'control', label: 'v1', version: 'v1', vars: {}, control: true }, { id: 'change', label: 'v10', version: 'v10', vars: {}, control: false }] },
+    runs: [],
+    report: {
+      verdict: 'tune', headline: 'v10 tied control', summary: 'v10 tied control',
+      matrix: [{ group: 'control', metric: 'accuracy', mean: 0.7, sd: null, n: 1, seeds: [] }, { group: 'change', metric: 'accuracy', mean: 0.7, sd: null, n: 1, seeds: [] }],
+      directions: [],
+      compare: { comparable: true, metric: 'accuracy', dir: 'up', groups: [{ group: 'control', eligible: true, delta: 0, beatsControl: false, guardrails: [] }, { group: 'change', eligible: true, delta: 0, beatsControl: false, guardrails: [] }] },
       predictions: [], attribution: { assessedLayers: [] },
     },
     decision: null, events: [],
   });
 
-  // Exercise rsi_version optional aspects validation + persistence -> v10
-  x.d.versionRequest = { cycle: 6, title: 'v10 declared', since: now + 750, invocationId: 'inv-asp' };
+  // Exercise rsi_version optional aspects validation + persistence -> v11
+  x.d.versionRequest = { cycle: 6, title: 'v11 declared', since: now + 750, invocationId: 'inv-asp' };
   const badAsp = toolAction(x.s, 'rsi.version', { change: 'bad aspect', config: { a: 1 }, aspects: ['bogus'] }, { catId: x.d.members.find((m) => m.role === 'iterate').catId, threadId: 't-ov', invocationId: 'inv-asp' }, now + 755);
   assert.match(badAsp.error, /aspects must be a non-empty array/);
   const okAsp = toolAction(x.s, 'rsi.version', { change: 'declared object+rubric', config: { a: 2 }, aspects: ['rubric', 'object'] }, { catId: x.d.members.find((m) => m.role === 'iterate').catId, threadId: 't-ov', invocationId: 'inv-asp' }, now + 760);
   assert.equal(okAsp.ok, true);
-  assert.equal(okAsp.version, 'v10');
+  assert.equal(okAsp.version, 'v11');
 
   const vmMap = viewModel(x.s, 'exp', { project: P, pick: `obj:${x.id}`, selO: `${x.id}/v2>c1.eval` });
   const row = (id) => vmMap.versions.find((v) => v.id === id);
-  // P1-1 + alpha.113 polish: honest states (noGain vs guardrail vs pruned)
+  // P1-1 + alpha.113 polish: honest states (worse vs tied vs guardrail vs pruned)
   assert.equal(row('v1').outcome, 'current');
   assert.equal(row('v1').pruned, false);
   assert.equal(row('v2').outcome, 'confirmed');
@@ -985,12 +1000,14 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
   assert.equal(row('v5').pruned, false);
   assert.equal(row('v6').outcome, 'pruned');
   assert.equal(row('v6').pruned, true);
-  assert.equal(row('v7').outcome, 'noGain');
+  assert.equal(row('v7').outcome, 'worse');
   assert.equal(row('v7').pruned, false);
   assert.equal(row('v8').outcome, 'explored');
   assert.equal(row('v8').pruned, false);
   assert.equal(row('v9').outcome, 'guardrail');
   assert.equal(row('v9').pruned, true);
+  assert.equal(row('v10').outcome, 'tied');
+  assert.equal(row('v10').pruned, false);
   assert.equal(vmMap.overviewMap.stats.pruned, 3); // strictly v3 (rollback), v6 (rejected), v9 (guardrail)
   assert.equal(vmMap.overviewMap.stats.insufficient, 1); // v4
 
@@ -1000,8 +1017,8 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
   assert.deepEqual(row('v3').aspects, ['observability']);
   assert.equal(row('v8').aspectKind, 'unlabeled');
   assert.deepEqual(row('v8').aspects, []);
-  assert.equal(row('v10').aspectKind, 'declared');
-  assert.deepEqual(row('v10').aspects, ['object', 'rubric']);
+  assert.equal(row('v11').aspectKind, 'declared');
+  assert.deepEqual(row('v11').aspects, ['object', 'rubric']);
 
   // P2-3: slim overviewMap nodes (no causality/receipts/full change bloat on all nodes; selectedDetail only for selected)
   for (const n of vmMap.overviewMap.nodes) {
@@ -1018,7 +1035,7 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
   assert.equal(vmV3.cycle.detailCard.main.comparable, false);
   assert.equal(vmV3.cycle.detailCard.autoFoldBody, false);
 
-  // P2-1 + P2-2 + alpha.113: hot-reload listener replacement, cluster container (zero fake sibling chains), inline inspector & expand modal button
+  // P2-1 + P2-2 + alpha.113: hot-reload single click listener (zero keydown), cluster container, inline inspector & native viewport modal mode
   const vmMod = await import('node:vm');
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../console/components/lineage.js', import.meta.url), 'utf8');
@@ -1046,23 +1063,28 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
     pvText: (v) => String(v ?? ''),
     chipHtml: (o) => `<button class="${o.cls}"${o.attrs || ''}>${o.label}</button>`,
   };
-  // Load twice (simulating hot-install reload without page refresh) -> must keep strictly 1 active click & 1 keydown listener
+  // Load twice (simulating hot-install reload without page refresh) -> strictly 1 click listener, 0 keydown listeners
   vmMod.runInNewContext(src, sandbox);
   vmMod.runInNewContext(src, sandbox);
   assert.equal(clickListeners.length, 1);
-  assert.equal(keyListeners.length, 1);
+  assert.equal(keyListeners.length, 0);
 
   const mapHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.map' }, {}, {});
   assert.match(mapHtml, /Refuted ✕/);
   assert.match(mapHtml, /Guardrail ✕/);
-  assert.match(mapHtml, /No gain/);
+  assert.match(mapHtml, /Below control/);
+  assert.match(mapHtml, /Tied/);
   assert.match(mapHtml, /Insufficient/);
   assert.match(mapHtml, /Superseded/);
-  assert.match(mapHtml, /data-rsi-map-act="expand"/);
   assert.match(mapHtml, /class="rsi-map-inspect"/);
   assert.match(mapHtml, /class="rsi-map-cluster"/);
   assert.doesNotMatch(mapHtml, /rsi-map-edge chain/);
   assert.doesNotMatch(mapHtml, /已证伪|证据不足|剪枝/);
+
+  const modalHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.map', mode: 'modal' }, {}, {});
+  assert.match(modalHtml, /rsi-map-wrap is-modal/);
+  assert.match(modalHtml, /class="rsi-map-split"/);
+  assert.match(modalHtml, /class="rsi-map-aside"/);
 
   const aspectMapHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.mapAspect' }, {}, {});
   assert.match(aspectMapHtml, /asp-unlabeled/);
@@ -1082,7 +1104,8 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
   const linHtml = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiLineage']({ from: vmMap.versions, key: '@key', parent: '@parentKey', node: { label: [{ text: '@id' }], state: '@nodeState' } }, {}, {});
   assert.match(linHtml, /data-state="pruned"/);
   assert.match(linHtml, /data-state="guardrail"/);
-  assert.match(linHtml, /data-state="noGain"/);
+  assert.match(linHtml, /data-state="worse"/);
+  assert.match(linHtml, /data-state="tied"/);
   assert.match(linHtml, /data-state="confirmed"/);
   assert.match(linHtml, /data-state="insufficient"/);
   assert.match(linHtml, /data-state="repaired"/);

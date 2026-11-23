@@ -128,7 +128,8 @@ ov:
   stRunning: 运行中
   stPruned: 已证伪 ✕
   stGuardrail: 越护栏 ✕
-  stNoGain: 未胜对照
+  stWorse: 低于对照
+  stTied: 持平
   stInsufficient: 证据不足
   stRepaired: 已被修复取代
   stExplore: 探索

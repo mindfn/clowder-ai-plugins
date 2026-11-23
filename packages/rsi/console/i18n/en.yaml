@@ -128,7 +128,8 @@ ov:
   stRunning: Running
   stPruned: Refuted ✕
   stGuardrail: Guardrail ✕
-  stNoGain: No gain
+  stWorse: Below control
+  stTied: Tied
   stInsufficient: Insufficient
   stRepaired: Superseded
   stExplore: Explore
