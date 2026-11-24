@@ -19,7 +19,7 @@ function killTree(pid: number) {
   if (windows) spawn('taskkill', ['/pid', String(pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true });
   else process.kill(-pid, 'SIGKILL');
 }
-const render = (command: string, values: Data) => command.replace(/\{(config|run|seed|job|start|end)\}/g, (_, k) => quote(values[k]));
+const render = (command: string, values: Data) => command.replace(/\{(config|run|seed|job|start|end|harness|version|commit)\}/g, (_, k) => quote(values[k] ?? ''));
 const canCancel = (tpl: string | undefined, values: Data | undefined) => !!tpl && !!values && (!!values.job || !tpl.includes('{job}'));
 const field = (value: Data, path: string) => path.split('.').reduce((v: any, k) => v?.[k], value);
 const exists = (path: string) => stat(path).then(() => true, () => false);
@@ -96,12 +96,21 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         busy = d.objective.id;
         const probeVersion = d.versions.find((v: Data) => v.id === d.objective.currentVersion && v.commit);
         const probeCwd = probeVersion ? (await versionDirectory(host, key, d, probeVersion)).cwd : d.objective.projectPath;
-        const result = await launch(d.executor.commands.preflight, probeCwd, { config: '', run: '', seed: 0, job: '' });
+        const latestVersion = [...d.versions].reverse().find((v: Data) => v.commit);
+        const harnessDir = latestVersion
+          ? (latestVersion.id === probeVersion?.id ? probeCwd : (await versionDirectory(host, key, d, latestVersion)).cwd)
+          : probeCwd;
+        const result = await launch(d.executor.commands.preflight, probeCwd, {
+          config: '', run: '', seed: 0, job: '', start: Math.floor(Date.now() / 1000),
+          harness: harnessDir, version: probeVersion?.id || '', commit: probeVersion?.commit || '',
+        });
         const commit = await projectCommit(d.objective.projectPath);
         if (stopped) return;
         await retain(host.storage, key, (state) => {
           const current = state.experiments[d.objective.id];
           if (current?.exec?.run?.id !== executionId || current.executor.state !== 'probing') return;
+          if (probeVersion?.commit) { const pv = current.versions.find((v: Data) => v.id === probeVersion.id); if (pv) pv.worktree = probeCwd; }
+          if (latestVersion?.commit) { const lv = current.versions.find((v: Data) => v.id === latestVersion.id); if (lv) lv.worktree = harnessDir; }
           current.executor.state = result.code === 0 ? 'passed' : 'failed';
           current.executor.probe = { at: Date.now(), error: result.code === 0 ? null : clip(result.log || `exit ${result.code}`), log: result.log.slice(-LOG_KEEP) };
           const initial = current.versions.find((v: Data) => v.snapshot);
@@ -145,12 +154,17 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       let where: { cwd: string; values: Data } | undefined;
       try {
         const { cwd, commit } = await versionDirectory(host, key, d, version);
+        const harnessVersion = d.versions.find((v: Data) => v.id === round.version && v.commit) || version;
+        const harnessDir = harnessVersion && harnessVersion.id !== version.id
+          ? (await versionDirectory(host, key, d, harnessVersion)).cwd
+          : cwd;
         env.commit = commit;
         env.hw = `${env.hardware.os} / ${env.hardware.arch} / ${env.hardware.chip}`;
         await retain(host.storage, key, (state) => {
           const current = state.experiments[d.objective.id];
           if (!current) return;
           if (version.commit) current.versions.find((v: Data) => v.id === version.id).worktree = cwd;
+          if (harnessVersion?.commit && harnessVersion.id !== version.id) current.versions.find((v: Data) => v.id === harnessVersion.id).worktree = harnessDir;
           Object.assign(current.rounds.find((r: Data) => r.n === round.n).runs.find((r: Data) => r.id === run.id), { cwd, env });
         });
         // An attempt starts in an empty run directory; an earlier attempt's files are kept beside it. A persisted async job keeps writing into its own.
@@ -171,7 +185,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         const config = JSON.stringify(merged, null, 2) + '\n';
         env.config = env.configHash = createHash('sha256').update(config).digest('hex');
         await writeFile(configFile, config);
-        const values: Data = { config: configFile, run: directory, seed: run.seed, job: jobId || '', start: Math.floor(start / 1000) };
+        const values: Data = { config: configFile, run: directory, seed: run.seed, job: jobId || '', start: Math.floor(start / 1000), harness: harnessDir, version: version.id, commit: commit || '' };
         where = { cwd, values };
         const since = jobId ? start : Date.now();
         if (!jobId) {
@@ -182,7 +196,11 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             const oldJob = String(orphan.run.jobId);
             const oldDir = typeof orphan.run.directory === 'string' && orphan.run.directory ? orphan.run.directory : directory;
             const oldCwd = typeof orphan.run.cwd === 'string' && orphan.run.cwd && await exists(orphan.run.cwd) ? orphan.run.cwd : cwd;
-            const oldValues: Data = { config: join(oldDir, 'config.json'), run: oldDir, seed: orphan.run.seed, job: oldJob, start: Math.floor((orphan.run.start || start) / 1000) };
+            const oldRound = d.rounds.find((r: Data) => r.n === orphan.cycle);
+            const oldGroup = oldRound?.plan?.groups?.find((g: Data) => g.id === orphan.run.group);
+            const oldHarnessVer = oldRound && d.versions.find((v: Data) => v.id === oldRound.version && v.commit);
+            const oldHarness = oldHarnessVer?.worktree && await exists(oldHarnessVer.worktree) ? oldHarnessVer.worktree : harnessDir;
+            const oldValues: Data = { config: join(oldDir, 'config.json'), run: oldDir, seed: orphan.run.seed, job: oldJob, start: Math.floor((orphan.run.start || start) / 1000), harness: oldHarness, version: oldGroup?.version || '', commit: orphan.run.env?.commit || '' };
             let cleared = false;
             if (d.executor.commands.get) {
               const probe = await launch(d.executor.commands.get, oldCwd, oldValues);
@@ -298,7 +316,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         const collect = d.executor.commands.collect as string;
         let raw: string;
         if (/\.json$/.test(collect) && !/\s/.test(collect)) {
-          const path = collect.replace(/\{(config|run|seed|job|start|end)\}/g, (_, k) => String(values[k]));
+          const path = collect.replace(/\{(config|run|seed|job|start|end|harness|version|commit)\}/g, (_, k) => String(values[k] ?? ''));
           raw = await readFile(resolve(cwd, path), 'utf8');
         } else {
           const collected = await launch(collect, cwd, values);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
-import { copyFile, access, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { copyFile, access, mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -2460,4 +2460,107 @@ test('alpha.121: rsi_status brief separates failedCount (state===failed) from pa
   assert.equal(brief.round.runsCount, 3);
   assert.equal(brief.round.failedCount, 1);
   assert.equal(brief.round.partialCount, 1);
+});
+
+test('alpha.122: {harness}/{version}/{commit} placeholders allow upgraded async Step 3 harness (and >1800s timeout) to drive untouched legacy currentVersion in confirm cycles', async (t) => {
+  const f = await fixture(t), o = await f.create({ repair: '0' });
+  git(f.project, 'init');
+  git(f.project, 'config', 'user.email', 'test@example.com');
+  git(f.project, 'config', 'user.name', 'test');
+  // Legacy v1 commit: only has model.json and legacy sync runner, NO async harness/ directory.
+  await writeFile(join(f.project, 'model.json'), JSON.stringify({ score: 10 }) + '\n');
+  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'legacy v1 baseline');
+  const c1 = git(f.project, 'rev-parse', 'HEAD');
+
+  f.commands.submit = `node -e 'const fs=require("fs"),m=JSON.parse(fs.readFileSync("model.json","utf8"));fs.writeFileSync(process.argv[1]+"/metrics.json",JSON.stringify({metrics:{score:m.score}}))' {run}`;
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [601] });
+  const cats = [{ id: 'mgr-cat', name: '墨墨', model: 'm', handle: '@gemini' }, { id: 'codex', name: '砚砚', model: 'm', handle: '@codex' }];
+  assert.equal((await f.http('POST', { op: 'manager', objective: o.id, v: 'mgr-cat', cats })).status, 200);
+
+  await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', {
+    cycle: 1, verdict: 'tune', findings: 'Legacy v1 baseline measured',
+    options: [{ k: 'upgrade-v2', title: 'Upgrade model and async harness', why: 'verify confirm against untouched v1' }],
+  }, 'cat-b5ddoo9l', o.thread)).ok, true);
+  assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 1, pick: 'direction', directionId: 'upgrade-v2' }, 'mgr-cat', 'infra')).ok, true);
+
+  // New v2 commit: improves model.json AND introduces upgraded async harness scripts ONLY in v2.
+  await writeFile(join(f.project, 'model.json'), JSON.stringify({ score: 25 }) + '\n');
+  await mkdir(join(f.project, 'harness'), { recursive: true });
+  await writeFile(join(f.project, 'harness', 'preflight.mjs'), `import { existsSync } from 'node:fs';
+console.log(JSON.stringify({ python: '3.12', hasModelInCwd: existsSync('model.json') }));
+`);
+  await writeFile(join(f.project, 'harness', 'submit.mjs'), `import { readFileSync, writeFileSync } from 'node:fs';
+const [, , configPath, runDir, seed, versionId, commitSha] = process.argv;
+const model = JSON.parse(readFileSync('model.json', 'utf8'));
+const jobId = 'job-' + versionId + '-' + seed;
+writeFileSync(runDir + '/meta.json', JSON.stringify({ cwd: process.cwd(), versionId, commitSha, score: model.score, configPath }));
+console.log(JSON.stringify({ jobId }));
+`);
+  await writeFile(join(f.project, 'harness', 'get.mjs'), `console.log(JSON.stringify({ state: 'done', exitCode: 0 }));\n`);
+  await writeFile(join(f.project, 'harness', 'collect.mjs'), `import { readFileSync } from 'node:fs';
+const [, , runDir] = process.argv;
+const meta = JSON.parse(readFileSync(runDir + '/meta.json', 'utf8'));
+console.log(JSON.stringify({ metrics: { score: meta.score } }));
+`);
+  await writeFile(join(f.project, 'harness', 'cancel.mjs'), `process.exit(0);\n`);
+  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'v2 model + async harness');
+  const c2 = git(f.project, 'rev-parse', 'HEAD');
+
+  // Register v2 as a formal confirm cycle (control=v1 vs change=v2).
+  await f.tool('task', {}, 'codex', o.thread, 't-v2');
+  const regV2 = await f.tool('version', { change: 'Upgraded model + async harness', commit: c2, config: { x: 2 }, tier: 'confirm', seeds: 1 }, 'codex', o.thread, 't-v2');
+  assert.equal(regV2.ok, true, JSON.stringify(regV2));
+
+  // Refresh Step 3 executor to use {harness}/harness/*.mjs with timeout=4200 (covering 2700s soak).
+  assert.equal((await f.tool('operate', { op: 'initStepRefresh', objectiveId: o.id, k: 'run' }, 'mgr-cat', 'infra')).ok, true);
+  await f.tool('task', {}, 'codex', o.thread, 't-exec');
+  const exRes = await f.tool('executor', {
+    preflight: 'node {harness}/harness/preflight.mjs',
+    submit: 'node {harness}/harness/submit.mjs {config} {run} {seed} {version} {commit}',
+    get: 'node {harness}/harness/get.mjs {run} {job}',
+    collect: 'node {harness}/harness/collect.mjs {run} {job}',
+    cancel: 'node {harness}/harness/cancel.mjs {run} {job}',
+    timeout: 4200,
+    poll: 1,
+  }, 'codex', o.thread, 't-exec');
+  assert.equal(exRes.ok, true, JSON.stringify(exRes));
+  await until(f.read, (s) => s.experiments[o.id].executor.state === 'passed', 'Step 3 probe passed using {harness} on v2 while currentVersion is v1', 15000);
+  assert.equal((await f.read()).experiments[o.id].executor.timeout, 4200);
+
+  const runItems = (await f.read()).experiments[o.id].prep.filter((p) => p.section === 'run').map((p) => ({ id: p.id, value: 'Use {harness} with 4200s timeout' }));
+  const subRes = await f.tool('submit', { step: 3, window: '不限制', items: runItems }, 'codex', o.thread, 't-exec');
+  assert.equal(subRes.ok, true, JSON.stringify(subRes));
+  assert.equal((await f.tool('operate', { op: 'prepConfirm', objectiveId: o.id, section: 'run' }, 'mgr-cat', 'infra')).ok, true);
+
+  // Execute formal confirm Cycle 2: control=v1 (untouched legacy worktree) vs change=v2.
+  const r2 = await execute(f, o);
+  assert.equal(r2.n, 2);
+  const ctrl = r2.runs.find((r) => r.group === 'control');
+  const chg = r2.runs.find((r) => r.group === 'change');
+  assert.equal(ctrl.state, 'done', JSON.stringify(ctrl.error));
+  assert.equal(ctrl.error, null);
+  assert.equal(chg.state, 'done', JSON.stringify(chg.error));
+  assert.equal(chg.error, null);
+  assert.equal(ctrl.metrics.score, 10);
+  assert.equal(chg.metrics.score, 25);
+
+  const ctrlMeta = JSON.parse(await readFile(join(ctrl.directory, 'meta.json'), 'utf8'));
+  const chgMeta = JSON.parse(await readFile(join(chg.directory, 'meta.json'), 'utf8'));
+  assert.equal(ctrlMeta.versionId, 'v1');
+  assert.equal(ctrlMeta.commitSha, c1);
+  assert.equal(chgMeta.versionId, 'v2');
+  assert.equal(chgMeta.commitSha, c2);
+  assert.notEqual(ctrlMeta.cwd, chgMeta.cwd);
+  // Untouched legacy v1 worktree still has NO harness/ directory.
+  const { existsSync } = await import('node:fs');
+  assert.equal(existsSync(join(ctrlMeta.cwd, 'harness')), false);
+  assert.equal(existsSync(join(chgMeta.cwd, 'harness')), true);
+
+  const { comparison } = await import('../dist/cycles.js');
+  const dAfter = (await f.read()).experiments[o.id];
+  const cmp = comparison(dAfter, r2);
+  assert.equal(cmp.comparable, true);
+  assert.equal(cmp.groups.find((g) => g.group === 'change').beatsControl, true);
 });
