@@ -117,7 +117,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
     name: 'rsi_executor',
     method: 'rsi.executor',
     description:
-      '第 3 步调用 rsi_task 后登记本机执行方式，必填 preflight / submit / collect，选填 get / cancel / analyze / resultMap / failureField / timeout / poll。带 commit 的版本在独立 git worktree（cwd）运行，支持占位符 {config}/{run}/{seed}/{job}/{start}/{end}/{harness}/{version}/{commit}（{harness} 为本周期目标版本或最新提交版本的 worktree，适合新版执行脚本驱动只读旧基线对照）；同步前台 submit 省略 get（get 仅用于异步作业轮询），analyze 仅用于失败诊断。提交后立即触发 preflight 预检。',
+      '第 3 步调用 rsi_task 后登记本机执行方式，必填 preflight / submit / collect，选填 get / cancel / analyze / resultMap / failureField / timeout / poll。带 commit 的版本在独立 git worktree（cwd）运行，支持占位符 {config}/{run}/{seed}/{job}/{start}/{end}/{harness}/{version}/{commit}；注意 {harness} 仅用于定位测量脚本，被测代码必须从当前工作目录 cwd（或按 {version}/{commit}）取，脚本严禁按自身所在路径（如 $(dirname "$0")/..）去定位或部署被测包，否则对照组会静默跑成新版本代码。同步前台 submit 省略 get（get 仅用于异步作业轮询），analyze 仅用于失败诊断。提交后立即触发 preflight 预检。',
     inputSchema: {
       type: 'object',
       additionalProperties: false,

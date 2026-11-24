@@ -155,10 +155,12 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       try {
         const { cwd, commit } = await versionDirectory(host, key, d, version);
         const harnessVersion = d.versions.find((v: Data) => v.id === round.version && v.commit) || version;
-        const harnessDir = harnessVersion && harnessVersion.id !== version.id
-          ? (await versionDirectory(host, key, d, harnessVersion)).cwd
-          : cwd;
+        const harnessRes = harnessVersion && harnessVersion.id !== version.id
+          ? await versionDirectory(host, key, d, harnessVersion)
+          : { cwd, commit };
+        const harnessDir = harnessRes.cwd;
         env.commit = commit;
+        env.harness = { version: harnessVersion.id, commit: harnessRes.commit || null };
         env.hw = `${env.hardware.os} / ${env.hardware.arch} / ${env.hardware.chip}`;
         await retain(host.storage, key, (state) => {
           const current = state.experiments[d.objective.id];

@@ -2545,6 +2545,10 @@ console.log(JSON.stringify({ metrics: { score: meta.score } }));
   assert.equal(chg.error, null);
   assert.equal(ctrl.metrics.score, 10);
   assert.equal(chg.metrics.score, 25);
+  assert.equal(ctrl.env.commit, c1);
+  assert.deepEqual(ctrl.env.harness, { version: 'v2', commit: c2 });
+  assert.equal(chg.env.commit, c2);
+  assert.deepEqual(chg.env.harness, { version: 'v2', commit: c2 });
 
   const ctrlMeta = JSON.parse(await readFile(join(ctrl.directory, 'meta.json'), 'utf8'));
   const chgMeta = JSON.parse(await readFile(join(chg.directory, 'meta.json'), 'utf8'));
