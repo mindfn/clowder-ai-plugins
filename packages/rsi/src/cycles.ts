@@ -4,9 +4,27 @@ import { insideWindow, windowEnd, windowStart } from './schedule.js';
 import { cycleResult, record, text } from './store.js';
 import type { Data, Experiment, RsiState } from './types.js';
 
+export const RUN_ORDERS = ['grouped', 'interleaved', 'balanced'] as const;
+export type RunOrder = (typeof RUN_ORDERS)[number];
+
+export function validOrder(order: unknown): order is RunOrder {
+  return typeof order === 'string' && (RUN_ORDERS as readonly string[]).includes(order);
+}
+
+export function orderedPairs(groups: Data[], seeds: number[], order?: RunOrder): { group: Data; seed: number }[] {
+  if (order === 'interleaved') {
+    return seeds.flatMap((seed) => groups.map((group) => ({ group, seed })));
+  }
+  if (order === 'balanced') {
+    return seeds.flatMap((seed, idx) => (idx % 2 === 1 ? [...groups].reverse() : groups).map((group) => ({ group, seed })));
+  }
+  return groups.flatMap((group) => seeds.map((seed) => ({ group, seed })));
+}
+
 export function validPlan(plan: unknown): plan is Data {
   return record(plan) && Array.isArray(plan.groups) && plan.groups.length > 0 && Array.isArray(plan.seeds) && plan.seeds.length > 0
     && plan.seeds.every((s: unknown) => Number.isSafeInteger(s) && Number(s) >= 0) && new Set(plan.seeds).size === plan.seeds.length
+    && (plan.order === undefined || validOrder(plan.order))
     && plan.groups.every((g: unknown) => record(g) && text(g.id) && /^[a-zA-Z0-9_-]+$/.test(g.id) && text(g.label) && record(g.vars ?? g.overrides))
     && new Set(plan.groups.map((g: Data) => g.id)).size === plan.groups.length;
 }
@@ -84,8 +102,8 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
     const n = planned?.n || Math.max(0, ...d.rounds.map((r: Data) => r.n)) + 1;
     round = planned || { n };
     Object.assign(round, { version: testedVersion(plan), start: now, end: null, state: 'running', plan, metrics: structuredClone(d.metrics), report: null, decision: null, events: [],
-      runs: plan.groups.flatMap((g: Data) => plan.seeds.map((seed: number) => ({ id: `${d.objective.id}-${n}-${g.id}-s${seed}`, group: g.id, seed,
-        state: 'queued', start: null, end: null, retries: 0, attempts: [], metrics: {}, artifacts: [], env: {}, log: '', error: null }))) });
+      runs: orderedPairs(plan.groups, plan.seeds, plan.order).map(({ group: g, seed }) => ({ id: `${d.objective.id}-${n}-${g.id}-s${seed}`, group: g.id, seed,
+        state: 'queued', start: null, end: null, retries: 0, attempts: [], metrics: {}, artifacts: [], env: {}, log: '', error: null })) });
     if (!planned) d.rounds.push(round);
   }
   d.objective.round = round.n;

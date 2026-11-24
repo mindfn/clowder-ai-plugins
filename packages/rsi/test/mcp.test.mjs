@@ -5,7 +5,7 @@ import { parse } from 'yaml';
 import { createRsiMcpServer } from '../dist/mcp-server.js';
 import { toolAction } from '../dist/tools.js';
 import { viewModel } from '../dist/views.js';
-import { finishCycle } from '../dist/cycles.js';
+import { finishCycle, orderedPairs, validPlan } from '../dist/cycles.js';
 import { fixture } from './helpers.mjs';
 
 function createMemoryPair() {
@@ -76,6 +76,8 @@ test('native RSI MCP server declares 8 flat strong-typed tools with zero oneOf a
   assert.deepEqual(listRes.result.tools.map((t) => t.name), [
     'rsi_task', 'rsi_submit', 'rsi_executor', 'rsi_version', 'rsi_conclude', 'rsi_propose', 'rsi_status', 'rsi_operate',
   ]);
+  const versionTool = listRes.result.tools.find((t) => t.name === 'rsi_version');
+  assert.deepEqual(versionTool.inputSchema.properties.order.enum, ['grouped', 'interleaved', 'balanced']);
   // No fragile oneOf constructs anywhere in native MCP schemas
   assert.equal(JSON.stringify(listRes.result.tools).includes('"oneOf"'), false);
 
@@ -206,4 +208,79 @@ test('rsi_submit accepts flat 2–3 level payloads (string step, string[]/record
   assert.equal(targetExp.versionRequest.repair.signature, 'submit exited #: NPU # not claimed');
 
   await server.close();
+});
+
+test('orderedPairs and validPlan project grouped, interleaved, and balanced AB/BA queues and reject invalid order', () => {
+  const twoGroups = [{ id: 'control', label: 'Control', vars: {} }, { id: 'change', label: 'Change', vars: {} }];
+  const seeds = [101, 102, 103, 104];
+  const fmt = (pairs) => pairs.map((p) => `${p.group.id}:${p.seed}`);
+
+  // Default (omitted) and explicit grouped preserve legacy group-first AAAA / BBBB order.
+  const expectedGrouped = ['control:101', 'control:102', 'control:103', 'control:104', 'change:101', 'change:102', 'change:103', 'change:104'];
+  assert.deepEqual(fmt(orderedPairs(twoGroups, seeds)), expectedGrouped);
+  assert.deepEqual(fmt(orderedPairs(twoGroups, seeds, 'grouped')), expectedGrouped);
+
+  // Interleaved runs per-seed fixed AB / AB / AB / AB.
+  assert.deepEqual(fmt(orderedPairs(twoGroups, seeds, 'interleaved')), [
+    'control:101', 'change:101', 'control:102', 'change:102', 'control:103', 'change:103', 'control:104', 'change:104',
+  ]);
+
+  // Balanced runs per-seed counterbalanced AB / BA / AB / BA.
+  assert.deepEqual(fmt(orderedPairs(twoGroups, seeds, 'balanced')), [
+    'control:101', 'change:101', 'change:102', 'control:102', 'control:103', 'change:103', 'change:104', 'control:104',
+  ]);
+
+  // Single-group and 3-group edge cases do not mutate input arrays and alternate cleanly.
+  const threeGroups = [...twoGroups, { id: 'alt', label: 'Alt', vars: {} }];
+  assert.deepEqual(fmt(orderedPairs([twoGroups[0]], [1, 2, 3], 'balanced')), ['control:1', 'control:2', 'control:3']);
+  assert.deepEqual(fmt(orderedPairs(threeGroups, [1, 2], 'balanced')), ['control:1', 'change:1', 'alt:1', 'alt:2', 'change:2', 'control:2']);
+  assert.deepEqual(threeGroups.map((g) => g.id), ['control', 'change', 'alt']);
+
+  // validPlan accepts omitted and valid order values, and rejects invalid ones.
+  assert.equal(validPlan({ groups: twoGroups, seeds }), true);
+  assert.equal(validPlan({ groups: twoGroups, seeds, order: 'grouped' }), true);
+  assert.equal(validPlan({ groups: twoGroups, seeds, order: 'interleaved' }), true);
+  assert.equal(validPlan({ groups: twoGroups, seeds, order: 'balanced' }), true);
+  for (const bad of ['zigzag', '', null, 42, true, {}]) {
+    assert.equal(validPlan({ groups: twoGroups, seeds, order: bad }), false, `should reject ${JSON.stringify(bad)}`);
+  }
+});
+
+test('rsi.version inherits last cycle order when omitted, allows explicit override to grouped, and preserves order on direct repair', async () => {
+  const f = fixture();
+  await f.seed();
+  const id = await f.newObjective();
+  const state = await f.read();
+  const exp = state.experiments[id];
+  exp.objective.thread = 'th-order-1';
+  exp.objective.projectPath = '/tmp/demo';
+  const iterCatId = exp.members.find((m) => m.role === 'iterate').catId;
+  const ctx = { catId: iterCatId, threadId: 'th-order-1', userId: 'u-1', invocationId: 'inv-ord', async assertCurrent() {} };
+
+  exp.rounds = [{
+    n: 1, version: 'v1', state: 'done', start: state.now,
+    plan: { groups: [{ id: 'control', label: 'Control', version: 'v1', vars: {}, control: true }], seeds: [1, 2], order: 'balanced' },
+    runs: [],
+  }];
+
+  // Omitting order inherits 'balanced' from last cycle.
+  exp.versionRequest = { cycle: 1, title: 'follow-up', since: state.now, decision: 'next' };
+  toolAction(state, 'rsi.task', {}, ctx, state.now + 900);
+  const inheritRes = toolAction(state, 'rsi.version', { change: 'inherit order', config: { a: 1 } }, ctx, state.now + 1000);
+  assert.equal(inheritRes.ok, true, JSON.stringify(inheritRes));
+  assert.equal(exp.upcoming.order, 'balanced');
+
+  // Explicit order: 'grouped' overrides inherited 'balanced'.
+  exp.versionRequest = { cycle: 1, title: 'switch back', since: state.now + 2000, decision: 'next2' };
+  toolAction(state, 'rsi.task', {}, ctx, state.now + 1900);
+  const overrideRes = toolAction(state, 'rsi.version', { change: 'switch grouped', config: { a: 2 }, order: 'grouped' }, ctx, state.now + 2000);
+  assert.equal(overrideRes.ok, true, JSON.stringify(overrideRes));
+  assert.equal(exp.upcoming.order, 'grouped');
+
+  // Direct execution repair preserves last cycle's order when omitted.
+  exp.versionRequest = { cycle: 1, title: 'repair', direct: true, since: state.now + 3000, repair: { signature: 'err', failures: [] } };
+  toolAction(state, 'rsi.task', {}, ctx, state.now + 2900);
+  const repairRes = toolAction(state, 'rsi.version', { change: 'fix env', config: { a: 3 } }, ctx, state.now + 3000);
+  assert.equal(repairRes.ok, true, JSON.stringify(repairRes));
+  assert.equal(exp.upcoming.order, 'balanced');
 });

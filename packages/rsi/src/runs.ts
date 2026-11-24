@@ -184,6 +184,11 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         else delete merged.tier;
         if (round.plan.tier === 'explore' && Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length) merged.reservedSeeds = round.plan.reservedSeeds;
         else delete merged.reservedSeeds;
+        if (round.plan.groups.length > 1 && (round.plan.order === 'balanced' || round.plan.order === 'interleaved')) {
+          merged.pairedPlan = round.runs.map((r: Data) => ({ group: r.group, seed: r.seed }));
+        } else {
+          delete merged.pairedPlan;
+        }
         const config = JSON.stringify(merged, null, 2) + '\n';
         env.config = env.configHash = createHash('sha256').update(config).digest('hex');
         await writeFile(configFile, config);

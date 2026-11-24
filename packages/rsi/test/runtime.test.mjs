@@ -2568,3 +2568,261 @@ console.log(JSON.stringify({ metrics: { score: meta.score } }));
   assert.equal(cmp.comparable, true);
   assert.equal(cmp.groups.find((g) => g.group === 'change').beatsControl, true);
 });
+
+test('alpha.123: balanced order executes 4-seed confirm serially in AB/BA/AB/BA with per-arm {harness}/cwd isolation, carries over across confirm/version, preserves grouped default, and rejects invalid order fail-closed', async (t) => {
+  const f = await fixture(t), o = await f.create({ repair: '0' });
+  git(f.project, 'init');
+  git(f.project, 'config', 'user.email', 'test@example.com');
+  git(f.project, 'config', 'user.name', 'test');
+  await writeFile(join(f.project, 'model.json'), JSON.stringify({ score: 10 }) + '\n');
+  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'v1 baseline');
+  const c1 = git(f.project, 'rev-parse', 'HEAD');
+
+  const execLog = join(f.project, 'exec-order.ndjson');
+  await writeFile(join(f.project, 'run-arm.mjs'), `import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+const [, , configFile, runDir, seed, versionId, commitSha, harnessDir] = process.argv;
+const cfg = JSON.parse(readFileSync(configFile, 'utf8'));
+const model = JSON.parse(readFileSync('model.json', 'utf8'));
+const group = runDir.split('/').pop().replace(/-s\\d+$/, '');
+appendFileSync(${JSON.stringify(execLog)}, JSON.stringify({ group, seed: Number(seed), versionId, commitSha, cwd: process.cwd(), harnessDir, score: model.score, pairedPlan: cfg.pairedPlan ?? null }) + '\\n');
+writeFileSync(runDir + '/metrics.json', JSON.stringify({ metrics: { score: model.score } }));
+`);
+  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'add harness runner');
+  const c1Runner = git(f.project, 'rev-parse', 'HEAD');
+
+  f.commands.preflight = 'test -f {harness}/run-arm.mjs';
+  f.commands.submit = `node {harness}/run-arm.mjs {config} {run} {seed} {version} {commit} {harness}`;
+  f.commands.collect = '{run}/metrics.json';
+
+  // Step 5 rejects invalid upcoming.order fail-closed.
+  const badObj = await f.create({ repair: '0' });
+  for (let guard = 0; guard < 12; guard++) {
+    const d = (await f.read()).experiments[badObj.id];
+    const entry = Object.entries(d.exec).find(([, e]) => e.state === 'started');
+    if (!entry) break;
+    const [section, execution] = entry;
+    const task = await f.tool('task', {}, execution.by, badObj.thread);
+    const step = task.steps.find((s) => s.section === section);
+    const items = (step.examples ? step.examples.map((x) => ({ id: `own-${x.id}`, title: `Own ${x.title}` })) : step.items.filter((i) => !i.userOwned))
+      .map((i) => ({ id: i.id, title: i.title, value: `Observed ${i.title}` }));
+    if (section === 'design') {
+      const badRes = await f.tool('submit', {
+        step: step.step, items, unknowns: '', next: '',
+        upcoming: { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [1, 2], order: 'zigzag' },
+      }, execution.by, badObj.thread);
+      assert.match(badRes.error || '', /Invalid upcoming plan/);
+      break;
+    }
+    const res = await f.tool('submit', {
+      step: step.step, items, unknowns: '', next: '',
+      ...(section === 'run' ? { window: '不限制' } : {}),
+      ...(section === 'rules' ? { metrics: { version: 'E1', items: [{ id: 'score', name: 'Score', how: 'metrics.score', dir: 'up' }] } } : {}),
+    }, execution.by, badObj.thread);
+    assert.equal(res.ok, true, JSON.stringify(res));
+    if (section === 'run') {
+      await f.tool('executor', f.commands, execution.by, badObj.thread);
+      await until(f.read, (s) => s.experiments[badObj.id].steps.run, 'badObj run step');
+    }
+    const after = (await f.read()).experiments[badObj.id];
+    for (const item of after.prep.filter((p) => p.section === section && p.neededFrom === 'human' && p.state !== 'confirmed')) {
+      assert.equal((await f.http('POST', { op: 'prep', objective: badObj.id, id: item.id, action: 'confirm' }, { project: f.project })).status, 200);
+    }
+  }
+
+  // Initialize main objective with default (omitted) order and 2 seeds (including a spoofed pairedPlan) to verify backward-compatible grouped default strips spoofed pairedPlan.
+  await f.initialize(o, {
+    groups: [{ id: 'control', label: 'Control', vars: {}, control: true }, { id: 'change', label: 'InitChange', vars: { pairedPlan: [{ group: 'fake', seed: 999 }] } }],
+    seeds: [10, 20],
+  });
+  const cats = [{ id: 'mgr-cat', name: '墨墨', model: 'm', handle: '@gemini' }, { id: 'codex', name: '砚砚', model: 'm', handle: '@codex' }];
+  assert.equal((await f.http('POST', { op: 'manager', objective: o.id, v: 'mgr-cat', cats })).status, 200);
+
+  const r1 = await execute(f, o);
+  assert.equal(r1.plan.order, undefined);
+  assert.deepEqual(r1.runs.map((r) => `${r.group}:${r.seed}`), ['control:10', 'control:20', 'change:10', 'change:20']);
+  const log1 = (await readFile(execLog, 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(log1.map((x) => `${x.group}:${x.seed}`), ['control:10', 'control:20', 'change:10', 'change:20']);
+  assert.ok(log1.every((x) => x.pairedPlan === null), 'grouped default must strip spoofed pairedPlan');
+  await writeFile(execLog, '');
+
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', {
+    cycle: 1, verdict: 'tune', findings: 'Baseline measured',
+    options: [{ k: 'v2-balanced', title: '4-seed balanced confirm', why: 'avoid thermal drift' }],
+  }, 'cat-b5ddoo9l', o.thread)).ok, true);
+  assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 1, pick: 'direction', directionId: 'v2-balanced' }, 'mgr-cat', 'infra')).ok, true);
+
+  // Create v2 commit with improved score.
+  await writeFile(join(f.project, 'model.json'), JSON.stringify({ score: 25 }) + '\n');
+  git(f.project, 'add', '.'); git(f.project, 'commit', '-m', 'v2 candidate');
+  const c2 = git(f.project, 'rev-parse', 'HEAD');
+
+  // Invalid order in rsi_version fails closed without mutating versions or closing versionRequest.
+  await f.tool('task', {}, 'codex', o.thread, 't-v2');
+  const versionsBefore = (await f.read()).experiments[o.id].versions.length;
+  const badVer = await f.tool('version', { change: 'bad order', commit: c2, config: {}, tier: 'confirm', seeds: 4, order: 'zigzag' }, 'codex', o.thread, 't-v2');
+  assert.match(badVer.error || '', /order must be one of/);
+  assert.equal((await f.read()).experiments[o.id].versions.length, versionsBefore);
+  assert.ok((await f.read()).experiments[o.id].versionRequest);
+
+  // Submit v2 with 4 seeds and order: 'balanced' (passing a spoofed pairedPlan in config to verify Host overwrites it on both control and change).
+  const okVer = await f.tool('version', { change: 'v2 balanced confirm', commit: c2, config: { pairedPlan: [{ group: 'spoof', seed: 0 }] }, tier: 'confirm', seeds: 4, order: 'balanced' }, 'codex', o.thread, 't-v2');
+  assert.equal(okVer.ok, true, JSON.stringify(okVer));
+  assert.equal((await f.read()).experiments[o.id].upcoming.order, 'balanced');
+
+  // Run Cycle 2 and verify exact AB / BA / AB / BA persisted queue AND on-disk execution order.
+  const r2 = await execute(f, o);
+  assert.equal(r2.n, 2);
+  assert.equal(r2.plan.order, 'balanced');
+  const [s0, s1, s2, s3] = r2.plan.seeds;
+  const expectedPairedPlan = [
+    { group: 'control', seed: s0 }, { group: 'change', seed: s0 },
+    { group: 'change', seed: s1 }, { group: 'control', seed: s1 },
+    { group: 'control', seed: s2 }, { group: 'change', seed: s2 },
+    { group: 'change', seed: s3 }, { group: 'control', seed: s3 },
+  ];
+  const expectedAbBa = expectedPairedPlan.map((x) => `${x.group}:${x.seed}`);
+  assert.deepEqual(r2.runs.map((r) => `${r.group}:${r.seed}`), expectedAbBa);
+
+  const log2 = (await readFile(execLog, 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(log2.map((x) => `${x.group}:${x.seed}`), expectedAbBa);
+  for (const row of log2) {
+    assert.deepEqual(row.pairedPlan, expectedPairedPlan, `Host must project identical pairedPlan into ${row.group}:${row.seed} config.json`);
+    assert.equal(row.harnessDir, (await f.read()).experiments[o.id].versions.find((v) => v.id === 'v2').worktree);
+    if (row.group === 'control') {
+      assert.equal(row.versionId, 'v1');
+      assert.equal(row.commitSha, c1Runner);
+      assert.equal(row.score, 10);
+    } else {
+      assert.equal(row.versionId, 'v2');
+      assert.equal(row.commitSha, c2);
+      assert.equal(row.score, 25);
+    }
+  }
+  assert.notEqual(c1, c2);
+
+  // Full status snapshot exposes plan.order and persisted AB/BA runs order.
+  const st = await f.tool('status', { objectiveId: o.id, scope: 'full', cycle: 2 }, 'cat-b5ddoo9l', o.thread);
+  assert.equal(st.round.plan.order, 'balanced');
+  assert.deepEqual(st.round.runs.map((r) => `${r.group}:${r.seed}`), expectedAbBa);
+
+  // Concluding a winning balanced cycle preserves order: 'balanced' into the automatic confirmation upcoming plan.
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  const c2Res = await f.tool('conclude', {
+    cycle: 2, verdict: 'keep', findings: 'v2 beats v1 across all 4 balanced pairs',
+    options: [{ k: 'next', title: 'Continue', why: 'confirm winner', cites: [`${o.id}-cycle-1`] }],
+  }, 'cat-b5ddoo9l', o.thread);
+  assert.equal(c2Res.ok, true, JSON.stringify(c2Res));
+  assert.equal((await f.read()).experiments[o.id].upcoming.order, 'balanced');
+});
+
+test('alpha.123: balanced order persists queue across mid-cycle plugin restart (interrupted resume and async jobId recovery) without reordering or rerunning completed arms', async (t) => {
+  const { existsSync } = await import('node:fs');
+  // Part A: synchronous executor interrupted mid-cycle on arm #4 (control-s1); resume preserves AB/BA order & never reruns arms 1-3.
+  const f1 = await fixture(t), o1 = await f1.create({ repair: '0' });
+  const logFile1 = join(f1.project, 'sync-order.log');
+  const gateFile1 = join(f1.project, 'arm4.hold');
+  await writeFile(gateFile1, 'hold');
+  await writeFile(join(f1.project, 'sync-arm.mjs'), `import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
+const [, , runDir, seed] = process.argv;
+const group = runDir.split('/').pop().replace(/-s\\d+$/, '');
+const tag = group + ':' + seed;
+appendFileSync(${JSON.stringify(logFile1)}, tag + '\\n');
+if (tag === 'control:202' && existsSync(${JSON.stringify(gateFile1)})) {
+  writeFileSync(${JSON.stringify(join(f1.project, 'arm4.started'))}, 'yes');
+  await new Promise((r) => setTimeout(r, 30000));
+}
+writeFileSync(runDir + '/metrics.json', JSON.stringify({ metrics: { score: group === 'change' ? 20 : 10 } }));
+`);
+  f1.commands.preflight = 'test -f sync-arm.mjs';
+  f1.commands.submit = `node sync-arm.mjs {run} {seed}`;
+  f1.commands.collect = '{run}/metrics.json';
+
+  await f1.initialize(o1, {
+    groups: [{ id: 'control', label: 'Control', vars: {}, control: true }, { id: 'change', label: 'Change', vars: {} }],
+    seeds: [201, 202, 203, 204],
+    order: 'balanced',
+  });
+  await f1.http('POST', { op: 'runCycle', objective: o1.id });
+  await until(f1.read, (s) => {
+    const r = s.experiments[o1.id].rounds[0];
+    return r?.runs?.slice(0, 3).every((u) => u.state === 'done') && r?.runs?.[3]?.state === 'running'
+      && existsSync(join(f1.project, 'arm4.started'));
+  }, 'sync arm 1-3 done and arm 4 running');
+
+  // Stop & restart plugin mid-cycle.
+  await f1.activation().stop();
+  await rm(gateFile1, { force: true });
+  f1.start();
+  await f1.http('GET', undefined, { view: 'exp', project: f1.project, pick: `obj:${o1.id}` });
+
+  const afterRestart1 = (await f1.read()).experiments[o1.id].rounds[0];
+  assert.equal(afterRestart1.state, 'interrupted');
+  const expectedSeq1 = ['control:201', 'change:201', 'change:202', 'control:202', 'control:203', 'change:203', 'change:204', 'control:204'];
+  assert.deepEqual(afterRestart1.runs.map((r) => `${r.group}:${r.seed}`), expectedSeq1);
+  assert.deepEqual(afterRestart1.runs.slice(0, 3).map((r) => r.state), ['done', 'done', 'done']);
+  assert.equal(afterRestart1.runs[3].retryable, true);
+
+  // Resume interrupted cycle and verify arms 1-3 were never re-run and arms 4-8 ran in exact persisted AB/BA order.
+  await f1.http('POST', { op: 'runCycle', objective: o1.id });
+  const done1 = (await until(f1.read, (s) => s.experiments[o1.id].rounds[0].state === 'evaluating', 'sync resumed balanced cycle finished')).experiments[o1.id].rounds[0];
+  assert.ok(done1.runs.every((r) => r.state === 'done'));
+  const ranSeq1 = (await readFile(logFile1, 'utf8')).trim().split('\n');
+  // Arms 1-3 ran once; arm 4 started before restart and was cleanly retried after resume; arms 5-8 ran once in exact order.
+  assert.deepEqual(ranSeq1, [
+    'control:201', 'change:201', 'change:202', 'control:202',
+    'control:202', 'control:203', 'change:203', 'change:204', 'control:204',
+  ]);
+
+  // Part B: async executor (without cancel) restarts while arm #4 holds a persisted jobId; recovers in-place without resubmitting arm #4 or rerunning arms 1-3.
+  const f2 = await fixture(t), o2 = await f2.create({ repair: '0' });
+  const logFile2 = join(f2.project, 'async-submits.log');
+  const gateFile2 = join(f2.project, 'async-arm4.hold');
+  await writeFile(gateFile2, 'hold');
+  await writeFile(join(f2.project, 'async-submit.mjs'), `import { appendFileSync, writeFileSync } from 'node:fs';
+const [, , runDir, seed] = process.argv;
+const group = runDir.split('/').pop().replace(/-s\\d+$/, '');
+const tag = group + ':' + seed;
+appendFileSync(${JSON.stringify(logFile2)}, tag + '\\n');
+writeFileSync(runDir + '/metrics.json', JSON.stringify({ metrics: { score: group === 'change' ? 20 : 10 } }));
+console.log(JSON.stringify({ jobId: 'job-' + tag }));
+`);
+  await writeFile(join(f2.project, 'async-get.mjs'), `import { existsSync } from 'node:fs';
+const [, , jobId] = process.argv;
+if (jobId === 'job-control:302' && existsSync(${JSON.stringify(gateFile2)})) {
+  console.log(JSON.stringify({ state: 'running' }));
+} else {
+  console.log(JSON.stringify({ state: 'done', exitCode: 0 }));
+}
+`);
+  f2.commands.preflight = 'test -f async-submit.mjs';
+  f2.commands.submit = `node async-submit.mjs {run} {seed}`;
+  f2.commands.get = `node async-get.mjs {job}`;
+  f2.commands.collect = '{run}/metrics.json';
+  f2.commands.poll = 1;
+  delete f2.commands.cancel;
+
+  await f2.initialize(o2, {
+    groups: [{ id: 'control', label: 'Control', vars: {}, control: true }, { id: 'change', label: 'Change', vars: {} }],
+    seeds: [301, 302, 303, 304],
+    order: 'balanced',
+  });
+  await f2.http('POST', { op: 'runCycle', objective: o2.id });
+  await until(f2.read, (s) => {
+    const r = s.experiments[o2.id].rounds[0];
+    return r?.runs?.slice(0, 3).every((u) => u.state === 'done') && r?.runs?.[3]?.jobId === 'job-control:302';
+  }, 'async arm 1-3 done and arm 4 holds persisted jobId');
+
+  // Restart plugin while arm #4 is polling remote job.
+  await f2.activation().stop();
+  await rm(gateFile2, { force: true });
+  f2.start();
+  await f2.http('GET', undefined, { view: 'exp', project: f2.project, pick: `obj:${o2.id}` });
+
+  const done2 = (await until(f2.read, (s) => s.experiments[o2.id].rounds[0].state === 'evaluating', 'async resumed balanced cycle finished')).experiments[o2.id].rounds[0];
+  const expectedSeq2 = ['control:301', 'change:301', 'change:302', 'control:302', 'control:303', 'change:303', 'change:304', 'control:304'];
+  assert.deepEqual(done2.runs.map((r) => `${r.group}:${r.seed}`), expectedSeq2);
+  assert.ok(done2.runs.every((r) => r.state === 'done'));
+  // Exact 8 submits total: arm 4 resumed polling its persisted jobId without resubmitting, and arms 1-3 were never rerun!
+  assert.deepEqual((await readFile(logFile2, 'utf8')).trim().split('\n'), expectedSeq2);
+});

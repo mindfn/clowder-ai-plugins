@@ -1,7 +1,7 @@
 import { RSI_CP_INIT, createFixtures } from './fixtures.js';
 import { act } from './actions.js';
 import { clipTitle, submitInitStep, enqueue, kick, message, prepSettled, stepMemberOf, STOP_TARGET, syncObjective } from './init.js';
-import { abandonRepair, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, resolveRsiParent, validateReservedSeeds, validPlan } from './cycles.js';
+import { abandonRepair, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, resolveRsiParent, RUN_ORDERS, type RunOrder, validOrder, validateReservedSeeds, validPlan } from './cycles.js';
 import { sliceMatrix, validateSliceSpecs } from './compare.js';
 import { parseScheduleText } from './schedule.js';
 import { record, text } from './store.js';
@@ -176,6 +176,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     const configVal = input.config !== undefined ? input.config : text(input.configPath) ? input.configPath : undefined;
     if (!text(input.change) || input.commit !== undefined && (!text(input.commit) || !/^[a-f0-9]{7,40}$/i.test(input.commit)) || !(record(configVal) || text(configVal))) return { error: 'Provide change, optional git commit (7–40 hex characters), and config (JSON object or JSON file path / configPath)' };
     if (input.tier !== undefined && !['explore', 'confirm'].includes(input.tier)) return { error: 'tier must be "explore" or "confirm"' };
+    if (input.order !== undefined && !validOrder(input.order)) return { error: `order must be one of ${RUN_ORDERS.join(', ')}` };
     if (input.seeds !== undefined && !(Number.isInteger(input.seeds) && input.seeds >= 1 && input.seeds <= 20)) return { error: 'seeds must be an integer between 1 and 20' };
     if (input.skipControl !== undefined && typeof input.skipControl !== 'boolean') return { error: 'skipControl must be a boolean' };
     if (input.skipControl === true && input.tier !== 'explore') return { error: 'skipControl is only allowed when tier is "explore"' };
@@ -230,23 +231,26 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       for (const v of d.versions) v.current = v.id === id;
       d.objective.currentVersion = id;
       const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, ...cleanLastPlan } = last.plan;
+      const directOrder = (input.order ?? cleanLastPlan.order) as (RunOrder | undefined);
       if (d.versionRequest.repair) {
         // A repair reruns the failed cycle's plan on the fixed version; the failed cycle stays as it ran, marked repaired, and is not evaluated.
         Object.assign(last, { state: 'repaired', repairedBy: id });
         (d.repairs ||= []).push({ at: now, cycle: last.n, version: id, signature: d.versionRequest.repair.signature });
-        d.upcoming = { ...cleanLastPlan, baseline: false, groups: last.plan.groups.map((g: Data) => (g.version || previous) === previous ? { ...g, version: id } : g) };
+        d.upcoming = { ...cleanLastPlan, ...(directOrder ? { order: directOrder } : {}), baseline: false, groups: last.plan.groups.map((g: Data) => (g.version || previous) === previous ? { ...g, version: id } : g) };
         message(state, d, now, `执行修复 ${id}：重跑第 ${last.n} 周期的计划`, `${input.change}\n\n修的是：${d.versionRequest.repair.signature}`, 'plan');
       } else {
-        d.upcoming = { ...cleanLastPlan, baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d)] };
+        d.upcoming = { ...cleanLastPlan, ...(directOrder ? { order: directOrder } : {}), baseline: false, seeds: freshSeeds(d, last.plan.seeds.length), groups: [controlGroup(d)] };
         message(state, d, now, `执行修复 ${id} 直接作为默认版本`, `${input.change}\n\n执行修复不和旧版本对比；下一周期用它跑当前版本对照，确认没有跑坏。`, 'plan');
       }
     } else {
       const changeGroup = { id: 'change', label: input.change, version: id, vars: {}, control: false, confirm: false };
       const reservedSeeds = Array.isArray(input.reservedSeeds) && input.reservedSeeds.length ? [...(input.reservedSeeds as number[])] : undefined;
+      const order = (input.order ?? last?.plan?.order) as (RunOrder | undefined);
       d.upcoming = {
         baseline: false,
         skipControl,
         ...(tier ? { tier } : {}),
+        ...(order ? { order } : {}),
         ...(reservedSeeds ? { reservedSeeds } : {}),
         seeds: scheduledSeeds,
         groups: skipControl ? [changeGroup] : [controlGroup(d), changeGroup],
