@@ -236,7 +236,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
     name: 'rsi_operate',
     method: 'rsi.operate',
     description:
-      '受托管理操作工具：仅当评估项的委托负责人（policy.manager）被主人指定为当前成员时可用。支持代为采纳方向（expDecide）、确认准备项（prepConfirm）、重做步骤（initStepRefresh/initRetry）、切换步骤成员（stepMember）、暂停/恢复/开始/结项毕业/重试（life）、手动跑一轮（runCycle）以及重新触发阶段（evalAgain/discussAgain/versionAgain）；不可修改委托负责人或删除评估项。',
+      '受托管理操作工具：仅当评估项的委托负责人（policy.manager）被主人指定为当前成员时可用。支持代为采纳方向（expDecide）、确认准备项（prepConfirm）、重做步骤（initStepRefresh/initRetry）、切换步骤成员（stepMember）、暂停/恢复/开始/重试（life）、手动跑一轮（runCycle）以及重新触发阶段（evalAgain/discussAgain/versionAgain）；不可修改委托负责人或停机/删除策略。',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -251,12 +251,12 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
         n: { type: 'integer', minimum: 1, description: '周期号（expDecide 必填，evalAgain 可选）。' },
         pick: { type: 'string', enum: ['direction', 'same', 'info', 'addVar', 'metric', 'goal'], description: 'expDecide 的决策类型。' },
         directionId: { type: 'string', minLength: 1, description: 'expDecide pick="direction" 时的方向 ID。' },
-        note: { type: 'string', description: 'expDecide 的说明（info/addVar/metric/goal 必填），或 life(action="finish") 的结项/毕业原因说明（必填，≤240字）。' },
+        note: { type: 'string', description: 'expDecide 的说明（info/addVar/metric/goal 必填）。' },
         itemId: { type: 'string', minLength: 1, description: 'prepConfirm 确认单个待确认条目 ID。' },
         section: { type: 'string', minLength: 1, description: 'prepConfirm 批量确认某步全部待确认项，或作为步骤编号/名称。' },
         k: { type: 'string', minLength: 1, description: 'initStepRefresh / initRetry / stepMember 的步骤名或编号（1–7 / goal/scope/run/rules/design/feedback/baseline）。' },
         catId: { type: 'string', minLength: 1, description: 'stepMember 要切换的目标成员 catId。' },
-        action: { type: 'string', enum: ['start', 'pause', 'resume', 'finish', 'retry'], description: 'life 生命周期动作（finish 用于正式结项/毕业，需带 note）。' },
+        action: { type: 'string', enum: ['start', 'pause', 'resume', 'retry'], description: 'life 生命周期动作。' },
         force: { type: 'boolean', description: 'initRetry 强制重新叫醒。' },
         patches: {
           type: 'array',

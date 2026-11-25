@@ -448,16 +448,19 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     predictions: checkPredictions(d, round, compared), asks: [], directions: directionsFrom(d, options, member, []), agree: true,
     compare: { ...compare, note: '仅比较本周期 control；区间为种子均值 ± 样本标准差。' }, confirmation,
     attribution: { verdict: 'unresolved', primaryLayer: null, assessedLayers: [], competingLayers: [], uncertainty: 'interval', comparability: 'unchanged', reasons: [], evidence: [] } };
+  const alreadyClosed = ['done', 'retired'].includes(d.objective.state);
   round.state = 'done';
-  if (d.objective.state === 'paused') d.objective.resumeTo = 'pending';
-  else d.objective.state = 'pending';
+  if (!alreadyClosed) {
+    if (d.objective.state === 'paused') d.objective.resumeTo = 'pending';
+    else d.objective.state = 'pending';
+  }
   const interval = confirmation?.interval;
   const outcome = confirmation ? `\n\n${confirmation.status === 'candidate' ? '候选：下一周期换新种子确认赢家，默认版本保持当前对照。' : confirmation.status === 'confirmed' ? `确认赢家，采用 ${confirmation.version}：${short(interval.mean)} ± ${interval.spread == null ? '无法估计' : short(interval.spread)}。` : confirmation.status === 'insufficient' ? '复验环境失败，证据不足；保留候选，下周期换新种子继续确认。' : '复验未保持改善，保留当前默认版本。'}` : '';
   // A conclusion that stops the objective asks for no direction; its stop card follows it.
   // Nor does one that leaves a winner to confirm: the next cycle is the confirmation whatever is picked.
   round.report.outcome = outcome;
-  const stopped = stopAfterConclusion(state, d, round, compared, now);
-  if (analysts.length && !stopped && !d.candidate) {
+  const stopped = alreadyClosed ? null : stopAfterConclusion(state, d, round, compared, now);
+  if (analysts.length && !stopped && !alreadyClosed && !d.candidate) {
     // The analysts receive the same report and propose side by side; the conclusion card waits for them.
     round.analysis = { waiting: analysts.map((m) => m.catId), since: now };
     for (const m of analysts) enqueue(state, d, 'agent', { member: m.catId, cycle: round.n, action: 'direction', message: { title: `第 ${round.n} 周期：请给方向`,
@@ -470,21 +473,22 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
 }
 
 function conclusionCard(state: RsiState, d: Experiment, round: Data, now: number, stopped?: Data | null) {
-  // From here the conclusion waits for your decision (a stopping one is already decided).
-  if (!round.decision) round.asked = now;
+  const closed = !!stopped || ['done', 'retired'].includes(d.objective.state);
+  // From here the conclusion waits for your decision (a stopping or already-closed objective does not).
+  if (!round.decision && !closed) round.asked = now;
   const report = round.report, nameOf = (id: string) => d.members.find((m) => m.catId === id)?.name || id, several = new Set(report.directions.map((x: Data) => x.by)).size > 1;
   const lines = report.directions.map((x: Data) => `${x.id} · ${x.title}${several ? `（${nameOf(x.by)}）` : ''}：${x.why}`);
   const missing = round.analysis?.missing || [];
   // Agreement is stated only when at least two analysts proposed: one analyst's directions cannot agree or disagree.
-  const verdict = (round.analysis?.compared || 0) > 1 && !stopped ? `\n\n${report.agree ? '分析成员意见一致，可以直接采纳。' : '几个分析成员意见不一致，需要你判断。'}` : '';
+  const verdict = (round.analysis?.compared || 0) > 1 && !closed ? `\n\n${report.agree ? '分析成员意见一致，可以直接采纳。' : '几个分析成员意见不一致，需要你判断。'}` : '';
   const absent = missing.length ? `\n\n${missing.map(nameOf).join('、')} 没在时限内给方向。` : '';
   const checked = report.predictions.length ? `\n\n${report.predictions.map((p: Data) => `预测核对 · ${p.text}：预期 ${p.expect}，实际 ${p.actual}，${p.result === 'hit' ? '命中' : p.result === 'unresolved' ? '无法核对' : '未命中'}`).join('\n')}` : '';
   const compareMd = formatComparisonMarkdown(d, round);
   const compareBlock = compareMd ? `\n\n${compareMd}` : '';
-  const customSeedNote = !stopped && !d.candidate && Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length ? '（本周期含自定义 reservedSeeds 绑定，超时不会自动照旧续跑。）' : '';
-  message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${compareBlock}${report.outcome}${checked}\n\n${lines.join('\n')}${verdict}${absent}${stopped ? '' : d.candidate ? '\n\n在 RSI 页面点「今晚照旧」，下一周期跑确认。' : `\n\n在 RSI 页面选择方向。${customSeedNote}`}`, 'conclusion');
+  const customSeedNote = !closed && !d.candidate && Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length ? '（本周期含自定义 reservedSeeds 绑定，超时不会自动照旧续跑。）' : '';
+  message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${compareBlock}${report.outcome}${checked}\n\n${lines.join('\n')}${verdict}${absent}${closed ? '' : d.candidate ? '\n\n在 RSI 页面点「今晚照旧」，下一周期跑确认。' : `\n\n在 RSI 页面选择方向。${customSeedNote}`}`, 'conclusion');
   if (stopped) message(state, d, now, stopped.text, `第 ${round.n} 周期结论后停止启动新周期。`, 'conclusion');
-  if (!round.decision) decideAtNight(state, d, round, now);
+  if (!round.decision && !closed) decideAtNight(state, d, round, now);
 }
 
 // Inside the run window a conclusion that starts waiting goes on by the rules declared at creation (PHASE3 §2): a candidate is

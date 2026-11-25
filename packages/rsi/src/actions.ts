@@ -52,7 +52,19 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       const resumed = d.objective.state === 'done';
       if (resumed) {
         delete d.objective.stopReason;
-        d.objective.state = 'running';
+        d.objective.state = d.rounds.some((r: Data) => r.report && !r.decision) ? 'pending' : 'running';
+        for (const r of d.rounds) {
+          if (r.report && !r.decision && r.asked) r.asked = now;
+          if (r.analysis?.waiting?.length) {
+            r.analysis.since = now;
+            r.analysis.askedAt = now;
+            delete r.analysis.unclaimedNotified;
+          }
+          if (r.state === 'evaluating') {
+            r.evalAskedAt = now;
+            if (!r.invocationId) delete r.evalStalledNotified;
+          }
+        }
         if (d.executor.off) {
           d.executor.off = false;
           for (const g of state.groups[project]) if (g.forObjective === id || (g.kind === 'mcp' && g.name.includes(d.executor.mcp))) g.off = false;

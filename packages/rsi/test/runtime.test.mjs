@@ -2938,7 +2938,7 @@ test('alpha.125: paused state freezes analysis timeout and unclaimed warnings, a
   assert.equal(exp.versionRequest.stalledNotified, undefined);
 });
 
-test('alpha.126: manual life:finish closes objective with stopReason, blocks while running, surfaces in views/rsi_status, and pause/resume audit uses Chinese state labels', async (t) => {
+test('alpha.126: manual life:finish is owner-only, closes with stopReason, blocks while running, preserves done on late conclude, reopens cleanly to pending, and pause/resume audit uses Chinese state labels', async (t) => {
   const f = await fixture(t), o = await f.create({ auto: 'default', scheduleMode: 'unlimited' });
   await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [61] });
   const cats = [{ id: 'mgr-cat', name: '墨墨', model: 'm', handle: '@gemini' }];
@@ -2956,31 +2956,30 @@ test('alpha.126: manual life:finish closes objective with stopReason, blocks whi
   const resumeMsg = exp.messages.findLast((m) => m.title === '你恢复了评估项');
   assert.ok(resumeMsg && resumeMsg.body.includes('已恢复为 等待决定') && !resumeMsg.body.includes('pending'));
 
-  // Clicking finish in UI without note opens dlg.rsiFinish dialog; empty note is rejected.
+  // Clicking finish in UI without note opens dlg.rsiFinish dialog; empty note is rejected; delegated rsi_operate MUST NOT allow finish (owner-only).
   const openDlg = await f.http('POST', { op: 'life', action: 'finish', objective: o.id });
   assert.equal(openDlg.status, 200);
   assert.equal(openDlg.act, 'dialog');
   assert.equal(openDlg.args.kind, 'rsiFinish');
   assert.equal((await f.http('POST', { op: 'life', action: 'finish', objective: o.id, note: '   ' })).status, 400);
-  assert.match((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'finish' }, 'mgr-cat', 'infra-thread')).error || '', /Provide note/);
+  assert.equal((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'finish', note: 'delegated should be rejected' }, 'mgr-cat', 'infra-thread')).status, 400);
 
-  // Delegated finish succeeds when idle/paused/pending, sets done + stopReason, disables executor, and surfaces in rsi_status & exp view.
+  // Owner finishes from paused state with undecided cycle 1 conclusion -> sets done + stopReason, disables executor, surfaces in rsi_status & exp view.
   const reason = '毕业：交付 v47 实测与 af67757 收官包；账面当前版本仍是 v4';
   assert.equal((await f.http('POST', { op: 'life', action: 'pause', objective: o.id })).status, 200);
-  const fin = await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'finish', note: reason }, 'mgr-cat', 'infra-thread');
-  assert.equal(fin.ok, true);
+  assert.equal((await f.http('POST', { op: 'life', action: 'finish', objective: o.id, note: reason })).status, 200);
   exp = (await f.read()).experiments[o.id];
   assert.equal(exp.objective.state, 'done');
   assert.equal(exp.objective.resumeTo, undefined);
   assert.equal(exp.objective.stopReason.kind, 'manual');
   assert.equal(exp.objective.stopReason.text, reason);
   assert.equal(exp.objective.stopReason.cycle, 1);
-  assert.equal(exp.objective.stopReason.by, '墨墨（受托）');
+  assert.equal(exp.objective.stopReason.by, '你');
   assert.equal(exp.executor.off, true);
-  assert.ok(exp.messages.some((m) => m.title === '墨墨（受托）结项了评估项' && m.body === reason));
+  assert.ok(exp.messages.some((m) => m.title === '你结项了评估项' && m.body === reason));
 
-  // Subsequent finish / pause on done objective rejects cleanly.
-  assert.match((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'finish', note: 'again' }, 'mgr-cat', 'infra-thread')).error || '', /stopped/i);
+  // Subsequent finish on done objective rejects cleanly.
+  assert.equal((await f.http('POST', { op: 'life', action: 'finish', objective: o.id, note: 'again' })).status, 400);
 
   // Both brief and full rsi_status and Console exp view expose stopReason clearly.
   const briefSt = await f.tool('status', { objectiveId: o.id, scope: 'brief' }, 'mgr-cat', 'infra-thread');
@@ -2993,12 +2992,35 @@ test('alpha.126: manual life:finish closes objective with stopReason, blocks whi
   assert.equal(expView.next.v, `（${reason}）`);
   assert.equal(expView.stopReason?.text, reason);
 
-  // Re-opening via op:stop clears stopReason and re-enables executor cleanly.
+  // P1-1: Re-opening via op:stop when cycle 1 report is undecided MUST restore 'pending' (not deadlocked 'running'), re-enable executor, and allow deciding cycle 1.
   assert.equal((await f.http('POST', { op: 'stop', objective: o.id, rounds: '10' })).status, 200);
   exp = (await f.read()).experiments[o.id];
-  assert.equal(exp.objective.state, 'running');
+  assert.equal(exp.objective.state, 'pending');
   assert.equal(exp.objective.stopReason, undefined);
   assert.equal(exp.executor.off, false);
+  assert.equal((await f.http('POST', { op: 'expDecide', objective: o.id, n: 1, pick: 'same' })).status, 200);
+  assert.equal((await f.read()).experiments[o.id].objective.state, 'running');
+
+  // P1-2: Late conclude() after owner manually finishes while evaluating saves the report/evidence WITHOUT flipping state back to pending or waking analysts.
+  const fEval = await fixture(t), oEval = await fEval.create({ auto: 'default', scheduleMode: 'unlimited' });
+  await fEval.initialize(oEval, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [65] });
+  const anaCats = [{ id: 'ana-1', name: '甲', model: 'm1' }];
+  assert.equal((await fEval.http('POST', { op: 'analystAdd', objective: oEval.id, catId: 'ana-1', cats: anaCats })).status, 200);
+  await execute(fEval, oEval);
+  await fEval.tool('task', {}, 'cat-b5ddoo9l', oEval.thread);
+  const lateReason = '评估进行中由主人提前结项';
+  assert.equal((await fEval.http('POST', { op: 'life', action: 'finish', objective: oEval.id, note: lateReason })).status, 200);
+  const sendsBeforeLate = fEval.sends.length;
+  const lateConclude = await fEval.tool('conclude', { cycle: 1, verdict: 'tune', findings: 'valuable late evidence', options: [{ k: 'x', title: 'opt', why: 'why' }] }, 'cat-b5ddoo9l', oEval.thread);
+  assert.equal(lateConclude.ok, true);
+  const evalExp = (await fEval.read()).experiments[oEval.id];
+  assert.equal(evalExp.rounds[0].state, 'done');
+  assert.equal(evalExp.rounds[0].report.headline, 'valuable late evidence');
+  assert.equal(evalExp.objective.state, 'done');
+  assert.equal(evalExp.objective.stopReason?.text, lateReason);
+  assert.equal(evalExp.executor.off, true);
+  assert.equal(evalExp.rounds[0].analysis, undefined);
+  assert.equal(fEval.sends.slice(sendsBeforeLate).some((s) => s.wake?.catId === 'ana-1'), false);
 
   // Attempting to finish while a cycle is actively running must be rejected with 409.
   const fRun = await fixture(t, { submit: 'node -e "setTimeout(() => {}, 10000)"' });
