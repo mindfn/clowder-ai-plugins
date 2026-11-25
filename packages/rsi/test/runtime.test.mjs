@@ -2937,3 +2937,75 @@ test('alpha.125: paused state freezes analysis timeout and unclaimed warnings, a
   exp = (await f.read()).experiments[o.id];
   assert.equal(exp.versionRequest.stalledNotified, undefined);
 });
+
+test('alpha.126: manual life:finish closes objective with stopReason, blocks while running, surfaces in views/rsi_status, and pause/resume audit uses Chinese state labels', async (t) => {
+  const f = await fixture(t), o = await f.create({ auto: 'default', scheduleMode: 'unlimited' });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [61] });
+  const cats = [{ id: 'mgr-cat', name: '墨墨', model: 'm', handle: '@gemini' }];
+  assert.equal((await f.http('POST', { op: 'manager', objective: o.id, v: 'mgr-cat', cats })).status, 200);
+  await execute(f, o);
+  await report(f, o, 'keep', [{ k: 'opt1', title: 'next', why: 'reason', kind: 'code', target: 'lr' }]);
+
+  // Pause & resume audit messages use human-readable Chinese state labels instead of raw internal state keys.
+  assert.equal((await f.http('POST', { op: 'life', action: 'pause', objective: o.id })).status, 200);
+  let exp = (await f.read()).experiments[o.id];
+  const pauseMsg = exp.messages.findLast((m) => m.title === '你暂停了评估项');
+  assert.ok(pauseMsg && pauseMsg.body.includes('原状态：等待决定') && !pauseMsg.body.includes('pending'));
+  assert.equal((await f.http('POST', { op: 'life', action: 'resume', objective: o.id })).status, 200);
+  exp = (await f.read()).experiments[o.id];
+  const resumeMsg = exp.messages.findLast((m) => m.title === '你恢复了评估项');
+  assert.ok(resumeMsg && resumeMsg.body.includes('已恢复为 等待决定') && !resumeMsg.body.includes('pending'));
+
+  // Clicking finish in UI without note opens dlg.rsiFinish dialog; empty note is rejected.
+  const openDlg = await f.http('POST', { op: 'life', action: 'finish', objective: o.id });
+  assert.equal(openDlg.status, 200);
+  assert.equal(openDlg.act, 'dialog');
+  assert.equal(openDlg.args.kind, 'rsiFinish');
+  assert.equal((await f.http('POST', { op: 'life', action: 'finish', objective: o.id, note: '   ' })).status, 400);
+  assert.match((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'finish' }, 'mgr-cat', 'infra-thread')).error || '', /Provide note/);
+
+  // Delegated finish succeeds when idle/paused/pending, sets done + stopReason, disables executor, and surfaces in rsi_status & exp view.
+  const reason = '毕业：交付 v47 实测与 af67757 收官包；账面当前版本仍是 v4';
+  assert.equal((await f.http('POST', { op: 'life', action: 'pause', objective: o.id })).status, 200);
+  const fin = await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'finish', note: reason }, 'mgr-cat', 'infra-thread');
+  assert.equal(fin.ok, true);
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.objective.state, 'done');
+  assert.equal(exp.objective.resumeTo, undefined);
+  assert.equal(exp.objective.stopReason.kind, 'manual');
+  assert.equal(exp.objective.stopReason.text, reason);
+  assert.equal(exp.objective.stopReason.cycle, 1);
+  assert.equal(exp.objective.stopReason.by, '墨墨（受托）');
+  assert.equal(exp.executor.off, true);
+  assert.ok(exp.messages.some((m) => m.title === '墨墨（受托）结项了评估项' && m.body === reason));
+
+  // Subsequent finish / pause on done objective rejects cleanly.
+  assert.match((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'finish', note: 'again' }, 'mgr-cat', 'infra-thread')).error || '', /stopped/i);
+
+  // Both brief and full rsi_status and Console exp view expose stopReason clearly.
+  const briefSt = await f.tool('status', { objectiveId: o.id, scope: 'brief' }, 'mgr-cat', 'infra-thread');
+  assert.equal(briefSt.objective.state, 'done');
+  assert.equal(briefSt.objective.stopReason?.text, reason);
+  const fullSt = await f.tool('status', { objectiveId: o.id, scope: 'full' }, 'mgr-cat', 'infra-thread');
+  assert.equal(fullSt.objective.stopReason?.text, reason);
+  const expView = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
+  assert.equal(expView.next.k, 'done');
+  assert.equal(expView.next.v, `（${reason}）`);
+  assert.equal(expView.stopReason?.text, reason);
+
+  // Re-opening via op:stop clears stopReason and re-enables executor cleanly.
+  assert.equal((await f.http('POST', { op: 'stop', objective: o.id, rounds: '10' })).status, 200);
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.objective.state, 'running');
+  assert.equal(exp.objective.stopReason, undefined);
+  assert.equal(exp.executor.off, false);
+
+  // Attempting to finish while a cycle is actively running must be rejected with 409.
+  const fRun = await fixture(t, { submit: 'node -e "setTimeout(() => {}, 10000)"' });
+  const oRun = await fRun.create({ auto: 'default', scheduleMode: 'unlimited' });
+  await fRun.initialize(oRun, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [71] });
+  await fRun.http('POST', { op: 'runCycle', objective: oRun.id });
+  await until(fRun.read, (s) => s.experiments[oRun.id].rounds[0]?.state === 'running', 'cycle running');
+  assert.equal((await fRun.http('POST', { op: 'life', action: 'finish', objective: oRun.id, note: 'too early' })).status, 409);
+  await fRun.activation().stop();
+});

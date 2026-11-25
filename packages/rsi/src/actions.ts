@@ -50,7 +50,16 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       if (item) Object.assign(item, { value: text, state: 'confirmed', by: '你', mine: true, at: now });
       // A finished objective continues under the new conditions; they are checked again after the next conclusion.
       const resumed = d.objective.state === 'done';
-      if (resumed) { delete d.objective.stopReason; d.objective.state = 'running'; syncObjective(state, d); }
+      if (resumed) {
+        delete d.objective.stopReason;
+        d.objective.state = 'running';
+        if (d.executor.off) {
+          d.executor.off = false;
+          for (const g of state.groups[project]) if (g.forObjective === id || (g.kind === 'mcp' && g.name.includes(d.executor.mcp))) g.off = false;
+          enqueue(state, d, 'executor', { action: 'enable' });
+        }
+        syncObjective(state, d);
+      }
       message(state, d, now, resumed ? '你改了何时停，接着迭代' : '你改了何时停', text);
       return { ok: true };
     }
@@ -557,9 +566,22 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       return d?.objective.projectPath ? runCycle(state, d, now) : { error: 'Select a real experimental project' };
     case 'life': {
       if (!o) return { error: 'Objective not found', status: 404 };
-      if (!['start', 'pause', 'resume', 'retry', 'more'].includes(body.action)) return { error: 'Invalid lifecycle action' };
+      if (!['start', 'pause', 'resume', 'finish', 'retry', 'more'].includes(body.action)) return { error: 'Invalid lifecycle action' };
       if (d?.objective.projectPath && body.action === 'retry') return runCycle(state, d, now);
       if (d?.objective.projectPath && ['done', 'retired'].includes(d.objective.state)) return { error: 'Objective has stopped' };
+      const STATE_LABEL: Record<string, string> = {
+        setup: '准备中',
+        ready: '待开始',
+        running: '运行中',
+        pending: '等待决定',
+        paused: '已暂停',
+        done: '已结束',
+        retired: '已退役',
+        baseline: '基线周期',
+        collecting: '采集中',
+        exhausted: '次数用完',
+      };
+      const stateLabel = (s: string | undefined) => (s && STATE_LABEL[s]) || s || '运行中';
       const objective = d ? d.objective : o;
       if (body.action === 'start') {
         if (d?.objective.projectPath && !hasValidSchedule(d.policy.schedule)) return { error: '请先在策略区配置「运行时段」或完成第 3 步，也可先手动点「跑一轮」' };
@@ -570,7 +592,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
         if (!wasPaused) objective.resumeTo = objective.state;
         objective.state = 'paused';
         if (d && !wasPaused) {
-          message(state, d, now, `${actor}暂停了评估项`, `已暂停自动推进并关闭执行器（原状态：${objective.resumeTo || 'running'}）；恢复后会重新计算等待计时。`, 'plan');
+          message(state, d, now, `${actor}暂停了评估项`, `已暂停自动推进并关闭执行器（原状态：${stateLabel(objective.resumeTo)}）；恢复后会重新计算等待计时。`, 'plan');
         }
       } else if (body.action === 'resume') {
         if (objective.state !== 'paused') return { error: 'Objective is not paused' };
@@ -594,15 +616,33 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
             d.versionRequest.since = now;
             if (!d.versionRequest.invocationId) delete d.versionRequest.stalledNotified;
           }
-          message(state, d, now, `${actor}恢复了评估项`, `已恢复为 ${targetState} 并启用执行器；等待决策/分析/版本计时已从本次恢复重新起算。`, 'plan');
+          message(state, d, now, `${actor}恢复了评估项`, `已恢复为 ${stateLabel(targetState)} 并启用执行器；等待决策/分析/版本计时已从本次恢复重新起算。`, 'plan');
+        }
+      } else if (body.action === 'finish') {
+        if (d?.rounds.some((r: Data) => r.state === 'running')) {
+          return { error: '当前有运行中的周期，请先暂停或等本周期结束后再结项', status: 409 };
+        }
+        if (d && body.note == null) {
+          return { ok: true, act: 'dialog', args: { kind: 'rsiFinish', objective: d.objective.id, name: d.objective.name } };
+        }
+        const note = typeof body.note === 'string' ? body.note.trim() : '';
+        if (d && !note) return { error: '请填写结项/毕业说明' };
+        if (note.length > 240) return { error: '结项说明请控制在 240 字以内' };
+        objective.state = 'done';
+        delete objective.resumeTo;
+        if (d) {
+          const lastCycle = d.rounds.length ? d.rounds[d.rounds.length - 1].n : (d.objective.round || 0);
+          objective.stopReason = { kind: 'manual', text: note, cycle: lastCycle, at: now, by: actor };
+          delete d.versionRequest;
+          message(state, d, now, `${actor}结项了评估项`, note, 'plan');
         }
       } else if (body.action === 'more') {
         if (d) d.objective.budget.rounds = (d.objective.budget.rounds || 0) + 10;
         else if (state.details[id]?.trigger) state.details[id].trigger.evals.max += 10;
       }
       if (d) {
-        if (body.action === 'pause' || body.action === 'resume') {
-          d.executor.off = body.action === 'pause';
+        if (body.action === 'pause' || body.action === 'resume' || body.action === 'finish') {
+          d.executor.off = body.action !== 'resume';
           for (const g of state.groups[project]) if (g.forObjective === id || (g.kind === 'mcp' && g.name.includes(d.executor.mcp))) g.off = d.executor.off;
           enqueue(state, d, 'executor', { action: d.executor.off ? 'disable' : 'enable' });
         } else enqueue(state, d, body.action === 'retry' ? 'run' : 'schedule', { action: body.action, plan: d.upcoming || null, schedule: d.policy.schedule });

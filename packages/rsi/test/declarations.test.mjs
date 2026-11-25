@@ -140,4 +140,10 @@ test('i18n yaml packs parse cleanly and rsi.exp dual-tab removes trailing lineag
   assert.ok(expandableLists>=9,`expected >=9 expandable lists audited, got ${expandableLists}`);
   assert.equal(zh.applyResult.concluded,'运行失败·已有结论');
   assert.equal(en.applyResult.concluded,'Run failed · concluded');
+  assert.ok(pdl.views['dlg.rsiFinish'],'dlg.rsiFinish must be declared for manual graduation/closeout');
+  assert.equal(pdl.requests.life.body.note,'@note','life request must forward @note for finish action');
+  assert.equal(zh.life.finish,'结项');
+  assert.equal(en.life.finish,'Finish');
+  assert.match(zh.exp.next.done,/\{0\}/);
+  assert.match(en.exp.next.done,/\{0\}/);
 });

@@ -438,6 +438,12 @@ life:
   start: Start evaluation
   pause: Pause evaluation
   resume: Resume evaluation
+  finish: Finish
+  finishTitle: Finish / Graduate Objective
+  finishHelp: Formally close this objective (state becomes Done, no further cycles start, and old version worktrees are cleaned up). The reason is displayed at the top of the objective and kept in history; you can still resume later via Change when to stop.
+  finishNote: Closeout / graduation note
+  finishPlaceholder: "e.g. Graduated: delivered v47 verified package; currentVersion remains v4"
+  finishOk: Confirm finish
   retry: Retry once
   more: Add 10 evaluations
 todo:
@@ -823,7 +829,7 @@ exp:
     _: "{0}"
   runs: "Individual runs ({0}) · main metric: {1}"
   next:
-    done: Evaluation is complete; no further cycles will start
+    done: Evaluation is complete; no further cycles will start{0}
     decide: Results for {0} cycle {1} are ready; choose the next step. Tonight follows the current plan if you take no action.
     running: "{0} cycle {1} is running. Failures are reported immediately; other groups continue."
     evaluating: "{0} cycle {1} has finished; waiting for {4} to conclude. No new cycle starts before the conclusion."

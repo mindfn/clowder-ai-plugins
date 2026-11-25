@@ -312,6 +312,21 @@ views:
             disabled: $.pending
           - type: button
             when:
+              of: $.exp.state
+              map:
+                ready: true
+                pending: true
+                running: true
+                paused: true
+                _: false
+            label: t:rsi.life.finish
+            act: plugin
+            args:
+              request: life
+              op: finish
+            disabled: $.pending
+          - type: button
+            when:
               of: $.exp.next.k
               map:
                 _: false
@@ -5871,6 +5886,23 @@ views:
     okArgs:
       request: stop
       objective: $.objective
+  dlg.rsiFinish:
+    title: t:rsi.life.finishTitle
+    help: t:rsi.life.finishHelp
+    fields:
+      - id: dlg-finish-note
+        label: t:rsi.life.finishNote
+        placeholder: t:rsi.life.finishPlaceholder
+        area: true
+        rows: 4
+        req: true
+        arg: note
+    ok: t:rsi.life.finishOk
+    okAct: plugin
+    okArgs:
+      request: life
+      op: finish
+      objective: $.objective
   dlg.rsiMembers:
     title: t:rsi.exp.membersEdit
     fields:
@@ -6956,6 +6988,7 @@ requests:
       op: life
       action: "@op"
       objective: "@objective"
+      note: "@note"
   delete:
     path: rsi/act
     method: POST

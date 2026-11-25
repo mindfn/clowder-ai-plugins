@@ -506,6 +506,7 @@ function projectStatus(d: Experiment, input: Data): Data {
         round: d.objective.round,
         currentVersion: d.objective.currentVersion,
         thread: d.objective.thread || null,
+        ...(d.objective.stopReason ? { stopReason: d.objective.stopReason } : {}),
       },
       prepSettled: prepSettled(d),
       active,
@@ -526,6 +527,7 @@ function projectStatus(d: Experiment, input: Data): Data {
       projectPath: d.objective.projectPath,
       thread: d.objective.thread || null,
       stop: d.objective.stop || null,
+      stopReason: d.objective.stopReason || null,
       budget: d.objective.budget || null,
     },
     policy: {
@@ -619,8 +621,9 @@ export function operateAction(state: RsiState, raw: Data, ctx: ToolContext, now:
   }
   if (op === 'life') {
     const action = typeof input.action === 'string' ? input.action : '';
-    if (!['start', 'pause', 'resume', 'retry'].includes(action)) return { error: 'life action must be start, pause, resume, or retry' };
-    return act(state, { op: 'life', objective: d.objective.id, action }, query, now, actor);
+    if (!['start', 'pause', 'resume', 'finish', 'retry'].includes(action)) return { error: 'life action must be start, pause, resume, finish, or retry' };
+    if (action === 'finish' && !text(input.note)) return { error: 'Provide note explaining why this objective is finished/graduated' };
+    return act(state, { op: 'life', objective: d.objective.id, action, ...(action === 'finish' ? { note: input.note } : {}) }, query, now, actor);
   }
   if (op === 'stepMember') {
     const k = currentStep(d, { step: input.k ?? input.section });
