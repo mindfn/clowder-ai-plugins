@@ -5,7 +5,7 @@ import { parse } from 'yaml';
 import { createRsiMcpServer } from '../dist/mcp-server.js';
 import { toolAction } from '../dist/tools.js';
 import { viewModel } from '../dist/views.js';
-import { finishCycle, orderedPairs, validPlan } from '../dist/cycles.js';
+import { buildCloseoutReport, finishCycle, orderedPairs, validPlan } from '../dist/cycles.js';
 import { fixture } from './helpers.mjs';
 
 function createMemoryPair() {
@@ -283,4 +283,69 @@ test('rsi.version inherits last cycle order when omitted, allows explicit overri
   const repairRes = toolAction(state, 'rsi.version', { change: 'fix env', config: { a: 3 } }, ctx, state.now + 3000);
   assert.equal(repairRes.ok, true, JSON.stringify(repairRes));
   assert.equal(exp.upcoming.order, 'balanced');
+});
+
+test('buildCloseoutReport P1 fixes: baseline excludes skipControl explore, roles distinguish aux, tail advance metrics prioritized, cross-rubric labeled', async () => {
+  const f = fixture();
+  await f.seed();
+  const id = await f.newObjective();
+  const state = await f.read();
+  const exp = state.experiments[id];
+  exp.objective.currentVersion = 'v1';
+  exp.versions = [
+    { id: 'v1', parent: null, commit: 'aaa1111', current: true, desc: 'baseline' },
+    { id: 'v2', parent: 'v1', commit: 'bbb2222', current: false, desc: 'explore candidate' },
+    { id: 'v3', parent: 'v2', commit: 'ccc3333', current: false, desc: 'graduated candidate' },
+  ];
+  // 20 metrics: 1 main (non-guard), 1 aux (non-guard), 18 guards (last two only measured on v3).
+  const items = [
+    { id: 'qps', name: '可持续QPS', unit: 'qps', guard: false },
+    { id: 'hbm', name: '峰值显存', unit: 'GiB', guard: false },
+    ...Array.from({ length: 16 }, (_, i) => ({ id: `g${i + 1}`, name: `常规护栏${i + 1}`, unit: 'ms', guard: true, line: '<= 100' })),
+    { id: 'soak-p99', name: '长稳P99', unit: 'ms', guard: true, line: '<= 80' },
+    { id: 'soak-err', name: '长稳错误', unit: '笔', guard: true, line: '= 0' },
+  ];
+  exp.metrics = { version: 'E2', items, versions: [] };
+  exp.rounds = [
+    // Round 1: true baseline (plan.baseline = true, rubric E1 != current E2)
+    {
+      n: 1, version: 'v1', state: 'done', start: state.now - 3000,
+      metrics: { version: 'E1' },
+      plan: { baseline: true, groups: [{ id: 'base', label: 'v1', version: 'v1', vars: {} }], seeds: [1] },
+      runs: [{ id: 'r1', group: 'base', seed: 1, state: 'done', metrics: { qps: 10, hbm: 8.5, g1: 50 } }],
+      report: { verdict: 'baseline', summary: 'v1 baseline' },
+    },
+    // Round 2: skipControl explore round (groups[0] is v2 without control:true and without plan.baseline)
+    // Must NOT leak v2 into the baseline column for soak-p99 or g2!
+    {
+      n: 2, version: 'v2', state: 'done', start: state.now - 2000,
+      metrics: { version: 'E2' },
+      plan: { skipControl: true, groups: [{ id: 'explore', label: 'v2', version: 'v2', vars: {} }], seeds: [1] },
+      runs: [{ id: 'r2', group: 'explore', seed: 1, state: 'done', metrics: { qps: 15, hbm: 12, g2: 40, 'soak-p99': 99 } }],
+      report: { verdict: 'tune', summary: 'v2 explore' },
+    },
+    // Round 3: advancing milestone v3 with tail graduation metrics soak-p99 & soak-err
+    {
+      n: 3, version: 'v3', state: 'done', start: state.now - 1000,
+      metrics: { version: 'E2' },
+      plan: { skipControl: true, groups: [{ id: 'cand', label: 'v3', version: 'v3', vars: {} }], seeds: [1] },
+      runs: [{ id: 'r3', group: 'cand', seed: 1, state: 'done', metrics: { hbm: 17.17, 'soak-p99': 76.01, 'soak-err': 0 } }],
+      report: { verdict: 'tune', disposition: 'advance', tag: '长稳门过', summary: 'v3 passed soak' },
+    },
+  ];
+
+  const report = buildCloseoutReport(exp, state.now, 'lang');
+  const md = report.markdown;
+  // P1-4: non-same-cycle disclaimer & cross-rubric tag (E1 vs current E2)
+  assert.match(md, /不是同周期对照，不能直接相减/);
+  assert.match(md, /\| 可持续QPS \| 主指标 \| 10 qps（v1·C1·E1） \| 10 qps（v1·C1·E1） \| — \|/);
+  // P1-2: second non-guard metric labeled 辅助, not 主指标
+  assert.match(md, /\| 峰值显存 \| 辅助 \| 8\.5 GiB（v1·C1·E1） \| 8\.5 GiB（v1·C1·E1） \| 17\.17 GiB（v3·C3） \|/);
+  // P1-1: skipControl explore round v2·C2 must NOT leak into baseline column
+  assert.doesNotMatch(md, /v2·C2/);
+  assert.match(md, /\| 长稳P99 \| 护栏（<= 80） \| — \| — \| 76\.01 ms（v3·C3） \|/);
+  assert.match(md, /\| 长稳错误 \| 护栏（= 0） \| — \| — \| 0 笔（v3·C3） \|/);
+  // P1-3: cap at 16 rows + neutral footnote ("其余 4 项指标略", not "辅助指标")
+  assert.match(md, /其余 4 项指标略/);
+  assert.doesNotMatch(md, /项辅助指标略/);
 });

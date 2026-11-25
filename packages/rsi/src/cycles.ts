@@ -288,18 +288,21 @@ export function buildCloseoutReport(d: Experiment, now: number, by?: string): Da
     const sd = Math.sqrt(vals.reduce((s: number, x: number) => s + (x - mean) ** 2, 0) / (vals.length - 1));
     return { mean, spread: sd };
   };
-  const fmtCell = (hit: { mean: number; spread: number | null; cycle: number; version: string } | null, unit: string) => {
+  const curMetricVersion = typeof d.metrics?.version === 'string' && d.metrics.version.trim() ? d.metrics.version.trim() : null;
+  const fmtCell = (hit: { mean: number; spread: number | null; cycle: number; version: string; metricVersion: string | null } | null, unit: string) => {
     if (!hit) return '—';
     const u = unit ? ` ${unit}` : '';
     const val = hit.spread != null ? `${short(hit.mean)} ± ${short(hit.spread)}${u}` : `${short(hit.mean)}${u}`;
-    return `${val}（${hit.version}·C${hit.cycle}）`;
+    const mv = hit.metricVersion && curMetricVersion && hit.metricVersion !== curMetricVersion ? `·${hit.metricVersion}` : '';
+    return `${val}（${hit.version}·C${hit.cycle}${mv}）`;
   };
   const findBaselineMetric = (metricId: string) => {
     for (const r of rounds) {
-      const ctrl = (r.plan?.groups || []).find((g: Data) => g.control) || r.plan?.groups?.[0];
+      const groups: Data[] = r.plan?.groups || [];
+      const ctrl = groups.find((g: Data) => g.control) || (r.plan?.baseline ? groups[0] : null);
       if (!ctrl) continue;
       const cell = metricCellOf(r, ctrl.id, metricId);
-      if (cell) return { ...cell, cycle: r.n, version: ctrl.version || r.version };
+      if (cell) return { ...cell, cycle: r.n, version: ctrl.version || r.version, metricVersion: r.metrics?.version || null };
     }
     return null;
   };
@@ -311,17 +314,28 @@ export function buildCloseoutReport(d: Experiment, now: number, by?: string): Da
       const targetGroup = groups.find((g) => !g.control && g.version === versionId) || groups.find((g) => g.version === versionId);
       if (!targetGroup) continue;
       const cell = metricCellOf(r, targetGroup.id, metricId);
-      if (cell) return { ...cell, cycle: r.n, version: versionId };
+      if (cell) return { ...cell, cycle: r.n, version: versionId, metricVersion: r.metrics?.version || null };
     }
     return null;
   };
 
   const hasDistinctAdvance = !!latestAdvance && latestAdvance.id !== curVer?.id;
   const metricsItems: Data[] = Array.isArray(d.metrics?.items) ? d.metrics.items : [];
-  const orderedMetrics = [
-    ...metricsItems.filter((m) => !m.guard),
-    ...metricsItems.filter((m) => m.guard),
-  ].slice(0, 12);
+  const mainMetricId = metricsItems.find((m) => !m.guard)?.id || null;
+  const metricRows = metricsItems.map((m, idx) => {
+    const baseHit = findBaselineMetric(m.id);
+    const curHit = findLatestVersionMetric(curVer?.id, m.id);
+    const advHit = hasDistinctAdvance ? findLatestVersionMetric(latestAdvance!.id, m.id) : null;
+    const isMain = m.id === mainMetricId;
+    const prio = isMain ? 0
+      : advHit ? 1
+      : curHit ? (m.guard ? 2 : 3)
+      : m.guard ? 4 : 5;
+    return { m, idx, prio, isMain, baseHit, curHit, advHit };
+  });
+  const orderedMetrics = [...metricRows]
+    .sort((a, b) => a.prio - b.prio || a.idx - b.idx)
+    .slice(0, 16);
 
   const lines: string[] = [];
   lines.push('### 1. 结项概览');
@@ -337,6 +351,7 @@ export function buildCloseoutReport(d: Experiment, now: number, by?: string): Da
   if (orderedMetrics.length) {
     lines.push('');
     lines.push('### 2. 核心指标对照');
+    lines.push('_各列取自不同周期的实测（括号内为版本·周期；量尺版本不同时另标量尺号），条件可能不同，不是同周期对照，不能直接相减；同周期对照请看各周期结论。_');
     if (hasDistinctAdvance) {
       lines.push(`| 指标 | 角色 | 基线实测 | 当前正式版（${curVer?.id || '—'}） | 最新推进版（${latestAdvance!.id}） |`);
       lines.push('|---|---|---|---|---|');
@@ -344,20 +359,21 @@ export function buildCloseoutReport(d: Experiment, now: number, by?: string): Da
       lines.push(`| 指标 | 角色 | 基线实测 | 当前正式版（${curVer?.id || '—'}） |`);
       lines.push('|---|---|---|---|');
     }
-    for (const m of orderedMetrics) {
-      const role = m.guard ? `护栏${m.line ? `（${m.line}）` : ''}` : '主指标';
+    for (const row of orderedMetrics) {
+      const { m, isMain, baseHit, curHit, advHit } = row;
+      const role = isMain ? '主指标' : m.guard ? `护栏${m.line ? `（${m.line}）` : ''}` : '辅助';
       const unit = m.unit || '';
-      const base = fmtCell(findBaselineMetric(m.id), unit);
-      const cur = fmtCell(findLatestVersionMetric(curVer?.id, m.id), unit);
+      const base = fmtCell(baseHit, unit);
+      const cur = fmtCell(curHit, unit);
       if (hasDistinctAdvance) {
-        const adv = fmtCell(findLatestVersionMetric(latestAdvance!.id, m.id), unit);
+        const adv = fmtCell(advHit, unit);
         lines.push(`| ${mdCell(m.name || m.id)} | ${mdCell(role)} | ${mdCell(base)} | ${mdCell(cur)} | ${mdCell(adv)} |`);
       } else {
         lines.push(`| ${mdCell(m.name || m.id)} | ${mdCell(role)} | ${mdCell(base)} | ${mdCell(cur)} |`);
       }
     }
     if (metricsItems.length > orderedMetrics.length) {
-      lines.push(`_（其余 ${metricsItems.length - orderedMetrics.length} 项辅助指标略，可在周期记录中查看完整矩阵。）_`);
+      lines.push(`_（其余 ${metricsItems.length - orderedMetrics.length} 项指标略，可在周期记录中查看完整矩阵。）_`);
     }
   }
 
