@@ -2976,7 +2976,7 @@ test('alpha.126: manual life:finish is owner-only, closes with stopReason, block
   assert.equal(exp.objective.stopReason.cycle, 1);
   assert.equal(exp.objective.stopReason.by, '你');
   assert.equal(exp.executor.off, true);
-  assert.ok(exp.messages.some((m) => m.title === '你结项了评估项' && m.body === reason));
+  assert.ok(exp.messages.some((m) => m.title === '你结项了评估项' && m.body.includes(reason)));
 
   // Subsequent finish on done objective rejects cleanly.
   assert.equal((await f.http('POST', { op: 'life', action: 'finish', objective: o.id, note: 'again' })).status, 400);
@@ -3030,4 +3030,78 @@ test('alpha.126: manual life:finish is owner-only, closes with stopReason, block
   await until(fRun.read, (s) => s.experiments[oRun.id].rounds[0]?.state === 'running', 'cycle running');
   assert.equal((await fRun.http('POST', { op: 'life', action: 'finish', objective: oRun.id, note: 'too early' })).status, 409);
   await fRun.activation().stop();
+});
+
+test('alpha.127: manual finish and automatic target stop both generate structured closeoutReport in state, thread, Console view, and rsi_status, and op:stop clears it', async (t) => {
+  const f = await fixture(t), o = await f.create({ auto: 'default', scheduleMode: 'unlimited' });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [81] });
+  const cats = [{ id: 'mgr-cat', name: '墨墨', model: 'm', handle: '@gemini' }];
+  assert.equal((await f.http('POST', { op: 'manager', objective: o.id, v: 'mgr-cat', cats })).status, 200);
+  await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', {
+    cycle: 1,
+    verdict: 'tune',
+    disposition: 'advance',
+    tag: '基线首测通过',
+    findings: 'Cycle 1 baseline measured cleanly',
+    options: [{ k: 'try-bsh', title: 'Try BSH', why: 'test layout', kind: 'code', target: 'attn' }],
+  }, 'cat-b5ddoo9l', o.thread)).ok, true);
+  assert.equal((await f.http('POST', { op: 'expDecide', objective: o.id, n: 1, pick: 'direction', directionId: 'try-bsh' })).status, 200);
+  await f.tool('task', {}, 'codex', o.thread);
+  assert.equal((await f.tool('version', { change: 'Switch attention to BSH', config: { bsh: true }, tier: 'explore', seeds: 1 }, 'codex', o.thread)).ok, true);
+  await execute(f, o, 2);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', {
+    cycle: 2,
+    verdict: 'rollback',
+    disposition: 'dead_end',
+    tag: 'BSH 退化拦截',
+    findings: 'BSH degraded throughput severely',
+    options: [{ k: 'next', title: 'Keep baseline', why: 'safe', kind: 'code', target: 'attn', cites: [`${o.id}-cycle-1`] }],
+  }, 'cat-b5ddoo9l', o.thread)).ok, true);
+
+  // Manual finish generates detailed closeoutReport with overview, metrics table, milestones, dead-ends, and recent cycles.
+  const reason = '阶段毕业：保留 v1 基线，淘汰 BSH 路线';
+  assert.equal((await f.http('POST', { op: 'life', action: 'finish', objective: o.id, note: reason })).status, 200);
+  let exp = (await f.read()).experiments[o.id];
+  assert.ok(exp.closeoutReport && typeof exp.closeoutReport.markdown === 'string');
+  assert.match(exp.closeoutReport.markdown, /### 1\. 结项概览/);
+  assert.match(exp.closeoutReport.markdown, /阶段毕业：保留 v1 基线，淘汰 BSH 路线/);
+  assert.match(exp.closeoutReport.markdown, /### 2\. 核心指标对照/);
+  assert.match(exp.closeoutReport.markdown, /### 3\. 演进里程碑/);
+  assert.match(exp.closeoutReport.markdown, /### 4\. 已验证淘汰路线与避坑清单/);
+  assert.match(exp.closeoutReport.markdown, /BSH 退化拦截/);
+  assert.match(exp.closeoutReport.markdown, /### 5\. 近期周期结论摘录/);
+  assert.equal(exp.closeoutReport.stats.rounds, 2);
+  assert.equal(exp.closeoutReport.stats.pruned, 1);
+
+  // Thread message contains the detailed report, Console view and rsi_status expose it.
+  const closeMsg = exp.messages.findLast((m) => m.title === '你结项了评估项');
+  assert.ok(closeMsg && closeMsg.body.includes('### 1. 结项概览') && closeMsg.body.includes('BSH 退化拦截'));
+  const expView = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
+  assert.equal(expView.closeoutReport?.reason, reason);
+  assert.match(expView.closeoutReport?.markdown || '', /已验证淘汰路线与避坑清单/);
+  const fullSt = await f.tool('status', { objectiveId: o.id, scope: 'full' }, 'mgr-cat', 'infra-thread');
+  assert.equal(fullSt.closeoutReport?.reason, reason);
+  const briefSt = await f.tool('status', { objectiveId: o.id, scope: 'brief' }, 'mgr-cat', 'infra-thread');
+  assert.equal(briefSt.objective.hasCloseoutReport, true);
+
+  // Reopening via op:stop clears closeoutReport cleanly.
+  assert.equal((await f.http('POST', { op: 'stop', objective: o.id, rounds: '10' })).status, 200);
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.closeoutReport, undefined);
+  const reopenedView = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
+  assert.equal(reopenedView.closeoutReport, null);
+
+  // Automatic stopAfterConclusion (maxCycles) also generates closeoutReport automatically.
+  const fAuto = await fixture(t), oAuto = await fAuto.create({ auto: 'default', scheduleMode: 'unlimited', rounds: '1' });
+  await fAuto.initialize(oAuto, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [91] });
+  await execute(fAuto, oAuto);
+  await report(fAuto, oAuto, 'keep', [{ k: 'opt1', title: 'next', why: 'w' }]);
+  const autoExp = (await fAuto.read()).experiments[oAuto.id];
+  assert.equal(autoExp.objective.state, 'done');
+  assert.ok(autoExp.closeoutReport && autoExp.closeoutReport.kind === 'maxCycles');
+  assert.match(autoExp.closeoutReport.markdown, /达到周期上限自动结项/);
+  assert.ok(autoExp.messages.some((m) => m.body.includes('### 1. 结项概览')));
 });

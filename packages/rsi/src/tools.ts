@@ -1,7 +1,7 @@
 import { RSI_CP_INIT, createFixtures } from './fixtures.js';
 import { act } from './actions.js';
 import { clipTitle, submitInitStep, enqueue, kick, message, prepSettled, stepMemberOf, STOP_TARGET, syncObjective } from './init.js';
-import { abandonRepair, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, resolveRsiParent, RUN_ORDERS, type RunOrder, validOrder, validateReservedSeeds, validPlan } from './cycles.js';
+import { abandonRepair, buildCloseoutReport, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, resolveRsiParent, RUN_ORDERS, type RunOrder, validOrder, validateReservedSeeds, validPlan } from './cycles.js';
 import { sliceMatrix, validateSliceSpecs } from './compare.js';
 import { parseScheduleText } from './schedule.js';
 import { record, text } from './store.js';
@@ -483,6 +483,9 @@ function projectStatus(d: Experiment, input: Data): Data {
       change: brief ? clipTitle(v.change || '', 80, v.id) : (v.change || ''),
     };
   };
+  const closeoutReport = d.objective.state === 'done'
+    ? (d.closeoutReport || buildCloseoutReport(d, d.objective.stopReason?.at || Date.now(), d.objective.stopReason?.by || 'RSI'))
+    : null;
   if (scope === 'brief') {
     const briefRound = targetRound ? {
       n: targetRound.n,
@@ -507,6 +510,7 @@ function projectStatus(d: Experiment, input: Data): Data {
         currentVersion: d.objective.currentVersion,
         thread: d.objective.thread || null,
         ...(d.objective.stopReason ? { stopReason: d.objective.stopReason } : {}),
+        ...(closeoutReport ? { hasCloseoutReport: true } : {}),
       },
       prepSettled: prepSettled(d),
       active,
@@ -530,6 +534,7 @@ function projectStatus(d: Experiment, input: Data): Data {
       stopReason: d.objective.stopReason || null,
       budget: d.objective.budget || null,
     },
+    ...(closeoutReport ? { closeoutReport } : {}),
     policy: {
       manager: d.policy?.manager || null,
       auto: d.policy?.auto ?? null,

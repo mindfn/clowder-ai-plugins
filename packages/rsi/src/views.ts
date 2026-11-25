@@ -2,7 +2,7 @@ import { AUTO, autoKey, clipTitle, prepSettled, REPAIR_DEFAULT, repairText, step
 import type { Data, RsiState } from './types.js';
 import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData, memberIds } from './data.js';
 import { formatPolicy, maxRunsText, nextScheduledRuns, policiesOf, scheduleForm, scheduleSummary, timeRange, validatePolicy } from './schedule.js';
-import { analystsOf, resolveRsiParent, short, signed, testedVersion } from './cycles.js';
+import { analystsOf, buildCloseoutReport, resolveRsiParent, short, signed, testedVersion } from './cycles.js';
 import { buildComparisonTable } from './compare.js';
 
 const tc = (key: string, ...args: unknown[]) => ({ t: key, args });
@@ -1426,7 +1426,10 @@ function exp(): any {
       gov: (r.report || r.state === 'repaired' || r.state === 'repairing') && govFor(r),
     });
   })() : null;
-  return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, stopReason: o.stopReason || null, projectPath: o.projectPath, goal: o.goal, goalQuote, editingGoal: S.rsiEditGoal, execStatus, execFlow, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
+  const closeoutReport = o.state === 'done'
+    ? (d.closeoutReport || buildCloseoutReport(d, o.stopReason?.at || Date.now(), o.stopReason?.by || 'RSI'))
+    : null;
+  return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, stopReason: o.stopReason || null, closeoutReport, projectPath: o.projectPath, goal: o.goal, goalQuote, editingGoal: S.rsiEditGoal, execStatus, execFlow, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
     trend: legacyTrend,
     trendMetric: d.metrics.items.find((m: Data) => m.id === main).name,

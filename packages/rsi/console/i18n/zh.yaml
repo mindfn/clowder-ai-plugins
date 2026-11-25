@@ -945,6 +945,7 @@ exp:
     execPolicy: 执行策略
     approvalPolicy: 审批策略
     stopPolicy: 停止策略
+    closeoutReport: 结项报告
   execStatusNotStarted: 未开始
   execStatusMetric: 指标版本
   execStatusRounds: 已运行周期

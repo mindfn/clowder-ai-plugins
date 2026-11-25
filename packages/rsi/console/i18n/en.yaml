@@ -945,6 +945,7 @@ exp:
     execPolicy: Execution policy
     approvalPolicy: Approval policy
     stopPolicy: Stop policy
+    closeoutReport: Closeout report
   execStatusNotStarted: Not started
   execStatusMetric: Metrics version
   execStatusRounds: Completed cycles

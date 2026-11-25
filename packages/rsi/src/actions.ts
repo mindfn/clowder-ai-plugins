@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { askEvaluation, controlGroup, finishAnalysis, freshSeeds, requestVersion, runCycle } from './cycles.js';
+import { askEvaluation, buildCloseoutReport, controlGroup, finishAnalysis, freshSeeds, requestVersion, runCycle } from './cycles.js';
 import { formatPolicy, hasValidSchedule, parseMaxRuns, parseScheduleText, policiesOf, scheduleOf, scheduleSummary, timeRange, validatePolicy } from './schedule.js';
 import { summaryOf, objectiveData } from './data.js';
 import { clipTitle, enqueue, kick, mention, message, refreshMembers, rsiExpNew, rsiExpReady, rsiExpStaleFrom, setMember, stopOf, stopText, syncObjective, repairCount, repairText, REPAIR_DEFAULT, prepSettled, AUTO, autoKinds, autoKey, autoText } from './init.js';
@@ -52,6 +52,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       const resumed = d.objective.state === 'done';
       if (resumed) {
         delete d.objective.stopReason;
+        delete d.closeoutReport;
         d.objective.state = d.rounds.some((r: Data) => r.report && !r.decision) ? 'pending' : 'running';
         for (const r of d.rounds) {
           if (r.report && !r.decision && r.asked) r.asked = now;
@@ -646,7 +647,9 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
           const lastCycle = d.rounds.length ? d.rounds[d.rounds.length - 1].n : (d.objective.round || 0);
           objective.stopReason = { kind: 'manual', text: note, cycle: lastCycle, at: now, by: actor };
           delete d.versionRequest;
-          message(state, d, now, `${actor}结项了评估项`, note, 'plan');
+          const report = buildCloseoutReport(d, now, actor);
+          d.closeoutReport = report;
+          message(state, d, now, `${actor}结项了评估项`, report.markdown, 'conclusion');
         }
       } else if (body.action === 'more') {
         if (d) d.objective.budget.rounds = (d.objective.budget.rounds || 0) + 10;

@@ -146,4 +146,11 @@ test('i18n yaml packs parse cleanly and rsi.exp dual-tab removes trailing lineag
   assert.equal(en.life.finish,'Finish');
   assert.match(zh.exp.next.done,/\{0\}/);
   assert.match(en.exp.next.done,/\{0\}/);
+  assert.equal(zh.exp.sec.closeoutReport,'结项报告');
+  assert.equal(en.exp.sec.closeoutReport,'Closeout report');
+  let hasCloseoutMd=false;
+  walk(pdl.views['rsi.exp'],(node)=>{
+    if(node.type==='markdown'&&node.text==='$.exp.closeoutReport.markdown')hasCloseoutMd=true;
+  });
+  assert.ok(hasCloseoutMd,'rsi.exp must render $.exp.closeoutReport.markdown for done objectives');
 });

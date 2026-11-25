@@ -1,4 +1,4 @@
-import { AUTO, enqueue, mention, message, prepSettled, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
+import { AUTO, clipTitle, enqueue, mention, message, prepSettled, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
 import { formatComparisonMarkdown, sliceMatrix } from './compare.js';
 import { insideWindow, windowEnd, windowStart } from './schedule.js';
 import { cycleResult, record, text } from './store.js';
@@ -225,7 +225,207 @@ function stopAfterConclusion(state: RsiState, d: Experiment, round: Data, compar
   d.objective.state = 'done';
   delete d.objective.resumeTo;
   round.decision = { pick: 'same', note: reason.text, by: 'RSI', at: now };
+  d.closeoutReport = buildCloseoutReport(d, now, 'RSI');
   return reason;
+}
+
+const STOP_KIND_LABEL: Record<string, string> = {
+  manual: '人工结项 / 毕业',
+  target: '达到目标自动结项',
+  maxCycles: '达到周期上限自动结项',
+  sunset: '评估建议停止',
+};
+
+const mdCell = (s: string) => s.replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
+
+// Deterministic, record-grounded closeout report built purely from persisted objective/version/round records.
+export function buildCloseoutReport(d: Experiment, now: number, by?: string): Data {
+  const stop = d.objective.stopReason || {};
+  const reasonText = typeof stop.text === 'string' && stop.text.trim() ? stop.text.trim() : '评估已结束';
+  const kindLabel = (stop.kind && STOP_KIND_LABEL[stop.kind]) || '结项';
+  const actor = by || stop.by || 'RSI';
+  const at = typeof stop.at === 'number' ? stop.at : now;
+  const rounds: Data[] = Array.isArray(d.rounds) ? d.rounds : [];
+  const versions: Data[] = Array.isArray(d.versions) ? d.versions : [];
+  const reportedRounds = rounds.filter((r) => r.report);
+  const verdictCounts: Record<string, number> = {};
+  for (const r of reportedRounds) {
+    const v = r.report?.verdict;
+    if (v) verdictCounts[v] = (verdictCounts[v] || 0) + 1;
+  }
+  const verdictSummary = Object.entries(verdictCounts).map(([k, n]) => `${k} ${n}`).join(' / ') || '暂无';
+
+  const preds = reportedRounds.flatMap((r) => (Array.isArray(r.report?.predictions) ? r.report.predictions : []));
+  const resolvedPreds = preds.filter((p: Data) => p.result && p.result !== 'unresolved');
+  const hitPreds = resolvedPreds.filter((p: Data) => p.result === 'hit');
+  const predText = resolvedPreds.length ? `${hitPreds.length}/${resolvedPreds.length}（${Math.round((hitPreds.length / resolvedPreds.length) * 100)}%）` : '暂无可核对预测';
+
+  const latestReportOf = (vid: string) => [...reportedRounds].reverse().find((r) => r.version === vid)?.report;
+  const dispOf = (v: Data) => v.disposition || latestReportOf(v.id)?.disposition || null;
+  const tagOf = (v: Data) => v.tag || latestReportOf(v.id)?.tag || '';
+
+  const curVer = versions.find((v) => v.id === d.objective.currentVersion) || versions.find((v) => v.current) || versions[0];
+  const latestAdvance = [...versions].reverse().find((v) => dispOf(v) === 'advance');
+  const verBrief = (v: Data | undefined) => {
+    if (!v) return '—';
+    const commit = v.commit ? `@${String(v.commit).slice(0, 7)}` : '';
+    const t = tagOf(v);
+    const tag = t ? ` · ${t}` : '';
+    return `${v.id}${commit}${tag}`;
+  };
+
+  const metricCellOf = (round: Data, groupId: string, metricId: string): { mean: number; spread: number | null } | null => {
+    const cell = Array.isArray(round.report?.matrix)
+      ? round.report.matrix.find((c: Data) => c.group === groupId && c.metric === metricId && typeof c.mean === 'number' && Number.isFinite(c.mean))
+      : null;
+    if (cell) return { mean: cell.mean, spread: typeof cell.spread === 'number' && Number.isFinite(cell.spread) ? cell.spread : null };
+    const vals = (round.runs || [])
+      .filter((u: Data) => u.group === groupId && u.state === 'done' && u.error?.kind !== 'env' && typeof u.metrics?.[metricId] === 'number' && Number.isFinite(u.metrics[metricId]))
+      .map((u: Data) => u.metrics[metricId] as number);
+    if (!vals.length) return null;
+    const mean = vals.reduce((a: number, b: number) => a + b, 0) / vals.length;
+    if (vals.length === 1) return { mean, spread: null };
+    const sd = Math.sqrt(vals.reduce((s: number, x: number) => s + (x - mean) ** 2, 0) / (vals.length - 1));
+    return { mean, spread: sd };
+  };
+  const fmtCell = (hit: { mean: number; spread: number | null; cycle: number; version: string } | null, unit: string) => {
+    if (!hit) return '—';
+    const u = unit ? ` ${unit}` : '';
+    const val = hit.spread != null ? `${short(hit.mean)} ± ${short(hit.spread)}${u}` : `${short(hit.mean)}${u}`;
+    return `${val}（${hit.version}·C${hit.cycle}）`;
+  };
+  const findBaselineMetric = (metricId: string) => {
+    for (const r of rounds) {
+      const ctrl = (r.plan?.groups || []).find((g: Data) => g.control) || r.plan?.groups?.[0];
+      if (!ctrl) continue;
+      const cell = metricCellOf(r, ctrl.id, metricId);
+      if (cell) return { ...cell, cycle: r.n, version: ctrl.version || r.version };
+    }
+    return null;
+  };
+  const findLatestVersionMetric = (versionId: string | undefined, metricId: string) => {
+    if (!versionId) return null;
+    for (let i = rounds.length - 1; i >= 0; i--) {
+      const r = rounds[i];
+      const groups: Data[] = r.plan?.groups || [];
+      const targetGroup = groups.find((g) => !g.control && g.version === versionId) || groups.find((g) => g.version === versionId);
+      if (!targetGroup) continue;
+      const cell = metricCellOf(r, targetGroup.id, metricId);
+      if (cell) return { ...cell, cycle: r.n, version: versionId };
+    }
+    return null;
+  };
+
+  const hasDistinctAdvance = !!latestAdvance && latestAdvance.id !== curVer?.id;
+  const metricsItems: Data[] = Array.isArray(d.metrics?.items) ? d.metrics.items : [];
+  const orderedMetrics = [
+    ...metricsItems.filter((m) => !m.guard),
+    ...metricsItems.filter((m) => m.guard),
+  ].slice(0, 12);
+
+  const lines: string[] = [];
+  lines.push('### 1. 结项概览');
+  lines.push(`- **结项方式**：${kindLabel}（操作者：${actor}）`);
+  lines.push(`- **结项说明**：${reasonText}`);
+  lines.push(`- **评估目标**：${clipTitle(d.objective.goal?.statement || d.objective.name, 200, d.objective.id)}`);
+  lines.push(`- **规模统计**：共 **${rounds.length}** 个周期（已出结论 ${reportedRounds.length}：${verdictSummary}），共 **${versions.length}** 个版本，预测命中率 ${predText}`);
+  lines.push(`- **当前正式版本**：\`${verBrief(curVer)}\``);
+  if (hasDistinctAdvance) {
+    lines.push(`- **最新推进里程碑**：\`${verBrief(latestAdvance)}\`（未自动替换当前正式版）`);
+  }
+
+  if (orderedMetrics.length) {
+    lines.push('');
+    lines.push('### 2. 核心指标对照');
+    if (hasDistinctAdvance) {
+      lines.push(`| 指标 | 角色 | 基线实测 | 当前正式版（${curVer?.id || '—'}） | 最新推进版（${latestAdvance!.id}） |`);
+      lines.push('|---|---|---|---|---|');
+    } else {
+      lines.push(`| 指标 | 角色 | 基线实测 | 当前正式版（${curVer?.id || '—'}） |`);
+      lines.push('|---|---|---|---|');
+    }
+    for (const m of orderedMetrics) {
+      const role = m.guard ? `护栏${m.line ? `（${m.line}）` : ''}` : '主指标';
+      const unit = m.unit || '';
+      const base = fmtCell(findBaselineMetric(m.id), unit);
+      const cur = fmtCell(findLatestVersionMetric(curVer?.id, m.id), unit);
+      if (hasDistinctAdvance) {
+        const adv = fmtCell(findLatestVersionMetric(latestAdvance!.id, m.id), unit);
+        lines.push(`| ${mdCell(m.name || m.id)} | ${mdCell(role)} | ${mdCell(base)} | ${mdCell(cur)} | ${mdCell(adv)} |`);
+      } else {
+        lines.push(`| ${mdCell(m.name || m.id)} | ${mdCell(role)} | ${mdCell(base)} | ${mdCell(cur)} |`);
+      }
+    }
+    if (metricsItems.length > orderedMetrics.length) {
+      lines.push(`_（其余 ${metricsItems.length - orderedMetrics.length} 项辅助指标略，可在周期记录中查看完整矩阵。）_`);
+    }
+  }
+
+  const milestones = versions.filter((v) => v.current || v.status === 'confirmed' || dispOf(v) === 'advance');
+  if (milestones.length) {
+    lines.push('');
+    lines.push(`### 3. 演进里程碑（共 ${milestones.length} 个关键节点）`);
+    const shown = milestones.length <= 12 ? milestones : [...milestones.slice(0, 4), ...milestones.slice(-8)];
+    for (const v of shown) {
+      const parent = v.parent ? ` ← ${v.parent}` : '';
+      const commit = v.commit ? ` \`${String(v.commit).slice(0, 7)}\`` : '';
+      const t = tagOf(v);
+      const tag = t ? ` **${t}**` : '';
+      const change = v.change ? `：${clipTitle(v.change, 90, '')}` : '';
+      lines.push(`- **${v.id}**${parent}${commit}${v.current ? '（当前正式版）' : ''}${tag}${change}`);
+    }
+    if (milestones.length > shown.length) {
+      lines.push(`- _（中间 ${milestones.length - shown.length} 个过渡推进节点已折叠，完整谱系见总览图。）_`);
+    }
+  }
+
+  const rollbackVerIds = new Set(reportedRounds.filter((r) => r.report?.verdict === 'rollback').map((r) => r.version));
+  const pruned = versions.filter((v) => !v.current && (dispOf(v) === 'dead_end' || v.status === 'rejected' || rollbackVerIds.has(v.id)));
+  if (pruned.length) {
+    lines.push('');
+    lines.push(`### 4. 已验证淘汰路线与避坑清单（共 ${pruned.length} 项）`);
+    for (const v of pruned.slice(-15)) {
+      const parent = v.parent ? `（自 ${v.parent} 分出）` : '';
+      const t = tagOf(v);
+      const tag = t ? ` **${t}**` : '';
+      const rMatch = latestReportOf(v.id);
+      const detail = t ? '' : (rMatch?.headline ? `：${clipTitle(rMatch.headline, 90, '')}` : v.change ? `：${clipTitle(v.change, 90, '')}` : '');
+      lines.push(`- **${v.id}**${parent}${tag}${detail}`);
+    }
+  }
+
+  if (reportedRounds.length) {
+    lines.push('');
+    lines.push('### 5. 近期周期结论摘录');
+    for (const r of reportedRounds.slice(-5)) {
+      lines.push(`- **C${r.n}**（${r.version} · \`${r.report.verdict}\`）：${clipTitle(r.report.headline || r.report.summary || '', 120, '')}`);
+    }
+  }
+  const repairs: Data[] = Array.isArray(d.repairs) ? d.repairs : [];
+  if (repairs.length) {
+    lines.push('');
+    lines.push(`- **自动修复记录**：共 ${repairs.length} 次（最近：${repairs.slice(-3).map((x) => `${x.version}「${clipTitle(x.signature || '', 40, '')}」`).join('；')}）`);
+  }
+
+  return {
+    at,
+    by: actor,
+    kind: stop.kind || 'manual',
+    cycle: stop.cycle ?? (rounds.length ? rounds[rounds.length - 1].n : d.objective.round || 0),
+    reason: reasonText,
+    stats: {
+      rounds: rounds.length,
+      concludedRounds: reportedRounds.length,
+      versions: versions.length,
+      milestones: milestones.length,
+      pruned: pruned.length,
+      currentVersion: curVer?.id || null,
+      latestAdvanceVersion: latestAdvance?.id || null,
+      predictionsHit: hitPreds.length,
+      predictionsResolved: resolvedPreds.length,
+    },
+    markdown: lines.join('\n'),
+  };
 }
 
 // Directions a member proposes for a cycle: distinct k, title and why; kind, target and baseVersion optional; cites must name an earlier cycle when there is one.
@@ -468,6 +668,9 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   } else conclusionCard(state, d, round, now, stopped);
   state.library[d.objective.projectId].push({ id: `${d.objective.id}-cycle-${round.n}`, kind: 'feedback', title: `第 ${round.n} 周期：${round.report.headline}`, body: `${round.plan.groups.filter((g: Data) => !g.control).map((g: Data) => `${g.label} (${g.version}) ${JSON.stringify(g.vars)}`).join('\n') || '当前版本基线'}\n\n${findings}${outcome}`,
     objectives: [d.objective.id], cycle: round.n, tried: round.plan.groups.filter((g: Data) => !g.control), result: cycleResult(input.verdict, compared, confirmation), sources: [{ objective: d.objective.id, cycle: round.n }], state: 'confirmed', by: member.catId, at: now });
+  if (alreadyClosed && d.objective.state === 'done' && d.closeoutReport) {
+    d.closeoutReport = buildCloseoutReport(d, now, d.closeoutReport.by);
+  }
   syncObjective(state, d);
   return { ok: true, comparison: compared, confirmation, stop: d.objective.stopReason || null, ...(round.analysis ? { analysts: round.analysis.waiting } : {}) };
 }
@@ -487,7 +690,7 @@ function conclusionCard(state: RsiState, d: Experiment, round: Data, now: number
   const compareBlock = compareMd ? `\n\n${compareMd}` : '';
   const customSeedNote = !closed && !d.candidate && Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length ? '（本周期含自定义 reservedSeeds 绑定，超时不会自动照旧续跑。）' : '';
   message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${compareBlock}${report.outcome}${checked}\n\n${lines.join('\n')}${verdict}${absent}${closed ? '' : d.candidate ? '\n\n在 RSI 页面点「今晚照旧」，下一周期跑确认。' : `\n\n在 RSI 页面选择方向。${customSeedNote}`}`, 'conclusion');
-  if (stopped) message(state, d, now, stopped.text, `第 ${round.n} 周期结论后停止启动新周期。`, 'conclusion');
+  if (stopped) message(state, d, now, stopped.text, d.closeoutReport?.markdown || `第 ${round.n} 周期结论后停止启动新周期。`, 'conclusion');
   if (!round.decision && !closed) decideAtNight(state, d, round, now);
 }
 
