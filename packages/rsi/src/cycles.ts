@@ -591,13 +591,13 @@ const unclaimedAnalysts = (r: Data, now: number) => r.analysis?.waiting?.length 
   : [];
 
 export function hasUnclaimed(d: Experiment, now: number): boolean {
-  if (!d.objective.projectPath || ['done', 'retired'].includes(d.objective.state)) return false;
+  if (!d.objective.projectPath || ['done', 'retired', 'paused'].includes(d.objective.state)) return false;
   return versionUnclaimed(d, now) || d.rounds.some((r: Data) => evalUnclaimed(r, now) || unclaimedAnalysts(r, now).length > 0);
 }
 
 // Self-contained stalled-wake detection: surfaces a visible reminder card once per dispatch when a member has not called rsi_task after UNCLAIMED_WAIT.
 export function warnUnclaimed(state: RsiState, d: Experiment, now: number) {
-  if (!d.objective.projectPath || ['done', 'retired'].includes(d.objective.state)) return;
+  if (!d.objective.projectPath || ['done', 'retired', 'paused'].includes(d.objective.state)) return;
   const nameOf = (id: string) => d.members.find((m) => m.catId === id)?.name || id;
   const hint = '可能遭遇唤醒失败或连接中断；可在 RSI 页面点「重新触发」，或让该成员直接调用原生 MCP 工具 rsi_task 继续。';
   for (const r of d.rounds) {

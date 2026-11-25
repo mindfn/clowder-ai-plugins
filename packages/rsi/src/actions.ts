@@ -566,12 +566,36 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
         if (objective.state !== 'ready') return { error: 'Objective is not ready' };
         objective.state = d ? 'running' : 'baseline';
       } else if (body.action === 'pause') {
-        if (objective.state !== 'paused') objective.resumeTo = objective.state;
+        const wasPaused = objective.state === 'paused';
+        if (!wasPaused) objective.resumeTo = objective.state;
         objective.state = 'paused';
+        if (d && !wasPaused) {
+          message(state, d, now, `${actor}暂停了评估项`, `已暂停自动推进并关闭执行器（原状态：${objective.resumeTo || 'running'}）；恢复后会重新计算等待计时。`, 'plan');
+        }
       } else if (body.action === 'resume') {
         if (objective.state !== 'paused') return { error: 'Objective is not paused' };
-        objective.state = objective.resumeTo || (d?.rounds.some((r: Data) => r.report && !r.decision) ? 'pending' : 'running');
+        const targetState = objective.resumeTo || (d?.rounds.some((r: Data) => r.report && !r.decision) ? 'pending' : 'running');
+        objective.state = targetState;
         delete objective.resumeTo;
+        if (d) {
+          for (const r of d.rounds) {
+            if (r.report && !r.decision && r.asked) r.asked = now;
+            if (r.analysis?.waiting?.length) {
+              r.analysis.since = now;
+              r.analysis.askedAt = now;
+              delete r.analysis.unclaimedNotified;
+            }
+            if (r.state === 'evaluating') {
+              r.evalAskedAt = now;
+              if (!r.invocationId) delete r.evalStalledNotified;
+            }
+          }
+          if (d.versionRequest) {
+            d.versionRequest.since = now;
+            if (!d.versionRequest.invocationId) delete d.versionRequest.stalledNotified;
+          }
+          message(state, d, now, `${actor}恢复了评估项`, `已恢复为 ${targetState} 并启用执行器；等待决策/分析/版本计时已从本次恢复重新起算。`, 'plan');
+        }
       } else if (body.action === 'more') {
         if (d) d.objective.budget.rounds = (d.objective.budget.rounds || 0) + 10;
         else if (state.details[id]?.trigger) state.details[id].trigger.evals.max += 10;

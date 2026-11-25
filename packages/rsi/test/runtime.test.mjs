@@ -2826,3 +2826,114 @@ if (jobId === 'job-control:302' && existsSync(${JSON.stringify(gateFile2)})) {
   // Exact 8 submits total: arm 4 resumed polling its persisted jobId without resubmitting, and arms 1-3 were never rerun!
   assert.deepEqual((await readFile(logFile2, 'utf8')).trim().split('\n'), expectedSeq2);
 });
+
+test('alpha.125: life resume resets stale decision clock so immediate tick does not fire decideByDefault, and pause/resume emit auditable lifecycle messages', async (t) => {
+  const f = await fixture(t), o = await f.create({ auto: 'default', scheduleMode: 'unlimited' });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [41] });
+  const cats = [{ id: 'mgr-cat', name: '墨墨', model: 'm', handle: '@gemini' }];
+  assert.equal((await f.http('POST', { op: 'manager', objective: o.id, v: 'mgr-cat', cats })).status, 200);
+  await execute(f, o);
+
+  const t0 = new Date(2026, 10, 25, 20, 0).getTime();
+  t.mock.timers.enable({ apis: ['Date'], now: t0 });
+  await report(f, o, 'keep', [{ k: 'exec-fix', title: 'fix', why: 'reason', kind: 'execution' }]);
+  let exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.objective.state, 'pending');
+  assert.equal(exp.rounds[0].asked, t0);
+
+  // Pause by human UI -> auditable message recorded; duplicate pause is idempotent without spamming.
+  const tPause = t0 + 2 * 60_000;
+  t.mock.timers.setTime(tPause);
+  assert.equal((await f.http('POST', { op: 'life', action: 'pause', objective: o.id })).status, 200);
+  assert.equal((await f.http('POST', { op: 'life', action: 'pause', objective: o.id })).status, 200);
+  exp = (await f.read()).experiments[o.id];
+  const pauseMsgs = exp.messages.filter((m) => m.title === '你暂停了评估项');
+  assert.equal(pauseMsgs.length, 1);
+  assert.equal(pauseMsgs[0].at, tPause);
+
+  // Resume 3 hours later via delegated manager -> round.asked refreshed to tResume + auditable message recorded.
+  const tResume = t0 + 3 * 60 * 60_000;
+  t.mock.timers.setTime(tResume);
+  assert.equal((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'resume' }, 'mgr-cat', 'infra-thread')).ok, true);
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.objective.state, 'pending');
+  assert.equal(exp.rounds[0].asked, tResume);
+  const resumeMsgs = exp.messages.filter((m) => m.title === '墨墨（受托）恢复了评估项');
+  assert.equal(resumeMsgs.length, 1);
+  assert.equal(resumeMsgs[0].at, tResume);
+
+  // Next 3-min tick right after resume must NOT fire decideByDefault!
+  t.mock.timers.setTime(tResume + 3 * 60_000);
+  await f.activation().actions['rsi.tick']();
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.objective.state, 'pending');
+  assert.equal(exp.rounds[0].decision, null);
+  assert.equal(exp.rounds.length, 1);
+
+  // After a fresh DECISION_WAIT (>30m) post-resume, decideByDefault fires normally.
+  t.mock.timers.setTime(tResume + 35 * 60_000);
+  await f.activation().actions['rsi.tick']();
+  t.mock.timers.reset();
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.rounds[0].decision?.pick, 'same');
+  assert.equal(exp.rounds[0].decision?.by, 'RSI');
+});
+
+test('alpha.125: paused state freezes analysis timeout and unclaimed warnings, and resume resets analysis and versionRequest clocks', async (t) => {
+  const f = await fixture(t), o = await f.create({ auto: 'default', scheduleMode: 'unlimited' });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [51] });
+  const cats = [{ id: 'ana-1', name: '甲', model: 'm1' }, { id: 'ana-2', name: '乙', model: 'm2' }];
+  for (const c of cats) assert.equal((await f.http('POST', { op: 'analystAdd', objective: o.id, catId: c.id, cats })).status, 200);
+  await execute(f, o);
+
+  const t0 = new Date(2026, 10, 25, 12, 0).getTime();
+  t.mock.timers.enable({ apis: ['Date'], now: t0 });
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', { cycle: 1, verdict: 'tune', findings: 'needs analysis' }, 'cat-b5ddoo9l', o.thread)).ok, true);
+  let exp = (await f.read()).experiments[o.id];
+  assert.deepEqual(exp.rounds[0].analysis.waiting, ['ana-1', 'ana-2']);
+
+  // Pause while analysts are still waiting; advance past both UNCLAIMED_WAIT and ANALYSIS_LIMIT.
+  assert.equal((await f.http('POST', { op: 'life', action: 'pause', objective: o.id })).status, 200);
+  t.mock.timers.setTime(t0 + 2 * 60 * 60_000);
+  await f.activation().actions['rsi.tick']();
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.objective.state, 'paused');
+  assert.deepEqual(exp.rounds[0].analysis.waiting, ['ana-1', 'ana-2']);
+  assert.equal(exp.rounds[0].analysis.unclaimedNotified, undefined);
+  assert.equal(exp.messages.some((m) => /仍未认领/.test(m.title)), false);
+
+  // Resume resets analysis.since & analysis.askedAt so immediate tick neither closes analysis nor fires unclaimed warning.
+  const tResume = t0 + 2 * 60 * 60_000;
+  assert.equal((await f.http('POST', { op: 'life', action: 'resume', objective: o.id })).status, 200);
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.rounds[0].analysis.since, tResume);
+  assert.equal(exp.rounds[0].analysis.askedAt, tResume);
+  t.mock.timers.setTime(tResume + 2 * 60_000);
+  await f.activation().actions['rsi.tick']();
+  exp = (await f.read()).experiments[o.id];
+  assert.deepEqual(exp.rounds[0].analysis.waiting, ['ana-1', 'ana-2']);
+  assert.equal(exp.messages.some((m) => /仍未认领/.test(m.title)), false);
+
+  // Also check versionRequest.since reset + paused repair freeze.
+  t.mock.timers.setTime(tResume + 3 * 60_000);
+  await f.tool('task', {}, 'ana-1', o.thread);
+  assert.equal((await f.tool('propose', { cycle: 1, options: [{ k: 'd1', title: 'dir 1', why: 'w1' }] }, 'ana-1', o.thread)).ok, true);
+  await f.tool('task', {}, 'ana-2', o.thread);
+  assert.equal((await f.tool('propose', { cycle: 1, options: [{ k: 'd2', title: 'dir 2', why: 'w2' }] }, 'ana-2', o.thread)).ok, true);
+  assert.equal((await f.http('POST', { op: 'expDecide', objective: o.id, n: 1, pick: 'direction', directionId: 'd1' }, { project: f.project })).status, 200);
+  assert.equal((await f.http('POST', { op: 'life', action: 'pause', objective: o.id })).status, 200);
+  const tLater = tResume + 2 * 60 * 60_000;
+  t.mock.timers.setTime(tLater);
+  await f.activation().actions['rsi.tick']();
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.versionRequest.stalledNotified, undefined);
+  assert.equal((await f.http('POST', { op: 'life', action: 'resume', objective: o.id })).status, 200);
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.versionRequest.since, tLater);
+  t.mock.timers.setTime(tLater + 2 * 60_000);
+  await f.activation().actions['rsi.tick']();
+  t.mock.timers.reset();
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.versionRequest.stalledNotified, undefined);
+});

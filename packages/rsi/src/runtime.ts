@@ -170,15 +170,16 @@ export function createRuntime(host: RsiHost) {
     // a conclusion nobody decided in time inside the run window goes on with its plan. Whatever else is running:
     // the busy check below only guards starting a new cycle.
     const now = Date.now();
-    const analysisLate = (r: Data) => r.analysis?.waiting.length && now - r.analysis.since > ANALYSIS_LIMIT;
+    const inactive = (x: Experiment) => ['paused', 'done', 'retired'].includes(x.objective.state);
+    const analysisLate = (x: Experiment, r: Data) => !inactive(x) && r.analysis?.waiting.length && now - r.analysis.since > ANALYSIS_LIMIT;
     const decisionLate = (x: Experiment, r: Data) => x.objective.state === 'pending' && r.asked && !r.decision && !(r.plan?.reservedSeeds?.length && !x.candidate) && !x.upcoming?.requiresExplicitPlan && now - r.asked > DECISION_WAIT && insideWindow(x.policy.schedule, now);
-    const repairLate = (x: Experiment) => x.versionRequest?.repair && now - x.versionRequest.since > REPAIR_WAIT;
-    const late = (state: import('./types.js').RsiState) => Object.values(state.experiments).some((x) => repairLate(x) || nightDue(x, now) || hasUnclaimed(x, now) || x.rounds.some((r: Data) => analysisLate(r) || decisionLate(x, r)));
+    const repairLate = (x: Experiment) => !inactive(x) && x.versionRequest?.repair && now - x.versionRequest.since > REPAIR_WAIT;
+    const late = (state: import('./types.js').RsiState) => Object.values(state.experiments).some((x) => repairLate(x) || nightDue(x, now) || hasUnclaimed(x, now) || x.rounds.some((r: Data) => analysisLate(x, r) || decisionLate(x, r)));
     for (const [key, entry] of owners) if (late(entry.value)) {
       await retain(host.storage, key, (state) => {
         for (const x of Object.values(state.experiments)) if (repairLate(x)) abandonRepair(state, x, `${REPAIR_WAIT / 60_000} 分钟内没修好`, now);
         for (const x of Object.values(state.experiments)) for (const r of x.rounds) {
-          if (analysisLate(r)) finishAnalysis(state, x, r, now);
+          if (analysisLate(x, r)) finishAnalysis(state, x, r, now);
           else if (decisionLate(x, r)) decideByDefault(state, x, r, now);
         }
         for (const x of Object.values(state.experiments)) warnUnclaimed(state, x, now);
