@@ -617,7 +617,6 @@ function rsiFoldLinearChains(nodes, selectedId, expandedMap, metricDir) {
     if ((kids[n.parent] || []).length > 1) return true;
     if ((kids[n.id] || []).length !== 1) return true;
     if (n.state === 'current' || n.state === 'running' || n.state === 'preparing' || n.pruned) return true;
-    if (n.disposition === 'advance') return true;
     return false;
   };
   const splitChunks = function (list) {

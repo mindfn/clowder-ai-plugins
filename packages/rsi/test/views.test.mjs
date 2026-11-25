@@ -1242,6 +1242,39 @@ test('overview lineage map, honest pruned/neutral states, explicit aspects, hot-
   assert.doesNotMatch(html115, /class="rsi-cc-asp obs"/, 'must not collide with host .obs flex-column CSS class');
   assert.match(html115, /rsi-asp-obs/, 'must use namespaced rsi-asp-obs class');
 
+  // alpha.124: consecutive linear `advance` nodes fold like other linear exploration chains (only true structural/active/pruned boundaries stay pinned)
+  const advanceChainMap = {
+    objectiveId: 'obj-adv-fold',
+    objectiveName: 'Advance linear fold test',
+    currentVersion: 'v4',
+    metricVersion: 'E1',
+    lens: 'metric',
+    metric: { id: 'qps', name: 'QPS', dir: 'up', unit: '' },
+    selectedVersion: 'v47',
+    stats: { total: 8, pruned: 1, insufficient: 0, running: 0, preparing: null, current: 'v4' },
+    nodes: [
+      { id: 'v38', parent: null, state: 'explored', disposition: 'advance', value: 8.5, valueText: '8.5', aspects: ['observability'], changeShort: 'root branch' },
+      { id: 'v39', parent: 'v38', state: 'deadEnd', disposition: 'dead_end', pruned: true, value: 0, valueText: '0', aspects: ['object'], changeShort: 'dead branch' },
+      { id: 'v40', parent: 'v38', state: 'explored', disposition: 'advance', value: 8.5, valueText: '8.5', aspects: ['observability'], changeShort: 'head' },
+      { id: 'v41', parent: 'v40', state: 'explored', disposition: 'advance', value: 8.5, valueText: '8.5', aspects: ['observability'], changeShort: 'mid1' },
+      { id: 'v42', parent: 'v41', state: 'explored', disposition: 'advance', value: 8.57, valueText: '8.57', aspects: ['observability'], changeShort: 'mid2' },
+      { id: 'v43', parent: 'v42', state: 'explored', disposition: 'advance', value: 8.63, valueText: '8.63', aspects: ['observability'], changeShort: 'mid3' },
+      { id: 'v44', parent: 'v43', state: 'explored', disposition: 'advance', value: 8.63, valueText: '8.63', aspects: ['observability'], changeShort: 'mid4' },
+      { id: 'v45', parent: 'v44', state: 'explored', disposition: 'advance', value: 8.63, valueText: '8.63', aspects: ['observability'], changeShort: 'branch tail' },
+      { id: 'v46', parent: 'v45', state: 'deadEnd', disposition: 'dead_end', pruned: true, value: 0, valueText: '0', aspects: ['object'], changeShort: 'dead2' },
+      { id: 'v47', parent: 'v45', state: 'explored', value: 8.45, valueText: '8.45', aspects: ['observability'], changeShort: 'leaf' },
+    ],
+    selectedDetail: { id: 'v47', causality: { triggerKind: 'direction', triggerCycle: 50, triggerDetail: 'soak', action: 'soak', basisKind: 'done' }, receipts: [] },
+  };
+  sandbox.globalThis.__rsiMapExpanded = {};
+  sandbox.pv = (expr, sc) => expr === '$.map124' ? advanceChainMap : (typeof expr === 'string' && expr.startsWith('@') ? sc?.[expr.slice(1)] : expr);
+  const html124 = sandbox.PDL_COMPONENTS['plugin:official.rsi/rsiOverviewMap']({ from: '$.map124', mode: 'modal' }, {}, {});
+  assert.match(html124, /data-fold-key="v41~v44"/, 'linear advance chain v40->v41..v44->v45 must fold middle v41~v44');
+  assert.match(html124, /data-ver="v39"/, 'dead_end branch stays visible');
+  assert.match(html124, /data-ver="v46"/, 'dead_end branch stays visible');
+  assert.match(html124, /data-ver="v40"/, 'branch child head stays visible');
+  assert.match(html124, /data-ver="v45"/, 'branch parent tail stays visible');
+
   // alpha.116: card without numeric metric or manual tag surfaces headlineBrief (instead of hiding verdict behind changeShort),
   // and version tree marks env-failed runs with non-insufficient report verdict as 'concluded' instead of misleading 'failed'.
   x.d.versions.push({ id: 'v15', parent: 'v2', change: 'Code change description hidden behind headline', at: now + 1500, current: false, status: 'proposed', aspects: ['object'] });
@@ -1710,6 +1743,9 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
   const cssSrc = readFileSync(new URL('../console/components/lineage.css', import.meta.url), 'utf8');
   assert.match(cssSrc, /\.rsi-mx-scroll \.rsi-mx tbody tr > td\.rsi-mx-col-m/, 'sticky body column selector must beat Host tbody tr + tr > td specificity');
   assert.match(cssSrc, /border-collapse:separate/, 'sticky table must use border-collapse:separate');
+  assert.match(cssSrc, /\.pop-center:has\(\.rsi-map-wrap\.is-modal\)\{padding:var\(--sp-l\)\}/, 'modal overview map must remove .pop-center top gap');
+  assert.match(cssSrc, /\[data-shell="v2"\] \.v2-confirm-dialog\):has\(\.rsi-map-wrap\.is-modal\)/, 'v2 modal fill selector must anchor on [data-shell="v2"] (top-layer pop-host is outside .v2-shell)');
+  assert.doesNotMatch(cssSrc, /\.v2-shell \.v2-confirm-dialog:has\(\.rsi-map-wrap\.is-modal\)/, 'must not scope modal dialog under .v2-shell which misses top-layer popover dialogs');
   // P2-2: English labels render without leaked Chinese chrome
   const enScalarHtml = sb.PDL_COMPONENTS['plugin:official.rsi/rsiCompareMatrix']({ from: '$.scalar', labels: enPack.cmp }, {}, {});
   assert.match(enScalarHtml, /Guardrails 8\/8 passed/);

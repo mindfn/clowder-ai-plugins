@@ -228,8 +228,9 @@
 .rsi-map-ins-chain b{color:var(--fg-strong);font-weight:600}
 .rsi-map-rcpts{display:flex;flex-wrap:wrap;gap:6px;padding-top:4px;border-top:1px solid color-mix(in srgb,var(--line) 55%,transparent)}
 .rsi-map-rcpt{font-family:var(--font-mono);font-size:11px;color:var(--fg-muted);background:var(--bg-group);padding:2px 6px;border-radius:var(--r-s)}
-.v2-shell .v2-confirm-dialog:has(.rsi-map-wrap.is-modal){height:calc(100dvh - 48px);max-height:calc(100dvh - 48px);width:calc(100vw - 48px);max-width:calc(100vw - 48px);display:flex;flex-direction:column}
-.dialog-body:has(.rsi-map-wrap.is-modal),.v2-shell .v2-confirm-dialog>.v2-dialog-body:has(.rsi-map-wrap.is-modal){flex:1 1 0;height:auto;max-height:none;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.pop-center:has(.rsi-map-wrap.is-modal){padding:var(--sp-l)}
+:is(.dialog,[data-shell="v2"] .v2-confirm-dialog):has(.rsi-map-wrap.is-modal){height:100%;max-height:100%;width:100%;max-width:100%;box-sizing:border-box;display:flex;flex-direction:column}
+:is(.dialog-body,[data-shell="v2"] .v2-confirm-dialog>.v2-dialog-body):has(.rsi-map-wrap.is-modal){flex:1 1 0;height:auto;max-height:none;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .vw-view:has(> .rsi-map-wrap.is-modal){flex:1 1 0;min-height:0;height:100%;display:flex;flex-direction:column;gap:var(--sp-xs);overflow:hidden}
 .rsi-map-wrap.is-modal{flex:1 1 0;min-height:0;height:auto;max-height:100%;box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column}
 .rsi-map-split{flex:1 1 0;min-height:0;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px}

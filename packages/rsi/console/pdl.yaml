@@ -5473,7 +5473,7 @@ views:
     error: t:rsi.console.error
   dlg.rsiMap:
     title: $.title
-    layout: viewport
+    layout: fill
     span: full
     noFieldFocus: true
     blocks:
