@@ -3,6 +3,7 @@ import { askEvaluation, buildCloseoutReport, controlGroup, finishAnalysis, fresh
 import { formatPolicy, hasValidSchedule, parseMaxRuns, parseScheduleText, policiesOf, scheduleOf, scheduleSummary, timeRange, validatePolicy } from './schedule.js';
 import { summaryOf, objectiveData } from './data.js';
 import { clipTitle, enqueue, kick, mention, message, refreshMembers, rsiExpNew, rsiExpReady, rsiExpStaleFrom, setMember, stopOf, stopText, syncObjective, repairCount, repairText, REPAIR_DEFAULT, prepSettled, AUTO, autoKinds, autoKey, autoText } from './init.js';
+import { record } from './store.js';
 import type { Data, Experiment, RsiState, Section } from './types.js';
 
 function selected(state: RsiState, body: Data, query: Data) {
@@ -25,7 +26,7 @@ function dispatchDecision(state: RsiState, d: Experiment, round: Data, now: numb
   d.objective.state = 'running';
   if (d.candidate || round.decision.pick === 'same') {
     if (!d.candidate) {
-      const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, ...basePlan } = round.plan;
+      const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, cycleVars: _dropCycleVars, ...basePlan } = round.plan;
       const confirmSeedCount = d.policy.confirmSeeds || round.plan.seeds.length;
       d.upcoming = { ...basePlan, tier: 'confirm', skipControl: false, seeds: freshSeeds(d, confirmSeedCount), groups: [controlGroup(d)] };
     }
@@ -852,6 +853,29 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       message(state, d, now, `${annotatedBy}校准了 ${updated.length} 个版本的谱系标注`, updated.join('、'), 'declare');
       syncObjective(state, d);
       return { ok: true, updated, annotatedBy };
+    }
+    case 'cycleVars': {
+      if (!d) return { error: 'Experiment not found', status: 404 };
+      if (['done', 'retired'].includes(d.objective.state)) {
+        return { error: `Cannot set cycleVars while objective is ${d.objective.state}`, status: 409 };
+      }
+      if (!d.upcoming) return { error: 'No upcoming cycle plan to bind cycleVars to', status: 400 };
+      const raw = body.vars;
+      if (raw === null) {
+        delete d.upcoming.cycleVars;
+        syncObjective(state, d);
+        return { ok: true, cycleVars: null };
+      }
+      if (!record(raw)) return { error: 'Provide vars as a JSON object or null to clear', status: 400 };
+      const RESERVED_KEYS = ['seed', 'tier', 'reservedSeeds', 'pairedPlan'];
+      const forbidden = RESERVED_KEYS.filter((k) => Object.prototype.hasOwnProperty.call(raw, k));
+      if (forbidden.length) return { error: `cycleVars cannot override Host-managed keys: ${forbidden.join(', ')}`, status: 400 };
+      const encoded = JSON.stringify(raw);
+      if (encoded.length > 65_536) return { error: 'cycleVars exceeds 64 KiB limit', status: 400 };
+      if (!Object.keys(raw).length) delete d.upcoming.cycleVars;
+      else d.upcoming.cycleVars = JSON.parse(encoded);
+      syncObjective(state, d);
+      return { ok: true, cycleVars: d.upcoming.cycleVars ?? null };
     }
     default: return { error: 'Unknown operation' };
   }

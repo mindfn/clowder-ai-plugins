@@ -3244,3 +3244,97 @@ test('pollGraceWindowMs scales with long executor timeouts and retryable get/col
   assert.equal((await readFile(join(f3.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
   assert.equal(await access(join(f3.project, 'cancels')).then(() => true, () => false), false);
 });
+
+test('alpha.131: rsi_operate cycleVars injects one-shot per-cycle config.json overrides, shares across arms, strips on next cycle, and fails closed on reserved keys', async (t) => {
+  const f = await fixture(t), o = await f.create({ auto: 'none', scheduleMode: 'unlimited' });
+  // Designate cat-drby1x4c as delegated manager so rsi_operate is authorized.
+  await retain(f.storage, ownerKey('owner'), (st) => {
+    st.experiments[o.id].policy.manager = { catId: 'cat-drby1x4c', name: '墨墨', handle: '@gemini' };
+  });
+  const seen = join(f.project, 'seen-configs.jsonl');
+  Object.assign(f.commands, {
+    submit: `node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));fs.appendFileSync(process.argv[3],JSON.stringify(cfg)+'\\n');fs.writeFileSync(process.argv[2]+'/metrics.json',JSON.stringify({score:50}));" {config} {run} ${quote(seen)}`,
+    collect: '{run}/metrics.json',
+  });
+  await f.initialize(o, {
+    groups: [{ id: 'control', label: '当前版本对照', vars: { execution_mode: 'multicard-cpu', cards: [0, 1, 4, 5], instances_per_card: 1, routing: 'static' }, control: true }],
+    seeds: [801],
+  });
+  // Pause before binding cycleVars (mirrors real paused C3 workflow).
+  assert.equal((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'pause' }, 'cat-drby1x4c', o.thread)).ok, true);
+
+  // Fail-closed checks: reserved Host keys and non-object inputs must be rejected.
+  const badReserved = await f.tool('operate', { op: 'cycleVars', objectiveId: o.id, vars: { seed: 999, cards: [2, 3] } }, 'cat-drby1x4c', o.thread);
+  assert.equal(badReserved.status, 400);
+  assert.match(badReserved.error, /Host-managed keys: seed/);
+  const badTier = await f.tool('operate', { op: 'cycleVars', objectiveId: o.id, vars: { tier: 'confirm' } }, 'cat-drby1x4c', o.thread);
+  assert.equal(badTier.status, 400);
+  const badNonObj = await f.tool('operate', { op: 'cycleVars', objectiveId: o.id, vars: 'oops' }, 'cat-drby1x4c', o.thread);
+  assert.equal(badNonObj.status, 400);
+
+  // Bind single-cycle device lease vars while paused; verify visibility in rsi_status(full), then clear and re-bind.
+  const set1 = await f.tool('operate', { op: 'cycleVars', objectiveId: o.id, vars: { execution_mode: 'multicard-device', cards: [2, 3, 4, 5], claim_ref: 'issue#6-c1' } }, 'cat-drby1x4c', o.thread);
+  assert.equal(set1.ok, true);
+  assert.deepEqual(set1.cycleVars.cards, [2, 3, 4, 5]);
+  const stWithVars = await f.tool('status', { objectiveId: o.id, scope: 'full' }, 'cat-drby1x4c', o.thread);
+  assert.equal(stWithVars.upcoming.cycleVars.execution_mode, 'multicard-device');
+  assert.equal((await f.tool('operate', { op: 'cycleVars', objectiveId: o.id, vars: null }, 'cat-drby1x4c', o.thread)).cycleVars, null);
+  assert.equal((await f.tool('status', { objectiveId: o.id, scope: 'full' }, 'cat-drby1x4c', o.thread)).upcoming.cycleVars, undefined);
+
+  // Re-bind final C1 lease vars, resume, and run Cycle 1.
+  const lease1 = {
+    execution_mode: 'multicard-device',
+    cards: [2, 3, 4, 5],
+    claim_owner: 'codex',
+    claim_ref: 'https://example/issues/6#c1',
+    starts_at: '2026-11-26T15:00:00Z',
+    ends_at: '2026-11-26T15:40:00Z',
+    run_key: `${o.id}/1/control-s801`,
+  };
+  assert.equal((await f.tool('operate', { op: 'cycleVars', objectiveId: o.id, vars: lease1 }, 'cat-drby1x4c', o.thread)).ok, true);
+  assert.equal((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'resume' }, 'cat-drby1x4c', o.thread)).ok, true);
+  const r1 = await execute(f, o);
+  assert.equal(r1.plan.cycleVars.claim_ref, lease1.claim_ref);
+  // One-shot consumption: d.upcoming.cycleVars must be cleared once Cycle 1 started.
+  assert.equal((await f.read()).experiments[o.id].upcoming.cycleVars, undefined);
+  const cfgs1 = (await readFile(seen, 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(cfgs1.length, 1);
+  assert.equal(cfgs1[0].execution_mode, 'multicard-device');
+  assert.deepEqual(cfgs1[0].cards, [2, 3, 4, 5]);
+  assert.equal(cfgs1[0].instances_per_card, 1);
+  assert.equal(cfgs1[0].claim_ref, lease1.claim_ref);
+  assert.equal(cfgs1[0].seed, 801);
+
+  // Conclude Cycle 1 and register a new candidate version v2 (instances_per_card: 2) for two-arm Cycle 2.
+  await report(f, o, 'insufficient');
+  assert.equal((await f.read()).experiments[o.id].upcoming.cycleVars, undefined);
+  await decide(f, o, 'direction');
+  await f.tool('task', {}, 'codex', o.thread);
+  assert.equal((await f.tool('version', { change: '4c2i candidate', config: { instances_per_card: 2, routing: 'static' }, seeds: 1 }, 'codex', o.thread)).ok, true);
+  // Bind fresh Cycle 2 shared lease vars (without overwriting instances_per_card) — both arms must receive it while keeping their own instances_per_card.
+  const lease2 = { execution_mode: 'multicard-device', cards: [0, 1, 6, 7], claim_ref: 'https://example/issues/6#c2' };
+  assert.equal((await f.tool('operate', { op: 'cycleVars', objectiveId: o.id, vars: lease2 }, 'cat-drby1x4c', o.thread)).ok, true);
+  const r2 = await execute(f, o);
+  assert.equal(r2.plan.cycleVars.claim_ref, lease2.claim_ref);
+  assert.equal((await f.read()).experiments[o.id].upcoming.cycleVars, undefined);
+  const cfgsAll = (await readFile(seen, 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+  const c2Cfgs = cfgsAll.slice(1);
+  assert.equal(c2Cfgs.length, 2);
+  assert.deepEqual(c2Cfgs.map((c) => c.instances_per_card), [1, 2]);
+  assert.deepEqual(c2Cfgs.map((c) => c.cards), [[0, 1, 6, 7], [0, 1, 6, 7]]);
+  assert.deepEqual(c2Cfgs.map((c) => c.claim_ref), [lease2.claim_ref, lease2.claim_ref]);
+
+  // Running Cycle 3 with no fresh cycleVars must NOT inherit Cycle 2's lease.
+  await report(f, o, 'insufficient');
+  await decide(f, o, 'same');
+  const r3 = await execute(f, o);
+  assert.equal(r3.plan.cycleVars, undefined);
+  const c3Cfgs = (await readFile(seen, 'utf8')).trim().split('\n').map((l) => JSON.parse(l)).slice(3);
+  assert.equal(c3Cfgs.every((c) => c.claim_ref === undefined), true);
+
+  // Setting cycleVars on a finished objective fails closed with 409.
+  await report(f, o, 'keep');
+  assert.equal((await f.http('POST', { op: 'life', action: 'finish', objective: o.id, note: 'done' })).status, 200);
+  const doneRes = await f.tool('operate', { op: 'cycleVars', objectiveId: o.id, vars: { cards: [0, 1] } }, 'cat-drby1x4c', o.thread);
+  assert.equal(doneRes.status, 409);
+});

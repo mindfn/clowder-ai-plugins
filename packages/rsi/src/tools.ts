@@ -230,7 +230,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       Object.assign(version, { status: 'confirmed', direct: true, config: before.config, vars: before.vars || {} });
       for (const v of d.versions) v.current = v.id === id;
       d.objective.currentVersion = id;
-      const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, ...cleanLastPlan } = last.plan;
+      const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, cycleVars: _dropCycleVars, ...cleanLastPlan } = last.plan;
       const directOrder = (input.order ?? cleanLastPlan.order) as (RunOrder | undefined);
       if (d.versionRequest.repair) {
         // A repair reruns the failed cycle's plan on the fixed version; the failed cycle stays as it ran, marked repaired, and is not evaluated.
@@ -575,7 +575,7 @@ function projectStatus(d: Experiment, input: Data): Data {
 }
 
 const DELEGATED_OPS = new Set([
-  'expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix',
+  'expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix', 'cycleVars',
 ]);
 
 // Delegated operator control: strictly gated to the owner-designated policy.manager catId.
@@ -647,6 +647,9 @@ export function operateAction(state: RsiState, raw: Data, ctx: ToolContext, now:
   if (op === 'lineageFix') {
     const annotatedBy = text(input.annotatedBy) ? input.annotatedBy.trim() : `${manager.name || ctx.catId}（回填）`;
     return act(state, { op: 'lineageFix', objective: d.objective.id, patches: input.patches, annotatedBy }, query, now, actor);
+  }
+  if (op === 'cycleVars') {
+    return act(state, { op: 'cycleVars', objective: d.objective.id, vars: input.vars }, query, now, actor);
   }
   return act(state, { op, objective: d.objective.id, ...(input.n !== undefined ? { n: input.n } : {}) }, query, now, actor);
 }

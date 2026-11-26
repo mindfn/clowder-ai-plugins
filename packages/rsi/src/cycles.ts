@@ -104,7 +104,11 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
     Object.assign(round, { version: testedVersion(plan), start: now, end: null, state: 'running', plan, metrics: structuredClone(d.metrics), report: null, decision: null, events: [],
       runs: orderedPairs(plan.groups, plan.seeds, plan.order).map(({ group: g, seed }) => ({ id: `${d.objective.id}-${n}-${g.id}-s${seed}`, group: g.id, seed,
         state: 'queued', start: null, end: null, retries: 0, attempts: [], metrics: {}, artifacts: [], env: {}, log: '', error: null })) });
-    if (!planned) d.rounds.push(round);
+    if (!planned) {
+      d.rounds.push(round);
+      // One-shot per-cycle runtime overrides are snapshotted onto round.plan and never carried into future cycles.
+      if (d.upcoming?.cycleVars) delete d.upcoming.cycleVars;
+    }
   }
   d.objective.round = round.n;
   d.objective.state = 'running';
@@ -617,7 +621,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   const winner = isExplore ? undefined : wins[0], candidate = d.candidate;
   let confirmation: Data | null = null;
   const hadReservedSeeds = Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length > 0;
-  const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, ...basePlan } = round.plan;
+  const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, cycleVars: _dropCycleVars, ...basePlan } = round.plan;
   if (!isExplore && candidate) {
     const group = round.plan.groups.find((g: Data) => g.confirm && g.version === candidate.version && JSON.stringify(g.vars) === JSON.stringify(candidate.vars));
     const missing = !compared.comparable || round.runs.some((r: Data) => (r.group === 'control' || r.group === group?.id) && r.error?.kind === 'env');

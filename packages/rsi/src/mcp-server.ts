@@ -236,7 +236,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
     name: 'rsi_operate',
     method: 'rsi.operate',
     description:
-      '受托管理操作工具：仅当评估项的委托负责人（policy.manager）被主人指定为当前成员时可用。支持代为采纳方向（expDecide）、确认准备项（prepConfirm）、重做步骤（initStepRefresh/initRetry）、切换步骤成员（stepMember）、暂停/恢复/开始/重试（life）、手动跑一轮（runCycle）以及重新触发阶段（evalAgain/discussAgain/versionAgain）；不可修改委托负责人或停机/删除策略。',
+      '受托管理操作工具：仅当评估项的委托负责人（policy.manager）被主人指定为当前成员时可用。支持代为采纳方向（expDecide）、确认准备项（prepConfirm）、重做步骤（initStepRefresh/initRetry）、切换步骤成员（stepMember）、暂停/恢复/开始/重试（life）、手动跑一轮（runCycle）、设置单轮一次性运行时参数覆盖（cycleVars）、校准谱系标注（lineageFix）以及重新触发阶段（evalAgain/discussAgain/versionAgain）；不可修改委托负责人或停机/删除策略。',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -244,7 +244,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
       properties: {
         op: {
           type: 'string',
-          enum: ['expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix'],
+          enum: ['expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix', 'cycleVars'],
           description: '要执行的受托管理操作。',
         },
         objectiveId: { type: 'string', minLength: 1, description: '可选评估项 ID（跨线程代操作时传入）。' },
@@ -277,6 +277,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
           },
         },
         annotatedBy: { type: 'string', minLength: 1, maxLength: 48, description: 'lineageFix 可选标注来源名（如 "墨墨（回填）"）。' },
+        vars: { type: ['object', 'null'], description: 'cycleVars 单轮一次性运行时参数覆盖（并入下一周期 config.json 顶层，启动该周期后自动清空，传 null 清空；禁止覆盖 seed/tier/reservedSeeds/pairedPlan）。' },
       },
     },
   },
