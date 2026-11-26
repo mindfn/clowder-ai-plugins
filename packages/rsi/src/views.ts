@@ -1300,9 +1300,10 @@ function exp(): any {
     const candItem = mainMetric?.items?.find((it: Data) => !it.control) || ctrlItem;
     const comparable = !!targetR.report.compare?.comparable && !!ctrlItem && candItem !== ctrlItem;
     const tier = targetR.plan.tier || (targetR.plan.baseline ? 'baseline' : 'confirm');
-    const scaleVer = (targetR.metrics || d.metrics).version;
-    const guardrailsText = ((targetR.metrics || d.metrics).items || [])
-      .filter((it: Data) => it.guard)
+    const targetScale = roundMetrics(d, targetR);
+    const scaleVer = targetScale.version;
+    const guardrailsText = (targetScale.items || [])
+      .filter((it: Data) => it.guard && (!targetScale.fallback || it.threshold != null))
       .slice(0, 6)
       .map((it: Data) => `${it.name}${it.threshold != null ? ` (${it.dir === 'up' ? '≥' : '≤'}${it.threshold}${it.unit ? ' ' + it.unit : ''})` : ''}`)
       .join('; ');

@@ -2,7 +2,7 @@ import { RSI_CP_INIT, createFixtures } from './fixtures.js';
 import { act } from './actions.js';
 import { clipTitle, submitInitStep, enqueue, kick, message, prepSettled, stepMemberOf, STOP_TARGET, syncObjective } from './init.js';
 import { abandonRepair, buildCloseoutReport, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, resolveRsiParent, RUN_ORDERS, type RunOrder, validOrder, validateReservedSeeds, validPlan } from './cycles.js';
-import { sliceMatrix, validateSliceSpecs } from './compare.js';
+import { roundMetrics, sliceMatrix, validateSliceSpecs } from './compare.js';
 import { parseScheduleText } from './schedule.js';
 import { record, text } from './store.js';
 import type { Data, Experiment, PrepItem, RsiState, Section, ToolContext } from './types.js';
@@ -98,9 +98,9 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
   const analyzeSlices = analyze ? (Array.isArray(analyze.report?.slices) && analyze.report.slices.length ? analyze.report.slices : sliceMatrix(d, analyze)) : [];
   return { objective: d.objective, projectPath: d.objective.projectPath, steps, versions: d.versions,
     // The shell that runs the registered commands, so members write commands that run on this host.
-    shell: platform() === 'win32' ? 'cmd' : 'sh', stepVersions: d.steps, ...(evaluate ? { evaluate: { cycle: evaluate.n, plan: evaluate.plan, runs: evaluate.runs, metrics: evaluate.metrics || d.metrics, comparison: comparison(d, evaluate), ...(evalSlices.length ? { slices: evalSlices } : {}), library: cycleLibrary(state, d), next: '调用原生 MCP 工具 rsi_conclude 提交 verdict/findings/options；方向 cites 引用之前周期的资料库条目。' } } : {}),
+    shell: platform() === 'win32' ? 'cmd' : 'sh', stepVersions: d.steps, ...(evaluate ? { evaluate: { cycle: evaluate.n, plan: evaluate.plan, runs: evaluate.runs, metrics: roundMetrics(d, evaluate), comparison: comparison(d, evaluate), ...(evalSlices.length ? { slices: evalSlices } : {}), library: cycleLibrary(state, d), next: '调用原生 MCP 工具 rsi_conclude 提交 verdict/findings/options；方向 cites 引用之前周期的资料库条目。' } } : {}),
     ...(analyze ? { analyze: { cycle: analyze.n, report: { verdict: analyze.report.verdict, findings: analyze.report.summary, confirmation: analyze.confirmation }, plan: analyze.plan, runs: analyze.runs,
-      metrics: analyze.metrics || d.metrics, comparison: comparison(d, analyze), ...(analyzeSlices.length ? { slices: analyzeSlices } : {}), library: cycleLibrary(state, d),
+      metrics: roundMetrics(d, analyze), comparison: comparison(d, analyze), ...(analyzeSlices.length ? { slices: analyzeSlices } : {}), library: cycleLibrary(state, d),
       next: '调用原生 MCP 工具 rsi_propose({cycle,options:[{k,title,why,kind?,target?,cites?}]}) 交你的方向。target 写这个方向要改的对象（例如 lr、group_size、train.py 的奖励），几个分析成员的第一方向种类和对象都相同就算意见一致。' } } : {}),
     ...(version ? { version: { ...version, next: version.repair ? '修好让它跑不起来的问题并提交 git，调用原生 MCP 工具 rsi_version({change,commit,config})，插件用修好的版本重跑这一周期的计划；修不了就调 rsi_version({cannot:"原因"})。' : '按方向修改项目并提交 git；调用原生 MCP 工具 rsi_version({change,commit,config})。config 是 JSON 对象或项目内 JSON 文件路径（也可用 configPath）。若所选方向契约冲突或无法满足，可调 rsi_version({cannot:"原因"}) 退回重新选方向。' } } : {}) };
 }

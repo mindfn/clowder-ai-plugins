@@ -1923,10 +1923,13 @@ test('unified roundMetrics / roundMetricVersion keeps compare table cross-scale 
   const e2 = {
     version: 'E2',
     items: [
-      { id: 'qps', name: '吞吐', dir: 'up', unit: 'req/s', guard: false },
-      { id: 'p99', name: 'P99 延迟', dir: 'down', unit: 'ms', guard: true, threshold: 210, line: '≤ 210 ms' },
+      { id: 'qps', name: '吞吐', dir: 'up', unit: 'req/s', guard: false, how: 'E2 新口径' },
+      { id: 'p99', name: 'P99 延迟', dir: 'down', unit: 'ms', guard: true, threshold: 210, line: '≤ 210 ms', how: 'E2 门限' },
+      { id: 'unrecorded-guard', name: '未记录护栏', dir: 'down', unit: '%', guard: true, threshold: 25, line: '≤ 25 %', how: 'E2 新增' },
     ],
-    slices: [],
+    slices: [
+      { id: 'mixed', name: '混合', axis: '档位', stats: [{ id: 't2', name: 'T2 P99', unit: 'ms', dir: 'down', threshold: 210 }] },
+    ],
   };
   d.versions = [
     { id: 'v1', parent: null, change: 'baseline', config: {}, at: now, current: false, status: 'confirmed' },
@@ -2016,9 +2019,27 @@ test('unified roundMetrics / roundMetricVersion keeps compare table cross-scale 
   assert.equal(vm.cycle.collectSummary.metricVersion, 'E1');
   assert.equal(vm.cycle.evalMetrics.version, 'E1');
 
-  // 5. Legacy pre-alpha.133 compacted state (no metricHistory, no r1.metricVersion) STILL flags E1 vs E2 via stepHistory.rules timestamps.
+  // 5. Legacy pre-alpha.133 compacted state (no metricHistory, no r1.metricVersion) STILL flags E1 vs E2 via stepHistory.rules timestamps,
+  //    recovers recorded E1 threshold (≤ 100 ms) from r1.report.compare, and NEVER stamps E2's unverified thresholds/formulas onto E1.
   delete d.rounds[0].metricVersion;
   delete d.metricHistory;
+  const { roundMetrics } = await import('../dist/compare.js');
+  const legacyE1Scale = roundMetrics(d, d.rounds[0]);
+  assert.equal(legacyE1Scale.version, 'E1');
+  assert.equal(legacyE1Scale.fallback, true);
+  assert.equal(legacyE1Scale.items.find((m) => m.id === 'p99').threshold, 100);
+  assert.equal(legacyE1Scale.items.find((m) => m.id === 'p99').line, '≤ 100 ms');
+  assert.equal(legacyE1Scale.items.find((m) => m.id === 'qps').how, undefined);
+  assert.equal(legacyE1Scale.items.find((m) => m.id === 'unrecorded-guard').threshold, undefined);
+  assert.equal(legacyE1Scale.slices[0].stats[0].threshold, undefined);
+  const legacyC1Table = buildComparisonTable(d, d.rounds[0], d.rounds);
+  assert.equal(legacyC1Table.sections.flatMap((s) => s.rows).find((r) => r.id === 'p99').ruleText, '≤ 100 ms');
+  const legacyVm = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v2>c1.eval` });
+  const condScale = legacyVm.cycle.detailCard.conditions.find((c) => c.kKey === 'metricVersion');
+  const condGuard = legacyVm.cycle.detailCard.conditions.find((c) => c.kKey === 'guardrails');
+  assert.equal(condScale.v, 'E1');
+  assert.match(condGuard.v, /≤100 ms/);
+  assert.doesNotMatch(condGuard.v, /210|25/);
   const legacyDefault = buildComparisonTable(d, d.rounds[1], d.rounds);
   const legacyAddV2 = legacyDefault.addColumns.find((c) => c.id === 'c1:control');
   assert.ok(legacyAddV2);

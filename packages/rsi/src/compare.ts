@@ -97,7 +97,34 @@ export function roundMetrics(d: Experiment, round: Data | null | undefined): Dat
   const fromSibling = (d.rounds || []).find((r: Data) => r?.metrics && String(r.metrics.version || '') === ver && Array.isArray(r.metrics.items))?.metrics;
   if (fromSibling) return fromSibling;
   if (d.metrics) {
-    return String(d.metrics.version || 'E1') === ver ? d.metrics : { ...d.metrics, version: ver };
+    if (String(d.metrics.version || 'E1') === ver) return d.metrics;
+    // Historical snapshot was lost before metricHistory existed: never stamp current scale's thresholds/formulas onto an older version.
+    // Recover any guardrail threshold/dir recorded in this round's own report.compare; omit unverified thresholds/formulas.
+    const recordedGuards = new Map<string, { threshold: number; dir?: string }>();
+    for (const g of round?.report?.compare?.groups || []) {
+      for (const gr of g?.guardrails || []) {
+        if (gr?.metric && typeof gr.threshold === 'number' && Number.isFinite(gr.threshold) && !recordedGuards.has(gr.metric)) {
+          recordedGuards.set(gr.metric, { threshold: gr.threshold, dir: gr.dir });
+        }
+      }
+    }
+    const items = (d.metrics.items || []).map((m: Data) => {
+      const rec = recordedGuards.get(m.id);
+      const { threshold: _t, line: _l, how: _h, ...base } = m;
+      if (rec) {
+        const dir = rec.dir || m.dir;
+        const line = `${dir === 'up' ? '≥' : '≤'} ${rec.threshold}${m.unit ? ' ' + m.unit : ''}`;
+        return { ...base, dir, threshold: rec.threshold, line };
+      }
+      return base;
+    });
+    const slices = Array.isArray(d.metrics.slices)
+      ? d.metrics.slices.map((s: Data) => ({
+          ...s,
+          stats: Array.isArray(s.stats) ? s.stats.map(({ threshold: _t, ...st }: Data) => st) : [],
+        }))
+      : [];
+    return { version: ver, fallback: true, items, slices };
   }
   return { version: ver, items: [], slices: [] };
 }
