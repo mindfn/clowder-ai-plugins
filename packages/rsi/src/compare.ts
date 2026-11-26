@@ -135,11 +135,18 @@ export function roundMetrics(d: Experiment, round: Data | null | undefined): Dat
       const dir = rec.dir || 'down';
       items.push({ id: gid, name: gid, dir, guard: true, threshold: rec.threshold, line: `${dir === 'up' ? '≥' : '≤'} ${rec.threshold}` });
     }
-    // Preserve E1 main metric if deleted from current d.metrics.items.
+    // Anchor main metric & direction strictly to round.report.compare.metric/dir (even when the ID still exists in E2 in a different order/direction).
     const recordedMain = round?.report?.compare?.metric;
-    if (typeof recordedMain === 'string' && recordedMain && !seen.has(recordedMain)) {
-      seen.add(recordedMain);
-      items.unshift({ id: recordedMain, name: recordedMain, dir: round.report.compare.dir || 'up', guard: false });
+    const recordedDir = round?.report?.compare?.dir;
+    if (typeof recordedMain === 'string' && recordedMain) {
+      const idx = items.findIndex((m: Data) => m.id === recordedMain);
+      if (idx >= 0) {
+        const [existing] = items.splice(idx, 1);
+        items.unshift({ ...existing, guard: false, dir: recordedDir || existing.dir });
+      } else {
+        seen.add(recordedMain);
+        items.unshift({ id: recordedMain, name: recordedMain, dir: recordedDir || 'up', guard: false });
+      }
     }
     const slices = Array.isArray(d.metrics.slices)
       ? d.metrics.slices.map((s: Data) => ({

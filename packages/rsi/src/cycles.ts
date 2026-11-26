@@ -230,9 +230,18 @@ export function comparison(d: Experiment, round: Data) {
       const prevMatrix = Array.isArray(round.report?.matrix) && round.report.matrix.length
         ? structuredClone(round.report.matrix)
         : matrix(d, round);
+      const cloned = structuredClone(prev);
+      if (cloned.unrecomputable) {
+        delete cloned.preservedFromReport;
+        return {
+          ...cloned,
+          cycle: cloned.cycle ?? round.n,
+          matrix: prevMatrix,
+        };
+      }
       return {
-        ...structuredClone(prev),
-        cycle: prev.cycle ?? round.n,
+        ...cloned,
+        cycle: cloned.cycle ?? round.n,
         preservedFromReport: true,
         matrix: prevMatrix,
       };

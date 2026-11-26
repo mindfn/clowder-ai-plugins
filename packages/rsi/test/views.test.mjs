@@ -2128,7 +2128,8 @@ test('unified roundMetrics / roundMetricVersion keeps compare table cross-scale 
   assert.equal(d.rounds[0].report.compare.groups.find((g) => g.group === 'change').beatsControl, true);
   assert.equal(d.rounds[0].report.compare.groups.find((g) => g.group === 'change').eligible, true);
 
-  // 6c. Missing E1 snapshot AND no prior report.compare -> comparison explicitly flags unrecomputable instead of fabricating E2 verdicts.
+  // 6c. Missing E1 snapshot AND no prior report.compare -> comparison explicitly flags unrecomputable instead of fabricating E2 verdicts,
+  //     and a subsequent re-eval preserves unrecomputable without stamping preservedFromReport=true.
   const noReportRound = makePairRound(90, true, true, true);
   noReportRound.report = null;
   d.rounds[0] = noReportRound;
@@ -2137,4 +2138,70 @@ test('unified roundMetrics / roundMetricVersion keeps compare table cross-scale 
   assert.equal(cmpMissing.unrecomputable, true);
   assert.match(cmpMissing.unrecomputableReason, /E1/);
   assert.equal(cmpMissing.groups.every((g) => !g.eligible && !g.beatsControl && g.guardrails.length === 0), true);
+  const { matrix: missingCells, ...missingCompare } = cmpMissing;
+  d.rounds[0].report = { verdict: 'insufficient', headline: 'unrecomputable', summary: 'unrecomputable', matrix: missingCells, directions: [], predictions: [], compare: missingCompare, attribution: { assessedLayers: [] } };
+  const cmpMissingAgain = cmpFn(d, d.rounds[0]);
+  assert.equal(cmpMissingAgain.unrecomputable, true);
+  assert.equal(cmpMissingAgain.preservedFromReport, undefined);
+  assert.equal(cmpMissingAgain.unrecomputableReason, cmpMissing.unrecomputableReason);
+
+  // 6d. E1 & E2 keep the SAME metrics (qps & latency) but swap main metric to latency (which got worse: 80 -> 100) while qps improved (7 -> 9):
+  //     fallback MUST anchor main metric & direction to E1's compare.metric ('qps', 'up'), never hanging E1's win onto 'latency'!
+  d.metrics = {
+    version: 'E2',
+    items: [
+      { id: 'latency', name: '延迟', dir: 'down', unit: 'ms', guard: false },
+      { id: 'qps', name: '吞吐', dir: 'down', unit: 'req/s', guard: false },
+    ],
+    slices: [],
+  };
+  d.rounds[0] = {
+    n: 1, version: 'v2', start: now + 1100, end: now + 1200, state: 'done',
+    plan: {
+      groups: [
+        { id: 'control', label: 'v1', version: 'v1', vars: {}, control: true },
+        { id: 'change', label: 'v2', version: 'v2', vars: {}, control: false },
+      ],
+      seeds: [1],
+    },
+    runs: [
+      { id: 'r-c', group: 'control', seed: 1, state: 'done', metrics: { qps: 7.0, latency: 80 }, attempts: [], env: {} },
+      { id: 'r-t', group: 'change', seed: 1, state: 'done', metrics: { qps: 9.0, latency: 100 }, attempts: [], env: {} },
+    ],
+    report: {
+      verdict: 'keep', headline: 'E1 qps win', summary: 'E1 qps win',
+      matrix: [
+        { group: 'control', metric: 'qps', mean: 7.0, sd: null, n: 1, seeds: [{ seed: 1, value: 7.0, state: 'done' }] },
+        { group: 'control', metric: 'latency', mean: 80, sd: null, n: 1, seeds: [{ seed: 1, value: 80, state: 'done' }] },
+        { group: 'change', metric: 'qps', mean: 9.0, sd: null, n: 1, seeds: [{ seed: 1, value: 9.0, state: 'done' }] },
+        { group: 'change', metric: 'latency', mean: 100, sd: null, n: 1, seeds: [{ seed: 1, value: 100, state: 'done' }] },
+      ],
+      directions: [], predictions: [],
+      compare: {
+        cycle: 1, against: 'control', metric: 'qps', dir: 'up', comparable: true,
+        groups: [
+          { group: 'control', version: 'v1', control: true, mean: 7.0, delta: 0, eligible: true, guardrails: [], beatsControl: false },
+          { group: 'change', version: 'v2', control: false, mean: 9.0, delta: 2.0, eligible: true, guardrails: [], beatsControl: true },
+        ],
+      },
+      attribution: { assessedLayers: [] },
+    },
+    decision: { pick: 'same', by: '墨墨', at: now + 1300 }, events: [],
+  };
+  const swappedScale = roundMetrics(d, d.rounds[0]);
+  assert.equal(swappedScale.items[0].id, 'qps');
+  assert.equal(swappedScale.items[0].dir, 'up');
+  assert.equal(swappedScale.items[0].guard, false);
+  const swappedTable = buildComparisonTable(d, d.rounds[0], d.rounds);
+  const swappedRows = swappedTable.sections.flatMap((s) => s.rows);
+  const qpsRow = swappedRows.find((r) => r.id === 'qps');
+  const latRow = swappedRows.find((r) => r.id === 'latency');
+  assert.equal(qpsRow.role, 'main');
+  assert.equal(qpsRow.statusText, '胜过对照');
+  assert.equal(qpsRow.better, 'better');
+  assert.equal(latRow.role, 'other');
+  assert.equal(latRow.statusText, '更差');
+  assert.notEqual(latRow.statusText, '胜过对照');
+  const swappedVm = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v2>c1.eval` });
+  assert.equal(swappedVm.cycle.compare.metrics[0].id, 'qps');
 });
