@@ -8,7 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import plugin from '../dist/index.js';
 import { ownerKey, readState } from '../dist/backend.js';
 import { retain } from '../dist/store.js';
-import { quote } from '../dist/runs.js';
+import { pollGraceWindowMs, quote } from '../dist/runs.js';
 
 const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 const script = `
@@ -3179,4 +3179,68 @@ test('alpha.129: expDecide while paused defers versionRequest until life:resume,
   const resDone = await fDone.http('POST', { op: 'expDecide', objective: oDone.id, n: 1, pick: 'direction', directionId: 'next' });
   assert.equal(resDone.status, 409);
   assert.equal((await fDone.read()).experiments[oDone.id].rounds[0].decision, null);
+});
+
+test('pollGraceWindowMs scales with long executor timeouts and retryable get/collect blips preserve jobId without premature cancel', async (t) => {
+  // 1) Pure grace-window scaling: fast-fail for <60s, 60s floor for 60..240s, 25% of timeout for long runs, capped at 10m.
+  assert.equal(pollGraceWindowMs(null), 0);
+  assert.equal(pollGraceWindowMs(30), 0);
+  assert.equal(pollGraceWindowMs(60), 60_000);
+  assert.equal(pollGraceWindowMs(240), 60_000);
+  assert.equal(pollGraceWindowMs(1800), 450_000);
+  assert.equal(pollGraceWindowMs(2100), 525_000);
+  assert.equal(pollGraceWindowMs(3600), 600_000);
+
+  // 2) Retryable get pollLost on attempt 1 must NOT call cancel even when cancel is registered; attempt 2 resumes same jobId and succeeds.
+  const f1 = await fixture(t), o1 = await f1.create();
+  Object.assign(f1.commands, {
+    submit: `node -e "const fs=require('fs');fs.appendFileSync('submits','1\\n');console.log('job-ssh-blip');"`,
+    get: `node -e "const fs=require('fs'),p=process.argv[1]+'/gcount';const n=(fs.existsSync(p)?Number(fs.readFileSync(p,'utf8')):0)+1;fs.writeFileSync(p,String(n));if(n<=4){console.log(JSON.stringify({reason:'ssh banner timeout',retryable:true}));process.exit(1);}fs.writeFileSync(process.argv[1]+'/metrics.json',JSON.stringify({metrics:{score:88}}));console.log(JSON.stringify({state:'done',exitCode:0}));" {run}`,
+    cancel: 'echo {job} >> cancels',
+    collect: '{run}/metrics.json',
+    poll: 1,
+  });
+  await f1.initialize(o1, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [710] });
+  const r1 = await execute(f1, o1);
+  assert.equal(r1.runs[0].state, 'done');
+  assert.equal(r1.runs[0].retries, 1);
+  assert.equal(r1.runs[0].metrics.score, 88);
+  assert.equal((await readFile(join(f1.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
+  assert.equal(await access(join(f1.project, 'cancels')).then(() => true, () => false), false);
+
+  // 3) Retryable get pollLost that persists through attempt 2 (final) still calls cancel once to avoid leaking the remote job.
+  const f2 = await fixture(t), o2 = await f2.create();
+  Object.assign(f2.commands, {
+    submit: `node -e "const fs=require('fs');fs.appendFileSync('submits','1\\n');console.log('job-ssh-dead');"`,
+    get: `node -e "console.log(JSON.stringify({reason:'ssh permanently unreachable',retryable:true}));process.exit(1);"`,
+    cancel: 'echo {job} >> cancels',
+    collect: '{run}/metrics.json',
+    poll: 1,
+  });
+  await f2.initialize(o2, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [711] });
+  await f2.http('POST', { op: 'runCycle', objective: o2.id });
+  const r2 = (await until(f2.read, (s) => s.experiments[o2.id].rounds.at(-1)?.runs?.[0]?.state === 'failed', 'final retryable poll failure', 15000)).experiments[o2.id].rounds.at(-1);
+  assert.equal(r2.runs[0].state, 'failed');
+  assert.equal(r2.runs[0].retries, 1);
+  assert.equal(r2.runs[0].jobId, undefined);
+  assert.equal((await readFile(join(f2.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
+  assert.equal((await readFile(join(f2.project, 'cancels'), 'utf8')).trim().split('\n').length, 1);
+
+  // 4) Retryable collect failure after remote job finished preserves jobId, retries collect without re-submitting or cancelling, and succeeds.
+  const f3 = await fixture(t), o3 = await f3.create();
+  Object.assign(f3.commands, {
+    submit: `node -e "const fs=require('fs');fs.appendFileSync('submits','1\\n');console.log('job-collect-blip');"`,
+    get: `node -e "console.log(JSON.stringify({state:'done',exitCode:0}));"`,
+    cancel: 'echo {job} >> cancels',
+    collect: `node -e "const fs=require('fs'),p=process.argv[1]+'/ccount';const n=(fs.existsSync(p)?Number(fs.readFileSync(p,'utf8')):0)+1;fs.writeFileSync(p,String(n));if(n===1){console.log(JSON.stringify({reason:'scp transient timeout',retryable:true}));process.exit(1);}console.log(JSON.stringify({metrics:{score:91}}));" {run}`,
+    poll: 1,
+  });
+  await f3.initialize(o3, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [712] });
+  const r3 = await execute(f3, o3);
+  assert.equal(r3.runs[0].state, 'done');
+  assert.equal(r3.runs[0].retries, 1);
+  assert.equal(r3.runs[0].metrics.score, 91);
+  assert.equal(r3.runs[0].jobId, undefined);
+  assert.equal((await readFile(join(f3.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
+  assert.equal(await access(join(f3.project, 'cancels')).then(() => true, () => false), false);
 });

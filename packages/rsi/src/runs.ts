@@ -24,8 +24,10 @@ const canCancel = (tpl: string | undefined, values: Data | undefined) => !!tpl &
 const field = (value: Data, path: string) => path.split('.').reduce((v: any, k) => v?.[k], value);
 const exists = (path: string) => stat(path).then(() => true, () => false);
 const parseResult = (raw: string) => JSON.parse(raw.replace(/"(?:\\.|[^"\\])*"|\bNaN\b|-?Infinity\b/g, (token) => token.startsWith('"') ? token : JSON.stringify(token)));
-function isNonRetryableOutput(raw: string | undefined): boolean {
-  if (!raw) return false;
+export const pollGraceWindowMs = (timeoutSec: number | null | undefined) =>
+  timeoutSec && timeoutSec >= 60 ? Math.min(600_000, Math.max(60_000, Math.floor(timeoutSec * 1000 * 0.25))) : 0;
+function parseStructuredOutput(raw: string | undefined): Data | null {
+  if (!raw) return null;
   const trimmed = raw.trim();
   const candidates = [trimmed];
   const lines = trimmed.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('{') && l.endsWith('}'));
@@ -34,10 +36,18 @@ function isNonRetryableOutput(raw: string | undefined): boolean {
     if (!s.startsWith('{')) continue;
     try {
       const parsed = parseResult(s);
-      if (record(parsed) && (parsed.retryable === false || parsed.errorKind === 'real' || parsed.failureKind === 'real')) return true;
+      if (record(parsed)) return parsed;
     } catch {}
   }
-  return false;
+  return null;
+}
+function isNonRetryableOutput(raw: string | undefined): boolean {
+  const parsed = parseStructuredOutput(raw);
+  return !!parsed && (parsed.retryable === false || parsed.errorKind === 'real' || parsed.failureKind === 'real');
+}
+function isRetryableOutput(raw: string | undefined): boolean {
+  const parsed = parseStructuredOutput(raw);
+  return !!parsed && parsed.retryable === true;
 }
 
 export function createRuns(host: RsiHost, changed: (key: string) => Promise<void>) {
@@ -147,7 +157,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       busy = d.objective.id; runId = run.id;
       const priorEnv = run.jobId ? (run.attempts?.slice().reverse().find((a: Data) => a.jobId === run.jobId && record(a.env))?.env || (record(run.env) ? run.env : null)) : null;
       let metrics: Data = {}, slices: Data | undefined, env: Data = { ...(priorEnv || {}), seed: run.seed, hardware: { os: `${platform()} ${release()}`, arch: arch(), chip: cpus()[0]?.model || 'unknown' } };
-      let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId, timedOut = false, pollLost = false, remoteEnded = false, submitted = !!jobId;
+      let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId, timedOut = false, pollLost = false, pollLostRetryable = false, collectRetryable = false, remoteEnded = false, submitted = !!jobId;
       // The foreground submit's limit: the registered timeout, else three times this objective's longest successful attempt (at least 10 minutes); none before one has succeeded.
       const succeeded = d.rounds.flatMap((r: Data) => r.runs.flatMap((x: Data) => (x.attempts || []).filter((a: Data) => !a.error).map((a: Data) => a.end - a.start)));
       const limit = d.executor.timeout ? d.executor.timeout * 1000 : succeeded.length ? Math.max(600_000, 3 * Math.max(...succeeded)) : 0;
@@ -274,7 +284,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           step = 'get';
           let pollFails = 0, pollFailSince = 0;
           const MAX_POLL_FAILS = 3;
-          const pollGraceMs = d.executor.timeout && d.executor.timeout >= 60 ? 60_000 : 0;
+          const pollGraceMs = pollGraceWindowMs(d.executor.timeout);
           for (;;) {
             if (stopped) return;
             if (held) throw new Error('Run window closed');
@@ -298,7 +308,8 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             if (pollErr) {
               pollFails++;
               if (!pollFailSince) pollFailSince = Date.now();
-              if (pollFails > MAX_POLL_FAILS && (!pollGraceMs || Date.now() - pollFailSince >= pollGraceMs)) { pollLost = true; throw new Error(`${pollErr} (${pollFails} consecutive poll failures): ${polled.log}`); }
+              const pollRetryable = isRetryableOutput(polled.stdout) || isRetryableOutput(polled.log);
+              if (pollFails > MAX_POLL_FAILS && (!pollGraceMs || Date.now() - pollFailSince >= pollGraceMs)) { pollLost = true; pollLostRetryable = pollRetryable; throw new Error(`${pollErr} (${pollFails} consecutive poll failures): ${polled.log}`); }
               if (d.executor.timeout && Date.now() - since > d.executor.timeout * 1000) { timedOut = true; throw new Error(`异步任务超过 ${d.executor.timeout} 秒没结束`); }
               await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, (d.executor.poll || 1) * 1000); });
               releasePoll = undefined; pollTimer = undefined;
@@ -328,7 +339,10 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         } else {
           const collected = await launch(collect, cwd, values);
           log = (log + collected.log).slice(-16000);
-          if (collected.code !== 0) throw new Error(`collect exited ${collected.code}: ${collected.log}`);
+          if (collected.code !== 0) {
+            collectRetryable = isRetryableOutput(collected.stdout) || isRetryableOutput(collected.log);
+            throw new Error(`collect exited ${collected.code}: ${collected.log}`);
+          }
           raw = collected.stdout;
         }
         kind = 'real';
@@ -374,14 +388,14 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       // Never cancel when failure occurred before submit (prepare/preflight), and never let cancel output evict the failing step's log.
       const failureLog = log;
       let cancelLog = '', cancelOk = false;
-      if (submitted && (timedOut || final || pollLost || (error && kind === 'env' && step === 'submit')) && canCancel(cancel, where?.values)) {
+      if (submitted && (timedOut || final || (pollLost && !pollLostRetryable) || (error && kind === 'env' && step === 'submit')) && canCancel(cancel, where?.values)) {
         const cancelled = await launch(cancel!, where!.cwd, where!.values);
         cancelOk = cancelled.code === 0;
         cancelLog = cancelled.log;
         if (cancelLog) log = `${log}\n[cancel]\n${cancelLog}`.slice(-16000);
       }
-      // Retain jobId whenever an async remote job was neither confirmed terminated nor confirmed cancelled, preventing duplicate submits.
-      const keepJob = !!(jobId && !remoteEnded && !cancelOk);
+      // Retain jobId whenever an async remote job was neither confirmed terminated nor confirmed cancelled, or when collect hit a retryable transport error before final failure.
+      const keepJob = !!(jobId && ((!remoteEnded && !cancelOk) || (step === 'collect' && !final && collectRetryable)));
       // A deleted objective's run is neither logged nor recorded: its folder is being removed.
       if (stopped || dropped.has(d.objective.id)) return;
       // The full log stays with the run; the state keeps its tail. The run's result is recorded whether or not the file can be written.
@@ -395,7 +409,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         if (!current) return;
         const cycle = current.rounds.find((r: Data) => r.n === round.n), entry = cycle.runs.find((r: Data) => r.id === run.id);
         if (entry.state !== 'running') return;
-        const unconfirmed = keepJob ? `远端作业 ${jobId} 未确认结束或取消，可能仍在运行` : '';
+        const unconfirmed = keepJob && !remoteEnded ? `远端作业 ${jobId} 未确认结束或取消，可能仍在运行` : '';
         const end = Date.now(), failure = error ? { kind, step, raw: clip(unconfirmed ? `${unconfirmed}；${error}` : error), ...(analysis ? { analysis } : {}) } : null;
         Object.assign(entry, { end, metrics, ...(slices ? { slices } : {}), env, log: keptLog, error: failure, evidence: !error || kind === 'real' });
         entry.attempts ||= [];
@@ -404,7 +418,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         if (error && kind === 'env' && entry.retries < 1) {
           retrying = true;
           entry.retries++; entry.state = 'queued';
-          cycle.events.push({ at: end, kind: 'retry', text: keepJob ? `${entry.id} 远端作业 ${jobId} 未确认结束或取消，保留原作业继续轮询` : `${entry.id} 环境失败，自动重试一次；不计入结果` });
+          cycle.events.push({ at: end, kind: 'retry', text: keepJob ? (remoteEnded ? `${entry.id} 远端作业 ${jobId} 采集遇瞬时传输错误，保留原作业重试采集` : `${entry.id} 远端作业 ${jobId} 未确认结束或取消，保留原作业继续轮询`) : `${entry.id} 环境失败，自动重试一次；不计入结果` });
         } else {
           entry.state = error && kind === 'env' ? 'failed' : 'done';
           entry.retryable = false;
