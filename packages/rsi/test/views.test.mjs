@@ -1789,3 +1789,118 @@ test('alpha.118: data-driven sliced & scalar comparison, guardrail rollup, user 
   const bytes = Buffer.byteLength(JSON.stringify(bigVm));
   assert.ok(bytes < 150_000, `expected slim exp payload < 150 KB for 25-round objective, got ${bytes} bytes`);
 });
+
+test('alpha.133: real exp view builds interactive E1->E2 metrics lineage with diff & cycle conclusions and C1->C2 collect lineage retroactively', () => {
+  const { state } = createFixtures(now);
+  const project = 'cartpole';
+  const o = rsiExpNew(state, project, { statement: 'Ascend BGE multi-card', prepare: 'codex', evaluate: 'codex', iterate: 'codex', auto: 'none' }, now);
+  const id = o.id;
+  const d = state.experiments[id];
+  const e1 = {
+    version: 'E1',
+    items: [
+      { id: 'qps-short', name: '短文吞吐', dir: 'up', line: '≥ 8 req/s', how: '短文有效吞吐', guard: false, locked: true },
+      { id: 'card-imbalance', name: '卡间不均', dir: 'down', line: '≤ 15%', how: '按请求数计算', guard: true, locked: true },
+    ],
+    slices: [{ id: 'mixed-ladder', name: '混合梯度', stats: [{ id: 'p99-t2-ms', name: 'T2 P99', dir: 'down', line: '待定' }] }],
+  };
+  const e2 = {
+    version: 'E2',
+    items: [
+      { id: 'qps-short', name: '短文吞吐', dir: 'up', line: '≥ 8 req/s', how: '短文有效吞吐', guard: false, locked: true },
+      { id: 'card-imbalance', name: '卡间不均', dir: 'down', line: '≤ 15%', how: '按设备忙碌时间计算', guard: true, locked: true },
+    ],
+    slices: [{ id: 'mixed-ladder', name: '混合梯度', stats: [{ id: 'p99-t2-ms', name: 'T2 P99', dir: 'down', line: '≤ 210 ms' }] }],
+  };
+  d.metrics = structuredClone(e2);
+  d.stepHistory = {
+    rules: [
+      { rev: 1, at: now, by: 'opus', next: '初始化 E1 量尺' },
+      { rev: 2, at: now + 2000, by: 'opus', next: '冻结 E2 长文门限并改用忙碌时间口径' },
+    ],
+    run: [
+      { rev: 1, at: now, by: 'cat-drby1x4c', next: 'CPU 占位执行器' },
+      { rev: 2, at: now + 1500, by: 'cat-drby1x4c', next: '切换四卡实机执行器' },
+    ],
+  };
+  d.steps.run = { rev: 2, stale: false, redo: false, next: '切换四卡实机执行器' };
+  d.executor = { state: 'passed', commands: { preflight: 'py preflight', submit: 'py submit', collect: 'py collect' }, timeout: 2100, poll: 15 };
+  d.versions = [
+    { id: 'v1', parent: null, change: 'init', config: {}, at: now, current: false, status: null },
+    { id: 'v2', parent: 'v1', change: 'device exec', config: {}, at: now + 1000, current: false, status: 'confirmed' },
+    { id: 'v3', parent: 'v2', change: 'host config', config: {}, at: now + 2000, current: true, status: 'confirmed' },
+  ];
+  d.objective.currentVersion = 'v3';
+  d.objective.state = 'running';
+  d.rounds = [
+    {
+      n: 1, version: 'v1', start: now + 100, end: now + 200, state: 'done', metrics: structuredClone(e1),
+      plan: { groups: [{ id: 'control', label: '对照', version: 'v1', vars: {}, control: true }], seeds: [1] },
+      runs: [{ id: 'r1', group: 'control', seed: 1, state: 'done', metrics: { 'qps-short': null, 'card-imbalance': null }, attempts: [], env: {} }],
+      report: { verdict: 'insufficient', tag: 'CPU 占位', headline: 'C1 CPU 占位无实机样本', summary: 'C1', matrix: [], directions: [{ id: 'd1', title: '接通设备执行器' }], predictions: [], compare: { comparable: false, groups: [] }, attribution: { assessedLayers: [] } },
+      decision: { pick: 'direction', directionId: 'd1', by: '墨墨', at: now + 250 }, events: [],
+    },
+    {
+      n: 2, version: 'v2', start: now + 1100, end: now + 1200, state: 'done', metrics: structuredClone(e1),
+      plan: { groups: [{ id: 'control', label: '对照', version: 'v2', vars: {}, control: true }], seeds: [2] },
+      runs: [{ id: 'r2', group: 'control', seed: 2, state: 'failed', metrics: {}, attempts: [], env: {} }],
+      report: { verdict: 'insufficient', tag: '校准完成', headline: 'C2 设备校准完成，建议升 E2', summary: 'C2', matrix: [], directions: [{ id: 'd2', title: '固定 Host Python 与 config.json' }], predictions: [], compare: { comparable: false, groups: [] }, attribution: { assessedLayers: [] } },
+      decision: { pick: 'direction', directionId: 'd2', by: '墨墨', at: now + 1250 }, events: [],
+    },
+    {
+      n: 3, version: 'v3', start: now + 2100, end: null, state: 'running', metrics: structuredClone(e2),
+      plan: { groups: [{ id: 'control', label: '对照', version: 'v3', vars: {}, control: true }], seeds: [3] },
+      runs: [{ id: 'r3', group: 'control', seed: 3, state: 'running', metrics: {}, attempts: [], env: {} }],
+      report: null, decision: null, events: [],
+    },
+  ];
+
+  // Default view selects current E2 and reconstructs E1 -> E2 even without d.metricHistory.
+  const vmE2 = viewModel(state, 'exp', { project, pick: `obj:${id}` });
+  assert.deepEqual(vmE2.eTree.map((n) => [n.id, n.parentKey, n.nodeState]), [['E1', null, ''], ['E2', `${id}/E1`, 'current']]);
+  assert.deepEqual(vmE2.eTree[0].versionsUsed, ['v1', 'v2']);
+  assert.deepEqual(vmE2.eTree[1].versionsUsed, ['v3']);
+  assert.equal(vmE2.eSel.id, 'E2');
+  assert.equal(vmE2.eSel.hasDiff, true);
+  assert.equal(vmE2.eSel.diff.parent, 'E1');
+  assert.equal(vmE2.eSel.diff.mod, 2); // card-imbalance formula + mixed-ladder p99-t2-ms line
+  assert.equal(vmE2.eSel.diffChanges.some((c) => c.title.includes('卡间不均') && c.detail.includes('按设备忙碌时间计算')), true);
+  assert.equal(vmE2.eSel.diffChanges.some((c) => c.title.includes('T2 P99') && c.detail.includes('≤ 210 ms')), true);
+  assert.equal(vmE2.eSel.cycleSummaries.length, 1);
+  assert.equal(vmE2.eSel.cycleSummaries[0].n, 3);
+  assert.equal(vmE2.eSel.cycleSummaries[0].verdict, 'running');
+
+  // Selecting E1 switches detail pane to E1's metrics and Cycle 1-2 conclusions.
+  const vmE1 = viewModel(state, 'exp', { project, pick: `obj:${id}`, selE: `${id}/E1>node` });
+  assert.equal(vmE1.eSel.id, 'E1');
+  assert.equal(vmE1.eSel.hasDiff, false);
+  assert.equal(vmE1.eSel.items.find((m) => m.id === 'card-imbalance').how, '按请求数计算');
+  assert.deepEqual(vmE1.eSel.cycleSummaries.map((c) => [c.n, c.verdict, c.decisionText]), [
+    [1, 'insufficient', '接通设备执行器'],
+    [2, 'insufficient', '固定 Host Python 与 config.json'],
+  ]);
+
+  // Collection lineage reconstructs C1 -> C2 from stepHistory.run and switches cleanly via selC.
+  assert.deepEqual(vmE2.cTree.map((n) => [n.id, n.parentKey, n.nodeState]), [['C1', null, ''], ['C2', `${id}/C1`, 'current']]);
+  assert.equal(vmE2.cSel.id, 'C2');
+  assert.equal(vmE2.cSel.hasOps, true);
+  const vmC1 = viewModel(state, 'exp', { project, pick: `obj:${id}`, selC: `${id}/C1>node` });
+  assert.equal(vmC1.cSel.id, 'C1');
+  assert.equal(vmC1.cSel.note, 'CPU 占位执行器');
+
+  // Legacy compacted state (pre-alpha.133 live objective where C1/C2 round.metrics were deleted before E2 upgrade):
+  // E1 is reconstructed from stepHistory.rules[0], C1/C2 are attributed to E1 by timestamp, and C3 to E2.
+  delete d.rounds[0].metrics;
+  delete d.rounds[1].metrics;
+  delete d.metricHistory;
+  d.steps.rules = { rev: 2, stale: false, redo: false, next: '冻结 E2 长文门限' };
+  d.stepHistory.rules[0].items = [{ id: 'rule-e1-short', title: 'E1 短文门限', value: 'T1 P99 ≤ 80 ms' }];
+  const vmLegacy = viewModel(state, 'exp', { project, pick: `obj:${id}` });
+  assert.deepEqual(vmLegacy.eTree.map((n) => [n.id, n.parentKey, n.nodeState]), [['E1', null, ''], ['E2', `${id}/E1`, 'current']]);
+  assert.deepEqual(vmLegacy.eTree[0].versionsUsed, ['v1', 'v2']);
+  assert.deepEqual(vmLegacy.eTree[1].versionsUsed, ['v3']);
+  assert.equal(vmLegacy.eSel.hasDiff, false); // no bogus item diff against legacy prep-card fallback
+  const vmLegacyE1 = viewModel(state, 'exp', { project, pick: `obj:${id}`, selE: `${id}/E1>node` });
+  assert.equal(vmLegacyE1.eSel.items[0].name, 'E1 短文门限');
+  assert.deepEqual(vmLegacyE1.eSel.cycleSummaries.map((c) => c.n), [1, 2]);
+});

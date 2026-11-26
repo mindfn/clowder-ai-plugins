@@ -1429,6 +1429,233 @@ function exp(): any {
   const closeoutReport = o.state === 'done'
     ? (d.closeoutReport || buildCloseoutReport(d, o.stopReason?.at || Date.now(), o.stopReason?.by || 'RSI'))
     : null;
+
+  // Build real Metrics (E1 -> E2 -> ...) lineage from metricHistory + per-round metric snapshots + legacy stepHistory.rules + current d.metrics.
+  const currentMetricVer = String(d.metrics?.version || 'E1');
+  const rulesHist = Array.isArray(d.stepHistory?.rules) ? d.stepHistory.rules : [];
+  const metricOrder: string[] = [];
+  const metricMap = new Map<string, Data>();
+  const upsertMetricSnap = (snap: Data | null | undefined, meta?: { rev?: number; at?: number; by?: string; note?: string; legacyPrep?: boolean }) => {
+    if (!snap || !Array.isArray(snap.items)) return;
+    const id = String(snap.version || 'E1');
+    if (!metricMap.has(id)) {
+      metricOrder.push(id);
+      metricMap.set(id, { id, items: snap.items, slices: Array.isArray(snap.slices) ? snap.slices : [], rev: meta?.rev ?? snap.rev ?? null, at: meta?.at ?? snap.at ?? null, by: meta?.by ?? snap.by ?? null, note: meta?.note ?? snap.note ?? '', legacyPrep: !!meta?.legacyPrep });
+    } else {
+      const existing = metricMap.get(id)!;
+      if (existing.legacyPrep && !meta?.legacyPrep && snap.items.length) {
+        existing.items = snap.items;
+        existing.slices = Array.isArray(snap.slices) ? snap.slices : [];
+        existing.legacyPrep = false;
+      }
+      if (meta?.rev != null && existing.rev == null) existing.rev = meta.rev;
+      if (meta?.at != null && existing.at == null) existing.at = meta.at;
+      if (meta?.by && !existing.by) existing.by = meta.by;
+      if (meta?.note && !existing.note) existing.note = meta.note;
+    }
+  };
+  for (const h of Array.isArray(d.metricHistory) ? d.metricHistory : []) upsertMetricSnap(h);
+  for (const r of rounds) if (r.metrics) upsertMetricSnap(r.metrics, { at: r.start });
+  // Retroactive fallback for objectives whose earlier E1 round.metrics were compacted before metricHistory existed:
+  // reconstruct prior E<rev> nodes from stepHistory.rules before inserting current d.metrics so E1 -> E2 stays intact.
+  const curRulesRev = d.steps?.rules?.rev || rulesHist.length || 1;
+  for (const rh of rulesHist) {
+    if (typeof rh?.rev !== 'number' || rh.rev >= curRulesRev) continue;
+    const inferredId = `E${rh.rev}`;
+    if (inferredId === currentMetricVer || metricMap.has(inferredId)) continue;
+    const prepAsItems = Array.isArray(rh.items)
+      ? rh.items.map((p: Data) => ({ id: p.id, name: p.title || p.id, how: p.value || '', dir: '', line: '', guard: false, locked: false }))
+      : [];
+    upsertMetricSnap({ version: inferredId, items: prepAsItems, slices: [] }, { rev: rh.rev, at: rh.at, by: rh.by, note: rh.next || rh.unknowns || '', legacyPrep: true });
+  }
+  if (d.metrics) {
+    const curHist = rulesHist.find((h: Data) => h.rev === curRulesRev) || rulesHist[rulesHist.length - 1];
+    upsertMetricSnap(d.metrics, { rev: curRulesRev, at: curHist?.at, by: curHist?.by, note: curHist?.next || d.steps?.rules?.next || '' });
+    const curEntry = metricMap.get(currentMetricVer);
+    if (curEntry) { curEntry.items = d.metrics.items; curEntry.slices = Array.isArray(d.metrics.slices) ? d.metrics.slices : []; curEntry.legacyPrep = false; }
+  }
+  const eNum = (id: string) => { const m = /^E(\d+)$/i.exec(id); return m ? +m[1] : Number.MAX_SAFE_INTEGER; };
+  metricOrder.sort((a, b) => {
+    const na = eNum(a), nb = eNum(b);
+    if (na !== nb) return na - nb;
+    const ea = metricMap.get(a)!, eb = metricMap.get(b)!;
+    if (ea.rev != null && eb.rev != null && ea.rev !== eb.rev) return ea.rev - eb.rev;
+    return (ea.at || 0) - (eb.at || 0);
+  });
+  const roundMetricVersion = (r: Data): string => {
+    if (r.metrics?.version) return String(r.metrics.version);
+    if (r.metricVersion) return String(r.metricVersion);
+    if (metricOrder.length <= 1) return currentMetricVer;
+    const t = typeof r.start === 'number' ? r.start : 0;
+    let picked = metricOrder[0];
+    for (const mid of metricOrder) {
+      const mAt = metricMap.get(mid)?.at;
+      if (typeof mAt === 'number' && t >= mAt) picked = mid;
+    }
+    return picked;
+  };
+  const metricNodes = metricOrder.map(function (id: string, idx: number): Data {
+    const entry = metricMap.get(id)!;
+    const parentId = idx > 0 ? metricOrder[idx - 1] : null;
+    const parentEntry = parentId ? metricMap.get(parentId)! : null;
+    const histMatch = (entry.rev != null && rulesHist.find((h: Data) => h.rev === entry.rev)) || rulesHist[idx] || null;
+    const by = entry.by || histMatch?.by || null;
+    const at = entry.at || histMatch?.at || null;
+    const note = entry.note || histMatch?.next || (id === currentMetricVer ? d.steps?.rules?.next || '' : '');
+    const usedRounds = rounds.filter((r: Data) => roundMetricVersion(r) === id);
+    const versionsUsed = [...new Set(usedRounds.map((r: Data) => r.version).filter(Boolean))];
+    const lockedCount = entry.items.filter((m: Data) => m.locked || m.guard).length;
+    const workingCount = entry.items.length - lockedCount;
+    const diffChanges: Data[] = [];
+    let add = 0, del = 0, mod = 0;
+    if (parentEntry && !parentEntry.legacyPrep && !entry.legacyPrep) {
+      const pItems = new Map<string, Data>(parentEntry.items.map((m: Data) => [m.id, m]));
+      const cItems = new Map<string, Data>(entry.items.map((m: Data) => [m.id, m]));
+      for (const m of entry.items) {
+        const pm = pItems.get(m.id);
+        if (!pm) {
+          add++;
+          diffChanges.push({ key: `add:${m.id}`, kind: 'add', title: m.name || m.id, detail: [m.dir, m.line, m.how].filter(Boolean).join(' · ') });
+        } else {
+          const diffs: string[] = [];
+          if ((pm.line || '') !== (m.line || '')) diffs.push(`${pm.line || '—'} → ${m.line || '—'}`);
+          if ((pm.dir || '') !== (m.dir || '')) diffs.push(`${pm.dir || '—'} → ${m.dir || '—'}`);
+          if (Boolean(pm.guard) !== Boolean(m.guard)) diffs.push(m.guard ? '转为护栏' : '取消护栏');
+          if ((pm.how || '') !== (m.how || '')) diffs.push(`${pm.how || '—'} → ${m.how || '—'}`);
+          if (diffs.length) {
+            mod++;
+            diffChanges.push({ key: `mod:${m.id}`, kind: 'mod', title: m.name || m.id, detail: diffs.join('；') });
+          }
+        }
+      }
+      for (const pm of parentEntry.items) {
+        if (!cItems.has(pm.id)) {
+          del++;
+          diffChanges.push({ key: `del:${pm.id}`, kind: 'del', title: pm.name || pm.id, detail: [pm.dir, pm.line].filter(Boolean).join(' · ') });
+        }
+      }
+      const pSlices = new Map<string, Data>((parentEntry.slices || []).map((s: Data) => [s.id, s]));
+      for (const s of entry.slices || []) {
+        const ps = pSlices.get(s.id);
+        const pStats = new Map<string, Data>((ps?.stats || []).map((st: Data) => [st.id, st]));
+        for (const st of s.stats || []) {
+          const pst = pStats.get(st.id);
+          if (!pst) {
+            add++;
+            diffChanges.push({ key: `sadd:${s.id}:${st.id}`, kind: 'add', title: `${s.name || s.id} / ${st.name || st.id}`, detail: [st.dir, st.line].filter(Boolean).join(' · ') });
+          } else if ((pst.line || '') !== (st.line || '') || (pst.dir || '') !== (st.dir || '')) {
+            mod++;
+            diffChanges.push({ key: `smod:${s.id}:${st.id}`, kind: 'mod', title: `${s.name || s.id} / ${st.name || st.id}`, detail: `${pst.line || '—'} → ${st.line || '—'}` });
+          }
+        }
+      }
+    }
+    const eCycles = usedRounds.map((r: Data) => {
+      const done = (r.runs || []).filter((u: Data) => u.state === 'done' || u.state === 'failed').length;
+      const total = (r.runs || []).length;
+      const evalRes = r.state === 'running' ? null : r.report ? r.report.verdict : (r.state === 'evaluating' ? 'waiting' : r.state);
+      const dec = r.decision;
+      const decText = dec ? (dec.pick === 'direction'
+        ? ((r.report?.directions || []).find((x: Data) => x.id === dec.directionId)?.title || dec.directionId || '采纳方向')
+        : dec.note || dec.pick) : '';
+      return {
+        n: r.n,
+        version: r.version,
+        state: r.state,
+        verdict: r.report?.verdict || r.state,
+        tag: r.report?.tag || '',
+        headline: r.report?.headline || (r.state === 'running' ? '运行中' : r.state === 'evaluating' ? '等待评估' : ''),
+        summary: r.report?.summary || '',
+        decisionText: decText,
+        collect: true,
+        live: r.state === 'running',
+        done,
+        total,
+        eval: evalRes,
+      };
+    });
+    return {
+      key: key(id),
+      parent: parentId ? key(parentId) : null,
+      gov: idx < metricOrder.length - 1 ? 'switch' : null,
+      cycles: eCycles,
+      data: {
+        id,
+        parent: parentId,
+        isCurrent: id === currentMetricVer,
+        nodeState: id === currentMetricVer ? 'current' : '',
+        count: entry.items.length,
+        locked: lockedCount,
+        working: workingCount,
+        versionsUsed,
+        hasVersionsUsed: versionsUsed.length > 0,
+        by: by ? nameOf(by) : '',
+        at,
+        note,
+        items: entry.items,
+        hasDiff: diffChanges.length > 0,
+        diff: parentId ? { parent: parentId, add, del, mod } : null,
+        diffChanges,
+        hasCycles: eCycles.length > 0,
+        cycleSummaries: eCycles,
+      },
+    };
+  });
+  const eTreeObj = rsiTree('rsiSelE', metricNodes, { row: key(currentMetricVer) });
+  const eSelRow = eTreeObj.rows.find((x: Data) => x.key === eTreeObj.rowKey) || eTreeObj.rows[eTreeObj.rows.length - 1] || null;
+  const eCycleMatch = /^c(\d+)\./.exec(eTreeObj.stepKey || '');
+  const eSelCycle = eSelRow && eCycleMatch ? (eSelRow.cycleSummaries || []).find((c: Data) => c.n === +eCycleMatch[1]) || null : null;
+  const eSel = eSelRow ? Object.assign({}, eSelRow, { selectedCycle: eSelCycle, hasSelectedCycle: !!eSelCycle }) : null;
+
+  // Build real Collection / Executor (C1 -> C2 -> ...) lineage from executorHistory + stepHistory.run + current d.executor.
+  const executorOpsOf = (ex: Data | null | undefined) => {
+    if (!ex) return [];
+    if (Array.isArray(ex.ops) && ex.ops.length) {
+      return ex.ops.map(function (op: any) {
+        const p = op.params;
+        const params = typeof p === 'string' ? p : p && typeof p === 'object' && Object.keys(p).length ? JSON.stringify(p) : '';
+        return Object.assign({}, op, { params: params || op.tool || '' });
+      });
+    }
+    if (ex.commands && typeof ex.commands === 'object') {
+      return Object.entries(ex.commands).filter(([, v]) => typeof v === 'string' && v).map(([k, v]) => ({ op: k, params: String(v) }));
+    }
+    return [];
+  };
+  const runHist = Array.isArray(d.stepHistory?.run) ? d.stepHistory.run : [];
+  const execHist = Array.isArray(d.executorHistory) ? d.executorHistory : [];
+  const cRevs = [...new Set([...execHist.map((h: Data) => h.rev), ...runHist.map((h: Data) => h.rev), d.steps?.run?.rev || 1].filter((n) => typeof n === 'number' && n > 0))].sort((a, b) => a - b);
+  const latestCRev = cRevs[cRevs.length - 1] || 1;
+  const cNodes = cRevs.map((rev: number, idx: number) => {
+    const cid = `C${rev}`;
+    const parentCid = idx > 0 ? `C${cRevs[idx - 1]}` : null;
+    const eh = execHist.find((h: Data) => h.rev === rev);
+    const rh = runHist.find((h: Data) => h.rev === rev);
+    const isCur = rev === latestCRev;
+    const ops = isCur ? executorOpsOf(d.executor) : executorOpsOf(eh);
+    return {
+      key: key(cid),
+      parent: parentCid ? key(parentCid) : null,
+      gov: idx < cRevs.length - 1 ? 'switch' : null,
+      cycles: [],
+      data: {
+        id: cid,
+        rev,
+        isCurrent: isCur,
+        nodeState: isCur ? 'current' : '',
+        by: (eh?.by || rh?.by) ? nameOf(eh?.by || rh?.by) : '',
+        at: eh?.at || rh?.at || null,
+        note: eh?.note || rh?.next || rh?.unknowns || (isCur ? d.steps?.run?.next || '' : ''),
+        state: isCur ? (d.executor?.state || '') : (eh?.state || ''),
+        mcp: isCur ? (d.executor?.mcp || '') : (eh?.mcp || ''),
+        ops,
+        hasOps: ops.length > 0,
+      },
+    };
+  });
+  const cTreeObj = rsiTree('rsiSelC', cNodes, { row: key(`C${latestCRev}`) });
+  const cSel = cTreeObj.rows.find((x: Data) => x.key === cTreeObj.rowKey) || cTreeObj.rows[cTreeObj.rows.length - 1] || null;
+
   return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, stopReason: o.stopReason || null, closeoutReport, projectPath: o.projectPath, goal: o.goal, goalQuote, editingGoal: S.rsiEditGoal, execStatus, execFlow, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
     trend: legacyTrend,
@@ -1443,8 +1670,8 @@ function exp(): any {
     hitRate: { hit: preds.filter(function (p: any): any { return p.result === 'hit'; }).length, all: preds.filter(function (p: any): any { return p.result !== 'unresolved'; }).length },
     versions: tree.rows, ver: ver, step: currentStep, prepStage, candidate: d.candidate ? d.candidate.version : null,
     cycle: cycleView,
-    prep: { needYou: needYou, steps: slimPrepSteps, dagNodes: dagNodes, visibleSteps: slimPrepSteps.filter((s: Data) => s.visible), ready: readyInfo, activeKey: activeKey, showAll: showAll }, executor: d.executor && Object.assign({}, d.executor, { ops: (d.executor.ops || []).map(function (op: any) { const p = op.params; const params = typeof p === 'string' ? p : p && typeof p === 'object' && Object.keys(p).length ? JSON.stringify(p) : ''; return Object.assign({}, op, { params: params || op.tool || '' }); }) }), members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, roleMembers: o.projectPath ? d.members.filter(function (m: any): any { return m.catId && m.role !== 'analyze'; }) : d.members, execStages, discussion: d.members.filter(function (m: any): any { return m.role === 'analyze' && m.catId; }).map(function (m: any): any { return { id: m.catId, name: m.name }; }), memberIds: { prepare: (d.members.find(function (m: any): any { return m.role === 'prepare'; }) || {}).catId, evaluate: (d.members.find(function (m: any): any { return m.role === 'evaluate'; }) || {}).catId, iterate: (d.members.find(function (m: any): any { return m.role === 'iterate'; }) || {}).catId }, policy: policyOf(d, o, schedNow), policyEditor: policyEditorOf(d, schedNow), metrics: d.metrics,
-    eTree: [{ id: d.metrics.version }], cTree: [{ id: 'C1' }] };
+    prep: { needYou: needYou, steps: slimPrepSteps, dagNodes: dagNodes, visibleSteps: slimPrepSteps.filter((s: Data) => s.visible), ready: readyInfo, activeKey: activeKey, showAll: showAll }, executor: d.executor && Object.assign({}, d.executor, { ops: executorOpsOf(d.executor) }), members: o.projectPath ? d.members.filter(function (m: any): any { return m.catId; }) : d.members, roleMembers: o.projectPath ? d.members.filter(function (m: any): any { return m.catId && m.role !== 'analyze'; }) : d.members, execStages, discussion: d.members.filter(function (m: any): any { return m.role === 'analyze' && m.catId; }).map(function (m: any): any { return { id: m.catId, name: m.name }; }), memberIds: { prepare: (d.members.find(function (m: any): any { return m.role === 'prepare'; }) || {}).catId, evaluate: (d.members.find(function (m: any): any { return m.role === 'evaluate'; }) || {}).catId, iterate: (d.members.find(function (m: any): any { return m.role === 'iterate'; }) || {}).catId }, policy: policyOf(d, o, schedNow), policyEditor: policyEditorOf(d, schedNow), metrics: d.metrics,
+    eTree: eTreeObj.rows, eSel, cTree: cTreeObj.rows, cSel };
 };
 function record(): any {
   const a = S.dialog && S.dialog.kind === 'rsiRecord' && S.dialog.args; if (!a) return null;

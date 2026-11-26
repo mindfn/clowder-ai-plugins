@@ -2977,38 +2977,189 @@ views:
             use: plugin:official.rsi/rsiLineage
             props:
               from: $.exp.eTree
-              key: "@id"
+              key: "@key"
+              parent: "@parentKey"
               node:
-                label: "@id"
-                state: current
-              tail:
-                - text:
-                    t: rsi.exp.eCount
+                label:
+                  - text: "@id"
+                state: "@nodeState"
+                pressed: "@nodeSelected"
+                act: plugSet
+                args:
+                  k: selE
+                  v: "@pick"
+              cells:
+                - type: select
+                  when: "@cyclePick"
+                  id: "@cyclePick.id"
+                  label: t:rsi.cycle.pick
+                  change: plugSet
+                  args:
+                    k: selE
+                  value: "@cyclePick.value"
+                  options:
+                    - from: "@cyclePick.options"
+                      item:
+                        v: "@v"
+                        label:
+                          t: rsi.cycle.nOf
+                          args:
+                            - "@n"
+                            - "@total"
+                - type: each
+                  from: "@steps"
+                  control:
+                    type: chip
+                    label:
+                      of: "@k"
+                      map:
+                        collect:
+                          of: "@live"
+                          map:
+                            "true":
+                              t: rsi.step.collectLive
+                              args:
+                                - "@n"
+                            _:
+                              t: rsi.step.collect
+                              args:
+                                - "@n"
+                        eval:
+                          t: rsi.step.eval
+                          args:
+                            - "@n"
+                            - t: rsi.exp.verdict
+                              args:
+                                - "@result"
+                        gov:
+                          t: rsi.step.gov
+                          args:
+                            - t: rsi.govResult
+                              args:
+                                - "@result"
+                    pressed: "@selected"
+                    tone:
+                      of: "@result"
+                      map:
+                        rollback: warn
+                        insufficient: warn
+                        waiting: warn
+                        _: ""
+                    act: plugSet
                     args:
-                      - $.exp.metrics.items.length
-          - type: list
-            from: $.exp.metrics.items
-            row:
-              layout: two
-              key: "@id"
-              title: "@name"
-              inline:
-                - chip: t:rsi.metric.locked
-                  when: "@locked"
-                - chip: t:rsi.metric.guard
-                  when: "@guard"
-              sub: "@how"
-              cols:
-                - v:
-                    text:
-                      t: rsi.exp.dir
+                      k: selE
+                      v: "@pick"
+              tail:
+                sep: " · "
+                parts:
+                  - text:
+                      t: rsi.exp.eCount
                       args:
-                        - "@dir"
-                  w: label
-                - v:
-                    text: "@line"
-                  w: label
-                  when: "@line"
+                        - "@count"
+                  - text:
+                      t: rsi.metricVersion.used
+                      args:
+                        - of: "@versionsUsed"
+                          sep: " "
+                    when: "@hasVersionsUsed"
+                  - text: "@by"
+                    when: "@by"
+          - type: section
+            when: $.exp.eSel.hasDiff
+            title:
+              t: rsi.exp.eDiffTitle
+              args:
+                - $.exp.eSel.diff.parent
+                - $.exp.eSel.diff.add
+                - $.exp.eSel.diff.del
+                - $.exp.eSel.diff.mod
+            blocks:
+              - type: text
+                variant: meta
+                text: $.exp.eSel.note
+                when: $.exp.eSel.note
+              - type: list
+                from: $.exp.eSel.diffChanges
+                row:
+                  layout: two
+                  key: "@key"
+                  title: "@title"
+                  inline:
+                    - chip:
+                        t: rsi.exp.eDiffKind
+                        args:
+                          - "@kind"
+                  sub: "@detail"
+          - type: text
+            variant: meta
+            text: $.exp.eSel.note
+            when:
+              - "!$.exp.eSel.hasDiff"
+              - $.exp.eSel.note
+          - type: section
+            when: $.exp.eSel.hasCycles
+            title:
+              t: rsi.exp.eCyclesTitle
+              args:
+                - $.exp.eSel.id
+            blocks:
+              - type: list
+                from: $.exp.eSel.cycleSummaries
+                row:
+                  layout: two
+                  key: "@n"
+                  title:
+                    sep: " · "
+                    parts:
+                      - text:
+                          t: rsi.exp.cycleNo
+                          args:
+                            - "@n"
+                      - text: "@version"
+                        mono: true
+                        when: "@version"
+                      - text: "@tag"
+                        when: "@tag"
+                  inline:
+                    - chip:
+                        t: rsi.exp.verdict
+                        args:
+                          - "@verdict"
+                  sub: "@headline"
+                  cols:
+                    - v:
+                        text: "@decisionText"
+                      w: label
+                      when: "@decisionText"
+          - type: section
+            title:
+              t: rsi.exp.eMetricsTitle
+              args:
+                - $.exp.eSel.id
+            blocks:
+              - type: list
+                from: $.exp.eSel.items
+                row:
+                  layout: two
+                  key: "@id"
+                  title: "@name"
+                  inline:
+                    - chip: t:rsi.metric.locked
+                      when: "@locked"
+                    - chip: t:rsi.metric.guard
+                      when: "@guard"
+                  sub: "@how"
+                  cols:
+                    - v:
+                        text:
+                          t: rsi.exp.dir
+                          args:
+                            - "@dir"
+                      w: label
+                    - v:
+                        text: "@line"
+                      w: label
+                      when: "@line"
       - type: each
         from:
           - {}
@@ -3027,22 +3178,42 @@ views:
             use: plugin:official.rsi/rsiLineage
             props:
               from: $.exp.cTree
-              key: "@id"
+              key: "@key"
+              parent: "@parentKey"
               node:
-                label: "@id"
-                state: current
+                label:
+                  - text: "@id"
+                state: "@nodeState"
+                pressed: "@nodeSelected"
+                act: plugSet
+                args:
+                  k: selC
+                  v: "@pick"
               tail:
                 sep: " · "
                 parts:
-                  - text: $.exp.executor.mcp
+                  - text:
+                      t: rsi.exp.cRevTail
+                      args:
+                        - "@rev"
+                  - text: "@by"
+                    when: "@by"
+                  - text: "@mcp"
                     mono: true
+                    when: "@mcp"
                   - text:
                       t: rsi.exp.exState
                       args:
-                        - $.exp.executor.state
+                        - "@state"
+                    when: "@state"
+          - type: text
+            variant: meta
+            text: $.exp.cSel.note
+            when: $.exp.cSel.note
           - type: list
             label: t:rsi.exp.executor
-            from: $.exp.executor.ops
+            from: $.exp.cSel.ops
+            when: $.exp.cSel.hasOps
             row:
               layout: two
               title: "@op"

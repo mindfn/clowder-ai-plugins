@@ -625,6 +625,16 @@ exp:
   thread: Go to objective thread
   resultMap: Result field mapping
   eCount: "{0} metrics"
+  eDiffTitle: "Changes vs {0}: +{1} · -{2} · ~{3}"
+  eDiffKind:
+    add: Added
+    del: Removed
+    mod: Modified
+    _: "{0}"
+  eCyclesTitle: "Cycles & conclusions under {0}"
+  eMetricsTitle: "{0} metric definitions"
+  cycleNo: "Cycle {0}"
+  cRevTail: "Rev r{0}"
   state:
     running: Running
     planned: Tonight
@@ -646,6 +656,11 @@ exp:
     rollback: Roll back
     sunset: Stop
     insufficient: Insufficient evidence
+    running: Running
+    evaluating: Evaluating
+    waiting: Pending eval
+    repaired: Repaired
+    _: "{0}"
   layer:
     execution: Execution environment
     harness: Implementation (code / variables)

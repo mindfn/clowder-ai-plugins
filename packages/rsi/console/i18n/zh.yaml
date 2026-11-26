@@ -625,6 +625,16 @@ exp:
   thread: 去评估项 thread
   resultMap: 结果字段映射
   eCount: "{0} 个指标"
+  eDiffTitle: "相对 {0} 的变动：新增 {1} · 删去 {2} · 修改 {3}"
+  eDiffKind:
+    add: 新增
+    del: 删去
+    mod: 修改
+    _: "{0}"
+  eCyclesTitle: "在 {0} 量尺下运行的周期与结论"
+  eMetricsTitle: "{0} 指标定义"
+  cycleNo: "第 {0} 周期"
+  cRevTail: "修订 r{0}"
   state:
     running: 运行中
     planned: 今晚
@@ -646,6 +656,11 @@ exp:
     rollback: 回退
     sunset: 停止
     insufficient: 证据不足
+    running: 运行中
+    evaluating: 评估中
+    waiting: 待评估
+    repaired: 已修复
+    _: "{0}"
   layer:
     execution: 执行环境
     harness: 实现（代码 / 变量）

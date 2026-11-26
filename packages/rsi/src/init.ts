@@ -158,9 +158,31 @@ export function submitInitStep(state: RsiState, id: string, submission: InitSubm
   if (old && !(section === 'run' && d.rounds.length > 0)) rsiExpStaleFrom(d, section, true);
   if (submission.goal) Object.assign(d.objective.goal, submission.goal, { statement: d.objective.goal?.statement || d.objective.name });
   if (submission.executor) d.executor = structuredClone(submission.executor);
+  if (section === 'run' && d.executor) {
+    d.executorHistory ||= [];
+    const cId = `C${nextRev}`;
+    const cSnap = { id: cId, rev: nextRev, at: now, by: execution.by, note: submission.next || submission.unknowns || '', state: d.executor.state || null, mcp: d.executor.mcp || '', commands: d.executor.commands ? structuredClone(d.executor.commands) : null, timeout: d.executor.timeout ?? null, poll: d.executor.poll ?? null };
+    const cIdx = d.executorHistory.findIndex((x: Data) => x.rev === nextRev);
+    if (cIdx >= 0) d.executorHistory[cIdx] = cSnap;
+    else d.executorHistory.push(cSnap);
+  }
   if (submission.metrics) {
+    if (d.metrics?.version) {
+      d.metricHistory ||= [];
+      const prevVer = String(d.metrics.version);
+      if (!d.metricHistory.some((m: Data) => m.version === prevVer)) {
+        const prevStep = (d.stepHistory?.rules || []).find((h: Data) => h.rev === (old?.rev || 1));
+        d.metricHistory.push({ ...structuredClone(d.metrics), rev: old?.rev || 1, at: prevStep?.at || now, by: prevStep?.by || execution.by, note: prevStep?.next || '' });
+      }
+    }
     d.metrics = structuredClone(submission.metrics);
     for (const metric of d.metrics.items) if (metric.guard) metric.locked = true;
+    d.metricHistory ||= [];
+    const curVer = String(d.metrics.version || 'E1');
+    const mSnap = { ...structuredClone(d.metrics), rev: nextRev, at: now, by: execution.by, note: submission.next || '' };
+    const mIdx = d.metricHistory.findIndex((m: Data) => m.version === curVer);
+    if (mIdx >= 0) d.metricHistory[mIdx] = mSnap;
+    else d.metricHistory.push(mSnap);
   }
   if (section === 'run') {
     const rawWindow = submission.window || (!hasValidSchedule(d.policy.schedule) ? submission.items.find((p) => p.id === 'cp-trigger')?.value : undefined);

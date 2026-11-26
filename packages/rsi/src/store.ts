@@ -36,7 +36,16 @@ export function compact(state: RsiState, now = Date.now()) {
       const r = rounds[idx];
       const closed = ['done', 'repaired'].includes(r.state);
       const archived = closed && idx < rounds.length - 3;
-      if (r.metrics && d.metrics && same(r.metrics, d.metrics)) delete r.metrics;
+      if (r.metrics && d.metrics && same(r.metrics, d.metrics)) {
+        if (r.metrics.version) {
+          r.metricVersion = r.metrics.version;
+          d.metricHistory ||= [];
+          if (!d.metricHistory.some((m: Data) => m.version === r.metrics.version)) {
+            d.metricHistory.push(structuredClone(r.metrics));
+          }
+        }
+        delete r.metrics;
+      }
       if (r.report?.compare) delete r.report.compare.matrix;
       const baseEnv = archived ? r.runs?.[0]?.env : undefined;
       for (let ri = 0; ri < (r.runs || []).length; ri++) {
