@@ -4,7 +4,7 @@ import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { arch, cpus, platform, release } from 'node:os';
 import { join, resolve } from 'node:path';
 import { finishCycle } from './cycles.js';
-import { normalizeSlicesInput } from './compare.js';
+import { normalizeSlicesInput, roundMetrics } from './compare.js';
 import { message, recordInitExecution, submitInitStep } from './init.js';
 import { insideWindow } from './schedule.js';
 import { clip, listOwners, LOG_KEEP, record, retain } from './store.js';
@@ -350,9 +350,10 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         const output = parseResult(raw);
         if (!record(output)) throw new Error('Collected metrics must be a JSON object');
         if (output.dataVersion !== undefined) env.data = output.dataVersion;
-        slices = normalizeSlicesInput(output.slices, (round.metrics || d.metrics).slices);
+        const roundScale = roundMetrics(d, round);
+        slices = normalizeSlicesInput(output.slices, roundScale.slices);
         const source = record(output.metrics) ? output.metrics : output, invalid: string[] = [];
-        for (const metric of (round.metrics || d.metrics).items) {
+        for (const metric of roundScale.items) {
           const mapping = d.executor.resultMap.find((m: Data) => m.metric === metric.id);
           const value = mapping ? field(output, mapping.field) : source[metric.id];
           metrics[metric.id] = value ?? null;

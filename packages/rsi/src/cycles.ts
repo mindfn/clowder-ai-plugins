@@ -1,5 +1,5 @@
 import { AUTO, clipTitle, enqueue, mention, message, prepSettled, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
-import { formatComparisonMarkdown, sliceMatrix } from './compare.js';
+import { formatComparisonMarkdown, roundMetrics, roundMetricVersion, sliceMatrix } from './compare.js';
 import { insideWindow, windowEnd, windowStart } from './schedule.js';
 import { cycleResult, record, text } from './store.js';
 import type { Data, Experiment, RsiState } from './types.js';
@@ -213,7 +213,7 @@ export function askEvaluation(state: RsiState, d: Experiment, round: Data, reeva
 }
 
 export function matrix(d: Experiment, round: Data) {
-  return round.plan.groups.flatMap((group: Data) => (round.metrics || d.metrics).items.map((metric: Data) => {
+  return round.plan.groups.flatMap((group: Data) => roundMetrics(d, round).items.map((metric: Data) => {
     const seeds = round.runs.filter((r: Data) => r.group === group.id).map((r: Data) => ({ seed: r.seed, value: r.metrics[metric.id] ?? null, state: r.state, error: r.error }));
     const values = seeds.filter((s: Data) => s.state === 'done' && s.error?.kind !== 'env' && typeof s.value === 'number' && Number.isFinite(s.value)).map((s: Data) => s.value);
     const n = values.length, mean = n ? values.reduce((a: number, b: number) => a + b, 0) / n : null;
@@ -223,7 +223,7 @@ export function matrix(d: Experiment, round: Data) {
 }
 
 export function comparison(d: Experiment, round: Data) {
-  const cells = matrix(d, round), metrics = (round.metrics || d.metrics).items, main = metrics.find((m: Data) => !m.guard);
+  const cells = matrix(d, round), metrics = roundMetrics(d, round).items, main = metrics.find((m: Data) => !m.guard);
   const control = round.plan.groups.find((g: Data) => g.control), cell = (group: string) => cells.find((m: Data) => m.group === group && m.metric === main?.id);
   const valid = (group: string) => round.runs.filter((r: Data) => r.group === group).every((r: Data) => r.state === 'done' && !r.error);
   const reference = control && cell(control.id), comparable = !!reference && reference.n === round.plan.seeds.length && valid(control.id);
@@ -252,7 +252,7 @@ function stopAfterConclusion(state: RsiState, d: Experiment, round: Data, compar
   const stop = d.objective.stop;
   const target = stop?.target;
   const match = typeof target === 'string' && STOP_TARGET.exec(target);
-  const metric = match && (round.metrics || d.metrics).items.find((m: Data) => m.id === match[1].trim() || m.name === match[1].trim());
+  const metric = match && roundMetrics(d, round).items.find((m: Data) => m.id === match[1].trim() || m.name === match[1].trim());
   const adopted = round.confirmation?.status === 'confirmed' ? round.confirmation.group : 'control';
   const cell = metric && compared.matrix.find((m: Data) => m.group === adopted && m.metric === metric.id);
   const eligible = compared.groups.find((g: Data) => g.group === adopted)?.eligible;
@@ -342,7 +342,7 @@ export function buildCloseoutReport(d: Experiment, now: number, by?: string): Da
       const ctrl = groups.find((g: Data) => g.control) || (r.plan?.baseline ? groups[0] : null);
       if (!ctrl) continue;
       const cell = metricCellOf(r, ctrl.id, metricId);
-      if (cell) return { ...cell, cycle: r.n, version: ctrl.version || r.version, metricVersion: r.metrics?.version || null };
+      if (cell) return { ...cell, cycle: r.n, version: ctrl.version || r.version, metricVersion: roundMetricVersion(d, r) };
     }
     return null;
   };
@@ -354,7 +354,7 @@ export function buildCloseoutReport(d: Experiment, now: number, by?: string): Da
       const targetGroup = groups.find((g) => !g.control && g.version === versionId) || groups.find((g) => g.version === versionId);
       if (!targetGroup) continue;
       const cell = metricCellOf(r, targetGroup.id, metricId);
-      if (cell) return { ...cell, cycle: r.n, version: versionId, metricVersion: r.metrics?.version || null };
+      if (cell) return { ...cell, cycle: r.n, version: versionId, metricVersion: roundMetricVersion(d, r) };
     }
     return null;
   };
@@ -579,7 +579,7 @@ function checkPredictions(d: Experiment, round: Data, compared: Data): Data[] {
     if (!p || p.checked || !compared.comparable) return [];
     const who = `${d.members.find((m) => m.catId === p.by)?.name || p.by}：${p.text}`;
     // The scale changed and no longer has the predicted metric: say so instead of leaving the prediction unchecked forever.
-    if (!(round.metrics || d.metrics).items.some((m: Data) => m.id === p.metric)) {
+    if (!roundMetrics(d, round).items.some((m: Data) => m.id === p.metric)) {
       p.checked = { cycle: round.n, delta: null, result: 'unresolved' };
       return [{ text: who, expect: p.expect, actual: `量尺里没有 ${p.metric}`, result: 'unresolved', by: p.by }];
     }

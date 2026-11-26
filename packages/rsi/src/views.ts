@@ -3,7 +3,7 @@ import type { Data, RsiState } from './types.js';
 import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData, memberIds } from './data.js';
 import { formatPolicy, maxRunsText, nextScheduledRuns, policiesOf, scheduleForm, scheduleSummary, timeRange, validatePolicy } from './schedule.js';
 import { analystsOf, buildCloseoutReport, resolveRsiParent, short, signed, testedVersion } from './cycles.js';
-import { buildComparisonTable } from './compare.js';
+import { buildComparisonTable, roundMetrics, roundMetricVersion } from './compare.js';
 
 const tc = (key: string, ...args: unknown[]) => ({ t: key, args });
 
@@ -302,7 +302,7 @@ function exp(): any {
   const memberName = function (role: any): any { return nameOf((d.members.find(function (m: any): any { return m.role === role; }) || {}).catId); };
   const num = (x: unknown) => typeof x === 'number' && Number.isFinite(x) ? short(x) : null;
   // A cycle's metrics are the scale it ran with; the first that is not a guardrail is its main metric.
-  const mainOf = (r: Data) => (r.metrics || d.metrics).items.find((m: Data) => !m.guard);
+  const mainOf = (r: Data) => roundMetrics(d, r).items.find((m: Data) => !m.guard);
   // A cycle whose analysts are still proposing is not yet waiting for the decision.
   const waiting = function (r: any): any { return !!r.report && !r.decision && r.state === 'done' && !(r.analysis && r.analysis.waiting.length); };
   const tested = d.rounds.map(function (r: any): any { return Object.assign({}, r, { version: testedVersion(r.plan) }); });
@@ -404,7 +404,7 @@ function exp(): any {
     return delta ? signed(delta) : '0';
   };
   const compareOf = function (r: Data) {
-    const report = r.report, items = (r.metrics || d.metrics).items, lead = mainOf(r);
+    const report = r.report, items = roundMetrics(d, r).items, lead = mainOf(r);
     const groups = [...r.plan.groups.filter((g: Data) => g.control), ...r.plan.groups.filter((g: Data) => !g.control)], control = groups.find((g: Data) => g.control);
     const cell = (g: string, m: string) => report.matrix.find((c: Data) => c.group === g && c.metric === m), judged = (g: string) => report.compare.groups?.find((x: Data) => x.group === g);
     const row = (g: Data, m: Data) => {
@@ -521,7 +521,7 @@ function exp(): any {
     return (!hasAnalysts || r.state === 'repaired' || r.state === 'repairing') ? 'skipped' : 'waiting';
   };
   const evalMetricsOf = (r: Data) => {
-    const m = r.metrics || d.metrics || { version: '', items: [] };
+    const m = roundMetrics(d, r);
     return {
       version: m.version,
       items: (m.items || []).map((it: Data) => Object.assign({}, it, {
@@ -550,8 +550,9 @@ function exp(): any {
     const set = new Set<string>();
     const trig = findTriggerRound(v, verRounds);
     const parentRounds = rounds.filter((x: Data) => x.version === v.parent);
-    const parentMetricVer = parentRounds[parentRounds.length - 1]?.metrics?.version || d.metrics.version;
-    const ownMetricVer = verRounds[0]?.metrics?.version || d.metrics.version;
+    const parentLast = parentRounds[parentRounds.length - 1];
+    const parentMetricVer = parentLast ? roundMetricVersion(d, parentLast) : d.metrics.version;
+    const ownMetricVer = verRounds[0] ? roundMetricVersion(d, verRounds[0]) : d.metrics.version;
     if (ownMetricVer && parentMetricVer && ownMetricVer !== parentMetricVer) set.add('rubric');
     if (trig?.repair || v.direct) set.add('observability');
     else if (trig?.round?.decision) {
@@ -592,7 +593,7 @@ function exp(): any {
         return { outcome: 'guardrail', pruned: true, reason: tagReason };
       }
       if (ownJudged.length && ownJudged.every((j: Data) => j.eligible && !j.beatsControl)) {
-        const mItems = (lastR.metrics || d.metrics).items || [];
+        const mItems = roundMetrics(d, lastR).items || [];
         const mDef = mItems.find((m: Data) => m.id === lastR.report.compare.metric) || mItems.find((m: Data) => !m.guard);
         const cmpDir = lastR.report.compare.dir || mDef?.dir || 'up';
         const minDelta = typeof mDef?.minDelta === 'number' && Number.isFinite(mDef.minDelta) && mDef.minDelta > 0 ? mDef.minDelta : 0;
@@ -665,7 +666,7 @@ function exp(): any {
       annotatedBy: v.annotatedBy || '',
       nodeState,
       commitShort: v.commit ? String(v.commit).slice(0, 7) : '',
-      metricVersion: lastR?.metrics?.version || d.metrics.version,
+      metricVersion: lastR ? roundMetricVersion(d, lastR) : d.metrics.version,
       verRounds,
       lastRound: lastR,
       isRunningVer,
@@ -1369,7 +1370,7 @@ function exp(): any {
     if (runningN) progParts.push(`${runningN} 运行中`);
     return {
       tier: r.plan?.tier || (r.plan?.baseline ? 'baseline' : 'confirm'),
-      metricVersion: (r.metrics || d.metrics).version,
+      metricVersion: roundMetricVersion(d, r),
       seedsText,
       progressText: progParts.join(' · '),
       failed: failedN,
@@ -1482,18 +1483,6 @@ function exp(): any {
     if (ea.rev != null && eb.rev != null && ea.rev !== eb.rev) return ea.rev - eb.rev;
     return (ea.at || 0) - (eb.at || 0);
   });
-  const roundMetricVersion = (r: Data): string => {
-    if (r.metrics?.version) return String(r.metrics.version);
-    if (r.metricVersion) return String(r.metricVersion);
-    if (metricOrder.length <= 1) return currentMetricVer;
-    const t = typeof r.start === 'number' ? r.start : 0;
-    let picked = metricOrder[0];
-    for (const mid of metricOrder) {
-      const mAt = metricMap.get(mid)?.at;
-      if (typeof mAt === 'number' && t >= mAt) picked = mid;
-    }
-    return picked;
-  };
   const metricNodes = metricOrder.map(function (id: string, idx: number): Data {
     const entry = metricMap.get(id)!;
     const parentId = idx > 0 ? metricOrder[idx - 1] : null;
@@ -1502,7 +1491,7 @@ function exp(): any {
     const by = entry.by || histMatch?.by || null;
     const at = entry.at || histMatch?.at || null;
     const note = entry.note || histMatch?.next || (id === currentMetricVer ? d.steps?.rules?.next || '' : '');
-    const usedRounds = rounds.filter((r: Data) => roundMetricVersion(r) === id);
+    const usedRounds = rounds.filter((r: Data) => roundMetricVersion(d, r) === id);
     const versionsUsed = [...new Set(usedRounds.map((r: Data) => r.version).filter(Boolean))];
     const lockedCount = entry.items.filter((m: Data) => m.locked || m.guard).length;
     const workingCount = entry.items.length - lockedCount;

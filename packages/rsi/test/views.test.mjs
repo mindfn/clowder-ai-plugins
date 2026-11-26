@@ -1904,3 +1904,128 @@ test('alpha.133: real exp view builds interactive E1->E2 metrics lineage with di
   assert.equal(vmLegacyE1.eSel.items[0].name, 'E1 短文门限');
   assert.deepEqual(vmLegacyE1.eSel.cycleSummaries.map((c) => c.n), [1, 2]);
 });
+
+test('unified roundMetrics / roundMetricVersion keeps compare table cross-scale warnings, thresholds, closeout report, and rubric aspects consistent after compaction', async () => {
+  const { buildCloseoutReport } = await import('../dist/cycles.js');
+  const { buildComparisonTable } = await import('../dist/compare.js');
+  const { compact } = await import('../dist/store.js');
+  const x = arith();
+  const { s: state, d, id } = x;
+  const project = P;
+  const e1 = {
+    version: 'E1',
+    items: [
+      { id: 'qps', name: '吞吐', dir: 'up', unit: 'req/s', guard: false },
+      { id: 'p99', name: 'P99 延迟', dir: 'down', unit: 'ms', guard: true, threshold: 100, line: '≤ 100 ms' },
+    ],
+    slices: [],
+  };
+  const e2 = {
+    version: 'E2',
+    items: [
+      { id: 'qps', name: '吞吐', dir: 'up', unit: 'req/s', guard: false },
+      { id: 'p99', name: 'P99 延迟', dir: 'down', unit: 'ms', guard: true, threshold: 210, line: '≤ 210 ms' },
+    ],
+    slices: [],
+  };
+  d.versions = [
+    { id: 'v1', parent: null, change: 'baseline', config: {}, at: now, current: false, status: 'confirmed' },
+    { id: 'v2', parent: 'v1', change: 'e1 device', config: {}, at: now + 1000, current: false, status: 'confirmed' },
+    { id: 'v3', parent: 'v2', change: 'e2 host cfg', config: {}, at: now + 2000, current: true, status: 'confirmed' },
+  ];
+  d.objective.currentVersion = 'v3';
+  d.metrics = structuredClone(e1);
+  d.steps.rules = { rev: 1, stale: false, redo: false, next: 'E1' };
+  d.stepHistory = {
+    rules: [
+      { rev: 1, at: now, by: 'opus', next: 'E1' },
+      { rev: 2, at: now + 1900, by: 'opus', next: 'E2' },
+    ],
+  };
+  d.rounds = [
+    {
+      n: 1, version: 'v2', start: now + 1100, end: now + 1200, state: 'done', metrics: structuredClone(e1),
+      plan: { groups: [{ id: 'control', label: 'v2', version: 'v2', vars: {}, control: true }], seeds: [1] },
+      runs: [{ id: 'r1', group: 'control', seed: 1, state: 'done', metrics: { qps: 7.5, p99: 95 }, attempts: [], env: {} }],
+      report: {
+        verdict: 'keep', headline: 'C1 on E1', summary: 'C1',
+        matrix: [
+          { group: 'control', metric: 'qps', mean: 7.5, sd: null, n: 1, seeds: [{ seed: 1, value: 7.5, state: 'done' }] },
+          { group: 'control', metric: 'p99', mean: 95, sd: null, n: 1, seeds: [{ seed: 1, value: 95, state: 'done' }] },
+        ],
+        directions: [], predictions: [], compare: { comparable: false, groups: [{ group: 'control', eligible: true, beatsControl: false, guardrails: [{ metric: 'p99', seed: 1, value: 95, threshold: 100, dir: 'down', pass: true }] }] },
+        attribution: { assessedLayers: [] },
+      },
+      decision: null, events: [],
+    },
+  ];
+  // Compact while d.metrics is E1 (stores r1.metricVersion='E1' and d.metricHistory=[E1], deletes r1.metrics).
+  compact(state);
+  assert.equal(d.rounds[0].metrics, undefined);
+  assert.equal(d.rounds[0].metricVersion, 'E1');
+  assert.equal(d.metricHistory.some((m) => m.version === 'E1'), true);
+
+  // Upgrade d.metrics to E2 and add Cycle 2 (v3) on E2.
+  d.metrics = structuredClone(e2);
+  d.steps.rules = { rev: 2, stale: false, redo: false, next: 'E2' };
+  d.rounds.push({
+    n: 2, version: 'v3', start: now + 2100, end: now + 2200, state: 'done', metrics: structuredClone(e2),
+    plan: { tier: 'explore', skipControl: true, groups: [{ id: 'change', label: 'v3', version: 'v3', vars: {}, control: false }], seeds: [2] },
+    runs: [{ id: 'r2', group: 'change', seed: 2, state: 'done', metrics: { qps: 8.1, p99: 140 }, attempts: [], env: {} }],
+    report: {
+      verdict: 'keep', headline: 'C2 on E2', summary: 'C2',
+      matrix: [
+        { group: 'change', metric: 'qps', mean: 8.1, sd: null, n: 1, seeds: [{ seed: 2, value: 8.1, state: 'done' }] },
+        { group: 'change', metric: 'p99', mean: 140, sd: null, n: 1, seeds: [{ seed: 2, value: 140, state: 'done' }] },
+      ],
+      directions: [], predictions: [], compare: { comparable: false, groups: [{ group: 'change', eligible: true, beatsControl: false, guardrails: [{ metric: 'p99', seed: 2, value: 140, threshold: 210, dir: 'down', pass: true }] }] },
+      attribution: { assessedLayers: [] },
+    },
+    decision: null, events: [],
+  });
+
+  // 1. Comparison table on C2 (E2) refuses to silently auto-pull compacted cross-scale parent v2 (E1),
+  //    labels it "不同量尺 E1" in addColumns, and suppresses delta when the user explicitly adds it!
+  const defaultC2 = buildComparisonTable(d, d.rounds[1], d.rounds);
+  assert.deepEqual(defaultC2.columns.map((c) => [c.version, c.metricVersion]), [['v3', 'E2']]);
+  const addV2 = defaultC2.addColumns.find((c) => c.id === 'c1:control');
+  assert.ok(addV2, 'v2 should be available in addColumns');
+  assert.match(addV2.menuLabel, /不同量尺 E1/);
+  const crossTable = buildComparisonTable(d, d.rounds[1], d.rounds, { cmpCols: addV2.addVal });
+  const scales = Object.fromEntries(crossTable.columns.map((c) => [c.version, c.metricVersion]));
+  assert.deepEqual(scales, { v2: 'E1', v3: 'E2' });
+  assert.equal(crossTable.pairSameScale, false);
+  const crossQps = crossTable.sections.flatMap((s) => s.rows).find((r) => r.id === 'qps');
+  assert.equal(crossQps.deltaSuppressed, true);
+  assert.equal(crossQps.delta, null);
+  assert.equal(crossQps.statusText, '量尺不同');
+
+  // 2. Cycle 1 comparison table preserves E1's guardrail threshold text (≤ 100 ms), NOT E2's (≤ 210 ms).
+  const c1Table = buildComparisonTable(d, d.rounds[0], d.rounds);
+  const c1P99 = c1Table.sections.flatMap((s) => s.rows).find((r) => r.id === 'p99');
+  assert.equal(c1P99.ruleText, '≤ 100 ms');
+
+  // 3. Closeout report annotates compacted E1 baseline cell with E1 (v2·C1·E1) since E1 !== current E2.
+  const closeout = buildCloseoutReport(d);
+  assert.match(closeout.markdown, /v2·C1·E1/);
+
+  // 4. View model derives 'rubric' aspect on v3, and labels v2 & C1 as E1.
+  const vm = viewModel(state, 'exp', { project, pick: `obj:${id}`, selO: `${id}/v2>c1.eval` });
+  assert.equal(vm.versions.find((v) => v.id === 'v2').metricVersion, 'E1');
+  assert.equal(vm.versions.find((v) => v.id === 'v3').aspects.includes('rubric'), true);
+  assert.equal(vm.cycle.collectSummary.metricVersion, 'E1');
+  assert.equal(vm.cycle.evalMetrics.version, 'E1');
+
+  // 5. Legacy pre-alpha.133 compacted state (no metricHistory, no r1.metricVersion) STILL flags E1 vs E2 via stepHistory.rules timestamps.
+  delete d.rounds[0].metricVersion;
+  delete d.metricHistory;
+  const legacyDefault = buildComparisonTable(d, d.rounds[1], d.rounds);
+  const legacyAddV2 = legacyDefault.addColumns.find((c) => c.id === 'c1:control');
+  assert.ok(legacyAddV2);
+  assert.match(legacyAddV2.menuLabel, /不同量尺 E1/);
+  const legacyCross = buildComparisonTable(d, d.rounds[1], d.rounds, { cmpCols: legacyAddV2.addVal });
+  assert.deepEqual(Object.fromEntries(legacyCross.columns.map((c) => [c.version, c.metricVersion])), { v2: 'E1', v3: 'E2' });
+  assert.equal(legacyCross.pairSameScale, false);
+  assert.equal(legacyCross.sections.flatMap((s) => s.rows).find((r) => r.id === 'qps').deltaSuppressed, true);
+  assert.match(buildCloseoutReport(d).markdown, /v2·C1·E1/);
+});

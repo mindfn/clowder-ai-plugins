@@ -34,6 +34,74 @@ const MAX_ADD_COLS = 24;
 const numStr = (x: unknown): string | null =>
   typeof x === 'number' && Number.isFinite(x) ? short(x) : null;
 
+const metricVerOrder = (id: string) => { const m = /^E(\d+)$/i.exec(id); return m ? +m[1] : Number.MAX_SAFE_INTEGER; };
+
+function metricTimeline(d: Experiment): { id: string; rev: number | null; at: number | null }[] {
+  const curVer = String(d.metrics?.version || 'E1');
+  const rulesHist = Array.isArray(d.stepHistory?.rules) ? d.stepHistory.rules : [];
+  const curRulesRev = d.steps?.rules?.rev || rulesHist.length || 1;
+  const byId = new Map<string, { id: string; rev: number | null; at: number | null }>();
+  const put = (id: string, rev: number | null | undefined, at: number | null | undefined) => {
+    if (!id) return;
+    const prev = byId.get(id);
+    if (!prev) byId.set(id, { id, rev: typeof rev === 'number' ? rev : null, at: typeof at === 'number' ? at : null });
+    else {
+      if (prev.rev == null && typeof rev === 'number') prev.rev = rev;
+      if (prev.at == null && typeof at === 'number') prev.at = at;
+    }
+  };
+  for (const h of Array.isArray(d.metricHistory) ? d.metricHistory : []) {
+    if (h?.version) put(String(h.version), h.rev, h.at);
+  }
+  for (const r of d.rounds || []) {
+    if (r?.metrics?.version) put(String(r.metrics.version), null, r.start);
+    else if (r?.metricVersion) put(String(r.metricVersion), null, r.start);
+  }
+  for (const rh of rulesHist) {
+    if (typeof rh?.rev !== 'number' || rh.rev >= curRulesRev) continue;
+    const inferred = `E${rh.rev}`;
+    if (inferred !== curVer) put(inferred, rh.rev, rh.at);
+  }
+  const curHist = rulesHist.find((h: Data) => h.rev === curRulesRev) || rulesHist[rulesHist.length - 1];
+  put(curVer, curRulesRev, curHist?.at);
+  return [...byId.values()].sort((a, b) => {
+    const na = metricVerOrder(a.id), nb = metricVerOrder(b.id);
+    if (na !== nb) return na - nb;
+    if (a.rev != null && b.rev != null && a.rev !== b.rev) return a.rev - b.rev;
+    return (a.at || 0) - (b.at || 0);
+  });
+}
+
+// Single source of truth for which metric scale (E1/E2/...) governed a given round across lineage, comparison tables, cycles, and closeout reports.
+export function roundMetricVersion(d: Experiment, round: Data | null | undefined): string {
+  if (round?.metrics?.version) return String(round.metrics.version);
+  if (round?.metricVersion) return String(round.metricVersion);
+  const curVer = String(d.metrics?.version || 'E1');
+  if (!round) return curVer;
+  const timeline = metricTimeline(d);
+  if (timeline.length <= 1) return curVer;
+  const t = typeof round.start === 'number' ? round.start : 0;
+  let picked = timeline[0].id;
+  for (const entry of timeline) {
+    if (typeof entry.at === 'number' && t >= entry.at) picked = entry.id;
+  }
+  return picked;
+}
+
+// Single source of truth for the metric definition snapshot (version, items, slices) of a round.
+export function roundMetrics(d: Experiment, round: Data | null | undefined): Data {
+  if (round?.metrics && Array.isArray(round.metrics.items)) return round.metrics;
+  const ver = roundMetricVersion(d, round);
+  const fromHistory = (Array.isArray(d.metricHistory) ? d.metricHistory : []).find((h: Data) => String(h?.version || '') === ver && Array.isArray(h?.items));
+  if (fromHistory) return fromHistory;
+  const fromSibling = (d.rounds || []).find((r: Data) => r?.metrics && String(r.metrics.version || '') === ver && Array.isArray(r.metrics.items))?.metrics;
+  if (fromSibling) return fromSibling;
+  if (d.metrics) {
+    return String(d.metrics.version || 'E1') === ver ? d.metrics : { ...d.metrics, version: ver };
+  }
+  return { version: ver, items: [], slices: [] };
+}
+
 export function validateSliceSpecs(raw: unknown): string | null {
   if (raw === undefined) return null;
   if (!Array.isArray(raw) || !raw.length || raw.length > MAX_SLICE_TABLES) {
@@ -122,8 +190,9 @@ function sortSliceKeys(keys: (string | number)[]): (string | number)[] {
 }
 
 export function sliceSpecsOf(d: Experiment, round: Data): SliceTableSpec[] {
-  const declared: SliceTableSpec[] = Array.isArray((round.metrics || d.metrics)?.slices)
-    ? (round.metrics || d.metrics).slices
+  const rm = roundMetrics(d, round);
+  const declared: SliceTableSpec[] = Array.isArray(rm?.slices)
+    ? rm.slices
     : [];
   const byId = new Map<string, SliceTableSpec>(declared.map((s) => [s.id, s]));
   const extraOrder: string[] = [];
@@ -351,7 +420,7 @@ function resolveColumnSelection(
   const ancestors = lineageAncestorsOf(d, round.version);
   const directParent = ancestors[0] || '';
   const curVer = d.objective.currentVersion || '';
-  const scaleOf = (r: Data) => (r.metrics || d.metrics)?.version || '';
+  const scaleOf = (r: Data) => roundMetricVersion(d, r);
   const cycleLabelOf = (r: Data) => `${r.version}-${r.k ?? 1}`;
 
   const pool: ColRef[] = [];
@@ -521,7 +590,7 @@ function buildScalarComparison(
   opts: CompareQueryOpts,
 ): Data {
   const objId = d.objective.id;
-  const items: Data[] = (round.metrics || d.metrics)?.items || [];
+  const items: Data[] = roundMetrics(d, round)?.items || [];
   const lead = items.find((m: Data) => !m.guard) || items[0];
   const orderedDefs: Data[] = lead
     ? [lead, ...items.filter((m: Data) => m.guard && m.id !== lead.id), ...items.filter((m: Data) => !m.guard && m.id !== lead.id)]
@@ -996,7 +1065,7 @@ export function buildComparisonTable(
   const cols = resolveColumnSelection(d, round, allRounds, opts.cmpCols);
   const scalar = buildScalarComparison(d, round, cols, opts);
   const sliced = buildSliceComparison(d, cols, opts);
-  const items: Data[] = (round.metrics || d.metrics)?.items || [];
+  const items: Data[] = roundMetrics(d, round)?.items || [];
   const lead = items.find((m: Data) => !m.guard) || items[0];
   const ctrlGroup = (round.plan?.groups || []).find((g: Data) => g.control) || null;
   const nonCtrlGroups = (round.plan?.groups || []).filter((g: Data) => !g.control);
