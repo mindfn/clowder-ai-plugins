@@ -3105,3 +3105,78 @@ test('alpha.127: manual finish and automatic target stop both generate structure
   assert.match(autoExp.closeoutReport.markdown, /达到周期上限自动结项/);
   assert.ok(autoExp.messages.some((m) => m.body.includes('### 1. 结项概览')));
 });
+
+test('alpha.129: expDecide while paused defers versionRequest until life:resume, supports re-deciding while deferred, recovers stranded legacy resumeTo:pending, and rejects done with 409', async (t) => {
+  const f = await fixture(t), o = await f.create({ auto: 'none', scheduleMode: 'unlimited' });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [701] });
+  await execute(f, o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', {
+    cycle: 1,
+    verdict: 'insufficient',
+    findings: 'Need device executor',
+    options: [
+      { k: 'exec-fix', title: 'Direct execution fix', why: 'fix executor', kind: 'execution', target: 'exec' },
+      { k: 'alt-fix', title: 'Alt direction', why: 'alt', kind: 'code', target: 'model' },
+    ],
+  }, 'cat-b5ddoo9l', o.thread)).ok, true);
+
+  // Pause while pending decision, then decide while paused: decision is deferred (no premature versionRequest / wake).
+  assert.equal((await f.http('POST', { op: 'life', action: 'pause', objective: o.id })).status, 200);
+  assert.equal((await f.http('POST', { op: 'expDecide', objective: o.id, n: 1, pick: 'direction', directionId: 'alt-fix' })).status, 200);
+  let exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.objective.state, 'paused');
+  assert.equal(exp.objective.resumeTo, 'running');
+  assert.equal(exp.rounds[0].decision.directionId, 'alt-fix');
+  assert.equal(exp.rounds[0].decision.deferred, true);
+  assert.equal(exp.versionRequest, undefined);
+
+  // Can still re-decide while deferred & paused before resume.
+  assert.equal((await f.http('POST', { op: 'expDecide', objective: o.id, n: 1, pick: 'direction', directionId: 'exec-fix' })).status, 200);
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.rounds[0].decision.directionId, 'exec-fix');
+  assert.equal(exp.rounds[0].decision.deferred, true);
+
+  // Resume clears deferred, enters running (not pending), and immediately dispatches versionRequest to iterate member.
+  assert.equal((await f.http('POST', { op: 'life', action: 'resume', objective: o.id })).status, 200);
+  exp = (await f.read()).experiments[o.id];
+  assert.equal(exp.objective.state, 'running');
+  assert.equal(exp.rounds[0].decision.deferred, undefined);
+  assert.equal(exp.versionRequest?.cycle, 1);
+  assert.equal(exp.versionRequest?.direct, true);
+  assert.equal(exp.versionRequest?.decision?.directionId, 'exec-fix');
+  assert.ok(f.sends.some((s) => s.wake?.catId === 'codex' && s.payload?.elements?.[0]?.payload?.text?.includes('Direct execution fix')));
+
+  // Legacy stranded recovery (pre-alpha.129: paused with resumeTo='pending', round 1 decided without deferred flag, no versionRequest).
+  const fLeg = await fixture(t), oLeg = await fLeg.create({ auto: 'none', scheduleMode: 'unlimited' });
+  await fLeg.initialize(oLeg, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [702] });
+  await execute(fLeg, oLeg);
+  await fLeg.tool('task', {}, 'cat-b5ddoo9l', oLeg.thread);
+  assert.equal((await fLeg.tool('conclude', {
+    cycle: 1,
+    verdict: 'insufficient',
+    findings: 'Need legacy exec fix',
+    options: [{ k: 'exec-fix', title: 'Legacy exec fix', why: 'fix', kind: 'execution', target: 'exec' }],
+  }, 'cat-b5ddoo9l', oLeg.thread)).ok, true);
+  assert.equal((await fLeg.http('POST', { op: 'life', action: 'pause', objective: oLeg.id })).status, 200);
+  await retain(fLeg.storage, ownerKey('owner'), (st) => {
+    const d = st.experiments[oLeg.id];
+    d.objective.resumeTo = 'pending';
+    d.rounds[0].decision = { pick: 'direction', directionId: 'exec-fix', note: 'legacy', by: '墨墨（受托）', at: Date.now() };
+  });
+  assert.equal((await fLeg.http('POST', { op: 'life', action: 'resume', objective: oLeg.id })).status, 200);
+  const legExp = (await fLeg.read()).experiments[oLeg.id];
+  assert.equal(legExp.objective.state, 'running');
+  assert.equal(legExp.versionRequest?.cycle, 1);
+  assert.equal(legExp.versionRequest?.direct, true);
+
+  // Deciding a finished (done) objective must fail closed with 409 without mutating round.decision.
+  const fDone = await fixture(t), oDone = await fDone.create({ auto: 'none', scheduleMode: 'unlimited' });
+  await fDone.initialize(oDone, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [703] });
+  await execute(fDone, oDone);
+  await report(fDone, oDone, 'keep');
+  assert.equal((await fDone.http('POST', { op: 'life', action: 'finish', objective: oDone.id, note: 'done' })).status, 200);
+  const resDone = await fDone.http('POST', { op: 'expDecide', objective: oDone.id, n: 1, pick: 'direction', directionId: 'next' });
+  assert.equal(resDone.status, 409);
+  assert.equal((await fDone.read()).experiments[oDone.id].rounds[0].decision, null);
+});

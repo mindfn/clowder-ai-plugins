@@ -3,6 +3,8 @@ import test from 'node:test';
 import { createFixtures } from '../dist/fixtures.js';
 import { invalidateProjects, projects, PROJECTS_TTL_MS, threadProject, withLiveProjects } from '../dist/projects.js';
 import { GC_GRACE_MS, isOwnerKey, LIMIT, listOwners, load, ownerKey, readState, retain, update } from '../dist/store.js';
+import { statusAction } from '../dist/tools.js';
+import { follow, viewModel } from '../dist/views.js';
 
 const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 
@@ -347,4 +349,30 @@ test('projects() caches with TTL and single-flight dedup, threadProject() caches
   assert.equal(base.objectives['/ws/gamma'], undefined);
   assert.ok(merged.projects.some((p) => p.id === '/ws/gamma'));
   assert.deepEqual(merged.objectives['/ws/gamma'], []);
+});
+
+test('readonly views and statusAction never mutate cached RsiState (deep-frozen guard)', () => {
+  const deepFreeze = (obj) => {
+    if (obj && typeof obj === 'object' && !Object.isFrozen(obj)) {
+      Object.freeze(obj);
+      for (const v of Object.values(obj)) deepFreeze(v);
+    }
+    return obj;
+  };
+  const state = createFixtures(1800000000000).state;
+  const before = JSON.stringify(state);
+  deepFreeze(state);
+
+  const live = [{ id: '/ws/live-proj', name: 'live-proj', exp: true, projectPath: '/ws/live-proj' }];
+  const withLive = withLiveProjects(state, live);
+  for (const project of ['cartpole', 'pd-ttft', '/ws/live-proj']) {
+    for (const view of ['home', 'exp', 'metrics', 'library', 'cards', 'record', 'doc', 'ver']) {
+      const q = { view, project };
+      follow(withLive, q);
+      viewModel(withLive, view, q);
+    }
+  }
+  const ctx = { catId: 'cat-drby1x4c', threadId: 't-none', userId: 'owner', invocationId: 'inv', async assertCurrent() {} };
+  statusAction(state, {}, ctx);
+  assert.equal(JSON.stringify(state), before);
 });

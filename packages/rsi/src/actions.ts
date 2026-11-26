@@ -21,6 +21,21 @@ function touched(state: RsiState, d: Experiment, item: Data, now: number, what: 
   message(state, d, now, `你${what}第 ${d.plan.findIndex((p) => p.k === item.section) + 1} 步「${item.title}」`, item.value + (stale.length ? `\n\n依赖它的第 ${stale.join('、')} 步已标过期；按新版本重做会按依赖顺序重新 @ 对应的成员。` : ''));
 }
 
+function dispatchDecision(state: RsiState, d: Experiment, round: Data, now: number) {
+  d.objective.state = 'running';
+  if (d.candidate || round.decision.pick === 'same') {
+    if (!d.candidate) {
+      const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, ...basePlan } = round.plan;
+      const confirmSeedCount = d.policy.confirmSeeds || round.plan.seeds.length;
+      d.upcoming = { ...basePlan, tier: 'confirm', skipControl: false, seeds: freshSeeds(d, confirmSeedCount), groups: [controlGroup(d)] };
+    }
+    message(state, d, now, d.candidate ? '下一周期：确认赢家' : '下一周期：当前版本对照', '在已确认的时段运行，也可点「跑一轮」。', 'plan');
+    syncObjective(state, d);
+    return;
+  }
+  requestVersion(state, d, round, now);
+}
+
 export function act(state: RsiState, body: Data, query: Data, now: number, actor = '你'): Data {
   const project = body.project || query.project || 'cartpole';
   if (!state.objectives[project]) return { error: 'Project not found', status: 404 };
@@ -609,7 +624,23 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
         }
       } else if (body.action === 'resume') {
         if (objective.state !== 'paused') return { error: 'Objective is not paused' };
-        const targetState = objective.resumeTo || (d?.rounds.some((r: Data) => r.report && !r.decision) ? 'pending' : 'running');
+        const prevResumeTo = objective.resumeTo;
+        const hasUndecided = !!d?.rounds.some((r: Data) => r.report && !r.decision);
+        const lastRound = d?.rounds.at(-1);
+        const strandedLegacy = !!d?.objective.projectPath
+          && prevResumeTo === 'pending'
+          && !!lastRound?.report
+          && !!lastRound.decision
+          && lastRound.decision.pick !== 'same'
+          && !d.candidate
+          && !d.versionRequest
+          && d.versions.at(-1)?.id === lastRound.version;
+        const deferredRound = d?.objective.projectPath && lastRound?.report && lastRound.decision
+          && (lastRound.decision.deferred || strandedLegacy)
+          ? lastRound
+          : undefined;
+        const rawTarget = prevResumeTo || (hasUndecided ? 'pending' : 'running');
+        const targetState = rawTarget === 'pending' && !hasUndecided ? 'running' : rawTarget;
         objective.state = targetState;
         delete objective.resumeTo;
         if (d) {
@@ -630,6 +661,10 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
             if (!d.versionRequest.invocationId) delete d.versionRequest.stalledNotified;
           }
           message(state, d, now, `${actor}恢复了评估项`, `已恢复为 ${stateLabel(targetState)} 并启用执行器；等待决策/分析/版本计时已从本次恢复重新起算。`, 'plan');
+          if (deferredRound) {
+            delete deferredRound.decision.deferred;
+            dispatchDecision(state, d, deferredRound, now);
+          }
         }
       } else if (body.action === 'finish') {
         if (d?.rounds.some((r: Data) => r.state === 'running')) {
@@ -711,30 +746,25 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       if (!['direction', 'same', 'info', 'addVar', 'metric', 'goal'].includes(body.pick)) return { error: 'Invalid experiment decision' };
       if (body.pick !== 'direction' && body.pick !== 'same' && body.note == null) return { ok: true, act: 'dialog', args: { kind: 'rsiExpNote', n: body.n, pick: body.pick, directionId: body.directionId } };
       if (body.pick === 'direction' && !round.report.directions.some((x: Data) => x.id === body.directionId)) return { error: 'Direction not found', status: 404 };
+      if (d.objective.projectPath && ['done', 'retired'].includes(d.objective.state)) return { error: 'Objective is not active', status: 409 };
       const canRedecide = !!round.decision
         && !!d.objective.projectPath
         && !d.rounds.some((r: Data) => r.n > round.n)
-        && d.versionRequest?.cycle === round.n
-        && !d.versionRequest.repair;
+        && ((d.versionRequest?.cycle === round.n && !d.versionRequest.repair) || !!round.decision.deferred);
       if (round.decision && !canRedecide) return { error: 'Round already decided', status: 409 };
-      if (canRedecide && ['done', 'paused', 'retired'].includes(d.objective.state)) return { error: 'Objective is not active', status: 409 };
+      if (canRedecide && !round.decision.deferred && d.objective.state === 'paused') return { error: 'Objective is not active', status: 409 };
       if (canRedecide) delete d.versionRequest;
       round.decision = { pick: body.pick, directionId: body.directionId ?? null, note: body.note ?? '', by: actor, at: now };
       const n = round.n + 1, current = round.plan.groups[0];
       if (d.objective.projectPath) {
-        if (['done', 'paused', 'retired'].includes(d.objective.state)) return { ok: true };
-        d.objective.state = 'running';
-        if (d.candidate || body.pick === 'same') {
-          if (!d.candidate) {
-            const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, ...basePlan } = round.plan;
-            const confirmSeedCount = d.policy.confirmSeeds || round.plan.seeds.length;
-            d.upcoming = { ...basePlan, tier: 'confirm', skipControl: false, seeds: freshSeeds(d, confirmSeedCount), groups: [controlGroup(d)] };
-          }
-          message(state, d, now, d.candidate ? '下一周期：确认赢家' : '下一周期：当前版本对照', '在已确认的时段运行，也可点「跑一轮」。', 'plan');
+        if (d.objective.state === 'paused') {
+          round.decision.deferred = true;
+          if (d.objective.resumeTo === 'pending') d.objective.resumeTo = 'running';
+          message(state, d, now, `${actor}已暂存第 ${round.n} 周期决定`, '评估项当前处于暂停状态；恢复后会自动派发该决定对应的版本或下一周期计划。', 'plan');
           syncObjective(state, d);
           return { ok: true };
         }
-        requestVersion(state, d, round, now);
+        dispatchDecision(state, d, round, now);
         return { ok: true };
       }
       d.objective.state = 'running'; d.objective.round = n;
