@@ -223,7 +223,41 @@ export function matrix(d: Experiment, round: Data) {
 }
 
 export function comparison(d: Experiment, round: Data) {
-  const cells = matrix(d, round), metrics = roundMetrics(d, round).items, main = metrics.find((m: Data) => !m.guard);
+  const scale = roundMetrics(d, round);
+  if (scale.fallback) {
+    const prev = round.report?.compare;
+    if (prev && Array.isArray(prev.groups)) {
+      const prevMatrix = Array.isArray(round.report?.matrix) && round.report.matrix.length
+        ? structuredClone(round.report.matrix)
+        : matrix(d, round);
+      return {
+        ...structuredClone(prev),
+        cycle: prev.cycle ?? round.n,
+        preservedFromReport: true,
+        matrix: prevMatrix,
+      };
+    }
+    const cells = matrix(d, round), metrics = scale.items, main = metrics.find((m: Data) => !m.guard);
+    const control = round.plan.groups.find((g: Data) => g.control), cell = (group: string) => cells.find((m: Data) => m.group === group && m.metric === main?.id);
+    const reference = control && cell(control.id);
+    const groups = round.plan.groups.map((g: Data) => {
+      const result = cell(g.id);
+      const delta = typeof result?.mean === 'number' && typeof reference?.mean === 'number' ? result.mean - reference.mean : null;
+      return { group: g.id, version: g.version, control: !!g.control, mean: result?.mean ?? null, delta, eligible: false, guardrails: [], beatsControl: false };
+    });
+    return {
+      cycle: round.n,
+      against: control?.id || null,
+      metric: main?.id,
+      dir: main?.dir,
+      comparable: false,
+      unrecomputable: true,
+      unrecomputableReason: `历史量尺 ${scale.version} 快照缺失且无原报告实录，无法按现行 ${d.metrics?.version || ''} 规则复算同周期判定`,
+      groups,
+      matrix: cells,
+    };
+  }
+  const cells = matrix(d, round), metrics = scale.items, main = metrics.find((m: Data) => !m.guard);
   const control = round.plan.groups.find((g: Data) => g.control), cell = (group: string) => cells.find((m: Data) => m.group === group && m.metric === main?.id);
   const valid = (group: string) => round.runs.filter((r: Data) => r.group === group).every((r: Data) => r.state === 'done' && !r.error);
   const reference = control && cell(control.id), comparable = !!reference && reference.n === round.plan.seeds.length && valid(control.id);
@@ -635,7 +669,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
       ...(disposition ? { disposition } : {}),
       ...(tag ? { tag } : {}),
       ...(comparisons.length ? { comparisons } : {}),
-      compare: { ...compare, note: '仅比较本周期 control；区间为种子均值 ± 样本标准差。' },
+      compare: { ...compare, note: compare.unrecomputableReason || prev.compare?.note || '仅比较本周期 control；区间为种子均值 ± 样本标准差。' },
     };
     round.stageMembers ||= {};
     round.stageMembers.eval = { catId: member.catId, name: member.name };

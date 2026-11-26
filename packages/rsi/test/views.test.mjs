@@ -2030,7 +2030,7 @@ test('unified roundMetrics / roundMetricVersion keeps compare table cross-scale 
   assert.equal(legacyE1Scale.items.find((m) => m.id === 'p99').threshold, 100);
   assert.equal(legacyE1Scale.items.find((m) => m.id === 'p99').line, '≤ 100 ms');
   assert.equal(legacyE1Scale.items.find((m) => m.id === 'qps').how, undefined);
-  assert.equal(legacyE1Scale.items.find((m) => m.id === 'unrecorded-guard').threshold, undefined);
+  assert.equal(legacyE1Scale.items.find((m) => m.id === 'unrecorded-guard'), undefined);
   assert.equal(legacyE1Scale.slices[0].stats[0].threshold, undefined);
   const legacyC1Table = buildComparisonTable(d, d.rounds[0], d.rounds);
   assert.equal(legacyC1Table.sections.flatMap((s) => s.rows).find((r) => r.id === 'p99').ruleText, '≤ 100 ms');
@@ -2049,4 +2049,92 @@ test('unified roundMetrics / roundMetricVersion keeps compare table cross-scale 
   assert.equal(legacyCross.pairSameScale, false);
   assert.equal(legacyCross.sections.flatMap((s) => s.rows).find((r) => r.id === 'qps').deltaSuppressed, true);
   assert.match(buildCloseoutReport(d).markdown, /v2·C1·E1/);
+
+  // 6. Historical re-evaluation on a legacy snapshot-less E1 round NEVER overturns original verdicts or guardrail checks
+  //    when E2 deletes an E1 guardrail OR adds a brand-new E2 guardrail, and marks unrecomputable when no prior compare exists.
+  const { comparison: cmpFn } = await import('../dist/cycles.js');
+  const { toolAction } = await import('../dist/tools.js');
+  const evalCatId = d.members.find((m) => m.role === 'evaluate').catId;
+  d.objective.thread = 't-reeval-scale';
+  const makePairRound = (candP99, prevEligible, prevBeats, prevPass) => ({
+    n: 1, version: 'v2', start: now + 1100, end: now + 1200, state: 'done',
+    plan: {
+      groups: [
+        { id: 'control', label: 'v1', version: 'v1', vars: {}, control: true },
+        { id: 'change', label: 'v2', version: 'v2', vars: {}, control: false },
+      ],
+      seeds: [1],
+    },
+    runs: [
+      { id: 'r-c', group: 'control', seed: 1, state: 'done', metrics: { qps: 7.0, p99: 80 }, attempts: [], env: {} },
+      { id: 'r-t', group: 'change', seed: 1, state: 'done', metrics: { qps: 9.0, p99: candP99 }, attempts: [], env: {} },
+    ],
+    report: {
+      verdict: prevBeats ? 'keep' : 'rollback', headline: 'E1 original', summary: 'E1 original',
+      matrix: [
+        { group: 'control', metric: 'qps', mean: 7.0, sd: null, n: 1, seeds: [{ seed: 1, value: 7.0, state: 'done' }] },
+        { group: 'control', metric: 'p99', mean: 80, sd: null, n: 1, seeds: [{ seed: 1, value: 80, state: 'done' }] },
+        { group: 'change', metric: 'qps', mean: 9.0, sd: null, n: 1, seeds: [{ seed: 1, value: 9.0, state: 'done' }] },
+        { group: 'change', metric: 'p99', mean: candP99, sd: null, n: 1, seeds: [{ seed: 1, value: candP99, state: 'done' }] },
+      ],
+      directions: [], predictions: [],
+      compare: {
+        cycle: 1, against: 'control', metric: 'qps', dir: 'up', comparable: true,
+        groups: [
+          { group: 'control', version: 'v1', control: true, mean: 7.0, delta: 0, eligible: true, guardrails: [{ metric: 'p99', seed: 1, value: 80, threshold: 100, dir: 'down', pass: true }], beatsControl: false },
+          { group: 'change', version: 'v2', control: false, mean: 9.0, delta: 2.0, eligible: prevEligible, guardrails: [{ metric: 'p99', seed: 1, value: candP99, threshold: 100, dir: 'down', pass: prevPass }], beatsControl: prevBeats },
+        ],
+      },
+      attribution: { assessedLayers: [] },
+    },
+    decision: { pick: 'same', by: '墨墨', at: now + 1300 }, events: [],
+  });
+
+  // 6a. E2 DELETED E1's p99 guardrail: candidate with P99=110 (> 100) MUST stay beatsControl=false, eligible=false, and retain p99 guardrail check across rsi_task & historical rsi_conclude.
+  d.metrics = { version: 'E2', items: [{ id: 'qps', name: '吞吐', dir: 'up', unit: 'req/s', guard: false }], slices: [] };
+  d.rounds[0] = makePairRound(110, false, false, false);
+  const scaleDel = roundMetrics(d, d.rounds[0]);
+  assert.equal(scaleDel.items.some((m) => m.id === 'p99' && m.guard === true && m.threshold === 100), true);
+  assert.equal(act(state, { op: 'evalAgain', objective: id, n: 1 }, { project }, now + 3000).ok, true);
+  const taskDel = toolAction(state, 'rsi.task', {}, { catId: evalCatId, threadId: 't-reeval-scale', invocationId: 'inv-del' }, now + 3005);
+  assert.equal(taskDel.evaluate.comparison.preservedFromReport, true);
+  assert.equal(taskDel.evaluate.comparison.groups.find((g) => g.group === 'change').beatsControl, false);
+  assert.equal(taskDel.evaluate.comparison.groups.find((g) => g.group === 'change').guardrails[0].metric, 'p99');
+  assert.equal(taskDel.evaluate.comparison.groups.find((g) => g.group === 'change').guardrails[0].pass, false);
+  const conDel = conclude(state, d, { cycle: 1, verdict: 'rollback', findings: '重评保留原越线', options: [option('re-del', 'code', 'serve.py')] }, now + 3010);
+  assert.equal(conDel.ok, true);
+  assert.equal(d.rounds[0].report.compare.groups.find((g) => g.group === 'change').beatsControl, false);
+  assert.equal(d.rounds[0].report.compare.groups.find((g) => g.group === 'change').eligible, false);
+  assert.equal(d.rounds[0].report.compare.groups.find((g) => g.group === 'change').guardrails[0].pass, false);
+
+  // 6b. E2 ADDED a brand-new guardrail (new-guard): candidate with P99=90 (<= 100) that originally won MUST stay beatsControl=true, eligible=true across rsi_task & historical rsi_conclude.
+  d.metrics = {
+    version: 'E2',
+    items: [
+      { id: 'qps', name: '吞吐', dir: 'up', unit: 'req/s', guard: false },
+      { id: 'p99', name: 'P99 延迟', dir: 'down', unit: 'ms', guard: true, threshold: 210, line: '≤ 210 ms' },
+      { id: 'new-guard', name: '新增护栏', dir: 'down', unit: '%', guard: true, threshold: 10, line: '≤ 10 %' },
+    ],
+    slices: [],
+  };
+  d.rounds[0] = makePairRound(90, true, true, true);
+  assert.equal(act(state, { op: 'evalAgain', objective: id, n: 1 }, { project }, now + 3100).ok, true);
+  const taskAdd = toolAction(state, 'rsi.task', {}, { catId: evalCatId, threadId: 't-reeval-scale', invocationId: 'inv-add' }, now + 3105);
+  assert.equal(taskAdd.evaluate.comparison.preservedFromReport, true);
+  assert.equal(taskAdd.evaluate.comparison.groups.find((g) => g.group === 'change').beatsControl, true);
+  assert.equal(taskAdd.evaluate.comparison.groups.find((g) => g.group === 'change').eligible, true);
+  const conAdd = conclude(state, d, { cycle: 1, verdict: 'keep', findings: '重评保留原胜出', options: [option('re-add', 'code', 'serve.py')] }, now + 3110);
+  assert.equal(conAdd.ok, true);
+  assert.equal(d.rounds[0].report.compare.groups.find((g) => g.group === 'change').beatsControl, true);
+  assert.equal(d.rounds[0].report.compare.groups.find((g) => g.group === 'change').eligible, true);
+
+  // 6c. Missing E1 snapshot AND no prior report.compare -> comparison explicitly flags unrecomputable instead of fabricating E2 verdicts.
+  const noReportRound = makePairRound(90, true, true, true);
+  noReportRound.report = null;
+  d.rounds[0] = noReportRound;
+  const cmpMissing = cmpFn(d, d.rounds[0]);
+  assert.equal(cmpMissing.comparable, false);
+  assert.equal(cmpMissing.unrecomputable, true);
+  assert.match(cmpMissing.unrecomputableReason, /E1/);
+  assert.equal(cmpMissing.groups.every((g) => !g.eligible && !g.beatsControl && g.guardrails.length === 0), true);
 });

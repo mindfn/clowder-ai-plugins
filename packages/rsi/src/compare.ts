@@ -98,8 +98,8 @@ export function roundMetrics(d: Experiment, round: Data | null | undefined): Dat
   if (fromSibling) return fromSibling;
   if (d.metrics) {
     if (String(d.metrics.version || 'E1') === ver) return d.metrics;
-    // Historical snapshot was lost before metricHistory existed: never stamp current scale's thresholds/formulas onto an older version.
-    // Recover any guardrail threshold/dir recorded in this round's own report.compare; omit unverified thresholds/formulas.
+    // Historical snapshot was lost before metricHistory existed: never stamp current scale's thresholds/formulas/guardrail list onto an older version.
+    // Reconstruct guardrails strictly from this round's own report.compare, preserve deleted E1 guardrails/main metric, and drop unrecorded E2-only guardrails.
     const recordedGuards = new Map<string, { threshold: number; dir?: string }>();
     for (const g of round?.report?.compare?.groups || []) {
       for (const gr of g?.guardrails || []) {
@@ -108,16 +108,39 @@ export function roundMetrics(d: Experiment, round: Data | null | undefined): Dat
         }
       }
     }
-    const items = (d.metrics.items || []).map((m: Data) => {
+    const observedIds = new Set<string>(recordedGuards.keys());
+    if (typeof round?.report?.compare?.metric === 'string' && round.report.compare.metric) observedIds.add(round.report.compare.metric);
+    for (const c of round?.report?.matrix || []) if (c?.metric) observedIds.add(String(c.metric));
+    for (const u of round?.runs || []) if (record(u?.metrics)) for (const k of Object.keys(u.metrics)) observedIds.add(k);
+
+    const seen = new Set<string>();
+    const items: Data[] = [];
+    for (const m of d.metrics.items || []) {
       const rec = recordedGuards.get(m.id);
+      if (!rec && observedIds.size > 0 && !observedIds.has(m.id)) continue;
+      seen.add(m.id);
       const { threshold: _t, line: _l, how: _h, ...base } = m;
       if (rec) {
         const dir = rec.dir || m.dir;
         const line = `${dir === 'up' ? '≥' : '≤'} ${rec.threshold}${m.unit ? ' ' + m.unit : ''}`;
-        return { ...base, dir, threshold: rec.threshold, line };
+        items.push({ ...base, guard: true, dir, threshold: rec.threshold, line });
+      } else {
+        items.push({ ...base, guard: false });
       }
-      return base;
-    });
+    }
+    // Preserve E1 guardrails that were later deleted from current d.metrics.items.
+    for (const [gid, rec] of recordedGuards) {
+      if (seen.has(gid)) continue;
+      seen.add(gid);
+      const dir = rec.dir || 'down';
+      items.push({ id: gid, name: gid, dir, guard: true, threshold: rec.threshold, line: `${dir === 'up' ? '≥' : '≤'} ${rec.threshold}` });
+    }
+    // Preserve E1 main metric if deleted from current d.metrics.items.
+    const recordedMain = round?.report?.compare?.metric;
+    if (typeof recordedMain === 'string' && recordedMain && !seen.has(recordedMain)) {
+      seen.add(recordedMain);
+      items.unshift({ id: recordedMain, name: recordedMain, dir: round.report.compare.dir || 'up', guard: false });
+    }
     const slices = Array.isArray(d.metrics.slices)
       ? d.metrics.slices.map((s: Data) => ({
           ...s,
