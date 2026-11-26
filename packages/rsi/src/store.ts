@@ -74,8 +74,17 @@ interface LoadedState {
   value: unknown;
   legacy: boolean;
   root?: ShardedRoot;
+  shards?: Map<string, unknown>;
   shardJson?: Map<string, string>;
 }
+
+const INCREMENTAL_SHARD_LIMIT = 8;
+const ownerCache = new WeakMap<RsiStorage, Map<string, LoadedState>>();
+const cacheFor = (storage: RsiStorage) => {
+  let map = ownerCache.get(storage);
+  if (!map) ownerCache.set(storage, map = new Map());
+  return map;
+};
 
 const isShardedRoot = (value: unknown): value is ShardedRoot =>
   record(value) && value.sharded === 1 && Array.isArray(value.projects) && record(value.objectives) && record(value.shards) && Array.isArray(value.outbox);
@@ -97,21 +106,13 @@ function referencedShardKeys(shards: ShardManifest | undefined): Set<string> {
   return keys;
 }
 
-async function assemble(
-  raw: { revision: number; value: unknown },
-  getShard: (shardKey: string) => Promise<unknown>,
-): Promise<LoadedState> {
-  if (isState(raw.value)) return { revision: raw.revision, value: raw.value, legacy: true };
-  if (!isShardedRoot(raw.value)) return { revision: raw.revision, value: raw.value, legacy: false };
-  const root = raw.value, shards = root.shards;
-  const needed = [...referencedShardKeys(shards)];
-  const fetched = await Promise.all(needed.map(async (k) => [k, await getShard(k)] as const));
-  const values = new Map<string, unknown>(), shardJson = new Map<string, string>();
-  for (const [k, v] of fetched) {
-    if (v === undefined) return { revision: raw.revision, value: { corrupted: true, missingShard: k }, legacy: false };
-    values.set(k, v);
-    shardJson.set(k, JSON.stringify(v));
-  }
+function buildShardedState(
+  root: ShardedRoot,
+  values: Map<string, unknown>,
+  shardJson: Map<string, string>,
+  revision: number,
+): LoadedState {
+  const shards = root.shards;
   const details = shards.details ? (values.get(shards.details) as Record<string, Data>) : {};
   const library: Record<string, Data[]> = {};
   for (const p of root.projects as Data[]) library[p.id] = [];
@@ -122,35 +123,114 @@ async function assemble(
   }
   const experiments: Record<string, Experiment> = {};
   for (const [expId, meta] of Object.entries(shards.experiments || {})) {
-    const exp = structuredClone(values.get(meta.key)) as Experiment;
-    if (Array.isArray(exp.rounds)) {
-      exp.rounds = exp.rounds.map((r: Data) =>
-        record(r) && typeof r.__roundRef === 'number' && meta.rounds[String(r.__roundRef)]
-          ? structuredClone(values.get(meta.rounds[String(r.__roundRef)])) as Data
-          : r);
-    }
-    experiments[expId] = exp;
+    const rawExp = values.get(meta.key) as Experiment;
+    const rounds = Array.isArray(rawExp.rounds)
+      ? rawExp.rounds.map((r: Data) =>
+          record(r) && typeof r.__roundRef === 'number' && meta.rounds[String(r.__roundRef)]
+            ? values.get(meta.rounds[String(r.__roundRef)]) as Data
+            : r)
+      : rawExp.rounds;
+    experiments[expId] = { ...rawExp, ...(rounds !== undefined ? { rounds } : {}) };
   }
   const { sharded: _s, seq: _q, shards: _m, gc: _g, ...meta } = root;
   const state = { ...meta, details, library, experiments } as RsiState;
-  return { revision: raw.revision, value: state, legacy: false, root, shardJson };
+  return { revision, value: state, legacy: false, root, shards: values, shardJson };
 }
 
-export async function readState(storage: RsiStorage, key: string): Promise<LoadedState | undefined> {
-  // Single storage.list() = 1 Host RPC (avoiding ExecutionRpcPeer's 64 in-flight RPC cap under
-  // concurrent view=home + view=exp requests) and 1 atomic Redis HGETALL snapshot.
+async function assemble(
+  raw: { revision: number; value: unknown },
+  getShard: (shardKey: string) => Promise<unknown>,
+  cached?: LoadedState,
+): Promise<LoadedState> {
+  if (isState(raw.value)) return { revision: raw.revision, value: raw.value, legacy: true };
+  if (!isShardedRoot(raw.value)) return { revision: raw.revision, value: raw.value, legacy: false };
+  const root = raw.value, shards = root.shards;
+  const needed = [...referencedShardKeys(shards)];
+  const values = new Map<string, unknown>(), shardJson = new Map<string, string>();
+  const missing: string[] = [];
+  for (const k of needed) {
+    if (cached?.shards?.has(k)) {
+      const v = cached.shards.get(k);
+      values.set(k, v);
+      shardJson.set(k, cached.shardJson?.get(k) ?? JSON.stringify(v));
+    } else {
+      missing.push(k);
+    }
+  }
+  if (missing.length) {
+    const fetched = await Promise.all(missing.map(async (k) => [k, await getShard(k)] as const));
+    for (const [k, v] of fetched) {
+      if (v === undefined) return { revision: raw.revision, value: { corrupted: true, missingShard: k }, legacy: false };
+      values.set(k, v);
+      shardJson.set(k, JSON.stringify(v));
+    }
+  }
+  return buildShardedState(root, values, shardJson, raw.revision);
+}
+
+function saveCache(storage: RsiStorage, key: string, loaded: LoadedState) {
+  const cache = cacheFor(storage);
+  if (isState(loaded.value)) cache.set(key, loaded);
+  else cache.delete(key);
+}
+
+function presentState(loaded: LoadedState, readonly: boolean): LoadedState {
+  return readonly ? loaded : { ...loaded, value: structuredClone(loaded.value) };
+}
+
+export async function readState(storage: RsiStorage, key: string, options?: { readonly?: boolean }): Promise<LoadedState | undefined> {
+  const readonly = !!options?.readonly;
+  const cache = cacheFor(storage);
+  const cached = cache.get(key);
+  if (cached) {
+    // Warm path: 1 lightweight root get (~40–80 KB) instead of full multi-MB storage.list().
+    const raw = await storage.get(key);
+    if (!raw) {
+      cache.delete(key);
+      return undefined;
+    }
+    if (raw.revision === cached.revision) return presentState(cached, readonly);
+    if (isShardedRoot(raw.value) && cached.shards) {
+      const needed = [...referencedShardKeys(raw.value.shards)];
+      const missing = needed.filter((k) => !cached.shards!.has(k));
+      if (missing.length <= INCREMENTAL_SHARD_LIMIT) {
+        const loaded = await assemble(raw, async (k) => (await storage.get(k))?.value, cached);
+        if (isState(loaded.value)) {
+          cache.set(key, loaded);
+          return presentState(loaded, readonly);
+        }
+        // A shard disappeared between root get and shard get (or state is genuinely corrupted):
+        // fall through to 1 atomic storage.list() snapshot to verify before reporting corruption.
+      }
+    } else if (!isShardedRoot(raw.value)) {
+      const loaded = await assemble(raw, async () => undefined);
+      saveCache(storage, key, loaded);
+      return presentState(loaded, readonly);
+    }
+  }
+  // Cold path (or bulk shard delta): 1 storage.list() = 1 Host RPC & 1 atomic Redis HGETALL snapshot.
   const all = await storage.list();
   const raw = all[key];
-  if (!raw) return undefined;
-  return assemble(raw, async (k) => all[k]?.value);
+  if (!raw) {
+    cache.delete(key);
+    return undefined;
+  }
+  const loaded = await assemble(raw, async (k) => all[k]?.value, cached);
+  saveCache(storage, key, loaded);
+  return presentState(loaded, readonly);
 }
 
 export async function listOwners(storage: RsiStorage): Promise<[string, { revision: number; value: RsiState; legacy: boolean }][]> {
+  const cache = cacheFor(storage);
   const all = await storage.list();
   const out: [string, { revision: number; value: RsiState; legacy: boolean }][] = [];
   for (const [key, entry] of Object.entries(all)) {
     if (!isOwnerKey(key)) continue;
-    const loaded = await assemble(entry, async (k) => all[k]?.value);
+    const cached = cache.get(key);
+    const loaded = cached && cached.revision === entry.revision
+      ? cached
+      : await assemble(entry, async (k) => all[k]?.value, cached);
+    saveCache(storage, key, loaded);
     if (isState(loaded.value)) out.push([key, { revision: loaded.revision, value: loaded.value, legacy: loaded.legacy }]);
   }
   return out;
@@ -169,18 +249,19 @@ async function commitSharded(
   expectedRevision: number | null,
   next: RsiState,
   prevRoot?: ShardedRoot,
+  prevShardsMap?: Map<string, unknown>,
   prevJson?: Map<string, string>,
   assertCurrent: () => Promise<void> = async () => {},
 ): Promise<{ ok: true } | { error: string; status: number }> {
   const nextSeq = (prevRoot?.seq || 0) + 1;
   const tag = shardTag(nextSeq);
   const prevShards = prevRoot?.shards;
-  const staged = new Map<string, { value: unknown; bytes: number }>();
+  const staged = new Map<string, { value: unknown; json: string; bytes: number }>();
 
   const planShard = (prevKey: string | undefined, newKey: string, value: unknown): string => {
     const json = JSON.stringify(value);
     if (prevKey && prevJson?.get(prevKey) === json) return prevKey;
-    staged.set(newKey, { value, bytes: Buffer.byteLength(json) });
+    staged.set(newKey, { value, json, bytes: Buffer.byteLength(json) });
     return newKey;
   };
 
@@ -220,7 +301,8 @@ async function commitSharded(
 
   const { details: _d, library: _l, experiments: _e, ...topMeta } = next;
   const nextRoot: ShardedRoot = { ...topMeta, sharded: 1, seq: nextSeq, shards: nextShards, ...(pendingGc.length ? { gc: pendingGc } : {}) };
-  const rootBytes = Buffer.byteLength(JSON.stringify(nextRoot));
+  const rootJson = JSON.stringify(nextRoot);
+  const rootBytes = Buffer.byteLength(rootJson);
   if (rootBytes > LIMIT) {
     return { error: `RSI 状态超过宿主 1 MiB 上限（${rootBytes} 字节，上限 ${LIMIT} 字节），这次的改动没有保存。`, status: 507 };
   }
@@ -247,28 +329,52 @@ async function commitSharded(
     return { error: 'RSI state changed, please retry', status: 409 };
   }
 
+  // Keep shard cache warm with JSON-roundtripped values so the next read avoids re-fetching staged shards.
+  const nextShardsMap = new Map<string, unknown>();
+  const nextShardJson = new Map<string, string>();
+  let complete = true;
+  for (const k of kept) {
+    const s = staged.get(k);
+    if (s) {
+      nextShardsMap.set(k, JSON.parse(s.json));
+      nextShardJson.set(k, s.json);
+    } else if (prevShardsMap?.has(k)) {
+      const v = prevShardsMap.get(k);
+      nextShardsMap.set(k, v);
+      nextShardJson.set(k, prevJson?.get(k) ?? JSON.stringify(v));
+    } else {
+      complete = false;
+      break;
+    }
+  }
+  if (complete) {
+    const parsedRoot = JSON.parse(rootJson) as ShardedRoot;
+    const rev = typeof committed.revision === 'number' ? committed.revision : -1;
+    cacheFor(storage).set(key, buildShardedState(parsedRoot, nextShardsMap, nextShardJson, rev));
+  }
+
   if (expiredGc.length) await deleteBestEffort(storage, expiredGc);
   return { ok: true };
 }
 
-export async function load(storage: RsiStorage, key: string, assertCurrent: () => Promise<void>) {
-  let current = await readState(storage, key);
+export async function load(storage: RsiStorage, key: string, assertCurrent: () => Promise<void>, options?: { readonly?: boolean }) {
+  let current = await readState(storage, key, options);
   if (!current) {
     const seeded = seedState();
     compact(seeded);
-    await commitSharded(storage, key, null, seeded, undefined, undefined, assertCurrent);
-    current = await readState(storage, key);
+    await commitSharded(storage, key, null, seeded, undefined, undefined, undefined, assertCurrent);
+    current = await readState(storage, key, options);
   }
   return current;
 }
 
 export async function update(storage: RsiStorage, key: string, change: (state: RsiState) => Data, assertCurrent = async () => {}) {
-  const current = await readState(storage, key);
+  const current = await readState(storage, key, { readonly: true });
   if (!current || !isState(current.value)) return { error: 'Invalid RSI data', status: 500 };
   const next = structuredClone(current.value), result = change(next);
   if (result.error) return result;
   compact(next);
-  const saved = await commitSharded(storage, key, current.revision, next, current.root, current.shardJson, assertCurrent);
+  const saved = await commitSharded(storage, key, current.revision, next, current.root, current.shards, current.shardJson, assertCurrent);
   return 'error' in saved ? saved : result;
 }
 

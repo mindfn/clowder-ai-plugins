@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createFixtures } from '../dist/fixtures.js';
+import { invalidateProjects, projects, PROJECTS_TTL_MS, threadProject, withLiveProjects } from '../dist/projects.js';
 import { GC_GRACE_MS, isOwnerKey, LIMIT, listOwners, load, ownerKey, readState, retain, update } from '../dist/store.js';
 
 const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -213,4 +214,137 @@ test('legacy monolithic single-key state reads seamlessly and migrates losslessl
   assert.deepEqual(after.value.experiments['cp-converge'].rounds[0].runs[0].metrics, { score: 0.9 });
   assert.deepEqual(Object.keys(after.value.details).sort(), Object.keys(legacy.details).sort());
   assert.deepEqual(after.value.library, legacy.library);
+});
+
+test('warm readState hits cache via 1 root get, incrementally fetches only new shards on revision change, and handles deletion cleanly', async () => {
+  const entries = new Map();
+  let revision = 0;
+  const counts = { list: 0, get: 0, getKeys: [] };
+  const storage = {
+    entries,
+    async list() { counts.list++; return Object.fromEntries([...entries].map(([k, v]) => [k, clone(v)])); },
+    async get(k) { counts.get++; counts.getKeys.push(k); return clone(entries.get(k)); },
+    async compareAndSet(k, expected, value) {
+      if ((entries.get(k)?.revision ?? null) !== expected) return { applied: false };
+      const rev = ++revision;
+      entries.set(k, { revision: rev, value: clone(value) });
+      return { applied: true, revision: rev };
+    },
+    async delete(k) { return { deleted: entries.delete(k) }; },
+  };
+  const key = ownerKey('cache-owner');
+  await load(storage, key, async () => {});
+  await retain(storage, key, (state) => {
+    state.experiments['cp-converge'].rounds = Array.from({ length: 12 }, (_, i) => ({
+      n: i + 1, state: 'done', version: 'v1', runs: [{ id: `r${i + 1}`, state: 'done', metrics: { score: i } }],
+    }));
+  });
+
+  // Warm cache hit: 1 root get, 0 list, 0 shard gets.
+  counts.list = 0; counts.get = 0; counts.getKeys.length = 0;
+  const hit = await readState(storage, key);
+  assert.equal(hit.value.experiments['cp-converge'].rounds.length, 12);
+  assert.equal(counts.list, 0);
+  assert.deepEqual(counts.getKeys, [key]);
+
+  // Simulate an external writer (separate storage wrapper so it does not touch `storage`'s cache)
+  // adding 1 closed round (changes 1 experiment shard + adds 1 closed round shard = 2 new shards).
+  const external = {
+    list: () => storage.list(),
+    get: (k) => storage.get(k),
+    compareAndSet: (k, exp, val) => storage.compareAndSet(k, exp, val),
+    delete: (k) => storage.delete(k),
+  };
+  await retain(external, key, (state) => {
+    state.experiments['cp-converge'].rounds.push({
+      n: 13, state: 'done', version: 'v2', runs: [{ id: 'r13', state: 'done', metrics: { score: 99 } }],
+    });
+  });
+
+  // Warm reader sees new revision and fetches ONLY root + 2 new shards, 0 list().
+  counts.list = 0; counts.get = 0; counts.getKeys.length = 0;
+  const inc = await readState(storage, key);
+  assert.equal(inc.value.experiments['cp-converge'].rounds.length, 13);
+  assert.equal(inc.value.experiments['cp-converge'].rounds[12].runs[0].metrics.score, 99);
+  assert.equal(counts.list, 0);
+  assert.equal(counts.getKeys.length, 3);
+  assert.equal(counts.getKeys[0], key);
+
+  // Subsequent read is a 1-get hit again, and mutating default readState output never poisons cache.
+  counts.list = 0; counts.get = 0; counts.getKeys.length = 0;
+  const hit2 = await readState(storage, key);
+  assert.equal(hit2.value.experiments['cp-converge'].rounds.length, 13);
+  assert.equal(counts.list, 0);
+  assert.deepEqual(counts.getKeys, [key]);
+  hit2.value.experiments['cp-converge'].objective.name = 'mutated-by-caller';
+  const hit3 = await readState(storage, key, { readonly: true });
+  assert.notEqual(hit3.value.experiments['cp-converge'].objective.name, 'mutated-by-caller');
+
+  // Deleting root evicts cache and returns undefined cleanly.
+  await storage.delete(key);
+  assert.equal(await readState(storage, key), undefined);
+});
+
+test('projects() caches with TTL and single-flight dedup, threadProject() caches positive hits, and withLiveProjects() does not mutate state', async (t) => {
+  let listCalls = 0, getCalls = 0;
+  const rows = [
+    { id: 't1', projectRef: '/ws/alpha', lastActiveAt: 10 },
+    { id: 't2', projectRef: '/ws/beta', lastActiveAt: 9 },
+  ];
+  const host = {
+    threads: {
+      async list() {
+        listCalls++;
+        await new Promise((r) => setTimeout(r, 5));
+        return clone(rows);
+      },
+      async get(id) {
+        getCalls++;
+        return clone(rows.find((r) => r.id === id) || null);
+      },
+    },
+  };
+
+  // Concurrent cold calls share a single scan (single-flight).
+  const [p1, p2] = await Promise.all([projects(host), projects(host)]);
+  assert.equal(listCalls, 1);
+  assert.deepEqual(p1.map((p) => p.id), ['/ws/alpha', '/ws/beta']);
+  assert.deepEqual(p2.map((p) => p.id), ['/ws/alpha', '/ws/beta']);
+
+  // Cached hit within TTL makes 0 RPCs.
+  const p3 = await projects(host);
+  assert.equal(listCalls, 1);
+  assert.equal(p3.length, 2);
+
+  // Explicit fresh or invalidateProjects forces a re-scan.
+  rows.push({ id: 't3', projectRef: '/ws/gamma', lastActiveAt: 11 });
+  const p4 = await projects(host, { fresh: true });
+  assert.equal(listCalls, 2);
+  assert.deepEqual(p4.map((p) => p.id), ['/ws/alpha', '/ws/beta', '/ws/gamma']);
+
+  invalidateProjects(host);
+  await projects(host);
+  assert.equal(listCalls, 3);
+
+  // TTL expiration refreshes automatically.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() + PROJECTS_TTL_MS + 1000 });
+  await projects(host);
+  assert.equal(listCalls, 4);
+
+  // threadProject caches positive hits and does not negative-cache missing threads.
+  assert.equal(await threadProject(host, 't1'), '/ws/alpha');
+  assert.equal(await threadProject(host, 't1'), '/ws/alpha');
+  assert.equal(getCalls, 1);
+  assert.equal(await threadProject(host, 'missing'), undefined);
+  assert.equal(await threadProject(host, 'missing'), undefined);
+  assert.equal(getCalls, 3);
+
+  // withLiveProjects returns merged view without mutating the cached base state.
+  const base = createFixtures(1800000000000).state;
+  const beforeProjects = base.projects.map((p) => p.id);
+  const merged = withLiveProjects(base, p4);
+  assert.deepEqual(base.projects.map((p) => p.id), beforeProjects);
+  assert.equal(base.objectives['/ws/gamma'], undefined);
+  assert.ok(merged.projects.some((p) => p.id === '/ws/gamma'));
+  assert.deepEqual(merged.objectives['/ws/gamma'], []);
 });

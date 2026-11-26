@@ -79,7 +79,7 @@ export interface RsiState {
 export interface RsiStorage {
   list(): Promise<Readonly<Record<string, { revision: number; value: unknown }>>>;
   get(key: string): Promise<{ revision: number; value: unknown } | undefined>;
-  compareAndSet(key: string, revision: number | null, value: unknown): Promise<{ applied: boolean }>;
+  compareAndSet(key: string, revision: number | null, value: unknown): Promise<{ applied: boolean; revision?: number }>;
   delete?(key: string, expectedRevision?: number): Promise<{ deleted: boolean }>;
 }
 

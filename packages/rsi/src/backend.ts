@@ -1,7 +1,7 @@
 import { follow, viewModel } from './views.js';
 import { act } from './actions.js';
 import { createRuntime } from './runtime.js';
-import { mergeProjects, projects } from './projects.js';
+import { invalidateProjects, mergeProjects, projects, threadProject, withLiveProjects } from './projects.js';
 import { isState, load, ownerKey, readState, record, update } from './store.js';
 import { operateAction, statusAction, toolAction } from './tools.js';
 import type { Data, Experiment, OwnerContext, RsiHost, ToolContext } from './types.js';
@@ -22,18 +22,33 @@ export function createRsi(host: RsiHost) {
     if (method === 'POST' && (!record(input.request.body) || typeof input.request.body.op !== 'string')) return json(400, { error: 'Invalid operation' });
     await context.assertCurrent();
     await ready;
-    const key = ownerKey(context.userId), query = input.request.query || {};
-    const current = await load(host.storage, key, () => context.assertCurrent());
+    const key = ownerKey(context.userId), query: Data = { ...(input.request.query || {}) };
+    const current = await load(host.storage, key, () => context.assertCurrent(), { readonly: true });
     if (!current) return json(409, { error: 'RSI state changed, please retry' });
     if (!isState(current.value)) return json(500, { error: 'Invalid RSI data' });
-    const live = await projects(host);
+    const postOp = method === 'POST' ? (input.request.body as Data).op : undefined;
+    let refreshed = typeof postOp === 'string' && ['new', 'newExp', 'refresh'].includes(postOp);
+    const [initialLive, currentThreadProject] = await Promise.all([
+      projects(host, { fresh: refreshed }),
+      typeof query.thread === 'string' && query.thread ? threadProject(host, query.thread) : Promise.resolve(undefined),
+    ]);
+    let live = initialLive;
     // The current conversation's project: the page follows it when nothing was chosen in this conversation.
-    if (typeof query.thread === 'string' && query.thread) query.threadProject = (await host.threads.get(query.thread).catch(() => null))?.projectRef;
+    if (typeof query.thread === 'string' && query.thread) query.threadProject = currentThreadProject;
+    if (!refreshed && typeof currentThreadProject === 'string' && currentThreadProject && currentThreadProject !== 'default'
+      && !live.some((p) => p.id === currentThreadProject)) {
+      live = await projects(host, { fresh: true });
+      refreshed = true;
+    }
     if (method === 'GET') {
       if (typeof query.view !== 'string') return json(400, { error: 'Provide a view' });
-      mergeProjects(current.value, live);
-      if (follow(current.value, query).missing) return json(404, { error: 'Project not found' });
-      const result = viewModel(current.value, query.view, query);
+      let state = withLiveProjects(current.value, live);
+      if (follow(state, query).missing && !refreshed) {
+        live = await projects(host, { fresh: true });
+        state = withLiveProjects(current.value, live);
+      }
+      if (follow(state, query).missing) return json(404, { error: 'Project not found' });
+      const result = viewModel(state, query.view, query);
       return result === undefined ? json(400, { error: 'Unknown view' }) : json(200, result);
     }
     const body: Data = { ...input.request.body };
@@ -66,7 +81,8 @@ export function createRsi(host: RsiHost) {
     if (removed.length) await runtime.drop(removed);
     await runtime.flush(key);
     if (created) {
-      const saved = await readState(host.storage, key);
+      invalidateProjects(host);
+      const saved = await readState(host.storage, key, { readonly: true });
       const id = isState(saved?.value) && saved.value.experiments[created]?.objective.thread;
       // Open the new objective's conversation, then the RSI panel; the panel follows that conversation to the objective.
       if (id) return json(200, { ok: true, acts: [{ act: 'thread', args: { id } }, { act: 'open', args: { ref: 'plugin:official.rsi/rsi.panel' } }] });
@@ -83,7 +99,7 @@ export function createRsi(host: RsiHost) {
       await ready;
       const key = ownerKey(ctx.userId);
       if (method === 'rsi.status') {
-        const stored = await readState(host.storage, key);
+        const stored = await readState(host.storage, key, { readonly: true });
         if (!stored || !isState(stored.value)) return { error: 'No RSI objective for this owner', status: 404 };
         return statusAction(stored.value, input, ctx);
       }

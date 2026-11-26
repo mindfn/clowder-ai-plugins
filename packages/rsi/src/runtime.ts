@@ -71,7 +71,7 @@ export function createRuntime(host: RsiHost) {
 
   async function deliverOutbox(key: string) {
     while (!stopped) {
-      const stored = await readState(host.storage, key);
+      const stored = await readState(host.storage, key, { readonly: true });
       if (!stored || !isState(stored.value)) return;
       const state = stored.value;
       const entry = state.outbox.find((e) => !e.sent && state.experiments[e.objective]?.objective.projectPath);
