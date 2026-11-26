@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { askEvaluation, buildCloseoutReport, controlGroup, finishAnalysis, freshSeeds, requestVersion, runCycle } from './cycles.js';
+import { askEvaluation, buildCloseoutReport, controlGroup, cycleVarsConflicts, finishAnalysis, freshSeeds, requestVersion, runCycle } from './cycles.js';
 import { formatPolicy, hasValidSchedule, parseMaxRuns, parseScheduleText, policiesOf, scheduleOf, scheduleSummary, timeRange, validatePolicy } from './schedule.js';
 import { summaryOf, objectiveData } from './data.js';
 import { clipTitle, enqueue, kick, mention, message, refreshMembers, rsiExpNew, rsiExpReady, rsiExpStaleFrom, setMember, stopOf, stopText, syncObjective, repairCount, repairText, REPAIR_DEFAULT, prepSettled, AUTO, autoKinds, autoKey, autoText } from './init.js';
@@ -872,6 +872,8 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       if (forbidden.length) return { error: `cycleVars cannot override Host-managed keys: ${forbidden.join(', ')}`, status: 400 };
       const encoded = JSON.stringify(raw);
       if (encoded.length > 65_536) return { error: 'cycleVars exceeds 64 KiB limit', status: 400 };
+      const conflicts = cycleVarsConflicts(d, d.upcoming.groups || [], raw);
+      if (conflicts.length) return { error: `cycleVars cannot override keys that differ across groups: ${conflicts.join(', ')}`, status: 400 };
       if (!Object.keys(raw).length) delete d.upcoming.cycleVars;
       else d.upcoming.cycleVars = JSON.parse(encoded);
       syncObjective(state, d);

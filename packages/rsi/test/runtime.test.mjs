@@ -3338,3 +3338,42 @@ test('alpha.131: rsi_operate cycleVars injects one-shot per-cycle config.json ov
   const doneRes = await f.tool('operate', { op: 'cycleVars', objectiveId: o.id, vars: { cards: [0, 1] } }, 'cat-drby1x4c', o.thread);
   assert.equal(doneRes.status, 409);
 });
+
+test('alpha.132: multi-arm cycleVars rejects treatment-key conflicts at both cycleVars and runCycle while allowing shared bench overrides', async (t) => {
+  const f = await fixture(t), o = await f.create({ auto: 'none', scheduleMode: 'unlimited' });
+  await retain(f.storage, ownerKey('owner'), (st) => {
+    st.experiments[o.id].policy.manager = { catId: 'cat-drby1x4c', name: '墨墨', handle: '@gemini' };
+  });
+  await f.initialize(o, {
+    groups: [{ id: 'control', label: '当前版本对照', vars: { execution_mode: 'multicard-cpu', cards: [0, 1, 4, 5], instances_per_card: 1, routing: 'static' }, control: true }],
+    seeds: [820],
+  });
+  await execute(f, o);
+  await report(f, o, 'insufficient');
+  await decide(f, o, 'direction');
+  await f.tool('task', {}, 'codex', o.thread);
+  // Candidate v2 differs from control on instances_per_card (2 vs 1) and introduces use_queue_routing (true vs absent); routing is equal ('static').
+  assert.equal((await f.tool('version', { change: '4c2i + queue flag', config: { instances_per_card: 2, routing: 'static', use_queue_routing: true }, seeds: 1 }, 'codex', o.thread)).ok, true);
+
+  // 1) Overriding differing treatment keys (instances_per_card, use_queue_routing) must fail closed at rsi_operate(cycleVars).
+  const bad1 = await f.tool('operate', { op: 'cycleVars', objectiveId: o.id, vars: { execution_mode: 'multicard-device', instances_per_card: 1, use_queue_routing: false } }, 'cat-drby1x4c', o.thread);
+  assert.equal(bad1.status, 400);
+  assert.match(bad1.error, /instances_per_card/);
+  assert.match(bad1.error, /use_queue_routing/);
+  assert.equal((await f.read()).experiments[o.id].upcoming.cycleVars, undefined);
+
+  // 2) Shared bench keys (legacy control-only execution_mode/cards, equal routing:'static', new claim_ref) are allowed.
+  const okShared = await f.tool('operate', { op: 'cycleVars', objectiveId: o.id, vars: { execution_mode: 'multicard-device', cards: [2, 3, 4, 5], routing: 'static', claim_ref: 'issue#6-c4' } }, 'cat-drby1x4c', o.thread);
+  assert.equal(okShared.ok, true);
+
+  // 3) Authoritative runCycle gate must ALSO reject if conflicting cycleVars is present on upcoming.
+  await retain(f.storage, ownerKey('owner'), (st) => {
+    st.experiments[o.id].upcoming.cycleVars = { instances_per_card: 1 };
+  });
+  const blockedRun = await f.tool('operate', { op: 'runCycle', objectiveId: o.id }, 'cat-drby1x4c', o.thread);
+  assert.match(blockedRun.error || '', /instances_per_card/);
+  // State must remain unchanged (still round 1) and cycleVars not silently consumed on failed runCycle.
+  const stAfter = (await f.read()).experiments[o.id];
+  assert.equal(stAfter.rounds.length, 1);
+  assert.deepEqual(stAfter.upcoming.cycleVars, { instances_per_card: 1 });
+});

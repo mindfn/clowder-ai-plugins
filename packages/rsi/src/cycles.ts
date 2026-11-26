@@ -61,6 +61,40 @@ export function controlGroup(d: Experiment): Data {
   return { id: 'control', label: '当前版本对照', version: version.id, vars: version.vars || {}, control: true, confirm: false };
 }
 
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (record(value)) return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`;
+  return JSON.stringify(value);
+}
+
+// Reject cycleVars keys that would erase treatment differences in a multi-arm plan:
+// if any non-control arm defines key k and the arms do not all agree on k, overriding k is forbidden.
+// Shared bench keys that only exist as legacy placeholders on control (absent on treatment arms) remain overridable.
+export function cycleVarsConflicts(d: Experiment, groups: Data[], cycleVars: unknown): string[] {
+  if (!record(cycleVars) || !Array.isArray(groups) || groups.length < 2) return [];
+  const keys = Object.keys(cycleVars);
+  if (!keys.length) return [];
+  const perGroup = groups.map((g: Data) => {
+    const isControl = !!(g.control || g.id === 'control');
+    const resolved = isControl ? controlGroup(d) : g;
+    const ver = d.versions.find((v: Data) => v.id === (resolved.version || d.objective.currentVersion));
+    const merged: Data = {
+      ...(record(ver?.config) ? ver.config : {}),
+      ...(record(ver?.vars) ? ver.vars : {}),
+      ...(record(resolved.vars) ? resolved.vars : record(resolved.overrides) ? resolved.overrides : {}),
+    };
+    return { isControl, merged };
+  });
+  const conflicts: string[] = [];
+  for (const k of keys) {
+    const definedByTreatment = perGroup.some((g) => !g.isControl && Object.prototype.hasOwnProperty.call(g.merged, k));
+    if (!definedByTreatment) continue;
+    const vals = new Set(perGroup.map((g) => Object.prototype.hasOwnProperty.call(g.merged, k) ? canonicalJson(g.merged[k]) : 'undefined'));
+    if (vals.size > 1) conflicts.push(k);
+  }
+  return conflicts;
+}
+
 // A cycle belongs to the version it tests: the first group other than the control that runs another version,
 // otherwise the control's version (a cycle that only tries variables on it).
 export function testedVersion(plan: Data): string {
@@ -94,6 +128,8 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
     const skipOuterControl = !isConfirmPlan && plan.tier === 'explore' && plan.skipControl === true && nonControl.length > 0;
     plan.groups = skipOuterControl ? nonControl : [controlGroup(d), ...nonControl];
     if (plan.groups.some((g: Data) => !d.versions.some((v: Data) => v.id === g.version))) return { error: 'Unknown group version' };
+    const conflicts = cycleVarsConflicts(d, plan.groups, plan.cycleVars);
+    if (conflicts.length) return { error: `cycleVars cannot override keys that differ across groups: ${conflicts.join(', ')}` };
     if (!d.policy.confirmSeeds && plan.tier !== 'explore' && plan.seeds.length > 0) d.policy.confirmSeeds = plan.seeds.length;
     if (d.rounds.length) plan.seeds = freshSeeds(d, plan.seeds.length);
     if (plan.reservedSeeds !== undefined && plan.tier !== 'explore') return { error: 'reservedSeeds is only allowed when tier is "explore"' };

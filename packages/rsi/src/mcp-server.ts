@@ -277,7 +277,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
           },
         },
         annotatedBy: { type: 'string', minLength: 1, maxLength: 48, description: 'lineageFix 可选标注来源名（如 "墨墨（回填）"）。' },
-        vars: { type: ['object', 'null'], description: 'cycleVars 单轮一次性运行时参数覆盖（并入下一周期 config.json 顶层，启动该周期后自动清空，传 null 清空；禁止覆盖 seed/tier/reservedSeeds/pairedPlan）。' },
+        vars: { type: ['object', 'null'], description: 'cycleVars 单轮一次性运行时参数覆盖（须在登记新版本之后、恢复/开跑之前设置，因 rsi_version 会重建 upcoming 并丢弃此前设置；并入下一周期 config.json 顶层，启动该周期后自动清空，传 null 清空；禁止覆盖 seed/tier/reservedSeeds/pairedPlan，且多组对比时禁止覆盖组间取值不同的处理变量）。' },
       },
     },
   },
