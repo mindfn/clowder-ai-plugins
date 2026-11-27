@@ -631,7 +631,7 @@ exp:
     del: 删去
     mod: 修改
     _: "{0}"
-  eCyclesTitle: "在 {0} 量尺下运行的周期与结论"
+  eCyclesTitle: "在 {0} 量尺下的指标评审记录"
   eMetricsTitle: "{0} 指标定义"
   cycleNo: "第 {0} 周期"
   cRevTail: "修订 r{0}"

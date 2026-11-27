@@ -631,7 +631,7 @@ exp:
     del: Removed
     mod: Modified
     _: "{0}"
-  eCyclesTitle: "Cycles & conclusions under {0}"
+  eCyclesTitle: "Metric review events under {0}"
   eMetricsTitle: "{0} metric definitions"
   cycleNo: "Cycle {0}"
   cRevTail: "Rev r{0}"

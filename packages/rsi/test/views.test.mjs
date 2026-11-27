@@ -1844,7 +1844,7 @@ test('alpha.133: real exp view builds interactive E1->E2 metrics lineage with di
       n: 2, version: 'v2', start: now + 1100, end: now + 1200, state: 'done', metrics: structuredClone(e1),
       plan: { groups: [{ id: 'control', label: '对照', version: 'v2', vars: {}, control: true }], seeds: [2] },
       runs: [{ id: 'r2', group: 'control', seed: 2, state: 'failed', metrics: {}, attempts: [], env: {} }],
-      report: { verdict: 'insufficient', tag: '校准完成', headline: 'C2 设备校准完成，建议升 E2', summary: 'C2', matrix: [], directions: [{ id: 'd2', title: '固定 Host Python 与 config.json' }], predictions: [], compare: { comparable: false, groups: [] }, attribution: { assessedLayers: [] } },
+      report: { verdict: 'insufficient', tag: '校准完成', headline: 'C2 设备校准完成，建议升 E2', summary: 'C2', matrix: [], directions: [{ id: 'd2', kind: 'metric', title: '升级 E2 量尺口径' }], predictions: [], compare: { comparable: false, groups: [] }, attribution: { assessedLayers: [] } },
       decision: { pick: 'direction', directionId: 'd2', by: '墨墨', at: now + 1250 }, events: [],
     },
     {
@@ -1856,6 +1856,7 @@ test('alpha.133: real exp view builds interactive E1->E2 metrics lineage with di
   ];
 
   // Default view selects current E2 and reconstructs E1 -> E2 even without d.metricHistory.
+  // Metrics lineage stays low-frequency: ordinary experiment cycles (like C3) are NOT dumped into E2's cycle chips.
   const vmE2 = viewModel(state, 'exp', { project, pick: `obj:${id}` });
   assert.deepEqual(vmE2.eTree.map((n) => [n.id, n.parentKey, n.nodeState]), [['E1', null, ''], ['E2', `${id}/E1`, 'current']]);
   assert.deepEqual(vmE2.eTree[0].versionsUsed, ['v1', 'v2']);
@@ -1866,19 +1867,19 @@ test('alpha.133: real exp view builds interactive E1->E2 metrics lineage with di
   assert.equal(vmE2.eSel.diff.mod, 2); // card-imbalance formula + mixed-ladder p99-t2-ms line
   assert.equal(vmE2.eSel.diffChanges.some((c) => c.title.includes('卡间不均') && c.detail.includes('按设备忙碌时间计算')), true);
   assert.equal(vmE2.eSel.diffChanges.some((c) => c.title.includes('T2 P99') && c.detail.includes('≤ 210 ms')), true);
-  assert.equal(vmE2.eSel.cycleSummaries.length, 1);
-  assert.equal(vmE2.eSel.cycleSummaries[0].n, 3);
-  assert.equal(vmE2.eSel.cycleSummaries[0].verdict, 'running');
+  assert.equal(vmE2.eSel.cycleSummaries.length, 0);
+  assert.equal(vmE2.eSel.roundCount, 1);
+  assert.equal(vmE2.eTree[1].steps.length, 0);
 
-  // Selecting E1 switches detail pane to E1's metrics and Cycle 1-2 conclusions.
+  // Selecting E1 switches detail pane to E1's metrics and only its low-frequency metric-review cycle (C2, not ordinary C1).
   const vmE1 = viewModel(state, 'exp', { project, pick: `obj:${id}`, selE: `${id}/E1>node` });
   assert.equal(vmE1.eSel.id, 'E1');
   assert.equal(vmE1.eSel.hasDiff, false);
   assert.equal(vmE1.eSel.items.find((m) => m.id === 'card-imbalance').how, '按请求数计算');
   assert.deepEqual(vmE1.eSel.cycleSummaries.map((c) => [c.n, c.verdict, c.decisionText]), [
-    [1, 'insufficient', '接通设备执行器'],
-    [2, 'insufficient', '固定 Host Python 与 config.json'],
+    [2, 'insufficient', '升级 E2 量尺口径'],
   ]);
+  assert.equal(vmE1.eSel.roundCount, 2);
 
   // Collection lineage reconstructs C1 -> C2 from stepHistory.run and switches cleanly via selC.
   assert.deepEqual(vmE2.cTree.map((n) => [n.id, n.parentKey, n.nodeState]), [['C1', null, ''], ['C2', `${id}/C1`, 'current']]);
@@ -1902,7 +1903,21 @@ test('alpha.133: real exp view builds interactive E1->E2 metrics lineage with di
   assert.equal(vmLegacy.eSel.hasDiff, false); // no bogus item diff against legacy prep-card fallback
   const vmLegacyE1 = viewModel(state, 'exp', { project, pick: `obj:${id}`, selE: `${id}/E1>node` });
   assert.equal(vmLegacyE1.eSel.items[0].name, 'E1 短文门限');
-  assert.deepEqual(vmLegacyE1.eSel.cycleSummaries.map((c) => c.n), [1, 2]);
+  assert.deepEqual(vmLegacyE1.eSel.cycleSummaries.map((c) => c.n), [2]);
+  assert.equal(vmLegacyE1.eSel.roundCount, 2);
+
+  // When a metric version spans >4 versions (e.g. v3..v7), tail compacts versionsUsed cleanly without listing every version.
+  for (let i = 4; i <= 7; i++) {
+    d.versions.push({ id: `v${i}`, parent: `v${i - 1}`, change: `iter ${i}`, config: {}, at: now + i * 1000, current: i === 7, status: 'proposed' });
+    d.rounds.push({ n: i, version: `v${i}`, start: now + i * 1000 + 100, end: now + i * 1000 + 200, state: 'done', metrics: structuredClone(e2),
+      plan: { groups: [{ id: 'control', label: '对照', version: `v${i}`, vars: {}, control: true }], seeds: [i] },
+      runs: [], report: { verdict: 'tune', headline: `C${i}`, summary: `C${i}`, matrix: [], directions: [], predictions: [], compare: { comparable: false, groups: [] }, attribution: { assessedLayers: [] } },
+      decision: null, events: [] });
+  }
+  const vmMany = viewModel(state, 'exp', { project, pick: `obj:${id}` });
+  assert.deepEqual(vmMany.eTree[1].versionsUsed, ['v3–v7 (5 轮)']);
+  assert.equal(vmMany.eTree[1].steps.length, 0);
+  assert.equal(vmMany.eSel.cycleSummaries.length, 0);
 });
 
 test('unified roundMetrics / roundMetricVersion keeps compare table cross-scale warnings, thresholds, closeout report, and rubric aspects consistent after compaction', async () => {
