@@ -189,7 +189,11 @@ export function submitInitStep(state: RsiState, id: string, submission: InitSubm
     const parsed = parseScheduleText(rawWindow);
     if (parsed) d.policy.schedule = parsed;
   }
-  if (submission.upcoming) d.upcoming = structuredClone(submission.upcoming);
+  if (submission.upcoming) {
+    // A preparation plan cannot grant the owner's one-cycle runtime binding.
+    const { cycleVars: _dropCycleVars, ...plan } = submission.upcoming;
+    d.upcoming = structuredClone(plan);
+  }
   const project = Object.keys(state.objectives).find((k) => state.objectives[k].some((o) => o.id === id))!;
   for (const doc of submission.docs || []) {
     const at = state.library[project].findIndex((x) => x.id === doc.id);

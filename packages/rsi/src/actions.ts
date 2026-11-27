@@ -914,14 +914,16 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       if (note.length > 240) return { error: '晋升说明请控制在 240 字以内', status: 400 };
       const previous = d.objective.currentVersion;
       const isCandidatePromote = !!candidate && candidate.version === version.id;
+      if (!isCandidatePromote && version.status !== 'confirmed') {
+        return { error: 'Only the active candidate or a previously confirmed version can be promoted', status: 409 };
+      }
       if (version.id === previous) {
         if (!isCandidatePromote) return { error: `Version ${version.id} is already the current version`, status: 409 };
-        version = { ...version, id: `v${d.versions.length + 1}`, parent: version.id, current: false, change: candidate.label || version.change, vars: structuredClone(candidate.vars || version.vars || {}), at: now };
+        version = { ...version, id: `v${d.versions.length + 1}`, parent: version.id, current: false, change: candidate.label || version.change, at: now };
         delete version.worktree;
         d.versions.push(version);
-      } else if (isCandidatePromote && candidate.vars && !version.vars) {
-        version.vars = structuredClone(candidate.vars);
       }
+      if (isCandidatePromote) version.vars = structuredClone(candidate.vars);
       Object.assign(version, { status: 'confirmed', promotedAt: now, promotedBy: actor, ...(note ? { promotedNote: note } : {}) });
       for (const v of d.versions) v.current = v.id === version.id;
       d.objective.currentVersion = version.id;

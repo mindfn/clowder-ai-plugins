@@ -106,7 +106,7 @@ async function fixture(t) {
       assert.ok(step?.ask); assert.ok(step.items.every((i) => i.meaning && i.format && i.example));
       const result = await tool('submit', { step: step.step, items: (step.examples ? step.examples.map((x) => ({ id: `own-${x.id}`, title: `Own ${x.title}` })) : step.items.filter((i) => !i.userOwned)).map((i) => ({ id: i.id, title: i.title, value: `Observed ${i.title}` })),
         unknowns: '', next: '', ...(section === 'run' ? { window: options.window || '20:00–08:00' } : {}), ...(section === 'rules' ? { metrics: options.metrics || { version: 'E1', items: [{ id: 'score', name: 'Score', how: 'metrics.score', dir: 'up' }] } } : {}),
-        ...(section === 'design' ? { upcoming: plan } : {}) }, execution.by, objective.thread);
+        ...(section === 'design' ? { upcoming: plan } : section === 'baseline' && options.baselinePlan ? { upcoming: options.baselinePlan } : {}) }, execution.by, objective.thread);
       assert.equal(result.ok, true, JSON.stringify(result));
       if (section === 'run') {
         assert.equal(result.state, 'awaiting-preflight');
@@ -3465,8 +3465,9 @@ test('alpha.136: pendingDecisionCycle wakes policy.manager without rsi_task prom
   const vTask = await f.tool('task', {}, 'codex', o.thread);
   assert.equal(vTask.version?.cycle, 1);
   const sendsBeforeVersion = f.sends.length;
-  const reg = await f.tool('version', { change: 'Phase 2 router', config: { boost: 1 } }, 'codex', o.thread);
+  const reg = await f.tool('version', { change: 'Phase 2 router', config: { boost: 1 }, cycleVars: { lease_id: 'untrusted' }, upcoming: { cycleVars: { lease_id: 'untrusted' } } }, 'codex', o.thread);
   assert.equal(reg.ok, true);
+  assert.equal((await f.read()).experiments[o.id].upcoming.cycleVars, undefined);
   const varsWake = f.sends.slice(sendsBeforeVersion).find(
     (s) => s.wake?.catId === 'cat-drby1x4c' && s.payload.elements[0].payload.text.includes('待绑定本轮参数'),
   );
@@ -3478,6 +3479,87 @@ test('alpha.136: pendingDecisionCycle wakes policy.manager without rsi_task prom
   assert.equal(stHeld.objective.state, 'running');
   assert.equal(stHeld.active.runningCycle, null);
   assert.equal(stHeld.active.awaitingCycleVars, true);
+});
+
+test('alpha.136 regression: preparation plans cannot bind cycleVars through step 5 or 7', async (t) => {
+  for (const section of ['design', 'baseline']) await t.test(section, async (t) => {
+    const f = await fixture(t), o = await f.create();
+    await retain(f.storage, ownerKey('owner'), (st) => {
+      st.experiments[o.id].policy.manager = { catId: 'cat-drby1x4c', name: '墨墨', handle: '@gemini' };
+    });
+    assert.equal((await f.tool('operate', { op: 'requireCycleVars', objectiveId: o.id, enabled: true }, 'cat-drby1x4c', o.thread)).ok, true);
+    const cleanPlan = { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [951] };
+    const submittedPlan = { ...cleanPlan, cycleVars: { lease_id: 'placeholder-from-preparer' } };
+    await f.initialize(o, section === 'design' ? submittedPlan : cleanPlan,
+      { window: '不限制', ...(section === 'baseline' ? { baselinePlan: submittedPlan } : {}) });
+    assert.equal((await f.read()).experiments[o.id].upcoming.cycleVars, undefined);
+    assert.equal((await f.tool('operate', { op: 'cycleVars', objectiveId: o.id, vars: submittedPlan.cycleVars }, 'codex', o.thread)).status, 403);
+    assert.equal((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'start' }, 'cat-drby1x4c', o.thread)).ok, true);
+    await f.activation().actions['rsi.tick']();
+    assert.equal((await f.read()).experiments[o.id].rounds.length, 0);
+    const held = await f.tool('status', { objectiveId: o.id, scope: 'brief' }, 'cat-drby1x4c', o.thread);
+    assert.equal(held.active.awaitingCycleVars, true);
+    const blocked = await f.tool('operate', { op: 'runCycle', objectiveId: o.id }, 'cat-drby1x4c', o.thread);
+    assert.match(blocked.error, /cycleVars/);
+    assert.equal((await f.read()).experiments[o.id].rounds.length, 0);
+    assert.equal((await f.tool('operate', { op: 'cycleVars', objectiveId: o.id, vars: { lease_id: 'manager-approved' } }, 'cat-drby1x4c', o.thread)).ok, true);
+    await f.activation().actions['rsi.tick']();
+    const started = (await f.read()).experiments[o.id].rounds[0];
+    assert.equal(started.scheduled, true);
+    assert.deepEqual(started.plan.cycleVars, { lease_id: 'manager-approved' });
+  });
+});
+
+test('alpha.136 regression: promote rejects unvalidated non-candidates and permits confirmed rollback', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o);
+  await retain(f.storage, ownerKey('owner'), (st) => {
+    const d = st.experiments[o.id];
+    d.policy.manager = { catId: 'cat-drby1x4c', name: '墨墨', handle: '@gemini' };
+    for (const [i, status] of ['proposed', 'rejected', 'candidate', undefined, 'confirmed'].entries()) {
+      d.versions.push({ ...d.versions[0], id: `v${i + 2}`, current: false, status, vars: { knob: i } });
+    }
+  });
+  const before = (await f.read()).experiments[o.id];
+  for (const version of ['v2', 'v3', 'v4', 'v5']) {
+    const result = await f.tool('operate', { op: 'promote', objectiveId: o.id, version }, 'cat-drby1x4c', o.thread);
+    assert.equal(result.status, 409, JSON.stringify(result));
+    assert.deepEqual((await f.read()).experiments[o.id], before);
+  }
+  const rollback = await f.http('POST', { op: 'promote', objective: o.id, version: 'v6' });
+  assert.equal(rollback.ok, true, JSON.stringify(rollback));
+  const after = (await f.read()).experiments[o.id];
+  assert.equal(after.objective.currentVersion, 'v6');
+  assert.deepEqual(after.upcoming.groups.find((g) => g.control).vars, { knob: 4 });
+});
+
+test('alpha.136 regression: promoting a different-version candidate preserves its measured overrides', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  f.commands.submit = `node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));fs.writeFileSync(process.argv[2]+'/metrics.json',JSON.stringify({score:cfg.knob?80:50}));" {config} {run}`;
+  await f.initialize(o, { groups: [
+    { id: 'control', label: 'Control', vars: { knob: 0 }, control: true },
+    { id: 'change', label: 'Measured candidate', version: 'v2', vars: { knob: 1 } },
+  ], seeds: [961, 962] });
+  await retain(f.storage, ownerKey('owner'), (st) => {
+    const d = st.experiments[o.id];
+    d.versions.push({ ...d.versions[0], id: 'v2', parent: 'v1', current: false, status: 'proposed', vars: { knob: 0 } });
+  });
+  await execute(f, o);
+  const result = await report(f, o, 'keep');
+  assert.equal(result.confirmation.status, 'candidate');
+  const candidate = (await f.read()).experiments[o.id].candidate;
+  assert.equal(candidate.version, 'v2');
+  assert.deepEqual(candidate.vars, { knob: 1 });
+  const promoted = await f.http('POST', { op: 'promote', objective: o.id, version: 'v2' });
+  assert.equal(promoted.ok, true, JSON.stringify(promoted));
+  const after = (await f.read()).experiments[o.id];
+  assert.deepEqual(after.versions.find((v) => v.id === 'v2').vars, { knob: 1 });
+  assert.deepEqual(after.upcoming.groups.find((g) => g.control).vars, { knob: 1 });
+  assert.equal(after.candidate, undefined);
+  assert.equal((await f.http('POST', { op: 'expDecide', objective: o.id, n: 1, pick: 'same' })).status, 200);
+  const next = await execute(f, o);
+  assert.deepEqual(next.plan.groups.find((g) => g.control).vars, { knob: 1 });
+  assert.ok(next.runs.filter((r) => r.group === 'control').every((r) => r.metrics.score === 80));
 });
 
 test('alpha.136: remoteEnded retryable collect transport errors retry up to 3 times preserving jobId before failing', async (t) => {
