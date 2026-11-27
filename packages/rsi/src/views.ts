@@ -1493,10 +1493,7 @@ function exp(): any {
     const at = entry.at || histMatch?.at || null;
     const note = entry.note || histMatch?.next || (id === currentMetricVer ? d.steps?.rules?.next || '' : '');
     const usedRounds = rounds.filter((r: Data) => roundMetricVersion(d, r) === id);
-    const rawVersionsUsed = [...new Set(usedRounds.map((r: Data) => r.version).filter(Boolean))];
-    const versionsUsed = rawVersionsUsed.length > 4
-      ? [`${rawVersionsUsed[0]}–${rawVersionsUsed[rawVersionsUsed.length - 1]} (${usedRounds.length} 轮)`]
-      : rawVersionsUsed;
+    const versionsUsed = [...new Set(usedRounds.map((r: Data) => r.version).filter(Boolean))];
     const lockedCount = entry.items.filter((m: Data) => m.locked || m.guard).length;
     const workingCount = entry.items.length - lockedCount;
     const diffChanges: Data[] = [];
@@ -1583,9 +1580,12 @@ function exp(): any {
         count: entry.items.length,
         locked: lockedCount,
         working: workingCount,
+        versionCount: versionsUsed.length,
         roundCount: usedRounds.length,
         versionsUsed,
         hasVersionsUsed: versionsUsed.length > 0,
+        hasFewVersionsUsed: versionsUsed.length > 0 && versionsUsed.length <= 4,
+        manyVersionsUsed: versionsUsed.length > 4,
         by: by ? nameOf(by) : '',
         at,
         note,

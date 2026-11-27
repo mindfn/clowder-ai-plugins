@@ -632,6 +632,7 @@ exp:
     mod: 修改
     _: "{0}"
   eCyclesTitle: "在 {0} 量尺下的指标评审记录"
+  eUsedSummary: "用于 {0} 个版本 · {1} 轮"
   eMetricsTitle: "{0} 指标定义"
   cycleNo: "第 {0} 周期"
   cRevTail: "修订 r{0}"

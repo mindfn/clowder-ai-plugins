@@ -1906,16 +1906,23 @@ test('alpha.133: real exp view builds interactive E1->E2 metrics lineage with di
   assert.deepEqual(vmLegacyE1.eSel.cycleSummaries.map((c) => c.n), [2]);
   assert.equal(vmLegacyE1.eSel.roundCount, 2);
 
-  // When a metric version spans >4 versions (e.g. v3..v7), tail compacts versionsUsed cleanly without listing every version.
-  for (let i = 4; i <= 7; i++) {
-    d.versions.push({ id: `v${i}`, parent: `v${i - 1}`, change: `iter ${i}`, config: {}, at: now + i * 1000, current: i === 7, status: 'proposed' });
-    d.rounds.push({ n: i, version: `v${i}`, start: now + i * 1000 + 100, end: now + i * 1000 + 200, state: 'done', metrics: structuredClone(e2),
-      plan: { groups: [{ id: 'control', label: '对照', version: `v${i}`, vars: {}, control: true }], seeds: [i] },
-      runs: [], report: { verdict: 'tune', headline: `C${i}`, summary: `C${i}`, matrix: [], directions: [], predictions: [], compare: { comparable: false, groups: [] }, attribution: { assessedLayers: [] } },
+  // When a metric version spans >4 versions (including non-monotonic & gapped v3, v4, v5, v8, v2),
+  // tail switches to localized count summary (manyVersionsUsed + versionCount/roundCount) instead of a fake start–end range.
+  for (const [n, vid] of [[4, 'v4'], [5, 'v5'], [6, 'v8'], [7, 'v2']]) {
+    if (!d.versions.some((v) => v.id === vid)) {
+      d.versions.push({ id: vid, parent: 'v3', change: `iter ${vid}`, config: {}, at: now + n * 1000, current: vid === 'v8', status: 'proposed' });
+    }
+    d.rounds.push({ n, version: vid, start: now + n * 1000 + 100, end: now + n * 1000 + 200, state: 'done', metrics: structuredClone(e2),
+      plan: { groups: [{ id: 'control', label: '对照', version: vid, vars: {}, control: true }], seeds: [n] },
+      runs: [], report: { verdict: 'tune', headline: `C${n}`, summary: `C${n}`, matrix: [], directions: [], predictions: [], compare: { comparable: false, groups: [] }, attribution: { assessedLayers: [] } },
       decision: null, events: [] });
   }
   const vmMany = viewModel(state, 'exp', { project, pick: `obj:${id}` });
-  assert.deepEqual(vmMany.eTree[1].versionsUsed, ['v3–v7 (5 轮)']);
+  assert.deepEqual(vmMany.eTree[1].versionsUsed, ['v3', 'v4', 'v5', 'v8', 'v2']);
+  assert.equal(vmMany.eTree[1].versionCount, 5);
+  assert.equal(vmMany.eTree[1].roundCount, 5);
+  assert.equal(vmMany.eTree[1].hasFewVersionsUsed, false);
+  assert.equal(vmMany.eTree[1].manyVersionsUsed, true);
   assert.equal(vmMany.eTree[1].steps.length, 0);
   assert.equal(vmMany.eSel.cycleSummaries.length, 0);
 });

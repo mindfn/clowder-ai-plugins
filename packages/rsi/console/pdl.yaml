@@ -3061,7 +3061,13 @@ views:
                       args:
                         - of: "@versionsUsed"
                           sep: " "
-                    when: "@hasVersionsUsed"
+                    when: "@hasFewVersionsUsed"
+                  - text:
+                      t: rsi.exp.eUsedSummary
+                      args:
+                        - "@versionCount"
+                        - "@roundCount"
+                    when: "@manyVersionsUsed"
                   - text: "@by"
                     when: "@by"
           - type: section
