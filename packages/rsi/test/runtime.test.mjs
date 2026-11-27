@@ -3510,6 +3510,64 @@ test('alpha.136 regression: preparation plans cannot bind cycleVars through step
   });
 });
 
+test('alpha.136 upgrade: enabling the gate invalidates legacy pending bindings but repeated enable preserves fresh authorization', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [971] }, { window: '不限制' });
+  await retain(f.storage, ownerKey('owner'), (st) => {
+    const d = st.experiments[o.id];
+    d.policy.manager = { catId: 'cat-drby1x4c', name: '墨墨', handle: '@gemini' };
+    // alpha.135 persisted the complete preparer submission, including this untrusted field.
+    d.upcoming.cycleVars = { lease_id: 'legacy-preparer-placeholder' };
+  });
+  const operate = (input) => f.tool('operate', { objectiveId: o.id, ...input }, 'cat-drby1x4c', o.thread);
+  assert.equal((await operate({ op: 'requireCycleVars', enabled: true })).ok, true);
+  assert.equal((await f.read()).experiments[o.id].upcoming.cycleVars, undefined);
+  assert.equal((await operate({ op: 'life', action: 'start' })).ok, true);
+  await f.activation().actions['rsi.tick']();
+  assert.equal((await f.read()).experiments[o.id].rounds.length, 0);
+  assert.equal((await f.tool('status', { objectiveId: o.id, scope: 'brief' }, 'cat-drby1x4c', o.thread)).active.awaitingCycleVars, true);
+  assert.match((await operate({ op: 'runCycle' })).error, /cycleVars/);
+  const fresh = { lease_id: 'manager-approved-after-enable' };
+  assert.equal((await operate({ op: 'cycleVars', vars: fresh })).ok, true);
+  assert.equal((await operate({ op: 'requireCycleVars', enabled: true })).ok, true);
+  assert.deepEqual((await f.read()).experiments[o.id].upcoming.cycleVars, fresh);
+  assert.equal((await operate({ op: 'requireCycleVars', enabled: false })).ok, true);
+  assert.equal((await operate({ op: 'requireCycleVars', enabled: true })).ok, true);
+  assert.equal((await f.read()).experiments[o.id].upcoming.cycleVars, undefined);
+  assert.equal((await operate({ op: 'cycleVars', vars: fresh })).ok, true);
+  await f.activation().actions['rsi.tick']();
+  assert.deepEqual((await f.read()).experiments[o.id].rounds[0].plan.cycleVars, fresh);
+});
+
+test('alpha.136 upgrade: enabling the gate preserves the running snapshot and interrupted-cycle recovery', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  f.commands.submit = `node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));fs.writeFileSync(process.argv[2]+'/seen.json',JSON.stringify(cfg));if(!fs.existsSync('resume-ok'))setTimeout(()=>{},30000);else fs.writeFileSync(process.argv[2]+'/metrics.json',JSON.stringify({score:80}));" {config} {run}`;
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [972] }, { window: '不限制' });
+  const snapshot = { lease_id: 'already-running-lease' };
+  assert.equal((await f.http('POST', { op: 'cycleVars', objective: o.id, vars: snapshot })).ok, true);
+  assert.equal((await f.http('POST', { op: 'runCycle', objective: o.id })).ok, true);
+  const running = (await until(f.read, (s) => s.experiments[o.id].rounds[0]?.runs[0]?.state === 'running')).experiments[o.id].rounds[0];
+  const seen = join(running.runs[0].directory, 'seen.json');
+  await until(() => access(seen).then(() => true, () => false), Boolean, 'executor started');
+  await retain(f.storage, ownerKey('owner'), (st) => { st.experiments[o.id].upcoming.cycleVars = { lease_id: 'legacy-pending' }; });
+  assert.equal((await f.http('POST', { op: 'requireCycleVars', objective: o.id, enabled: true })).ok, true);
+  const gated = (await f.read()).experiments[o.id];
+  assert.equal(gated.upcoming.cycleVars, undefined);
+  assert.deepEqual(gated.rounds[0].plan, running.plan);
+  await f.activation().stop();
+  await writeFile(join(f.project, 'resume-ok'), '1');
+  f.start();
+  await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
+  assert.equal((await f.read()).experiments[o.id].rounds[0].state, 'interrupted');
+  await f.activation().actions['rsi.tick']();
+  const resumed = (await until(f.read, (s) => s.experiments[o.id].rounds[0].state === 'evaluating')).experiments[o.id];
+  assert.equal(resumed.rounds.length, 1);
+  assert.equal(resumed.rounds[0].autoResumed, true);
+  assert.deepEqual(resumed.rounds[0].plan.cycleVars, snapshot);
+  assert.equal(JSON.parse(await readFile(seen, 'utf8')).lease_id, snapshot.lease_id);
+  assert.equal(resumed.rounds[0].runs[0].metrics.score, 80);
+});
+
 test('alpha.136 regression: promote rejects unvalidated non-candidates and permits confirmed rollback', async (t) => {
   const f = await fixture(t), o = await f.create();
   await f.initialize(o);

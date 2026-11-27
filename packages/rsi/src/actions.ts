@@ -889,6 +889,8 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       else if (raw === 'off' || raw === 'false' || raw === '') enabled = false;
       else return { error: 'Provide enabled as true/false or "on"/"off"', status: 400 };
       d.policy ||= {};
+      // Pre-gate plans may contain preparer-supplied bindings; require fresh authorization.
+      if (enabled && !d.policy.requireCycleVars && d.upcoming) delete d.upcoming.cycleVars;
       if (enabled) d.policy.requireCycleVars = true;
       else delete d.policy.requireCycleVars;
       message(state, d, now, `${actor}${enabled ? '开启' : '关闭'}了每轮前绑定 cycleVars 门禁`, enabled ? '后续每次启动新周期前均须先绑定非空 cycleVars（外部资源/租约），未绑定时系统自动等待而不盲跑。' : '恢复为按计划自动推进周期，不再强制每轮前绑定 cycleVars。', 'declare');
