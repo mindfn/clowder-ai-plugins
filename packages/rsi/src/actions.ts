@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { askEvaluation, buildCloseoutReport, controlGroup, cycleVarsConflicts, finishAnalysis, freshSeeds, requestVersion, runCycle } from './cycles.js';
+import { askEvaluation, buildCloseoutReport, controlGroup, cycleVarsConflicts, finishAnalysis, freshSeeds, needsCycleVars, notifyAwaitingCycleVars, requestVersion, runCycle } from './cycles.js';
 import { formatPolicy, hasValidSchedule, parseMaxRuns, parseScheduleText, policiesOf, scheduleOf, scheduleSummary, timeRange, validatePolicy } from './schedule.js';
 import { summaryOf, objectiveData } from './data.js';
 import { clipTitle, enqueue, kick, mention, message, refreshMembers, rsiExpNew, rsiExpReady, rsiExpStaleFrom, setMember, stopOf, stopText, syncObjective, repairCount, repairText, REPAIR_DEFAULT, prepSettled, AUTO, autoKinds, autoKey, autoText } from './init.js';
@@ -30,7 +30,8 @@ function dispatchDecision(state: RsiState, d: Experiment, round: Data, now: numb
       const confirmSeedCount = d.policy.confirmSeeds || round.plan.seeds.length;
       d.upcoming = { ...basePlan, tier: 'confirm', skipControl: false, seeds: freshSeeds(d, confirmSeedCount), groups: [controlGroup(d)] };
     }
-    message(state, d, now, d.candidate ? '下一周期：确认赢家' : '下一周期：当前版本对照', '在已确认的时段运行，也可点「跑一轮」。', 'plan');
+    message(state, d, now, d.candidate ? '下一周期：确认赢家' : '下一周期：当前版本对照', needsCycleVars(d) ? '下一周期计划已就绪；因已启用每轮前绑定 cycleVars 门禁，待绑定本轮参数后启动。' : '在已确认的时段运行，也可点「跑一轮」。', 'plan');
+    notifyAwaitingCycleVars(state, d, now, d.candidate ? `第 ${round.n} 周期已确认进入候选复验` : `第 ${round.n} 周期决定沿用当前计划`);
     syncObjective(state, d);
     return;
   }
@@ -878,6 +879,66 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       else d.upcoming.cycleVars = JSON.parse(encoded);
       syncObjective(state, d);
       return { ok: true, cycleVars: d.upcoming.cycleVars ?? null };
+    }
+    case 'requireCycleVars': {
+      if (!d) return { error: 'Experiment not found', status: 404 };
+      const raw = body.enabled ?? body.v;
+      let enabled: boolean;
+      if (typeof raw === 'boolean') enabled = raw;
+      else if (raw === 'on' || raw === 'true') enabled = true;
+      else if (raw === 'off' || raw === 'false' || raw === '') enabled = false;
+      else return { error: 'Provide enabled as true/false or "on"/"off"', status: 400 };
+      d.policy ||= {};
+      if (enabled) d.policy.requireCycleVars = true;
+      else delete d.policy.requireCycleVars;
+      message(state, d, now, `${actor}${enabled ? '开启' : '关闭'}了每轮前绑定 cycleVars 门禁`, enabled ? '后续每次启动新周期前均须先绑定非空 cycleVars（外部资源/租约），未绑定时系统自动等待而不盲跑。' : '恢复为按计划自动推进周期，不再强制每轮前绑定 cycleVars。', 'declare');
+      syncObjective(state, d);
+      return { ok: true, requireCycleVars: !!d.policy.requireCycleVars };
+    }
+    case 'promote': {
+      if (!d || !d.objective.projectPath) return { error: 'Real experimental objective not found', status: 404 };
+      if (['done', 'retired'].includes(d.objective.state)) {
+        return { error: `Cannot promote version while objective is ${d.objective.state}`, status: 409 };
+      }
+      if (d.rounds.some((r: Data) => ['running', 'evaluating'].includes(r.state)) || d.versionRequest) {
+        return { error: '当前有运行中、评估中或出版本中的周期任务，请等当前阶段完成后再晋升默认版本', status: 409 };
+      }
+      const candidate = d.candidate;
+      const requestedId = typeof body.version === 'string' && body.version.trim()
+        ? body.version.trim()
+        : (candidate?.version || '');
+      if (!requestedId) return { error: 'Provide version to promote (or have an active candidate)', status: 400 };
+      let version = d.versions.find((v: Data) => v.id === requestedId);
+      if (!version) return { error: `Unknown version ${JSON.stringify(requestedId)}`, status: 404 };
+      const note = typeof body.note === 'string' ? body.note.trim() : '';
+      if (note.length > 240) return { error: '晋升说明请控制在 240 字以内', status: 400 };
+      const previous = d.objective.currentVersion;
+      const isCandidatePromote = !!candidate && candidate.version === version.id;
+      if (version.id === previous) {
+        if (!isCandidatePromote) return { error: `Version ${version.id} is already the current version`, status: 409 };
+        version = { ...version, id: `v${d.versions.length + 1}`, parent: version.id, current: false, change: candidate.label || version.change, vars: structuredClone(candidate.vars || version.vars || {}), at: now };
+        delete version.worktree;
+        d.versions.push(version);
+      } else if (isCandidatePromote && candidate.vars && !version.vars) {
+        version.vars = structuredClone(candidate.vars);
+      }
+      Object.assign(version, { status: 'confirmed', promotedAt: now, promotedBy: actor, ...(note ? { promotedNote: note } : {}) });
+      for (const v of d.versions) v.current = v.id === version.id;
+      d.objective.currentVersion = version.id;
+      if (candidate) delete d.candidate;
+      if (d.upcoming) {
+        delete d.upcoming.cycleVars;
+        const rest = (d.upcoming.groups || []).filter((g: Data) => !g.control && g.id !== 'control' && !(g.confirm && (g.version === requestedId || g.version === candidate?.version)));
+        d.upcoming.groups = [controlGroup(d), ...rest];
+      }
+      const lastRound = d.rounds.at(-1);
+      if (isCandidatePromote && lastRound?.decision?.deferred && lastRound.decision.pick === 'same') {
+        delete lastRound.decision;
+        if (d.objective.state === 'paused') d.objective.resumeTo = 'pending';
+      }
+      message(state, d, now, `${actor}将 ${version.id} 晋升为当前默认版本（原 ${previous}）`, note || '经批准直接采用为当前默认版本，后续周期将以该版本作为对照基线。', 'declare');
+      syncObjective(state, d);
+      return { ok: true, previous, currentVersion: version.id, status: 'confirmed' };
     }
     default: return { error: 'Unknown operation' };
   }

@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { abandonRepair, ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAnalysis, hasUnclaimed, nightDigest, nightDue, REPAIR_WAIT, runCycle, warnUnclaimed } from './cycles.js';
+import { abandonRepair, ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAnalysis, hasUnclaimed, needsCycleVars, nightDigest, nightDue, REPAIR_WAIT, runCycle, warnUnclaimed } from './cycles.js';
 import { insideWindow, withinWindowLimit } from './schedule.js';
 import { bindObjectiveThread, clipTitle, message, recordInitExecution, threadTitle } from './init.js';
 import { createRuns } from './runs.js';
@@ -89,7 +89,7 @@ export function createRuntime(host: RsiHost) {
           await retain(host.storage, key, (next) => { mark(next, entry.id); });
           continue;
         }
-        const content = [entry.message?.title, entry.kind === 'agent' ? AGENT_HOW : '', entry.message?.body, entry.message?.ask].filter(Boolean).join('\n\n');
+        const content = [entry.message?.title, entry.kind === 'agent' && !['decide', 'cycleVars'].includes(entry.action || '') ? AGENT_HOW : '', entry.message?.body, entry.message?.ask].filter(Boolean).join('\n\n');
         const sent = await host.messaging.send({ threadId: d.objective.thread, idempotencyKey: entry.id,
           ...(entry.kind === 'agent' && !entry.inTurn ? { wake: { catId: entry.member, exact: true as const } } : {}),
           payload: { provenance: { epistemicStatus: entry.kind === 'agent' ? 'user_intent' : 'observation' },
@@ -172,7 +172,7 @@ export function createRuntime(host: RsiHost) {
     const now = Date.now();
     const inactive = (x: Experiment) => ['paused', 'done', 'retired'].includes(x.objective.state);
     const analysisLate = (x: Experiment, r: Data) => !inactive(x) && r.analysis?.waiting.length && now - r.analysis.since > ANALYSIS_LIMIT;
-    const decisionLate = (x: Experiment, r: Data) => x.objective.state === 'pending' && r.asked && !r.decision && !(r.plan?.reservedSeeds?.length && !x.candidate) && !x.upcoming?.requiresExplicitPlan && now - r.asked > DECISION_WAIT && insideWindow(x.policy.schedule, now);
+    const decisionLate = (x: Experiment, r: Data) => x.objective.state === 'pending' && r.asked && !r.decision && !(r.plan?.reservedSeeds?.length && !x.candidate) && !x.upcoming?.requiresExplicitPlan && !x.policy?.requireCycleVars && now - r.asked > DECISION_WAIT && insideWindow(x.policy.schedule, now);
     const repairLate = (x: Experiment) => !inactive(x) && x.versionRequest?.repair && now - x.versionRequest.since > REPAIR_WAIT;
     const late = (state: import('./types.js').RsiState) => Object.values(state.experiments).some((x) => repairLate(x) || nightDue(x, now) || hasUnclaimed(x, now) || x.rounds.some((r: Data) => analysisLate(x, r) || decisionLate(x, r)));
     for (const [key, entry] of owners) if (late(entry.value)) {
@@ -199,6 +199,7 @@ export function createRuntime(host: RsiHost) {
     // and one that cannot start leaves the turn to the next.
     const due = (d: Experiment) => d.objective.projectPath && d.objective.state === 'running' && !d.versionRequest
       && (!d.upcoming?.requiresExplicitPlan || d.rounds.some((r: Data) => r.state === 'interrupted' && !r.autoResumed))
+      && (!needsCycleVars(d) || d.rounds.some((r: Data) => r.state === 'interrupted' && !r.autoResumed))
       && insideWindow(d.policy.schedule, Date.now()) && withinWindowLimit(d.policy.schedule, d.rounds, Date.now()) && !d.rounds.some((r: Data) => ['running', 'evaluating'].includes(r.state) || r.state === 'interrupted' && r.autoResumed || r.report && !r.decision);
     const lastStart = (d: Experiment) => Math.max(0, ...d.rounds.map((r: Data) => r.start || 0));
     const turns = owners.flatMap(([key, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments).filter(due)

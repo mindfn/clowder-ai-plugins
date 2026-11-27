@@ -367,7 +367,9 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       }
       remote = undefined;
       if (stopped) return;
-      const final = error && kind === 'env' && run.retries >= 1, cancel = d.executor.commands.cancel;
+      const collectOnlyRetry = step === 'collect' && remoteEnded && collectRetryable;
+      const maxRetries = collectOnlyRetry ? 3 : 1;
+      const final = error && kind === 'env' && run.retries >= maxRetries, cancel = d.executor.commands.cancel;
       // Held at its window's end, the run waits in the queue for the next night as if it had not started; a job that is not cancelled is polled again.
       if (held && error && kind === 'env') {
         const cancelled = canCancel(cancel, where?.values) && (await command(cancel!, where!.cwd, where!.values)).code === 0;
@@ -417,21 +419,22 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         entry.attempts ||= [];
         entry.attempts.push({ start, end, env, metrics, ...(slices ? { slices } : {}), error: failure, jobId: jobId || null });
         if (!keepJob) delete entry.jobId;
-        if (error && kind === 'env' && entry.retries < 1) {
+        if (error && kind === 'env' && entry.retries < maxRetries) {
           retrying = true;
           entry.retries++; entry.state = 'queued';
-          cycle.events.push({ at: end, kind: 'retry', text: keepJob ? (remoteEnded ? `${entry.id} 远端作业 ${jobId} 采集遇瞬时传输错误，保留原作业重试采集` : `${entry.id} 远端作业 ${jobId} 未确认结束或取消，保留原作业继续轮询`) : `${entry.id} 环境失败，自动重试一次；不计入结果` });
+          cycle.events.push({ at: end, kind: 'retry', text: keepJob ? (remoteEnded ? `${entry.id} 远端作业 ${jobId} 采集遇瞬时传输错误，保留原作业重试采集（第 ${entry.retries}/${maxRetries} 次）` : `${entry.id} 远端作业 ${jobId} 未确认结束或取消，保留原作业继续轮询`) : `${entry.id} 环境失败，自动重试一次；不计入结果` });
         } else {
           entry.state = error && kind === 'env' ? 'failed' : 'done';
           entry.retryable = false;
-          if (error && kind === 'env') message(state, current, end, '运行失败（已重试一次）', `${entry.id}${unconfirmed ? `\n${unconfirmed}` : ''}\n${clip(error)}`, 'failed');
+          if (error && kind === 'env') message(state, current, end, entry.retries > 1 ? `运行失败（已重试 ${entry.retries} 次）` : '运行失败（已重试一次）', `${entry.id}${unconfirmed ? `\n${unconfirmed}` : ''}\n${clip(error)}`, 'failed');
         }
         finishCycle(state, current, cycle, end);
       });
       await changed(key);
       // Give transient network/SSH hiccups a bounded recovery window before retrying long-running remote jobs.
       if (retrying && !stopped && !held && !dropped.has(d.objective.id) && d.executor.timeout && d.executor.timeout >= 60) {
-        await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, 15_000); });
+        const backoffMs = collectOnlyRetry ? Math.min(60_000, 15_000 * (run.retries + 1)) : 15_000;
+        await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, backoffMs); });
         releasePoll = undefined; pollTimer = undefined;
       }
     }

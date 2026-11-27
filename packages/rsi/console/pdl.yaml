@@ -1084,6 +1084,21 @@ views:
                         request: managerInline
                         objective: $.exp.id
                         cats: $.members.rows
+                  - label: t:rsi.exp.pol.requireCycleVars
+                    control:
+                      type: select
+                      id: rsi-pol-require-cycle-vars
+                      label: t:rsi.exp.pol.requireCycleVars
+                      value: $.exp.policy.requireCycleVarsValue
+                      options:
+                        - v: "off"
+                          label: t:rsi.exp.pol.requireCycleVarsOff
+                        - v: "on"
+                          label: t:rsi.exp.pol.requireCycleVarsOn
+                      change: plugin
+                      args:
+                        request: requireCycleVarsInline
+                        objective: $.exp.id
               - type: settings
                 when: "!$.exp.projectPath"
                 rows:
@@ -2682,6 +2697,7 @@ views:
                           of: "@k"
                           map:
                             same: t:rsi.exp.pick.same
+                            promote: t:rsi.exp.pick.promote
                             _: t:rsi.exp.gov.noteTitle
                       sub:
                         text:
@@ -2700,6 +2716,11 @@ views:
                                   t: rsi.exp.gov.same
                                   args:
                                     - $.exp.cycle.gov.current
+                            promote:
+                              t: rsi.exp.gov.promote
+                              args:
+                                - $.exp.cycle.gov.candidate.version
+                                - $.exp.cycle.gov.current
                             _:
                               t: rsi.exp.gov.note
                               args:
@@ -2720,6 +2741,19 @@ views:
                                 of: "@k"
                                 map:
                                   same: true
+                                  _: false
+                              disabled: $.pending
+                            - type: button
+                              label: t:rsi.exp.pick.promote
+                              act: plugin
+                              args:
+                                request: promoteVersion
+                                objective: $.exp.id
+                                version: $.exp.cycle.gov.candidate.version
+                              when:
+                                of: "@k"
+                                map:
+                                  promote: true
                                   _: false
                               disabled: $.pending
                             - type: button
@@ -7304,6 +7338,32 @@ requests:
       objective: "@objective"
       v: "@v"
       cats: "@cats"
+  requireCycleVarsInline:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      thread: host:currentThread.id
+    body:
+      op: requireCycleVars
+      objective: "@objective"
+      v: "@v"
+  promoteVersion:
+    path: rsi/act
+    method: POST
+    query:
+      project: state.project
+      pick: state.pick
+      tab: state.tab
+      selO: state.selO
+      selE: state.selE
+      selC: state.selC
+      thread: host:currentThread.id
+    body:
+      op: promote
+      objective: "@objective"
+      version: "@version"
   stopInline:
     path: rsi/act
     method: POST

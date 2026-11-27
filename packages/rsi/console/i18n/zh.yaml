@@ -766,6 +766,7 @@ exp:
     metric: 改指标
     goal: 改目标
     same: 今晚照旧
+    promote: 直接采用候选
   pickName:
     direction: 采纳方向
     info: 补充信息
@@ -773,6 +774,7 @@ exp:
     metric: 改指标
     goal: 改目标
     same: 今晚照旧
+    promote: 直接采用候选
     repair: 执行修复（原版本运行异常）
     repairing: 待执行修复（原版本运行异常）
     _: "{0}"
@@ -807,6 +809,7 @@ exp:
     others: 看全部方向
     same: 当前版本 {0} 换新种子再跑一轮，什么都不改
     sameConfirm: 下一周期复验候选 {0}（{1}）：换新种子，再和当前版本 {2} 比一次
+    promote: 直接将候选 {0} 晋升为当前默认版本（原 {1}），无需再跑一轮确认
     noteTitle: 写说明出版本
     note: 你写一段说明，{0} 按说明出新版本，下一周期拿它和当前版本 {1} 对照
     chosen: 选了
@@ -1102,6 +1105,9 @@ exp:
     repair: 出错自动修
     manager: 委托负责人
     managerNone: 仅我本人（默认）
+    requireCycleVars: 外部租约门禁
+    requireCycleVarsOff: 关闭（按计划自动推进）
+    requireCycleVarsOn: 开启（每轮前须绑定 cycleVars）
     stop: 何时停
     seeds: 每组种子
     vars: 允许 agent 调的变量

@@ -95,6 +95,28 @@ export function cycleVarsConflicts(d: Experiment, groups: Data[], cycleVars: unk
   return conflicts;
 }
 
+export function hasCycleVars(plan: Data | undefined): boolean {
+  return !!plan && record(plan.cycleVars) && Object.keys(plan.cycleVars).length > 0;
+}
+
+export function needsCycleVars(d: Experiment): boolean {
+  return !!d.policy?.requireCycleVars && !hasCycleVars(d.upcoming);
+}
+
+export function notifyAwaitingCycleVars(state: RsiState, d: Experiment, now: number, reason: string) {
+  const manager = d.policy?.manager;
+  if (!d.objective.projectPath || !needsCycleVars(d) || !manager?.catId) return;
+  const pausedHint = d.objective.state === 'paused' ? '（评估项当前处于暂停态）' : '';
+  enqueue(state, d, 'agent', {
+    member: manager.catId,
+    action: 'cycleVars',
+    message: {
+      title: '下一周期待绑定本轮参数（cycleVars）',
+      body: `${mention(manager)} ${reason}${pausedHint}。因已启用「每轮前须绑定 cycleVars」门禁，系统暂不自动启动下一周期；请先确认外部资源/租约，再调原生 MCP 工具 rsi_operate(op="cycleVars") 绑定本轮参数并启动。`,
+    },
+  });
+}
+
 // A cycle belongs to the version it tests: the first group other than the control that runs another version,
 // otherwise the control's version (a cycle that only tries variables on it).
 export function testedVersion(plan: Data): string {
@@ -119,6 +141,7 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
     const plan = structuredClone(planned?.plan || d.upcoming);
     if (!validPlan(plan)) return { error: 'Submit a cycle plan with groups and seeds' };
     if (plan.requiresExplicitPlan) return { error: '上一个探索周期包含自定义 reservedSeeds 绑定，不能直接沿用旧计划重跑；请通过方向决策提交新 rsi_version 重新登记完整兼容的种子计划。' };
+    if (d.policy?.requireCycleVars && !hasCycleVars(plan)) return { error: '本评估项已启用每轮前须绑定 cycleVars 门禁，请先通过 rsi_operate(op="cycleVars") 绑定本轮一次性运行时参数后再启动周期。' };
     const current = d.versions.find((v: Data) => v.id === d.objective.currentVersion);
     const declared = plan.groups.find((g: Data) => g.control || g.id === 'control');
     if (!current.vars) current.vars = !declared?.version || declared.version === current.id ? declared?.vars ?? declared?.overrides ?? {} : {};
@@ -791,6 +814,22 @@ function conclusionCard(state: RsiState, d: Experiment, round: Data, now: number
   message(state, d, now, `第 ${round.n} 周期结论 · ${report.verdict}`, `${report.summary}${compareBlock}${report.outcome}${checked}\n\n${lines.join('\n')}${verdict}${absent}${closed ? '' : d.candidate ? '\n\n在 RSI 页面点「今晚照旧」，下一周期跑确认。' : `\n\n在 RSI 页面选择方向。${customSeedNote}`}`, 'conclusion');
   if (stopped) message(state, d, now, stopped.text, d.closeoutReport?.markdown || `第 ${round.n} 周期结论后停止启动新周期。`, 'conclusion');
   if (!round.decision && !closed) decideAtNight(state, d, round, now);
+  if (!round.decision && !closed && d.objective.projectPath && d.policy?.manager?.catId) {
+    const manager = d.policy.manager;
+    const pausedHint = d.objective.state === 'paused' ? '评估项当前处于暂停状态；' : '';
+    const actionHint = d.candidate
+      ? `已产生候选版本 ${d.candidate.version}，可按授权决定复验（expDecide pick="same"）、直接晋升默认版本（promote）或请主人拍板。`
+      : '请调原生 MCP 工具 rsi_status 查看完整结论与各成员方向，再按授权通过 rsi_operate(op="expDecide") 拍板或转交主人。';
+    enqueue(state, d, 'agent', {
+      member: manager.catId,
+      cycle: round.n,
+      action: 'decide',
+      message: {
+        title: `第 ${round.n} 周期结论已就绪，请处理决策`,
+        body: `${mention(manager)} 第 ${round.n} 周期结论（${report.verdict}）及方向提案已汇总完毕。${pausedHint}${actionHint}`,
+      },
+    });
+  }
 }
 
 // Inside the run window a conclusion that starts waiting goes on by the rules declared at creation (PHASE3 §2): a candidate is
@@ -802,7 +841,8 @@ function decideAtNight(state: RsiState, d: Experiment, round: Data, now: number)
   if (d.candidate) {
     round.decision = { pick: 'same', note: '有候选：直接换新种子复验', by: 'RSI', at: now };
     d.objective.state = 'running';
-    message(state, d, now, `第 ${round.n} 周期：有候选，直接换新种子复验`, '复验只换种子、不改任何东西，不用等人：下一周期跑确认。', 'plan');
+    message(state, d, now, `第 ${round.n} 周期：有候选，直接换新种子复验`, needsCycleVars(d) ? '复验计划已就绪；因已启用每轮前绑定 cycleVars 门禁，待绑定本轮参数后启动。' : '复验只换种子、不改任何东西，不用等人：下一周期跑确认。', 'plan');
+    notifyAwaitingCycleVars(state, d, now, `第 ${round.n} 周期已排入候选确认计划`);
     return;
   }
   // The first analyst who proposed speaks for them (two or more must agree); without one, the evaluator's first direction.
@@ -843,7 +883,7 @@ export function propose(state: RsiState, d: Experiment, input: Data, catId: stri
 // The analysts agree when their first directions change the same thing in the same way (same kind and target); without a target there is nothing to compare.
 // Nobody decided in time: the plan the conclusion set goes on — a candidate is confirmed, otherwise the same groups run again on fresh seeds. Nothing is changed.
 export function decideByDefault(state: RsiState, d: Experiment, round: Data, now: number) {
-  if ((Array.isArray(round.plan?.reservedSeeds) && round.plan.reservedSeeds.length && !d.candidate) || d.upcoming?.requiresExplicitPlan) return;
+  if ((Array.isArray(round.plan?.reservedSeeds) && round.plan.reservedSeeds.length && !d.candidate) || d.upcoming?.requiresExplicitPlan || d.policy?.requireCycleVars) return;
   round.decision = { pick: 'same', note: `${DECISION_WAIT / 60_000} 分钟没人回应，按当前计划继续`, by: 'RSI', at: now };
   d.objective.state = 'running';
   message(state, d, now, `第 ${round.n} 周期：没人回应，按当前计划继续`, d.candidate ? '下一周期换新种子复验候选。' : '下一周期按同样的组换新种子再跑一轮，不改任何东西。下一个结论出来时可以再选方向。', 'plan');

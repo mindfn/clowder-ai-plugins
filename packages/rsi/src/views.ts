@@ -122,6 +122,7 @@ function policyOf(d: Data, o: Data, nowTs = Date.now()) {
     stopRounds: stop.maxCycles || '', stopRoundsValue: stop.maxCycles ? String(stop.maxCycles) : '', stopRoundsText: stop.maxCycles ? `${stop.maxCycles} 个周期` : '不限制',
     stopText: stopText(stop), autoKey: autoKey(d.policy.auto || AUTO.default) || 'default',
     managerId: d.policy.manager?.catId || '', managerName: d.policy.manager?.name || '',
+    requireCycleVarsValue: d.policy.requireCycleVars ? 'on' : 'off',
   };
   if (!o.projectPath) return Object.assign({}, d.policy, shared, { autoText: tc('rsi.exp.pol.autoText') });
   const plan = d.upcoming || (d.rounds.length ? d.rounds[d.rounds.length - 1].plan : null), tried: Data = {};
@@ -506,7 +507,7 @@ function exp(): any {
     const selectedFile = diffFiles.find((f: Data) => f.path === S.rsiGovFile) || null;
     const hasDetails = !!(pr || changeItems.length || diffFiles.length);
     return { ask: !waiting(r) ? '' : d.candidate ? 'confirm' : !r.report.directions.length ? 'empty' : ['split', 'agree'].includes(disc!.status) ? disc!.status : 'choose',
-      choices: !waiting(r) ? [] : d.candidate ? [{ k: 'same' }] : [{ k: 'same' }, { k: 'note' }], candidate: d.candidate && { group: d.candidate.id, version: d.candidate.version }, current: o.currentVersion, iterate: memberName('iterate'),
+      choices: !waiting(r) ? [] : d.candidate ? [{ k: 'same' }, { k: 'promote' }] : [{ k: 'same' }, { k: 'note' }], candidate: d.candidate && { group: d.candidate.id, version: d.candidate.version }, current: o.currentVersion, iterate: memberName('iterate'),
       discuss: disc && sel(r, 'discuss'), adopted: dirOf(r) || null,
       pr, changeItems, diffFiles, selectedFile, diffMode: S.rsiGovDiffMode, hasDetails,
       led: !decision ? null : ask ? { k: 'version', title: ask.title } : later ? { k: 'cycle', n: later.k, version: later.version, go: sel(later, later.report ? 'eval' : 'collect') }

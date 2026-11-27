@@ -3377,3 +3377,142 @@ test('alpha.132: multi-arm cycleVars rejects treatment-key conflicts at both cyc
   assert.equal(stAfter.rounds.length, 1);
   assert.deepEqual(stAfter.upcoming.cycleVars, { instances_per_card: 1 });
 });
+
+test('alpha.136: pendingDecisionCycle wakes policy.manager without rsi_task prompt, promote adopts candidate directly, and requireCycleVars gates auto-start without pause', async (t) => {
+  const f = await fixture(t), o = await f.create({ auto: 'none', scheduleMode: 'unlimited' });
+  await retain(f.storage, ownerKey('owner'), (st) => {
+    st.experiments[o.id].policy.manager = { catId: 'cat-drby1x4c', name: '墨墨', handle: '@gemini' };
+  });
+  let roundScore = 50;
+  Object.assign(f.commands, {
+    submit: `node -e "const fs=require('fs');const cfg=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const s=cfg.boost?80:50;fs.writeFileSync(process.argv[2]+'/metrics.json',JSON.stringify({score:s}));" {config} {run}`,
+    collect: '{run}/metrics.json',
+  });
+  await f.initialize(o, {
+    groups: [
+      { id: 'control', label: '当前版本对照', vars: { boost: 0 }, control: true },
+      { id: 'cand', label: '候选改进', vars: { boost: 1 } },
+    ],
+    seeds: [901, 902],
+  });
+
+  // 1) Enable requireCycleVars via rsi_operate; verify status surfaces awaitingCycleVars and blocks tick() & runCycle without pausing.
+  const gateOn = await f.tool('operate', { op: 'requireCycleVars', objectiveId: o.id, enabled: true }, 'cat-drby1x4c', o.thread);
+  assert.equal(gateOn.ok, true);
+  assert.equal(gateOn.requireCycleVars, true);
+  const stGated = await f.tool('status', { objectiveId: o.id, scope: 'full' }, 'cat-drby1x4c', o.thread);
+  assert.equal(stGated.policy.requireCycleVars, true);
+  assert.equal(stGated.active.awaitingCycleVars, true);
+  // Start objective (running), verify tick() does NOT auto-start a cycle while cycleVars is unbound, and manual runCycle fails closed.
+  assert.equal((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'start' }, 'cat-drby1x4c', o.thread)).ok, true);
+  await f.activation().actions['rsi.tick']();
+  assert.equal((await f.read()).experiments[o.id].rounds.length, 0);
+  const blockedNoVars = await f.tool('operate', { op: 'runCycle', objectiveId: o.id }, 'cat-drby1x4c', o.thread);
+  assert.match(blockedNoVars.error || '', /cycleVars/);
+
+  // 2) Bind cycleVars -> awaitingCycleVars turns false -> Cycle 1 runs and wins candidate.
+  assert.equal((await f.tool('operate', { op: 'cycleVars', objectiveId: o.id, vars: { lease_id: 'npu-1' } }, 'cat-drby1x4c', o.thread)).ok, true);
+  const stReady = await f.tool('status', { objectiveId: o.id, scope: 'brief' }, 'cat-drby1x4c', o.thread);
+  assert.equal(stReady.active.awaitingCycleVars, false);
+  const sendsBeforeConclude = f.sends.length;
+  const r1 = await execute(f, o);
+  assert.equal(r1.state, 'evaluating');
+  const blockedWhileEval = await f.tool('operate', { op: 'promote', objectiveId: o.id, version: 'v2' }, 'cat-drby1x4c', o.thread);
+  assert.match(blockedWhileEval.error || '', /评估中/);
+  // Evaluator concludes with candidate winning -> conclusionCard must wake policy.manager without misleading AGENT_HOW (rsi_task) boilerplate.
+  const evalTask = await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal(evalTask.evaluate?.cycle, 1);
+  const conc = await f.tool('conclude', {
+    cycle: 1,
+    verdict: 'keep',
+    findings: 'cand beat control by +30 on both seeds',
+    options: [{ k: 'next', title: 'Next phase', why: 'Proceed after promotion', kind: 'code', target: 'router' }],
+  }, 'cat-b5ddoo9l', o.thread);
+  assert.equal(conc.ok, true);
+  assert.equal(conc.confirmation?.status, 'candidate');
+  const managerDecisionWake = f.sends.slice(sendsBeforeConclude).find(
+    (s) => s.wake?.catId === 'cat-drby1x4c' && s.payload.elements[0].payload.text.includes('第 1 周期结论已就绪'),
+  );
+  assert.ok(managerDecisionWake, 'conclusionCard must wake policy.manager when pending decision');
+  assert.equal(managerDecisionWake.payload.elements[0].payload.text.includes('rsi_task'), false, 'manager decision wake must not inject rsi_task AGENT_HOW');
+
+  // 3) Simulate accidental deferred same decision while paused, then promote candidate directly via rsi_operate.
+  assert.equal((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'pause' }, 'cat-drby1x4c', o.thread)).ok, true);
+  assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 1, pick: 'same' }, 'cat-drby1x4c', o.thread)).ok, true);
+  const promoted = await f.tool('operate', { op: 'promote', objectiveId: o.id, note: 'Phase 1 E3 verified' }, 'cat-drby1x4c', o.thread);
+  assert.equal(promoted.ok, true);
+  assert.equal(promoted.previous, 'v1');
+  assert.equal(promoted.currentVersion, 'v2');
+  assert.equal(promoted.status, 'confirmed');
+  const expAfterPromote = (await f.read()).experiments[o.id];
+  assert.equal(expAfterPromote.objective.currentVersion, 'v2');
+  assert.equal(expAfterPromote.candidate, undefined);
+  // Deferred same confirmation decision must have been cleared so resuming goes cleanly to pending without firing a redundant cycle.
+  assert.equal(expAfterPromote.rounds[0].decision, undefined);
+  assert.equal(expAfterPromote.objective.resumeTo, 'pending');
+  // Resuming stays pending (waiting for next direction) and does NOT trigger decideByDefault even after DECISION_WAIT because requireCycleVars is enabled.
+  assert.equal((await f.tool('operate', { op: 'life', objectiveId: o.id, action: 'resume' }, 'cat-drby1x4c', o.thread)).ok, true);
+  await retain(f.storage, ownerKey('owner'), (st) => {
+    st.experiments[o.id].rounds[0].asked = Date.now() - 60 * 60_000;
+  });
+  await f.activation().actions['rsi.tick']();
+  assert.equal((await f.read()).experiments[o.id].rounds[0].decision, undefined);
+
+  // 4) Adopt a code direction -> iterate submits rsi_version -> requireCycleVars holds auto-start and wakes policy.manager with action=cycleVars.
+  assert.equal((await f.tool('operate', { op: 'expDecide', objectiveId: o.id, n: 1, pick: 'direction', directionId: 'next' }, 'cat-drby1x4c', o.thread)).ok, true);
+  const blockedWhileVersion = await f.tool('operate', { op: 'promote', objectiveId: o.id, version: 'v1' }, 'cat-drby1x4c', o.thread);
+  assert.match(blockedWhileVersion.error || '', /出版本中/);
+  const vTask = await f.tool('task', {}, 'codex', o.thread);
+  assert.equal(vTask.version?.cycle, 1);
+  const sendsBeforeVersion = f.sends.length;
+  const reg = await f.tool('version', { change: 'Phase 2 router', config: { boost: 1 } }, 'codex', o.thread);
+  assert.equal(reg.ok, true);
+  const varsWake = f.sends.slice(sendsBeforeVersion).find(
+    (s) => s.wake?.catId === 'cat-drby1x4c' && s.payload.elements[0].payload.text.includes('待绑定本轮参数'),
+  );
+  assert.ok(varsWake, 'rsi_version must wake policy.manager when requireCycleVars is enabled');
+  assert.equal(varsWake.payload.elements[0].payload.text.includes('rsi_task'), false);
+  // Objective stays running (not paused!), yet tick() MUST NOT launch Cycle 2 until cycleVars is bound.
+  await f.activation().actions['rsi.tick']();
+  const stHeld = await f.tool('status', { objectiveId: o.id, scope: 'brief' }, 'cat-drby1x4c', o.thread);
+  assert.equal(stHeld.objective.state, 'running');
+  assert.equal(stHeld.active.runningCycle, null);
+  assert.equal(stHeld.active.awaitingCycleVars, true);
+});
+
+test('alpha.136: remoteEnded retryable collect transport errors retry up to 3 times preserving jobId before failing', async (t) => {
+  // 1) Two consecutive transient SSH 255 collect errors followed by success on attempt 3 (retries === 2): single submit, zero cancels.
+  const f = await fixture(t), o = await f.create();
+  Object.assign(f.commands, {
+    submit: `node -e "const fs=require('fs');fs.appendFileSync('submits','1\\n');console.log('job-collect-3x');"`,
+    get: `node -e "console.log(JSON.stringify({state:'done',exitCode:0}));"`,
+    cancel: 'echo {job} >> cancels',
+    collect: `node -e "const fs=require('fs'),p=process.argv[1]+'/ccount';const n=(fs.existsSync(p)?Number(fs.readFileSync(p,'utf8')):0)+1;fs.writeFileSync(p,String(n));if(n<=2){console.log(JSON.stringify({reason:'Ascend transport exited 255',retryable:true}));process.exit(1);}console.log(JSON.stringify({metrics:{score:95}}));" {run}`,
+    poll: 1,
+  });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [921] });
+  const r = await execute(f, o);
+  assert.equal(r.runs[0].state, 'done');
+  assert.equal(r.runs[0].retries, 2);
+  assert.equal(r.runs[0].metrics.score, 95);
+  assert.equal(r.runs[0].jobId, undefined);
+  assert.equal((await readFile(join(f.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
+  assert.equal(await access(join(f.project, 'cancels')).then(() => true, () => false), false);
+
+  // 2) Four consecutive retryable collect failures exhaust the 3-retry budget and fail cleanly with accurate count.
+  const f2 = await fixture(t), o2 = await f2.create();
+  Object.assign(f2.commands, {
+    submit: `node -e "const fs=require('fs');fs.appendFileSync('submits','1\\n');console.log('job-collect-dead');"`,
+    get: `node -e "console.log(JSON.stringify({state:'done',exitCode:0}));"`,
+    cancel: 'echo {job} >> cancels',
+    collect: `node -e "console.log(JSON.stringify({reason:'Ascend transport exited 255',retryable:true}));process.exit(1);"`,
+    poll: 1,
+  });
+  await f2.initialize(o2, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [922] });
+  await f2.http('POST', { op: 'runCycle', objective: o2.id });
+  const r2 = (await until(f2.read, (s) => s.experiments[o2.id].rounds.at(-1)?.runs?.[0]?.state === 'failed', 'collect 3 retries exhausted', 15000)).experiments[o2.id].rounds.at(-1);
+  assert.equal(r2.runs[0].state, 'failed');
+  assert.equal(r2.runs[0].retries, 3);
+  assert.equal((await readFile(join(f2.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
+  assert.ok(f2.sends.some((s) => s.payload.elements[0].payload.text.includes('运行失败（已重试 3 次）')));
+});

@@ -1,7 +1,7 @@
 import { RSI_CP_INIT, createFixtures } from './fixtures.js';
 import { act } from './actions.js';
 import { clipTitle, submitInitStep, enqueue, kick, message, prepSettled, stepMemberOf, STOP_TARGET, syncObjective } from './init.js';
-import { abandonRepair, buildCloseoutReport, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, propose, resolveRsiParent, RUN_ORDERS, type RunOrder, validOrder, validateReservedSeeds, validPlan } from './cycles.js';
+import { abandonRepair, buildCloseoutReport, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, hasCycleVars, needsCycleVars, notifyAwaitingCycleVars, propose, resolveRsiParent, RUN_ORDERS, type RunOrder, validOrder, validateReservedSeeds, validPlan } from './cycles.js';
 import { roundMetrics, sliceMatrix, validateSliceSpecs } from './compare.js';
 import { parseScheduleText } from './schedule.js';
 import { record, text } from './store.js';
@@ -257,6 +257,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       };
     }
     delete d.versionRequest;
+    notifyAwaitingCycleVars(state, d, now, `新版本 ${id} 已登记并生成下一周期计划`);
     syncObjective(state, d);
     return { ok: true, version: id };
   }
@@ -465,6 +466,7 @@ function projectStatus(d: Experiment, input: Data): Data {
       repair: !!d.versionRequest.repair,
       claimed: !!d.versionRequest.invocationId,
     } : null,
+    awaitingCycleVars: !!(d.objective.projectPath && !['done', 'retired'].includes(d.objective.state) && needsCycleVars(d) && !d.versionRequest && !running && !evaluating && !discussing && !undecided && d.upcoming && !hasCycleVars(d.upcoming)),
   };
   const mapVersion = (v: Data, brief: boolean) => {
     const lr = lastRoundOf(v.id);
@@ -539,6 +541,7 @@ function projectStatus(d: Experiment, input: Data): Data {
       manager: d.policy?.manager || null,
       auto: d.policy?.auto ?? null,
       repair: d.policy?.repair ?? null,
+      requireCycleVars: !!d.policy?.requireCycleVars,
       schedule: d.policy?.schedule || null,
     },
     members: d.members.map((m) => ({ role: m.role, catId: m.catId, name: m.name, ...(m.handle ? { handle: m.handle } : {}) })),
@@ -575,7 +578,7 @@ function projectStatus(d: Experiment, input: Data): Data {
 }
 
 const DELEGATED_OPS = new Set([
-  'expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix', 'cycleVars',
+  'expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix', 'cycleVars', 'promote', 'requireCycleVars',
 ]);
 
 // Delegated operator control: strictly gated to the owner-designated policy.manager catId.
@@ -650,6 +653,12 @@ export function operateAction(state: RsiState, raw: Data, ctx: ToolContext, now:
   }
   if (op === 'cycleVars') {
     return act(state, { op: 'cycleVars', objective: d.objective.id, vars: input.vars }, query, now, actor);
+  }
+  if (op === 'requireCycleVars') {
+    return act(state, { op: 'requireCycleVars', objective: d.objective.id, enabled: input.enabled }, query, now, actor);
+  }
+  if (op === 'promote') {
+    return act(state, { op: 'promote', objective: d.objective.id, version: input.version, note: input.note }, query, now, actor);
   }
   return act(state, { op, objective: d.objective.id, ...(input.n !== undefined ? { n: input.n } : {}) }, query, now, actor);
 }

@@ -267,11 +267,11 @@ test('where agreeing 首选 still differ, and why 首选 without a target cannot
 });
 
 test('governance names what you decide and records what was chosen, by whom and what came of it', () => {
-  // A candidate: the next cycle is its confirmation, and 今晚照旧 is the only choice.
+  // A candidate: the next cycle can confirm it (今晚照旧) or promote it directly (直接采用候选).
   const w = arith();
   w.conclude([option('confirm', 'variable', 'reward_weights.format')]);
   const g = w.view('gov').cycle.gov;
-  assert.deepEqual([g.ask, g.candidate, g.choices, g.current, g.iterate], ['confirm', { group: 'format-zero', version: 'v1' }, [{ k: 'same' }], 'v1', '砚砚']);
+  assert.deepEqual([g.ask, g.candidate, g.choices, g.current, g.iterate], ['confirm', { group: 'format-zero', version: 'v1' }, [{ k: 'same' }, { k: 'promote' }], 'v1', '砚砚']);
   // An adopted direction: who proposed it, and the version the governance member is asked for.
   const x = arith({ analysts: [['a1', '甲'], ['a2', '乙']], values: SPLIT });
   x.conclude(); x.propose('a1', [option('lr', 'variable', 'lr')]); x.propose('a2', [option('lr2', 'variable', 'lr')]);

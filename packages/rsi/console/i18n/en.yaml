@@ -766,6 +766,7 @@ exp:
     metric: Change metrics
     goal: Change goal
     same: Keep tonight as planned
+    promote: Promote candidate now
   pickName:
     direction: Adopt direction
     info: Add information
@@ -773,6 +774,7 @@ exp:
     metric: Change metrics
     goal: Change goal
     same: Keep tonight as planned
+    promote: Promote candidate now
     repair: Execution repair (version failed to run)
     repairing: Repairing execution (version failed to run)
     _: "{0}"
@@ -807,6 +809,7 @@ exp:
     others: All directions
     same: The current version {0} runs again on fresh seeds; nothing changes
     sameConfirm: "Next cycle confirms candidate {0} ({1}): fresh seeds, compared with the current version {2} again"
+    promote: "Promote candidate {0} directly to current default (was {1}) without an extra confirmation cycle"
     noteTitle: Write a note for a version
     note: You write a note, {0} makes a new version from it, and the next cycle compares it with the current version {1}
     chosen: Chosen
@@ -1102,6 +1105,9 @@ exp:
     repair: Auto-repair
     manager: Delegated manager
     managerNone: Owner only (default)
+    requireCycleVars: Per-cycle resource gate
+    requireCycleVarsOff: Off (auto-start on schedule)
+    requireCycleVarsOn: On (require cycleVars before each cycle)
     stop: Stop condition
     seeds: Seeds per group
     vars: Variables the agent may tune
