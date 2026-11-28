@@ -1237,6 +1237,9 @@ abort:
   unconfirmed: Remote cleanup unconfirmed; inspection required
 
 progress:
+  tier: "Unknown tier: {0}"
+  tierEvidence: "Lower-tier evidence required: {0}"
+  hypothesis: Invalid hypothesis or scenario association; check the plan
   terminal: Objective has ended
   paused: Objective is paused; resume before running
   preparing: Preparation is incomplete
@@ -1271,3 +1274,44 @@ reservedIssue:
   duplicate: Reserved seeds must be unique
   history: "Overlaps historical seeds: {0}"
   scheduled: "Overlaps this cycle's outer seeds: {0}"
+
+hypothesis:
+  prerequisite: "Requires evidence from {0}"
+  scenariosText: Scenarios (comma separated)
+  cards: Planned cards
+  minutes: Planned minutes
+  cardHours: Card-hour budget
+  budget: "{0} cards · {1} minutes · {2} card-hours budget"
+  pool: Hypotheses
+  create: New hypothesis
+  edit: Edit hypothesis
+  archive: Archive
+  restore: Restore
+  empty: No hypotheses yet. Create one or collect them from analysis directions.
+  question: Testable question
+  note: Evidence and notes
+  specification: Experiment specification
+  links: Version and cycle associations
+  unlinked: Unlinked
+  cycle: "Cycle {0}"
+  source:
+    manual: "Proposed manually · {0}"
+    direction: "From cycle {1} · {2}"
+  control:
+    'true': Control required
+    'false': Control optional
+  binding:
+    'true': Bind resources each cycle
+    'false': No extra binding requirement
+  seed:
+    fresh: Fresh seeds
+    fixed: Fixed seeds
+  status:
+    archived: Archived
+    untested: Untested
+    working: In progress
+    blocked: Execution blocked
+    negative: Negative result
+    incomplete: Evidence incomplete
+    positive: Positive result
+    tested: Tested

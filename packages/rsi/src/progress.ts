@@ -1,3 +1,5 @@
+import { planAssociations } from './hypotheses.js';
+import { tierOf, tierBlocker, tiersOf } from './tiers.js';
 import { prepSettled, stepMemberOf } from './init.js';
 import { cycleVarsConflicts, freshSeeds, hasCycleVars, validPlan, reservedSeedIssue } from './cycles.js';
 import { insideWindow, withinWindowLimit } from './schedule.js';
@@ -64,8 +66,13 @@ export function progress(d: Experiment, now: number) {
     if (!validPlan(source)) add('plan', 'Submit a cycle plan with groups and seeds', 'prepare', 'plan');
     else {
       plan = structuredClone(source);
+      const tier = tierOf(d, plan);
+      const associationError = planAssociations(d, plan);
+      if (associationError) add('hypothesis', associationError, 'prepare', 'plan', 'all', { detail: associationError });
+      if (!tier) add('tier', 'Unknown experiment tier', 'prepare', 'plan', 'all', { detail: String(plan.tier) });
+      if (d.policy.tiers && !plan.tier) plan.tier = tiersOf(d)[0].id;
       if (plan.requiresExplicitPlan) add('explicitPlan', '上一个探索周期包含自定义 reservedSeeds 绑定，不能直接沿用旧计划重跑；请通过方向决策提交新 rsi_version 重新登记完整兼容的种子计划。', 'iterate', 'version');
-      if (d.policy.requireCycleVars && !hasCycleVars(plan)) add('cycleVars', '本评估项已启用每轮前须绑定 cycleVars 门禁，请先通过 rsi_operate(op="cycleVars") 绑定本轮一次性运行时参数后再启动周期。', 'manager', 'cycleVars');
+      if ((d.policy.requireCycleVars || tier?.requireCycleVars) && !hasCycleVars(plan)) add('cycleVars', '本评估项已启用每轮前须绑定 cycleVars 门禁，请先通过 rsi_operate(op="cycleVars") 绑定本轮一次性运行时参数后再启动周期。', 'manager', 'cycleVars');
       const current = d.versions.find((v: Data) => v.id === d.objective.currentVersion);
       if (!current) add('versionMissing', 'Unknown current version', 'iterate', 'version');
       else {
@@ -74,8 +81,8 @@ export function progress(d: Experiment, now: number) {
         initialVars = structuredClone(vars);
         const others = plan.groups.filter((g: Data) => !g.control && g.id !== 'control')
           .map((g: Data) => ({ ...g, control: false, vars: g.vars ?? g.overrides, version: g.version || current.id }));
-        const confirming = plan.tier === 'confirm' || others.some((g: Data) => g.confirm);
-        plan.groups = !confirming && plan.tier === 'explore' && plan.skipControl === true && others.length ? others
+        const confirming = !d.policy.tiers && plan.tier === 'confirm' || others.some((g: Data) => g.confirm);
+        plan.groups = !confirming && tier?.requireControl === false && plan.skipControl === true && others.length ? others
           : [{ id: 'control', label: '当前版本对照', version: current.id, vars: structuredClone(vars), control: true, confirm: false }, ...others];
         if (plan.groups.some((g: Data) => !d.versions.some((v: Data) => v.id === g.version))) add('groupVersion', 'Unknown group version', 'iterate', 'version');
         // First start initializes the control's variables from its declared group. Check
@@ -83,8 +90,14 @@ export function progress(d: Experiment, now: number) {
         const baseline = { ...d, versions: d.versions.map((v: Data) => v === current ? { ...v, vars } : v) };
         const conflicts = cycleVarsConflicts(baseline, plan.groups, plan.cycleVars);
         if (conflicts.length) add('cycleVarsConflict', `cycleVars cannot override keys that differ across groups: ${conflicts.join(', ')}`, 'manager', 'cycleVars', 'all', { detail: conflicts.join(', ') });
-        if (d.rounds.length) plan.seeds = freshSeeds(d, plan.seeds.length);
-        if (plan.reservedSeeds !== undefined && plan.tier !== 'explore') add('reservedTier', 'reservedSeeds is only allowed when tier is "explore"', 'iterate', 'plan');
+        if (tier) {
+          const gap = tierBlocker(d, plan, tier);
+          if (gap) add('tierEvidence', 'Required lower-tier evidence is missing: ' + gap, 'prepare', 'plan', 'all', { detail: gap });
+          // Never trust a submitted rule snapshot. Freeze the effective policy at start.
+          plan.tierRule = { ...structuredClone(tier), requireCycleVars: !!d.policy.requireCycleVars || tier.requireCycleVars, adoption: tier.id === tiersOf(d).at(-1)!.id };
+        }
+        if (d.rounds.length && tier?.seedPolicy !== 'fixed') plan.seeds = freshSeeds(d, plan.seeds.length);
+        if (plan.reservedSeeds !== undefined && (d.policy.tiers ? plan.tierRule?.adoption !== false : plan.tier !== 'explore')) add('reservedTier', 'reservedSeeds is only allowed when tier is "explore"', 'iterate', 'plan');
         const seedError = reservedSeedIssue(d, plan.reservedSeeds, plan.seeds);
         if (seedError) add('reservedSeeds', seedError.message, 'iterate', 'plan', 'all', { reason: seedError.code, detail: seedError.detail });
       }

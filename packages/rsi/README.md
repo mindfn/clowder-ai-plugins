@@ -96,3 +96,10 @@ npm test
 ```
 
 未完成范围和实机走查记录见 [GAPS.md](GAPS.md)，夜间连续推进的设计见 [PHASE3.md](PHASE3.md)。
+
+
+### alpha.138: hypotheses and experiment tiers
+
+Hypotheses are persisted on the objective shard. Analysis directions (`code`, `variable`, `discriminate`) enter automatically by provenance; owner Console and delegated `rsi_operate(op="hypothesis")` support creation, editing and archiving. Status is projected from associated evidence, with environment failures distinct from negative findings.
+
+Step 5 accepts an experiment specification (`tiers`, optional `scenarios`). `progress()` applies tier requirements and prerequisite evidence to both manual and scheduled starts. Cycles freeze their tier rules and associations; old records remain unlinked. The default is the unchanged explore/confirm behavior. See `skills/rsi/SKILL.md` for the complete schema and same-version tier advancement workflow. Parallel cycles and the validation matrix remain out of this release.

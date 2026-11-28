@@ -1237,6 +1237,9 @@ abort:
   unconfirmed: 远端清理未确认，请核查
 
 progress:
+  tier: "计划引用了未知层级：{0}"
+  tierEvidence: "尚缺低一级有效证据：{0}"
+  hypothesis: 假设或场景关联无效，请检查实验计划
   terminal: 评估项已结束
   paused: 评估项已暂停，恢复后才能运行
   preparing: 准备尚未完成
@@ -1271,3 +1274,44 @@ reservedIssue:
   duplicate: 预留种子不能重复
   history: "与历史种子重叠：{0}"
   scheduled: "与本轮外层种子重叠：{0}"
+
+hypothesis:
+  prerequisite: "需有 {0} 层级的有效证据"
+  scenariosText: 场景（逗号分隔）
+  cards: 预计卡数
+  minutes: 预计分钟
+  cardHours: 卡时预算
+  budget: "{0} 卡 · {1} 分钟 · {2} 卡时预算"
+  pool: 假设池
+  create: 新建假设
+  edit: 编辑假设
+  archive: 搁置
+  restore: 恢复
+  empty: 尚无假设；可手动新建，也会从分析方向自动收集。
+  question: 可验证的问题
+  note: 依据与备注
+  specification: 实验规约
+  links: 版本与周期关联
+  unlinked: 未关联
+  cycle: "周期 {0}"
+  source:
+    manual: "手动提出 · {0}"
+    direction: "来自周期 {1} · {2}"
+  control:
+    'true': 必须对照
+    'false': 对照可选
+  binding:
+    'true': 每轮绑定资源
+    'false': 无额外绑定要求
+  seed:
+    fresh: 使用新种子
+    fixed: 沿用固定种子
+  status:
+    archived: 已搁置
+    untested: 未验证
+    working: 验证中
+    blocked: 运行受阻
+    negative: 负结果
+    incomplete: 证据待补
+    positive: 有收益
+    tested: 已验证

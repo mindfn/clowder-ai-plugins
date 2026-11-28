@@ -123,6 +123,7 @@ export interface InitSubmission {
   metrics?: Data;
   docs?: Data[];
   upcoming?: Data;
+  specification?: Data;
   window?: string;
 }
 
@@ -189,9 +190,14 @@ export function submitInitStep(state: RsiState, id: string, submission: InitSubm
     const parsed = parseScheduleText(rawWindow);
     if (parsed) d.policy.schedule = parsed;
   }
+  if (section === 'design' && submission.specification) {
+    const { tiers, scenarios } = submission.specification;
+    if (tiers) d.policy.tiers = structuredClone(tiers);
+    if (scenarios) d.policy.scenarios = [...scenarios];
+  }
   if (submission.upcoming) {
     // A preparation plan cannot grant the owner's one-cycle runtime binding.
-    const { cycleVars: _dropCycleVars, ...plan } = submission.upcoming;
+    const { cycleVars: _dropCycleVars, tierRule: _dropTierRule, ...plan } = submission.upcoming;
     d.upcoming = structuredClone(plan);
   }
   const project = Object.keys(state.objectives).find((k) => state.objectives[k].some((o) => o.id === id))!;

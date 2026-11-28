@@ -1,3 +1,5 @@
+import { editHypothesis } from './hypotheses.js';
+import { tierEvidence, tiersOf } from './tiers.js';
 import { randomUUID } from 'node:crypto';
 import { askEvaluation, buildCloseoutReport, controlGroup, cycleVarsConflicts, finishAnalysis, freshSeeds, needsCycleVars, notifyAwaitingCycleVars, requestVersion, runCycle } from './cycles.js';
 import { formatPolicy, hasValidSchedule, parseMaxRuns, parseScheduleText, policiesOf, scheduleOf, scheduleSummary, timeRange, validatePolicy } from './schedule.js';
@@ -28,7 +30,9 @@ function dispatchDecision(state: RsiState, d: Experiment, round: Data, now: numb
     if (!d.candidate) {
       const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, cycleVars: _dropCycleVars, ...basePlan } = round.plan;
       const confirmSeedCount = d.policy.confirmSeeds || round.plan.seeds.length;
-      d.upcoming = { ...basePlan, tier: 'confirm', skipControl: false, seeds: freshSeeds(d, confirmSeedCount), groups: [controlGroup(d)] };
+      d.upcoming = d.policy.tiers
+        ? { ...basePlan, seeds: basePlan.tierRule?.seedPolicy === 'fixed' ? [...basePlan.seeds] : freshSeeds(d, basePlan.seeds.length) }
+        : { ...basePlan, tier: 'confirm', skipControl: false, seeds: freshSeeds(d, confirmSeedCount), groups: [controlGroup(d)] };
     }
     message(state, d, now, d.candidate ? '下一周期：确认赢家' : '下一周期：当前版本对照', needsCycleVars(d) ? '下一周期计划已就绪；因已启用每轮前绑定 cycleVars 门禁，待绑定本轮参数后启动。' : '在已确认的时段运行，也可点「跑一轮」。', 'plan');
     notifyAwaitingCycleVars(state, d, now, d.candidate ? `第 ${round.n} 周期已确认进入候选复验` : `第 ${round.n} 周期决定沿用当前计划`);
@@ -43,6 +47,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
   if (!state.objectives[project]) return { error: 'Project not found', status: 404 };
   const id = selected(state, body, query), o = summaryOf(state, id), d = state.experiments[id];
   switch (body.op) {
+    case 'hypothesis': return d ? editHypothesis(d, body, actor, now) : { error: 'Experiment not found', status: 404 };
     case 'refresh': return { ok: true };
     case 'groupRename': {
       const g = (state.groups[project] || []).find((x) => x.id === body.id), name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -940,13 +945,22 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       if (!isCandidatePromote && version.status !== 'confirmed') {
         return { error: 'Only the active candidate or a previously confirmed version can be promoted', status: 409 };
       }
+      if (isCandidatePromote && d.policy.tiers) {
+        const top = tiersOf(d).at(-1)!;
+        const selected = d.rounds.find((r: Data) => r.n === candidate.cycle);
+        const plan = { groups: [candidate], hypothesisIds: selected?.hypothesisIds, scenario: selected?.scenario };
+        if (!tierEvidence(d, plan, top.id).length) return { error: 'Adoption requires completed highest-tier evidence for this candidate', status: 409 };
+      }
       if (version.id === previous) {
         if (!isCandidatePromote) return { error: `Version ${version.id} is already the current version`, status: 409 };
         version = { ...version, id: `v${d.versions.length + 1}`, parent: version.id, current: false, change: candidate.label || version.change, at: now };
         delete version.worktree;
         d.versions.push(version);
       }
-      if (isCandidatePromote) version.vars = structuredClone(candidate.vars);
+      if (isCandidatePromote) {
+        version.vars = structuredClone(candidate.vars);
+        if (candidate.hypothesisId) version.hypothesisId = candidate.hypothesisId;
+      }
       Object.assign(version, { status: 'confirmed', promotedAt: now, promotedBy: actor, ...(note ? { promotedNote: note } : {}) });
       for (const v of d.versions) v.current = v.id === version.id;
       d.objective.currentVersion = version.id;

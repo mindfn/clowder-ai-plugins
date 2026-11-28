@@ -1,3 +1,5 @@
+import { hypothesisViews } from './hypotheses.js';
+import { tiersOf } from './tiers.js';
 import { progressView } from './progress.js';
 import { AUTO, autoKey, clipTitle, REPAIR_DEFAULT, repairText, stepMemberOf, stopText } from './init.js';
 import type { Data, RsiState } from './types.js';
@@ -1675,7 +1677,11 @@ function exp(): any {
   const abortedRound = [...d.rounds].reverse().find((r: Data) => r.aborted);
   const lastAbort = abortedRound && (abortedRound === d.rounds.at(-1) || o.state === 'paused') ? { ...abortedRound.aborted, cycle: abortedRound.n, note: abortedRound.aborted.note || '',
     cleanup: abortedRound.runs.filter((r: Data) => r.cancelResult).map((r: Data) => ({ run: r.id, jobId: r.jobId || null, ...r.cancelResult })) } : null;
-  return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, progress: readiness, lastAbort, stopReason: o.stopReason || null, closeoutReport, projectPath: o.projectPath, goal: o.goal, goalQuote, editingGoal: S.rsiEditGoal, execStatus, execFlow, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
+  return { id: o.id, name: clipTitle(o.name, 64, o.id),
+    hypotheses: hypothesisViews(d), tiers: tiersOf(d), scenarios: d.policy.scenarios || [],
+    hypothesisVersions: d.versions.map((v: Data) => ({ id: v.id, hypothesisId: v.hypothesisId || null })),
+    hypothesisCycles: d.rounds.map((r: Data) => ({ n: r.n, tier: r.tier || null, scenario: r.scenario || null, hypothesisIds: r.hypothesisIds || [] })),
+    state: o.state, progress: readiness, lastAbort, stopReason: o.stopReason || null, closeoutReport, projectPath: o.projectPath, goal: o.goal, goalQuote, editingGoal: S.rsiEditGoal, execStatus, execFlow, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
     trend: legacyTrend,
     trendMetric: d.metrics.items.find((m: Data) => m.id === main).name,

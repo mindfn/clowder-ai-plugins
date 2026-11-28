@@ -419,6 +419,145 @@ views:
                   request: goalEdit
                   objective: $.exp.id
           - type: section
+            title: t:rsi.hypothesis.pool
+            actions:
+              - type: button
+                label: t:rsi.hypothesis.create
+                act: dialog
+                args:
+                  kind: rsiHypothesis
+                  objective: $.exp.id
+            blocks:
+              - type: notice
+                when: "!$.exp.hypotheses"
+                text: t:rsi.hypothesis.empty
+                tone: info
+              - type: each
+                from: $.exp.hypotheses
+                blocks:
+                  - type: box
+                    blocks:
+                      - type: label
+                        text: "@title"
+                      - type: toolbar
+                        left:
+                          - type: status
+                            text:
+                              t: rsi.hypothesis.status
+                              args: ["@status"]
+                        right:
+                          - type: button
+                            label: t:rsi.hypothesis.edit
+                            act: dialog
+                            args:
+                              kind: rsiHypothesis
+                              objective: $.exp.id
+                              hypothesisId: "@id"
+                              title: "@title"
+                              note: "@note"
+                              scenariosText: "@scenariosText"
+                              cards: "@budget.cards"
+                              minutes: "@budget.minutes"
+                              cardHours: "@budget.cardHours"
+                          - type: button
+                            when: "!@archived"
+                            label: t:rsi.hypothesis.archive
+                            act: plugin
+                            args:
+                              request: hypothesisArchive
+                              objective: $.exp.id
+                              hypothesisId: "@id"
+                              archived: true
+                          - type: button
+                            when: "@archived"
+                            label: t:rsi.hypothesis.restore
+                            act: plugin
+                            args:
+                              request: hypothesisArchive
+                              objective: $.exp.id
+                              hypothesisId: "@id"
+                              archived: false
+                      - type: text
+                        when: "@scenariosText"
+                        text: "@scenariosText"
+                      - type: text
+                        when: "@budget"
+                        text:
+                          t: rsi.hypothesis.budget
+                          args: ["@budget.cards", "@budget.minutes", "@budget.cardHours"]
+                      - type: text
+                        text: "@id"
+                        faint: true
+                      - type: text
+                        text: "@note"
+                        when: "@note"
+                      - type: text
+                        text:
+                          t: rsi.hypothesis.source
+                          args: ["@source.kind", "@source.by", "@source.cycle", "@source.member"]
+          - type: section
+            title: t:rsi.hypothesis.specification
+            blocks:
+              - type: each
+                from: $.exp.tiers
+                blocks:
+                  - type: text
+                    parts:
+                      - text: "@label"
+                      - text: "@id"
+                        faint: true
+                      - text:
+                          t: rsi.hypothesis.control
+                          args: ["@requireControl"]
+                      - text:
+                          t: rsi.hypothesis.seed
+                          args: ["@seedPolicy"]
+                      - text:
+                          t: rsi.hypothesis.binding
+                          args: ["@requireCycleVars"]
+                      - text:
+                          t: rsi.hypothesis.prerequisite
+                          args: ["@promoteFrom"]
+                        when: "@promoteFrom"
+              - type: each
+                from: $.exp.scenarios
+                blocks:
+                  - type: text
+                    text: "@"
+              - type: disclosure
+                key: rsi-hypothesis-links
+                title: t:rsi.hypothesis.links
+                blocks:
+                  - type: each
+                    from: $.exp.hypothesisVersions
+                    blocks:
+                      - type: text
+                        parts:
+                          - text: "@id"
+                          - text: "@hypothesisId"
+                            when: "@hypothesisId"
+                          - text: t:rsi.hypothesis.unlinked
+                            when: "!@hypothesisId"
+                  - type: each
+                    from: $.exp.hypothesisCycles
+                    blocks:
+                      - type: text
+                        parts:
+                          - text:
+                              t: rsi.hypothesis.cycle
+                              args: ["@n"]
+                          - text: "@tier"
+                            when: "@tier"
+                          - text: "@scenario"
+                            when: "@scenario"
+                          - text: t:rsi.hypothesis.unlinked
+                            when: "!@hypothesisIds"
+                      - type: each
+                        from: "@hypothesisIds"
+                        blocks:
+                          - type: text
+                            text: "@"
+          - type: section
             title: t:rsi.exp.sec.execStatus
             actions:
               - type: button
@@ -6161,6 +6300,44 @@ views:
     okArgs:
       request: stop
       objective: $.objective
+  dlg.rsiHypothesis:
+    title: t:rsi.hypothesis.edit
+    fields:
+      - id: dlg-hypothesis-title
+        label: t:rsi.hypothesis.question
+        value: $.title
+        req: true
+        max: '240'
+        arg: title
+      - id: dlg-hypothesis-note
+        label: t:rsi.hypothesis.note
+        value: $.note
+        area: true
+        rows: 4
+        max: '2000'
+        arg: note
+      - id: dlg-hypothesis-scenariosText
+        label: t:rsi.hypothesis.scenariosText
+        value: $.scenariosText
+        arg: scenariosText
+      - id: dlg-hypothesis-cards
+        label: t:rsi.hypothesis.cards
+        value: $.cards
+        arg: cards
+      - id: dlg-hypothesis-minutes
+        label: t:rsi.hypothesis.minutes
+        value: $.minutes
+        arg: minutes
+      - id: dlg-hypothesis-cardHours
+        label: t:rsi.hypothesis.cardHours
+        value: $.cardHours
+        arg: cardHours
+    ok: t:rsi.common.save
+    okAct: plugin
+    okArgs:
+      request: hypothesis
+      objective: $.objective
+      hypothesisId: $.hypothesisId
   dlg.rsiAbortCycle:
     title: t:rsi.abort.action
     danger: true
@@ -7854,6 +8031,27 @@ requests:
       op: policy
       key: "@key"
       v: "@v"
+  hypothesis:
+    path: rsi/act
+    method: POST
+    body:
+      op: hypothesis
+      objective: "@objective"
+      hypothesisId: "@hypothesisId"
+      title: "@title"
+      note: "@note"
+      scenariosText: "@scenariosText"
+      cards: "@cards"
+      minutes: "@minutes"
+      cardHours: "@cardHours"
+  hypothesisArchive:
+    path: rsi/act
+    method: POST
+    body:
+      op: hypothesis
+      objective: "@objective"
+      hypothesisId: "@hypothesisId"
+      archived: "@archived"
   abortCycle:
     path: rsi/act
     method: POST

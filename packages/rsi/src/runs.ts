@@ -230,7 +230,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         const merged: Data = { ...base, ...version.vars, ...group.vars, ...cycleVars, seed: run.seed };
         if (round.plan.tier) merged.tier = round.plan.tier;
         else delete merged.tier;
-        if (round.plan.tier === 'explore' && Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length) merged.reservedSeeds = round.plan.reservedSeeds;
+        if ((round.plan.tierRule?.adoption === false || round.plan.tier === 'explore') && Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length) merged.reservedSeeds = round.plan.reservedSeeds;
         else delete merged.reservedSeeds;
         if (round.plan.groups.length > 1 && (round.plan.order === 'balanced' || round.plan.order === 'interleaved')) {
           merged.pairedPlan = round.runs.map((r: Data) => ({ group: r.group, seed: r.seed }));

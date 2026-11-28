@@ -106,7 +106,7 @@ async function fixture(t) {
       assert.ok(step?.ask); assert.ok(step.items.every((i) => i.meaning && i.format && i.example));
       const result = await tool('submit', { step: step.step, items: (step.examples ? step.examples.map((x) => ({ id: `own-${x.id}`, title: `Own ${x.title}` })) : step.items.filter((i) => !i.userOwned)).map((i) => ({ id: i.id, title: i.title, value: `Observed ${i.title}` })),
         unknowns: '', next: '', ...(section === 'run' ? { window: options.window || '20:00–08:00' } : {}), ...(section === 'rules' ? { metrics: options.metrics || { version: 'E1', items: [{ id: 'score', name: 'Score', how: 'metrics.score', dir: 'up' }] } } : {}),
-        ...(section === 'design' ? { upcoming: plan } : section === 'baseline' && options.baselinePlan ? { upcoming: options.baselinePlan } : {}) }, execution.by, objective.thread);
+        ...(section === 'design' ? { upcoming: plan, ...(options.specification ? { specification: options.specification } : {}) } : section === 'baseline' && options.baselinePlan ? { upcoming: options.baselinePlan } : {}) }, execution.by, objective.thread);
       assert.equal(result.ok, true, JSON.stringify(result));
       if (section === 'run') {
         assert.equal(result.state, 'awaiting-preflight');
@@ -3908,4 +3908,74 @@ test('alpha.137 queued redo: upstream work and an already queued downstream step
   view = viewModel(state, 'exp', { project: f.project, pick: `obj:${o.id}` });
   assert.equal(view.next.k, 'stale'); assert.equal(view.next.count, 1);
   assert.equal(view.progress.nextAction.op, 'initRedo');
+});
+
+
+test('P1 hypotheses persist across restart, owner/manager edit safely, and direction versions inherit provenance', async (t) => {
+  const f = await fixture(t), o = await f.create({ repair: '0' });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [11] });
+  const made = await f.http('POST', { op: 'hypothesis', objective: o.id, title: 'Can batching improve throughput?', note: 'Manual origin' });
+  assert.equal(made.ok, true, JSON.stringify(made));
+  assert.equal((await f.tool('operate', { op: 'hypothesis', title: 'Unauthorized' }, 'codex', o.thread)).status, 403);
+  assert.equal((await f.http('POST', { op: 'manager', objective: o.id, v: 'mgr', cats: [{ id: 'mgr', name: 'Manager' }] })).status, 200);
+  assert.equal((await f.tool('operate', { op: 'hypothesis', objectiveId: o.id, hypothesisId: made.hypothesisId, archived: true }, 'mgr', 'infra')).ok, true);
+  await execute(f,o);
+  await f.tool('task', {}, 'cat-b5ddoo9l', o.thread);
+  assert.equal((await f.tool('conclude', {cycle:1,verdict:'keep',findings:'Measured baseline',options:[{k:'batch',title:'Batch requests?',why:'Reduce overhead',kind:'code',target:'queue'},{k:'collect',title:'Fix collector',why:'Maintenance',kind:'execution',target:'collector'}]}, 'cat-b5ddoo9l', o.thread)).ok,true);
+  let d=(await f.read()).experiments[o.id];
+  assert.equal(d.hypotheses.length,2); const h=d.hypotheses.find(h=>h.source.kind==='direction');
+  assert.deepEqual(h.source,{kind:'direction',cycle:1,directionId:'batch',member:'cat-b5ddoo9l'});
+  assert.equal((await f.tool('operate',{op:'expDecide',objectiveId:o.id,n:1,pick:'direction',directionId:'batch'},'mgr','infra')).ok,true);
+  await f.tool('task',{},'codex',o.thread,'p1-version');
+  assert.equal((await f.tool('version',{change:'Batching',config:{delta:1},tier:'explore',seeds:1},'codex',o.thread,'p1-version')).ok,true);
+  d=(await f.read()).experiments[o.id];assert.equal(d.versions.at(-1).hypothesisId,h.id);assert.deepEqual(d.upcoming.hypothesisIds,[h.id]);
+  await f.activation().stop(); await f.start();
+  d=(await f.read()).experiments[o.id];assert.equal(d.hypotheses.length,2);assert.equal(d.hypotheses[0].archived,true);
+  const status=await f.tool('status',{objectiveId:o.id},'mgr','infra');assert.equal(status.hypotheses.length,2);assert.equal(status.versions.at(-1).hypothesisId,h.id);
+  const {viewModel}=await import('../dist/views.js');const vm=viewModel(await f.read(),'exp',{project:f.project,pick:`obj:${o.id}`});
+  assert.equal(vm.hypotheses.length,2);assert.equal(vm.hypothesisVersions[0].hypothesisId,null);assert.deepEqual(vm.hypothesisCycles[0].hypothesisIds,[]);
+});
+
+test('P1 specification snapshots custom tier and blocks higher tiers across status, manual and scheduler projections', async(t)=>{
+  const f=await fixture(t),o=await f.create({repair:'0'});
+  const specification={tiers:[{id:'screen',label:'Screen',requireControl:false,seedPolicy:'fixed',requireCycleVars:false},{id:'full',label:'Full',requireControl:true,seedPolicy:'fresh',requireCycleVars:true,promoteFrom:'screen',promotion:{verdicts:['keep'],minCycles:1}}],scenarios:['mixed']};
+  const made=await f.http('POST',{op:'hypothesis',objective:o.id,title:'Same configuration passes screening'});
+  const plan={tier:'screen',scenario:'mixed',hypothesisIds:[made.hypothesisId],skipControl:true,groups:[{id:'change',label:'Treatment',vars:{delta:1}}],seeds:[21]};
+  await f.initialize(o,plan,{specification});await execute(f,o);
+  let d=(await f.read()).experiments[o.id];assert.equal(d.rounds[0].tier,'screen');assert.equal(d.rounds[0].scenario,'mixed');assert.deepEqual(d.rounds[0].hypothesisIds,[made.hypothesisId]);assert.equal(d.rounds[0].plan.tierRule.adoption,false);assert.equal(d.rounds[0].runs.length,1);
+  await f.tool('task',{},'cat-b5ddoo9l',o.thread);
+  assert.equal((await f.tool('conclude',{cycle:1,verdict:'keep',findings:'Screen passes',options:[{k:'next',title:'Next',why:'Confirm',kind:'variable',target:'delta'}]},'cat-b5ddoo9l',o.thread)).ok,true);
+  const {progress}=await import('../dist/progress.js');const {runCycle}=await import('../dist/cycles.js');const {viewModel}=await import('../dist/views.js');
+  // Isolated persisted-state copy: the same candidate enters full validation without creating a different version.
+  const state=await f.read();d=state.experiments[o.id];d.rounds[0].decision={pick:'same'};d.objective.state='running';d.upcoming={...plan,tier:'full',cycleVars:{cards:8}};
+  assert.equal(progress(d,Date.now()).canRunCycle,true);
+  const frozen=structuredClone(d.rounds[0].plan.tierRule);d.policy.tiers[0].label='Edited later';assert.deepEqual(d.rounds[0].plan.tierRule,frozen);
+  d.rounds[0].runs[0].error={kind:'env'};
+  const p=progress(d,Date.now());assert.equal(p.canRunCycle,false);assert.equal(p.canSchedule,false);assert.ok(p.blockers.some(b=>b.code==='tierEvidence'));
+  assert.ok(runCycle(state,d,Date.now()).error);assert.equal(viewModel(state,'exp',{project:f.project,pick:`obj:${o.id}`}).progress.canRunCycle,false);
+  // Remove fields to replay an old objective; readers must not write speculative associations.
+  delete d.policy.tiers;delete d.policy.scenarios;delete d.hypotheses;delete d.upcoming.hypothesisIds;delete d.upcoming.scenario;delete d.upcoming.tier;
+  delete d.rounds[0].hypothesisIds;delete d.rounds[0].tier;delete d.rounds[0].scenario;
+  const before=structuredClone(state);const legacy=viewModel(state,'exp',{project:f.project,pick:`obj:${o.id}`});assert.equal(legacy.hypothesisCycles[0].tier,null);assert.deepEqual(legacy.hypothesisCycles[0].hypothesisIds,[]);assert.deepEqual(state,before);
+});
+
+test('P1 same-version screening advances through real preparation/binding to adoption-tier candidate and explicit promotion', async(t)=>{
+  const f=await fixture(t),o=await f.create({repair:'0'});
+  const specification={tiers:[{id:'screen',label:'Screen',requireControl:false,seedPolicy:'fixed',requireCycleVars:false},{id:'full',label:'Full',requireControl:true,seedPolicy:'fresh',requireCycleVars:true,promoteFrom:'screen'}],scenarios:['mixed']};
+  const made=await f.http('POST',{op:'hypothesis',objective:o.id,title:'Delta improves score'});
+  const plan={tier:'screen',scenario:'mixed',hypothesisIds:[made.hypothesisId],skipControl:true,groups:[{id:'change',label:'Treatment',vars:{delta:1}}],seeds:[31]};
+  await f.initialize(o,plan,{specification});await execute(f,o);await f.tool('task',{},'cat-b5ddoo9l',o.thread);
+  assert.equal((await f.tool('conclude',{cycle:1,verdict:'keep',findings:'Screen passed',options:[{k:'more',title:'Test more',why:'Confirm evidence',kind:'discriminate',target:'score'}]},'cat-b5ddoo9l',o.thread)).ok,true);
+  let d=(await f.read()).experiments[o.id];assert.equal(d.candidate,undefined);assert.deepEqual(d.upcoming.seeds,[31]);
+  assert.equal((await f.http('POST',{op:'expDecide',objective:o.id,n:1,pick:'same'})).status,200);
+  d=(await f.read()).experiments[o.id];assert.deepEqual(d.upcoming.groups[0].vars,{delta:1});assert.deepEqual(d.upcoming.seeds,[31]);
+  assert.equal((await f.http('POST',{op:'initStepRefresh',objective:o.id,k:'design'})).status,200);
+  await f.prepare(o,{...plan,tier:'full',skipControl:false},{specification});
+  assert.equal((await f.tool('status',{objectiveId:o.id},'codex',o.thread)).active.awaitingCycleVars,true);
+  assert.equal((await f.http('POST',{op:'cycleVars',objective:o.id,vars:{cards:8}})).status,200);
+  await execute(f,o);await f.tool('task',{},'cat-b5ddoo9l',o.thread);
+  const concluded=await f.tool('conclude',{cycle:2,verdict:'keep',findings:'Full candidate beats the control',options:[{k:'more',title:'More',why:'Continue',kind:'variable',target:'delta',cites:[`${o.id}-cycle-1`]}]},'cat-b5ddoo9l',o.thread);
+  assert.equal(concluded.ok,true,JSON.stringify(concluded));d=(await f.read()).experiments[o.id];assert.equal(d.candidate.vars.delta,1);assert.equal(d.upcoming.tier,'full');
+  const promoted=await f.http('POST',{op:'promote',objective:o.id,version:d.candidate.version,note:'Adopt full-tier evidence'});assert.equal(promoted.ok,true,JSON.stringify(promoted));
+  d=(await f.read()).experiments[o.id];assert.equal(d.versions.at(-1).vars.delta,1);assert.equal(d.versions.at(-1).status,'confirmed');assert.equal(d.versions.at(-1).hypothesisId,made.hypothesisId);
 });

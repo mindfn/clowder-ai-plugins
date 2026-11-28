@@ -1,3 +1,5 @@
+import { hypothesisViews, planAssociations } from './hypotheses.js';
+import { tierOf, tiersOf, validateTiers } from './tiers.js';
 import { progressView } from './progress.js';
 import { RSI_CP_INIT, createFixtures } from './fixtures.js';
 import { act } from './actions.js';
@@ -80,6 +82,7 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
       deps: p.deps.map((k) => ({ step: d.plan.findIndex((p) => p.k === k) + 1, section: k, version: d.steps![k]!.rev, items: d.prep.filter((item) => item.section === k) })),
       ...(p.k === 'run' ? { window: '支持「不限制」「周一至周五 09:00–18:00；周六至周日 全天」「2026-11-21~2026-11-30 09:00–18:00」或「20:00–08:00」', executor: '先用原生 MCP 工具 rsi_executor 登记 preflight/submit/collect 命令（可用占位符 {config}/{run}/{seed}/{job}/{harness}/{version}/{commit}；{harness} 仅用于定位本周期目标版本或最新提交版本的测量脚本，被测代码必须从当前工作目录 cwd 或按 {version}/{commit} 取，严禁脚本按自身路径如 $(dirname "$0")/.. 去部署被测包，避免对照组静默跑成新版本代码；同步前台 submit 省略 get，异步长任务请配 get 与 cancel，analyze 仅用于失败诊断）；异步 get 对已结束或未知/已清理作业应输出终态 JSON（如 {"state":"done","exitCode":0} 或 {"state":"cancelled"}），cancel 对已停止作业应幂等退出 0；preflight 通过且本步 items 已通过 rsi_submit 提交后才完成。' } : {}),
       ...(p.k === 'rules' ? { metrics: { version: 'E1', items: [{ id: 'score', name: '得分', how: 'metrics.json 的 score', dir: 'up', unit: '分', locked: true, guard: false }], slices: '可选分档量尺数组：[{ id, name, axis, axisUnit?, stats: [{ id, name, unit?, dir: up|down, threshold?, primary? }] }]；collect 对应输出 slices: { "<id>": [{ at, values: { "<stat>": number }, pass? }] }' } } : {}),
+      ...(p.k === 'design' ? { specification: d.policy.tiers ? { tiers: d.policy.tiers, scenarios: d.policy.scenarios || [] } : null, hypothesisIds: (d.hypotheses || []).filter((h: Data) => !h.archived).map((h: Data) => ({ id: h.id, title: h.title })) } : {}),
       ...(p.k === 'design' || p.k === 'baseline' ? { upcoming: { groups: [{ id: 'control', label: '对照', vars: {}, control: true }, { id: 'change', label: '一个改动', vars: { '<配置里的键>': '<新取值>' } }], seeds: [11, 23] } } : {}) };
   });
   const evaluate = d.members.find((m) => m.role === 'evaluate')?.catId === ctx.catId && d.rounds.find((r: Data) => r.state === 'evaluating');
@@ -97,7 +100,7 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
   if (version) version.invocationId = ctx.invocationId;
   const evalSlices = evaluate ? sliceMatrix(d, evaluate) : [];
   const analyzeSlices = analyze ? (Array.isArray(analyze.report?.slices) && analyze.report.slices.length ? analyze.report.slices : sliceMatrix(d, analyze)) : [];
-  return { objective: d.objective, progress: progressView(d, Date.now()), projectPath: d.objective.projectPath, steps, versions: d.versions,
+  return { hypotheses: hypothesisViews(d), specification: { tiers: tiersOf(d), scenarios: d.policy.scenarios || [] }, objective: d.objective, progress: progressView(d, Date.now()), projectPath: d.objective.projectPath, steps, versions: d.versions,
     // The shell that runs the registered commands, so members write commands that run on this host.
     shell: platform() === 'win32' ? 'cmd' : 'sh', stepVersions: d.steps, ...(evaluate ? { evaluate: { cycle: evaluate.n, aborted: evaluate.aborted || null, plan: evaluate.plan, runs: evaluate.runs, metrics: roundMetrics(d, evaluate), comparison: comparison(d, evaluate), ...(evalSlices.length ? { slices: evalSlices } : {}), library: cycleLibrary(state, d), next: '调用原生 MCP 工具 rsi_conclude 提交 verdict/findings/options；方向 cites 引用之前周期的资料库条目。' } } : {}),
     ...(analyze ? { analyze: { cycle: analyze.n, report: { verdict: analyze.report.verdict, findings: analyze.report.summary, confirmation: analyze.confirmation }, plan: analyze.plan, runs: analyze.runs,
@@ -176,13 +179,17 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     }
     const configVal = input.config !== undefined ? input.config : text(input.configPath) ? input.configPath : undefined;
     if (!text(input.change) || input.commit !== undefined && (!text(input.commit) || !/^[a-f0-9]{7,40}$/i.test(input.commit)) || !(record(configVal) || text(configVal))) return { error: 'Provide change, optional git commit (7–40 hex characters), and config (JSON object or JSON file path / configPath)' };
-    if (input.tier !== undefined && !['explore', 'confirm'].includes(input.tier)) return { error: 'tier must be "explore" or "confirm"' };
+    const selectedTier = tierOf(d, input);
+    if (!selectedTier) return { error: 'Unknown tier' };
+    const hypothesisId = input.hypothesisId ?? d.versionRequest.hypothesisId;
+    const associationError = planAssociations(d, { ...(hypothesisId !== undefined ? { hypothesisIds: [hypothesisId] } : {}), ...(input.scenario !== undefined ? { scenario: input.scenario } : {}) });
+    if (associationError) return { error: associationError };
     if (input.order !== undefined && !validOrder(input.order)) return { error: `order must be one of ${RUN_ORDERS.join(', ')}` };
     if (input.seeds !== undefined && !(Number.isInteger(input.seeds) && input.seeds >= 1 && input.seeds <= 20)) return { error: 'seeds must be an integer between 1 and 20' };
     if (input.skipControl !== undefined && typeof input.skipControl !== 'boolean') return { error: 'skipControl must be a boolean' };
-    if (input.skipControl === true && input.tier !== 'explore') return { error: 'skipControl is only allowed when tier is "explore"' };
+    if (input.skipControl === true && selectedTier.requireControl) return { error: d.policy.tiers ? 'skipControl requires an optional-control tier' : 'skipControl is only allowed when tier is "explore"' };
     if (d.versionRequest.direct && input.reservedSeeds !== undefined) return { error: 'reservedSeeds is not allowed on direct execution fixes' };
-    if (input.reservedSeeds !== undefined && input.tier !== 'explore') return { error: 'reservedSeeds is only allowed when tier is "explore"' };
+    if (input.reservedSeeds !== undefined && selectedTier.id === tiersOf(d).at(-1)!.id) return { error: d.policy.tiers ? 'reservedSeeds requires a screening tier' : 'reservedSeeds is only allowed when tier is "explore"' };
     let aspects: string[] | undefined;
     if (input.aspects !== undefined) {
       if (!Array.isArray(input.aspects) || !input.aspects.length || input.aspects.some((a: unknown) => typeof a !== 'string' || !['object', 'observability', 'rubric'].includes(a))) {
@@ -191,9 +198,9 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       aspects = ['object', 'observability', 'rubric'].filter((k) => (input.aspects as string[]).includes(k));
     }
     const last = d.rounds.find((r: Data) => r.n === d.versionRequest.cycle);
-    const tier = input.tier as ('explore' | 'confirm' | undefined);
-    const skipControl = tier === 'explore' && input.skipControl === true;
-    const defaultSeeds = tier === 'explore' ? last.plan.seeds.length : (d.policy.confirmSeeds || last.plan.seeds.length);
+    const tier = input.tier || (d.policy.tiers ? selectedTier.id : undefined);
+    const skipControl = !selectedTier.requireControl && input.skipControl === true;
+    const defaultSeeds = !selectedTier.requireControl ? last.plan.seeds.length : (d.policy.confirmSeeds || last.plan.seeds.length);
     const seedCount = typeof input.seeds === 'number' ? input.seeds : defaultSeeds;
     const scheduledSeeds = freshSeeds(d, seedCount);
     const reservedErr = validateReservedSeeds(d, input.reservedSeeds, scheduledSeeds);
@@ -213,6 +220,7 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       ...(Array.isArray(input.changes.items) ? { items: input.changes.items.filter((it: unknown) => record(it) && text(it.name)).map((it: Data) => ({ op: ['set', 'add', 'del'].includes(it.op) ? it.op : 'set', name: it.name, ...(it.from !== undefined ? { from: String(it.from) } : {}), ...(it.to !== undefined ? { to: String(it.to) } : {}) })) } : {}),
     } : null;
     const versionRecord: Data = { id, parent: derivedParent, change: input.change, commit: input.commit || null, config: configVal, at: now, current: false, status: 'proposed',
+      ...(hypothesisId ? { hypothesisId } : {}),
       ...(aspects ? { aspects } : {}),
       ...(changes ? { changes } : {}),
       ...(changes?.pr?.id ? { pr: changes.pr.id } : {}),
@@ -249,6 +257,8 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
       const order = (input.order ?? last?.plan?.order) as (RunOrder | undefined);
       d.upcoming = {
         baseline: false,
+        ...(hypothesisId ? { hypothesisIds: [hypothesisId] } : {}),
+        ...(input.scenario ? { scenario: input.scenario } : {}),
         skipControl,
         ...(tier ? { tier } : {}),
         ...(order ? { order } : {}),
@@ -318,9 +328,22 @@ export function toolAction(state: RsiState, method: string, raw: Data, ctx: Tool
     return { error: `停止目标「${d.objective.stop.target}」里的指标「${stopMetric}」不在量尺里：把对应量尺的 id 或名称写成「${stopMetric}」，或请用户在页面上改「何时停」。` };
   if ((section === 'design' || section === 'baseline') && input.upcoming !== undefined && !validPlan(input.upcoming)) return { error: 'Invalid upcoming plan' };
   if (section === 'design' && !validPlan(input.upcoming)) return { error: 'Step 5 requires upcoming {groups:[{id,label,vars}],seeds:[integer]}' };
+  if (input.specification !== undefined) {
+    if (section !== 'design' || !record(input.specification)) return { error: 'specification belongs to Step 5' };
+    const { tiers, scenarios } = input.specification;
+    if (tiers !== undefined) { const error = validateTiers(tiers); if (error) return { error }; }
+    if (scenarios !== undefined && (!Array.isArray(scenarios) || scenarios.some((s: unknown) => !text(s)) || new Set(scenarios).size !== scenarios.length)) return { error: 'specification.scenarios must contain distinct non-empty strings' };
+  }
+  if (input.upcoming) {
+    const projected = { ...d, policy: { ...d.policy, ...(section === 'design' ? input.specification : {}) } };
+    const error = planAssociations(projected, input.upcoming);
+    if (error) return { error };
+    if (!tierOf(projected, input.upcoming)) return { error: 'Unknown tier in upcoming plan' };
+  }
   const items = checkedItems.map((p: Data) => ({ ...d.prep.find((x) => x.id === p.id)!, ...p, section })) as PrepItem[];
   const joinNote = (v: unknown) => Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean).join('\n') : v;
   const submission = { section, executionId: d.exec![section]!.id, items, unknowns: joinNote(input.unknowns) as string | undefined, next: joinNote(input.next) as string | undefined, ...(section === 'run' && input.window ? { window: input.window } : {}),
+    ...(section === 'design' && input.specification ? { specification: input.specification } : {}),
     ...(section === 'goal' && input.goal ? { goal: input.goal } : {}), ...(section === 'rules' ? { metrics: input.metrics } : {}),
     ...(['design', 'baseline'].includes(section) && input.upcoming ? { upcoming: input.upcoming } : {}),
     ...(input.docs ? { docs: input.docs.map((doc: Data) => ({ ...doc, objectives: [d.objective.id], sources: doc.sources || [], by: ctx.catId })) } : {}) };
@@ -467,6 +490,7 @@ function projectStatus(d: Experiment, input: Data): Data {
     const tag = v.tag || lr?.report?.tag || null;
     return {
       id: v.id,
+      hypothesisId: v.hypothesisId ?? null,
       parent: v.parent ?? null,
       commit: v.commit || null,
       status: v.status || null,
@@ -483,6 +507,7 @@ function projectStatus(d: Experiment, input: Data): Data {
     : null;
   if (scope === 'brief') {
     const briefRound = targetRound ? {
+      tier: targetRound.tier ?? null, scenario: targetRound.scenario ?? null, hypothesisIds: targetRound.hypothesisIds || [],
       n: targetRound.n,
       state: targetRound.state,
       aborted: targetRound.aborted || null,
@@ -498,6 +523,7 @@ function projectStatus(d: Experiment, input: Data): Data {
     } : null;
     return {
       scope: 'brief',
+      hypotheses: hypothesisViews(d), specification: { tiers: tiersOf(d), scenarios: d.policy.scenarios || [] },
       objective: {
         id: d.objective.id,
         name: d.objective.name,
@@ -515,7 +541,7 @@ function projectStatus(d: Experiment, input: Data): Data {
       round: briefRound,
     };
   }
-  const round = targetRound ? summarizeRound(targetRound) : null;
+  const round = targetRound ? { ...summarizeRound(targetRound), tier: targetRound.tier ?? null, scenario: targetRound.scenario ?? null, hypothesisIds: targetRound.hypothesisIds || [] } : null;
   return {
     objective: {
       id: d.objective.id,
@@ -530,6 +556,7 @@ function projectStatus(d: Experiment, input: Data): Data {
       stopReason: d.objective.stopReason || null,
       budget: d.objective.budget || null,
     },
+    hypotheses: hypothesisViews(d), specification: { tiers: tiersOf(d), scenarios: d.policy.scenarios || [] },
     ...(closeoutReport ? { closeoutReport } : {}),
     policy: {
       manager: d.policy?.manager || null,
@@ -572,7 +599,7 @@ function projectStatus(d: Experiment, input: Data): Data {
 }
 
 const DELEGATED_OPS = new Set([
-  'expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix', 'cycleVars', 'promote', 'requireCycleVars', 'abortCycle',
+  'expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix', 'cycleVars', 'promote', 'requireCycleVars', 'abortCycle', 'hypothesis',
 ]);
 
 // Delegated operator control: strictly gated to the owner-designated policy.manager catId.
@@ -645,6 +672,7 @@ export function operateAction(state: RsiState, raw: Data, ctx: ToolContext, now:
     const annotatedBy = text(input.annotatedBy) ? input.annotatedBy.trim() : `${manager.name || ctx.catId}（回填）`;
     return act(state, { op: 'lineageFix', objective: d.objective.id, patches: input.patches, annotatedBy }, query, now, actor);
   }
+  if (op === 'hypothesis') return act(state, { ...input, op, objective: d.objective.id }, query, now, actor);
   if (op === 'abortCycle') return act(state, { op, objective: d.objective.id, reason: input.reason, note: input.note }, query, now, actor);
 
   if (op === 'cycleVars') {

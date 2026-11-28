@@ -1,3 +1,5 @@
+import { collectHypotheses } from './hypotheses.js';
+import { tierOf, screeningRound } from './tiers.js';
 import { progress } from './progress.js';
 import { AUTO, clipTitle, enqueue, mention, message, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
 import { formatComparisonMarkdown, roundMetrics, roundMetricVersion, sliceMatrix } from './compare.js';
@@ -105,7 +107,7 @@ export function hasCycleVars(plan: Data | undefined): boolean {
 }
 
 export function needsCycleVars(d: Experiment): boolean {
-  return !!d.policy?.requireCycleVars && !hasCycleVars(d.upcoming);
+  return !!(d.policy?.requireCycleVars || d.upcoming && tierOf(d, d.upcoming)?.requireCycleVars) && !hasCycleVars(d.upcoming);
 }
 
 export function notifyAwaitingCycleVars(state: RsiState, d: Experiment, now: number, reason: string) {
@@ -142,10 +144,10 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
     const plan = readiness.plan!;
     const current = d.versions.find((v: Data) => v.id === d.objective.currentVersion);
     if (!current.vars) current.vars = readiness.initialVars!;
-    if (!d.policy.confirmSeeds && plan.tier !== 'explore' && plan.seeds.length > 0) d.policy.confirmSeeds = plan.seeds.length;
+    if (!d.policy.confirmSeeds && plan.tierRule?.adoption !== false && plan.seeds.length > 0) d.policy.confirmSeeds = plan.seeds.length;
     const n = planned?.n || Math.max(0, ...d.rounds.map((r: Data) => r.n)) + 1;
     round = planned || { n };
-    Object.assign(round, { version: testedVersion(plan), start: now, end: null, state: 'running', plan, metrics: structuredClone(d.metrics), report: null, decision: null, events: [],
+    Object.assign(round, { tier: plan.tier || 'confirm', ...(plan.scenario ? { scenario: plan.scenario } : {}), ...(plan.hypothesisIds ? { hypothesisIds: [...plan.hypothesisIds] } : {}), version: testedVersion(plan), start: now, end: null, state: 'running', plan, metrics: structuredClone(d.metrics), report: null, decision: null, events: [],
       runs: orderedPairs(plan.groups, plan.seeds, plan.order).map(({ group: g, seed }) => ({ id: `${d.objective.id}-${n}-${g.id}-s${seed}`, group: g.id, seed,
         state: 'queued', start: null, end: null, retries: 0, attempts: [], metrics: {}, artifacts: [], env: {}, log: '', error: null })) });
     if (!planned) {
@@ -322,7 +324,7 @@ function stopAfterConclusion(state: RsiState, d: Experiment, round: Data, compar
   const adopted = round.confirmation?.status === 'confirmed' ? round.confirmation.group : 'control';
   const cell = metric && compared.matrix.find((m: Data) => m.group === adopted && m.metric === metric.id);
   const eligible = compared.groups.find((g: Data) => g.group === adopted)?.eligible;
-  const reached = round.plan.tier !== 'explore' && eligible && cell && typeof cell.mean === 'number' && match && (['>=', '≥'].includes(match[2]) ? cell.mean >= +match[3] : ['<=', '≤'].includes(match[2]) ? cell.mean <= +match[3] : match[2] === '>' ? cell.mean > +match[3] : cell.mean < +match[3]);
+  const reached = !screeningRound(round) && eligible && cell && typeof cell.mean === 'number' && match && (['>=', '≥'].includes(match[2]) ? cell.mean >= +match[3] : ['<=', '≤'].includes(match[2]) ? cell.mean <= +match[3] : match[2] === '>' ? cell.mean > +match[3] : cell.mean < +match[3]);
   const reason = reached ? { kind: 'target', text: `达到目标：${target}` }
     : stop?.maxCycles && d.objective.budget.used >= stop.maxCycles ? { kind: 'maxCycles', text: `已完成最多 ${stop.maxCycles} 个周期` }
     : round.report.verdict === 'sunset' ? { kind: 'sunset', text: '本周期结论：停止评估' } : null;
@@ -719,7 +721,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   }
   delete round.reevaluating;
   const wins = compared.groups.filter((g: Data) => g.beatsControl).sort((a: Data, b: Data) => compared.dir === 'up' ? b.mean - a.mean : a.mean - b.mean);
-  const isExplore = round.plan.tier === 'explore';
+  const isExplore = screeningRound(round);
   const winner = isExplore || round.aborted ? undefined : wins[0], candidate = d.candidate;
   let confirmation: Data | null = null;
   const hadReservedSeeds = Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length > 0;
@@ -737,7 +739,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
         d.versions.push(version);
       }
       const interval = compared.matrix.find((m: Data) => m.group === group.id && m.metric === compared.metric);
-      Object.assign(version, { vars: candidate.vars, status: 'confirmed', interval, confirmedCycle: round.n });
+      Object.assign(version, { vars: candidate.vars, ...(candidate.hypothesisId ? { hypothesisId: candidate.hypothesisId } : {}), status: 'confirmed', interval, confirmedCycle: round.n });
       for (const v of d.versions) v.current = v.id === version.id;
       d.objective.currentVersion = version.id;
       confirmation.version = version.id; confirmation.interval = interval;
@@ -748,16 +750,16 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
       delete d.candidate;
     }
     const confirmSeedCount = d.policy.confirmSeeds || round.plan.seeds.length;
-    d.upcoming = { ...basePlan, tier: 'confirm', skipControl: false, groups: [controlGroup(d), ...(missing ? [{ ...group, control: false, confirm: true }] : [])], seeds: freshSeeds(d, confirmSeedCount) };
+    d.upcoming = { ...basePlan, tier: round.plan.tierRule?.adoption ? round.plan.tierRule.id : 'confirm', skipControl: false, groups: [controlGroup(d), ...(missing ? [{ ...group, control: false, confirm: true }] : [])], seeds: freshSeeds(d, confirmSeedCount) };
   } else if (winner) {
     const group = round.plan.groups.find((g: Data) => g.id === winner.group);
     const confirmSeedCount = d.policy.confirmSeeds || round.plan.seeds.length;
-    d.candidate = { ...group, cycle: round.n, seeds: [...round.plan.seeds], against: d.objective.currentVersion };
+    d.candidate = { ...group, ...(round.hypothesisIds?.length === 1 ? { hypothesisId: round.hypothesisIds[0] } : {}), cycle: round.n, seeds: [...round.plan.seeds], against: d.objective.currentVersion };
     const version = d.versions.find((v: Data) => v.id === group.version);
     if (!version.current) version.status = 'candidate';
     confirmation = { status: 'candidate', group: group.id, version: group.version, cycle: round.n };
-    d.upcoming = { ...basePlan, tier: 'confirm', skipControl: false, groups: [controlGroup(d), { ...group, control: false, confirm: true }], seeds: freshSeeds(d, confirmSeedCount) };
-  } else d.upcoming = { ...basePlan, seeds: freshSeeds(d, round.plan.seeds.length), ...(hadReservedSeeds ? { requiresExplicitPlan: true } : {}) };
+    d.upcoming = { ...basePlan, tier: round.plan.tierRule?.adoption ? round.plan.tierRule.id : 'confirm', skipControl: false, groups: [controlGroup(d), { ...group, control: false, confirm: true }], seeds: freshSeeds(d, confirmSeedCount) };
+  } else d.upcoming = { ...basePlan, seeds: round.plan.tierRule?.seedPolicy === 'fixed' ? [...round.plan.seeds] : freshSeeds(d, round.plan.seeds.length), ...(hadReservedSeeds ? { requiresExplicitPlan: true } : {}) };
   round.confirmation = confirmation;
   round.stageMembers ||= {};
   round.stageMembers.eval = { catId: member.catId, name: member.name };
@@ -770,6 +772,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     predictions: checkPredictions(d, round, compared), asks: [], directions: directionsFrom(d, options, member, []), agree: true,
     compare: { ...compare, note: '仅比较本周期 control；区间为种子均值 ± 样本标准差。' }, confirmation,
     attribution: { verdict: 'unresolved', primaryLayer: null, assessedLayers: [], competingLayers: [], uncertainty: 'interval', comparability: 'unchanged', reasons: [], evidence: [] } };
+  collectHypotheses(d, round, now);
   const alreadyClosed = ['done', 'retired'].includes(d.objective.state);
   round.state = 'done';
   if (!alreadyClosed) {
@@ -855,11 +858,13 @@ function decideAtNight(state: RsiState, d: Experiment, round: Data, now: number)
 
 // A pick that changes something asks the governance member for its version, whether made on the page or by the night's rules.
 export function requestVersion(state: RsiState, d: Experiment, round: Data, now = Date.now()) {
+  collectHypotheses(d, round, now);
   const direction = round.report.directions.find((x: Data) => x.id === round.decision.directionId);
   // An execution fix must not change what is measured: its version replaces the default directly instead of competing with it.
   const direct = direction?.kind === 'execution';
+  const hypothesis = (d.hypotheses || []).find((h: Data) => h.source.kind === 'direction' && h.source.cycle === round.n && h.source.directionId === direction?.id && h.source.member === direction?.by);
   const baseVersion = resolveRsiParent(d, round, direction?.baseVersion, direct);
-  d.versionRequest = { cycle: round.n, since: now, decision: round.decision, title: direction?.title || round.decision.note || round.decision.pick, baseVersion, ...(direct ? { direct } : {}),
+  d.versionRequest = { cycle: round.n, since: now, decision: round.decision, ...(hypothesis ? { hypothesisId: hypothesis.id } : {}), title: direction?.title || round.decision.note || round.decision.pick, baseVersion, ...(direct ? { direct } : {}),
     ...(direction?.predict ? { prediction: { ...direction.predict, by: direction.by, text: direction.title, expect: direction.expect, direction: direction.id, cycle: round.n } } : {}) };
   d.objective.state = 'running';
   const member = d.members.find((m) => m.role === 'iterate')!;
@@ -883,7 +888,7 @@ export function propose(state: RsiState, d: Experiment, input: Data, catId: stri
 // The analysts agree when their first directions change the same thing in the same way (same kind and target); without a target there is nothing to compare.
 // Nobody decided in time: the plan the conclusion set goes on — a candidate is confirmed, otherwise the same groups run again on fresh seeds. Nothing is changed.
 export function decideByDefault(state: RsiState, d: Experiment, round: Data, now: number) {
-  if ((Array.isArray(round.plan?.reservedSeeds) && round.plan.reservedSeeds.length && !d.candidate) || d.upcoming?.requiresExplicitPlan || d.policy?.requireCycleVars) return;
+  if ((Array.isArray(round.plan?.reservedSeeds) && round.plan.reservedSeeds.length && !d.candidate) || d.upcoming?.requiresExplicitPlan || d.policy?.requireCycleVars || d.upcoming && tierOf(d, d.upcoming)?.requireCycleVars) return;
   round.decision = { pick: 'same', note: `${DECISION_WAIT / 60_000} 分钟没人回应，按当前计划继续`, by: 'RSI', at: now };
   d.objective.state = 'running';
   message(state, d, now, `第 ${round.n} 周期：没人回应，按当前计划继续`, d.candidate ? '下一周期换新种子复验候选。' : '下一周期按同样的组换新种子再跑一轮，不改任何东西。下一个结论出来时可以再选方向。', 'plan');
@@ -891,6 +896,7 @@ export function decideByDefault(state: RsiState, d: Experiment, round: Data, now
 }
 
 export function finishAnalysis(state: RsiState, d: Experiment, round: Data, now: number) {
+  collectHypotheses(d, round, now);
   const missing = round.analysis.waiting;
   round.analysis = { ...round.analysis, waiting: [], missing };
   const firsts = analystsOf(d).filter((m) => !missing.includes(m.catId!)).map((m) => round.report.directions.find((x: Data) => x.by === m.catId)).filter(Boolean);
