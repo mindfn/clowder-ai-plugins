@@ -1,4 +1,4 @@
-import { executionParameters } from './parameters.js';
+import { executionParameters, fingerprint } from './parameters.js';
 import { tierEvidence } from './tiers.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -14,6 +14,7 @@ import { projectCommit, projectRevision, removeVersionWorktrees, versionDirector
 import type { Data, RsiHost } from './types.js';
 
 // A registered command runs in the host system's shell, like any spawned command: sh, or cmd on Windows. What it does is the members' business.
+class EvidenceBlocked extends Error {}
 const windows = platform() === 'win32';
 export const quote = (value: string | number, win = windows) => win ? `"${String(value).replace(/"/g, '""')}"` : `'${String(value).replace(/'/g, `'"'"'`)}'`;
 // A stopped command takes what it started with it: its process group, or its process tree on Windows.
@@ -179,6 +180,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         .sort((x, y) => x.round.start - y.round.start)[0];
       if (!queued) return;
       const { key, d, round, run } = queued;
+      let executor = structuredClone(d.executor);
       const group = round.plan.groups.find((g: Data) => g.id === run.group), version = d.versions.find((v: Data) => v.id === group.version);
       const directory = join(d.objective.projectPath, 'runs', d.objective.id, String(round.n), `${group.id}-s${run.seed}`);
       // A persisted async job keeps the start of the attempt that submitted it: its {start} and timeout count from there.
@@ -199,69 +201,79 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       let log = '', error: string | undefined, kind = 'env', step = 'prepare', jobId = run.jobId, timedOut = false, pollLost = false, pollLostRetryable = false, collectRetryable = false, remoteEnded = false, submitted = !!jobId;
       // The foreground submit's limit: the registered timeout, else three times this objective's longest successful attempt (at least 10 minutes); none before one has succeeded.
       const succeeded = d.rounds.flatMap((r: Data) => r.runs.flatMap((x: Data) => (x.attempts || []).filter((a: Data) => !a.error).map((a: Data) => a.end - a.start)));
-      const limit = d.executor.timeout ? d.executor.timeout * 1000 : succeeded.length ? Math.max(600_000, 3 * Math.max(...succeeded)) : 0;
-      let where: { cwd: string; values: Data } | undefined;
+      let limit = executor.timeout ? executor.timeout * 1000 : succeeded.length ? Math.max(600_000, 3 * Math.max(...succeeded)) : 0;
+      let where: { cwd: string; values: Data } | undefined = run.jobId && run.execution ? { cwd: run.execution.cwd, values: { ...run.execution.values, job: run.jobId } } : undefined;
       try {
-        const { cwd, commit } = await versionDirectory(host, key, d, version);
-        const harnessVersion = d.versions.find((v: Data) => v.id === round.version && v.commit) || version;
-        const harnessRes = harnessVersion && harnessVersion.id !== version.id
-          ? await versionDirectory(host, key, d, harnessVersion)
-          : { cwd, commit };
-        const harnessDir = harnessRes.cwd;
-        env.commit = commit;
-        env.harness = { version: harnessVersion.id, commit: harnessRes.commit || null };
-        env.hw = `${env.hardware.os} / ${env.hardware.arch} / ${env.hardware.chip}`;
-        await retain(host.storage, key, (state) => {
-          const current = state.experiments[d.objective.id];
-          if (!current) return;
-          if (version.commit) current.versions.find((v: Data) => v.id === version.id).worktree = cwd;
-          if (harnessVersion?.commit && harnessVersion.id !== version.id) current.versions.find((v: Data) => v.id === harnessVersion.id).worktree = harnessDir;
-          Object.assign(current.rounds.find((r: Data) => r.n === round.n).runs.find((r: Data) => r.id === run.id), { cwd, env });
-        });
-        // An attempt starts in an empty run directory; an earlier attempt's files are kept beside it. A persisted async job keeps writing into its own.
-        if (!jobId && await exists(directory)) {
-          let k = 1;
-          while (await exists(`${directory}.attempt-${k}`)) k++;
-          await rename(directory, `${directory}.attempt-${k}`);
-          log += `上一次尝试的文件保留在 ${directory}.attempt-${k}\n`;
-        }
-        await mkdir(directory, { recursive: true });
-        const base = typeof version.config === 'string' ? JSON.parse(await readFile(resolve(cwd, version.config), 'utf8')) : version.config;
-        if (!record(base)) throw new Error('Version config must be a JSON object');
-        const cycleVars = record(round.plan.cycleVars) ? round.plan.cycleVars : {};
-        const merged: Data = { ...base, ...version.vars, ...group.vars, ...cycleVars, seed: run.seed };
-        if (round.plan.tier) merged.tier = round.plan.tier;
-        else delete merged.tier;
-        if ((round.plan.tierRule?.adoption === false || round.plan.tier === 'explore') && Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length) merged.reservedSeeds = round.plan.reservedSeeds;
-        else delete merged.reservedSeeds;
-        if (round.plan.groups.length > 1 && (round.plan.order === 'balanced' || round.plan.order === 'interleaved')) {
-          merged.pairedPlan = round.runs.map((r: Data) => ({ group: r.group, seed: r.seed }));
+        let cwd: string, values: Data, context: Data;
+        const verifyContext = async () => {
+          const bytes = await readFile(context.values.config, 'utf8').catch(() => '');
+          if (fingerprint(bytes) !== context.configHash) throw new EvidenceBlocked('Original submitted config is missing or changed; rescreen before adopting evidence');
+          if (run.jobId && context.tracked && !run.parameters) throw new EvidenceBlocked('Original execution fingerprint is unavailable; evidence cannot be recovered');
+          if (context.tracked && (await projectRevision(context.cwd) !== context.revision
+            || context.usesHarness && await projectRevision(context.values.harness) !== context.harnessRevision)) {
+            throw new EvidenceBlocked('Original execution checkout or measurement harness changed; evidence cannot be recovered');
+          }
+        };
+        if (jobId) {
+          const ref = run.execution?.context;
+          if (!ref) throw new EvidenceBlocked('Original execution context is unavailable; evidence cannot be recovered');
+          const bytes = await readFile(ref.path, 'utf8').catch(() => '');
+          if (fingerprint(bytes) !== ref.hash) throw new EvidenceBlocked('Original execution context is missing or changed; evidence cannot be recovered');
+          context = JSON.parse(bytes);
+          executor = context.executor; limit = context.limit; cwd = context.cwd;
+          values = { ...context.values, job: jobId }; where = { cwd, values };
+          await verifyContext();
         } else {
-          delete merged.pairedPlan;
+          const located = await versionDirectory(host, key, d, version);
+          cwd = located.cwd; const commit = located.commit;
+          const harnessVersion = d.versions.find((v: Data) => v.id === round.version && v.commit) || version;
+          const harnessRes = harnessVersion && harnessVersion.id !== version.id
+            ? await versionDirectory(host, key, d, harnessVersion)
+            : { cwd, commit };
+          const harnessDir = harnessRes.cwd;
+          env.commit = commit;
+          env.harness = { version: harnessVersion.id, commit: harnessRes.commit || null };
+          env.hw = `${env.hardware.os} / ${env.hardware.arch} / ${env.hardware.chip}`;
+          await retain(host.storage, key, (state) => {
+            const current = state.experiments[d.objective.id];
+            if (!current) return;
+            if (version.commit) current.versions.find((v: Data) => v.id === version.id).worktree = cwd;
+            if (harnessVersion?.commit && harnessVersion.id !== version.id) current.versions.find((v: Data) => v.id === harnessVersion.id).worktree = harnessDir;
+            Object.assign(current.rounds.find((r: Data) => r.n === round.n).runs.find((r: Data) => r.id === run.id), { cwd, env });
+          });
+          // An attempt starts in an empty run directory; an earlier attempt's files are kept beside it. A persisted async job keeps writing into its own.
+          if (!jobId && await exists(directory)) {
+            let k = 1;
+            while (await exists(`${directory}.attempt-${k}`)) k++;
+            await rename(directory, `${directory}.attempt-${k}`);
+            log += `上一次尝试的文件保留在 ${directory}.attempt-${k}\n`;
+          }
+          await mkdir(directory, { recursive: true });
+          const base = typeof version.config === 'string' ? JSON.parse(await readFile(resolve(cwd, version.config), 'utf8')) : version.config;
+          if (!record(base)) throw new Error('Version config must be a JSON object');
+          const cycleVars = record(round.plan.cycleVars) ? round.plan.cycleVars : {};
+          const merged: Data = { ...base, ...version.vars, ...group.vars, ...cycleVars, seed: run.seed };
+          if (round.plan.tier) merged.tier = round.plan.tier;
+          else delete merged.tier;
+          if ((round.plan.tierRule?.adoption === false || round.plan.tier === 'explore') && Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length) merged.reservedSeeds = round.plan.reservedSeeds;
+          else delete merged.reservedSeeds;
+          if (round.plan.groups.length > 1 && (round.plan.order === 'balanced' || round.plan.order === 'interleaved')) {
+            merged.pairedPlan = round.runs.map((r: Data) => ({ group: r.group, seed: r.seed }));
+          } else {
+            delete merged.pairedPlan;
+          }
+          const config = JSON.stringify(merged, null, 2) + '\n';
+          env.config = env.configHash = createHash('sha256').update(config).digest('hex');
+          await writeFile(configFile, config);
+          values = { config: configFile, run: directory, seed: run.seed, job: jobId || '', start: Math.floor(start / 1000), harness: harnessDir, version: version.id, commit: commit || '' };
+          where = { cwd, values };
+          await retain(host.storage, key, (state) => {
+            const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
+            if (entry) {
+              entry.execution = { cwd, values, cancel: executor.commands.cancel, submitted };
+            }
+          });
         }
-        const parameters = round.plan.tierRule && d.policy.tiers && !jobId
-          ? executionParameters(version, group, round.plan, merged, await projectRevision(cwd)) : undefined;
-        if (parameters && !group.control && group.id !== 'control') {
-          const rule = round.plan.tierRule, plan = { ...round.plan, groups: [group] }, actual = [{ group: group.id, parameters }];
-          if (rule.promoteFrom && tierEvidence(d, plan, rule.promoteFrom, rule.promotion, actual).length < (rule.promotion?.minCycles || 1)) {
-            throw new Error('Actual execution config or checkout differs from qualifying lower-tier evidence; submit was not started');
-          }
-          if (group.confirm && d.candidate && !tierEvidence(d, plan, rule.id, undefined, actual).includes(d.candidate.cycle)) {
-            throw new Error('Actual execution config or checkout differs from the selected candidate; submit was not started');
-          }
-        }
-        const config = JSON.stringify(merged, null, 2) + '\n';
-        env.config = env.configHash = createHash('sha256').update(config).digest('hex');
-        await writeFile(configFile, config);
-        const values: Data = { config: configFile, run: directory, seed: run.seed, job: jobId || '', start: Math.floor(start / 1000), harness: harnessDir, version: version.id, commit: commit || '' };
-        where = { cwd, values };
-        await retain(host.storage, key, (state) => {
-          const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
-          if (entry) {
-            entry.execution = { cwd, values, cancel: d.executor.commands.cancel, submitted };
-            if (parameters) entry.parameters = parameters;
-          }
-        });
         const since = jobId ? start : Date.now();
         if (!jobId) {
           // Before submitting a new job, ensure no earlier failed run still holds an unconfirmed remote jobId.
@@ -269,16 +281,19 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           for (const orphan of orphans) {
             step = 'orphan-check';
             const oldJob = String(orphan.run.jobId);
-            const oldDir = typeof orphan.run.directory === 'string' && orphan.run.directory ? orphan.run.directory : directory;
-            const oldCwd = typeof orphan.run.cwd === 'string' && orphan.run.cwd && await exists(orphan.run.cwd) ? orphan.run.cwd : cwd;
-            const oldRound = d.rounds.find((r: Data) => r.n === orphan.cycle);
-            const oldGroup = oldRound?.plan?.groups?.find((g: Data) => g.id === orphan.run.group);
-            const oldHarnessVer = oldRound && d.versions.find((v: Data) => v.id === oldRound.version && v.commit);
-            const oldHarness = oldHarnessVer?.worktree && await exists(oldHarnessVer.worktree) ? oldHarnessVer.worktree : harnessDir;
-            const oldValues: Data = { config: join(oldDir, 'config.json'), run: oldDir, seed: orphan.run.seed, job: oldJob, start: Math.floor((orphan.run.start || start) / 1000), harness: oldHarness, version: oldGroup?.version || '', commit: orphan.run.env?.commit || '' };
+            const oldExecution = orphan.run.execution;
+            if (!oldExecution) throw new EvidenceBlocked(`Original cleanup context unavailable for ${orphan.run.id}; confirm remote cleanup before rescreening`);
+            const oldCwd = oldExecution.cwd, oldValues = { ...oldExecution.values, job: oldJob };
+            let oldGet: string | undefined;
+            if (oldExecution.context) {
+              const bytes = await readFile(oldExecution.context.path, 'utf8').catch(() => '');
+              if (fingerprint(bytes) !== oldExecution.context.hash) throw new EvidenceBlocked(`Original cleanup context changed for ${orphan.run.id}`);
+              oldGet = JSON.parse(bytes).executor.commands.get;
+            }
+            const oldCancel = oldExecution.cancel;
             let cleared = false;
-            if (d.executor.commands.get) {
-              const probe = await launch(d.executor.commands.get, oldCwd, oldValues);
+            if (oldGet) {
+              const probe = await launch(oldGet, oldCwd, oldValues);
               log = (log + probe.log).slice(-16000);
               if (stopped) return;
               if (probe.code === 0) {
@@ -288,8 +303,8 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
                 } catch {}
               }
             }
-            if (!cleared && canCancel(d.executor.commands.cancel, oldValues)) {
-              const res = await launch(d.executor.commands.cancel, oldCwd, oldValues);
+            if (!cleared && canCancel(oldCancel, oldValues)) {
+              const res = await launch(oldCancel, oldCwd, oldValues);
               log = (log + res.log).slice(-16000);
               if (stopped) return;
               if (res.code === 0) cleared = true;
@@ -300,11 +315,11 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
                 if (target) delete target.jobId;
               });
             } else {
-              throw new Error(`前序失败运行 ${orphan.run.id} 的远端作业 ${oldJob} 仍未确认结束或取消，暂停提交新作业`);
+              throw new EvidenceBlocked(`前序失败运行 ${orphan.run.id} 的远端作业 ${oldJob} 仍未确认结束或取消，暂停提交新作业`);
             }
           }
           step = 'preflight';
-          const preflight = await launch(d.executor.commands.preflight, cwd, values);
+          const preflight = await launch(executor.commands.preflight, cwd, values);
           log += preflight.log;
           if (preflight.code !== 0) throw new Error(`preflight exited ${preflight.code}: ${preflight.log}`);
           if (preflight.stdout.trim().startsWith('{')) {
@@ -317,6 +332,34 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
               // Optional env metadata: multi-line / NDJSON diagnostic stdout must not fail an exit-0 preflight.
             }
           }
+          const submittedConfig = await readFile(configFile, 'utf8');
+          env.config = env.configHash = createHash('sha256').update(submittedConfig).digest('hex');
+          context = { cwd, values: { ...values }, executor, limit, tracked: !!d.policy.tiers,
+            usesHarness: Object.values(executor.commands).some((command) => typeof command === 'string' && command.includes('{harness}')),
+            configHash: fingerprint(submittedConfig),
+            revision: d.policy.tiers ? await projectRevision(cwd) : null,
+            harnessRevision: d.policy.tiers && Object.values(executor.commands).some((command) => typeof command === 'string' && command.includes('{harness}'))
+              ? await projectRevision(values.harness) : null };
+          const parameters = round.plan.tierRule && d.policy.tiers
+            ? executionParameters(version, group, round.plan, JSON.parse(submittedConfig), context.revision, fingerprint({ harness: context.harnessRevision, commands: executor.commands, resultMap: executor.resultMap, failureField: executor.failureField })) : undefined;
+          if (parameters && !group.control && group.id !== 'control') {
+            const rule = round.plan.tierRule, plan = { ...round.plan, groups: [group] }, actual = [{ group: group.id, parameters }];
+            if (rule.promoteFrom && tierEvidence(d, plan, rule.promoteFrom, rule.promotion, actual).length < (rule.promotion?.minCycles || 1)) {
+              throw new EvidenceBlocked('Actual execution config or checkout differs from qualifying lower-tier evidence; submit was not started');
+            }
+            if (group.confirm && d.candidate && !tierEvidence(d, plan, rule.id, undefined, actual).includes(d.candidate.cycle)) {
+              throw new EvidenceBlocked('Actual execution config or checkout differs from the selected candidate; submit was not started');
+            }
+          }
+          const contextPath = join(directory, 'execution.json'), contextBytes = JSON.stringify(context);
+          await writeFile(contextPath, contextBytes);
+          await retain(host.storage, key, (state) => {
+            const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
+            if (entry) {
+              entry.execution.context = { path: contextPath, hash: fingerprint(contextBytes) };
+              if (parameters) entry.parameters = parameters;
+            }
+          });
           step = 'submit';
           if (aborting) throw new Error('Cycle aborted');
           submitted = true;
@@ -324,21 +367,21 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
             if (entry?.execution) entry.execution.submitted = true;
           });
-          if (canCancel(d.executor.commands.cancel, values)) remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: d.executor.commands.cancel, cwd, values };
-          awaitingJobId = !!d.executor.commands.get;
+          if (canCancel(executor.commands.cancel, values)) remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: executor.commands.cancel, cwd, values };
+          awaitingJobId = !!executor.commands.get;
           asyncSubmitBounded = limit > 0;
           let result;
-          try { result = await launch(d.executor.commands.submit, cwd, values, limit); }
+          try { result = await launch(executor.commands.submit, cwd, values, limit); }
           finally { awaitingJobId = false; clearTimeout(abortSubmitTimer); abortSubmitTimer = undefined; }
           log += result.log;
           if (result.timedOut) timedOut = true;
           if (stopped) return;
-          if (!d.executor.commands.get) remote = undefined;
+          if (!executor.commands.get) remote = undefined;
           if (result.code !== 0) {
             if (isNonRetryableOutput(result.stdout) || isNonRetryableOutput(result.log)) kind = 'real';
             throw new Error(`submit exited ${result.code}: ${result.log}`);
           }
-          if (d.executor.commands.get) {
+          if (executor.commands.get) {
             const output = result.stdout.trim();
             jobId = output.startsWith('{') ? parseResult(output).jobId : output;
             if (typeof jobId !== 'string' || !jobId.trim()) throw new Error('Async submit must return a jobId');
@@ -346,18 +389,18 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             await retain(host.storage, key, (state) => { const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n).runs.find((r: Data) => r.id === run.id); if (entry) { entry.jobId = jobId; entry.env = env; } });
           }
         }
-        if (d.executor.commands.get) {
-          remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: d.executor.commands.cancel, cwd, values };
+        if (executor.commands.get) {
+          remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: executor.commands.cancel, cwd, values };
           step = 'get';
           let pollFails = 0, pollFailSince = 0;
           const MAX_POLL_FAILS = 3;
-          const pollGraceMs = pollGraceWindowMs(d.executor.timeout);
+          const pollGraceMs = pollGraceWindowMs(executor.timeout);
           for (;;) {
             if (stopped) return;
             if (aborting) throw new Error('Cycle aborted');
             if (held) throw new Error('Run window closed');
             if (remote?.dropped) throw new Error('Objective deleted');
-            const polled = await launch(d.executor.commands.get, cwd, values);
+            const polled = await launch(executor.commands.get, cwd, values);
             log = (log + polled.log).slice(-16000);
             if (stopped) return;
             if (aborting) throw new Error('Cycle aborted');
@@ -379,8 +422,8 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
               if (!pollFailSince) pollFailSince = Date.now();
               const pollRetryable = isRetryableOutput(polled.stdout) || isRetryableOutput(polled.log);
               if (pollFails > MAX_POLL_FAILS && (!pollGraceMs || Date.now() - pollFailSince >= pollGraceMs)) { pollLost = true; pollLostRetryable = pollRetryable; throw new Error(`${pollErr} (${pollFails} consecutive poll failures): ${polled.log}`); }
-              if (d.executor.timeout && Date.now() - since > d.executor.timeout * 1000) { timedOut = true; throw new Error(`异步任务超过 ${d.executor.timeout} 秒没结束`); }
-              await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, (d.executor.poll || 1) * 1000); });
+              if (executor.timeout && Date.now() - since > executor.timeout * 1000) { timedOut = true; throw new Error(`异步任务超过 ${executor.timeout} 秒没结束`); }
+              await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, (executor.poll || 1) * 1000); });
               releasePoll = undefined; pollTimer = undefined;
               continue;
             }
@@ -391,8 +434,8 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
               if (status!.retryable === false || status!.errorKind === 'real' || status!.failureKind === 'real') kind = 'real';
               throw new Error(`Remote job ${status!.state}, exit ${status!.exitCode ?? 'unknown'}: ${status!.reason || ''}`);
             }
-            if (d.executor.timeout && Date.now() - since > d.executor.timeout * 1000) { timedOut = true; throw new Error(`异步任务超过 ${d.executor.timeout} 秒没结束`); }
-            await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, (d.executor.poll || 1) * 1000); });
+            if (executor.timeout && Date.now() - since > executor.timeout * 1000) { timedOut = true; throw new Error(`异步任务超过 ${executor.timeout} 秒没结束`); }
+            await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, (executor.poll || 1) * 1000); });
             releasePoll = undefined; pollTimer = undefined;
           }
           remote = undefined;
@@ -400,7 +443,8 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         if (stopped) return;
         values.end = Math.floor(Date.now() / 1000);
         step = 'collect';
-        const collect = d.executor.commands.collect as string;
+        await verifyContext();
+        const collect = executor.commands.collect as string;
         let raw: string;
         if (/\.json$/.test(collect) && !/\s/.test(collect)) {
           const path = collect.replace(/\{(config|run|seed|job|start|end|harness|version|commit)\}/g, (_, k) => String(values[k] ?? ''));
@@ -422,15 +466,16 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         slices = normalizeSlicesInput(output.slices, roundScale.slices);
         const source = record(output.metrics) ? output.metrics : output, invalid: string[] = [];
         for (const metric of roundScale.items) {
-          const mapping = d.executor.resultMap.find((m: Data) => m.metric === metric.id);
+          const mapping = executor.resultMap.find((m: Data) => m.metric === metric.id);
           const value = mapping ? field(output, mapping.field) : source[metric.id];
           metrics[metric.id] = value ?? null;
           if (typeof value !== 'number' || !Number.isFinite(value)) invalid.push(metric.id);
         }
-        const failure = d.executor.failureField && field(output, d.executor.failureField);
-        if (failure) error = `Declared failure ${d.executor.failureField}: ${JSON.stringify(failure)}`;
+        const failure = executor.failureField && field(output, executor.failureField);
+        if (failure) error = `Declared failure ${executor.failureField}: ${JSON.stringify(failure)}`;
         else if (invalid.length) error = `Non-finite or missing metrics: ${invalid.join(', ')}`;
       } catch (failure) {
+        if (failure instanceof EvidenceBlocked) kind = 'evidence';
         error = failure instanceof Error ? failure.message : String(failure);
       }
       remote = undefined;
@@ -438,7 +483,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       if (aborting) continue;
       const collectOnlyRetry = step === 'collect' && remoteEnded && collectRetryable;
       const maxRetries = collectOnlyRetry ? 3 : 1;
-      const final = error && kind === 'env' && run.retries >= maxRetries, cancel = d.executor.commands.cancel;
+      const final = error && kind === 'env' && run.retries >= maxRetries, cancel = run.jobId ? run.execution?.cancel : executor.commands.cancel;
       // Held at its window's end, the run waits in the queue for the next night as if it had not started; a job that is not cancelled is polled again.
       if (held && error && kind === 'env') {
         const cancelled = canCancel(cancel, where?.values) && (await command(cancel!, where!.cwd, where!.values)).code === 0;
@@ -452,16 +497,16 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       }
       // A run that fails for good (after its retry) is analysed for its error signature by the executor's analyze command, when registered.
       let analysis: string | undefined;
-      if (final && d.executor.commands.analyze && where) {
+      if (final && executor.commands.analyze && where) {
         where.values.end ??= Math.floor(Date.now() / 1000);
-        const analysed = await launch(d.executor.commands.analyze, where.cwd, where.values);
+        const analysed = await launch(executor.commands.analyze, where.cwd, where.values);
         analysis = clip((analysed.stdout.trim() || analysed.log).trim());
       }
       // A job past its timeout, failing for good, or retrying after a foreground submit failure is cancelled so that nothing is left behind remotely.
       // Never cancel when failure occurred before submit (prepare/preflight), and never let cancel output evict the failing step's log.
       const failureLog = log;
       let cancelLog = '', cancelOk = false;
-      if (submitted && (timedOut || final || (pollLost && !pollLostRetryable) || (error && kind === 'env' && step === 'submit')) && canCancel(cancel, where?.values)) {
+      if (submitted && (timedOut || final || kind === 'evidence' || (pollLost && !pollLostRetryable) || (error && kind === 'env' && step === 'submit')) && canCancel(cancel, where?.values)) {
         const cancelled = await launch(cancel!, where!.cwd, where!.values);
         cancelOk = cancelled.code === 0;
         cancelLog = cancelled.log;
@@ -493,15 +538,18 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           entry.retries++; entry.state = 'queued';
           cycle.events.push({ at: end, kind: 'retry', text: keepJob ? (remoteEnded ? `${entry.id} 远端作业 ${jobId} 采集遇瞬时传输错误，保留原作业重试采集（第 ${entry.retries}/${maxRetries} 次）` : `${entry.id} 远端作业 ${jobId} 未确认结束或取消，保留原作业继续轮询`) : `${entry.id} 环境失败，自动重试一次；不计入结果` });
         } else {
-          entry.state = error && kind === 'env' ? 'failed' : 'done';
+          entry.state = error && kind !== 'real' ? 'failed' : 'done';
           entry.retryable = false;
           if (error && kind === 'env') message(state, current, end, entry.retries > 1 ? `运行失败（已重试 ${entry.retries} 次）` : '运行失败（已重试一次）', `${entry.id}${unconfirmed ? `\n${unconfirmed}` : ''}\n${clip(error)}`, 'failed');
+        }
+        if (kind === 'evidence' && error) {
+          for (const pending of cycle.runs.filter((r: Data) => r.state === 'queued')) Object.assign(pending, { state: 'cancelled', retryable: false, evidence: false, end });
         }
         finishCycle(state, current, cycle, end);
       });
       await changed(key);
       // Give transient network/SSH hiccups a bounded recovery window before retrying long-running remote jobs.
-      if (retrying && !stopped && !held && !aborting && !dropped.has(d.objective.id) && d.executor.timeout && d.executor.timeout >= 60) {
+      if (retrying && !stopped && !held && !aborting && !dropped.has(d.objective.id) && executor.timeout && executor.timeout >= 60) {
         const backoffMs = collectOnlyRetry ? Math.min(60_000, 15_000 * (run.retries + 1)) : 15_000;
         await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, backoffMs); });
         releasePoll = undefined; pollTimer = undefined;

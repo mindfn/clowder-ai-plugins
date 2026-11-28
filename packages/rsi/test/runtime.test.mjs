@@ -1950,7 +1950,7 @@ test('orphan retained jobId blocks new submission until confirmed ended or cance
     d.rounds.push({
       n: 1, version: 'v1', start: Date.now() - 60_000, end: Date.now() - 30_000, state: 'done',
       plan: { groups: [{ id: 'control', label: 'Control', version: 'v1', vars: {}, control: true }], seeds: [50] },
-      runs: [{ id: `${o.id}-1-control-s50`, group: 'control', seed: 50, state: 'failed', retryable: false, jobId: 'orphan-job-1', directory: f.project, cwd: f.project, start: Date.now() - 60_000, end: Date.now() - 30_000, retries: 1, attempts: [], metrics: {}, artifacts: [], env: {}, log: '', error: { kind: 'env', step: 'get', raw: 'lost' } }],
+      runs: [{ id: `${o.id}-1-control-s50`, group: 'control', seed: 50, state: 'failed', retryable: false, jobId: 'orphan-job-1', execution: { cwd: f.project, values: { job: 'orphan-job-1', run: f.project }, cancel: f.commands.cancel }, directory: f.project, cwd: f.project, start: Date.now() - 60_000, end: Date.now() - 30_000, retries: 1, attempts: [], metrics: {}, artifacts: [], env: {}, log: '', error: { kind: 'env', step: 'get', raw: 'lost' } }],
       report: { verdict: 'insufficient', headline: 'h', summary: 's', directions: [], predictions: [], asks: [], agree: true },
       decision: { pick: 'same', note: 'retry', by: '你', at: Date.now() - 20_000 },
       events: [],
@@ -1958,18 +1958,24 @@ test('orphan retained jobId blocks new submission until confirmed ended or cance
   });
 
   // 1) While orphan cancel fails, cycle 2 must fail at orphan-check without submitting a duplicate job.
-  const r2 = await execute(f, o);
+  await f.http('POST', { op: 'runCycle', objective: o.id });
+  const r2 = (await until(f.read,s=>s.experiments[o.id].rounds.at(-1)?.state==='aborted')).experiments[o.id].rounds.at(-1);
   assert.equal(r2.n, 2);
   assert.equal(r2.runs[0].state, 'failed');
   assert.equal(r2.runs[0].error.step, 'orphan-check');
+  assert.equal(r2.runs[0].error.kind,'evidence');
+  assert.equal(r2.runs[0].retries,0);
   assert.match(r2.runs[0].error.raw, /orphan-job-1/);
   await assert.rejects(access(submitCountFile));
   assert.equal((await f.read()).experiments[o.id].rounds[0].runs[0].jobId, 'orphan-job-1');
 
   // 2) Once cancel succeeds, cycle 3 clears the orphan jobId and submits normally.
-  await report(f, o, 'insufficient');
-  await decide(f, o, 'same');
+  assert.equal((await f.read()).experiments[o.id].objective.state,'paused');
+  await f.http('POST', { op: 'initStepRefresh', objective:o.id, k:'design' });
+  await f.prepare(o,{groups:[{id:'control',label:'Control',vars:{},control:true}],seeds:[52]});
+  await f.http('POST',{op:'life',objective:o.id,action:'resume'});
   await writeFile(cancelModeFile, 'ok');
+  await retain(f.storage,ownerKey('owner'),state=>{state.experiments[o.id].executor.commands.cancel='exit 9';});
   const r3 = await execute(f, o);
   assert.equal(r3.n, 3);
   assert.equal(r3.runs[0].state, 'done', JSON.stringify(r3.runs[0].error));
@@ -4039,7 +4045,7 @@ test('large file configurations execute normally with bounded custom-tier finger
   await retain(f.storage,ownerKey('owner'),state=>{state.experiments[o.id].versions[0].config='large-config.json';});
   await execute(f,o);const d=(await f.read()).experiments[o.id],run=d.rounds[0].runs[0];
   assert.equal(run.state,'done',JSON.stringify(run.error));assert.equal(run.metrics.score,41);
-  if(configured){assert.equal(run.parameters.format,2);assert.ok(JSON.stringify(run.parameters).length<600);}
+  if(configured){assert.equal(run.parameters.format,3);assert.ok(JSON.stringify(run.parameters).length<600);}
   else assert.equal(run.parameters,undefined);
   assert.ok(Buffer.byteLength(JSON.stringify(d.rounds[0]))<32*1024);
  });
@@ -4050,7 +4056,7 @@ test('actual file or checkout changes are rejected at the normal submit boundary
   const f=await fixture(t);git(f.project,'init','-q');git(f.project,'config','user.name','Fixture');git(f.project,'config','user.email','fixture@example.test');
   await writeFile(join(f.project,'base.json'),JSON.stringify({workload:'original'}));
   git(f.project,'add','simulate.mjs');if(change==='pinned-file')git(f.project,'add','base.json');git(f.project,'commit','-qm','Original implementation');
-  const o=await f.create({repair:'0'}),specification={tiers:[{id:'screen',label:'Screen',requireControl:false,seedPolicy:'fixed',requireCycleVars:false},{id:'full',label:'Full',requireControl:true,seedPolicy:'fresh',requireCycleVars:false,promoteFrom:'screen'}]};
+  const o=await f.create(),specification={tiers:[{id:'screen',label:'Screen',requireControl:false,seedPolicy:'fixed',requireCycleVars:false},{id:'full',label:'Full',requireControl:true,seedPolicy:'fresh',requireCycleVars:false,promoteFrom:'screen'}]};
   const made=await f.http('POST',{op:'hypothesis',objective:o.id,title:'Same workload and implementation'});
   const plan={tier:'screen',scenario:'mixed',hypothesisIds:[made.hypothesisId],skipControl:true,groups:[{id:'change',label:'Treatment',vars:{delta:1}}],seeds:[51]};
   await f.initialize(o,plan,{specification});
@@ -4063,8 +4069,70 @@ test('actual file or checkout changes are rejected at the normal submit boundary
   if(change==='live-revision') {await writeFile(join(cwd,'simulate.mjs'),script+'\n// New implementation\n');git(cwd,'add','simulate.mjs');git(cwd,'commit','-qm','Changed implementation');}
   else await writeFile(join(cwd,'base.json'),JSON.stringify({workload:'changed'}));
   const {progress}=await import('../dist/progress.js');assert.equal(progress(d,Date.now()).canRunCycle,true,JSON.stringify(progress(d,Date.now()).blockers));
-  const round=await execute(f,o),candidate=round.runs.find(run=>run.group==='change');
+  assert.equal((await f.http('POST',{op:'runCycle',objective:o.id})).status,200);
+  const result=(await until(f.read,s=>s.experiments[o.id].rounds.at(-1).state==='aborted')).experiments[o.id];
+  const round=result.rounds.at(-1),candidate=round.runs.find(run=>run.group==='change');
+  assert.equal(result.objective.state,'paused');assert.equal(result.versionRequest,undefined);assert.equal(candidate.retries,0);assert.equal(candidate.error.kind,'evidence');
+  const oldDefault=result.objective.currentVersion;await f.tool('task',{},'codex',o.thread);
+  assert.notEqual((await f.tool('version',{change:'Must not repair evidence',config:{}},'codex',o.thread)).ok,true);
+  assert.equal((await f.read()).experiments[o.id].objective.currentVersion,oldDefault);
   assert.equal(candidate.state,'failed');assert.match(candidate.error.raw,/Actual execution config or checkout/);
   assert.doesNotMatch(await readFile(join(cwd,'starts'),'utf8'),/\/2\/change-s/);
+ });
+});
+
+test('async recovery uses the original config and executor contract, never new collection inputs',async(t)=>{
+ for(const mode of ['recover','missing-config','changed-config','missing-context']) await t.test(mode,async(t)=>{
+ const f=await fixture(t),o=await f.create();
+ Object.assign(f.commands,{submit:'echo submit >> submits; echo saved-job',get:'test -f release-job && echo \'{"state":"done"}\' || echo \'{"state":"running"}\'',collect:`node -e 'const fs=require("fs");console.log(JSON.stringify({score:JSON.parse(fs.readFileSync(process.argv[1])).workload}))' {config}`,poll:1});
+ const specification={tiers:[{id:'full',label:'Full',requireControl:true,seedPolicy:'fresh',requireCycleVars:false}]};
+ await f.initialize(o,{groups:[{id:'control',label:'Control',vars:{},control:true}],seeds:[7]},{specification});
+ await writeFile(join(f.project,'base.json'),JSON.stringify({workload:10}));
+ await retain(f.storage,ownerKey('owner'),state=>{state.experiments[o.id].versions[0].config='base.json';});
+ await f.http('POST',{op:'runCycle',objective:o.id});await until(f.read,s=>s.experiments[o.id].rounds[0].runs[0].jobId);
+ await f.activation().stop();const before=(await f.read()).experiments[o.id].rounds[0].runs[0];
+ await writeFile(join(f.project,'base.json'),JSON.stringify({workload:99}));
+ await retain(f.storage,ownerKey('owner'),state=>{state.experiments[o.id].executor.commands.collect='echo \'{"score":777}\'';delete state.experiments[o.id].executor.commands.get;});
+ if(mode==='missing-config') await rm(join(before.directory,'config.json'));
+ if(mode==='changed-config') await writeFile(join(before.directory,'config.json'),JSON.stringify({workload:99}));
+ if(mode==='missing-context') await rm(before.execution.context.path);
+ await writeFile(join(f.project,'release-job'),'done');await f.start();
+ const recovered=async()=>{const state=await f.read();assert.notEqual(state.experiments[o.id].rounds[0].state,'interrupted');return state;};
+ if(mode!=='recover') {
+  const d=(await until(recovered,s=>s.experiments[o.id].rounds[0].state==='aborted','missing async input blocks')).experiments[o.id],run=d.rounds[0].runs[0];
+  assert.equal(run.evidence,false);assert.equal(run.error.kind,'evidence');assert.equal(run.retries,0);assert.equal(d.versionRequest,undefined);assert.equal(d.objective.state,'paused');return;
+ }
+ const d=(await until(recovered,s=>s.experiments[o.id].rounds[0].state==='evaluating','frozen async recovery')).experiments[o.id],run=d.rounds[0].runs[0];
+ assert.equal(run.metrics.score,10);assert.equal(run.evidence,true);assert.deepEqual(run.parameters,before.parameters);
+ assert.equal((await readFile(join(f.project,'submits'),'utf8')).trim(),'submit');
+ assert.equal(JSON.parse(await readFile(join(run.directory,'config.json'),'utf8')).workload,10);
+ });
+});
+
+
+test('measurement harness and executor contracts cannot change between screening and validation',async(t)=>{
+ for(const change of ['harness','contract']) await t.test(change,async(t)=>{
+  const f=await fixture(t);git(f.project,'init','-q');git(f.project,'config','user.name','Fixture');git(f.project,'config','user.email','fixture@example.test');
+  git(f.project,'add','simulate.mjs');git(f.project,'commit','-qm','Base');const base=git(f.project,'rev-parse','HEAD');
+  await writeFile(join(f.project,'simulate.mjs'),script+'\n// Target implementation\n');git(f.project,'add','simulate.mjs');git(f.project,'commit','-qm','Target');const target=git(f.project,'rev-parse','HEAD');
+  await writeFile(join(f.project,'simulate.mjs'),script.replace('(config.delta||0)','(config.delta||0)+1000'));git(f.project,'add','simulate.mjs');git(f.project,'commit','-qm','Other measurement implementation');const auxiliary=git(f.project,'rev-parse','HEAD');
+  const o=await f.create();f.commands.submit=`'${process.execPath}' {harness}/simulate.mjs {config} {run} {seed}`;
+  const specification={tiers:[{id:'screen',label:'Screen',requireControl:true,seedPolicy:'fixed',requireCycleVars:false},{id:'full',label:'Full',requireControl:true,seedPolicy:'fresh',requireCycleVars:false,promoteFrom:'screen'}]};
+  const made=await f.http('POST',{op:'hypothesis',objective:o.id,title:'Same measured candidate'});
+  const selected={id:'target',label:'Target',version:'v2',vars:{delta:2}};
+  const plan={tier:'screen',scenario:'mixed',hypothesisIds:[made.hypothesisId],groups:[{id:'control',label:'Control',version:'v1',vars:{delta:0},control:true},...(change==='harness'?[{id:'aux',label:'Auxiliary',version:'v3',vars:{delta:1}}]:[]),selected],seeds:[61]};
+  // Register the code versions in the isolated Host before preparing their plan.
+  await retain(f.storage,ownerKey('owner'),state=>{const d=state.experiments[o.id];d.versions[0].commit=base;d.versions.push({id:'v2',commit:target,config:{},vars:{}},{id:'v3',commit:auxiliary,config:{},vars:{}});});
+  await f.initialize(o,plan,{specification});
+  await retain(f.storage,ownerKey('owner'),state=>{state.experiments[o.id].versions[0].commit=base;});
+  const screen=await execute(f,o);assert.ok(screen.runs.every(r=>r.state==='done'),JSON.stringify(screen.runs));await report(f,o,'keep');
+  assert.equal((await f.http('POST',{op:'expDecide',objective:o.id,n:1,pick:'same'})).status,200);
+  await f.http('POST',{op:'initStepRefresh',objective:o.id,k:'design'});
+  await f.prepare(o,{...plan,tier:'full',groups:[selected]},{specification});
+  if(change==='contract') await retain(f.storage,ownerKey('owner'),state=>{state.experiments[o.id].executor.resultMap=[{metric:'score',field:'different'}];});
+  assert.equal((await f.http('POST',{op:'runCycle',objective:o.id})).status,200);
+  const d=(await until(f.read,s=>s.experiments[o.id].rounds.at(-1).state==='aborted')).experiments[o.id],run=d.rounds.at(-1).runs.find(r=>r.group==='target');
+  assert.equal(run.error.kind,'evidence');assert.equal(run.retries,0);assert.equal(d.versionRequest,undefined);assert.equal(d.objective.currentVersion,'v1');
+  assert.doesNotMatch(await readFile(join(d.versions.find(v=>v.id==='v2').worktree,'starts'),'utf8'),/\/2\/target-s/);
  });
 });

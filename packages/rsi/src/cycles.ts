@@ -166,6 +166,14 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
 export function finishCycle(state: RsiState, d: Experiment, round: Data, now: number) {
   if (round.state !== 'running' || round.runs.some((r: Data) => r.state === 'queued' || r.state === 'running')) return;
   round.end = now;
+  const blocked = round.runs.find((r: Data) => r.error?.kind === 'evidence');
+  if (blocked) {
+    round.state = 'aborted'; round.aborted = { reason: 'env', note: blocked.error.raw, by: 'system', at: now };
+    d.objective.state = 'paused';
+    d.upcoming = { ...round.plan, requiresExplicitPlan: true }; delete d.upcoming.cycleVars;
+    message(state, d, now, '证据不匹配，本周期已暂停', `${blocked.error.raw}\n未派发自动修复或晋升。请在第 5 步提交重新筛选的计划、完成准备确认，再绑定必要参数并恢复。`, 'failed');
+    syncObjective(state, d); return;
+  }
   // Runs of the default version that failed for environment or execution reasons go to the governance member to fix first (PHASE3 §1).
   if (!requestRepair(state, d, round, now)) {
     round.state = 'evaluating';
@@ -201,7 +209,7 @@ const usableAnalysis = (value: unknown) => {
 const signatureOf = (run: Data) => String(usableAnalysis(run.error?.analysis) || run.error?.raw || '').split('\n').map((l) => l.trim()).filter(Boolean).pop()?.replace(/\d+/g, '#').slice(0, 200) || '未知错误';
 
 function requestRepair(state: RsiState, d: Experiment, round: Data, now: number) {
-  const failed = round.runs.filter((r: Data) => r.state === 'failed' && (round.plan.groups.find((g: Data) => g.id === r.group)?.version || d.objective.currentVersion) === d.objective.currentVersion);
+  const failed = round.runs.filter((r: Data) => r.state === 'failed' && r.error?.kind !== 'evidence' && (round.plan.groups.find((g: Data) => g.id === r.group)?.version || d.objective.currentVersion) === d.objective.currentVersion);
   const member = d.members.find((m) => m.role === 'iterate');
   if (!failed.length || !member?.catId) return false;
   const since = windowStart(d.policy.schedule, now), left = (d.policy.repair ?? REPAIR_DEFAULT) - (d.repairs || []).filter((x: Data) => x.at >= since).length;

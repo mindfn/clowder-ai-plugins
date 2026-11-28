@@ -125,7 +125,7 @@ export function createRuntime(host: RsiHost) {
           // Objectives created before governance execution had its own member: the preparer keeps doing it.
           if (!d.members.some((m) => m.role === 'iterate')) d.members.push({ ...d.members.find((m) => m.role === 'prepare')!, role: 'iterate' });
           for (const round of d.rounds.filter((r: Data) => r.state === 'running')) {
-            if (d.executor.commands?.get && round.runs.some((r: Data) => ['running', 'queued'].includes(r.state) && r.jobId)) {
+            if (round.runs.some((r: Data) => ['running', 'queued'].includes(r.state) && r.jobId)) {
               for (const run of round.runs.filter((r: Data) => r.state === 'running')) run.state = 'queued';
               continue;
             }
