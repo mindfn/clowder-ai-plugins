@@ -170,3 +170,9 @@ The demonstration project ran with `codex` preparing and `kimi` evaluating: init
 
 
 
+
+## alpha.137 — async abort acknowledgement wait (non-blocking)
+
+An abort during async `submit` waits for its job ID under the submit's existing timeout; only submissions without a timeout get a 30-second abort grace. A long registered timeout therefore also bounds cancellation latency. Opus reported the live executor's timeout as 4500 seconds (75 minutes); a stuck submit could postpone cleanup that long. Source: review message `0001795872340418-000369-2ebf194a` (2026-11-28), scope `official.rsi@0.1.0-alpha.137`.
+
+Follow-up: consider a separate, shorter abort acknowledgement limit. Cutting that wait may lose a remotely started job's ID, so timeout must retain an explicit “cleanup unconfirmed” result. This is recorded for later design and does not change alpha.137's reviewed cancellation policy.

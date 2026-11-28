@@ -91,3 +91,26 @@ test('diagnostic parameters separate conflicting keys and reserved seed details 
   b = progress(d, now).blockers.find((b) => b.code === 'reservedSeeds');
   assert.equal(b.reason, 'history'); assert.equal(b.detail, '2');
 });
+
+test('every unsettled preparation combination has an actionable prep phase, including queued redo without active execution', async () => {
+  const { prepSettled } = await import('../dist/init.js');
+  const states = ['missing', 'fresh', 'stale', 'queued', 'started', 'cancelled', 'failed', 'blocked', 'missingReply'];
+  for (const left of states) for (const right of states) for (const needsConfirmation of [false, true]) {
+    const d = experiment(); d.objective.state = 'preparing';
+    d.plan = [{ k: 'rules', role: 'evaluate', deps: [] }, { k: 'design', role: 'prepare', deps: ['rules'] }];
+    d.steps = {}; d.members.push({ role: 'prepare', catId: 'preparer' });
+    for (const [index, name] of [left, right].entries()) {
+      const section = d.plan[index].k;
+      if (name !== 'missing') d.steps[section] = { rev: 1, stale: name === 'stale' || name === 'queued', redo: name === 'queued' };
+      if (['started', 'cancelled', 'failed', 'blocked', 'missingReply'].includes(name)) d.exec[section] = { state: name === 'missingReply' ? 'missing' : name, by: index ? 'preparer' : 'evaluator' };
+    }
+    d.prep = [{ neededFrom: 'human', state: needsConfirmation ? 'submitted' : 'confirmed' }];
+    if (prepSettled(d)) continue;
+    const label = `${left}/${right}/confirmation=${needsConfirmation}`, p = progress(d, now);
+    assert.match(p.phase, /^prep/, label); assert.equal(p.canRunCycle, false, label);
+    assert.ok(p.blockers.some((b) => b.code === p.phase), label);
+    if (['fresh', 'queued'].includes(left) && ['fresh', 'queued'].includes(right) && [left, right].includes('queued')) {
+      assert.equal(p.phase, 'prepWorking', label); assert.equal(p.nextAction.op, 'wait', label);
+    }
+  }
+});

@@ -42,15 +42,15 @@ export function progress(d: Experiment, now: number) {
   if (!settled) {
     const steps = d.plan.map((p, i) => ({ section: p.k, step: i + 1, execution: d.exec?.[p.k], stored: d.steps?.[p.k], member: stepMemberOf(d, p.k) }));
     const cut = steps.find((p) => p.execution && p.execution.state !== 'started');
-    const stale = steps.filter((p) => !p.execution && p.stored?.stale);
-    const working = steps.filter((p) => p.execution?.state === 'started');
+    const stale = steps.filter((p) => !p.execution && p.stored?.stale && !p.stored.redo);
+    const working = steps.filter((p) => p.execution?.state === 'started' || !p.execution && p.stored?.stale && p.stored.redo);
     const confirm = d.prep.filter((p) => p.neededFrom === 'human' && p.state !== 'confirmed');
     const pending = steps.find((p) => !p.execution && !p.stored);
     if (cut) add('prepInterrupted', 'Preparation reply was interrupted; retry the step', 'manager', 'initRetry', 'all',
       { section: cut.section, step: cut.step, by: cut.execution?.by });
     if (stale.length) add('prepStale', 'Preparation has stale steps; redo against the new version', 'owner', 'initRedo', 'all', { count: stale.length });
     if (working.length) add('prepWorking', 'Preparation members are still working', 'prepare', 'wait', 'all',
-      { count: working.length, memberIds: [...new Set(working.map((p) => p.execution!.by))] });
+      { count: working.length, memberIds: [...new Set(working.map((p) => p.execution?.by || p.member?.catId).filter((id): id is string => !!id))] });
     if (confirm.length) add('prepConfirm', 'Preparation items need confirmation', 'owner', 'prepConfirm', 'all', { count: confirm.length });
     if (pending && !cut && !stale.length && !working.length) add('prepPending', 'Preparation step has not started', 'manager', pending.member?.catId ? 'initRetry' : 'stepMember', 'all', { section: pending.section, step: pending.step });
   }

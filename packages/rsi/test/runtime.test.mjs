@@ -3889,3 +3889,23 @@ test('alpha.137 review: async acknowledgement drain respects the registered subm
   assert.equal(d.rounds[0].runs[0].cancelResult.status, 'unconfirmed');
   assert.ok(d.rounds[0].runs.every((r) => r.state === 'cancelled' && r.retries === 0));
 });
+
+test('alpha.137 queued redo: upstream work and an already queued downstream step show init/wait, while unrequested stale work still shows redo', async (t) => {
+  const { viewModel } = await import('../dist/views.js');
+  const { progressView } = await import('../dist/progress.js');
+  const f = await fixture(t), o = await f.create(); await f.initialize(o);
+  const state = await f.read(), d = state.experiments[o.id]; d.objective.state = 'preparing';
+  d.steps.rules.stale = true; d.steps.rules.redo = true;
+  d.exec.rules = { state: 'started', by: 'cat-b5ddoo9l', base: {} };
+  d.steps.design.stale = true; d.steps.design.redo = true;
+  let view = viewModel(state, 'exp', { project: f.project, pick: `obj:${o.id}` });
+  assert.equal(view.next.k, 'init'); assert.equal(view.progress.nextAction.op, 'wait');
+  assert.equal(view.next.by[0].i, 4); assert.equal(view.next.by[0].who, '小狸');
+  assert.equal(view.progress.blockers.some((b) => b.code === 'prepStale'), false);
+  assert.deepEqual(view.progress, progressView(d, Date.now()));
+  delete d.exec.rules; d.steps.rules.stale = false;
+  d.steps.design.redo = false;
+  view = viewModel(state, 'exp', { project: f.project, pick: `obj:${o.id}` });
+  assert.equal(view.next.k, 'stale'); assert.equal(view.next.count, 1);
+  assert.equal(view.progress.nextAction.op, 'initRedo');
+});
