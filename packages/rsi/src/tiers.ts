@@ -1,3 +1,4 @@
+import { plannedParameters, parametersMatch } from './parameters.js';
 import { record, text } from './store.js';
 import type { Data, Experiment } from './types.js';
 
@@ -16,6 +17,7 @@ export function validateTiers(value: unknown): string | null {
     if (i === 0 ? t.promoteFrom !== undefined : !seen.has(t.promoteFrom)) return 'Each higher tier must reference an earlier promoteFrom tier';
     if (t.promotion !== undefined && (!record(t.promotion) || !Array.isArray(t.promotion.verdicts) || !t.promotion.verdicts.length || t.promotion.verdicts.some((v: unknown) => !positiveVerdicts.includes(String(v))) || !Number.isInteger(t.promotion.minCycles) || t.promotion.minCycles < 1 || t.promotion.minCycles > 20 || t.promotion.sameScenario !== undefined && typeof t.promotion.sameScenario !== 'boolean')) return 'promotion requires positive verdicts and minCycles (1–20), with optional sameScenario';
     if (t.resourceVars !== undefined && (!Array.isArray(t.resourceVars) || t.resourceVars.length > 32 || t.resourceVars.some((k: unknown) => !text(k) || ['seed', 'tier', 'reservedSeeds', 'pairedPlan'].includes(String(k))) || new Set(t.resourceVars).size !== t.resourceVars.length)) return 'resourceVars must be distinct resource/topology parameter names (not executor protocol fields)';
+    if (t.promoteFrom && !same([...(t.resourceVars || [])].sort(), [...(value.find((p: Data) => p.id === t.promoteFrom).resourceVars || [])].sort())) return 'Linked tiers must declare the same resourceVars classification';
     seen.add(t.id);
   }
   const top = value.at(-1);
@@ -40,22 +42,17 @@ export function screeningRound(round: Data): boolean {
 const canonical = (v: any): string => Array.isArray(v) ? `[${v.map(canonical).join(',')}]` : record(v) ? `{${Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')}}` : JSON.stringify(v);
 const same = (a: unknown,b: unknown) => canonical(a) === canonical(b);
 
-// Compare the config actually submitted, not just the group's nominal overrides. File
-// bases can only be reused when pinned to the same commit; a mutable path is not proof.
-function sameParameters(d: Experiment, plan: Data, group: Data, round: Data, old: Data): boolean {
+// At conclusion actualRuns is mandatory at the call site: compare both runs'
+// fingerprints, never reconstruct the new execution from an older config base.
+function sameParameters(d: Experiment, plan: Data, group: Data, round: Data, old: Data, actualRuns?: Data[]): boolean {
   const version = d.versions.find((v: Data) => v.id === (group.version || d.objective.currentVersion));
   if (!version) return false;
-  const targetRule = tierOf(d, plan);
-  const resourceKeys = (round.plan.tierRule.resourceVars || []).filter((k: string) => targetRule?.resourceVars?.includes(k));
-  const identity = (values: Data) => Object.fromEntries(Object.entries(values).filter(([k]) =>
-    !['seed', 'tier', 'reservedSeeds', 'pairedPlan'].includes(k) && !resourceKeys.includes(k)));
-  return round.runs.filter((run: Data) => run.group === old.id).every((run: Data) => {
-    const snapshot = run.parameters;
-    if (!snapshot || !same(snapshot.config, version.config) || snapshot.commit !== (version.commit || null)) return false;
-    if (typeof version.config === 'string' && !version.commit) return false;
-    const desired = { ...snapshot.base, ...version.vars, ...group.vars, ...plan.cycleVars };
-    return same(identity(snapshot.effective), identity(desired));
-  });
+  const expected = plannedParameters(version, group, { ...plan, tierRule: tierOf(d, plan) });
+  const actual = actualRuns?.filter((run: Data) => run.group === group.id);
+  if (actual && (!actual.length || actual.some((run: Data) => !run.parameters))) return false;
+  return round.runs.filter((run: Data) => run.group === old.id).every((run: Data) => actual
+    ? actual.every((now: Data) => parametersMatch(run.parameters, expected, now.parameters))
+    : parametersMatch(run.parameters, expected));
 }
 
 export function sliceGuardsPass(metrics: Data, round: Data): boolean {
@@ -75,7 +72,7 @@ export function sliceGuardsPass(metrics: Data, round: Data): boolean {
   });
 }
 
-export function tierEvidence(d: Experiment, plan: Data, sourceTier: string, rule: Tier['promotion'] = { verdicts: ['keep','tune','baseline'], minCycles: 1 }): number[] {
+export function tierEvidence(d: Experiment, plan: Data, sourceTier: string, rule: Tier['promotion'] = { verdicts: ['keep','tune','baseline'], minCycles: 1 }, actualRuns?: Data[]): number[] {
   const currentRule = tiersOf(d).find((t) => t.id === sourceTier);
   const ruleIdentity = (t: Data) => ({ id: t.id, requireControl: t.requireControl, seedPolicy: t.seedPolicy,
     requireCycleVars: t.requireCycleVars, resourceVars: [...(t.resourceVars || [])].sort(), promoteFrom: t.promoteFrom,
@@ -105,7 +102,7 @@ export function tierEvidence(d: Experiment, plan: Data, sourceTier: string, rule
       ? r.report.compare?.groups?.some((c: Data) => c.group === g.id && c.eligible === true && c.beatsControl === true)
       : candidates.length === 1 && r.plan.tierRule.requireControl === false);
     return targets.every((g: Data) => qualified.some((old: Data) =>
-      old.version === (g.version || d.objective.currentVersion) && sameParameters(d, plan, g, r, old)));
+      old.version === (g.version || d.objective.currentVersion) && sameParameters(d, plan, g, r, old, actualRuns)));
   }).map((r: Data) => r.n);
 }
 

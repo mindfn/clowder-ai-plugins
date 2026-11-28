@@ -1,3 +1,5 @@
+import { executionParameters } from './parameters.js';
+import { tierEvidence } from './tiers.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
@@ -8,7 +10,7 @@ import { normalizeSlicesInput, roundMetrics } from './compare.js';
 import { message, recordInitExecution, submitInitStep } from './init.js';
 import { insideWindow } from './schedule.js';
 import { clip, listOwners, LOG_KEEP, record, retain, readState, isState } from './store.js';
-import { projectCommit, removeVersionWorktrees, versionDirectory } from './versions.js';
+import { projectCommit, projectRevision, removeVersionWorktrees, versionDirectory } from './versions.js';
 import type { Data, RsiHost } from './types.js';
 
 // A registered command runs in the host system's shell, like any spawned command: sh, or cmd on Windows. What it does is the members' business.
@@ -237,6 +239,17 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         } else {
           delete merged.pairedPlan;
         }
+        const parameters = round.plan.tierRule && d.policy.tiers && !jobId
+          ? executionParameters(version, group, round.plan, merged, await projectRevision(cwd)) : undefined;
+        if (parameters && !group.control && group.id !== 'control') {
+          const rule = round.plan.tierRule, plan = { ...round.plan, groups: [group] }, actual = [{ group: group.id, parameters }];
+          if (rule.promoteFrom && tierEvidence(d, plan, rule.promoteFrom, rule.promotion, actual).length < (rule.promotion?.minCycles || 1)) {
+            throw new Error('Actual execution config or checkout differs from qualifying lower-tier evidence; submit was not started');
+          }
+          if (group.confirm && d.candidate && !tierEvidence(d, plan, rule.id, undefined, actual).includes(d.candidate.cycle)) {
+            throw new Error('Actual execution config or checkout differs from the selected candidate; submit was not started');
+          }
+        }
         const config = JSON.stringify(merged, null, 2) + '\n';
         env.config = env.configHash = createHash('sha256').update(config).digest('hex');
         await writeFile(configFile, config);
@@ -246,7 +259,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
           if (entry) {
             entry.execution = { cwd, values, cancel: d.executor.commands.cancel, submitted };
-            if (!jobId) entry.parameters = structuredClone({ config: version.config, commit: version.commit || null, base, effective: merged });
+            if (parameters) entry.parameters = parameters;
           }
         });
         const since = jobId ? start : Date.now();

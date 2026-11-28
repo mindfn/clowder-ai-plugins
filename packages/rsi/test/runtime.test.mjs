@@ -7,6 +7,7 @@ import { basename, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import plugin from '../dist/index.js';
 import { ownerKey, readState } from '../dist/backend.js';
+import { executionParameters, fingerprint } from '../dist/parameters.js';
 import { retain } from '../dist/store.js';
 import { pollGraceWindowMs, quote } from '../dist/runs.js';
 
@@ -3981,7 +3982,7 @@ test('P1 same-version screening advances through real preparation/binding to ado
   const saved=await f.read();
   const deny=mutate=>{const state=structuredClone(saved),copy=state.experiments[o.id];mutate(copy);const before=structuredClone(copy);const result=act(state,{op:'promote',objective:o.id,version:copy.candidate.version},{project:f.project},Date.now());assert.equal(result.status,409,JSON.stringify(result));assert.match(result.error,/highest-tier/);assert.deepEqual(copy,before);};
   deny(copy=>{copy.candidate.vars={delta:0};}); // v1 with delta=0 only supplied the control evidence.
-  deny(copy=>{copy.rounds[1].runs.find(r=>r.group===copy.candidate.id).parameters.effective.workload='smoke';});
+  deny(copy=>{copy.rounds[1].runs.find(r=>r.group===copy.candidate.id).parameters.effective=fingerprint({workload:'smoke'});});
   deny(copy=>{copy.versions.find(v=>v.id===copy.candidate.version).vars.extraWorkload='production';});
   for(const slices of [undefined,{}, {load:[{at:1,values:{p99:160}}]}]) deny(copy=>{
     copy.metrics.slices=[{id:'load',name:'Load',axis:'requests',stats:[{id:'p99',name:'P99',dir:'down',threshold:80}]}];
@@ -3989,7 +3990,18 @@ test('P1 same-version screening advances through real preparation/binding to ado
   });
   // Automatic confirmation must also use this candidate's selected-cycle evidence.
   const {conclude}=await import('../dist/cycles.js');
-  for(const failure of ['slices','parameters','none']) {
+  // A weaker peer is not an adoption veto when the actual winning arm qualifies.
+  {
+    const state=structuredClone(saved),copy=state.experiments[o.id],round=copy.rounds[1];
+    delete copy.candidate;round.state='evaluating';round.report=null;
+    const weaker={id:'weaker',label:'Weaker',version:copy.objective.currentVersion,vars:{delta:-1}};
+    round.plan.groups.push(weaker);
+    const version=copy.versions.find(v=>v.id===weaker.version);
+    for(const run of round.runs.filter(r=>r.group==='control')) round.runs.push({...structuredClone(run),id:run.id+'-weaker',group:'weaker',metrics:{score:run.metrics.score-1},parameters:executionParameters(version,weaker,round.plan,{delta:-1},run.parameters.revision)});
+    const result=conclude(state,copy,{cycle:2,verdict:'keep',findings:'Only one arm meets the criterion',options:[{k:'more',title:'More',why:'Check',kind:'variable',target:'delta',cites:[`${o.id}-cycle-1`]}]},Date.now());
+    assert.equal(result.ok,true);assert.equal(result.confirmation.status,'candidate');assert.equal(copy.candidate.id,saved.experiments[o.id].candidate.id);
+  }
+  for(const failure of ['slices','parameters','actual-parameters','missing-snapshot','actual-revision','rollback','dead_end','none']) {
     const state=structuredClone(saved),copy=state.experiments[o.id],round=structuredClone(copy.rounds[1]);
     round.n=3;round.state='evaluating';round.report=null;round.decision=null;
     round.plan.groups.find(g=>g.id===copy.candidate.id).confirm=true;
@@ -4000,16 +4012,59 @@ test('P1 same-version screening advances through real preparation/binding to ado
       for(const run of copy.rounds[1].runs) run.slices={load:[{at:1,values:{p99:70}}]};
       for(const run of round.runs) run.slices={load:[{at:1,values:{p99:160}}]};
     } else if(failure==='parameters') round.plan.cycleVars.workload='changed-after-selection';
+    if(failure==='actual-parameters') for(const run of round.runs) run.parameters.effective=fingerprint({workload:'changed-on-disk'});
+    if(failure==='missing-snapshot') delete round.runs.find(run=>run.group===copy.candidate.id).parameters;
+    if(failure==='actual-revision') for(const run of round.runs) run.parameters.revision='different-live-checkout';
     copy.rounds.push(round);
-    const result=conclude(state,copy,{cycle:3,verdict:'keep',findings:'The scalar metric alone looks good',options:[{k:'more',title:'More',why:'Check',kind:'variable',target:'delta',cites:[`${o.id}-cycle-2`]}]},Date.now());
+    const result=conclude(state,copy,{cycle:3,verdict:failure==='rollback'?'rollback':'keep',...(failure==='dead_end'?{disposition:'dead_end'}:{}),findings:'The scalar metric alone looks good',options:[{k:'more',title:'More',why:'Check',kind:'variable',target:'delta',cites:[`${o.id}-cycle-2`]}]},Date.now());
     assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.confirmation.status,failure==='none'?'confirmed':'rejected',failure);
     if(failure==='none') assert.notEqual(copy.objective.currentVersion,saved.experiments[o.id].objective.currentVersion);
     else assert.equal(copy.objective.currentVersion,saved.experiments[o.id].objective.currentVersion);
   }
   // Declared lease changes do not alter the scientific configuration being adopted.
-  const leased=structuredClone(saved);for(const run of leased.experiments[o.id].rounds[1].runs) run.parameters.effective.lease='expired-lease';
+  const leased=structuredClone(saved);leased.experiments[o.id].rounds[1].plan.cycleVars.lease='new-lease';
   assert.equal(act(leased,{op:'promote',objective:o.id,version:d.candidate.version},{project:f.project},Date.now()).ok,true);
-  assert.equal(d.rounds[1].runs.find(r=>r.group===d.candidate.id).parameters.effective.delta,1);
+  assert.equal(d.rounds[1].runs.find(r=>r.group===d.candidate.id).parameters.effective,fingerprint({delta:1}));
   const promoted=await f.http('POST',{op:'promote',objective:o.id,version:d.candidate.version,note:'Adopt full-tier evidence'});assert.equal(promoted.ok,true,JSON.stringify(promoted));
   d=(await f.read()).experiments[o.id];assert.equal(d.versions.at(-1).vars.delta,1);assert.equal(d.versions.at(-1).status,'confirmed');assert.equal(d.versions.at(-1).hypothesisId,made.hypothesisId);
+});
+
+
+test('large file configurations execute normally with bounded custom-tier fingerprints and no legacy snapshots', async(t)=>{
+ for(const configured of [false,true]) await t.test(configured?'configured ladder':'legacy',async(t)=>{
+  const f=await fixture(t),o=await f.create({repair:'0'});
+  const options=configured?{specification:{tiers:[{id:'full',label:'Full',requireControl:true,seedPolicy:'fresh',requireCycleVars:false}]}}:{};
+  await f.initialize(o,{groups:[{id:'control',label:'Control',control:true,vars:{}}],seeds:[41]},options);
+  await writeFile(join(f.project,'large-config.json'),JSON.stringify({padding:'x'.repeat(530*1024)}));
+  await retain(f.storage,ownerKey('owner'),state=>{state.experiments[o.id].versions[0].config='large-config.json';});
+  await execute(f,o);const d=(await f.read()).experiments[o.id],run=d.rounds[0].runs[0];
+  assert.equal(run.state,'done',JSON.stringify(run.error));assert.equal(run.metrics.score,41);
+  if(configured){assert.equal(run.parameters.format,2);assert.ok(JSON.stringify(run.parameters).length<600);}
+  else assert.equal(run.parameters,undefined);
+  assert.ok(Buffer.byteLength(JSON.stringify(d.rounds[0]))<32*1024);
+ });
+});
+
+test('actual file or checkout changes are rejected at the normal submit boundary after readiness',async(t)=>{
+ for(const change of ['file','live-revision','pinned-file']) await t.test(change,async(t)=>{
+  const f=await fixture(t);git(f.project,'init','-q');git(f.project,'config','user.name','Fixture');git(f.project,'config','user.email','fixture@example.test');
+  await writeFile(join(f.project,'base.json'),JSON.stringify({workload:'original'}));
+  git(f.project,'add','simulate.mjs');if(change==='pinned-file')git(f.project,'add','base.json');git(f.project,'commit','-qm','Original implementation');
+  const o=await f.create({repair:'0'}),specification={tiers:[{id:'screen',label:'Screen',requireControl:false,seedPolicy:'fixed',requireCycleVars:false},{id:'full',label:'Full',requireControl:true,seedPolicy:'fresh',requireCycleVars:false,promoteFrom:'screen'}]};
+  const made=await f.http('POST',{op:'hypothesis',objective:o.id,title:'Same workload and implementation'});
+  const plan={tier:'screen',scenario:'mixed',hypothesisIds:[made.hypothesisId],skipControl:true,groups:[{id:'change',label:'Treatment',vars:{delta:1}}],seeds:[51]};
+  await f.initialize(o,plan,{specification});
+  await retain(f.storage,ownerKey('owner'),state=>{const v=state.experiments[o.id].versions[0];v.config='base.json';v.commit=change==='pinned-file'?git(f.project,'rev-parse','HEAD'):null;});
+  const screened=await execute(f,o);assert.equal(screened.runs[0].state,'done',JSON.stringify(screened.runs[0].error));await report(f,o,'keep');
+  assert.equal((await f.http('POST',{op:'expDecide',objective:o.id,n:1,pick:'same'})).status,200);
+  assert.equal((await f.http('POST',{op:'initStepRefresh',objective:o.id,k:'design'})).status,200);
+  await f.prepare(o,{...plan,tier:'full',skipControl:false},{specification});
+  let d=(await f.read()).experiments[o.id];const cwd=d.rounds[0].runs[0].cwd;
+  if(change==='live-revision') {await writeFile(join(cwd,'simulate.mjs'),script+'\n// New implementation\n');git(cwd,'add','simulate.mjs');git(cwd,'commit','-qm','Changed implementation');}
+  else await writeFile(join(cwd,'base.json'),JSON.stringify({workload:'changed'}));
+  const {progress}=await import('../dist/progress.js');assert.equal(progress(d,Date.now()).canRunCycle,true,JSON.stringify(progress(d,Date.now()).blockers));
+  const round=await execute(f,o),candidate=round.runs.find(run=>run.group==='change');
+  assert.equal(candidate.state,'failed');assert.match(candidate.error.raw,/Actual execution config or checkout/);
+  assert.doesNotMatch(await readFile(join(cwd,'starts'),'utf8'),/\/2\/change-s/);
+ });
 });

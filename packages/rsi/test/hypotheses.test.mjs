@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { progress } from '../dist/progress.js';
 import { collectHypotheses, hypothesisViews, editHypothesis } from '../dist/hypotheses.js';
 import { act } from '../dist/actions.js';
+import { executionParameters, fingerprint } from '../dist/parameters.js';
 import { validateTiers } from '../dist/tiers.js';
 const tiers = [
  {id:'screen',label:'少卡筛选',requireControl:false,seedPolicy:'fixed',requireCycleVars:false,resourceVars:['cards','lease']},
  {id:'full',label:'整机确认',requireControl:true,seedPolicy:'fresh',requireCycleVars:true,resourceVars:['cards','lease'],promoteFrom:'screen',promotion:{verdicts:['keep'],minCycles:1}},
 ];
 const fixture = () => ({ objective:{state:'running',currentVersion:'v1',projectPath:'/isolated'}, prep:[],plan:[],members:[],executor:{state:'passed',commands:{submit:'fixture'}},policy:{tiers,schedule:{mode:'anytime'}},metrics:{version:'E1',items:[]},versions:[{id:'v1',config:{},vars:{}},{id:'v2',config:{},vars:{},hypothesisId:'h1'}],hypotheses:[{id:'h1',title:'改善吞吐？',source:{kind:'manual',by:'owner'},createdAt:1}],rounds:[],upcoming:{tier:'full',scenario:'mixed',hypothesisIds:['h1'],cycleVars:{cards:8},groups:[{id:'change',label:'Candidate',vars:{},version:'v2'}],seeds:[1]} });
-const evidence = (extra={}) => ({n:1,tier:'screen',scenario:'mixed',hypothesisIds:['h1'],state:'done',plan:{tier:'screen',tierRule:{...tiers[0],adoption:false},groups:[{id:'change',version:'v2',vars:{}}],seeds:[1]},metrics:{version:'E1',items:[]},runs:[{group:'change',seed:1,state:'done',evidence:true,parameters:{config:{},commit:null,base:{},effective:{}}}],report:{verdict:'keep'},decision:{pick:'same'},...extra});
+const evidence = (extra={}) => ({n:1,tier:'screen',scenario:'mixed',hypothesisIds:['h1'],state:'done',plan:{tier:'screen',tierRule:{...tiers[0],adoption:false},groups:[{id:'change',version:'v2',vars:{}}],seeds:[1]},metrics:{version:'E1',items:[]},runs:[{group:'change',seed:1,state:'done',evidence:true,parameters:executionParameters({config:{},vars:{}},{vars:{}},{tierRule:tiers[0]}, {},null)}],report:{verdict:'keep'},decision:{pick:'same'},...extra});
 test('tier promotion requires matching complete lower-tier evidence; blocked env/partial/other hypothesis cannot qualify',()=>{
  const d=fixture(); assert.equal(progress(d,2).canRunCycle,false);
  for(const bad of [{runs:[{group:'change',seed:1,state:'failed',error:{kind:'env'}}]},{hypothesisIds:['other']},{aborted:{reason:'manual'}},{report:{verdict:'rollback'}},{plan:{groups:[{id:'change',version:'v1',vars:{}}],seeds:[1]}},{metrics:{version:'E2',items:[]}},{scenario:'other'}]){
@@ -42,7 +43,7 @@ test('invalid tier graph, missing fields and unsafe confirmations are rejected',
 
 
 test('promotion respects guardrails, variable identity, count and explicit cross-scenario allowance',()=>{
- const d=fixture();d.rounds=[evidence()];d.rounds[0].plan.groups[0].vars={knob:1};d.rounds[0].runs[0].parameters.effective={knob:1};
+ const d=fixture();d.rounds=[evidence()];d.rounds[0].plan.groups[0].vars={knob:1};d.rounds[0].runs[0].parameters.effective=fingerprint({knob:1});
  assert.ok(progress(d,2).blockers.some(b=>b.code==='tierEvidence'));
  d.rounds=[evidence()];d.metrics.items=[{id:'quality',guard:true,threshold:0.9,dir:'up'}];d.rounds[0].metrics=structuredClone(d.metrics);d.rounds[0].runs[0].metrics={quality:0.8};
  assert.ok(progress(d,2).blockers.some(b=>b.code==='tierEvidence'));
@@ -62,7 +63,7 @@ test('tightening a source-tier rule cannot reinterpret evidence collected under 
 
 
 const blocked = d => assert.ok(progress(d,2).blockers.some(b=>b.code==='tierEvidence'));
-const setCycleVars = (r, vars) => { r.plan.cycleVars=vars; for(const run of r.runs) run.parameters.effective={...vars}; };
+const setCycleVars = (r, vars) => { r.plan.cycleVars=vars; for(const run of r.runs) run.parameters=executionParameters({config:{},vars:{}},{vars:{}},r.plan,vars,null); };
 const adoption = d => {
  const r=d.rounds[0];r.tier='full';r.plan.tier='full';r.plan.tierRule={...d.policy.tiers[1],adoption:true};
  d.objective.id='obj';d.candidate={id:'change',version:'v2',vars:{},cycle:1};
@@ -93,7 +94,7 @@ test('tier evidence compares effective frozen parameters, allowing only declared
  d.upcoming.cycleVars.workload='smoke';assert.equal(progress(d,2).canRunCycle,true);
  // A later edit to version defaults must not reinterpret the historical execution.
  d.versions[1].vars={knob:2};blocked(d);delete d.versions[1].vars.knob;
- d.rounds[0].runs[0].parameters.effective.workload='production';blocked(d);
+ d.rounds[0].runs[0].parameters.effective=fingerprint({workload:'production'});blocked(d);
  delete d.rounds[0].runs[0].parameters;blocked(d);
 });
 test('declared slice guardrails block exceeded or missing measurements, including explicit adoption',()=>{
@@ -110,14 +111,16 @@ test('declared slice guardrails block exceeded or missing measurements, includin
 });
 
 
-test('effective parameters include inherited defaults and pinned file bases; resource declarations are frozen',()=>{
- const d=fixture();d.rounds=[evidence()];const r=d.rounds[0],v=d.versions[1],snapshot=r.runs[0].parameters;
- v.config={knob:1};snapshot.config={knob:1};snapshot.base={knob:1};snapshot.effective={knob:1};assert.equal(progress(d,2).canRunCycle,true);
+test('bounded fingerprints include inherited defaults, actual file contents and checkout identity',()=>{
+ const d=fixture();d.rounds=[evidence()];const r=d.rounds[0],v=d.versions[1],group=r.plan.groups[0];
+ v.config={knob:1};r.runs[0].parameters=executionParameters(v,group,r.plan,{knob:1},null);assert.equal(progress(d,2).canRunCycle,true);
  v.vars={knob:2};blocked(d);d.upcoming.groups[0].vars={knob:1};assert.equal(progress(d,2).canRunCycle,true);
- v.config='config.json';snapshot.config='config.json';blocked(d);
- v.commit='pinned';snapshot.commit='pinned';assert.equal(progress(d,2).canRunCycle,true);
+ v.config='config.json';v.commit='pinned';group.vars={knob:1};r.runs[0].parameters=executionParameters(v,group,r.plan,{knob:1},'actual-checkout');assert.equal(progress(d,2).canRunCycle,true);
  v.commit='changed';blocked(d);v.commit='pinned';
  d.policy={...d.policy,tiers:structuredClone(tiers)};d.policy.tiers[0].resourceVars.push('workload');blocked(d);
  assert.ok(validateTiers([{...tiers[0],resourceVars:['seed']},tiers[1]]));
  assert.ok(validateTiers([{...tiers[0],resourceVars:['lease','lease']},tiers[1]]));
+ assert.ok(validateTiers([{...tiers[0],resourceVars:['lease']},tiers[1]]));
+ const large=executionParameters({config:'config.json'},group,r.plan,{payload:'x'.repeat(530*1024)},'actual-checkout');
+ assert.ok(JSON.stringify(large).length<600);assert.equal(large.base,undefined);
 });

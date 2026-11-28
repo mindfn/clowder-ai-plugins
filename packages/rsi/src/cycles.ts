@@ -1,5 +1,5 @@
 import { collectHypotheses } from './hypotheses.js';
-import { tierOf, screeningRound, sliceGuardsPass, tierEvidence } from './tiers.js';
+import { tierOf, screeningRound, tierEvidence } from './tiers.js';
 import { progress } from './progress.js';
 import { AUTO, clipTitle, enqueue, mention, message, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
 import { formatComparisonMarkdown, roundMetrics, roundMetricVersion, sliceMatrix } from './compare.js';
@@ -722,7 +722,12 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   delete round.reevaluating;
   const wins = compared.groups.filter((g: Data) => g.beatsControl).sort((a: Data, b: Data) => compared.dir === 'up' ? b.mean - a.mean : a.mean - b.mean);
   const isExplore = screeningRound(round);
-  const winner = isExplore || round.aborted || d.policy.tiers && !sliceGuardsPass(roundMetrics(d, round), round) ? undefined : wins[0], candidate = d.candidate;
+  // Evaluate the current conclusion and actual runs before any adoption mutation.
+  const concludedRound = { ...round, state: 'done', report: { verdict: input.verdict, disposition, compare } };
+  const winnerGroup = round.plan.groups.find((g: Data) => g.id === wins[0]?.group);
+  const currentEvidence = !d.policy.tiers || winnerGroup && tierEvidence({ ...d, rounds: [concludedRound] },
+    { ...round.plan, groups: [winnerGroup] }, round.tier, undefined, round.runs).includes(round.n);
+  const winner = isExplore || round.aborted || !currentEvidence ? undefined : wins[0], candidate = d.candidate;
   let confirmation: Data | null = null;
   const hadReservedSeeds = Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length > 0;
   const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, cycleVars: _dropCycleVars, ...basePlan } = round.plan;
@@ -730,7 +735,7 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
     const group = round.plan.groups.find((g: Data) => g.confirm && g.version === candidate.version && JSON.stringify(g.vars) === JSON.stringify(candidate.vars));
     const missing = !compared.comparable || round.runs.some((r: Data) => (r.group === 'control' || r.group === group?.id) && r.error?.kind === 'env');
     const holds = !missing && group && winner?.group === group.id && round.plan.seeds.every((s: number) => !candidate.seeds.includes(s))
-      && (!d.policy.tiers || tierEvidence(d, round.plan, round.tier).includes(candidate.cycle));
+      && (!d.policy.tiers || tierEvidence(d, round.plan, round.tier, undefined, round.runs).includes(candidate.cycle));
     confirmation = { status: holds ? 'confirmed' : missing ? 'insufficient' : 'rejected', group: group?.id, version: candidate.version, selectedCycle: candidate.cycle, cycle: round.n };
     if (holds) {
       let version = d.versions.find((v: Data) => v.id === candidate.version);
