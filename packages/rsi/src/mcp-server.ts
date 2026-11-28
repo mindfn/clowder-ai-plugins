@@ -108,7 +108,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
         goal: { type: 'object', additionalProperties: true, description: '可选目标补充对象。' },
         executor: { type: 'object', additionalProperties: true, description: '第 3 步可选内联执行器命令对象。' },
         metrics: { type: 'object', additionalProperties: true, description: '第 4 步量尺定义 { version, items, slices? }；可选 slices 声明分档量尺 [{ id, name, axis, axisUnit?, stats: [{ id, name, unit?, dir: up|down, threshold?, primary? }] }]。' },
-        specification: { type: 'object', additionalProperties: false, properties: { tiers: { type: 'array', items: { type: 'object', additionalProperties: true } }, scenarios: { type: 'array', items: { type: 'string' } } }, description: '第 5 步实验规约。tiers 为有序层级：id/label/requireControl/seedPolicy(fresh|fixed)/requireCycleVars；高一级必须 promoteFrom 指向前级，promotion 可设 verdicts、minCycles、sameScenario。末级必须对照+新种子。' },
+        specification: { type: 'object', additionalProperties: false, properties: { tiers: { type: 'array', items: { type: 'object', additionalProperties: true } }, scenarios: { type: 'array', items: { type: 'string' } } }, description: '第 5 步实验规约。tiers 为有序层级：id/label/requireControl/seedPolicy(fresh|fixed)/requireCycleVars；高一级必须 promoteFrom 指向前级，promotion 可设 verdicts、minCycles、sameScenario；resourceVars 显式列出可随层级变化的资源/拓扑参数（如 lease/cards，两级均须声明），其他有效参数必须一致。末级必须对照+新种子。' },
         upcoming: { type: 'object', additionalProperties: true, description: '第 5/7 步下一周期计划 { groups, seeds, order?, tier?, scenario?, hypothesisIds? }；order 可选 grouped（默认，按组连续）/ interleaved（逐 seed 同序 AB/AB）/ balanced（逐 seed 平衡交错 AB/BA/AB/BA）。' },
         docs: { type: 'array', items: { type: 'object', additionalProperties: true }, description: '可选附带项目/参考文档。' },
       },

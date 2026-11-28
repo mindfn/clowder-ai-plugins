@@ -3938,7 +3938,7 @@ test('P1 hypotheses persist across restart, owner/manager edit safely, and direc
 
 test('P1 specification snapshots custom tier and blocks higher tiers across status, manual and scheduler projections', async(t)=>{
   const f=await fixture(t),o=await f.create({repair:'0'});
-  const specification={tiers:[{id:'screen',label:'Screen',requireControl:false,seedPolicy:'fixed',requireCycleVars:false},{id:'full',label:'Full',requireControl:true,seedPolicy:'fresh',requireCycleVars:true,promoteFrom:'screen',promotion:{verdicts:['keep'],minCycles:1}}],scenarios:['mixed']};
+  const specification={tiers:[{id:'screen',label:'Screen',requireControl:false,seedPolicy:'fixed',requireCycleVars:false,resourceVars:['cards','lease']},{id:'full',label:'Full',requireControl:true,seedPolicy:'fresh',requireCycleVars:true,resourceVars:['cards','lease'],promoteFrom:'screen',promotion:{verdicts:['keep'],minCycles:1}}],scenarios:['mixed']};
   const made=await f.http('POST',{op:'hypothesis',objective:o.id,title:'Same configuration passes screening'});
   const plan={tier:'screen',scenario:'mixed',hypothesisIds:[made.hypothesisId],skipControl:true,groups:[{id:'change',label:'Treatment',vars:{delta:1}}],seeds:[21]};
   await f.initialize(o,plan,{specification});await execute(f,o);
@@ -3961,7 +3961,7 @@ test('P1 specification snapshots custom tier and blocks higher tiers across stat
 
 test('P1 same-version screening advances through real preparation/binding to adoption-tier candidate and explicit promotion', async(t)=>{
   const f=await fixture(t),o=await f.create({repair:'0'});
-  const specification={tiers:[{id:'screen',label:'Screen',requireControl:false,seedPolicy:'fixed',requireCycleVars:false},{id:'full',label:'Full',requireControl:true,seedPolicy:'fresh',requireCycleVars:true,promoteFrom:'screen'}],scenarios:['mixed']};
+  const specification={tiers:[{id:'screen',label:'Screen',requireControl:false,seedPolicy:'fixed',requireCycleVars:false,resourceVars:['cards','lease']},{id:'full',label:'Full',requireControl:true,seedPolicy:'fresh',requireCycleVars:true,resourceVars:['cards','lease'],promoteFrom:'screen'}],scenarios:['mixed']};
   const made=await f.http('POST',{op:'hypothesis',objective:o.id,title:'Delta improves score'});
   const plan={tier:'screen',scenario:'mixed',hypothesisIds:[made.hypothesisId],skipControl:true,groups:[{id:'change',label:'Treatment',vars:{delta:1}}],seeds:[31]};
   await f.initialize(o,plan,{specification});await execute(f,o);await f.tool('task',{},'cat-b5ddoo9l',o.thread);
@@ -3976,6 +3976,40 @@ test('P1 same-version screening advances through real preparation/binding to ado
   await execute(f,o);await f.tool('task',{},'cat-b5ddoo9l',o.thread);
   const concluded=await f.tool('conclude',{cycle:2,verdict:'keep',findings:'Full candidate beats the control',options:[{k:'more',title:'More',why:'Continue',kind:'variable',target:'delta',cites:[`${o.id}-cycle-1`]}]},'cat-b5ddoo9l',o.thread);
   assert.equal(concluded.ok,true,JSON.stringify(concluded));d=(await f.read()).experiments[o.id];assert.equal(d.candidate.vars.delta,1);assert.equal(d.upcoming.tier,'full');
+  // Exercise adoption with real runtime snapshots, on isolated copies of the same state.
+  const {act}=await import('../dist/actions.js');
+  const saved=await f.read();
+  const deny=mutate=>{const state=structuredClone(saved),copy=state.experiments[o.id];mutate(copy);const before=structuredClone(copy);const result=act(state,{op:'promote',objective:o.id,version:copy.candidate.version},{project:f.project},Date.now());assert.equal(result.status,409,JSON.stringify(result));assert.match(result.error,/highest-tier/);assert.deepEqual(copy,before);};
+  deny(copy=>{copy.candidate.vars={delta:0};}); // v1 with delta=0 only supplied the control evidence.
+  deny(copy=>{copy.rounds[1].runs.find(r=>r.group===copy.candidate.id).parameters.effective.workload='smoke';});
+  deny(copy=>{copy.versions.find(v=>v.id===copy.candidate.version).vars.extraWorkload='production';});
+  for(const slices of [undefined,{}, {load:[{at:1,values:{p99:160}}]}]) deny(copy=>{
+    copy.metrics.slices=[{id:'load',name:'Load',axis:'requests',stats:[{id:'p99',name:'P99',dir:'down',threshold:80}]}];
+    copy.rounds[1].metrics=structuredClone(copy.metrics);for(const run of copy.rounds[1].runs) run.slices=slices;
+  });
+  // Automatic confirmation must also use this candidate's selected-cycle evidence.
+  const {conclude}=await import('../dist/cycles.js');
+  for(const failure of ['slices','parameters','none']) {
+    const state=structuredClone(saved),copy=state.experiments[o.id],round=structuredClone(copy.rounds[1]);
+    round.n=3;round.state='evaluating';round.report=null;round.decision=null;
+    round.plan.groups.find(g=>g.id===copy.candidate.id).confirm=true;
+    round.plan.seeds=round.plan.seeds.map(s=>s+100);for(const run of round.runs) run.seed+=100;
+    if(failure==='slices') {
+      copy.metrics.slices=[{id:'load',name:'Load',axis:'requests',stats:[{id:'p99',name:'P99',dir:'down',threshold:80}]}];
+      round.metrics=structuredClone(copy.metrics);copy.rounds[1].metrics=structuredClone(copy.metrics);
+      for(const run of copy.rounds[1].runs) run.slices={load:[{at:1,values:{p99:70}}]};
+      for(const run of round.runs) run.slices={load:[{at:1,values:{p99:160}}]};
+    } else if(failure==='parameters') round.plan.cycleVars.workload='changed-after-selection';
+    copy.rounds.push(round);
+    const result=conclude(state,copy,{cycle:3,verdict:'keep',findings:'The scalar metric alone looks good',options:[{k:'more',title:'More',why:'Check',kind:'variable',target:'delta',cites:[`${o.id}-cycle-2`]}]},Date.now());
+    assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.confirmation.status,failure==='none'?'confirmed':'rejected',failure);
+    if(failure==='none') assert.notEqual(copy.objective.currentVersion,saved.experiments[o.id].objective.currentVersion);
+    else assert.equal(copy.objective.currentVersion,saved.experiments[o.id].objective.currentVersion);
+  }
+  // Declared lease changes do not alter the scientific configuration being adopted.
+  const leased=structuredClone(saved);for(const run of leased.experiments[o.id].rounds[1].runs) run.parameters.effective.lease='expired-lease';
+  assert.equal(act(leased,{op:'promote',objective:o.id,version:d.candidate.version},{project:f.project},Date.now()).ok,true);
+  assert.equal(d.rounds[1].runs.find(r=>r.group===d.candidate.id).parameters.effective.delta,1);
   const promoted=await f.http('POST',{op:'promote',objective:o.id,version:d.candidate.version,note:'Adopt full-tier evidence'});assert.equal(promoted.ok,true,JSON.stringify(promoted));
   d=(await f.read()).experiments[o.id];assert.equal(d.versions.at(-1).vars.delta,1);assert.equal(d.versions.at(-1).status,'confirmed');assert.equal(d.versions.at(-1).hypothesisId,made.hypothesisId);
 });

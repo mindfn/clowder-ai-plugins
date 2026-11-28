@@ -948,7 +948,7 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       if (isCandidatePromote && d.policy.tiers) {
         const top = tiersOf(d).at(-1)!;
         const selected = d.rounds.find((r: Data) => r.n === candidate.cycle);
-        const plan = { groups: [candidate], hypothesisIds: selected?.hypothesisIds, scenario: selected?.scenario };
+        const plan = { ...selected?.plan, tier: top.id, groups: [candidate], hypothesisIds: selected?.hypothesisIds, scenario: selected?.scenario };
         if (!tierEvidence(d, plan, top.id).length) return { error: 'Adoption requires completed highest-tier evidence for this candidate', status: 409 };
       }
       if (version.id === previous) {

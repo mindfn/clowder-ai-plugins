@@ -244,7 +244,10 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         where = { cwd, values };
         await retain(host.storage, key, (state) => {
           const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
-          if (entry) entry.execution = { cwd, values, cancel: d.executor.commands.cancel, submitted };
+          if (entry) {
+            entry.execution = { cwd, values, cancel: d.executor.commands.cancel, submitted };
+            if (!jobId) entry.parameters = structuredClone({ config: version.config, commit: version.commit || null, base, effective: merged });
+          }
         });
         const since = jobId ? start : Date.now();
         if (!jobId) {

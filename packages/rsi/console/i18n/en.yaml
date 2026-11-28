@@ -1290,6 +1290,7 @@ hypothesis:
   empty: No hypotheses yet. Create one or collect them from analysis directions.
   question: Testable question
   note: Evidence and notes
+  resourceVar: "Resource parameter allowed to change across tiers: {0}"
   specification: Experiment specification
   links: Version and cycle associations
   unlinked: Unlinked
@@ -1313,5 +1314,5 @@ hypothesis:
     blocked: Execution blocked
     negative: Negative result
     incomplete: Evidence incomplete
-    positive: Positive result
+    positive: Meets criterion
     tested: Tested

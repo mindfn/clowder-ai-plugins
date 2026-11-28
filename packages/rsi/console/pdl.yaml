@@ -519,6 +519,14 @@ views:
                           t: rsi.hypothesis.prerequisite
                           args: ["@promoteFrom"]
                         when: "@promoteFrom"
+                  - type: each
+                    from: "@resourceVars"
+                    blocks:
+                      - type: text
+                        text:
+                          t: rsi.hypothesis.resourceVar
+                          args: ["@"]
+                        faint: true
               - type: each
                 from: $.exp.scenarios
                 blocks:

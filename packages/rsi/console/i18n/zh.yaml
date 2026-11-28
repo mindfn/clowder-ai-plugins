@@ -1290,6 +1290,7 @@ hypothesis:
   empty: 尚无假设；可手动新建，也会从分析方向自动收集。
   question: 可验证的问题
   note: 依据与备注
+  resourceVar: "允许跨层级变化的资源参数：{0}"
   specification: 实验规约
   links: 版本与周期关联
   unlinked: 未关联
@@ -1313,5 +1314,5 @@ hypothesis:
     blocked: 运行受阻
     negative: 负结果
     incomplete: 证据待补
-    positive: 有收益
+    positive: 通过判据
     tested: 已验证
