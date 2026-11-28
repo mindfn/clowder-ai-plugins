@@ -37,19 +37,23 @@ export function usedSeeds(d: Experiment): Set<number> {
   ]));
 }
 
-export function validateReservedSeeds(d: Experiment, reserved: unknown, scheduledSeeds: number[]): string | null {
+export function reservedSeedIssue(d: Experiment, reserved: unknown, scheduledSeeds: number[]): { code: string; detail: string; message: string } | null {
   if (reserved === undefined) return null;
   if (!Array.isArray(reserved) || reserved.length > 20 || reserved.some((s: unknown) => !Number.isSafeInteger(s) || (s as number) < 0))
-    return 'reservedSeeds must be an array of up to 20 non-negative integers';
+    return { code: 'shape', detail: '', message: 'reservedSeeds must be an array of up to 20 non-negative integers' };
   const nums = reserved as number[];
-  if (new Set(nums).size !== nums.length) return 'reservedSeeds must not contain duplicate seeds';
+  if (new Set(nums).size !== nums.length) return { code: 'duplicate', detail: '', message: 'reservedSeeds must not contain duplicate seeds' };
   const history = usedSeeds(d);
   const histDup = nums.filter((s) => history.has(s));
-  if (histDup.length) return `reservedSeeds overlaps previously used seeds: ${histDup.join(', ')}`;
+  if (histDup.length) return { code: 'history', detail: histDup.join(', '), message: `reservedSeeds overlaps previously used seeds: ${histDup.join(', ')}` };
   const schedSet = new Set(scheduledSeeds);
   const schedDup = nums.filter((s) => schedSet.has(s));
-  if (schedDup.length) return `reservedSeeds must list only extra internal seeds and must not overlap scheduled seeds: ${schedDup.join(', ')}`;
+  if (schedDup.length) return { code: 'scheduled', detail: schedDup.join(', '), message: `reservedSeeds must list only extra internal seeds and must not overlap scheduled seeds: ${schedDup.join(', ')}` };
   return null;
+}
+
+export function validateReservedSeeds(d: Experiment, reserved: unknown, scheduledSeeds: number[]): string | null {
+  return reservedSeedIssue(d, reserved, scheduledSeeds)?.message || null;
 }
 
 export function freshSeeds(d: Experiment, count: number): number[] {
@@ -172,7 +176,7 @@ export function finishCycle(state: RsiState, d: Experiment, round: Data, now: nu
 export function settleAbort(state: RsiState, d: Experiment, round: Data, now: number) {
   if (round.state !== 'aborting' || round.runs.some((r: Data) => r.cancelResult?.status === 'pending')) return;
   round.end = now;
-  const evidence = round.runs.filter((r: Data) => r.state === 'done' && r.evidence && !r.error);
+  const evidence = round.runs.filter((r: Data) => r.evidence === true);
   const evaluate = round.aborted.reason !== 'env' && evidence.length > 0;
   round.state = evaluate ? 'evaluating' : 'aborted';
   d.objective.budget.used++;

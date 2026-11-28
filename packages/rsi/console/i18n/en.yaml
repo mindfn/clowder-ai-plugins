@@ -1246,7 +1246,11 @@ progress:
   discussing: Waiting for analysts' directions
   decision: Waiting for the manager's next decision
   version: Waiting for a new version
-  preparation: Preparation needs submission, refresh or confirmation
+  prepStale: Preparation steps are stale; redo against the new version
+  prepInterrupted: Preparation reply interrupted; retry the step
+  prepConfirm: Preparation items need confirmation
+  prepWorking: Members are preparing
+  prepPending: Preparation has not started; assign a member or retry
   executor: Executor has not passed its check
   plan: A valid group and seed plan is required
   explicitPlan: Submit a new plan; consumed reserved seeds cannot be reused
@@ -1261,3 +1265,9 @@ progress:
   windowLimit: The automatic cycle limit for this window has been reached
   interrupted: Already resumed automatically once; continue the interrupted cycle manually
   _: "{0}"
+
+reservedIssue:
+  shape: Register up to 20 non-negative integer seeds
+  duplicate: Reserved seeds must be unique
+  history: "Overlaps historical seeds: {0}"
+  scheduled: "Overlaps this cycle's outer seeds: {0}"

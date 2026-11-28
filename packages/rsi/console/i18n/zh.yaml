@@ -1246,7 +1246,11 @@ progress:
   discussing: 等分析成员提交方向
   decision: 等管理员决定下一步
   version: 等迭代成员提交新版本
-  preparation: 准备项有待提交、更新或确认
+  prepStale: 准备步骤已过期，请按新版本重做
+  prepInterrupted: 准备回复中断，请重试对应步骤
+  prepConfirm: 准备项等待确认
+  prepWorking: 成员正在准备
+  prepPending: 准备步骤尚未启动，请指定成员或重试
   executor: 执行器尚未通过检查
   plan: 尚未提交有效的组别和种子计划
   explicitPlan: 需重新提交本轮计划，不能沿用已用的预留种子
@@ -1261,3 +1265,9 @@ progress:
   windowLimit: 本时段自动周期已达上限
   interrupted: 已自动恢复过一次，请手动继续中断周期
   _: "{0}"
+
+reservedIssue:
+  shape: 最多登记 20 个非负整数种子
+  duplicate: 预留种子不能重复
+  history: "与历史种子重叠：{0}"
+  scheduled: "与本轮外层种子重叠：{0}"

@@ -1,5 +1,5 @@
-import { prepSettled } from './init.js';
-import { cycleVarsConflicts, freshSeeds, hasCycleVars, validPlan, validateReservedSeeds } from './cycles.js';
+import { prepSettled, stepMemberOf } from './init.js';
+import { cycleVarsConflicts, freshSeeds, hasCycleVars, validPlan, reservedSeedIssue } from './cycles.js';
 import { insideWindow, withinWindowLimit } from './schedule.js';
 import type { Data, Experiment } from './types.js';
 
@@ -9,6 +9,13 @@ export interface Blocker {
   scope: 'all' | 'schedule';
   role: string;
   action: string;
+  section?: string;
+  step?: number;
+  count?: number;
+  by?: string;
+  memberIds?: string[];
+  detail?: string;
+  reason?: string;
 }
 
 // The same projection serves commands, scheduling and readers. Manual runs have always
@@ -17,22 +24,36 @@ export function progress(d: Experiment, now: number) {
   const running = d.rounds.find((r: Data) => r.state === 'running');
   const aborting = d.rounds.find((r: Data) => r.state === 'aborting');
   const evaluating = d.rounds.find((r: Data) => r.state === 'evaluating');
-  const discussing = d.rounds.find((r: Data) => r.analysis?.waiting?.length);
+  const discussing = d.rounds.find((r: Data) => r.analysis?.waiting?.length && !r.decision);
   const undecided = d.rounds.find((r: Data) => r.report && !r.decision && !r.analysis?.waiting?.length);
   const interrupted = d.rounds.find((r: Data) => r.state === 'interrupted');
   const settled = prepSettled(d);
   const blockers: Blocker[] = [];
-  const add = (code: string, message: string, role: string, action: string, scope: Blocker['scope'] = 'all') => blockers.push({ code, message, role, action, scope });
+  const add = (code: string, message: string, role: string, action: string, scope: Blocker['scope'] = 'all', details: Partial<Blocker> = {}) => blockers.push({ code, message, role, action, scope, ...details });
   if (['done', 'retired'].includes(d.objective.state)) add('terminal', 'Objective is not ready: it has ended', 'owner', 'none');
   else if (d.objective.state === 'paused') add('paused', 'Objective is not ready: it is paused', 'manager', 'resume');
-  else if (!['ready', 'running', 'pending'].includes(d.objective.state)) add('preparing', 'Objective is not ready', 'prepare', 'prepare');
+  else if (settled && !['ready', 'running', 'pending'].includes(d.objective.state)) add('preparing', 'Objective is not ready', 'prepare', 'prepare');
   if (aborting) add('aborting', 'Cycle cancellation is still being settled', 'executor', 'wait');
   if (running) add('running', 'Finish the current cycle first', 'executor', 'wait');
   if (evaluating) add('evaluating', 'Finish the current cycle first: evaluation is pending', 'evaluate', 'conclude');
   if (discussing) add('discussing', 'Finish the current cycle first: direction discussion is pending', 'analyze', 'propose');
   if (undecided) add('decision', 'Finish the current cycle first: a decision is pending', 'manager', 'expDecide');
   if (d.versionRequest) add('version', 'The prepare member must submit rsi.version first', 'iterate', 'version');
-  if (!settled) add('preparation', 'Preparation is being redone: wait for the members, then confirm the changed items', 'prepare', 'prepare');
+  if (!settled) {
+    const steps = d.plan.map((p, i) => ({ section: p.k, step: i + 1, execution: d.exec?.[p.k], stored: d.steps?.[p.k], member: stepMemberOf(d, p.k) }));
+    const cut = steps.find((p) => p.execution && p.execution.state !== 'started');
+    const stale = steps.filter((p) => !p.execution && p.stored?.stale);
+    const working = steps.filter((p) => p.execution?.state === 'started');
+    const confirm = d.prep.filter((p) => p.neededFrom === 'human' && p.state !== 'confirmed');
+    const pending = steps.find((p) => !p.execution && !p.stored);
+    if (cut) add('prepInterrupted', 'Preparation reply was interrupted; retry the step', 'manager', 'initRetry', 'all',
+      { section: cut.section, step: cut.step, by: cut.execution?.by });
+    if (stale.length) add('prepStale', 'Preparation has stale steps; redo against the new version', 'owner', 'initRedo', 'all', { count: stale.length });
+    if (working.length) add('prepWorking', 'Preparation members are still working', 'prepare', 'wait', 'all',
+      { count: working.length, memberIds: [...new Set(working.map((p) => p.execution!.by))] });
+    if (confirm.length) add('prepConfirm', 'Preparation items need confirmation', 'owner', 'prepConfirm', 'all', { count: confirm.length });
+    if (pending && !cut && !stale.length && !working.length) add('prepPending', 'Preparation step has not started', 'manager', pending.member?.catId ? 'initRetry' : 'stepMember', 'all', { section: pending.section, step: pending.step });
+  }
   if (d.executor.state !== 'passed' || !d.executor.commands) add('executor', 'Register and pass rsi.executor first', 'prepare', 'executor');
 
   const planned = d.rounds.find((r: Data) => r.state === 'planned');
@@ -61,11 +82,11 @@ export function progress(d: Experiment, now: number) {
         // against that same projected baseline without writing into the stored version.
         const baseline = { ...d, versions: d.versions.map((v: Data) => v === current ? { ...v, vars } : v) };
         const conflicts = cycleVarsConflicts(baseline, plan.groups, plan.cycleVars);
-        if (conflicts.length) add('cycleVarsConflict', `cycleVars cannot override keys that differ across groups: ${conflicts.join(', ')}`, 'manager', 'cycleVars');
+        if (conflicts.length) add('cycleVarsConflict', `cycleVars cannot override keys that differ across groups: ${conflicts.join(', ')}`, 'manager', 'cycleVars', 'all', { detail: conflicts.join(', ') });
         if (d.rounds.length) plan.seeds = freshSeeds(d, plan.seeds.length);
         if (plan.reservedSeeds !== undefined && plan.tier !== 'explore') add('reservedTier', 'reservedSeeds is only allowed when tier is "explore"', 'iterate', 'plan');
-        const seedError = validateReservedSeeds(d, plan.reservedSeeds, plan.seeds);
-        if (seedError) add('reservedSeeds', seedError, 'iterate', 'plan');
+        const seedError = reservedSeedIssue(d, plan.reservedSeeds, plan.seeds);
+        if (seedError) add('reservedSeeds', seedError.message, 'iterate', 'plan', 'all', { reason: seedError.code, detail: seedError.detail });
       }
     }
   }
@@ -76,20 +97,20 @@ export function progress(d: Experiment, now: number) {
   const first = blockers.find((b) => b.scope === 'all') || blockers[0];
   const phase = aborting ? 'aborting' : running ? 'running' : evaluating ? 'evaluating' : discussing ? 'analyzing'
     : undecided ? 'decide' : d.versionRequest ? (d.versionRequest.repair ? 'repair' : 'version')
-    : interrupted ? (interrupted.autoResumed ? 'interrupted' : 'resuming') : !settled ? 'preparing'
+    : interrupted ? (interrupted.autoResumed ? 'interrupted' : 'resuming') : !settled ? blockers.find((b) => b.code.startsWith('prep'))!.code
     : first?.code || 'ready';
   // Pausing prevents new execution, but does not remove work already owed by
   // an evaluator/analyst (including the partial evidence from an abort).
   const phaseCode = phase === 'analyzing' ? 'discussing' : phase === 'decide' ? 'decision' : phase === 'repair' ? 'version' : phase;
   const action = ['done', 'retired'].includes(d.objective.state) ? first : blockers.find((b) => b.code === phaseCode) || first;
   const role = action?.role || 'executor';
-  const memberIds = role === 'manager' ? (d.policy.manager?.catId ? [d.policy.manager.catId] : [])
-    : role === 'analyze' && discussing ? [...discussing.analysis.waiting] : d.members.filter((m) => m.role === role && m.catId).map((m) => m.catId);
+  const memberIds = action?.memberIds || (role === 'manager' ? (d.policy.manager?.catId ? [d.policy.manager.catId] : [])
+    : role === 'analyze' && discussing ? [...discussing.analysis.waiting] : d.members.filter((m) => m.role === role && m.catId).map((m) => m.catId));
   return {
     phase, role, memberIds, prepSettled: settled,
     canRunCycle: !blockers.some((b) => b.scope === 'all'), canSchedule: blockers.length === 0,
     canAbortCycle: !!running && !aborting,
-    blockers, nextAction: { op: action?.action || 'runCycle', role, memberIds },
+    blockers, nextAction: { op: action?.action || 'runCycle', role, memberIds, ...(action?.section ? { section: action.section, step: action.step, ...(action.by ? { by: action.by } : {}) } : {}), ...(action?.count !== undefined ? { count: action.count } : {}) },
     runningCycle: running?.n ?? null, abortingCycle: aborting?.n ?? null,
     evaluatingCycle: evaluating?.n ?? null, discussingCycle: discussing?.n ?? null,
     analysisWaiting: discussing?.analysis.waiting || [], pendingDecisionCycle: undecided?.n ?? null,

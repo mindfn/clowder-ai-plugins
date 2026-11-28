@@ -568,7 +568,9 @@ test('a real objective has only the members chosen for it, with their names and 
   await execute(f, o); await report(f, o); await decide(f, o);
   const item = (await f.read()).experiments[o.id].prep.find((p) => p.section === 'rules');
   assert.equal((await f.http('POST', { op: 'prep', objective: o.id, id: item.id, action: 'agent', note: 'Recalibrate the guard' }, { project: f.project })).status, 200);
-  assert.match((await f.http('POST', { op: 'runCycle', objective: o.id })).error, /Preparation is being redone/);
+  const blockedRun = await f.http('POST', { op: 'runCycle', objective: o.id });
+  assert.ok(blockedRun.error);
+  assert.equal(blockedRun.blockers.find((b) => b.code === 'prepStale').action, 'initRedo');
   await f.prepare(o, undefined, { metrics: { version: 'E2', items: [{ id: 'score', name: 'Score', how: 'metrics.score', dir: 'up' }] } });
   assert.equal((await f.read()).experiments[o.id].metrics.version, 'E2');
   assert.equal((await execute(f, o)).n, 2);
@@ -3729,7 +3731,7 @@ test('alpha.137: pure progress gives commands, views and status the same readine
     ['paused', (d) => { d.objective.state = 'paused'; }, false, false],
     ['terminal', (d) => { d.objective.state = 'done'; }, false, false],
     ['executor', (d) => { d.executor.state = 'failed'; }, false, false],
-    ['preparation', (d) => { d.steps.design.stale = true; }, false, false],
+    ['prepStale', (d) => { d.steps.design.stale = true; }, false, false],
     ['version', (d) => { d.versionRequest = { cycle: 1, title: 'new', since: Date.now() }; }, false, false],
     ['cycleVars', (d) => { d.policy.requireCycleVars = true; }, false, false],
     ['explicitPlan', (d) => { d.upcoming.requiresExplicitPlan = true; }, false, false],
@@ -3800,4 +3802,90 @@ test('alpha.137: abort kills a synchronous process and does not retry or start i
   assert.ok(d.rounds[0].runs.every((r) => r.retries === 0));
   assert.equal((await readFile(join(f.project, 'starts'), 'utf8')).trim(), runDir);
   assert.equal((await readFile(join(f.project, 'local-cancel'), 'utf8')).trim(), 'cleaned');
+});
+
+test('alpha.137 review: real preparation projects actionable stale/interrupted/confirmation/working states into Console and status', async (t) => {
+  const { progressView } = await import('../dist/progress.js');
+  const { viewModel } = await import('../dist/views.js');
+  const { statusAction } = await import('../dist/tools.js');
+  const f = await fixture(t), o = await f.create(); await f.initialize(o);
+  const base = await f.read();
+  const cases = [
+    ['prepStale', 'stale', 'initRedo', (d) => { d.steps.design.stale = true; }],
+    ['prepInterrupted', 'cancelled', 'initRetry', (d) => { d.exec.design = { id: 'cut', state: 'cancelled', by: 'codex', base: {} }; }],
+    ['prepConfirm', 'prep', 'prepConfirm', (d) => { d.prep.find((p) => p.neededFrom === 'human').state = 'submitted'; }],
+    ['prepWorking', 'init', 'wait', (d) => { d.exec.design = { id: 'work', state: 'started', by: 'codex', base: {} }; }],
+  ];
+  for (const [code, next, op, mutate] of cases) {
+    const state = clone(base), d = state.experiments[o.id]; d.objective.state = 'preparing'; mutate(d);
+    const p = progressView(d, Date.now());
+    assert.equal(p.phase, code); assert.equal(p.nextAction.op, op); assert.equal(p.canRunCycle, false);
+    const view = viewModel(state, 'exp', { project: f.project, pick: `obj:${o.id}` });
+    assert.equal(view.next.k, next, code);
+    assert.deepEqual(view.progress.blockers, p.blockers);
+    assert.deepEqual(statusAction(state, { objectiveId: o.id }, { catId: 'codex', threadId: o.thread }).active.nextAction, p.nextAction);
+    if (next === 'stale') {
+      assert.equal(view.next.count, 1);
+      const { act } = await import('../dist/actions.js');
+      assert.equal(act(state, { op: 'initRedo', objective: o.id }, {}, Date.now()).ok, true);
+      assert.equal(state.experiments[o.id].exec.design.state, 'started');
+      assert.equal(progressView(state.experiments[o.id], Date.now()).phase, 'prepWorking');
+    }
+    if (next === 'cancelled') { assert.equal(view.next.n, 5); assert.equal(p.nextAction.section, 'design'); }
+    if (next === 'prep') assert.equal(view.next.count, 1);
+  }
+});
+
+test('alpha.137 review: abort during async submit waits for its job acknowledgement then cancels exactly that job', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  Object.assign(f.commands, {
+    submit: `node -e "require('fs').writeFileSync('remote-started','yes');setTimeout(()=>console.log('late-job'),1500)"`,
+    get: 'echo polled >> polls; echo \'{"state":"running"}\'', cancel: 'echo {job} >> cancels', poll: 30, timeout: 5,
+  });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [1, 2] });
+  await f.http('POST', { op: 'runCycle', objective: o.id });
+  await until(async () => access(join(f.project, 'remote-started')).then(() => true, () => false), Boolean);
+  assert.equal((await f.http('POST', { op: 'abortCycle', objective: o.id, reason: 'manual' })).ok, true);
+  const d = (await until(f.read, (s) => s.experiments[o.id].rounds[0].state === 'aborted')).experiments[o.id];
+  assert.equal(d.rounds[0].runs[0].cancelResult.status, 'cancelled');
+  assert.equal((await readFile(join(f.project, 'cancels'), 'utf8')).trim(), 'late-job');
+  assert.equal(await access(join(f.project, 'polls')).then(() => true, () => false), false);
+  assert.ok(d.rounds[0].runs.every((r) => r.state === 'cancelled' && r.retries === 0));
+});
+
+test('alpha.137 review: experimental failures remain abort evidence and old abort notices disappear after explicit continuation', async (t) => {
+  const { act } = await import('../dist/actions.js');
+  const { settleAbort } = await import('../dist/cycles.js');
+  const { viewModel } = await import('../dist/views.js');
+  const f = await fixture(t), o = await f.create(); await f.initialize(o);
+  await f.activation().stop();
+  const state = await f.read(), d = state.experiments[o.id];
+  assert.equal(act(state, { op: 'runCycle', objective: o.id }, {}, Date.now()).ok, true);
+  const r = d.rounds[0];
+  Object.assign(r.runs[0], { state: 'done', evidence: true, error: { kind: 'real', step: 'submit', raw: 'candidate crashed' }, end: Date.now() });
+  act(state, { op: 'abortCycle', objective: o.id, reason: 'eliminated' }, {}, Date.now());
+  settleAbort(state, d, r, Date.now());
+  assert.equal(r.state, 'evaluating');
+  const getView = () => viewModel(state, 'exp', { project: f.project, pick: `obj:${o.id}` });
+  assert.equal(getView().lastAbort.reason, 'eliminated');
+  r.state = 'aborted'; d.objective.state = 'ready';
+  assert.equal(act(state, { op: 'runCycle', objective: o.id }, {}, Date.now()).ok, true);
+  assert.equal(getView().lastAbort, null);
+  d.objective.state = 'paused'; assert.equal(getView().lastAbort.cycle, 1);
+});
+
+test('alpha.137 review: async acknowledgement drain respects the registered submit timeout and never retries', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  Object.assign(f.commands, {
+    submit: `node -e "require('fs').writeFileSync('remote-started','yes');setTimeout(()=>console.log('too-late-job'),30000)"`,
+    get: 'echo \'{"state":"running"}\'', cancel: 'echo {job} >> cancels', timeout: 1,
+  });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [1, 2] });
+  await f.http('POST', { op: 'runCycle', objective: o.id });
+  await until(async () => access(join(f.project, 'remote-started')).then(() => true, () => false), Boolean);
+  const start = Date.now(); await f.http('POST', { op: 'abortCycle', objective: o.id, reason: 'manual' });
+  const d = (await until(f.read, (s) => s.experiments[o.id].rounds[0].state === 'aborted')).experiments[o.id];
+  assert.ok(Date.now() - start < 5000);
+  assert.equal(d.rounds[0].runs[0].cancelResult.status, 'unconfirmed');
+  assert.ok(d.rounds[0].runs.every((r) => r.state === 'cancelled' && r.retries === 0));
 });

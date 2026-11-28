@@ -72,3 +72,22 @@ test('a paused objective still assigns pending partial evaluation to the evaluat
   assert.equal(p.nextAction.op, 'conclude');
   assert.equal(p.canRunCycle, false);
 });
+
+test('an explicit decision releases the next cycle while old analyst replies are still pending', () => {
+  const d = experiment();
+  d.rounds.push({ ...round('done'), report: {}, decision: { pick: 'same' }, analysis: { waiting: ['analyst'] } });
+  const p = progress(d, now);
+  assert.equal(p.canRunCycle, true); assert.equal(p.canSchedule, true);
+  assert.equal(p.discussingCycle, null);
+});
+
+test('diagnostic parameters separate conflicting keys and reserved seed details from English error sentences', () => {
+  const d = experiment(); d.upcoming.groups.push({ id: 'change', label: 'Change', vars: { knob: 3 } }); d.upcoming.cycleVars = { knob: 2 };
+  assert.equal(progress(d, now).blockers.find((b) => b.code === 'cycleVarsConflict').detail, 'knob');
+  d.upcoming.tier = 'explore'; d.upcoming.reservedSeeds = [1];
+  let b = progress(d, now).blockers.find((b) => b.code === 'reservedSeeds');
+  assert.equal(b.reason, 'scheduled'); assert.equal(b.detail, '1');
+  d.rounds.push(round('done')); d.upcoming.reservedSeeds = [2];
+  b = progress(d, now).blockers.find((b) => b.code === 'reservedSeeds');
+  assert.equal(b.reason, 'history'); assert.equal(b.detail, '2');
+});

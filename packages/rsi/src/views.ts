@@ -872,7 +872,10 @@ function exp(): any {
     next = terminal ? { k: 'done', v: o.stopReason?.text ? `（${o.stopReason.text}）` : '', stop: (d.prep.find((p: Data) => p.section === 'goal' && p.id.endsWith('-stop')) || {}).id }
       : o.state === 'paused' ? { k: 'paused' }
       : activeRound ? { k: phase, n: activeRound.k, v: activeRound.version, by: readiness.memberIds.map(nameOf).join('、'), go: at(activeRound, phase === 'decide' ? 'gov' : phase === 'analyzing' ? 'discuss' : 'collect') }
-      : phase === 'preparing' ? { k: 'init', by: doing.map((x: Data) => ({ who: x.who, i: x.i, k: x.k })), hint }
+      : phase === 'prepStale' ? { k: 'stale', count: readiness.nextAction.count }
+      : phase === 'prepInterrupted' ? { k: 'cancelled', n: readiness.nextAction.step, by: readiness.nextAction.by ? nameOf(readiness.nextAction.by) : '' }
+      : phase === 'prepConfirm' ? { k: 'prep', count: readiness.nextAction.count, hint }
+      : ['prepWorking', 'prepPending', 'preparing'].includes(phase) ? { k: 'init', by: doing.map((x: Data) => ({ who: x.who, i: x.i, k: x.k })), hint }
       : d.versionRequest ? { k: phase, v: d.versionRequest.title, by: memberName('iterate') }
       : { k: readiness.canRunCycle ? 'ready' : 'blocked', v: readiness.blockers.find((b) => b.scope === 'all')?.message || '', window: scheduleSummary(d.policy.schedule) };
   }
@@ -1670,7 +1673,7 @@ function exp(): any {
   const cSel = cTreeObj.rows.find((x: Data) => x.key === cTreeObj.rowKey) || cTreeObj.rows[cTreeObj.rows.length - 1] || null;
 
   const abortedRound = [...d.rounds].reverse().find((r: Data) => r.aborted);
-  const lastAbort = abortedRound ? { ...abortedRound.aborted, cycle: abortedRound.n, note: abortedRound.aborted.note || '',
+  const lastAbort = abortedRound && (abortedRound === d.rounds.at(-1) || o.state === 'paused') ? { ...abortedRound.aborted, cycle: abortedRound.n, note: abortedRound.aborted.note || '',
     cleanup: abortedRound.runs.filter((r: Data) => r.cancelResult).map((r: Data) => ({ run: r.id, jobId: r.jobId || null, ...r.cancelResult })) } : null;
   return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, progress: readiness, lastAbort, stopReason: o.stopReason || null, closeoutReport, projectPath: o.projectPath, goal: o.goal, goalQuote, editingGoal: S.rsiEditGoal, execStatus, execFlow, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).

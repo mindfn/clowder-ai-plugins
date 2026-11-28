@@ -52,6 +52,7 @@ function isRetryableOutput(raw: string | undefined): boolean {
 
 export function createRuns(host: RsiHost, changed: (key: string) => Promise<void>) {
   let stopped = false, again = false, held = false, aborting = false, child: ChildProcess | undefined, job: Promise<void> | undefined, remote: Data | undefined;
+  let awaitingJobId = false, asyncSubmitBounded = false, abortSubmitTimer: ReturnType<typeof setTimeout> | undefined;
   let pollTimer: ReturnType<typeof setTimeout> | undefined, releasePoll: (() => void) | undefined;
   // busy: the objective whose probe or run is executing, runId: that run; a deleted (dropped) objective starts no further command.
   let busy: string | undefined, runId: string | undefined;
@@ -308,7 +309,11 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             if (entry?.execution) entry.execution.submitted = true;
           });
           if (canCancel(d.executor.commands.cancel, values)) remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: d.executor.commands.cancel, cwd, values };
-          const result = await launch(d.executor.commands.submit, cwd, values, limit);
+          awaitingJobId = !!d.executor.commands.get;
+          asyncSubmitBounded = limit > 0;
+          let result;
+          try { result = await launch(d.executor.commands.submit, cwd, values, limit); }
+          finally { awaitingJobId = false; clearTimeout(abortSubmitTimer); abortSubmitTimer = undefined; }
           log += result.log;
           if (result.timedOut) timedOut = true;
           if (stopped) return;
@@ -504,7 +509,13 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       if (!stored.value.experiments[busy]?.rounds.some((r: Data) => r.state === 'aborting' && r.runs.some((u: Data) => u.id === runId))) return;
       aborting = true;
       clearTimeout(pollTimer); releasePoll?.();
-      killChild(child);
+      if (!awaitingJobId) killChild(child);
+      else if (!asyncSubmitBounded) {
+        // Preserve the submit's own timeout while waiting for its acknowledgement.
+        // Legacy first submits may have no timeout; give those a finite abort grace.
+        const submitting = child;
+        abortSubmitTimer = setTimeout(() => killChild(submitting), 30_000);
+      }
     },
     // Deleting objectives: an async job is cancelled, a running command is killed, and no further command starts for them.
     async drop(ids: string[]) {

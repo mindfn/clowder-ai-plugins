@@ -572,7 +572,14 @@ views:
                   t: rsi.progress
                   args:
                     - "@code"
-                    - "@message"
+                    - of: "@code"
+                      map:
+                        reservedSeeds:
+                          t: rsi.reservedIssue
+                          args:
+                            - "@reason"
+                            - "@detail"
+                        _: "@detail"
           - type: notice
             when: $.exp.lastAbort
             tone: warn
