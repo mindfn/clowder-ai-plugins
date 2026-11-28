@@ -1,7 +1,8 @@
+import { progress } from './progress.js';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { abandonRepair, ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAnalysis, hasUnclaimed, needsCycleVars, nightDigest, nightDue, REPAIR_WAIT, runCycle, warnUnclaimed } from './cycles.js';
-import { insideWindow, withinWindowLimit } from './schedule.js';
+import { abandonRepair, ANALYSIS_LIMIT, DECISION_WAIT, decideByDefault, finishAnalysis, hasUnclaimed, nightDigest, nightDue, REPAIR_WAIT, runCycle, warnUnclaimed } from './cycles.js';
+import { insideWindow } from './schedule.js';
 import { bindObjectiveThread, clipTitle, message, recordInitExecution, threadTitle } from './init.js';
 import { createRuns } from './runs.js';
 import { isState, listOwners, readState, record, retain } from './store.js';
@@ -104,7 +105,8 @@ export function createRuntime(host: RsiHost) {
     }
   }
 
-  function flush(key: string) {
+  async function flush(key: string) {
+    await runs.interruptAborts(key);
     const delivery = tail.then(() => deliverOutbox(key));
     tail = delivery.catch((error: unknown) => host.log('error', 'RSI outbox delivery failed; retained for retry', { error: String(error) }));
     return delivery.then(() => { runs.wake(); });
@@ -197,10 +199,7 @@ export function createRuntime(host: RsiHost) {
     if (owners.some(([, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments).some((d) => d.objective.projectPath && (d.executor.state === 'probing' || d.rounds.some((r: Data) => r.state === 'running'))))) return;
     // Objectives take turns: of those that may start a cycle, the one whose last cycle started longest ago goes first,
     // and one that cannot start leaves the turn to the next.
-    const due = (d: Experiment) => d.objective.projectPath && d.objective.state === 'running' && !d.versionRequest
-      && (!d.upcoming?.requiresExplicitPlan || d.rounds.some((r: Data) => r.state === 'interrupted' && !r.autoResumed))
-      && (!needsCycleVars(d) || d.rounds.some((r: Data) => r.state === 'interrupted' && !r.autoResumed))
-      && insideWindow(d.policy.schedule, Date.now()) && withinWindowLimit(d.policy.schedule, d.rounds, Date.now()) && !d.rounds.some((r: Data) => ['running', 'evaluating'].includes(r.state) || r.state === 'interrupted' && r.autoResumed || r.report && !r.decision);
+    const due = (d: Experiment) => d.objective.projectPath && progress(d, Date.now()).canSchedule;
     const lastStart = (d: Experiment) => Math.max(0, ...d.rounds.map((r: Data) => r.start || 0));
     const turns = owners.flatMap(([key, entry]) => Object.values((entry.value as import('./types.js').RsiState).experiments).filter(due)
       .map((d) => ({ key, id: d.objective.id, last: lastStart(d) }))).sort((x, y) => x.last - y.last);
@@ -213,6 +212,7 @@ export function createRuntime(host: RsiHost) {
         // An interrupted cycle is resumed once by the schedule; interrupted again, it waits for 跑一轮.
         const halted = d.rounds.find((r: Data) => r.state === 'interrupted'), result = runCycle(state, d, Date.now());
         started = !!result.ok;
+        if (result.error) message(state, d, Date.now(), '周期未启动', result.error, 'failed');
         // A cycle the schedule starts keeps to its window; one started with 跑一轮 does not.
         if (started) d.rounds.find((r: Data) => r.n === result.cycle).scheduled = true;
         if (started && halted) { halted.autoResumed = true; halted.events.push({ at: Date.now(), kind: 'retry', text: '周期被插件重启打断，调度自动续跑一次' }); }

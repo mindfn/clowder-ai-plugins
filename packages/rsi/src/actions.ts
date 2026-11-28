@@ -855,6 +855,27 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       syncObjective(state, d);
       return { ok: true, updated, annotatedBy };
     }
+    case 'abortCycle': {
+      if (!d || !d.objective.projectPath) return { error: 'Real experimental objective not found', status: 404 };
+      if (!['budget', 'env', 'eliminated', 'manual'].includes(body.reason)) return { error: 'reason must be budget, env, eliminated or manual', status: 400 };
+      if (body.note !== undefined && typeof body.note !== 'string') return { error: 'note must be a string', status: 400 };
+      const note = typeof body.note === 'string' ? body.note.trim() : '';
+      if (note.length > 240) return { error: '中止说明请控制在 240 字以内', status: 400 };
+      const round = d.rounds.find((r: Data) => r.state === 'running');
+      if (!round) return { error: 'No running cycle to abort', status: 409 };
+      round.aborted = { reason: body.reason, ...(note ? { note } : {}), by: actor, at: now };
+      round.state = 'aborting';
+      for (const run of round.runs) {
+        if (run.state === 'running' || run.jobId) run.cancelResult = { status: 'pending' };
+        if (['running', 'queued'].includes(run.state)) Object.assign(run, { state: 'cancelled', retryable: false, end: now });
+      }
+      // Persist intent before touching processes. Restart only completes cleanup, never resumes these runs.
+      d.objective.state = 'paused';
+      d.objective.resumeTo = 'ready';
+      if (d.upcoming) delete d.upcoming.cycleVars;
+      syncObjective(state, d);
+      return { ok: true, cycle: round.n, state: 'aborting' };
+    }
     case 'cycleVars': {
       if (!d) return { error: 'Experiment not found', status: 404 };
       if (['done', 'retired'].includes(d.objective.state)) {

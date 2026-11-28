@@ -1218,3 +1218,46 @@ cmp:
   hintMetrics: "{0} metrics · click row for per-seed breakdown"
   hintSlices: "{0} · {1} slices"
   hintSlicesExpand: click slice for per-seed breakdown
+
+abort:
+  action: Abort this cycle
+  help: Stop remaining runs and clean up the executor while preserving completed evidence. The objective pauses until explicitly resumed.
+  reason: Reason
+  note: Optional note (up to 240 characters)
+  budget: Budget exhausted
+  env: Environment issue
+  eliminated: Candidate eliminated
+  manual: Manual stop
+  summary: "Cycle {0} aborted · {1} · {2}"
+  pending: Cleanup in progress
+  cancelled: Cancelled
+  notSubmitted: Job not submitted
+  localStopped: Local process stopped
+  failed: Cleanup failed; inspect the remote job
+  unconfirmed: Remote cleanup unconfirmed; inspection required
+
+progress:
+  terminal: Objective has ended
+  paused: Objective is paused; resume before running
+  preparing: Preparation is incomplete
+  aborting: Cancelling cycle and cleaning up tasks
+  running: Waiting for the current cycle to finish
+  evaluating: Waiting for the evaluator's conclusion
+  discussing: Waiting for analysts' directions
+  decision: Waiting for the manager's next decision
+  version: Waiting for a new version
+  preparation: Preparation needs submission, refresh or confirmation
+  executor: Executor has not passed its check
+  plan: A valid group and seed plan is required
+  explicitPlan: Submit a new plan; consumed reserved seeds cannot be reused
+  cycleVars: Waiting for the manager to bind this cycle's runtime parameters
+  versionMissing: Current version is missing
+  groupVersion: A version referenced by the plan is missing
+  cycleVarsConflict: "Runtime parameters conflict with group variables: {0}"
+  reservedTier: Reserved seeds are only valid for explore cycles
+  reservedSeeds: "Reserved seed validation failed: {0}"
+  notStarted: Automatic scheduling is off; eligible cycles can still run manually
+  window: Outside the automatic run window; eligible cycles can still run manually
+  windowLimit: The automatic cycle limit for this window has been reached
+  interrupted: Already resumed automatically once; continue the interrupted cycle manually
+  _: "{0}"

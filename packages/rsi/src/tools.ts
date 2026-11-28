@@ -1,7 +1,8 @@
+import { progressView } from './progress.js';
 import { RSI_CP_INIT, createFixtures } from './fixtures.js';
 import { act } from './actions.js';
 import { clipTitle, submitInitStep, enqueue, kick, message, prepSettled, stepMemberOf, STOP_TARGET, syncObjective } from './init.js';
-import { abandonRepair, buildCloseoutReport, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, hasCycleVars, needsCycleVars, notifyAwaitingCycleVars, propose, resolveRsiParent, RUN_ORDERS, type RunOrder, validOrder, validateReservedSeeds, validPlan } from './cycles.js';
+import { abandonRepair, buildCloseoutReport, conclude, comparison, controlGroup, cycleLibrary, freshSeeds, notifyAwaitingCycleVars, propose, resolveRsiParent, RUN_ORDERS, type RunOrder, validOrder, validateReservedSeeds, validPlan } from './cycles.js';
 import { roundMetrics, sliceMatrix, validateSliceSpecs } from './compare.js';
 import { parseScheduleText } from './schedule.js';
 import { record, text } from './store.js';
@@ -96,9 +97,9 @@ function task(state: RsiState, d: Experiment, ctx: ToolContext) {
   if (version) version.invocationId = ctx.invocationId;
   const evalSlices = evaluate ? sliceMatrix(d, evaluate) : [];
   const analyzeSlices = analyze ? (Array.isArray(analyze.report?.slices) && analyze.report.slices.length ? analyze.report.slices : sliceMatrix(d, analyze)) : [];
-  return { objective: d.objective, projectPath: d.objective.projectPath, steps, versions: d.versions,
+  return { objective: d.objective, progress: progressView(d, Date.now()), projectPath: d.objective.projectPath, steps, versions: d.versions,
     // The shell that runs the registered commands, so members write commands that run on this host.
-    shell: platform() === 'win32' ? 'cmd' : 'sh', stepVersions: d.steps, ...(evaluate ? { evaluate: { cycle: evaluate.n, plan: evaluate.plan, runs: evaluate.runs, metrics: roundMetrics(d, evaluate), comparison: comparison(d, evaluate), ...(evalSlices.length ? { slices: evalSlices } : {}), library: cycleLibrary(state, d), next: '调用原生 MCP 工具 rsi_conclude 提交 verdict/findings/options；方向 cites 引用之前周期的资料库条目。' } } : {}),
+    shell: platform() === 'win32' ? 'cmd' : 'sh', stepVersions: d.steps, ...(evaluate ? { evaluate: { cycle: evaluate.n, aborted: evaluate.aborted || null, plan: evaluate.plan, runs: evaluate.runs, metrics: roundMetrics(d, evaluate), comparison: comparison(d, evaluate), ...(evalSlices.length ? { slices: evalSlices } : {}), library: cycleLibrary(state, d), next: '调用原生 MCP 工具 rsi_conclude 提交 verdict/findings/options；方向 cites 引用之前周期的资料库条目。' } } : {}),
     ...(analyze ? { analyze: { cycle: analyze.n, report: { verdict: analyze.report.verdict, findings: analyze.report.summary, confirmation: analyze.confirmation }, plan: analyze.plan, runs: analyze.runs,
       metrics: roundMetrics(d, analyze), comparison: comparison(d, analyze), ...(analyzeSlices.length ? { slices: analyzeSlices } : {}), library: cycleLibrary(state, d),
       next: '调用原生 MCP 工具 rsi_propose({cycle,options:[{k,title,why,kind?,target?,cites?}]}) 交你的方向。target 写这个方向要改的对象（例如 lr、group_size、train.py 的奖励），几个分析成员的第一方向种类和对象都相同就算意见一致。' } } : {}),
@@ -349,6 +350,7 @@ function summarizeRound(round: Data) {
   return {
     n: round.n,
     state: round.state,
+    aborted: round.aborted || null,
     version: round.version,
     start: round.start ?? null,
     end: round.end ?? null,
@@ -359,6 +361,7 @@ function summarizeRound(round: Data) {
       seed: r.seed,
       state: r.state,
       jobId: r.jobId || null,
+      cancelResult: r.cancelResult || null,
       retries: r.retries || 0,
       error: r.error || null,
       metrics: r.metrics || {},
@@ -441,11 +444,7 @@ function projectStatus(d: Experiment, input: Data): Data {
   } else if (d.rounds.length) {
     targetRound = d.rounds.at(-1)!;
   }
-  const evaluating = d.rounds.find((r: Data) => r.state === 'evaluating');
-  const running = d.rounds.find((r: Data) => r.state === 'running');
-  const interrupted = d.rounds.find((r: Data) => r.state === 'interrupted');
-  const discussing = d.rounds.find((r: Data) => r.analysis?.waiting?.length);
-  const undecided = d.rounds.find((r: Data) => r.report && !r.decision && !r.analysis?.waiting?.length);
+  const readiness = progressView(d, Date.now());
   const slicedVersions = d.versions.slice(sinceIdx);
   const visibleVersions = versionsLimit !== undefined ? slicedVersions.slice(-versionsLimit) : slicedVersions;
   const lastRoundOf = (vid: string) => {
@@ -453,12 +452,7 @@ function projectStatus(d: Experiment, input: Data): Data {
     return null;
   };
   const active = {
-    runningCycle: running?.n ?? null,
-    evaluatingCycle: evaluating?.n ?? null,
-    discussingCycle: discussing?.n ?? null,
-    analysisWaiting: discussing?.analysis?.waiting || [],
-    pendingDecisionCycle: undecided?.n ?? null,
-    interruptedCycle: interrupted?.n ?? null,
+    ...readiness,
     versionRequest: d.versionRequest ? {
       cycle: d.versionRequest.cycle,
       title: d.versionRequest.title,
@@ -466,7 +460,6 @@ function projectStatus(d: Experiment, input: Data): Data {
       repair: !!d.versionRequest.repair,
       claimed: !!d.versionRequest.invocationId,
     } : null,
-    awaitingCycleVars: !!(d.objective.projectPath && !['done', 'retired'].includes(d.objective.state) && needsCycleVars(d) && !d.versionRequest && !running && !evaluating && !discussing && !undecided && d.upcoming && !hasCycleVars(d.upcoming)),
   };
   const mapVersion = (v: Data, brief: boolean) => {
     const lr = lastRoundOf(v.id);
@@ -492,6 +485,7 @@ function projectStatus(d: Experiment, input: Data): Data {
     const briefRound = targetRound ? {
       n: targetRound.n,
       state: targetRound.state,
+      aborted: targetRound.aborted || null,
       version: targetRound.version,
       verdict: targetRound.report?.verdict || null,
       ...(targetRound.report?.disposition ? { disposition: targetRound.report.disposition } : {}),
@@ -514,7 +508,7 @@ function projectStatus(d: Experiment, input: Data): Data {
         ...(d.objective.stopReason ? { stopReason: d.objective.stopReason } : {}),
         ...(closeoutReport ? { hasCloseoutReport: true } : {}),
       },
-      prepSettled: prepSettled(d),
+      prepSettled: readiness.prepSettled,
       active,
       versionsTotal: d.versions.length,
       versions: visibleVersions.map((v: Data) => mapVersion(v, true)),
@@ -556,7 +550,7 @@ function projectStatus(d: Experiment, input: Data): Data {
       resultMap: d.executor.resultMap || [],
       probe: d.executor.probe ? { at: d.executor.probe.at, error: d.executor.probe.error } : null,
     },
-    prepSettled: prepSettled(d),
+    prepSettled: readiness.prepSettled,
     steps: d.plan.map((p, i) => ({
       step: i + 1,
       k: p.k,
@@ -578,7 +572,7 @@ function projectStatus(d: Experiment, input: Data): Data {
 }
 
 const DELEGATED_OPS = new Set([
-  'expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix', 'cycleVars', 'promote', 'requireCycleVars',
+  'expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix', 'cycleVars', 'promote', 'requireCycleVars', 'abortCycle',
 ]);
 
 // Delegated operator control: strictly gated to the owner-designated policy.manager catId.
@@ -651,6 +645,8 @@ export function operateAction(state: RsiState, raw: Data, ctx: ToolContext, now:
     const annotatedBy = text(input.annotatedBy) ? input.annotatedBy.trim() : `${manager.name || ctx.catId}（回填）`;
     return act(state, { op: 'lineageFix', objective: d.objective.id, patches: input.patches, annotatedBy }, query, now, actor);
   }
+  if (op === 'abortCycle') return act(state, { op, objective: d.objective.id, reason: input.reason, note: input.note }, query, now, actor);
+
   if (op === 'cycleVars') {
     return act(state, { op: 'cycleVars', objective: d.objective.id, vars: input.vars }, query, now, actor);
   }

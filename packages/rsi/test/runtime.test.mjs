@@ -3656,3 +3656,148 @@ test('alpha.136: remoteEnded retryable collect transport errors retry up to 3 ti
   assert.equal((await readFile(join(f2.project, 'submits'), 'utf8')).trim().split('\n').length, 1);
   assert.ok(f2.sends.some((s) => s.payload.elements[0].payload.text.includes('运行失败（已重试 3 次）')));
 });
+
+test('alpha.137: abort cancels the remote job and queued runs, preserves completed evidence, and survives restart', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  Object.assign(f.commands, {
+    submit: `node -e "require('fs').appendFileSync('submits',process.argv[1]+'\\n');console.log('job-'+process.argv[1]);" {seed}`,
+    get: `node -e "console.log(JSON.stringify({state:process.argv[1]==='job-1'?'done':'running'}));" {job}`,
+    collect: `node -e "console.log(JSON.stringify({score:80}));"`, cancel: 'echo {job} >> cancels', poll: 30,
+  });
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [1, 2, 3] }, { window: '不限制' });
+  await retain(f.storage, ownerKey('owner'), (s) => { s.experiments[o.id].policy.manager = { catId: 'cat-drby1x4c', name: '墨墨' }; });
+  assert.equal((await f.http('POST', { op: 'runCycle', objective: o.id })).ok, true);
+  const before = (await until(f.read, (s) => s.experiments[o.id].rounds[0]?.runs[1]?.jobId === 'job-2')).experiments[o.id].rounds[0];
+  assert.equal(before.runs[0].state, 'done');
+  assert.equal((await f.tool('operate', { op: 'abortCycle', objectiveId: o.id, reason: 'manual' }, 'codex', o.thread)).status, 403);
+  assert.equal((await f.http('POST', { op: 'abortCycle', objective: o.id, reason: 'invalid' })).status, 400);
+  assert.equal((await f.http('POST', { op: 'abortCycle', objective: o.id, reason: 'manual', note: 'x'.repeat(241) })).status, 400);
+  const started = Date.now();
+  assert.equal((await f.tool('operate', { op: 'abortCycle', objectiveId: o.id, reason: 'budget', note: 'Enough evidence' }, 'cat-drby1x4c', o.thread)).ok, true);
+  const done = (await until(f.read, (s) => s.experiments[o.id].rounds[0].state === 'evaluating')).experiments[o.id];
+  assert.ok(Date.now() - started < 5000, 'abort interrupts the 30-second poll');
+  assert.deepEqual(done.rounds[0].runs[0], before.runs[0]);
+  assert.deepEqual(done.rounds[0].runs.map((r) => r.state), ['done', 'cancelled', 'cancelled']);
+  assert.equal(done.rounds[0].runs[1].cancelResult.status, 'cancelled');
+  assert.equal(done.rounds[0].runs[1].jobId, undefined);
+  assert.equal(done.rounds[0].aborted.reason, 'budget');
+  assert.equal(done.rounds[0].aborted.note, 'Enough evidence');
+  assert.equal(done.objective.state, 'paused');
+  assert.equal((await readFile(join(f.project, 'cancels'), 'utf8')).trim(), 'job-2');
+  assert.equal((await readFile(join(f.project, 'submits'), 'utf8')).trim(), '1\n2');
+  const view = await f.http('GET', undefined, { view: 'exp', project: f.project, pick: `obj:${o.id}` });
+  assert.equal(view.lastAbort.reason, 'budget');
+  assert.equal(view.progress.canAbortCycle, false);
+  await report(f, o, 'keep');
+  assert.equal((await f.read()).experiments[o.id].candidate, undefined);
+  await f.activation().stop(); f.start(); await f.activation().actions['rsi.tick']();
+  const restored = (await f.read()).experiments[o.id];
+  assert.equal(restored.objective.state, 'paused'); assert.equal(restored.rounds.length, 1);
+  assert.ok(restored.rounds[0].runs.every((r) => r.retries === 0));
+  assert.equal((await f.http('POST', { op: 'abortCycle', objective: o.id, reason: 'manual' })).status, 409);
+  assert.equal((await readFile(join(f.project, 'submits'), 'utf8')).trim(), '1\n2');
+});
+
+test('alpha.137: failed abort cleanup remains visible, and abort without valid evidence never wakes evaluation', async (t) => {
+  for (const reason of ['manual', 'env']) await t.test(reason, async (t) => {
+    const f = await fixture(t), o = await f.create();
+    Object.assign(f.commands, { submit: 'echo job-abort', get: 'echo \'{"state":"running"}\'', cancel: 'echo cancel-failed; exit 7', poll: 30 });
+    await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [1, 2] });
+    assert.equal((await f.http('POST', { op: 'runCycle', objective: o.id })).ok, true);
+    await until(f.read, (s) => s.experiments[o.id].rounds[0]?.runs[0]?.jobId === 'job-abort');
+    assert.equal((await f.http('POST', { op: 'abortCycle', objective: o.id, reason })).ok, true);
+    const d = (await until(f.read, (s) => s.experiments[o.id].rounds[0].state === 'aborted')).experiments[o.id];
+    assert.equal(d.rounds[0].runs[0].cancelResult.status, 'failed'); assert.equal(d.rounds[0].runs[0].cancelResult.code, 7);
+    assert.equal(d.rounds[0].runs[0].jobId, 'job-abort'); assert.equal(d.rounds[0].runs[0].retries, 0);
+    assert.ok(d.rounds[0].runs.every((r) => r.state === 'cancelled'));
+    assert.equal(f.sends.filter((s) => s.wake && textOf(s).includes('周期跑完')).length, 0);
+    await f.activation().actions['rsi.tick'](); assert.equal((await f.read()).experiments[o.id].rounds.length, 1);
+  });
+});
+
+test('alpha.137: pure progress gives commands, views and status the same readiness and blockers', async (t) => {
+  const { progress, progressView } = await import('../dist/progress.js');
+  const { runCycle } = await import('../dist/cycles.js');
+  const { statusAction } = await import('../dist/tools.js');
+  const { viewModel } = await import('../dist/views.js');
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [1] }, { window: '不限制' });
+  const original = await f.read();
+  const cases = [
+    ['ready', () => {}, true, false],
+    ['running', (d) => { d.objective.state = 'running'; }, true, true],
+    ['paused', (d) => { d.objective.state = 'paused'; }, false, false],
+    ['terminal', (d) => { d.objective.state = 'done'; }, false, false],
+    ['executor', (d) => { d.executor.state = 'failed'; }, false, false],
+    ['preparation', (d) => { d.steps.design.stale = true; }, false, false],
+    ['version', (d) => { d.versionRequest = { cycle: 1, title: 'new', since: Date.now() }; }, false, false],
+    ['cycleVars', (d) => { d.policy.requireCycleVars = true; }, false, false],
+    ['explicitPlan', (d) => { d.upcoming.requiresExplicitPlan = true; }, false, false],
+    ['groupVersion', (d) => { d.upcoming.groups.push({ id: 'change', label: 'Change', vars: {}, version: 'missing' }); }, false, false],
+    ['reservedSeeds', (d) => { d.upcoming.tier = 'explore'; d.upcoming.reservedSeeds = [1]; }, false, false],
+    ['window', (d) => { d.objective.state = 'running'; d.policy.schedule = { policies: [{ id: 'past', kind: 'fixed', dateFrom: '2000-01-01' }] }; }, true, false],
+  ];
+  for (const [code, mutate, manual, scheduled] of cases) {
+    const state = clone(original), d = state.experiments[o.id]; mutate(d);
+    const before = clone(state), now = Date.now(), result = progress(d, now), projected = progressView(d, now);
+    assert.equal(result.canRunCycle, manual, code); assert.equal(result.canSchedule, scheduled, code);
+    if (!manual || code === 'window') assert.ok(result.blockers.some((b) => b.code === code), code);
+    assert.deepEqual(state, before, 'projection must not mutate source state');
+    const status = statusAction(state, { objectiveId: o.id, scope: 'brief' }, { catId: 'codex', threadId: o.thread });
+    const view = viewModel(state, 'exp', { project: f.project, pick: `obj:${o.id}` });
+    assert.deepEqual(view.progress, projected, code); assert.deepEqual(status.active.blockers, projected.blockers, code);
+    assert.equal(view.prep.ready.canTriggerNow, manual, code);
+    const command = runCycle(state, d, now);
+    assert.equal(!!command.ok, manual, `${code}: ${JSON.stringify(command)}`);
+    if (!manual) assert.deepEqual(command.blockers, projected.blockers, code);
+  }
+  await retain(f.storage, ownerKey('owner'), (s) => { const d = s.experiments[o.id]; d.objective.state = 'running'; d.executor.state = 'failed'; });
+  await f.activation().actions['rsi.tick'](); assert.equal((await f.read()).experiments[o.id].rounds.length, 0);
+  await retain(f.storage, ownerKey('owner'), (s) => { s.experiments[o.id].executor.state = 'passed'; });
+  await f.activation().actions['rsi.tick'](); assert.equal((await f.read()).experiments[o.id].rounds[0].scheduled, true);
+});
+
+test('alpha.137: restart settles persisted abort intent using the frozen cancel command and never evaluates env evidence', async (t) => {
+  const { act } = await import('../dist/actions.js');
+  const f = await fixture(t), o = await f.create();
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: {}, control: true }], seeds: [1] });
+  const completed = await execute(f, o);
+  await f.activation().stop();
+  await retain(f.storage, ownerKey('owner'), (state) => {
+    const d = state.experiments[o.id], r = d.rounds[0];
+    r.state = 'running'; delete r.evalAskedAt;
+    r.runs.push({ id: 'pending-remote', state: 'running', group: 'control', seed: 2, retries: 0, jobId: 'persisted-job',
+      execution: { cwd: f.project, cancel: 'echo {job} >> recovered-cancels', values: { job: 'persisted-job' }, submitted: true } });
+    r.runs.push({ id: 'pending-queue', state: 'queued', group: 'control', seed: 3, retries: 0 });
+    // Simulate the crash boundary: intent committed, no worker has handled it yet.
+    assert.equal(act(state, { op: 'abortCycle', objective: o.id, reason: 'env', note: 'Device lost' }, {}, Date.now(), 'owner').ok, true);
+    d.executor.commands.cancel = 'exit 99'; // Mutable executor is not the command that launched this job.
+  });
+  f.sends.length = 0;
+  f.start(); await f.activation().actions['rsi.tick']();
+  const d = (await until(f.read, (s) => s.experiments[o.id].rounds[0].state === 'aborted')).experiments[o.id];
+  assert.deepEqual(d.rounds[0].runs[0], completed.runs[0]);
+  assert.equal(d.rounds[0].runs[1].cancelResult.status, 'cancelled');
+  assert.equal(d.rounds[0].runs[2].state, 'cancelled');
+  assert.equal((await readFile(join(f.project, 'recovered-cancels'), 'utf8')).trim(), 'persisted-job');
+  assert.equal(d.rounds[0].evalAskedAt, undefined);
+  assert.equal(f.sends.filter((s) => s.wake).length, 0);
+  assert.equal(d.objective.state, 'paused'); assert.equal(d.rounds.length, 1);
+});
+
+test('alpha.137: abort kills a synchronous process and does not retry or start its queued sibling', async (t) => {
+  const f = await fixture(t), o = await f.create();
+  f.commands.cancel = 'echo cleaned >> local-cancel; rm -rf active-run';
+  await f.initialize(o, { groups: [{ id: 'control', label: 'Control', vars: { slow: true }, control: true }], seeds: [1, 2] });
+  await f.http('POST', { op: 'runCycle', objective: o.id });
+  await until(async () => readFile(join(f.project, 'starts'), 'utf8').catch(() => ''), (s) => !!s);
+  const runDir = (await readFile(join(f.project, 'starts'), 'utf8')).trim();
+  const pid = Number(await readFile(join(runDir, 'pid'), 'utf8'));
+  assert.equal((await f.http('POST', { op: 'abortCycle', objective: o.id, reason: 'eliminated' })).ok, true);
+  const d = (await until(f.read, (s) => s.experiments[o.id].rounds[0].state === 'aborted')).experiments[o.id];
+  await until(async () => { try { process.kill(pid, 0); return false; } catch (e) { return e.code === 'ESRCH'; } }, Boolean, 'synchronous process killed');
+  assert.deepEqual(d.rounds[0].runs.map((r) => r.state), ['cancelled', 'cancelled']);
+  assert.ok(d.rounds[0].runs.every((r) => r.retries === 0));
+  assert.equal((await readFile(join(f.project, 'starts'), 'utf8')).trim(), runDir);
+  assert.equal((await readFile(join(f.project, 'local-cancel'), 'utf8')).trim(), 'cleaned');
+});

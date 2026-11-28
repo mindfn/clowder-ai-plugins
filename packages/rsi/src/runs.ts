@@ -3,11 +3,11 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { arch, cpus, platform, release } from 'node:os';
 import { join, resolve } from 'node:path';
-import { finishCycle } from './cycles.js';
+import { finishCycle, settleAbort } from './cycles.js';
 import { normalizeSlicesInput, roundMetrics } from './compare.js';
 import { message, recordInitExecution, submitInitStep } from './init.js';
 import { insideWindow } from './schedule.js';
-import { clip, listOwners, LOG_KEEP, record, retain } from './store.js';
+import { clip, listOwners, LOG_KEEP, record, retain, readState, isState } from './store.js';
 import { projectCommit, removeVersionWorktrees, versionDirectory } from './versions.js';
 import type { Data, RsiHost } from './types.js';
 
@@ -51,7 +51,7 @@ function isRetryableOutput(raw: string | undefined): boolean {
 }
 
 export function createRuns(host: RsiHost, changed: (key: string) => Promise<void>) {
-  let stopped = false, again = false, held = false, child: ChildProcess | undefined, job: Promise<void> | undefined, remote: Data | undefined;
+  let stopped = false, again = false, held = false, aborting = false, child: ChildProcess | undefined, job: Promise<void> | undefined, remote: Data | undefined;
   let pollTimer: ReturnType<typeof setTimeout> | undefined, releasePoll: (() => void) | undefined;
   // busy: the objective whose probe or run is executing, runId: that run; a deleted (dropped) objective starts no further command.
   let busy: string | undefined, runId: string | undefined;
@@ -85,12 +85,47 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
   }
 
   // The work loop starts no command once the plugin stops (stop() would otherwise wait for it to finish; stop() itself may still cancel a job) or its run is held.
-  const launch = (template: string, cwd: string, values: Data, limit = 0) => stopped || held ? Promise.resolve({ code: -1, log: held ? 'Run window closed' : 'Plugin stopped', stdout: '', timedOut: false }) : command(template, cwd, values, limit);
+  const launch = (template: string, cwd: string, values: Data, limit = 0) => stopped || held || aborting ? Promise.resolve({ code: -1, log: aborting ? 'Cycle aborted' : held ? 'Run window closed' : 'Plugin stopped', stdout: '', timedOut: false }) : command(template, cwd, values, limit);
 
   async function work() {
     while (!stopped) {
-      busy = runId = undefined; held = false;
+      busy = runId = undefined; held = aborting = false;
       const owners = await listOwners(host.storage);
+      const cancellation = owners.flatMap(([key, entry]) => Object.values(entry.value.experiments)
+        .filter((d) => d.objective.projectPath).flatMap((d) => d.rounds.filter((r: Data) => r.state === 'aborting').map((round: Data) => ({ key, d, round }))))[0];
+      if (cancellation) {
+        const { key, d, round } = cancellation;
+        busy = d.objective.id;
+        for (const run of round.runs.filter((r: Data) => r.cancelResult?.status === 'pending')) {
+          if (stopped) return;
+          // New runs freeze their exact command arguments; legacy persisted jobs use the recorded run directory/env.
+          const execution = run.execution || { cwd: run.cwd || d.objective.projectPath, cancel: d.executor.commands.cancel,
+            values: { config: join(run.directory || '', 'config.json'), run: run.directory || '', seed: run.seed,
+              start: Math.floor((run.start || round.start) / 1000), job: run.jobId || '',
+              harness: d.versions.find((v: Data) => v.id === run.env?.harness?.version)?.worktree || run.cwd || d.objective.projectPath,
+              version: round.plan.groups.find((g: Data) => g.id === run.group)?.version || '', commit: run.env?.commit || '' } };
+          const values = { ...execution.values, job: run.jobId || execution.values.job, end: Math.floor(Date.now() / 1000) };
+          let result: Data;
+          if (execution.submitted === false) result = { status: 'notSubmitted', at: Date.now() };
+          else if (canCancel(execution.cancel, values)) {
+            const cancelled = await command(execution.cancel, execution.cwd, values, 30_000);
+            if (stopped) return;
+            result = { status: cancelled.code === 0 ? 'cancelled' : 'failed', code: cancelled.code, log: cancelled.log.slice(-LOG_KEEP), at: Date.now() };
+          } else result = { status: run.jobId || d.executor.commands.get ? 'unconfirmed' : 'localStopped', at: Date.now() };
+          await retain(host.storage, key, (state) => {
+            const current = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
+            if (!current) return;
+            current.cancelResult = result;
+            if (result.status === 'cancelled') delete current.jobId;
+          });
+        }
+        await retain(host.storage, key, (state) => {
+          const current = state.experiments[d.objective.id];
+          if (current) settleAbort(state, current, current.rounds.find((r: Data) => r.n === round.n), Date.now());
+        });
+        await changed(key);
+        continue;
+      }
       const retired = owners.flatMap(([key, entry]) => Object.values(entry.value.experiments)
         .filter((d) => d.objective.projectPath && ['done', 'retired'].includes(d.objective.state) && d.versions.some((v: Data) => v.worktree)).map((d) => ({ key, d })))[0];
       if (retired) {
@@ -145,15 +180,16 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       const directory = join(d.objective.projectPath, 'runs', d.objective.id, String(round.n), `${group.id}-s${run.seed}`);
       // A persisted async job keeps the start of the attempt that submitted it: its {start} and timeout count from there.
       const configFile = join(directory, 'config.json'), start = run.jobId ? run.start : Date.now();
+      busy = d.objective.id; runId = run.id;
       let acquired = false;
       await retain(host.storage, key, (state) => {
         acquired = false;
         const objective = state.experiments[d.objective.id], current = objective?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
-        if (objective?.objective.state !== 'running' || current?.state !== 'queued') return;
+        if (objective?.objective.state !== 'running' || objective.rounds.find((r: Data) => r.n === round.n)?.state !== 'running' || current?.state !== 'queued') return;
         acquired = true;
         Object.assign(current, { state: 'running', start, end: null, directory });
       });
-      if (!acquired || stopped) continue;
+      if (!acquired || stopped || aborting) continue;
       busy = d.objective.id; runId = run.id;
       const priorEnv = run.jobId ? (run.attempts?.slice().reverse().find((a: Data) => a.jobId === run.jobId && record(a.env))?.env || (record(run.env) ? run.env : null)) : null;
       let metrics: Data = {}, slices: Data | undefined, env: Data = { ...(priorEnv || {}), seed: run.seed, hardware: { os: `${platform()} ${release()}`, arch: arch(), chip: cpus()[0]?.model || 'unknown' } };
@@ -205,10 +241,14 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         await writeFile(configFile, config);
         const values: Data = { config: configFile, run: directory, seed: run.seed, job: jobId || '', start: Math.floor(start / 1000), harness: harnessDir, version: version.id, commit: commit || '' };
         where = { cwd, values };
+        await retain(host.storage, key, (state) => {
+          const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
+          if (entry) entry.execution = { cwd, values, cancel: d.executor.commands.cancel, submitted };
+        });
         const since = jobId ? start : Date.now();
         if (!jobId) {
           // Before submitting a new job, ensure no earlier failed run still holds an unconfirmed remote jobId.
-          const orphans = d.rounds.flatMap((r: Data) => (r.runs || []).filter((u: Data) => u.id !== run.id && u.state === 'failed' && !u.retryable && u.jobId).map((u: Data) => ({ cycle: r.n, run: u })));
+          const orphans = d.rounds.flatMap((r: Data) => (r.runs || []).filter((u: Data) => u.id !== run.id && ['failed', 'cancelled'].includes(u.state) && !u.retryable && u.jobId).map((u: Data) => ({ cycle: r.n, run: u })));
           for (const orphan of orphans) {
             step = 'orphan-check';
             const oldJob = String(orphan.run.jobId);
@@ -261,7 +301,12 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             }
           }
           step = 'submit';
+          if (aborting) throw new Error('Cycle aborted');
           submitted = true;
+          await retain(host.storage, key, (state) => {
+            const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
+            if (entry?.execution) entry.execution.submitted = true;
+          });
           if (canCancel(d.executor.commands.cancel, values)) remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: d.executor.commands.cancel, cwd, values };
           const result = await launch(d.executor.commands.submit, cwd, values, limit);
           log += result.log;
@@ -288,11 +333,13 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           const pollGraceMs = pollGraceWindowMs(d.executor.timeout);
           for (;;) {
             if (stopped) return;
+            if (aborting) throw new Error('Cycle aborted');
             if (held) throw new Error('Run window closed');
             if (remote?.dropped) throw new Error('Objective deleted');
             const polled = await launch(d.executor.commands.get, cwd, values);
             log = (log + polled.log).slice(-16000);
             if (stopped) return;
+            if (aborting) throw new Error('Cycle aborted');
             if (held) throw new Error('Run window closed');
             if (remote?.dropped) throw new Error('Objective deleted');
             let status: Data | null = null;
@@ -367,6 +414,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       }
       remote = undefined;
       if (stopped) return;
+      if (aborting) continue;
       const collectOnlyRetry = step === 'collect' && remoteEnded && collectRetryable;
       const maxRetries = collectOnlyRetry ? 3 : 1;
       const final = error && kind === 'env' && run.retries >= maxRetries, cancel = d.executor.commands.cancel;
@@ -432,7 +480,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       });
       await changed(key);
       // Give transient network/SSH hiccups a bounded recovery window before retrying long-running remote jobs.
-      if (retrying && !stopped && !held && !dropped.has(d.objective.id) && d.executor.timeout && d.executor.timeout >= 60) {
+      if (retrying && !stopped && !held && !aborting && !dropped.has(d.objective.id) && d.executor.timeout && d.executor.timeout >= 60) {
         const backoffMs = collectOnlyRetry ? Math.min(60_000, 15_000 * (run.retries + 1)) : 15_000;
         await new Promise<void>((done) => { releasePoll = done; pollTimer = setTimeout(done, backoffMs); });
         releasePoll = undefined; pollTimer = undefined;
@@ -449,6 +497,15 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
     }
   }
   return {
+    async interruptAborts(key: string) {
+      if (!busy || !runId || aborting) return;
+      const stored = await readState(host.storage, key, { readonly: true });
+      if (!isState(stored?.value)) return;
+      if (!stored.value.experiments[busy]?.rounds.some((r: Data) => r.state === 'aborting' && r.runs.some((u: Data) => u.id === runId))) return;
+      aborting = true;
+      clearTimeout(pollTimer); releasePoll?.();
+      killChild(child);
+    },
     // Deleting objectives: an async job is cancelled, a running command is killed, and no further command starts for them.
     async drop(ids: string[]) {
       const job = remote && ids.includes(remote.objective) ? remote : undefined;
@@ -490,6 +547,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           if (!cycle) return;
           const run = cycle.runs.find((r: Data) => r.id === active.run);
           delete run.jobId;
+          if (cycle.aborted) { run.cancelResult = { status: 'cancelled', code: 0, log: cancelled.log.slice(-LOG_KEEP), at: Date.now() }; return; }
           cycle.state = 'interrupted';
           Object.assign(run, { state: 'failed', retryable: true, end: Date.now(), error: { kind: 'env', step: 'cancel', raw: '插件停止，已调用 cancel；可重试。' } });
         });

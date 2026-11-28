@@ -1,4 +1,5 @@
-import { AUTO, autoKey, clipTitle, prepSettled, REPAIR_DEFAULT, repairText, stepMemberOf, stopText } from './init.js';
+import { progressView } from './progress.js';
+import { AUTO, autoKey, clipTitle, REPAIR_DEFAULT, repairText, stepMemberOf, stopText } from './init.js';
 import type { Data, RsiState } from './types.js';
 import { projectOf, todoOf, cardsOf, libraryOf, tracesOf, runsOf, objectiveData, memberIds } from './data.js';
 import { formatPolicy, maxRunsText, nextScheduledRuns, policiesOf, scheduleForm, scheduleSummary, timeRange, validatePolicy } from './schedule.js';
@@ -294,6 +295,7 @@ function rsiExpData(): any { return experimentData(rsiPick(rsiProject().objectiv
 const RSI_LAYERS = ['execution', 'harness', 'rubric', 'observation'];
 function exp(): any {
   const d = rsiExpData(); if (!d) return null;
+  const readiness = d.objective.projectPath ? progressView(state.experiments[d.objective.id], Date.now()) : null;
   const o = d.objective, main = d.metrics.items.find((m: Data) => !m.guard).id, key = function (v: any): any { return o.id + '/' + v; };
   const nameOf = function (id: any): any {
     const m = d.members.find(function (m: any): any { return m.catId === id; })
@@ -844,7 +846,7 @@ function exp(): any {
     executorState: d.executor.state,
     canStart: o.state === 'ready',
     waitingFirstRun: o.state === 'ready' && rounds.length === 0,
-    canTriggerNow: !!o.projectPath && d.executor.state === 'passed' && ['ready', 'running', 'pending'].includes(o.state) && prepSettled(d) && !d.versionRequest && !d.rounds.some((x: Data) => ['running', 'evaluating'].includes(x.state)),
+    canTriggerNow: !!readiness?.canRunCycle,
     overview: readyOverview,
   };
   const at = function (x: any, step: any): any { return 'version|' + sel(x, step); };
@@ -853,7 +855,7 @@ function exp(): any {
 
   const first = steps.filter(function (x: any): any { return x.items.some(function (y: any): any { return y.needYou; }); }).map(function (x: any): any { return { i: x.i, n: below(x.k).length }; }).sort(function (a: any, b: any): any { return b.n - a.n; })[0];
   const hint = first && first.n ? tc('rsi.exp.firstOf', first.i, first.n) : '';
-  const next = o.state === 'done' ? { k: 'done', v: o.stopReason?.text ? `（${o.stopReason.text}）` : '', stop: (d.prep.find(function (p: any): any { return p.section === 'goal' && p.id.endsWith('-stop'); }) || {}).id } : o.state === 'paused' ? { k: 'paused' } : wait ? { k: 'decide', v: wait.version, n: wait.k, go: at(wait, 'gov') } : run ? { k: 'running', v: run.version, n: run.k, go: at(run, 'collect') }
+  let next: Data = readiness ? {} : o.state === 'done' ? { k: 'done', v: o.stopReason?.text ? `（${o.stopReason.text}）` : '', stop: (d.prep.find(function (p: any): any { return p.section === 'goal' && p.id.endsWith('-stop'); }) || {}).id } : o.state === 'paused' ? { k: 'paused' } : wait ? { k: 'decide', v: wait.version, n: wait.k, go: at(wait, 'gov') } : run ? { k: 'running', v: run.version, n: run.k, go: at(run, 'collect') }
     : ev ? { k: 'evaluating', v: ev.version, n: ev.k, by: memberName('evaluate'), go: at(ev, 'collect') }
     : an ? { k: 'analyzing', v: an.version, n: an.k, by: an.analysis.waiting.map(nameOf).join('、'), go: at(an, 'discuss') }
     : halted ? { k: halted.autoResumed ? 'interrupted' : 'resuming', v: halted.version, n: halted.k, go: at(halted, 'collect') }
@@ -861,6 +863,19 @@ function exp(): any {
     : o.state === 'ready' ? { k: 'ready' } : stale ? { k: 'stale', count: stale } : needYou ? { k: 'prep', count: needYou, hint: hint }
     : d.versionRequest ? (d.versionRequest.repair ? { k: 'repair', v: d.versionRequest.cycle, by: memberName('iterate') } : { k: 'version', v: d.versionRequest.title, by: memberName('iterate') })
     : d.executor.state !== 'passed' ? { k: 'executor' } : { k: 'planned', window: scheduleSummary(d.policy.schedule) };
+
+  if (readiness) {
+    const phase = readiness.phase;
+    const activeN = readiness.runningCycle ?? readiness.abortingCycle ?? readiness.evaluatingCycle ?? readiness.discussingCycle ?? readiness.pendingDecisionCycle ?? readiness.interruptedCycle;
+    const activeRound = rounds.find((r: Data) => r.n === activeN);
+    const terminal = ['done', 'retired'].includes(o.state);
+    next = terminal ? { k: 'done', v: o.stopReason?.text ? `（${o.stopReason.text}）` : '', stop: (d.prep.find((p: Data) => p.section === 'goal' && p.id.endsWith('-stop')) || {}).id }
+      : o.state === 'paused' ? { k: 'paused' }
+      : activeRound ? { k: phase, n: activeRound.k, v: activeRound.version, by: readiness.memberIds.map(nameOf).join('、'), go: at(activeRound, phase === 'decide' ? 'gov' : phase === 'analyzing' ? 'discuss' : 'collect') }
+      : phase === 'preparing' ? { k: 'init', by: doing.map((x: Data) => ({ who: x.who, i: x.i, k: x.k })), hint }
+      : d.versionRequest ? { k: phase, v: d.versionRequest.title, by: memberName('iterate') }
+      : { k: readiness.canRunCycle ? 'ready' : 'blocked', v: readiness.blockers.find((b) => b.scope === 'all')?.message || '', window: scheduleSummary(d.policy.schedule) };
+  }
 
   const cur = d.versions.find(function (v: any): any { return v.current; }), rules = steps.find(function (x: any): any { return x.k === 'rules'; }), ruled = ['submitted', 'confirmed', 'stale'].indexOf(rules.state) >= 0;
   const now = { version: cur.id, change: cur.change, when: run ? 'running' : o.state === 'running' ? 'soon' : o.state, window: scheduleSummary(d.policy.schedule), v: run && run.version, n: run && run.k,
@@ -1654,7 +1669,10 @@ function exp(): any {
   const cTreeObj = rsiTree('rsiSelC', cNodes, { row: key(`C${latestCRev}`) });
   const cSel = cTreeObj.rows.find((x: Data) => x.key === cTreeObj.rowKey) || cTreeObj.rows[cTreeObj.rows.length - 1] || null;
 
-  return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, stopReason: o.stopReason || null, closeoutReport, projectPath: o.projectPath, goal: o.goal, goalQuote, editingGoal: S.rsiEditGoal, execStatus, execFlow, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
+  const abortedRound = [...d.rounds].reverse().find((r: Data) => r.aborted);
+  const lastAbort = abortedRound ? { ...abortedRound.aborted, cycle: abortedRound.n, note: abortedRound.aborted.note || '',
+    cleanup: abortedRound.runs.filter((r: Data) => r.cancelResult).map((r: Data) => ({ run: r.id, jobId: r.jobId || null, ...r.cancelResult })) } : null;
+  return { id: o.id, name: clipTitle(o.name, 64, o.id), state: o.state, progress: readiness, lastAbort, stopReason: o.stopReason || null, closeoutReport, projectPath: o.projectPath, goal: o.goal, goalQuote, editingGoal: S.rsiEditGoal, execStatus, execFlow, thread: o.thread, next: next, now: now, tab: S.rsiTab, section: expSection, snapshot, hasRounds: rounds.length > 0, setup: rounds.length === 0,
     // Four significant digits: the chart prints the value (0.5075000000000001 → 0.5075).
     trend: legacyTrend,
     trendMetric: d.metrics.items.find((m: Data) => m.id === main).name,

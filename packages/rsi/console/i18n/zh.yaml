@@ -1218,3 +1218,46 @@ cmp:
   hintMetrics: 共 {0} 项指标 · 点击指标行展开逐轮结果
   hintSlices: "{0} · 共 {1} 档"
   hintSlicesExpand: 点击档位展开逐轮结果
+
+abort:
+  action: 中止本周期
+  help: 停止剩余运行并清理执行器，保留已完成证据。评估项将暂停，后续运行需要明确恢复。
+  reason: 中止原因
+  note: 补充说明（可选，最多 240 字）
+  budget: 预算用完
+  env: 环境问题
+  eliminated: 实测淘汰
+  manual: 人工停止
+  summary: "第 {0} 周期中止 · {1} · {2}"
+  pending: 正在清理
+  cancelled: 已取消
+  notSubmitted: 尚未提交任务
+  localStopped: 本地进程已停止
+  failed: 清理失败，请检查远端作业
+  unconfirmed: 远端清理未确认，请核查
+
+progress:
+  terminal: 评估项已结束
+  paused: 评估项已暂停，恢复后才能运行
+  preparing: 准备尚未完成
+  aborting: 正在中止周期并清理任务
+  running: 等当前周期运行完成
+  evaluating: 等评估成员提交结论
+  discussing: 等分析成员提交方向
+  decision: 等管理员决定下一步
+  version: 等迭代成员提交新版本
+  preparation: 准备项有待提交、更新或确认
+  executor: 执行器尚未通过检查
+  plan: 尚未提交有效的组别和种子计划
+  explicitPlan: 需重新提交本轮计划，不能沿用已用的预留种子
+  cycleVars: 等管理员绑定本轮运行参数
+  versionMissing: 当前版本不存在
+  groupVersion: 计划中引用的版本不存在
+  cycleVarsConflict: "本轮参数与组间变量冲突：{0}"
+  reservedTier: 预留种子只能用于探索周期
+  reservedSeeds: "预留种子尚未通过校验：{0}"
+  notStarted: 自动调度尚未开启；符合条件时仍可手动跑一轮
+  window: 当前不在自动运行时段；符合条件时仍可手动跑一轮
+  windowLimit: 本时段自动周期已达上限
+  interrupted: 已自动恢复过一次，请手动继续中断周期
+  _: "{0}"

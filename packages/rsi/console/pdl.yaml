@@ -422,6 +422,15 @@ views:
             title: t:rsi.exp.sec.execStatus
             actions:
               - type: button
+                label: t:rsi.abort.action
+                danger: true
+                when: $.exp.progress.canAbortCycle
+                act: dialog
+                args:
+                  kind: rsiAbortCycle
+                  objective: $.exp.id
+                disabled: $.pending
+              - type: button
                 primary: true
                 label: t:rsi.exp.triggerNow
                 when:
@@ -553,6 +562,48 @@ views:
                     map:
                       done: true
                       _: false
+          - type: list
+            from: $.exp.progress.blockers
+            row:
+              layout: line
+              key: "@code"
+              title:
+                text:
+                  t: rsi.progress
+                  args:
+                    - "@code"
+                    - "@message"
+          - type: notice
+            when: $.exp.lastAbort
+            tone: warn
+            text:
+              t: rsi.abort.summary
+              args:
+                - $.exp.lastAbort.cycle
+                - of: $.exp.lastAbort.reason
+                  map:
+                    budget: t:rsi.abort.budget
+                    env: t:rsi.abort.env
+                    eliminated: t:rsi.abort.eliminated
+                    manual: t:rsi.abort.manual
+                - $.exp.lastAbort.note
+          - type: list
+            from: $.exp.lastAbort.cleanup
+            row:
+              layout: two
+              key: "@run"
+              title:
+                text: "@run"
+              sub:
+                text:
+                  of: "@status"
+                  map:
+                    pending: t:rsi.abort.pending
+                    cancelled: t:rsi.abort.cancelled
+                    notSubmitted: t:rsi.abort.notSubmitted
+                    localStopped: t:rsi.abort.localStopped
+                    failed: t:rsi.abort.failed
+                    unconfirmed: t:rsi.abort.unconfirmed
           - type: section
             title: t:rsi.exp.sec.closeoutReport
             when: $.exp.closeoutReport
@@ -6103,6 +6154,35 @@ views:
     okArgs:
       request: stop
       objective: $.objective
+  dlg.rsiAbortCycle:
+    title: t:rsi.abort.action
+    danger: true
+    help: t:rsi.abort.help
+    fields:
+      - id: dlg-abort-reason
+        label: t:rsi.abort.reason
+        req: true
+        arg: reason
+        options:
+          - v: budget
+            label: t:rsi.abort.budget
+          - v: env
+            label: t:rsi.abort.env
+          - v: eliminated
+            label: t:rsi.abort.eliminated
+          - v: manual
+            label: t:rsi.abort.manual
+      - id: dlg-abort-note
+        label: t:rsi.abort.note
+        max: '240'
+        area: true
+        rows: 3
+        arg: note
+    ok: t:rsi.abort.action
+    okAct: plugin
+    okArgs:
+      request: abortCycle
+      objective: $.objective
   dlg.rsiFinish:
     title: t:rsi.life.finishTitle
     help: t:rsi.life.finishHelp
@@ -7767,6 +7847,14 @@ requests:
       op: policy
       key: "@key"
       v: "@v"
+  abortCycle:
+    path: rsi/act
+    method: POST
+    body:
+      op: abortCycle
+      objective: "@objective"
+      reason: "@reason"
+      note: "@note"
   runCycle:
     path: rsi/act
     method: POST

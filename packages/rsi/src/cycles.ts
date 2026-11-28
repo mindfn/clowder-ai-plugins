@@ -1,4 +1,5 @@
-import { AUTO, clipTitle, enqueue, mention, message, prepSettled, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
+import { progress } from './progress.js';
+import { AUTO, clipTitle, enqueue, mention, message, REPAIR_DEFAULT, STOP_TARGET, syncObjective } from './init.js';
 import { formatComparisonMarkdown, roundMetrics, roundMetricVersion, sliceMatrix } from './compare.js';
 import { insideWindow, windowEnd, windowStart } from './schedule.js';
 import { cycleResult, record, text } from './store.js';
@@ -125,12 +126,8 @@ export function testedVersion(plan: Data): string {
 }
 
 export function runCycle(state: RsiState, d: Experiment, now: number): Data {
-  if (d.executor.state !== 'passed' || !d.executor.commands) return { error: 'Register and pass rsi.executor first' };
-  if (!['ready', 'running', 'pending'].includes(d.objective.state)) return { error: 'Objective is not ready' };
-  if (d.versionRequest) return { error: 'The prepare member must submit rsi.version first' };
-  // A step rewritten after the start holds the next cycle until it is submitted again and confirmed.
-  if (!prepSettled(d)) return { error: 'Preparation is being redone: wait for the members, then confirm the changed items' };
-  if (d.rounds.some((r: Data) => ['running', 'evaluating'].includes(r.state) || r.report && !r.decision)) return { error: 'Finish the current cycle first' };
+  const readiness = progress(d, now);
+  if (!readiness.canRunCycle) return { error: readiness.blockers.find((b) => b.scope === 'all')!.message, blockers: readiness.blockers };
   let round = d.rounds.find((r: Data) => r.state === 'interrupted');
   if (round) {
     for (const run of round.runs) if (run.retryable) Object.assign(run, { state: 'queued', retryable: false, error: null });
@@ -138,26 +135,10 @@ export function runCycle(state: RsiState, d: Experiment, now: number): Data {
     round.state = 'running'; round.end = null; delete round.scheduled;
   } else {
     const planned = d.rounds.find((r: Data) => r.state === 'planned');
-    const plan = structuredClone(planned?.plan || d.upcoming);
-    if (!validPlan(plan)) return { error: 'Submit a cycle plan with groups and seeds' };
-    if (plan.requiresExplicitPlan) return { error: '上一个探索周期包含自定义 reservedSeeds 绑定，不能直接沿用旧计划重跑；请通过方向决策提交新 rsi_version 重新登记完整兼容的种子计划。' };
-    if (d.policy?.requireCycleVars && !hasCycleVars(plan)) return { error: '本评估项已启用每轮前须绑定 cycleVars 门禁，请先通过 rsi_operate(op="cycleVars") 绑定本轮一次性运行时参数后再启动周期。' };
+    const plan = readiness.plan!;
     const current = d.versions.find((v: Data) => v.id === d.objective.currentVersion);
-    const declared = plan.groups.find((g: Data) => g.control || g.id === 'control');
-    if (!current.vars) current.vars = !declared?.version || declared.version === current.id ? declared?.vars ?? declared?.overrides ?? {} : {};
-    const nonControl = plan.groups.filter((g: Data) => !g.control && g.id !== 'control')
-      .map((g: Data) => ({ ...g, control: false, vars: g.vars ?? g.overrides, version: g.version || current.id }));
-    const isConfirmPlan = plan.tier === 'confirm' || nonControl.some((g: Data) => g.confirm);
-    const skipOuterControl = !isConfirmPlan && plan.tier === 'explore' && plan.skipControl === true && nonControl.length > 0;
-    plan.groups = skipOuterControl ? nonControl : [controlGroup(d), ...nonControl];
-    if (plan.groups.some((g: Data) => !d.versions.some((v: Data) => v.id === g.version))) return { error: 'Unknown group version' };
-    const conflicts = cycleVarsConflicts(d, plan.groups, plan.cycleVars);
-    if (conflicts.length) return { error: `cycleVars cannot override keys that differ across groups: ${conflicts.join(', ')}` };
+    if (!current.vars) current.vars = readiness.initialVars!;
     if (!d.policy.confirmSeeds && plan.tier !== 'explore' && plan.seeds.length > 0) d.policy.confirmSeeds = plan.seeds.length;
-    if (d.rounds.length) plan.seeds = freshSeeds(d, plan.seeds.length);
-    if (plan.reservedSeeds !== undefined && plan.tier !== 'explore') return { error: 'reservedSeeds is only allowed when tier is "explore"' };
-    const reservedErr = validateReservedSeeds(d, plan.reservedSeeds, plan.seeds);
-    if (reservedErr) return { error: reservedErr };
     const n = planned?.n || Math.max(0, ...d.rounds.map((r: Data) => r.n)) + 1;
     round = planned || { n };
     Object.assign(round, { version: testedVersion(plan), start: now, end: null, state: 'running', plan, metrics: structuredClone(d.metrics), report: null, decision: null, events: [],
@@ -185,6 +166,21 @@ export function finishCycle(state: RsiState, d: Experiment, round: Data, now: nu
     d.objective.budget.used++;
     askEvaluation(state, d, round, false, now);
   }
+  syncObjective(state, d);
+}
+
+export function settleAbort(state: RsiState, d: Experiment, round: Data, now: number) {
+  if (round.state !== 'aborting' || round.runs.some((r: Data) => r.cancelResult?.status === 'pending')) return;
+  round.end = now;
+  const evidence = round.runs.filter((r: Data) => r.state === 'done' && r.evidence && !r.error);
+  const evaluate = round.aborted.reason !== 'env' && evidence.length > 0;
+  round.state = evaluate ? 'evaluating' : 'aborted';
+  d.objective.budget.used++;
+  const reasons: Data = { budget: '预算用完', env: '环境问题', eliminated: '实测淘汰', manual: '人工停止' };
+  const cleanup = round.runs.filter((r: Data) => r.cancelResult).map((r: Data) => `${r.id}: ${r.cancelResult.status}${r.jobId ? `（作业 ${r.jobId} 尚未确认清理）` : ''}`).join('；');
+  message(state, d, now, `第 ${round.n} 周期已中止：${reasons[round.aborted.reason]}`,
+    `${round.aborted.note || ''}\n保留 ${evidence.length} 次已完成运行；其余队列不会重试。${cleanup ? `\n清理：${cleanup}` : ''}\n评估项已暂停，恢复需明确操作。${evaluate ? '已交评估成员审阅部分证据，不自动晋升。' : '未派发科学评估。'}`, 'conclusion');
+  if (evaluate) askEvaluation(state, d, round, false, now);
   syncObjective(state, d);
 }
 
@@ -232,7 +228,7 @@ export function askEvaluation(state: RsiState, d: Experiment, round: Data, reeva
   delete round.evalStalledNotified;
   delete round.invocationId;
   enqueue(state, d, 'agent', { member: member.catId, cycle: round.n, action: 'evaluate',
-    message: { title: reeval ? `第 ${round.n} 周期：重新分析指标` : `第 ${round.n} 周期跑完`, body: `${mention(member)} ${reeval ? `用户请求重新分析第 ${round.n} 周期指标与结论` : `第 ${round.n} 周期跑完`}，调原生 MCP 工具 rsi_task 看同周期对照、各组均值和逐种子结果，再调 rsi_conclude。${EXPECT_HINT}` } });
+    message: { title: reeval ? `第 ${round.n} 周期：重新分析指标` : `第 ${round.n} 周期跑完`, body: `${mention(member)} ${round.aborted ? '本周期已中止，只评估保留的部分证据，不可当作完整验证或据此晋升。' : ''}${reeval ? `用户请求重新分析第 ${round.n} 周期指标与结论` : `第 ${round.n} 周期跑完`}，调原生 MCP 工具 rsi_task 看同周期对照、各组均值和逐种子结果，再调 rsi_conclude。${EXPECT_HINT}` } });
 }
 
 export function matrix(d: Experiment, round: Data) {
@@ -720,11 +716,11 @@ export function conclude(state: RsiState, d: Experiment, input: Data, now: numbe
   delete round.reevaluating;
   const wins = compared.groups.filter((g: Data) => g.beatsControl).sort((a: Data, b: Data) => compared.dir === 'up' ? b.mean - a.mean : a.mean - b.mean);
   const isExplore = round.plan.tier === 'explore';
-  const winner = isExplore ? undefined : wins[0], candidate = d.candidate;
+  const winner = isExplore || round.aborted ? undefined : wins[0], candidate = d.candidate;
   let confirmation: Data | null = null;
   const hadReservedSeeds = Array.isArray(round.plan.reservedSeeds) && round.plan.reservedSeeds.length > 0;
   const { reservedSeeds: _dropReserved, requiresExplicitPlan: _dropReq, cycleVars: _dropCycleVars, ...basePlan } = round.plan;
-  if (!isExplore && candidate) {
+  if (!isExplore && !round.aborted && candidate) {
     const group = round.plan.groups.find((g: Data) => g.confirm && g.version === candidate.version && JSON.stringify(g.vars) === JSON.stringify(candidate.vars));
     const missing = !compared.comparable || round.runs.some((r: Data) => (r.group === 'control' || r.group === group?.id) && r.error?.kind === 'env');
     const holds = !missing && group && winner?.group === group.id && round.plan.seeds.every((s: number) => !candidate.seeds.includes(s));
