@@ -4259,3 +4259,29 @@ test('terminal acknowledgements are rejected when command inputs change during g
   else assert.equal(d.rounds[0].runs[0].cancelResult.status,'unconfirmed');
  });
 });
+
+test('live polling accepts only protocol terminal states and never replaces an unconfirmed job',async(t)=>{
+ for(const state of ['done','failed','cancelled','cancelling']) await t.test(state,async(t)=>{
+  const f=await fixture(t),o=await f.create({repair:'0'});
+  Object.assign(f.commands,{submit:'echo submit >> submits; echo protocol-job',poll:1,get:`echo '${JSON.stringify({state,retryable:false})}'`,collect:'echo \'{"score":77}\''});
+  await f.initialize(o,{groups:[{id:'control',label:'Control',vars:{},control:true}],seeds:[91]});await f.http('POST',{op:'runCycle',objective:o.id});
+  const run=(await until(f.read,s=>['done','failed'].includes(s.experiments[o.id].rounds[0].runs[0].state))).experiments[o.id].rounds[0].runs[0];
+  assert.equal((await readFile(join(f.project,'submits'),'utf8')).trim(),'submit');
+  if(state==='cancelling'){assert.equal(run.jobId,'protocol-job');assert.equal(run.evidence,false);assert.equal(run.retries,1);assert.match(run.error.raw,/unknown.*state/);}
+  else {assert.equal(run.jobId,undefined);if(state==='done')assert.equal(run.metrics.score,77);else assert.match(run.error.raw,new RegExp(state));}
+ });
+});
+
+test('orphan cleanup shares explicit terminal classification and requires cancellation for unknown states',async(t)=>{
+ for(const state of ['done','failed','cancelled','cancelling','cancelling-with-cancel']) await t.test(state,async(t)=>{
+  const f=await fixture(t),o=await f.create({repair:'0'});
+  Object.assign(f.commands,{submit:'echo submit >> submits; echo new-job',get:'echo \'{"state":"done"}\'',collect:'echo \'{"score":77}\'',poll:1});
+  const plan={groups:[{id:'control',label:'Control',vars:{},control:true}],seeds:[92]};await f.initialize(o,plan);
+  await retain(f.storage,ownerKey('owner'),st=>{const d=st.experiments[o.id];d.rounds.push({n:1,state:'done',version:'v1',start:1,end:2,plan:{...plan,groups:[{...plan.groups[0],version:'v1'}]},runs:[{id:'old-run',group:'control',seed:90,state:'failed',retryable:false,jobId:'old-job',execution:{cwd:f.project,values:{job:'old-job'},get:`echo '${JSON.stringify({state:state.startsWith('cancelling')?'cancelling':state})}'`,...(state==='cancelling-with-cancel'?{cancel:'echo {job} >> cancellations'}:{})}}],report:{verdict:'insufficient'},decision:{pick:'same'},events:[]});});
+  await f.http('POST',{op:'runCycle',objective:o.id});
+  const d=(await until(f.read,s=>['aborted','evaluating'].includes(s.experiments[o.id].rounds.at(-1).state))).experiments[o.id];
+  if(state==='cancelling') {assert.equal(d.rounds[0].runs[0].jobId,'old-job');assert.equal(d.rounds.at(-1).state,'aborted');await assert.rejects(access(join(f.project,'submits')));}
+  else {assert.equal(d.rounds[0].runs[0].jobId,undefined);assert.equal(d.rounds.at(-1).runs[0].metrics.score,77);assert.equal((await readFile(join(f.project,'submits'),'utf8')).trim(),'submit');}
+  if(state==='cancelling-with-cancel') assert.equal((await readFile(join(f.project,'cancellations'),'utf8')).trim(),'old-job');
+ });
+});

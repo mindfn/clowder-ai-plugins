@@ -27,6 +27,14 @@ const canCancel = (tpl: string | undefined, values: Data | undefined) => !!tpl &
 const field = (value: Data, path: string) => path.split('.').reduce((v: any, k) => v?.[k], value);
 const exists = (path: string) => stat(path).then(() => true, () => false);
 const parseResult = (raw: string) => JSON.parse(raw.replace(/"(?:\\.|[^"\\])*"|\bNaN\b|-?Infinity\b/g, (token) => token.startsWith('"') ? token : JSON.stringify(token)));
+// Match the registered get protocol, not the complement of active states.
+// Unknown transport/provider states are not proof that the original job ended.
+function classifyJobState(value: unknown): 'active' | 'terminal' | 'unknown' {
+  if (!record(value)) return 'unknown';
+  if (['queued', 'running'].includes(value.state)) return 'active';
+  if (['done', 'failed', 'cancelled'].includes(value.state)) return 'terminal';
+  return 'unknown';
+}
 export const pollGraceWindowMs = (timeoutSec: number | null | undefined) =>
   timeoutSec && timeoutSec >= 60 ? Math.min(600_000, Math.max(60_000, Math.floor(timeoutSec * 1000 * 0.25))) : 0;
 function parseStructuredOutput(raw: string | undefined): Data | null {
@@ -319,7 +327,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
               if (probe.code === 0) {
                 try {
                   const st = parseResult(probe.stdout);
-                  if (record(st) && typeof st.state === 'string' && !['queued', 'running'].includes(st.state)) cleared = true;
+                  if (classifyJobState(st) === 'terminal') cleared = true;
                 } catch {}
               }
             }
@@ -432,8 +440,8 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             if (!pollErr) {
               try {
                 const parsed = parseResult(polled.stdout);
-                if (record(parsed) && typeof parsed.state === 'string') status = parsed;
-                else pollErr = 'get returned non-object status without state';
+                if (classifyJobState(parsed) !== 'unknown') status = parsed;
+                else pollErr = 'get returned unknown job state (expected queued/running/done/failed/cancelled)';
               } catch (e) {
                 pollErr = `get returned invalid JSON (${e instanceof Error ? e.message : String(e)})`;
               }
@@ -450,7 +458,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             }
             pollFails = 0; pollFailSince = 0;
             if (status!.state === 'done' && (status!.exitCode === undefined || status!.exitCode === 0)) { remoteEnded = true; break; }
-            if (!['queued', 'running'].includes(status!.state)) {
+            if (classifyJobState(status) === 'terminal') {
               remoteEnded = true;
               if (status!.retryable === false || status!.errorKind === 'real' || status!.failureKind === 'real') kind = 'real';
               throw new Error(`Remote job ${status!.state}, exit ${status!.exitCode ?? 'unknown'}: ${status!.reason || ''}`);

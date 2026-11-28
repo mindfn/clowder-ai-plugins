@@ -53,7 +53,7 @@ RSI 为一个真实项目建立可追溯的评估循环：按同周期对照运�
 | `preflight` | 是 | 登记时和每次运行前检查环境；登记时可输出 `{python,driver,dataVersion}` JSON。 |
 | `submit` | 是 | 启动本地任务；异步模式下 stdout 返回 job id 或 `{"jobId":"..."}`。 |
 | `collect` | 是 | 无空格的 JSON 文件路径模板，或输出 JSON 的命令；从顶层或 `metrics` 对象读取量尺。 |
-| `get` | 否 | 查询异步任务，输出 `{"state":"queued|running|done|failed|cancelled","exitCode":0,"reason":"..."}`。 |
+| `get` | 否 | 查询异步任务，输出 `{"state":"queued|running|done|failed|cancelled","exitCode":0,"reason":"..."}`。仅 `done/failed/cancelled` 表示终态；未知状态（如 `cancelling`）保留原 jobId，沿有界查询重试、可信取消或外部确认路径处理，不据此提交替换任务。 |
 | `cancel` | 否 | 停止、超时或最终失败时清理异步任务。 |
 | `analyze` | 否 | 最终环境失败后抽取错误特征，供自动修复与重复错误判断。 |
 | `timeout` | 否 | 秒数；限制前台 `submit`，也限制异步任务从提交到完成的总时长。未填时按最长成功运行的 3 倍、至少 10 分钟推导；尚无成功运行时不限。 |
