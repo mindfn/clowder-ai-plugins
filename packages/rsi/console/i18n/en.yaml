@@ -1234,6 +1234,7 @@ abort:
   notSubmitted: Job not submitted
   localStopped: Local process stopped
   failed: Cleanup failed; inspect the remote job
+  externallyConfirmed: Cleanup confirmed externally
   unconfirmed: Remote cleanup unconfirmed; inspection required
 
 progress:

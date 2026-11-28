@@ -860,6 +860,20 @@ export function act(state: RsiState, body: Data, query: Data, now: number, actor
       syncObjective(state, d);
       return { ok: true, updated, annotatedBy };
     }
+    case 'confirmCleanup': {
+      if (!d || !d.objective.projectPath) return { error: 'Real experimental objective not found', status: 404 };
+      if (!Number.isInteger(body.n) || typeof body.runId !== 'string' || typeof body.jobId !== 'string'
+        || typeof body.note !== 'string' || !body.note.trim() || body.note.trim().length > 240) return { error: 'Provide cycle n, runId, exact jobId and an external cleanup receipt note (1–240 characters)', status: 400 };
+      const round = d.rounds.find((r: Data) => r.n === body.n), run = round?.runs.find((r: Data) => r.id === body.runId);
+      if (d.objective.state !== 'paused' || d.rounds.some((r: Data) => ['running', 'aborting'].includes(r.state))
+        || !run || !['failed', 'cancelled'].includes(run.state) || !run.jobId || run.jobId !== body.jobId) return { error: 'Pause execution and confirm an exact unresolved job on a stopped run', status: 409 };
+      run.cancelResult = { status: 'externallyConfirmed', jobId: run.jobId, by: actor, at: now, note: body.note.trim() };
+      round.events.push({ at: now, kind: 'cleanup', text: `${actor}确认远端作业 ${run.jobId} 已结束或清理：${body.note.trim()}` });
+      message(state, d, now, '外部清理确认', `${actor}确认第 ${round.n} 周期 ${run.id} 的作业 ${run.jobId} 已结束或清理。\n依据：${body.note.trim()}\n本次确认不恢复执行、不改变实验结论或证据资格。`, 'declare');
+      delete run.jobId;
+      syncObjective(state, d);
+      return { ok: true, cycle: round.n, runId: run.id, cleanup: run.cancelResult };
+    }
     case 'abortCycle': {
       if (!d || !d.objective.projectPath) return { error: 'Real experimental objective not found', status: 404 };
       if (!['budget', 'env', 'eliminated', 'manual'].includes(body.reason)) return { error: 'reason must be budget, env, eliminated or manual', status: 400 };

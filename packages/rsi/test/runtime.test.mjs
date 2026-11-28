@@ -4136,3 +4136,72 @@ test('measurement harness and executor contracts cannot change between screening
   assert.doesNotMatch(await readFile(join(d.versions.find(v=>v.id==='v2').worktree,'starts'),'utf8'),/\/2\/target-s/);
  });
 });
+
+test('cleanup separates command inputs from evidence context and preserves unresolved job ownership',async(t)=>{
+ for(const mode of ['changed-config','lost-context']) await t.test(mode,async(t)=>{
+  const f=await fixture(t),o=await f.create();
+  const warnings=[];f.host.log=(_level,message,fields)=>warnings.push({message,fields});
+  Object.assign(f.commands,{submit:'echo fixture-job',get:'echo \'{"state":"running"}\'',poll:1,
+   cancel: mode==='changed-config' ? `test -f cleanup-ready && node -e 'const fs=require("fs");fs.appendFileSync("cancelled",JSON.parse(fs.readFileSync(process.argv[1])).route+" "+process.argv[2]+"\\n")' {config} {job}` : 'test -f cleanup-ready && echo {job} >> cancelled',
+   collect:'echo \'{"score":77}\''});
+  if(mode==='changed-config') f.commands.get=`node -e 'const fs=require("fs");console.log(JSON.stringify({state:JSON.parse(fs.readFileSync(process.argv[1])).route==="changed"?"done":"running"}))' {config}`;
+  const plan={groups:[{id:'control',label:'Control',vars:{route:'original'},control:true}],seeds:[71]};
+  await f.initialize(o,plan);await f.http('POST',{op:'runCycle',objective:o.id});
+  const before=(await until(f.read,s=>s.experiments[o.id].rounds[0].runs[0].jobId)).experiments[o.id].rounds[0].runs[0];
+  await f.activation().stop();assert.ok(warnings.length);
+  if(mode==='changed-config') {await writeFile(join(before.directory,'config.json'),JSON.stringify({route:'changed'}));await writeFile(join(f.project,'cleanup-ready'),'yes');}
+  else await rm(before.execution.context.path);
+  f.start();const blocked=(await until(f.read,s=>s.experiments[o.id].rounds[0].state==='aborted')).experiments[o.id];
+  assert.equal(blocked.rounds[0].runs[0].jobId,'fixture-job');
+  assert.equal(blocked.rounds[0].runs[0].evidence,false);await assert.rejects(access(join(f.project,'cancelled')));
+  if(mode==='changed-config') {
+   assert.equal(blocked.rounds[0].runs[0].cancelResult.status,'unconfirmed');
+   await f.http('POST',{op:'initStepRefresh',objective:o.id,k:'design'});await f.prepare(o,plan);
+   await f.http('POST',{op:'life',objective:o.id,action:'resume'});await f.http('POST',{op:'runCycle',objective:o.id});
+   const again=(await until(f.read,s=>s.experiments[o.id].rounds.at(-1).state==='aborted')).experiments[o.id];
+   assert.equal(again.rounds[0].runs[0].jobId,'fixture-job');await assert.rejects(access(join(f.project,'cancelled')));
+   const confirmation={op:'confirmCleanup',objectiveId:o.id,n:1,runId:before.id,jobId:'fixture-job',note:'Remote operator receipt #42: original route job ended'};
+   assert.equal((await f.tool('operate',confirmation,'codex',o.thread)).status,403);
+   await retain(f.storage,ownerKey('owner'),state=>{state.experiments[o.id].policy.manager={catId:'codex',name:'砚砚'};});
+   const old=await f.read();
+   assert.equal((await f.tool('operate',{...confirmation,jobId:'wrong-job'},'codex',o.thread)).status,409);
+   assert.equal((await f.tool('operate',{...confirmation,note:''},'codex',o.thread)).status,400);
+   assert.deepEqual(await f.read(),old);
+   const result=await f.tool('operate',confirmation,'codex',o.thread);assert.equal(result.ok,true,JSON.stringify(result));
+   const after=(await f.read()).experiments[o.id],run=after.rounds[0].runs[0];
+   assert.equal(run.jobId,undefined);assert.equal(run.evidence,false);assert.equal(after.objective.state,'paused');
+   assert.deepEqual(run.cancelResult,{status:'externallyConfirmed',jobId:'fixture-job',by:'砚砚（受托）',at:result.cleanup.at,note:confirmation.note});
+   assert.ok(after.rounds[0].events.some(e=>e.kind==='cleanup'&&e.text.includes('receipt #42')));
+   assert.ok(f.sends.some(send=>textOf(send).includes('receipt #42')));
+   assert.equal((await f.tool('operate',confirmation,'codex',o.thread)).status,409);
+   await f.activation().stop();f.start();
+   assert.equal((await f.read()).experiments[o.id].rounds[0].runs[0].cancelResult.jobId,'fixture-job');
+  }
+  if(mode==='lost-context') {
+   await writeFile(join(f.project,'cleanup-ready'),'yes');
+   await f.http('POST',{op:'initStepRefresh',objective:o.id,k:'design'});await f.prepare(o,plan);
+   await retain(f.storage,ownerKey('owner'),state=>{state.experiments[o.id].executor.commands.get='echo \'{"state":"done"}\'';});
+   await f.http('POST',{op:'life',objective:o.id,action:'resume'});await f.http('POST',{op:'runCycle',objective:o.id});
+   const done=(await until(f.read,s=>['aborted','evaluating'].includes(s.experiments[o.id].rounds.at(-1).state))).experiments[o.id];
+   assert.equal(done.rounds.at(-1).state,'evaluating');assert.equal(done.rounds[0].runs[0].jobId,undefined);
+   assert.equal((await readFile(join(f.project,'cancelled'),'utf8')).trim(),'fixture-job');
+  }
+ });
+});
+
+
+test('active abort and plugin stop never cancel through a changed routing config',async(t)=>{
+ for(const mode of ['abort','stop']) await t.test(mode,async(t)=>{
+  const f=await fixture(t),o=await f.create();f.host.log=()=>{};
+  Object.assign(f.commands,{submit:'echo held-job',get:'echo \'{"state":"running"}\'',poll:1,collect:'echo \'{"score":1}\'',
+   cancel:`node -e 'const fs=require("fs");fs.appendFileSync("cancelled",JSON.parse(fs.readFileSync(process.argv[1])).route+" "+process.argv[2])' {config} {job}`});
+  await f.initialize(o,{groups:[{id:'control',label:'Control',vars:{route:'original'},control:true}],seeds:[73]});
+  await f.http('POST',{op:'runCycle',objective:o.id});const run=(await until(f.read,s=>s.experiments[o.id].rounds[0].runs[0].jobId)).experiments[o.id].rounds[0].runs[0];
+  const activeConfirmation={op:'confirmCleanup',objective:o.id,n:1,runId:run.id,jobId:'held-job',note:'Cannot confirm an active job'};
+  assert.equal((await f.http('POST',activeConfirmation)).status,409);
+  await writeFile(join(run.directory,'config.json'),JSON.stringify({route:'changed'}));
+  if(mode==='abort') {await f.http('POST',{op:'abortCycle',objective:o.id,reason:'manual'});await until(f.read,s=>s.experiments[o.id].rounds[0].state==='aborted');}
+  else await f.activation().stop();
+  const kept=(await f.read()).experiments[o.id].rounds[0].runs[0];assert.equal(kept.jobId,'held-job');assert.equal(kept.cancelResult.status,'unconfirmed');await assert.rejects(access(join(f.project,'cancelled')));
+ });
+});

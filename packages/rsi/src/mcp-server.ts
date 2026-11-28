@@ -239,7 +239,7 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
     name: 'rsi_operate',
     method: 'rsi.operate',
     description:
-      '受托管理操作工具：仅当评估项的委托负责人（policy.manager）被主人指定为当前成员时可用。支持代为采纳方向（expDecide）、直接晋升候选/已验证版本为默认版本（promote）、开启/关闭每轮前绑定 cycleVars 门禁（requireCycleVars）、确认准备项（prepConfirm）、重做步骤（initStepRefresh/initRetry）、切换步骤成员（stepMember）、暂停/恢复/开始/重试（life）、中止当前周期并清理执行器（abortCycle，reason 必填，note 可选且最多240字）、手动跑一轮（runCycle）、设置单轮一次性运行时参数覆盖（cycleVars）、校准谱系标注（lineageFix）以及重新触发阶段（evalAgain/discussAgain/versionAgain）；不可修改委托负责人或停机/删除策略。',
+      '受托管理操作工具：仅当评估项的委托负责人（policy.manager）被主人指定为当前成员时可用。支持代为采纳方向（expDecide）、直接晋升候选/已验证版本为默认版本（promote）、开启/关闭每轮前绑定 cycleVars 门禁（requireCycleVars）、确认准备项（prepConfirm）、重做步骤（initStepRefresh/initRetry）、切换步骤成员（stepMember）、暂停/恢复/开始/重试（life）、以外部回执确认已停止运行的远端作业清理（confirmCleanup，须暂停并提供 n/runId/jobId/note）、中止当前周期并清理执行器（abortCycle，reason 必填，note 可选且最多240字）、手动跑一轮（runCycle）、设置单轮一次性运行时参数覆盖（cycleVars）、校准谱系标注（lineageFix）以及重新触发阶段（evalAgain/discussAgain/versionAgain）；不可修改委托负责人或停机/删除策略。',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -247,14 +247,16 @@ export const RSI_MCP_TOOLS: readonly RsiMcpToolDef[] = [
       properties: {
         op: {
           type: 'string',
-          enum: ['expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix', 'cycleVars', 'promote', 'requireCycleVars', 'abortCycle', 'hypothesis'],
+          enum: ['expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix', 'cycleVars', 'promote', 'requireCycleVars', 'abortCycle', 'hypothesis', 'confirmCleanup'],
           description: '要执行的受托管理操作。',
         },
         objectiveId: { type: 'string', minLength: 1, description: '可选评估项 ID（跨线程代操作时传入）。' },
-        n: { type: 'integer', minimum: 1, description: '周期号（expDecide 必填，evalAgain 可选）。' },
+        n: { type: 'integer', minimum: 1, description: '周期号（expDecide / confirmCleanup 必填，evalAgain 可选）。' },
+        runId: { type: 'string', minLength: 1, description: 'confirmCleanup 必填：已停止运行的精确 run ID。' },
+        jobId: { type: 'string', minLength: 1, description: 'confirmCleanup 必填：已在外部确认结束/清理的原 jobId，必须与状态一致。' },
         pick: { type: 'string', enum: ['direction', 'same', 'info', 'addVar', 'metric', 'goal'], description: 'expDecide 的决策类型。' },
         directionId: { type: 'string', minLength: 1, description: 'expDecide pick="direction" 时的方向 ID。' },
-        note: { type: 'string', description: 'expDecide（info/addVar/metric/goal 必填）或 promote / abortCycle（可选，最多 240 字）、hypothesis（最多 2000 字）的说明。' },
+        note: { type: 'string', description: 'expDecide（info/addVar/metric/goal 必填）或 promote / abortCycle（可选，最多 240 字）、hypothesis（最多 2000 字）的说明；confirmCleanup 必填外部清理回执或核查依据，1–240 字。' },
         version: { type: 'string', minLength: 1, description: 'promote 要晋升为当前默认版本的版本号（省略时默认晋升当前 candidate）。' },
         hypothesisId: { type: 'string', description: 'hypothesis 编辑/搁置已有假设时传入；新建时省略。' },
         title: { type: 'string', minLength: 1, maxLength: 240, description: 'hypothesis 可验证问题。' },

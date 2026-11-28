@@ -754,6 +754,7 @@ views:
                   map:
                     pending: t:rsi.abort.pending
                     cancelled: t:rsi.abort.cancelled
+                    externallyConfirmed: t:rsi.abort.externallyConfirmed
                     notSubmitted: t:rsi.abort.notSubmitted
                     localStopped: t:rsi.abort.localStopped
                     failed: t:rsi.abort.failed

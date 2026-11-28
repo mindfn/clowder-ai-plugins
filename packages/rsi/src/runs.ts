@@ -53,6 +53,20 @@ function isRetryableOutput(raw: string | undefined): boolean {
   return !!parsed && parsed.retryable === true;
 }
 
+// Cleanup consumes only its declared placeholders. Its small persisted contract is
+// independent of the full execution artifact used to qualify scientific evidence.
+async function cleanupIssue(execution: Data | undefined, template: string | undefined, values: Data): Promise<string | null> {
+  if (!execution || !template || typeof execution.cwd !== 'string' || !execution.cwd) return 'Original cleanup command or working directory is unavailable';
+  const needed = [...template.matchAll(/\{(config|run|seed|job|start|end|harness|version|commit)\}/g)].map(m => m[1]);
+  if (needed.some(k => values[k] === undefined || values[k] === null || values[k] === '')) return 'Original cleanup arguments are incomplete';
+  if (needed.includes('config')) {
+    const bytes = await readFile(values.config, 'utf8').catch(() => undefined);
+    if (bytes === undefined || !execution.inputs?.configHash || fingerprint(bytes) !== execution.inputs.configHash) return 'Cleanup config is missing or changed; remote job remains unconfirmed';
+  }
+  if (needed.includes('harness') && (execution.inputs?.harnessRevision === undefined || await projectRevision(values.harness) !== execution.inputs.harnessRevision)) return 'Cleanup harness is unavailable or changed; remote job remains unconfirmed';
+  return null;
+}
+
 export function createRuns(host: RsiHost, changed: (key: string) => Promise<void>) {
   let stopped = false, again = false, held = false, aborting = false, child: ChildProcess | undefined, job: Promise<void> | undefined, remote: Data | undefined;
   let awaitingJobId = false, asyncSubmitBounded = false, abortSubmitTimer: ReturnType<typeof setTimeout> | undefined;
@@ -91,6 +105,13 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
   // The work loop starts no command once the plugin stops (stop() would otherwise wait for it to finish; stop() itself may still cancel a job) or its run is held.
   const launch = (template: string, cwd: string, values: Data, limit = 0) => stopped || held || aborting ? Promise.resolve({ code: -1, log: aborting ? 'Cycle aborted' : held ? 'Run window closed' : 'Plugin stopped', stdout: '', timedOut: false }) : command(template, cwd, values, limit);
 
+  async function cancelExecution(execution: Data | undefined, values: Data, invoke = launch) {
+    values = { ...values, end: values.end ?? Math.floor(Date.now() / 1000) };
+    const issue = await cleanupIssue(execution, execution?.cancel, values);
+    if (issue) return { code: -1, log: issue, stdout: '', timedOut: false, unconfirmed: true };
+    return { ...await invoke(execution!.cancel, execution!.cwd, values, 30_000), unconfirmed: false };
+  }
+
   async function work() {
     while (!stopped) {
       busy = runId = undefined; held = aborting = false;
@@ -102,19 +123,14 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         busy = d.objective.id;
         for (const run of round.runs.filter((r: Data) => r.cancelResult?.status === 'pending')) {
           if (stopped) return;
-          // New runs freeze their exact command arguments; legacy persisted jobs use the recorded run directory/env.
-          const execution = run.execution || { cwd: run.cwd || d.objective.projectPath, cancel: d.executor.commands.cancel,
-            values: { config: join(run.directory || '', 'config.json'), run: run.directory || '', seed: run.seed,
-              start: Math.floor((run.start || round.start) / 1000), job: run.jobId || '',
-              harness: d.versions.find((v: Data) => v.id === run.env?.harness?.version)?.worktree || run.cwd || d.objective.projectPath,
-              version: round.plan.groups.find((g: Data) => g.id === run.group)?.version || '', commit: run.env?.commit || '' } };
-          const values = { ...execution.values, job: run.jobId || execution.values.job, end: Math.floor(Date.now() / 1000) };
+          const execution = run.execution;
+          const values = { ...execution?.values, job: run.jobId || execution?.values?.job, end: Math.floor(Date.now() / 1000) };
           let result: Data;
-          if (execution.submitted === false) result = { status: 'notSubmitted', at: Date.now() };
-          else if (canCancel(execution.cancel, values)) {
-            const cancelled = await command(execution.cancel, execution.cwd, values, 30_000);
+          if (execution?.submitted === false) result = { status: 'notSubmitted', at: Date.now() };
+          else if (execution?.cancel) {
+            const cancelled = await cancelExecution(execution, values, command);
             if (stopped) return;
-            result = { status: cancelled.code === 0 ? 'cancelled' : 'failed', code: cancelled.code, log: cancelled.log.slice(-LOG_KEEP), at: Date.now() };
+            result = { status: cancelled.code === 0 ? 'cancelled' : cancelled.unconfirmed ? 'unconfirmed' : 'failed', code: cancelled.code, log: cancelled.log.slice(-LOG_KEEP), at: Date.now() };
           } else result = { status: run.jobId || d.executor.commands.get ? 'unconfirmed' : 'localStopped', at: Date.now() };
           await retain(host.storage, key, (state) => {
             const current = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
@@ -180,7 +196,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         .sort((x, y) => x.round.start - y.round.start)[0];
       if (!queued) return;
       const { key, d, round, run } = queued;
-      let executor = structuredClone(d.executor);
+      let executor = structuredClone(d.executor), execution = run.execution;
       const group = round.plan.groups.find((g: Data) => g.id === run.group), version = d.versions.find((v: Data) => v.id === group.version);
       const directory = join(d.objective.projectPath, 'runs', d.objective.id, String(round.n), `${group.id}-s${run.seed}`);
       // A persisted async job keeps the start of the attempt that submitted it: its {start} and timeout count from there.
@@ -283,16 +299,10 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             const oldJob = String(orphan.run.jobId);
             const oldExecution = orphan.run.execution;
             if (!oldExecution) throw new EvidenceBlocked(`Original cleanup context unavailable for ${orphan.run.id}; confirm remote cleanup before rescreening`);
-            const oldCwd = oldExecution.cwd, oldValues = { ...oldExecution.values, job: oldJob };
-            let oldGet: string | undefined;
-            if (oldExecution.context) {
-              const bytes = await readFile(oldExecution.context.path, 'utf8').catch(() => '');
-              if (fingerprint(bytes) !== oldExecution.context.hash) throw new EvidenceBlocked(`Original cleanup context changed for ${orphan.run.id}`);
-              oldGet = JSON.parse(bytes).executor.commands.get;
-            }
-            const oldCancel = oldExecution.cancel;
+            const oldCwd = oldExecution.cwd, oldValues = { ...oldExecution.values, job: oldJob, end: Math.floor(Date.now() / 1000) };
+            const oldGet = oldExecution.get, oldCancel = oldExecution.cancel;
             let cleared = false;
-            if (oldGet) {
+            if (oldGet && !await cleanupIssue(oldExecution, oldGet, oldValues)) {
               const probe = await launch(oldGet, oldCwd, oldValues);
               log = (log + probe.log).slice(-16000);
               if (stopped) return;
@@ -304,7 +314,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
               }
             }
             if (!cleared && canCancel(oldCancel, oldValues)) {
-              const res = await launch(oldCancel, oldCwd, oldValues);
+              const res = await cancelExecution(oldExecution, oldValues);
               log = (log + res.log).slice(-16000);
               if (stopped) return;
               if (res.code === 0) cleared = true;
@@ -338,7 +348,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             usesHarness: Object.values(executor.commands).some((command) => typeof command === 'string' && command.includes('{harness}')),
             configHash: fingerprint(submittedConfig),
             revision: d.policy.tiers ? await projectRevision(cwd) : null,
-            harnessRevision: d.policy.tiers && Object.values(executor.commands).some((command) => typeof command === 'string' && command.includes('{harness}'))
+            harnessRevision: Object.values(executor.commands).some((command) => typeof command === 'string' && command.includes('{harness}'))
               ? await projectRevision(values.harness) : null };
           const parameters = round.plan.tierRule && d.policy.tiers
             ? executionParameters(version, group, round.plan, JSON.parse(submittedConfig), context.revision, fingerprint({ harness: context.harnessRevision, commands: executor.commands, resultMap: executor.resultMap, failureField: executor.failureField })) : undefined;
@@ -353,12 +363,12 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           }
           const contextPath = join(directory, 'execution.json'), contextBytes = JSON.stringify(context);
           await writeFile(contextPath, contextBytes);
+          execution = { cwd, values: { ...values }, cancel: executor.commands.cancel, get: executor.commands.get, submitted: false,
+            inputs: { configHash: context.configHash, harnessRevision: context.harnessRevision },
+            context: { path: contextPath, hash: fingerprint(contextBytes) } };
           await retain(host.storage, key, (state) => {
             const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
-            if (entry) {
-              entry.execution.context = { path: contextPath, hash: fingerprint(contextBytes) };
-              if (parameters) entry.parameters = parameters;
-            }
+            if (entry) { entry.execution = execution; if (parameters) entry.parameters = parameters; }
           });
           step = 'submit';
           if (aborting) throw new Error('Cycle aborted');
@@ -367,7 +377,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
             if (entry?.execution) entry.execution.submitted = true;
           });
-          if (canCancel(executor.commands.cancel, values)) remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: executor.commands.cancel, cwd, values };
+          if (canCancel(executor.commands.cancel, values)) remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: executor.commands.cancel, cwd, values, execution };
           awaitingJobId = !!executor.commands.get;
           asyncSubmitBounded = limit > 0;
           let result;
@@ -390,7 +400,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           }
         }
         if (executor.commands.get) {
-          remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: executor.commands.cancel, cwd, values };
+          remote = { key, objective: d.objective.id, cycle: round.n, run: run.id, cancel: executor.commands.cancel, cwd, values, execution };
           step = 'get';
           let pollFails = 0, pollFailSince = 0;
           const MAX_POLL_FAILS = 3;
@@ -486,7 +496,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       const final = error && kind === 'env' && run.retries >= maxRetries, cancel = run.jobId ? run.execution?.cancel : executor.commands.cancel;
       // Held at its window's end, the run waits in the queue for the next night as if it had not started; a job that is not cancelled is polled again.
       if (held && error && kind === 'env') {
-        const cancelled = canCancel(cancel, where?.values) && (await command(cancel!, where!.cwd, where!.values)).code === 0;
+        const cancelled = canCancel(cancel, where?.values) && (await cancelExecution(execution, where!.values, command)).code === 0;
         await retain(host.storage, key, (state) => {
           const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
           if (entry?.state !== 'running') return;
@@ -505,9 +515,10 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       // A job past its timeout, failing for good, or retrying after a foreground submit failure is cancelled so that nothing is left behind remotely.
       // Never cancel when failure occurred before submit (prepare/preflight), and never let cancel output evict the failing step's log.
       const failureLog = log;
-      let cancelLog = '', cancelOk = false;
+      let cancelLog = '', cancelOk = false, cleanup: Data | undefined;
       if (submitted && (timedOut || final || kind === 'evidence' || (pollLost && !pollLostRetryable) || (error && kind === 'env' && step === 'submit')) && canCancel(cancel, where?.values)) {
-        const cancelled = await launch(cancel!, where!.cwd, where!.values);
+        const cancelled = await cancelExecution(execution, where!.values);
+        cleanup = { status: cancelled.code === 0 ? 'cancelled' : cancelled.unconfirmed ? 'unconfirmed' : 'failed', code: cancelled.code, log: cancelled.log.slice(-LOG_KEEP), at: Date.now() };
         cancelOk = cancelled.code === 0;
         cancelLog = cancelled.log;
         if (cancelLog) log = `${log}\n[cancel]\n${cancelLog}`.slice(-16000);
@@ -532,6 +543,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
         Object.assign(entry, { end, metrics, ...(slices ? { slices } : {}), env, log: keptLog, error: failure, evidence: !error || kind === 'real' });
         entry.attempts ||= [];
         entry.attempts.push({ start, end, env, metrics, ...(slices ? { slices } : {}), error: failure, jobId: jobId || null });
+        if (cleanup) entry.cancelResult = cleanup;
         if (!keepJob) delete entry.jobId;
         if (error && kind === 'env' && entry.retries < maxRetries) {
           retrying = true;
@@ -586,7 +598,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       const job = remote && ids.includes(remote.objective) ? remote : undefined;
       if (job) { job.dropped = true; clearTimeout(pollTimer); releasePoll?.(); }
       if (job?.cancel) {
-        const cancelled = await command(job.cancel, job.cwd, job.values);
+        const cancelled = await cancelExecution(job.execution, job.values, command);
         if (cancelled.code !== 0) host.log('error', 'RSI remote cancellation failed for a deleted objective', { jobId: job.values.job, error: cancelled.log });
       }
       for (const id of ids) dropped.add(id);
@@ -615,8 +627,14 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
       await job;
       if (remote?.cancel) {
         const active = remote;
-        const cancelled = await command(active.cancel, active.cwd, active.values);
-        if (cancelled.code !== 0) { host.log('error', 'RSI remote cancellation failed; job retained', { jobId: active.values.job, error: cancelled.log }); return; }
+        const cancelled = await cancelExecution(active.execution, active.values, command);
+        if (cancelled.code !== 0) {
+          await retain(host.storage, active.key, (state) => {
+            const run = state.experiments[active.objective]?.rounds.find((r: Data) => r.n === active.cycle)?.runs.find((r: Data) => r.id === active.run);
+            if (run) run.cancelResult = { status: cancelled.unconfirmed ? 'unconfirmed' : 'failed', code: cancelled.code, log: cancelled.log.slice(-LOG_KEEP), at: Date.now() };
+          });
+          host.log('error', 'RSI remote cancellation failed; job retained', { jobId: active.values.job, error: cancelled.log }); return;
+        }
         await retain(host.storage, active.key, (state) => {
           const cycle = state.experiments[active.objective]?.rounds.find((r: Data) => r.n === active.cycle);
           if (!cycle) return;

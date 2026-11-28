@@ -1234,6 +1234,7 @@ abort:
   notSubmitted: 尚未提交任务
   localStopped: 本地进程已停止
   failed: 清理失败，请检查远端作业
+  externallyConfirmed: 已依据外部回执确认清理
   unconfirmed: 远端清理未确认，请核查
 
 progress:

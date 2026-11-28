@@ -599,7 +599,7 @@ function projectStatus(d: Experiment, input: Data): Data {
 }
 
 const DELEGATED_OPS = new Set([
-  'expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix', 'cycleVars', 'promote', 'requireCycleVars', 'abortCycle', 'hypothesis',
+  'expDecide', 'prepConfirm', 'initStepRefresh', 'initRetry', 'stepMember', 'life', 'runCycle', 'evalAgain', 'discussAgain', 'versionAgain', 'lineageFix', 'cycleVars', 'promote', 'requireCycleVars', 'abortCycle', 'hypothesis', 'confirmCleanup',
 ]);
 
 // Delegated operator control: strictly gated to the owner-designated policy.manager catId.
@@ -673,6 +673,7 @@ export function operateAction(state: RsiState, raw: Data, ctx: ToolContext, now:
     return act(state, { op: 'lineageFix', objective: d.objective.id, patches: input.patches, annotatedBy }, query, now, actor);
   }
   if (op === 'hypothesis') return act(state, { ...input, op, objective: d.objective.id }, query, now, actor);
+  if (op === 'confirmCleanup') return act(state, { op, objective: d.objective.id, n: input.n, runId: input.runId, jobId: input.jobId, note: input.note }, query, now, actor);
   if (op === 'abortCycle') return act(state, { op, objective: d.objective.id, reason: input.reason, note: input.note }, query, now, actor);
 
   if (op === 'cycleVars') {
