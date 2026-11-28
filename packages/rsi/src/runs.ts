@@ -53,17 +53,20 @@ function isRetryableOutput(raw: string | undefined): boolean {
   return !!parsed && parsed.retryable === true;
 }
 
-// Cleanup consumes only its declared placeholders. Its small persisted contract is
-// independent of the full execution artifact used to qualify scientific evidence.
-async function cleanupIssue(execution: Data | undefined, template: string | undefined, values: Data): Promise<string | null> {
+// A remote status/cancel result is trusted only while its original cwd revision
+// and declared inputs remain intact. This contract is independent of evidence artifacts.
+async function jobInputIssue(execution: Data | undefined, template: string | undefined, values: Data): Promise<string | null> {
   if (!execution || !template || typeof execution.cwd !== 'string' || !execution.cwd) return 'Original cleanup command or working directory is unavailable';
+  if (!await exists(execution.cwd)) return 'Original job working directory is unavailable';
+  const revision = await projectRevision(execution.cwd);
+  if (revision !== (execution.inputs?.cwdRevision ?? null)) return 'Job command checkout changed or its original revision is unavailable; remote job remains unconfirmed';
   const needed = [...template.matchAll(/\{(config|run|seed|job|start|end|harness|version|commit)\}/g)].map(m => m[1]);
   if (needed.some(k => values[k] === undefined || values[k] === null || values[k] === '')) return 'Original cleanup arguments are incomplete';
   if (needed.includes('config')) {
     const bytes = await readFile(values.config, 'utf8').catch(() => undefined);
     if (bytes === undefined || !execution.inputs?.configHash || fingerprint(bytes) !== execution.inputs.configHash) return 'Cleanup config is missing or changed; remote job remains unconfirmed';
   }
-  if (needed.includes('harness') && (execution.inputs?.harnessRevision === undefined || await projectRevision(values.harness) !== execution.inputs.harnessRevision)) return 'Cleanup harness is unavailable or changed; remote job remains unconfirmed';
+  if (needed.includes('harness') && (!await exists(values.harness) || execution.inputs?.harnessRevision === undefined || await projectRevision(values.harness) !== execution.inputs.harnessRevision)) return 'Cleanup harness is unavailable or changed; remote job remains unconfirmed';
   return null;
 }
 
@@ -105,12 +108,19 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
   // The work loop starts no command once the plugin stops (stop() would otherwise wait for it to finish; stop() itself may still cancel a job) or its run is held.
   const launch = (template: string, cwd: string, values: Data, limit = 0) => stopped || held || aborting ? Promise.resolve({ code: -1, log: aborting ? 'Cycle aborted' : held ? 'Run window closed' : 'Plugin stopped', stdout: '', timedOut: false }) : command(template, cwd, values, limit);
 
-  async function cancelExecution(execution: Data | undefined, values: Data, invoke = launch) {
+  async function jobCommand(execution: Data | undefined, template: string | undefined, values: Data, invoke = launch, limit = 0) {
     values = { ...values, end: values.end ?? Math.floor(Date.now() / 1000) };
-    const issue = await cleanupIssue(execution, execution?.cancel, values);
+    const issue = await jobInputIssue(execution, template, values);
     if (issue) return { code: -1, log: issue, stdout: '', timedOut: false, unconfirmed: true };
-    return { ...await invoke(execution!.cancel, execution!.cwd, values, 30_000), unconfirmed: false };
+    const result = await invoke(template!, execution!.cwd, values, limit);
+    // Inputs may change while the child is running. Never accept its terminal
+    // acknowledgement if the original command identity no longer holds.
+    const changed = await jobInputIssue(execution, template, values);
+    return changed ? { ...result, code: -1, log: `${result.log}\n${changed}`, unconfirmed: true } : { ...result, unconfirmed: false };
   }
+
+  const cancelExecution = (execution: Data | undefined, values: Data, invoke = launch) =>
+    jobCommand(execution, execution?.cancel, values, invoke, 30_000);
 
   async function work() {
     while (!stopped) {
@@ -299,11 +309,11 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             const oldJob = String(orphan.run.jobId);
             const oldExecution = orphan.run.execution;
             if (!oldExecution) throw new EvidenceBlocked(`Original cleanup context unavailable for ${orphan.run.id}; confirm remote cleanup before rescreening`);
-            const oldCwd = oldExecution.cwd, oldValues = { ...oldExecution.values, job: oldJob, end: Math.floor(Date.now() / 1000) };
+            const oldValues = { ...oldExecution.values, job: oldJob, end: Math.floor(Date.now() / 1000) };
             const oldGet = oldExecution.get, oldCancel = oldExecution.cancel;
             let cleared = false;
-            if (oldGet && !await cleanupIssue(oldExecution, oldGet, oldValues)) {
-              const probe = await launch(oldGet, oldCwd, oldValues);
+            if (oldGet) {
+              const probe = await jobCommand(oldExecution, oldGet, oldValues);
               log = (log + probe.log).slice(-16000);
               if (stopped) return;
               if (probe.code === 0) {
@@ -347,7 +357,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           context = { cwd, values: { ...values }, executor, limit, tracked: !!d.policy.tiers,
             usesHarness: Object.values(executor.commands).some((command) => typeof command === 'string' && command.includes('{harness}')),
             configHash: fingerprint(submittedConfig),
-            revision: d.policy.tiers ? await projectRevision(cwd) : null,
+            revision: await projectRevision(cwd),
             harnessRevision: Object.values(executor.commands).some((command) => typeof command === 'string' && command.includes('{harness}'))
               ? await projectRevision(values.harness) : null };
           const parameters = round.plan.tierRule && d.policy.tiers
@@ -364,7 +374,7 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
           const contextPath = join(directory, 'execution.json'), contextBytes = JSON.stringify(context);
           await writeFile(contextPath, contextBytes);
           execution = { cwd, values: { ...values }, cancel: executor.commands.cancel, get: executor.commands.get, submitted: false,
-            inputs: { configHash: context.configHash, harnessRevision: context.harnessRevision },
+            inputs: { cwdRevision: context.revision, configHash: context.configHash, harnessRevision: context.harnessRevision },
             context: { path: contextPath, hash: fingerprint(contextBytes) } };
           await retain(host.storage, key, (state) => {
             const entry = state.experiments[d.objective.id]?.rounds.find((r: Data) => r.n === round.n)?.runs.find((r: Data) => r.id === run.id);
@@ -410,12 +420,13 @@ export function createRuns(host: RsiHost, changed: (key: string) => Promise<void
             if (aborting) throw new Error('Cycle aborted');
             if (held) throw new Error('Run window closed');
             if (remote?.dropped) throw new Error('Objective deleted');
-            const polled = await launch(executor.commands.get, cwd, values);
+            const polled = await jobCommand(execution, executor.commands.get, values);
             log = (log + polled.log).slice(-16000);
             if (stopped) return;
             if (aborting) throw new Error('Cycle aborted');
             if (held) throw new Error('Run window closed');
             if (remote?.dropped) throw new Error('Objective deleted');
+            if (polled.unconfirmed) throw new EvidenceBlocked(polled.log);
             let status: Data | null = null;
             let pollErr = polled.code !== 0 ? `get exited ${polled.code}` : '';
             if (!pollErr) {

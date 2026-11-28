@@ -4205,3 +4205,57 @@ test('active abort and plugin stop never cancel through a changed routing config
   const kept=(await f.read()).experiments[o.id].rounds[0].runs[0];assert.equal(kept.jobId,'held-job');assert.equal(kept.cancelResult.status,'unconfirmed');await assert.rejects(access(join(f.project,'cancelled')));
  });
 });
+
+test('each live poll verifies original routing inputs before accepting a terminal state',async(t)=>{
+ const f=await fixture(t),o=await f.create();
+ Object.assign(f.commands,{submit:'echo polling-job',poll:1,collect:'echo \'{"score":77}\'',get:`node -e 'const fs=require("fs"),r=JSON.parse(fs.readFileSync(process.argv[1])).route;fs.appendFileSync("polled",r+"\\n");console.log(JSON.stringify({state:r==="original"?"running":"done"}))' {config}`});
+ await f.initialize(o,{groups:[{id:'control',label:'Control',vars:{route:'original'},control:true}],seeds:[81]});await f.http('POST',{op:'runCycle',objective:o.id});
+ const run=(await until(f.read,s=>s.experiments[o.id].rounds[0].runs[0].jobId)).experiments[o.id].rounds[0].runs[0];
+ await until(async()=>readFile(join(f.project,'polled'),'utf8').catch(()=>''),s=>s.includes('original'));
+ await writeFile(join(run.directory,'config.json'),JSON.stringify({route:'changed'}));
+ const d=(await until(f.read,s=>s.experiments[o.id].rounds[0].state!=='running')).experiments[o.id];
+ assert.equal(d.rounds[0].runs[0].jobId,'polling-job');assert.equal(d.rounds[0].state,'aborted');assert.equal(d.rounds[0].runs[0].evidence,false);
+ assert.equal((await readFile(join(f.project,'polled'),'utf8')).trim(),'original');
+});
+
+test('Git cleanup code identity protects polling abort stop and orphan paths independently of evidence artifacts',async(t)=>{
+ for(const mode of ['poll','abort','stop','orphan']) await t.test(mode,async(t)=>{
+  const f=await fixture(t);f.host.log=()=>{};
+  await writeFile(join(f.project,'get.cjs'),'require("fs").writeFileSync("original-query","called");console.log(JSON.stringify({state:"running"}));');
+  await writeFile(join(f.project,'cancel.cjs'),'const fs=require("fs");if(!fs.existsSync("cleanup-ready"))process.exit(1);fs.appendFileSync("cancelled","original "+process.argv[2]);');
+  git(f.project,'init','-q');git(f.project,'config','user.name','Fixture');git(f.project,'config','user.email','fixture@example.test');git(f.project,'add','simulate.mjs','get.cjs','cancel.cjs');git(f.project,'commit','-qm','Frozen cleanup contract');
+  const o=await f.create();Object.assign(f.commands,{submit:'echo git-job',poll:1,get:'node get.cjs {job}',cancel:'node cancel.cjs {job}',collect:'echo \'{"score":77}\''});
+  const plan={groups:[{id:'control',label:'Control',vars:{},control:true}],seeds:[82]};await f.initialize(o,plan);await f.http('POST',{op:'runCycle',objective:o.id});
+  const run=(await until(f.read,s=>s.experiments[o.id].rounds[0].runs[0].jobId)).experiments[o.id].rounds[0].runs[0],cwd=run.cwd;
+  if(mode==='orphan') {
+   await f.activation().stop();await rm(run.execution.context.path);f.start();await until(f.read,s=>s.experiments[o.id].rounds[0].state==='aborted');
+  }
+  if(mode==='poll') await until(async()=>access(join(cwd,'original-query')).then(()=>true,()=>false),s=>s);
+  if(mode==='poll') await writeFile(join(cwd,'get.cjs'),'require("fs").writeFileSync("changed-query","called");console.log(JSON.stringify({state:"done"}));');
+  else {await writeFile(join(cwd,'cleanup-ready'),'yes');await writeFile(join(cwd,'cancel.cjs'),'require("fs").writeFileSync("cancelled","changed "+process.argv[2]);');}
+  if(mode==='abort') await f.http('POST',{op:'abortCycle',objective:o.id,reason:'manual'});
+  else if(mode==='stop') await f.activation().stop();
+  else if(mode==='orphan') {await f.http('POST',{op:'initStepRefresh',objective:o.id,k:'design'});await f.prepare(o,plan);await retain(f.storage,ownerKey('owner'),state=>{state.experiments[o.id].executor.commands.get='echo \'{"state":"done"}\'';});await f.http('POST',{op:'life',objective:o.id,action:'resume'});await f.http('POST',{op:'runCycle',objective:o.id});}
+  const d= mode==='stop' ? (await f.read()).experiments[o.id] : (await until(f.read,s=>!['running','aborting'].includes(s.experiments[o.id].rounds.at(-1).state))).experiments[o.id];
+  assert.equal(d.rounds[0].runs[0].jobId,'git-job');await assert.rejects(access(join(cwd,'cancelled')));await assert.rejects(access(join(cwd,'changed-query')));
+  if(mode==='stop'||mode==='abort') assert.equal(d.rounds[0].runs[0].cancelResult.status,'unconfirmed');
+  else assert.equal(d.rounds.at(-1).state,'aborted');
+ });
+});
+
+
+test('terminal acknowledgements are rejected when command inputs change during get or cancel',async(t)=>{
+ for(const mode of ['get','cancel']) await t.test(mode,async(t)=>{
+  const f=await fixture(t),o=await f.create();f.host.log=()=>{};
+  const mutate=`node -e 'const fs=require("fs");fs.writeFileSync(process.argv[1],JSON.stringify({route:"changed"}));console.log(JSON.stringify({state:"done"}));' {config}`;
+  Object.assign(f.commands,{submit:'echo changing-job',poll:1,get:mode==='get'?mutate:'echo \'{"state":"running"}\'',collect:'echo \'{"score":77}\''});
+  if(mode==='cancel')f.commands.cancel=mutate;
+  await f.initialize(o,{groups:[{id:'control',label:'Control',vars:{route:'original'},control:true}],seeds:[83]});await f.http('POST',{op:'runCycle',objective:o.id});
+  await until(f.read,s=>s.experiments[o.id].rounds[0].runs[0].jobId);
+  if(mode==='cancel') await f.http('POST',{op:'abortCycle',objective:o.id,reason:'manual'});
+  const d=(await until(f.read,s=>s.experiments[o.id].rounds[0].state==='aborted')).experiments[o.id];
+  assert.equal(d.rounds[0].runs[0].jobId,'changing-job');
+  if(mode==='get')assert.equal(d.rounds[0].runs[0].evidence,false);
+  else assert.equal(d.rounds[0].runs[0].cancelResult.status,'unconfirmed');
+ });
+});
